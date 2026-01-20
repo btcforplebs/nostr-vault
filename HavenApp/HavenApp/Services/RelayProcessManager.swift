@@ -268,8 +268,6 @@ class RelayProcessManager: ObservableObject {
     
     /// Kills any existing haven processes and clears database locks before import
     private func cleanupBeforeImport() {
-        print("🔍 DEBUG: Running pre-import cleanup...")
-        
         // Kill any existing haven processes (except our own if running)
         let killTask = Process()
         killTask.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
@@ -287,11 +285,8 @@ class RelayProcessManager: ObservableObject {
             let lockFile = relayDataDir.appendingPathComponent(dbDir).appendingPathComponent("LOCK")
             if FileManager.default.fileExists(atPath: lockFile.path) {
                 try? FileManager.default.removeItem(at: lockFile)
-                print("🔍 DEBUG: Removed lock file: \(lockFile.path)")
             }
         }
-        
-        print("🔍 DEBUG: Pre-import cleanup complete")
     }
     
     func importNotes(config: HavenConfig) {
@@ -308,9 +303,8 @@ class RelayProcessManager: ObservableObject {
         let relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
         do {
             try FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
-            print("🔍 DEBUG: Created directory: \(relayDataDir.path)")
         } catch {
-            print("🔍 DEBUG: ERROR creating directory: \(error)")
+            // Error creating directory
         }
         
         // Create .env and relay JSON files if they don't exist
@@ -319,13 +313,9 @@ class RelayProcessManager: ObservableObject {
             let envContent = generateMinimalEnv(config: config)
             do {
                 try envContent.write(to: envURL, atomically: true, encoding: .utf8)
-                print("🔍 DEBUG: Created .env file at: \(envURL.path)")
-                print("🔍 DEBUG: .env content:\n\(envContent)")
             } catch {
-                print("🔍 DEBUG: ERROR creating .env: \(error)")
+                // Error creating .env
             }
-        } else {
-            print("🔍 DEBUG: .env already exists")
         }
         
         // Create seed relays file if it doesn't exist
@@ -336,12 +326,9 @@ class RelayProcessManager: ObservableObject {
             do {
                 let data = try encoder.encode(config.importSeedRelays)
                 try data.write(to: importRelaysURL)
-                print("🔍 DEBUG: Created \(config.importSeedRelaysFile) with \(config.importSeedRelays.count) relays")
             } catch {
-                print("🔍 DEBUG: ERROR creating import relays file: \(error)")
+                // Error creating import relays file
             }
-        } else {
-            print("🔍 DEBUG: \(config.importSeedRelaysFile) already exists")
         }
         
         // Create blastr relays file if it doesn't exist (required by Go binary)
@@ -353,12 +340,9 @@ class RelayProcessManager: ObservableObject {
             do {
                 let data = try encoder.encode(blastrRelays)
                 try data.write(to: blastrRelaysURL)
-                print("🔍 DEBUG: Created \(config.blastrRelaysFile) with \(blastrRelays.count) relays")
             } catch {
-                print("🔍 DEBUG: ERROR creating blastr relays file: \(error)")
+                // Error creating blastr relays file
             }
-        } else {
-            print("🔍 DEBUG: \(config.blastrRelaysFile) already exists")
         }
         
         let executablePath = Bundle.main.path(forResource: "haven", ofType: "") ?? "/usr/local/bin/haven"
@@ -436,10 +420,6 @@ class RelayProcessManager: ObservableObject {
     }
     
     private func processOutput(_ output: String) {
-        print("🔍 DEBUG: processOutput called - length: \(output.count), isEmpty: \(output.isEmpty)")
-        if !output.isEmpty {
-            print("🔍 DEBUG: Output content: [\(output)]")
-        }
         let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
         guard !lines.isEmpty else { return }
         
@@ -479,7 +459,6 @@ class RelayProcessManager: ObservableObject {
                     
                     // Terminate process if tagged import complete (Go doesnt exit)
                     if line.contains("tagged import complete") {
-                        print("🔍 DEBUG: Tagged import complete - setting importCompleted...")
                         self.isImporting = false
                         self.importCompleted = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
