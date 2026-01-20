@@ -1,6 +1,6 @@
 import Foundation
 
-struct HavenConfig: Codable {
+struct HavenConfig: Codable, Equatable {
     var ownerNpub: String = ""
     var relayURL: String = ""
     var relayPort: Int = 3355
@@ -10,6 +10,7 @@ struct HavenConfig: Codable {
     var launchAtLogin: Bool = false
     var autoStartRelay: Bool = true
     var hasCompletedSetup: Bool = false
+    var hasSeenWelcome: Bool = false
     
     // Private Relay
     var privateRelayName: String = "Haven Private"

@@ -12,6 +12,7 @@ struct SettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var selectedTab: SettingsTab = .identity
+    @State private var saveTask: Task<Void, Never>?
     
     enum SettingsTab: String, CaseIterable {
         case identity = "Identity"
@@ -56,6 +57,15 @@ struct SettingsView: View {
         .environmentObject(configService)
         .environmentObject(relayManager)
         .frame(width: 600, height: 500)
+        .onChange(of: configService.config) { oldValue, newValue in
+            saveTask?.cancel()
+            saveTask = Task {
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second debounce
+                if !Task.isCancelled {
+                    configService.save()
+                }
+            }
+        }
     }
 }
 
@@ -229,10 +239,10 @@ struct AdvancedSettingsView: View {
             Button("Reset Everything", role: .destructive) {
                 // 1. Stop relay
                 relayManager.stopRelay {
-                    // 2. Reset app data
+                    // 2. Reset app data and Restart
                     Task { @MainActor in
                         configService.resetApp()
-                        // Application layout checks config.hasCompletedSetup, so this should trigger a view switch
+                        ConfigService.restartApp()
                     }
                 }
             }

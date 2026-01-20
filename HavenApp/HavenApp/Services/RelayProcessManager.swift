@@ -2,6 +2,7 @@ import Foundation
 import Combine
 
 class RelayProcessManager: ObservableObject {
+    static let shared = RelayProcessManager()
     @Published var isRunning = false
     @Published var isBooting = false
     @Published var bootStatusMessage: String = ""
@@ -24,6 +25,11 @@ class RelayProcessManager: ObservableObject {
     
     private var pendingImportConfig: HavenConfig?
     @Published var startDate: Date?
+    
+    // Auto-fix locks
+    private var lastConfig: HavenConfig?
+    private var retryAttempted = false
+    private var needsLockFix = false
     
     private var metricsTimer: Timer?
     
@@ -48,6 +54,10 @@ class RelayProcessManager: ObservableObject {
         }
         
         guard !isRunning else { return }
+        
+        self.lastConfig = config
+        self.retryAttempted = false
+        self.needsLockFix = false
         
         let relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
         try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
@@ -141,6 +151,19 @@ class RelayProcessManager: ObservableObject {
                 self.isRunning = false
                 self.isBooting = false
                 self.isImporting = false
+                
+                // Check if we need to auto-fix locks
+                if self.needsLockFix && !self.retryAttempted {
+                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Database lock detected. Attempting automatic fix..."))
+                    self.retryAttempted = true
+                    self.clearDatabaseLocks {
+                        if let config = self.lastConfig {
+                            self.startRelay(config: config)
+                        }
+                    }
+                    return
+                }
+                
                 if let importConfig = self.pendingImportConfig {
                      self.importNotes(config: importConfig)
                 }
@@ -156,7 +179,7 @@ class RelayProcessManager: ObservableObject {
         startMetricsTimer()
     }
     
-    func clearDatabaseLocks() {
+    func clearDatabaseLocks(completion: (() -> Void)? = nil) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
             let dbDir = relayDataDir.appendingPathComponent("db")
@@ -181,6 +204,7 @@ class RelayProcessManager: ObservableObject {
             DispatchQueue.main.async {
                 self?.isLocked = false
                 self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared. You can now try starting the relay again."))
+                completion?()
             }
         }
     }
@@ -556,6 +580,7 @@ class RelayProcessManager: ObservableObject {
             
             if line.contains("Cannot acquire directory lock") || line.contains("Another process is using this Badger database") {
                 isLocked = true
+                needsLockFix = true
             }
         }
         

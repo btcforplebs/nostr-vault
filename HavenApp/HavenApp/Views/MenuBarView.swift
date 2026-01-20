@@ -5,6 +5,10 @@ struct MenuBarView: View {
     @ObservedObject var relayManager: RelayProcessManager
     @State private var selectedTab: Tab = .dashboard
     @Environment(\.openSettings) var openSettings
+    @Environment(\.openWindow) var openWindow
+    var isPoppedOut: Bool = false
+    
+    @State private var inactivityTimer: Timer?
     
     enum Tab {
         case dashboard
@@ -30,23 +34,8 @@ struct MenuBarView: View {
                             .transition(.opacity)
                     }
                     
-                    if relayManager.isLocked {
-                        Button(action: {
-                            relayManager.clearDatabaseLocks()
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "wrench.and.screwdriver.fill")
-                                Text("Fix Database Locks")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.orange.opacity(0.2))
-                            .foregroundColor(.orange)
-                            .cornerRadius(12)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    
+
 
                     Button(action: {
                         if relayManager.isRunning {
@@ -106,17 +95,46 @@ struct MenuBarView: View {
                 Divider()
                 
                 // MARK: - Footer
-                HStack {
-                    Button("Settings") {
+                HStack(spacing: 20) {
+                    Button(action: {
                         NSApp.activate(ignoringOtherApps: true)
                         if #available(macOS 14.0, *) {
                             openSettings()
                         } else {
                             NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                         }
+                    }) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
+                    .help("Settings")
+                    
+                    if !isPoppedOut {
+                        Button(action: {
+                            openWindow(id: "viewer-window")
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                NSApp.activate(ignoringOtherApps: true)
+                                for window in NSApp.windows {
+                                    if window.title == "Haven" {
+                                        window.makeKeyAndOrderFront(nil)
+                                        window.level = .normal
+                                    }
+                                    
+                                    if window.level.rawValue > NSWindow.Level.normal.rawValue && window.title.isEmpty {
+                                        window.orderOut(nil)
+                                    }
+                                }
+                            }
+                        }) {
+                            Image(systemName: "arrow.up.forward.square")
+                                .font(.system(size: 16))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Pop Out")
+                    }
                     
                     Spacer()
                     
@@ -125,6 +143,7 @@ struct MenuBarView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundColor(.secondary)
+                    .font(.system(size: 13))
                 }
                 .padding()
                 .background(Color(NSColor.windowBackgroundColor))
@@ -219,7 +238,28 @@ struct MenuBarView: View {
                 .transition(.opacity)
             }
         }
-        .frame(width: 480, height: 640)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            startInactivityTimer()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            stopInactivityTimer()
+        }
+    }
+    
+    private func startInactivityTimer() {
+        inactivityTimer?.invalidate()
+        inactivityTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { _ in
+            if selectedTab == .viewer {
+                DispatchQueue.main.async {
+                    selectedTab = .dashboard
+                }
+            }
+        }
+    }
+    
+    private func stopInactivityTimer() {
+        inactivityTimer?.invalidate()
+        inactivityTimer = nil
     }
 }
 

@@ -399,7 +399,7 @@ struct SetupSuccessStep: View {
             
             VStack(alignment: .leading, spacing: 16) {
                 SuccessBullet(icon: "bolt.fill", text: "Your relay is now your source of truth.")
-                SuccessBullet(icon: "shield.check.fill", text: "End-to-end encrypted DMs are enabled.")
+                SuccessBullet(icon: "checkmark.shield.fill", text: "End-to-end encrypted DMs are enabled.")
                 SuccessBullet(icon: "photo.fill", text: "Blossom media hosting is active.")
             }
             .padding(.top)

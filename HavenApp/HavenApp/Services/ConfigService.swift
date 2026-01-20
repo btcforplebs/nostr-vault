@@ -1,9 +1,11 @@
 import Foundation
 import ServiceManagement
+import AppKit
 
 /// Manages Haven configuration persistence
 @MainActor
 class ConfigService: ObservableObject {
+    static let shared = ConfigService()
     @Published var config: HavenConfig
     
     // Config stored in App Support (standard macOS location for app preferences/state)
@@ -41,6 +43,9 @@ class ConfigService: ObservableObject {
         }
         
         loadRelayLists()
+        
+        // Ensure configuration is synced to disk (updates .env with new defaults if code changed)
+        saveRelayLists()
     }
     
     private func loadRelayLists() {
@@ -80,7 +85,7 @@ class ConfigService: ObservableObject {
         // Ensure relayURL includes the port if it's localhost or empty
         let trimmedURL = config.relayURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedURL.isEmpty || trimmedURL == "localhost" || trimmedURL == "127.0.0.1" {
-            config.relayURL = "localhost:\(config.relayPort)"
+            config.relayURL = "127.0.0.1:\(config.relayPort)"
         }
         
         // Ensure data dir exists
@@ -186,6 +191,24 @@ class ConfigService: ObservableObject {
         config = HavenConfig.default
     }
     
+    /// Programmatically restart the application
+    static func restartApp() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.addsToRecentItems = false
+        
+        let bundleURL = Bundle.main.bundleURL
+        
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { _, error in
+            if let error = error {
+                print("Failed to relaunch app: \(error.localizedDescription)")
+            }
+            // Always terminate the current instance
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+    
     private func generateEnvFile() -> String {
         return """
         OWNER_NPUB="\(config.ownerNpub)"
@@ -235,8 +258,8 @@ class ConfigService: ObservableObject {
         OUTBOX_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL=10
         OUTBOX_RELAY_EVENT_IP_LIMITER_INTERVAL=60
         OUTBOX_RELAY_EVENT_IP_LIMITER_MAX_TOKENS=100
-        OUTBOX_RELAY_ALLOW_EMPTY_FILTERS=false
-        OUTBOX_RELAY_ALLOW_COMPLEX_FILTERS=false
+        OUTBOX_RELAY_ALLOW_EMPTY_FILTERS=true
+        OUTBOX_RELAY_ALLOW_COMPLEX_FILTERS=true
         OUTBOX_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL=3
         OUTBOX_RELAY_CONNECTION_RATE_LIMITER_INTERVAL=1
         OUTBOX_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS=9
@@ -250,8 +273,8 @@ class ConfigService: ObservableObject {
         INBOX_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL=10
         INBOX_RELAY_EVENT_IP_LIMITER_INTERVAL=1
         INBOX_RELAY_EVENT_IP_LIMITER_MAX_TOKENS=20
-        INBOX_RELAY_ALLOW_EMPTY_FILTERS=false
-        INBOX_RELAY_ALLOW_COMPLEX_FILTERS=false
+        INBOX_RELAY_ALLOW_EMPTY_FILTERS=true
+        INBOX_RELAY_ALLOW_COMPLEX_FILTERS=true
         INBOX_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL=3
         INBOX_RELAY_CONNECTION_RATE_LIMITER_INTERVAL=1
         INBOX_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS=9
