@@ -8,6 +8,7 @@ class RelayProcessManager: ObservableObject {
     @Published var isImporting = false
     @Published var importStatusMessage: String = ""
     @Published var importProgress: Double = 0.0
+    @Published var importCompleted: Bool = false
     @Published var isLocked = false
     
     @Published var logs: [LogEntry] = []
@@ -265,6 +266,34 @@ class RelayProcessManager: ObservableObject {
         return nil
     }
     
+    /// Kills any existing haven processes and clears database locks before import
+    private func cleanupBeforeImport() {
+        print("🔍 DEBUG: Running pre-import cleanup...")
+        
+        // Kill any existing haven processes (except our own if running)
+        let killTask = Process()
+        killTask.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        killTask.arguments = ["-9", "haven"]
+        try? killTask.run()
+        killTask.waitUntilExit()
+        
+        // Give it a moment for processes to terminate
+        Thread.sleep(forTimeInterval: 0.5)
+        
+        // Clear database lock files
+        let relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
+        let dbDirs = ["db/private", "db/chat", "db/inbox", "db/outbox", "db/wot"]
+        for dbDir in dbDirs {
+            let lockFile = relayDataDir.appendingPathComponent(dbDir).appendingPathComponent("LOCK")
+            if FileManager.default.fileExists(atPath: lockFile.path) {
+                try? FileManager.default.removeItem(at: lockFile)
+                print("🔍 DEBUG: Removed lock file: \(lockFile.path)")
+            }
+        }
+        
+        print("🔍 DEBUG: Pre-import cleanup complete")
+    }
+    
     func importNotes(config: HavenConfig) {
         if isRunning {
             pendingImportConfig = config
@@ -272,17 +301,31 @@ class RelayProcessManager: ObservableObject {
             return
         }
         
+        // Kill any existing haven processes and clear locks before starting import
+        cleanupBeforeImport()
+        
         // Ensure all required files exist before import
         let relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
-        try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
+            print("🔍 DEBUG: Created directory: \(relayDataDir.path)")
+        } catch {
+            print("🔍 DEBUG: ERROR creating directory: \(error)")
+        }
         
         // Create .env and relay JSON files if they don't exist
         let envURL = relayDataDir.appendingPathComponent(".env")
         if !FileManager.default.fileExists(atPath: envURL.path) {
-            // We need to generate the .env file - but we don't have access to ConfigService here
-            // So we'll create a minimal .env with the config passed in
             let envContent = generateMinimalEnv(config: config)
-            try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
+            do {
+                try envContent.write(to: envURL, atomically: true, encoding: .utf8)
+                print("🔍 DEBUG: Created .env file at: \(envURL.path)")
+                print("🔍 DEBUG: .env content:\n\(envContent)")
+            } catch {
+                print("🔍 DEBUG: ERROR creating .env: \(error)")
+            }
+        } else {
+            print("🔍 DEBUG: .env already exists")
         }
         
         // Create seed relays file if it doesn't exist
@@ -290,9 +333,15 @@ class RelayProcessManager: ObservableObject {
         if !FileManager.default.fileExists(atPath: importRelaysURL.path) {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
-            if let data = try? encoder.encode(config.importSeedRelays) {
-                try? data.write(to: importRelaysURL)
+            do {
+                let data = try encoder.encode(config.importSeedRelays)
+                try data.write(to: importRelaysURL)
+                print("🔍 DEBUG: Created \(config.importSeedRelaysFile) with \(config.importSeedRelays.count) relays")
+            } catch {
+                print("🔍 DEBUG: ERROR creating import relays file: \(error)")
             }
+        } else {
+            print("🔍 DEBUG: \(config.importSeedRelaysFile) already exists")
         }
         
         // Create blastr relays file if it doesn't exist (required by Go binary)
@@ -300,11 +349,16 @@ class RelayProcessManager: ObservableObject {
         if !FileManager.default.fileExists(atPath: blastrRelaysURL.path) {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
-            // Use empty array or config blastr relays
             let blastrRelays = config.blastrRelays.isEmpty ? [] : config.blastrRelays
-            if let data = try? encoder.encode(blastrRelays) {
-                try? data.write(to: blastrRelaysURL)
+            do {
+                let data = try encoder.encode(blastrRelays)
+                try data.write(to: blastrRelaysURL)
+                print("🔍 DEBUG: Created \(config.blastrRelaysFile) with \(blastrRelays.count) relays")
+            } catch {
+                print("🔍 DEBUG: ERROR creating blastr relays file: \(error)")
             }
+        } else {
+            print("🔍 DEBUG: \(config.blastrRelaysFile) already exists")
         }
         
         let executablePath = Bundle.main.path(forResource: "haven", ofType: "") ?? "/usr/local/bin/haven"
@@ -331,6 +385,7 @@ class RelayProcessManager: ObservableObject {
             self.importProgress = 0.0
             self.importStatusMessage = "Starting import..."
             self.isImporting = true
+            self.importCompleted = false
         }
         
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -345,22 +400,21 @@ class RelayProcessManager: ObservableObject {
         process.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
                 guard let self = self else { return }
+                self.outputPipe?.fileHandleForReading.readabilityHandler = nil
                 self.isImporting = false
                 let config = self.pendingImportConfig
                 self.pendingImportConfig = nil
                 
                 if proc.terminationStatus == 0 {
                     self.importProgress = 1.0
-                    self.importStatusMessage = "Import Complete - Restarting relay..."
+                    self.importStatusMessage = "Import Complete!"
+                    self.importCompleted = true
                     
-                    // Restart the relay after successful import
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        if let config = config {
-                            self.startRelay(config: config)
-                        }
-                    }
-                } else {
-                    self.importStatusMessage = "Import Failed (Code \(proc.terminationStatus))"
+                    // Don't restart relay automatically - let user finish setup first
+                    // The relay will start when they click "Launch Haven"
+                } else if !self.importCompleted {
+                    self.importStatusMessage = "Import Failed (Exit Code \(proc.terminationStatus))"
+                    self.importCompleted = false
                 }
             }
         }
@@ -382,6 +436,10 @@ class RelayProcessManager: ObservableObject {
     }
     
     private func processOutput(_ output: String) {
+        print("🔍 DEBUG: processOutput called - length: \(output.count), isEmpty: \(output.isEmpty)")
+        if !output.isEmpty {
+            print("🔍 DEBUG: Output content: [\(output)]")
+        }
         let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
         guard !lines.isEmpty else { return }
         
@@ -418,6 +476,18 @@ class RelayProcessManager: ObservableObject {
                } else if line.contains("Import complete") || line.contains("import complete") {
                    importProgress = 1.0
                    importStatusMessage = "Import Complete!"
+                    
+                    // Terminate process if tagged import complete (Go doesnt exit)
+                    if line.contains("tagged import complete") {
+                        print("🔍 DEBUG: Tagged import complete - setting importCompleted...")
+                        self.isImporting = false
+                        self.importCompleted = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            if let process = self.process, process.isRunning {
+                                process.terminate()
+                            }
+                        }
+                    }
                } else if line.contains("No notes found") {
                    if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
                        calculateProgress(currentDateStr: String(dateStr))

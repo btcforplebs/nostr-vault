@@ -73,20 +73,23 @@ struct SetupWizardView: View {
                 Spacer()
                 
                 if currentStep < 5 {
-                    Button(currentStep == 4 && relayManager.isImporting ? "Cancel Import" : (currentStep == 4 ? "Skip & Finish" : "Continue")) {
-                        if currentStep == 4 && relayManager.isImporting {
-                            // Cancel the import
-                            relayManager.cancelImport()
-                        } else {
-                            if currentStep == 3 {
-                                saveIntermediateConfig()
+                    // Hide buttons when import is complete (we show Finish Setup button in the content area)
+                    if !(currentStep == 4 && relayManager.importCompleted) {
+                        Button(currentStep == 4 && relayManager.isImporting ? "Cancel Import" : (currentStep == 4 ? "Skip & Finish" : "Continue")) {
+                            if currentStep == 4 && relayManager.isImporting {
+                                // Cancel the import
+                                relayManager.cancelImport()
+                            } else {
+                                if currentStep == 3 {
+                                    saveIntermediateConfig()
+                                }
+                                withAnimation { currentStep += 1 }
                             }
-                            withAnimation { currentStep += 1 }
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(currentStep == 4 && relayManager.isImporting ? .red : .havenPurple)
+                        .disabled(!canContinue && !(currentStep == 4 && relayManager.isImporting))
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(currentStep == 4 && relayManager.isImporting ? .red : .havenPurple)
-                    .disabled(!canContinue && !(currentStep == 4 && relayManager.isImporting))
                 } else {
                     Button("Launch Haven") {
                         saveAndComplete()
@@ -257,8 +260,6 @@ struct SetupImportStep: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
     
-    @State private var hasStartedImport = false
-    
     var body: some View {
         VStack(spacing: 24) {
             Image(systemName: "square.and.arrow.down")
@@ -275,21 +276,43 @@ struct SetupImportStep: View {
             }
             
             VStack(spacing: 16) {
-                if relayManager.isImporting {
+                if relayManager.isImporting || relayManager.importCompleted {
                     VStack(spacing: 12) {
                         ProgressView(value: relayManager.importProgress, total: 1.0)
                             .progressViewStyle(.linear)
                             .frame(maxWidth: 200)
                         
-                        Text("Importing your notes...")
+                        Text(relayManager.importCompleted ? "Import Complete!" : "Importing your notes...")
                             .font(.headline)
                         
-                        Text(relayManager.importStatusMessage)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .frame(height: 35)
+                        // Only show status message during import, not after completion
+                        if !relayManager.importCompleted {
+                            Text(relayManager.importStatusMessage)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .frame(height: 35)
+                        }
+                        
+                        // Show Finish Setup button when import is complete
+                        if relayManager.importCompleted {
+                            Button(action: {
+                                withAnimation {
+                                    currentStep += 1
+                                }
+                            }) {
+                                Label("Finish Setup", systemImage: "checkmark.circle.fill")
+                                    .font(.headline)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color.green)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(12)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 8)
+                        }
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
@@ -356,18 +379,6 @@ struct SetupImportStep: View {
             Spacer()
         }
         .padding()
-        .onChange(of: relayManager.isImporting) { oldValue, isImporting in
-            if isImporting {
-                hasStartedImport = true
-            } else if hasStartedImport {
-                // Import finished! Auto-advance
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    withAnimation {
-                        currentStep += 1
-                    }
-                }
-            }
-        }
     }
 }
 
