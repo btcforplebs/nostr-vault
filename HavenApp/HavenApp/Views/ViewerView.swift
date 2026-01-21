@@ -75,7 +75,7 @@ struct ViewerView: View {
                     }
                     .padding(4)
                     .background(Color.primary.opacity(0.05))
-                    .cornerRadius(8)
+                    .cornerRadius(24)
                     
                     Spacer()
                     
@@ -364,6 +364,7 @@ struct ModeButton: View {
             .foregroundColor(isSelected ? .white : .secondary)
             .background(isSelected ? Color.havenPurple : Color.clear)
             .cornerRadius(20)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -378,12 +379,7 @@ struct NoteRow: View {
     }
     
     var cleanContent: String {
-        var content = event.content
-        // Remove media URLs from the text
-        for url in mediaURLs {
-            content = content.replacingOccurrences(of: url.absoluteString, with: "")
-        }
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return event.content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     var body: some View {
@@ -413,39 +409,6 @@ struct NoteRow: View {
                     .font(.body)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-            
-            // Embedded media
-            if !mediaURLs.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(mediaURLs, id: \.self) { url in
-                        if url.isVideo {
-                            VideoPlayerView(url: url)
-                                .frame(height: 300)
-                                .cornerRadius(8)
-                        } else if url.isGIF {
-                            AnimatedImage(url: url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 600, height: 600))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 300)
-                                .cornerRadius(8)
-                                .clipped()
-                                .overlay(
-                                    Image(systemName: "gif")
-                                        .font(.title)
-                                        .foregroundColor(.white)
-                                        .shadow(radius: 2)
-                                        .padding(8),
-                                    alignment: .bottomTrailing
-                                )
-                        } else if url.isImage {
-                            RetryableAsyncImage(url: url, contentMode: .fill, targetSize: CGSize(width: 600, height: 600))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 300)
-                                .cornerRadius(8)
-                                .clipped()
-                        }
-                    }
-                }
             }
         }
         .padding()
@@ -629,7 +592,7 @@ struct RetryableAsyncImage: View {
         MediaCacheService.shared.downloadQueue.addOperation(downloadRequest)
     }
     
-    private func decode(data: Data) -> NSImage? {
+    nonisolated private func decode(data: Data) -> NSImage? {
         if let targetSize = targetSize,
            let downsampled = ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height)) {
             return downsampled

@@ -198,10 +198,25 @@ struct AdvancedSettingsView: View {
             }
             
             Section("Database") {
-                Picker("Engine", selection: $configService.config.dbEngine) {
-                    Text("BadgerDB").tag("badger")
-                    Text("LMDB").tag("lmdb")
+                if configService.config.hasCompletedSetup {
+                    HStack {
+                        Text("Engine")
+                        Spacer()
+                        Text(configService.config.dbEngine == "badger" ? "BadgerDB" : "LMDB")
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    Picker("Engine", selection: $configService.config.dbEngine) {
+                        Text("BadgerDB").tag("badger")
+                        Text("LMDB").tag("lmdb")
+                    }
                 }
+                
+                Text(configService.config.dbEngine == "badger" ? 
+                     "BadgerDB pre-allocates ~11GB of space. This is normal." :
+                     "LMDB uses sparse files. Reported file size may be larger than actual usage.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 
                 TextField("Blossom Path", text: $configService.config.blossomPath)
             }
@@ -242,12 +257,12 @@ struct AdvancedSettingsView: View {
                     // 2. Reset app data and Restart
                     Task { @MainActor in
                         configService.resetApp()
-                        ConfigService.restartApp()
+                        ConfigService.quitApp()
                     }
                 }
             }
         } message: {
-            Text("This action cannot be undone. all your relay data will be lost.")
+            Text("This action cannot be undone. All your relay data will be lost and the app will quit.")
         }
     }
 }

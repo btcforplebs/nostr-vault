@@ -29,6 +29,7 @@
 		AAAA0019 /* AnimatedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFF0019 /* AnimatedImage.swift */; };
 		AAAA0021 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFF0021 /* AppDelegate.swift */; };
 		AAAA0100 /* WelcomeWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFF0100 /* WelcomeWindowView.swift */; };
+		AAAA9002 /* StatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA9001 /* StatsService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,6 +57,7 @@
 		FFFF0021 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		FFFF0099 /* HavenApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HavenApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FFFF0100 /* WelcomeWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindowView.swift; sourceTree = "<group>"; };
+		AAAA9001 /* StatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -97,7 +99,8 @@
 				FFFF0005 /* ConfigService.swift */,
 				FFFF0006 /* RelayProcessManager.swift */,
 				FFFF0007 /* WebSocketClient.swift */,
-			);
+			
+				AAAA9001 /* StatsService.swift */,);
 			path = HavenApp/Services;
 			sourceTree = "<group>";
 		};
@@ -221,6 +224,7 @@
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
+			alwaysOutOfDate = 1;
 			shellPath = /bin/bash;
 			shellScript = "\"$PROJECT_DIR/HavenApp/App/sign_haven.sh\"\n";
 		};
@@ -250,7 +254,8 @@
 				AAAA0018 /* ColorExtension.swift in Sources */,
 				AAAA0100 /* WelcomeWindowView.swift in Sources */,
 				AAAA0021 /* AppDelegate.swift in Sources */,
-			);
+			
+				AAAA9002 /* StatsService.swift in Sources */,);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
@@ -385,7 +390,7 @@
 				CODE_SIGN_ENTITLEMENTS = HavenApp/App/HavenApp.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 100;
 				DEVELOPMENT_TEAM = KAD7WNBGH2;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -397,7 +402,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -414,7 +419,7 @@
 				CODE_SIGN_ENTITLEMENTS = HavenApp/App/HavenApp.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 100;
 				DEVELOPMENT_TEAM = KAD7WNBGH2;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -426,7 +431,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

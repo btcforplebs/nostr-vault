@@ -4,6 +4,7 @@ struct DashboardView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var statsService: StatsService
     
     var body: some View {
         ScrollView {
@@ -61,6 +62,23 @@ struct DashboardView: View {
                     .padding(.horizontal)
                 }
 
+
+                // MARK: - Statistics
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Statistics")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                    
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        StatsCard(title: "Total Notes", value: "\(statsService.loadedNotesCount)", icon: "doc.text.fill", color: .havenPurple, isLoading: statsService.isUpdatingCount && statsService.loadedNotesCount == 0)
+                        StatsCard(title: "Storage Used", value: statsService.formattedStorageSize, icon: "internaldrive.fill", color: .blue)
+                        StatsCard(title: "Blossom Storage", value: statsService.formattedBlossomSize, icon: "server.rack", color: .green)
+                        StatsCard(title: "Media Cache", value: statsService.formattedCacheSize, icon: "photo.stack.fill", color: .orange)
+                    }
+                    .padding(.horizontal)
+                }
+                
                 // MARK: - Actions
                 HStack(spacing: 12) {
                     ActionButton(icon: "safari", title: "Browser") {
@@ -71,10 +89,7 @@ struct DashboardView: View {
                     
                     ActionButton(icon: "arrow.down.circle", title: "Import") {
                         let config = configService.config
-                        // Run import on background thread to avoid UI freeze
-                        DispatchQueue.global(qos: .userInitiated).async {
-                            relayManager.importNotes(config: config)
-                        }
+                        relayManager.importNotes(config: config)
                     }
                 }
                 .padding(.horizontal)
@@ -82,6 +97,34 @@ struct DashboardView: View {
                 .padding(.horizontal)
             }
             .padding(.vertical)
+        }
+        .onAppear {
+            let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
+            statsService.refreshStats(relayURLString: urlString)
+        }
+        .onChange(of: relayManager.isRunning) { oldValue, newValue in
+            if newValue && !relayManager.isBooting {
+                let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    statsService.refreshStats(relayURLString: urlString)
+                }
+            }
+        }
+        .onChange(of: relayManager.isBooting) { oldValue, newValue in
+            if !newValue && relayManager.isRunning {
+                let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    statsService.refreshStats(relayURLString: urlString)
+                }
+            }
+        }
+        .onChange(of: relayManager.importCompleted) { oldValue, newValue in
+            if newValue {
+                let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    statsService.refreshStats(relayURLString: urlString)
+                }
+            }
         }
     }
 }
@@ -166,5 +209,42 @@ struct ActionButton: View {
             .cornerRadius(8)
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct StatsCard: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+    var isLoading: Bool = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                    .font(.system(size: 16))
+                Spacer()
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.8, anchor: .leading)
+                        .frame(height: 24)
+                } else {
+                    Text(value)
+                        .font(.system(size: 20, weight: .bold))
+                }
+                Text(title)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(8)
     }
 }

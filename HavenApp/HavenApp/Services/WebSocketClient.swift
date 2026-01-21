@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 import CryptoKit
 
-class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate {
+class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, @unchecked Sendable {
     enum ConnectionState: String {
         case disconnected
         case connecting
@@ -63,13 +63,14 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate {
             switch result {
             case .failure(let error):
                 print("WebSocket receive failure: \(error.localizedDescription)")
-                DispatchQueue.main.async { 
+                Task { @MainActor in
                     self?.connectionState = .error
                     self?.lastError = error.localizedDescription
                 }
             case .success(let message):
                 switch message {
                 case .string(let text):
+                    print("WebSocketClient [\(self?.url?.lastPathComponent ?? "root")]: Received: \(text.prefix(100))")
                     self?.messageSubject.send(text)
                 case .data(_):
                     break
@@ -103,7 +104,12 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate {
     }
 }
 
+@MainActor
 class NostrService: ObservableObject {
+    private struct UncheckedSendable<T>: @unchecked Sendable {
+        let value: T
+    }
+    
     static let shared = NostrService()
     // These are no longer @Published to prevent background-thread notification crashes.
     // We notify manually on the main thread via the throttled subject.
@@ -188,8 +194,11 @@ class NostrService: ObservableObject {
     private func sendRequest(to client: WebSocketClient, url: URL, until: Int64? = nil) {
         let subscriptionId = "viewer-\(url.lastPathComponent.isEmpty ? "root" : url.lastPathComponent)-\(UUID().uuidString.prefix(4))"
         // Request events with a limit to get the latest data. 
-        // Reverted to 500 as requested for better stability.
-        var filter: [String: Any] = ["limit": 500]
+        // Also include common kinds (1: text, 6: repost, 1063: file metadata) to avoid empty filter blocks
+        var filter: [String: Any] = [
+            "limit": 500,
+            "kinds": [1, 6, 1063]
+        ]
         if let until = until {
             filter["until"] = until
         }
@@ -293,6 +302,148 @@ class NostrService: ObservableObject {
         }
     }
     
+    func fetchCount(from relayURLs: [URL], filter: [String: Any] = [:]) async -> Int? {
+        print("NostrService: Starting aggregate fetchCount for \(relayURLs.count) relays")
+        var totalCount: Int? = nil
+        
+        let safeFilter = UncheckedSendable(value: filter)
+        
+        await withTaskGroup(of: Int?.self) { group in
+            for url in relayURLs {
+                group.addTask {
+                    let filter = safeFilter.value
+                    let urlString = url.absoluteString
+                    let relayTag = url.lastPathComponent.isEmpty ? "outbox" : url.lastPathComponent
+                    
+                    print("NostrService [\(relayTag)]: Task started")
+                    
+                    let (client, isNew) = await MainActor.run { () -> (WebSocketClient?, Bool) in
+                        if let existing = self.clients[urlString] {
+                            print("NostrService [\(relayTag)]: Using existing client")
+                            return (existing, false)
+                        } else {
+                            print("NostrService [\(relayTag)]: Creating new client")
+                            return (WebSocketClient(), true)
+                        }
+                    }
+                    
+                    guard let client = client else { 
+                        print("NostrService [\(relayTag)]: Failed to get client")
+                        return nil 
+                    }
+                    
+                    // 1. Wait for connection if needed
+                    if client.connectionState != .connected {
+                        print("NostrService [\(relayTag)]: Not connected. Connecting now...")
+                        client.connect(url: url)
+                        
+                        var cancellable: AnyCancellable?
+                        let didConnect = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                            var hasResumed = false
+                            
+                            cancellable = client.$connectionState
+                                .first(where: { $0 == .connected || $0 == .error })
+                                .timeout(.seconds(5), scheduler: DispatchQueue.main)
+                                .sink { completion in
+                                    if !hasResumed {
+                                        hasResumed = true
+                                        if case .failure = completion {
+                                            print("NostrService [\(relayTag)]: Connection timeout")
+                                        }
+                                        continuation.resume(returning: false)
+                                    }
+                                } receiveValue: { state in
+                                    if !hasResumed {
+                                        hasResumed = true
+                                        print("NostrService [\(relayTag)]: Connection state reached: \(state)")
+                                        continuation.resume(returning: state == .connected)
+                                    }
+                                }
+                        }
+                        _ = cancellable // Hold it until await finishes
+                        
+                        if !didConnect {
+                            print("NostrService [\(relayTag)]: Failed to connect during fetchCount")
+                            if isNew { await MainActor.run { client.disconnect() } }
+                            return nil
+                        }
+                    }
+                    
+                    // 2. Send COUNT and wait for response
+                    let subscriptionId = "count-\(UUID().uuidString.prefix(6))"
+                    print("NostrService [\(relayTag)]: Sending COUNT with subId: \(subscriptionId)")
+                    
+                    var messageCancellable: AnyCancellable?
+                    let countResult = await withCheckedContinuation { (continuation: CheckedContinuation<Int?, Never>) in
+                        var hasResumed = false
+                        
+                        messageCancellable = client.messageSubject
+                            .filter { $0.contains(subscriptionId) }
+                            .first()
+                            .timeout(.seconds(10), scheduler: DispatchQueue.main)
+                            .sink { completion in
+                                if !hasResumed {
+                                    hasResumed = true
+                                    if case .failure = completion {
+                                        print("NostrService [\(relayTag)]: COUNT response timeout")
+                                    } else {
+                                        print("NostrService [\(relayTag)]: Message stream finished before COUNT")
+                                    }
+                                    continuation.resume(returning: nil)
+                                }
+                            } receiveValue: { msg in
+                                if !hasResumed {
+                                    hasResumed = true
+                                    print("NostrService [\(relayTag)]: Received response: \(msg.prefix(200))")
+                                    
+                                    if let data = msg.data(using: .utf8),
+                                       let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                                       json.count >= 3,
+                                       let result = json[2] as? [String: Any],
+                                       let count = (result["count"] as? Int) ?? (result["count"] as? NSNumber)?.intValue {
+                                        continuation.resume(returning: count)
+                                    } else {
+                                        print("NostrService [\(relayTag)]: Failed to parse COUNT JSON")
+                                        continuation.resume(returning: nil)
+                                    }
+                                }
+                            }
+                        
+                        // Send the actual request
+                        let req = ["COUNT", subscriptionId, filter] as [Any]
+                        if let reqData = try? JSONSerialization.data(withJSONObject: req),
+                           let reqString = String(data: reqData, encoding: .utf8) {
+                            client.send(text: reqString)
+                        } else {
+                            if !hasResumed {
+                                hasResumed = true
+                                continuation.resume(returning: nil)
+                            }
+                        }
+                    }
+                    _ = messageCancellable // Hold it until await finishes
+                    
+                    if isNew { 
+                        print("NostrService [\(relayTag)]: Disconnecting temporary client")
+                        await MainActor.run { client.disconnect() }
+                    }
+                    
+                    print("NostrService [\(relayTag)]: Returning count: \(String(describing: countResult))")
+                    return countResult
+                }
+            }
+            
+            for await count in group {
+                if let count = count {
+                     totalCount = (totalCount ?? 0) + count
+                }
+            }
+        }
+        
+        print("NostrService: Final aggregated count: \(String(describing: totalCount))")
+        return totalCount
+    }
+
     func extractMediaURLs(from content: String) -> [URL] {
         // More robust pattern for media URLs, including those without extensions but following common patterns
         let pattern = #"(https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic|tiff)(?:\?\S+)?)|(https?://\S+?/blossom/[a-f0-9]{64})"#
@@ -319,7 +470,7 @@ class NostrService: ObservableObject {
     }
 }
 
-class MediaCacheService: ObservableObject {
+class MediaCacheService: ObservableObject, @unchecked Sendable {
     static let shared = MediaCacheService()
     
     private let cacheDirectory: URL
@@ -331,8 +482,17 @@ class MediaCacheService: ObservableObject {
     }()
     
     private init() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        self.cacheDirectory = home.appendingPathComponent("haven_relay/cache")
+        // Accessing ConfigService.shared.relayDataDir (MainActor) is unsafe here if init is non-isolated.
+        // However, we can construct the path manually or assume this specific property access is safe enough given it's a let constant
+        // For strict correctness, we should pass it or lazily init.
+        // Let's use the known path structure relative to Application Support which is standard.
+        // OR better: ConfigService.shared is MainActor. We can't access it.
+        // We will make init @MainActor, but then shared instance creation is MainActor.
+        // The error was that we were calling saveToCache from background.
+        
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let havenAppSupport = appSupport.appendingPathComponent("Haven", isDirectory: true)
+        self.cacheDirectory = havenAppSupport.appendingPathComponent("haven_database", isDirectory: true).appendingPathComponent("cache")
         
         createCacheDirectory()
     }

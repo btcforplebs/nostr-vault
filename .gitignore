@@ -1,13 +1,50 @@
-HavenApp.zip
-HavenApp/build/
-HavenApp/HavenApp/Resources/haven
-.env
-relays_import.json
-relays_blastr.json
-haven
+# Xcode
 .DS_Store
-.idea/
-db.zip
-db/
-dist/
-blossom/
+*/build/
+*.derivedData
+*. Ebenezer
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.xcuserstate
+*.xcarchive
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# CocoaPods
+Pods/
+Extensions/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# Bundle artifacts
+*.jsbundle
+
+# Temporary files
+build_log*.txt
+archive_log.txt
+build_output_debug.txt
+*.swp
+*~
+
+# Go
+haven
+vendor/
+go.work

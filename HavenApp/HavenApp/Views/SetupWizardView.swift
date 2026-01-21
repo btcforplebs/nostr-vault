@@ -100,7 +100,7 @@ struct SetupWizardView: View {
             }
             .padding()
         }
-        .frame(width: 480, height: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     var canContinue: Bool {
@@ -240,14 +240,23 @@ struct DatabaseStep: View {
                     selected: $dbEngine,
                     value: "badger",
                     title: "BadgerDB",
-                    description: "Recommended for most users. Good performance on all drives."
+                    description: "Pre-allocates ~11GB of disk space for high performance. Recommended for most users."
                 )
                 DatabaseOption(
                     selected: $dbEngine,
                     value: "lmdb",
                     title: "LMDB",
-                    description: "Faster on NVMe drives. May need tuning for stability."
+                    description: "Uses sparse files (grows as needed). Faster on NVMe drives, but may require tuning."
                 )
+                
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                    Text("This choice is permanent. Switching later requires a full reset.")
+                        .font(.caption)
+                }
+                .foregroundColor(.orange)
+                .padding(.top, 4)
             }
             .frame(maxWidth: 350)
         }
@@ -261,9 +270,9 @@ struct SetupImportStep: View {
     @EnvironmentObject var configService: ConfigService
     
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 12) {
             Image(systemName: "square.and.arrow.down")
-                .font(.system(size: 64))
+                .font(.system(size: 48))
                 .foregroundColor(.havenPurple)
             
             VStack(spacing: 8) {
@@ -277,18 +286,44 @@ struct SetupImportStep: View {
             
             VStack(spacing: 16) {
                 if relayManager.isImporting || relayManager.importCompleted {
-                    VStack(spacing: 12) {
-                        ProgressView(value: relayManager.importProgress, total: 1.0)
-                            .progressViewStyle(.linear)
-                            .frame(maxWidth: 200)
+                    VStack(spacing: 16) {
+                        // "Great loading bar math" (Gradient bar UI from MenuBarView)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(relayManager.importCompleted ? "Import Complete!" : "Importing your notes...")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(Int(relayManager.importProgress * 100))%")
+                                    .font(.caption.monospaced())
+                                    .foregroundColor(.havenPurple)
+                            }
+                            
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.havenPurplePale)
+                                        .frame(height: 6)
+                                    
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(
+                                            LinearGradient(
+                                                gradient: Gradient(colors: [.havenPurple, .havenPurpleLight]),
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .frame(width: geo.size.width * relayManager.importProgress, height: 6)
+                                }
+                            }
+                            .frame(height: 6)
+                        }
+                        .frame(maxWidth: 300)
                         
-                        Text(relayManager.importCompleted ? "Import Complete!" : "Importing your notes...")
-                            .font(.headline)
-                        
-                        // Only show status message during import, not after completion
+                        // Status Message
                         if !relayManager.importCompleted {
                             Text(relayManager.importStatusMessage)
-                                .font(.caption)
+                                .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)
@@ -350,14 +385,11 @@ struct SetupImportStep: View {
                     .cornerRadius(8)
                     
                     Button(action: {
-                        // Save config and start import in background
+                        // Save config and start import
                         configService.save()
                         
                         let config = configService.config
-                        // Run import on background thread
-                        DispatchQueue.global(qos: .userInitiated).async {
-                            relayManager.importNotes(config: config)
-                        }
+                        relayManager.importNotes(config: config)
                     }) {
                         Label("Start Initial Import", systemImage: "arrow.down.circle.fill")
                             .font(.headline)
@@ -379,6 +411,30 @@ struct SetupImportStep: View {
             Spacer()
         }
         .padding()
+        .alert("Port Already in Use", isPresented: $relayManager.isPortConflict) {
+            Button("Retry", role: .none) {
+                // Clear state and retry import
+                relayManager.isPortConflict = false
+                let config = configService.config
+                relayManager.importNotes(config: config)
+            }
+            
+            Button("Change Port", role: .none) {
+                // Go back to relay step
+                relayManager.isPortConflict = false
+                relayManager.cancelImport()
+                withAnimation {
+                    currentStep = 2 // RelayURLStep is index 2
+                }
+            }
+            
+            Button("Cancel", role: .cancel) {
+                relayManager.isPortConflict = false
+                relayManager.cancelImport()
+            }
+        } message: {
+            Text("Port \(configService.config.relayPort) is currently in use by another process. You can either stop that process manually or choose a different port for Haven.")
+        }
     }
 }
 

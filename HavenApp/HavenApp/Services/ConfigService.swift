@@ -11,7 +11,7 @@ class ConfigService: ObservableObject {
     // Config stored in App Support (standard macOS location for app preferences/state)
     private let configURL: URL
     // Relay data stored in separate directory to avoid conflicts with source code
-    private let relayDataDir: URL
+    let relayDataDir: URL
     
     init() {
         // Store config in Application Support
@@ -23,8 +23,8 @@ class ConfigService: ObservableObject {
         
         configURL = havenAppSupport.appendingPathComponent("config.json")
         
-        // Use ~/haven_relay for data to avoid destroying the ~/haven project folder
-        relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
+        // Create databases directory in Application Support (Sandboxed)
+        relayDataDir = havenAppSupport.appendingPathComponent("haven_database", isDirectory: true)
         
         // Load existing config or create default
         if let data = try? Data(contentsOf: configURL),
@@ -191,21 +191,10 @@ class ConfigService: ObservableObject {
         config = HavenConfig.default
     }
     
-    /// Programmatically restart the application
-    static func restartApp() {
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.addsToRecentItems = false
-        
-        let bundleURL = Bundle.main.bundleURL
-        
-        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { _, error in
-            if let error = error {
-                print("Failed to relaunch app: \(error.localizedDescription)")
-            }
-            // Always terminate the current instance
-            DispatchQueue.main.async {
-                NSApp.terminate(nil)
-            }
+    /// Programmatically quit the application
+    static func quitApp() {
+        DispatchQueue.main.async {
+            NSApp.terminate(nil)
         }
     }
     
@@ -217,6 +206,7 @@ class ConfigService: ObservableObject {
         RELAY_BIND_ADDRESS="0.0.0.0"
         DB_ENGINE="\(config.dbEngine)"
         LMDB_MAPSIZE=0
+        DATABASE_PATH="data/"
         BLOSSOM_PATH="blossom/"
         
         ## Private Relay Settings

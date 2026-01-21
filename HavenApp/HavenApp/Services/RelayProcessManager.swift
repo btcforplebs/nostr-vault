@@ -1,16 +1,27 @@
 import Foundation
 import Combine
 
+@MainActor
 class RelayProcessManager: ObservableObject {
     static let shared = RelayProcessManager()
+    enum RelayState {
+        case idle
+        case booting
+        case running
+        case stopping
+        case importing
+    }
+    
+    @Published var state: RelayState = .idle
     @Published var isRunning = false
     @Published var isBooting = false
-    @Published var bootStatusMessage: String = ""
     @Published var isImporting = false
+    @Published var importCompleted = false
+    @Published var isLocked = false
+    @Published var isPortConflict = false
+    @Published var bootStatusMessage: String = ""
     @Published var importStatusMessage: String = ""
     @Published var importProgress: Double = 0.0
-    @Published var importCompleted: Bool = false
-    @Published var isLocked = false
     
     @Published var logs: [LogEntry] = []
     
@@ -22,6 +33,9 @@ class RelayProcessManager: ObservableObject {
     
     private var process: Process?
     private var outputPipe: Pipe?
+    
+    // Track if we are in the middle of a shutdown to prevent recursive restarts
+    private var isShuttingDown = false
     
     private var pendingImportConfig: HavenConfig?
     @Published var startDate: Date?
@@ -48,19 +62,23 @@ class RelayProcessManager: ObservableObject {
     }
     
     func startRelay(config: HavenConfig) {
-        if let importConfig = pendingImportConfig {
-            importNotes(config: importConfig)
+        // Strict guard: Must be idle and NO process should be running
+        guard state == .idle && (process == nil || !process!.isRunning) else {
+            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start relay: current state is \(state) (running: \(process?.isRunning ?? false))"))
             return
         }
-        
-        guard !isRunning else { return }
         
         self.lastConfig = config
         self.retryAttempted = false
         self.needsLockFix = false
         
-        let relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
+        let relayDataDir = ConfigService.shared.relayDataDir
         try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
+        
+        // Ensure critical subdirectories exist for the Go relay
+        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("data"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("blossom"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("cache"), withIntermediateDirectories: true)
         
         // Copy templates directory
         if let templatesPath = Bundle.main.path(forResource: "templates", ofType: "") {
@@ -75,7 +93,8 @@ class RelayProcessManager: ObservableObject {
              logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Templates folder not found in Bundle"))
         }
 
-        // Ensure relay configuration files exist
+        // Write/Update essential relay files (relays list, blastr relays)
+        // We stop writing .env to disk and use environment variables instead
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         
@@ -87,25 +106,26 @@ class RelayProcessManager: ObservableObject {
         let blastrRelaysURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
         if let data = try? encoder.encode(config.blastrRelays) {
             try? data.write(to: blastrRelaysURL)
-            logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Wrote \(config.blastrRelays.count) blastr relays to \(config.blastrRelaysFile)"))
         }
 
-        // Check bundle first
-        var executablePath = Bundle.main.path(forResource: "haven", ofType: "")
-        
-        // Fallback or dev environment
-        if executablePath == nil {
-             executablePath = "/usr/local/bin/haven" // Fallback
-             // For dev, you might want to point to the project dir but sandbox prevents it.
-             logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "haven binary not found in bundle, trying /usr/local/bin"))
-        }
-
-        guard let executablePath = executablePath, FileManager.default.fileExists(atPath: executablePath) else {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "haven binary not found at \(executablePath ?? "unknown")"))
+        // Check bundle for the binary
+        guard let executablePath = Bundle.main.path(forResource: "haven", ofType: ""),
+              FileManager.default.fileExists(atPath: executablePath) else {
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "haven binary not found in application bundle"))
             return
         }
         
         logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting relay from: \(executablePath)"))
+        
+        // Reset conflict state
+        self.isPortConflict = false
+        
+        // Always try to clear locks and ensure directories exist
+        cleanupBeforeImport()
+        let dataDir = relayDataDir.appendingPathComponent("data")
+        let dbDir = relayDataDir.appendingPathComponent("db")
+        try? FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
         
         // Ensure executable permissions
         do {
@@ -113,23 +133,51 @@ class RelayProcessManager: ObservableObject {
             if let perms = attributes[.posixPermissions] as? Int {
                 if perms != 0o755 {
                     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executablePath)
-                     logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Fixed permissions for binary"))
+                     logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Ensured executable permissions for binary"))
                 }
             }
         } catch {
-             logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Could not set permissions: \(error)"))
+             logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Could not set permissions (might be read-only bundle): \(error)"))
         }
         
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.currentDirectoryURL = relayDataDir
         
-        // Clean environment
-        process.environment = ProcessInfo.processInfo.environment
+        let envURL = relayDataDir.appendingPathComponent(".env")
+        let envContent = generateMinimalEnv(config: config)
+        try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
+        
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Wrote .env to \(envURL.path)"))
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Working Directory: \(relayDataDir.path)"))
+        
+        // Prepare environment
+        var env: [String: String] = [:]
+        
+        // Minimal system environment
+        let sysEnv = ProcessInfo.processInfo.environment
+        env["PATH"] = sysEnv["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        env["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
+        env["TMPDIR"] = NSTemporaryDirectory()
+        env["USER"] = sysEnv["USER"] ?? "haven"
+        
+        // Inject all config variables
+        let configEnv = generateEnvDictionary(config: config)
+        for (key, value) in configEnv {
+            env[key] = value
+        }
+        
+        // Force local binding for security and sandbox reliability
+        env["RELAY_BIND_ADDRESS"] = "127.0.0.1"
+        
+        process.environment = env
+        
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Env: HOME=\(env["HOME"]?.prefix(25) ?? "")... PORT=\(env["RELAY_PORT"] ?? "") BIND=\(env["RELAY_BIND_ADDRESS"] ?? "")"))
         
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
+        process.standardInput = Pipe()
         
         self.outputPipe = pipe
         self.process = process
@@ -137,52 +185,89 @@ class RelayProcessManager: ObservableObject {
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             if let str = String(data: data, encoding: .utf8), !str.isEmpty {
-                DispatchQueue.main.async {
+                // Log raw output to console for deep debugging
+                print("Relay Output: \(str)")
+                Task { @MainActor in
                     self?.processOutput(str)
                 }
             }
         }
         
         process.terminationHandler = { [weak self] proc in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 guard let self = self else { return }
+                
+                // Only handle termination for the CURRENT process
+                guard proc == self.process else {
+                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Stray process terminated (PID: \(proc.processIdentifier), Code: \(proc.terminationStatus))"))
+                    return
+                }
+                
                 self.outputPipe?.fileHandleForReading.readabilityHandler = nil
-                self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Relay Process Terminated with code: \(proc.terminationStatus)"))
+                
+                let exitCode = proc.terminationStatus
+                self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Relay Process Terminated with code: \(exitCode)"))
+                
+                let previousState = self.state
+                self.state = .idle
                 self.isRunning = false
                 self.isBooting = false
                 self.isImporting = false
                 
+                // If we were stopping to start an import, trigger it now
+                if let importConfig = self.pendingImportConfig, previousState == .stopping {
+                    self.importNotes(config: importConfig)
+                    return
+                }
+                
                 // Check if we need to auto-fix locks
-                if self.needsLockFix && !self.retryAttempted {
+                if self.needsLockFix && !self.retryAttempted && previousState != .stopping {
                     self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Database lock detected. Attempting automatic fix..."))
                     self.retryAttempted = true
                     self.clearDatabaseLocks {
-                        if let config = self.lastConfig {
-                            self.startRelay(config: config)
+                        Task { @MainActor in
+                            if let config = self.lastConfig {
+                                self.startRelay(config: config)
+                            }
                         }
                     }
                     return
                 }
                 
-                if let importConfig = self.pendingImportConfig {
-                     self.importNotes(config: importConfig)
-                }
+                self.isShuttingDown = false
+                self.state = .idle
+                self.isRunning = false
+                self.isBooting = false
+                self.isImporting = false
+                
+                self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay process terminated (Exit Code: \(proc.terminationStatus))"))
             }
         }
         
-        process.launch()
+        self.state = .booting
         isRunning = true
         isBooting = true
         bootStatusMessage = "Starting system..."
+        
+        // Launch the process (non-blocking)
+        do {
+            try process.run()
+        } catch {
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to launch relay process: \(error.localizedDescription)"))
+            self.state = .idle
+            isRunning = false
+            isBooting = false
+            return
+        }
         isLocked = false
         startDate = Date()
         startMetricsTimer()
     }
     
-    func clearDatabaseLocks(completion: (() -> Void)? = nil) {
+    func clearDatabaseLocks(completion: (@Sendable () -> Void)? = nil) {
+        let relayDataDir = ConfigService.shared.relayDataDir
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
-            let dbDir = relayDataDir.appendingPathComponent("db")
+            let dbDir = relayDataDir.appendingPathComponent("data")
             
             // Relays list from init.go: blossom, chat, inbox, outbox, private
             let dbNames = ["blossom", "chat", "inbox", "outbox", "private"]
@@ -191,17 +276,10 @@ class RelayProcessManager: ObservableObject {
                 let lockFile = dbDir.appendingPathComponent(name).appendingPathComponent("LOCK")
                 if FileManager.default.fileExists(atPath: lockFile.path) {
                     try? FileManager.default.removeItem(at: lockFile)
-                    let entry = LogEntry(timestamp: Date(), level: "INFO", message: "Deleted lock file: \(lockFile.lastPathComponent) in \(name)")
-                    DispatchQueue.main.async {
-                        self?.logs.append(entry)
-                    }
                 }
             }
             
-            // Also kill any existing haven processes
-            self?.killAllHavenProcesses()
-            
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.isLocked = false
                 self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared. You can now try starting the relay again."))
                 completion?()
@@ -209,19 +287,20 @@ class RelayProcessManager: ObservableObject {
         }
     }
     
-    private func killAllHavenProcesses() {
-        let task = Process()
-        task.launchPath = "/usr/bin/pkill"
-        task.arguments = ["-9", "haven"]
-        task.launch()
-        task.waitUntilExit()
+    nonisolated private func killAllHavenProcesses() {
+        // No-op in Sandbox: We cannot use pkill/killall.
+        // We rely on process.terminate() for our managed process.
     }
     
     func stopRelay(completion: (() -> Void)? = nil) {
         guard let process = process, process.isRunning else {
+            self.state = .idle
+            isRunning = false
             completion?()
             return
         }
+        self.state = .stopping
+        self.isShuttingDown = true
         stopMetricsTimer()
         self.outputPipe?.fileHandleForReading.readabilityHandler = nil
         process.terminate()
@@ -262,7 +341,9 @@ class RelayProcessManager: ObservableObject {
     private func startMetricsTimer() {
         metricsTimer?.invalidate()
         metricsTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.updateMetrics()
+            Task { @MainActor in
+                self?.updateMetrics()
+            }
         }
         // Update immediately
         updateMetrics()
@@ -292,88 +373,104 @@ class RelayProcessManager: ObservableObject {
     
     /// Kills any existing haven processes and clears database locks before import
     private func cleanupBeforeImport() {
-        // Kill any existing haven processes (except our own if running)
-        let killTask = Process()
-        killTask.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        killTask.arguments = ["-9", "haven"]
-        try? killTask.run()
-        killTask.waitUntilExit()
+        // In Sandbox, we cannot use pkill/killall.
+        // Clear database lock files from the correct locations
+        let relayDataDir = ConfigService.shared.relayDataDir
+        let dbDir = relayDataDir.appendingPathComponent("data")
         
-        // Give it a moment for processes to terminate
-        Thread.sleep(forTimeInterval: 0.5)
-        
-        // Clear database lock files
-        let relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
-        let dbDirs = ["db/private", "db/chat", "db/inbox", "db/outbox", "db/wot"]
-        for dbDir in dbDirs {
-            let lockFile = relayDataDir.appendingPathComponent(dbDir).appendingPathComponent("LOCK")
+        // Standard data DBs
+        let standardDBs = ["chat", "inbox", "outbox", "private", "wot"]
+        for name in standardDBs {
+            let lockFile = dbDir.appendingPathComponent(name).appendingPathComponent("LOCK")
             if FileManager.default.fileExists(atPath: lockFile.path) {
                 try? FileManager.default.removeItem(at: lockFile)
             }
         }
+        
+        // Blossom DB is separate (at root of relayDataDir)
+        let blossomLock = relayDataDir.appendingPathComponent("blossom").appendingPathComponent("LOCK")
+        if FileManager.default.fileExists(atPath: blossomLock.path) {
+            try? FileManager.default.removeItem(at: blossomLock)
+        }
     }
     
     func importNotes(config: HavenConfig) {
-        if isRunning {
-            pendingImportConfig = config
-            stopRelay()
+        // Strict guard: Must be idle and NO process should be running
+        guard state == .idle && (process == nil || !process!.isRunning) else {
+            if (state == .running || state == .booting) && (process != nil && process!.isRunning) {
+                logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping running relay to start import..."))
+                self.pendingImportConfig = config
+                stopRelay()
+            } else {
+                logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start import: current state is \(state) (running: \(process?.isRunning ?? false))"))
+            }
             return
         }
+        
+        self.pendingImportConfig = config
+        self.state = .importing
+        isRunning = false
+        isBooting = false
+        isImporting = true
         
         // Kill any existing haven processes and clear locks before starting import
         cleanupBeforeImport()
         
-        // Ensure all required files exist before import
-        let relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
-        do {
-            try FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
-        } catch {
-            // Error creating directory
-        }
+        // Create working directories
+        let relayDataDir = ConfigService.shared.relayDataDir
+        try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("data"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("blossom"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("cache"), withIntermediateDirectories: true)
         
-        // Create .env and relay JSON files if they don't exist
-        let envURL = relayDataDir.appendingPathComponent(".env")
-        if !FileManager.default.fileExists(atPath: envURL.path) {
-            let envContent = generateMinimalEnv(config: config)
-            do {
-                try envContent.write(to: envURL, atomically: true, encoding: .utf8)
-            } catch {
-                // Error creating .env
-            }
-        }
+        // Write/Update all configuration files (except .env) before import
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
         
-        // Create seed relays file if it doesn't exist
+        // seed relays
         let importRelaysURL = relayDataDir.appendingPathComponent(config.importSeedRelaysFile)
-        if !FileManager.default.fileExists(atPath: importRelaysURL.path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            do {
-                let data = try encoder.encode(config.importSeedRelays)
-                try data.write(to: importRelaysURL)
-            } catch {
-                // Error creating import relays file
-            }
+        if let data = try? encoder.encode(config.importSeedRelays) {
+            try? data.write(to: importRelaysURL)
         }
         
-        // Create blastr relays file if it doesn't exist (required by Go binary)
+        // blastr relays
         let blastrRelaysURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
-        if !FileManager.default.fileExists(atPath: blastrRelaysURL.path) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            let blastrRelays = config.blastrRelays.isEmpty ? [] : config.blastrRelays
-            do {
-                let data = try encoder.encode(blastrRelays)
-                try data.write(to: blastrRelaysURL)
-            } catch {
-                // Error creating blastr relays file
-            }
+        let blastrRelays = config.blastrRelays.isEmpty ? [] : config.blastrRelays
+        if let data = try? encoder.encode(blastrRelays) {
+            try? data.write(to: blastrRelaysURL)
         }
         
-        let executablePath = Bundle.main.path(forResource: "haven", ofType: "") ?? "/usr/local/bin/haven"
-        
-        guard FileManager.default.fileExists(atPath: executablePath) else {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "haven binary not found"))
+        // Check bundle for the binary
+        guard let executablePath = Bundle.main.path(forResource: "haven", ofType: ""),
+              FileManager.default.fileExists(atPath: executablePath) else {
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "haven binary not found in application bundle"))
+            self.importStatusMessage = "Binary not found"
+            self.isImporting = false
             return
+        }
+        
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Launching import process from: \(executablePath) with --import"))
+        
+        // Reset conflict state
+        self.isPortConflict = false
+        
+        // Ensure data directory exist for import
+        let dataDir = relayDataDir.appendingPathComponent("data")
+        let dbDir = relayDataDir.appendingPathComponent("db")
+        try? FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
+        
+        // Ensure executable permissions
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: executablePath)
+            if let perms = attributes[.posixPermissions] as? Int {
+                if perms != 0o755 {
+                    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executablePath)
+                     logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Ensured executable permissions for binary"))
+                }
+            }
+        } catch {
+             logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Could not set permissions for import binary: \(error)"))
         }
         
         let process = Process()
@@ -381,9 +478,37 @@ class RelayProcessManager: ObservableObject {
         process.arguments = ["--import"]
         process.currentDirectoryURL = relayDataDir
         
+        // Write .env file for import as well
+        let envURL = relayDataDir.appendingPathComponent(".env")
+        let envContent = generateMinimalEnv(config: config)
+        try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
+        
+        // Prepare environment
+        var env: [String: String] = [:]
+        
+        // Minimal system environment
+        let sysEnv = ProcessInfo.processInfo.environment
+        env["PATH"] = sysEnv["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        env["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
+        env["TMPDIR"] = NSTemporaryDirectory()
+        env["USER"] = sysEnv["USER"] ?? "haven"
+        
+        // Inject all config variables
+        let configEnv = generateEnvDictionary(config: config)
+        for (key, value) in configEnv {
+            env[key] = value
+        }
+        
+        // Bind to all interfaces by default
+        env["RELAY_BIND_ADDRESS"] = "0.0.0.0"
+        
+        process.environment = env
+        
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
+        // Set standardInput to a new pipe to avoid signals like SIGPIPE
+        process.standardInput = Pipe()
         
         self.outputPipe = pipe
         self.process = process
@@ -391,56 +516,88 @@ class RelayProcessManager: ObservableObject {
         // Update @Published properties on main thread
         DispatchQueue.main.async {
             self.importProgress = 0.0
-            self.importStatusMessage = "Starting import..."
-            self.isImporting = true
-            self.importCompleted = false
+            self.importStatusMessage = "Starting import for \(config.ownerNpub.prefix(12))..."
         }
         
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            if let str = String(data: data, encoding: .utf8) {
-                DispatchQueue.main.async {
+            if let str = String(data: data, encoding: .utf8), !str.isEmpty {
+                Task { @MainActor in
                     self?.processOutput(str)
                 }
             }
         }
         
         process.terminationHandler = { [weak self] proc in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 guard let self = self else { return }
+                
+                // Only handle termination for the CURRENT process
+                guard proc == self.process else {
+                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Stray import process terminated (PID: \(proc.processIdentifier))"))
+                    return
+                }
+                
                 self.outputPipe?.fileHandleForReading.readabilityHandler = nil
                 self.isImporting = false
-                let config = self.pendingImportConfig
-                self.pendingImportConfig = nil
+                self.state = .idle // CRITICAL: Reset state so we are no longer stuck in .importing
                 
-                if proc.terminationStatus == 0 {
+                let exitCode = proc.terminationStatus
+                self.logs.append(LogEntry(timestamp: Date(), level: exitCode == 0 ? "INFO" : "ERROR", message: "Import process terminated with exit code: \(exitCode)"))
+                
+                if exitCode == 0 || self.importCompleted {
                     self.importProgress = 1.0
                     self.importStatusMessage = "Import Complete!"
                     self.importCompleted = true
                     
-                    // Don't restart relay automatically - let user finish setup first
-                    // The relay will start when they click "Launch Haven"
-                } else if !self.importCompleted {
-                    self.importStatusMessage = "Import Failed (Exit Code \(proc.terminationStatus))"
+                    // Automatically restart relay if we have a config ready
+                    if let restartConfig = self.pendingImportConfig {
+                        self.pendingImportConfig = nil
+                        self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import successful, restarting relay..."))
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            self.startRelay(config: restartConfig)
+                        }
+                    }
+                } else {
+                    self.importStatusMessage = "Import Failed (Exit Code \(exitCode))"
                     self.importCompleted = false
+                    
+                    // Even if import failed, we might want to try starting the relay anyway?
+                    // For now, let's keep it safe but allow manual restart by resetting state
+                    self.pendingImportConfig = nil
                 }
+                
+                self.isShuttingDown = false
             }
         }
         
         // Launch the process (non-blocking)
-        process.launch()
+        do {
+            try process.run()
+            logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import process started (PID: \(process.processIdentifier))"))
+        } catch {
+            let errorMsg = "Failed to launch import process: \(error.localizedDescription)"
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: errorMsg))
+            DispatchQueue.main.async {
+                self.isImporting = false
+                self.importStatusMessage = "Launch failed: \(error.localizedDescription)"
+            }
+        }
     }
     
     private func generateMinimalEnv(config: HavenConfig) -> String {
-        return """
-        OWNER_NPUB="\(config.ownerNpub)"
-        RELAY_URL="\(config.relayURL)"
-        RELAY_PORT=\(config.relayPort)
-        DB_ENGINE="\(config.dbEngine)"
-        IMPORT_START_DATE="\(config.importStartDate)"
-        IMPORT_SEED_RELAYS_FILE="\(config.importSeedRelaysFile)"
-        HAVEN_LOG_LEVEL="\(config.logLevel)"
-        """
+        let envDict = generateEnvDictionary(config: config)
+        var content = ""
+        for (key, value) in envDict.sorted(by: { $0.key < $1.key }) {
+            // Values should NOT be quoted in most shell-agnostic parsers unless they have spaces
+            // Nostr-rs-relay/Haven parser might be strict.
+            if value.contains(" ") {
+                content += "\(key)=\"\(value)\"\n"
+            } else {
+                content += "\(key)=\(value)\n"
+            }
+        }
+        return content
     }
     
     private func processOutput(_ output: String) {
@@ -582,6 +739,10 @@ class RelayProcessManager: ObservableObject {
                 isLocked = true
                 needsLockFix = true
             }
+            
+            if line.contains("bind: address already in use") {
+                isPortConflict = true
+            }
         }
         
         // Batch append logs
@@ -606,4 +767,106 @@ class RelayProcessManager: ObservableObject {
             }
         }
     }
+    
+    private func generateEnvDictionary(config: HavenConfig) -> [String: String] {
+        return [
+            "OWNER_NPUB": config.ownerNpub,
+            "RELAY_URL": config.relayURL,
+            "RELAY_PORT": String(config.relayPort),
+            "RELAY_BIND_ADDRESS": "0.0.0.0",
+            "DB_ENGINE": config.dbEngine,
+            "LMDB_MAPSIZE": "0",
+            "DATABASE_PATH": "data/",
+            "BLOSSOM_PATH": config.blossomPath,
+            "HAVEN_LOG_LEVEL": config.logLevel,
+            "LOG_FORMAT": "$$host $$remote_addr - $$remote_user [$$time_local] \"$$request\" $$status $$body_bytes_sent \"$$http_referer\" \"$$http_user_agent\" \"$$upstream_addr\"",
+            "TZ": "UTC",
+            
+            // Private Relay
+            "PRIVATE_RELAY_NAME": config.privateRelayName,
+            "PRIVATE_RELAY_NPUB": config.ownerNpub,
+            "PRIVATE_RELAY_DESCRIPTION": config.privateRelayDescription,
+            "PRIVATE_RELAY_ICON": config.privateRelayIcon,
+            "PRIVATE_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL": "50",
+            "PRIVATE_RELAY_EVENT_IP_LIMITER_INTERVAL": "1",
+            "PRIVATE_RELAY_EVENT_IP_LIMITER_MAX_TOKENS": "100",
+            "PRIVATE_RELAY_ALLOW_EMPTY_FILTERS": "true",
+            "PRIVATE_RELAY_ALLOW_COMPLEX_FILTERS": "true",
+            "PRIVATE_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL": "3",
+            "PRIVATE_RELAY_CONNECTION_RATE_LIMITER_INTERVAL": "5",
+            "PRIVATE_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS": "9",
+            
+            // Chat Relay
+            "CHAT_RELAY_NAME": config.chatRelayName,
+            "CHAT_RELAY_NPUB": config.ownerNpub,
+            "CHAT_RELAY_DESCRIPTION": config.chatRelayDescription,
+            "CHAT_RELAY_ICON": config.chatRelayIcon,
+            "CHAT_RELAY_WOT_DEPTH": String(config.chatRelayWotDepth),
+            "CHAT_RELAY_WOT_REFRESH_INTERVAL_HOURS": String(config.chatRelayWotRefreshHours),
+            "CHAT_RELAY_MINIMUM_FOLLOWERS": String(config.chatRelayMinFollowers),
+            "CHAT_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL": "50",
+            "CHAT_RELAY_EVENT_IP_LIMITER_INTERVAL": "1",
+            "CHAT_RELAY_EVENT_IP_LIMITER_MAX_TOKENS": "100",
+            "CHAT_RELAY_ALLOW_EMPTY_FILTERS": "true",
+            "CHAT_RELAY_ALLOW_COMPLEX_FILTERS": "false",
+            "CHAT_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL": "3",
+            "CHAT_RELAY_CONNECTION_RATE_LIMITER_INTERVAL": "3",
+            "CHAT_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS": "9",
+            
+            // Outbox Relay
+            "OUTBOX_RELAY_NAME": config.outboxRelayName,
+            "OUTBOX_RELAY_NPUB": config.ownerNpub,
+            "OUTBOX_RELAY_DESCRIPTION": config.outboxRelayDescription,
+            "OUTBOX_RELAY_ICON": config.outboxRelayIcon,
+            "OUTBOX_MAX_EVENTS_PER_MINUTE": String(config.outboxMaxEventsPerMinute),
+            "OUTBOX_MAX_CONNECTIONS_PER_MINUTE": String(config.outboxMaxConnectionsPerMinute),
+            "OUTBOX_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL": "10",
+            "OUTBOX_RELAY_EVENT_IP_LIMITER_INTERVAL": "60",
+            "OUTBOX_RELAY_EVENT_IP_LIMITER_MAX_TOKENS": "100",
+            "OUTBOX_RELAY_ALLOW_EMPTY_FILTERS": "true",
+            "OUTBOX_RELAY_ALLOW_COMPLEX_FILTERS": "false",
+            "OUTBOX_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL": "3",
+            "OUTBOX_RELAY_CONNECTION_RATE_LIMITER_INTERVAL": "1",
+            "OUTBOX_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS": "9",
+            
+            // Inbox Relay
+            "INBOX_RELAY_NAME": config.inboxRelayName,
+            "INBOX_RELAY_NPUB": config.ownerNpub,
+            "INBOX_RELAY_DESCRIPTION": config.inboxRelayDescription,
+            "INBOX_RELAY_ICON": config.inboxRelayIcon,
+            "INBOX_PULL_INTERVAL_SECONDS": String(config.inboxPullIntervalSeconds),
+            "INBOX_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL": "10",
+            "INBOX_RELAY_EVENT_IP_LIMITER_INTERVAL": "1",
+            "INBOX_RELAY_EVENT_IP_LIMITER_MAX_TOKENS": "20",
+            "INBOX_RELAY_ALLOW_EMPTY_FILTERS": "true",
+            "INBOX_RELAY_ALLOW_COMPLEX_FILTERS": "false",
+            "INBOX_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL": "3",
+            "INBOX_RELAY_CONNECTION_RATE_LIMITER_INTERVAL": "1",
+            "INBOX_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS": "9",
+            
+            // Import
+            "IMPORT_START_DATE": config.importStartDate,
+            "IMPORT_SEED_RELAYS_FILE": config.importSeedRelaysFile,
+            "IMPORT_QUERY_INTERVAL_SECONDS": "600",
+            "IMPORT_OWNER_NOTES_FETCH_TIMEOUT_SECONDS": "300", // Increased from 60
+            "IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS": "600", // Increased from 120
+            
+            // Backup
+            "BACKUP_PROVIDER": config.backupProvider,
+            "BACKUP_INTERVAL_HOURS": String(config.backupIntervalHours),
+            "S3_ACCESS_KEY_ID": config.s3AccessKeyId,
+            "S3_SECRET_KEY": config.s3SecretKey,
+            "S3_ENDPOINT": config.s3Endpoint,
+            "S3_REGION": config.s3Region,
+            "S3_BUCKET_NAME": config.s3BucketName,
+            
+            // Blastr
+            "BLASTR_RELAYS_FILE": config.blastrRelaysFile,
+            
+            // WoT
+            "WOT_FETCH_TIMEOUT_SECONDS": "60"
+        ]
+    }
+    
+    // pkill removed to ensure consistent behavior across debug and release builds
 }

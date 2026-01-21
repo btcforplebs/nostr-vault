@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     // Shared services are accessed directly from their static shared properties
     // We don't need to store them here as properties if we use singletons consistently
@@ -10,6 +11,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if !ConfigService.shared.config.hasCompletedSetup {
             openWelcomeWindow()
         }
+    }
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        // Ensure child processes are killed cleanly
+        print("Application terminating, stopping relay...")
+        RelayProcessManager.shared.stopRelay()
+        // Give it a moment to send the signal
+        Thread.sleep(forTimeInterval: 0.2)
     }
     
     // Keep a reference to the window prevent it from being deallocated immediately
