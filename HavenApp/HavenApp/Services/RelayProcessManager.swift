@@ -42,7 +42,7 @@ class RelayProcessManager: ObservableObject {
     @Published var startDate: Date?
     
     // Auto-fix locks
-    private var lastConfig: HavenConfig?
+    @Published var lastConfig: HavenConfig?
     private var retryAttempted = false
     private var needsLockFix = false
     
@@ -169,7 +169,7 @@ class RelayProcessManager: ObservableObject {
         }
         
         // Match .env default for consistent behavior with manual runs
-        env["RELAY_BIND_ADDRESS"] = "0.0.0.0"
+        env["RELAY_BIND_ADDRESS"] = "127.0.0.1"
         
         process.environment = env
         
@@ -518,8 +518,8 @@ class RelayProcessManager: ObservableObject {
             env[key] = value
         }
         
-        // Bind to all interfaces by default
-        env["RELAY_BIND_ADDRESS"] = "0.0.0.0"
+        // Bind to localhost by default
+        env["RELAY_BIND_ADDRESS"] = "127.0.0.1"
         
         process.environment = env
         
@@ -792,7 +792,7 @@ class RelayProcessManager: ObservableObject {
             "OWNER_NPUB": config.ownerNpub,
             "RELAY_URL": config.relayURL,
             "RELAY_PORT": String(config.relayPort),
-            "RELAY_BIND_ADDRESS": "0.0.0.0",
+            "RELAY_BIND_ADDRESS": "127.0.0.1",
             "DB_ENGINE": config.dbEngine,
             "LMDB_MAPSIZE": "0",
             "DATABASE_PATH": ConfigService.shared.relayDataDir.appendingPathComponent("data").standardized.path + "/",

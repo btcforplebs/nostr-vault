@@ -13,6 +13,12 @@ struct SettingsView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var selectedTab: SettingsTab = .identity
     @State private var saveTask: Task<Void, Never>?
+    @State private var isRestarting = false
+    
+    var needsRestart: Bool {
+        guard let lastLaunch = relayManager.lastConfig else { return false }
+        return configService.config != lastLaunch
+    }
     
     enum SettingsTab: String, CaseIterable {
         case identity = "Identity"
@@ -25,37 +31,74 @@ struct SettingsView: View {
     }
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            IdentitySettingsView()
-                .tabItem { Label("Identity", systemImage: "person") }
-                .tag(SettingsTab.identity)
+        VStack(spacing: 0) {
+            TabView(selection: $selectedTab) {
+                IdentitySettingsView()
+                    .tabItem { Label("Identity", systemImage: "person") }
+                    .tag(SettingsTab.identity)
+                
+                RelaySettingsView()
+                    .tabItem { Label("Relays", systemImage: "server.rack") }
+                    .tag(SettingsTab.relays)
+                
+                ImportSettingsView()
+                    .tabItem { Label("Import", systemImage: "square.and.arrow.down") }
+                    .tag(SettingsTab.importNotes)
+                
+                BlastrSettingsView()
+                    .tabItem { Label("Blastr", systemImage: "paperplane") }
+                    .tag(SettingsTab.blastr)
+                
+                AdvancedSettingsView()
+                    .tabItem { Label("Advanced", systemImage: "gearshape.2") }
+                    .tag(SettingsTab.advanced)
+                
+                BackupSettingsView()
+                    .tabItem { Label("Backup", systemImage: "icloud") }
+                    .tag(SettingsTab.backup)
+                
+                LogsView()
+                    .tabItem { Label("Logs", systemImage: "list.bullet.rectangle") }
+                    .tag(SettingsTab.logs)
+            }
+            .environmentObject(configService)
+            .environmentObject(relayManager)
             
-            RelaySettingsView()
-                .tabItem { Label("Relays", systemImage: "server.rack") }
-                .tag(SettingsTab.relays)
+            Divider()
             
-            ImportSettingsView()
-                .tabItem { Label("Import", systemImage: "square.and.arrow.down") }
-                .tag(SettingsTab.importNotes)
-            
-            BlastrSettingsView()
-                .tabItem { Label("Blastr", systemImage: "paperplane") }
-                .tag(SettingsTab.blastr)
-            
-            AdvancedSettingsView()
-                .tabItem { Label("Advanced", systemImage: "gearshape.2") }
-                .tag(SettingsTab.advanced)
-            
-            BackupSettingsView()
-                .tabItem { Label("Backup", systemImage: "icloud") }
-                .tag(SettingsTab.backup)
-            
-            LogsView()
-                .tabItem { Label("Logs", systemImage: "list.bullet.rectangle") }
-                .tag(SettingsTab.logs)
+            HStack {
+                if needsRestart && relayManager.isRunning {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text("Restart required to apply changes")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                if isRestarting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.trailing, 8)
+                } else {
+                    Button("Save & Restart Relay") {
+                        isRestarting = true
+                        configService.save() // Ensure saved before restart
+                        relayManager.stopRelay {
+                            Task { @MainActor in
+                                relayManager.startRelay(config: configService.config)
+                                isRestarting = false
+                            }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!needsRestart || !relayManager.isRunning)
+                }
+            }
+            .padding()
+            .background(.ultraThinMaterial)
         }
-        .environmentObject(configService)
-        .environmentObject(relayManager)
         .frame(width: 600, height: 500)
         .onChange(of: configService.config) { oldValue, newValue in
             saveTask?.cancel()
@@ -198,18 +241,11 @@ struct AdvancedSettingsView: View {
             }
             
             Section("Database (DEBUG)") {
-                if configService.config.hasCompletedSetup {
-                    HStack {
-                        Text("Engine")
-                        Spacer()
-                        Text(configService.config.dbEngine == "badger" ? "BadgerDB" : "LMDB")
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    Picker("Engine", selection: $configService.config.dbEngine) {
-                        Text("BadgerDB").tag("badger")
-                        Text("LMDB").tag("lmdb")
-                    }
+                HStack {
+                    Text("Engine")
+                    Spacer()
+                    Text(configService.config.dbEngine == "badger" ? "BadgerDB" : "LMDB")
+                        .foregroundColor(.secondary)
                 }
                 
                 Text(configService.config.dbEngine == "badger" ? 
@@ -218,7 +254,21 @@ struct AdvancedSettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
-                TextField("Blossom Path", text: $configService.config.blossomPath)
+                HStack {
+                    Text("Blossom Path")
+                    Spacer()
+                    Text(configService.config.blossomPath)
+                        .foregroundColor(.secondary)
+                    
+                    Button {
+                        let fullPath = configService.relayDataDir.appendingPathComponent(configService.config.blossomPath).path
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: fullPath)
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Show in Finder")
+                }
                 
                 // Show resolved path for user confirmation
                 let resolvedPath = configService.relayDataDir.appendingPathComponent(configService.config.blossomPath).path
