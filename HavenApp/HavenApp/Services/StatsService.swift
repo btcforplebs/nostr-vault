@@ -58,8 +58,8 @@ class StatsService: ObservableObject {
             self.cacheSize = cache
             
             // Fetch persistent count if URL provided
-            if let urlString = relayURLString,
-               let baseURL = URL(string: "ws://\(urlString)") {
+            if let _ = relayURLString,
+               let baseURL = URL(string: ConfigService.shared.config.nostrURL) {
                 
                 // Construct URLs for Outbox (root) and Inbox (tagged notes)
                 let outboxURL = baseURL

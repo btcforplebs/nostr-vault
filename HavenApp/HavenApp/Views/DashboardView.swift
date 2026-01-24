@@ -21,7 +21,7 @@ struct DashboardView: View {
                             name: "Outbox",
                             subtitle: "Public notes",
                             icon: "arrow.up.doc",
-                            uri: "ws://\(configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL)",
+                            uri: configService.config.nostrURL,
                             endpoint: ""
                         )
                         
@@ -29,7 +29,7 @@ struct DashboardView: View {
                             name: "Private",
                             subtitle: "Drafts & eCash",
                             icon: "lock.fill",
-                            uri: "ws://\(configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL)",
+                            uri: configService.config.nostrURL,
                             endpoint: "/private"
                         )
                         
@@ -37,7 +37,7 @@ struct DashboardView: View {
                             name: "Inbox",
                             subtitle: "Tagged notes",
                             icon: "arrow.down.doc",
-                            uri: "ws://\(configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL)",
+                            uri: configService.config.nostrURL,
                             endpoint: "/inbox"
                         )
                         
@@ -45,7 +45,7 @@ struct DashboardView: View {
                             name: "Chat",
                             subtitle: "Private DMs",
                             icon: "bubble.left.and.bubble.right",
-                            uri: "ws://\(configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL)",
+                            uri: configService.config.nostrURL,
                             endpoint: "/chat"
                         )
                         
@@ -53,8 +53,8 @@ struct DashboardView: View {
                             name: "Blossom",
                             subtitle: "Media Storage",
                             icon: "photo.stack",
-                            uri: "http://\(configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL)", // Blossom is usually HTTP
-                            endpoint: "/blossom" // Or just root? usually root for simple servers
+                            uri: configService.config.webURL,
+                            endpoint: ""
                         )
                     }
                     .background(Color(NSColor.controlBackgroundColor))
@@ -82,7 +82,7 @@ struct DashboardView: View {
                 // MARK: - Actions
                 HStack(spacing: 12) {
                     ActionButton(icon: "safari", title: "Browser") {
-                        if let url = URL(string: "http://\(configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL)") {
+                        if let url = URL(string: configService.config.webURL) {
                             NSWorkspace.shared.open(url)
                         }
                     }

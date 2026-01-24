@@ -292,11 +292,10 @@ struct ViewerView: View {
     
     func refreshAll() {
         nostrService.resetConnections()
-        let port = configService.config.relayPort
-        // Use 127.0.0.1 to avoid IPv6 localhost issues
+        // Use the centralized nostrURL which handles local vs remote correctly
         let urls = [
-            URL(string: "ws://127.0.0.1:\(port)/")!,
-            URL(string: "ws://127.0.0.1:\(port)/inbox")!
+            URL(string: configService.config.nostrURL)!,
+            URL(string: configService.config.nostrURL + "/inbox")!
         ]
         nostrService.fetchNotes(from: urls)
         loadLocalMedia()
@@ -308,14 +307,12 @@ struct ViewerView: View {
         // Get the oldest timestamp from events
         guard let oldestTimestamp = nostrService.events.last?.created_at else { return }
         
-        let port = configService.config.relayPort
-        let urls = [
-            URL(string: "ws://127.0.0.1:\(port)/")!,
-            URL(string: "ws://127.0.0.1:\(port)/inbox")!
-        ]
-        
         // Request events strictly older than the last one we have
         print("ViewerView: Requesting older events until: \(oldestTimestamp - 1)")
+        let urls = [
+            URL(string: configService.config.nostrURL)!,
+            URL(string: configService.config.nostrURL + "/inbox")!
+        ]
         nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1)
     }
     
@@ -334,8 +331,8 @@ struct ViewerView: View {
             let items = fileURLs.compactMap { url -> MediaItem? in
                 let filename = url.lastPathComponent
                 if filename.starts(with: ".") { return nil }
-                // Use 127.0.0.1 to avoid IPv6 localhost issues
-                guard let serveURL = URL(string: "http://127.0.0.1:\(configService.config.relayPort)/\(filename)") else { return nil }
+                // Use the centralized webURL which handles local vs remote correctly
+                guard let serveURL = URL(string: "\(configService.config.webURL)/\(filename)") else { return nil }
                 let mediaType: MediaItem.MediaType = serveURL.isVideo ? .video : .image
                 return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: Date())
             }

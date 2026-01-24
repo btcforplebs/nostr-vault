@@ -81,4 +81,51 @@ struct HavenConfig: Codable, Equatable {
     var gcpCredentialsPath: String = ""
     
     static let `default` = HavenConfig()
+    
+    // MARK: - Protocol Selection Logic
+    
+    /// Returns the relay URL without any protocol schemes or trailing slashes
+    var sanitizedRelayURL: String {
+        var url = relayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let schemes = ["wss://", "ws://", "https://", "http://"]
+        for scheme in schemes {
+            if url.lowercased().hasPrefix(scheme) {
+                url = String(url.dropFirst(scheme.count))
+            }
+        }
+        while url.hasSuffix("/") {
+            url = String(url.dropLast())
+        }
+        return url
+    }
+    
+    /// Returns true if the relay is running locally (empty URL, localhost, or 127.0.0.1)
+    var isLocal: Bool {
+        let url = sanitizedRelayURL.lowercased()
+        if url.isEmpty { return true }
+        
+        // Split by colon to ignore port
+        let host = url.split(separator: ":").first.map(String.init) ?? url
+        return host == "localhost" || host == "127.0.0.1"
+    }
+    
+    /// Returns the appropriate WebSocket URL (ws:// for local, wss:// for remote)
+    var nostrURL: String {
+        if isLocal {
+            // Force 127.0.0.1 for local connections
+            return "ws://127.0.0.1:\(relayPort)"
+        } else {
+            return "wss://\(sanitizedRelayURL)"
+        }
+    }
+    
+    /// Returns the appropriate Web/Blossom URL (http:// for local, https:// for remote)
+    var webURL: String {
+        if isLocal {
+            // Force 127.0.0.1 for local connections
+            return "http://127.0.0.1:\(relayPort)"
+        } else {
+            return "https://\(sanitizedRelayURL)"
+        }
+    }
 }

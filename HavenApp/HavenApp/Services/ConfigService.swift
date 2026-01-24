@@ -82,10 +82,22 @@ class ConfigService: ObservableObject {
     }
     
     private func saveRelayLists() {
-        // Ensure relayURL includes the port if it's localhost or empty
-        let trimmedURL = config.relayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Sanitize relayURL: strip schemes and trailing slashes
+        var trimmedURL = config.relayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let schemes = ["wss://", "ws://", "https://", "http://"]
+        for scheme in schemes {
+            if trimmedURL.lowercased().hasPrefix(scheme) {
+                trimmedURL = String(trimmedURL.dropFirst(scheme.count))
+            }
+        }
+        while trimmedURL.hasSuffix("/") {
+            trimmedURL = String(trimmedURL.dropLast())
+        }
+        
         if trimmedURL.isEmpty || trimmedURL == "localhost" || trimmedURL == "127.0.0.1" {
             config.relayURL = "127.0.0.1:\(config.relayPort)"
+        } else {
+            config.relayURL = trimmedURL
         }
         
         // Ensure data dir exists
