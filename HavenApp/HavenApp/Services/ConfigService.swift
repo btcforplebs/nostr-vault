@@ -218,8 +218,7 @@ class ConfigService: ObservableObject {
         RELAY_BIND_ADDRESS="0.0.0.0"
         DB_ENGINE="\(config.dbEngine)"
         LMDB_MAPSIZE=0
-        DATABASE_PATH="data/"
-        BLOSSOM_PATH="blossom/"
+        // DATABASE_PATH and BLOSSOM_PATH are injected via environment for absolute paths
         
         ## Private Relay Settings
         PRIVATE_RELAY_NAME="\(config.privateRelayName)"

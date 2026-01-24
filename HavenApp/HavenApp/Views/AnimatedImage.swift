@@ -66,7 +66,9 @@ struct AnimatedImage: NSViewRepresentable {
         }
         
         URLSession.shared.dataTask(with: url) { data, response, error in
-            guard let data = data, error == nil else {
+            guard let data = data, error == nil,
+                  let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
                 return
             }
             
@@ -183,6 +185,14 @@ extension URL {
     
     var isImage: Bool {
         let ext = self.pathExtension.lowercased()
-        return ["jpg", "jpeg", "png", "gif", "webp", "heic", "tiff"].contains(ext)
+        if ["jpg", "jpeg", "png", "gif", "webp", "heic", "tiff"].contains(ext) { return true }
+        // For extensionless URLs (like Blossom hashes), assume it's an image
+        // as they are far more common than extensionless videos.
+        if ext.isEmpty {
+            let last = self.lastPathComponent
+            let pattern = "^[a-f0-9]{64}$"
+            return last.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+        return false
     }
 }

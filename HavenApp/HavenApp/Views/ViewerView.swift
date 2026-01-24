@@ -317,8 +317,9 @@ struct ViewerView: View {
     }
     
     func loadLocalMedia() {
-        let relayDataDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("haven_relay")
-        let blossomDir = relayDataDir.appendingPathComponent("blossom")
+        // Use the actual data directory from ConfigService
+        let relayDataDir = configService.relayDataDir
+        let blossomDir = relayDataDir.appendingPathComponent(configService.config.blossomPath)
         
         do {
             if !FileManager.default.fileExists(atPath: blossomDir.path) {
@@ -330,7 +331,7 @@ struct ViewerView: View {
             let fileURLs = try FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: nil)
             let items = fileURLs.compactMap { url -> MediaItem? in
                 let filename = url.lastPathComponent
-                if filename.starts(with: ".") { return nil }
+                if filename.starts(with: ".") || filename == "LOCK" { return nil }
                 // Use the centralized webURL which handles local vs remote correctly
                 guard let serveURL = URL(string: "\(configService.config.webURL)/\(filename)") else { return nil }
                 let mediaType: MediaItem.MediaType = serveURL.isVideo ? .video : .image
@@ -407,6 +408,17 @@ struct NoteRow: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            
+            // Media attachments
+            let urls = mediaURLs
+            if !urls.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(urls, id: \.self) { url in
+                        MediaPreviewRow(url: url)
+                    }
+                }
+                .padding(.top, 4)
+            }
         }
         .padding()
         .background(Color(NSColor.controlBackgroundColor))
@@ -417,6 +429,33 @@ struct NoteRow: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+struct MediaPreviewRow: View {
+    let url: URL
+    
+    var body: some View {
+        Group {
+            if url.isVideo {
+                VideoThumbnailView(url: url)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxHeight: 250)
+                    .cornerRadius(8)
+                    .clipped()
+            } else if url.isGIF {
+                AnimatedImage(url: url, contentMode: .fill, shouldAnimate: true)
+                    .frame(maxHeight: 250)
+                    .cornerRadius(8)
+                    .clipped()
+            } else if url.isImage {
+                RetryableAsyncImage(url: url, contentMode: .fill)
+                    .frame(maxHeight: 250)
+                    .cornerRadius(8)
+                    .clipped()
+            }
+        }
+        .contentShape(Rectangle())
     }
 }
 
@@ -573,8 +612,8 @@ struct RetryableAsyncImage: View {
     private func autoCache() {
         let downloadRequest = BlockOperation {
             let semaphore = DispatchSemaphore(value: 0)
-            URLSession.shared.dataTask(with: url) { data, _, _ in
-                if let data = data {
+            URLSession.shared.dataTask(with: url) { data, response, _ in
+                if let data = data, let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                     MediaCacheService.shared.saveToCache(url: url, data: data)
                     if let image = self.decode(data: data) {
                         DispatchQueue.main.async {
@@ -748,8 +787,8 @@ struct SourceIndicatorView: View {
     
     private func cacheMedia() {
         isCaching = true
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            if let data = data {
+        URLSession.shared.dataTask(with: url) { data, response, _ in
+            if let data = data, let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 MediaCacheService.shared.saveToCache(url: url, data: data)
                 DispatchQueue.main.async {
                     source = .cached

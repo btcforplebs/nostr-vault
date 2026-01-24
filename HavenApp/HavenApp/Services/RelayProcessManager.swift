@@ -33,6 +33,7 @@ class RelayProcessManager: ObservableObject {
     
     private var process: Process?
     private var outputPipe: Pipe?
+    private var logReader: FileHandle?
     
     // Track if we are in the middle of a shutdown to prevent recursive restarts
     private var isShuttingDown = false
@@ -167,31 +168,53 @@ class RelayProcessManager: ObservableObject {
             env[key] = value
         }
         
-        // Force local binding for security and sandbox reliability
-        env["RELAY_BIND_ADDRESS"] = "127.0.0.1"
+        // Match .env default for consistent behavior with manual runs
+        env["RELAY_BIND_ADDRESS"] = "0.0.0.0"
         
         process.environment = env
         
         logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Env: HOME=\(env["HOME"]?.prefix(25) ?? "")... PORT=\(env["RELAY_PORT"] ?? "") BIND=\(env["RELAY_BIND_ADDRESS"] ?? "")"))
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Paths: BLOSSOM=\(env["BLOSSOM_PATH"] ?? "") DB=\(env["DATABASE_PATH"] ?? "")"))
         
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        process.standardInput = Pipe()
+        // Redirect stdout/stderr to a file to prevent pipe buffer blocking
+        let logFileURL = relayDataDir.appendingPathComponent("relay.log")
+        if !FileManager.default.fileExists(atPath: logFileURL.path) {
+            FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
+        }
         
-        self.outputPipe = pipe
-        self.process = process
-        
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            if let str = String(data: data, encoding: .utf8), !str.isEmpty {
-                // Log raw output to console for deep debugging
-                print("Relay Output: \(str)")
-                Task { @MainActor in
-                    self?.processOutput(str)
+        do {
+            let logHandle = try FileHandle(forWritingTo: logFileURL)
+            logHandle.seekToEndOfFile()
+            process.standardOutput = logHandle
+            process.standardError = logHandle
+            
+            // We can still tail this file if needed, or just let the user view it in Console
+            logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Redirecting output to \(logFileURL.path)"))
+            
+            // Tail the log file to restore UI updates
+            let readHandle = try FileHandle(forReadingFrom: logFileURL)
+            // Seek to end so we only read new logs
+            readHandle.seekToEndOfFile()
+            
+            readHandle.readabilityHandler = { [weak self] handle in
+                let data = handle.availableData
+                if let str = String(data: data, encoding: .utf8), !str.isEmpty {
+                    Task { @MainActor in
+                        self?.processOutput(str)
+                    }
                 }
             }
+            
+            self.logReader = readHandle
+        } catch {
+             logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to create log handle: \(error)"))
         }
+        
+        process.standardInput = Pipe()
+        
+        self.process = process
+        
+        // No readabilityHandler needed for file redirection
         
         process.terminationHandler = { [weak self] proc in
             Task { @MainActor in
@@ -199,11 +222,8 @@ class RelayProcessManager: ObservableObject {
                 
                 // Only handle termination for the CURRENT process
                 guard proc == self.process else {
-                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Stray process terminated (PID: \(proc.processIdentifier), Code: \(proc.terminationStatus))"))
-                    return
+                     return
                 }
-                
-                self.outputPipe?.fileHandleForReading.readabilityHandler = nil
                 
                 let exitCode = proc.terminationStatus
                 self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Relay Process Terminated with code: \(exitCode)"))
@@ -302,7 +322,6 @@ class RelayProcessManager: ObservableObject {
         self.state = .stopping
         self.isShuttingDown = true
         stopMetricsTimer()
-        self.outputPipe?.fileHandleForReading.readabilityHandler = nil
         process.terminate()
         isBooting = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -776,8 +795,8 @@ class RelayProcessManager: ObservableObject {
             "RELAY_BIND_ADDRESS": "0.0.0.0",
             "DB_ENGINE": config.dbEngine,
             "LMDB_MAPSIZE": "0",
-            "DATABASE_PATH": "data/",
-            "BLOSSOM_PATH": config.blossomPath,
+            "DATABASE_PATH": ConfigService.shared.relayDataDir.appendingPathComponent("data").standardized.path + "/",
+            "BLOSSOM_PATH": ConfigService.shared.relayDataDir.appendingPathComponent(config.blossomPath).standardized.path + "/",
             "HAVEN_LOG_LEVEL": config.logLevel,
             "LOG_FORMAT": "$$host $$remote_addr - $$remote_user [$$time_local] \"$$request\" $$status $$body_bytes_sent \"$$http_referer\" \"$$http_user_agent\" \"$$upstream_addr\"",
             "TZ": "UTC",

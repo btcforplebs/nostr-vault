@@ -197,7 +197,7 @@ struct AdvancedSettingsView: View {
                     .foregroundColor(.secondary)
             }
             
-            Section("Database") {
+            Section("Database (DEBUG)") {
                 if configService.config.hasCompletedSetup {
                     HStack {
                         Text("Engine")
@@ -219,6 +219,13 @@ struct AdvancedSettingsView: View {
                     .foregroundColor(.secondary)
                 
                 TextField("Blossom Path", text: $configService.config.blossomPath)
+                
+                // Show resolved path for user confirmation
+                let resolvedPath = configService.relayDataDir.appendingPathComponent(configService.config.blossomPath).path
+                Text("Resolved absolute path: \(resolvedPath)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
             }
             
             Section("Logging") {

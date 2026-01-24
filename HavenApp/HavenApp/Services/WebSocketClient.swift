@@ -445,27 +445,54 @@ class NostrService: ObservableObject {
     }
 
     func extractMediaURLs(from content: String) -> [URL] {
-        // More robust pattern for media URLs, including those without extensions but following common patterns
-        let pattern = #"(https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic|tiff)(?:\?\S+)?)|(https?://\S+?/blossom/[a-f0-9]{64})"#
+        let pattern = #"(https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic|tiff)(?:\?\S+)?)|(https?://\S+?/blossom/[a-f0-9]{64})|(https?://\S+?/[a-f0-9]{64})"#
+        
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
         let nsString = content as NSString
         let results = regex.matches(in: content, options: [], range: NSRange(location: 0, length: nsString.length))
         
-        return results.compactMap { result in
+        var urls: [URL] = []
+        for result in results {
             let urlString = nsString.substring(with: result.range)
-            guard var url = URL(string: urlString) else { return nil }
-            
-            // Normalize localhost URLs to use HTTP instead of HTTPS
-            // The local Blossom server only serves over HTTP, not HTTPS
-            if url.scheme == "https" && (url.host == "localhost" || url.host == "127.0.0.1") {
-                var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-                components?.scheme = "http"
-                if let normalizedURL = components?.url {
-                    url = normalizedURL
+            if let url = URL(string: urlString) {
+                urls.append(url)
+            }
+        }
+        
+        // Also look for potential blossom hashes that might be split from their hostname
+        let hashPattern = #"\b([a-f0-9]{64}(?:\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic|tiff))?)\b"#
+        if let hashRegex = try? NSRegularExpression(pattern: hashPattern, options: .caseInsensitive) {
+            let matches = hashRegex.matches(in: content, options: [], range: NSRange(location: 0, length: nsString.length))
+            for match in matches {
+                let potentialHash = nsString.substring(with: match.range)
+                // If we find a hash and it's not already part of a URL, assume it's for the local relay
+                if !urls.contains(where: { $0.absoluteString.contains(potentialHash) }) {
+                    // Try to resolve against the current webURL
+                    let webURLString = ConfigService.shared.config.webURL
+                    if let fullURL = URL(string: "\(webURLString)/\(potentialHash)") {
+                        urls.append(fullURL)
+                    }
                 }
             }
+        }
+        
+        return urls.map { url in
+            var finalURL = url
             
-            return url
+            // Normalize potential local/development URLs to use HTTP instead of HTTPS
+            // We check for localhost, 127.0.0.1, and any URL that matches the current relayURL if it's local
+            let isKnownLocal = finalURL.host == "localhost" || 
+                               finalURL.host == "127.0.0.1" || 
+                               ConfigService.shared.config.isLocal
+            
+            if finalURL.scheme == "https" && isKnownLocal {
+                var components = URLComponents(url: finalURL, resolvingAgainstBaseURL: false)
+                components?.scheme = "http"
+                if let normalizedURL = components?.url {
+                    finalURL = normalizedURL
+                }
+            }
+            return finalURL
         }
     }
 }
@@ -481,18 +508,14 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         return queue
     }()
     
+    private let blossomDirectory: URL
+    
     private init() {
-        // Accessing ConfigService.shared.relayDataDir (MainActor) is unsafe here if init is non-isolated.
-        // However, we can construct the path manually or assume this specific property access is safe enough given it's a let constant
-        // For strict correctness, we should pass it or lazily init.
-        // Let's use the known path structure relative to Application Support which is standard.
-        // OR better: ConfigService.shared is MainActor. We can't access it.
-        // We will make init @MainActor, but then shared instance creation is MainActor.
-        // The error was that we were calling saveToCache from background.
-        
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let havenAppSupport = appSupport.appendingPathComponent("Haven", isDirectory: true)
-        self.cacheDirectory = havenAppSupport.appendingPathComponent("haven_database", isDirectory: true).appendingPathComponent("cache")
+        let dbDir = havenAppSupport.appendingPathComponent("haven_database", isDirectory: true)
+        self.cacheDirectory = dbDir.appendingPathComponent("cache")
+        self.blossomDirectory = dbDir.appendingPathComponent("blossom")
         
         createCacheDirectory()
     }
@@ -524,11 +547,35 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     }
     
     func loadFromCache(url: URL) -> Data? {
+        // 1. Try to find if it's a local Blossom file we already have
+        let hash = self.hash(url: url)
+        if hash.count == 64 {
+            let blossomURL = blossomDirectory.appendingPathComponent(hash)
+            if let data = try? Data(contentsOf: blossomURL) {
+                return data
+            }
+        }
+        
+        // 2. Try the general cache
         let path = cachePath(for: url)
         return try? Data(contentsOf: path)
     }
     
     private func hash(url: URL) -> String {
+        // Optimization: If the URL contains a 64-char Blossom hash, use it directly as the cache key.
+        // This aligns with how the Go relay stores files and allows different URLs for the same
+        // content (e.g. extensioned vs non-extensioned) to share the cache.
+        let last = url.lastPathComponent
+        // Check if last component is a 64-char hash, possibly with an extension
+        let pattern = #"(^|/)([a-f0-9]{64})(\.[a-z0-9]+)?$"#
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+            let ns = last as NSString
+            if let match = regex.firstMatch(in: last, options: [], range: NSRange(location: 0, length: ns.length)) {
+                // Return just the hash part
+                return ns.substring(with: match.range(at: 2)).lowercased()
+            }
+        }
+        
         let inputData = Data(url.absoluteString.utf8)
         let hashed = SHA256.hash(data: inputData)
         return hashed.compactMap { String(format: "%02x", $0) }.joined()
