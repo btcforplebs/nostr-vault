@@ -1,7 +1,7 @@
 # HAVEN for Mac
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/bitvora/haven/master/templates/static/logo.png" width="200" alt="HAVEN Logo" />
+  <img src="docs/media/screenshots/haven_icon.png" width="200" alt="HAVEN Logo" />
 </p>
 
 <p align="center">
@@ -11,7 +11,7 @@
 
 ---
 
-**HAVEN for Mac** brings the power of [HAVEN](https://github.com/bitvora/haven) to your desktop with a beautiful, native Swift interface. It combines the performance and reliability of the original Go implementation (99% of the code!) with a seamless macOS experience.
+**HAVEN for Mac** brings the power of [HAVEN](https://github.com/bitvora/haven) to your desktop with a beautiful, native Swift interface. It combines the performance and reliability of the original Go implementation (100% of the code!) with a seamless macOS experience.
 
 ## ✨ Features
 
@@ -28,9 +28,9 @@
 
 | Dashboard | Settings |
 |:---:|:---:|
-| ![Dashboard](https://placehold.co/600x400?text=Dashboard+Screenshot) | ![Settings](https://placehold.co/600x400?text=Settings+Screenshot) |
+| ![Dashboard](docs/media/screenshots/dashboard.png) | ![Settings](docs/media/screenshots/settings.png) |
 
-*(Screenshots to be added)*
+
 
 ## 🛠️ Verification & Building
 
@@ -40,7 +40,7 @@ Don't trust, verify. You can build HAVEN for Mac entirely from source, or just c
 
 1.  **Clone the repo:**
     ```bash
-    git clone https://github.com/your-repo/haven-mac.git
+    git clone https://github.com/btcforplebs/haven-mac.git
     cd haven-mac
     ```
 
