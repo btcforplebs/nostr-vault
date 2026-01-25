@@ -48,3 +48,7 @@ build_output_debug.txt
 haven
 vendor/
 go.work
+
+# Build output
+HavenApp/HavenApp.zip
+HavenApp/build-output/
