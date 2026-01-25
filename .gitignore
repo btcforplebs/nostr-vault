@@ -8,3 +8,8 @@ db.zip
 db/
 dist/
 blossom/
+
+# HavenApp build artifacts
+HavenApp/HavenApp.zip
+HavenApp/build-output/
+/benchmarks/
