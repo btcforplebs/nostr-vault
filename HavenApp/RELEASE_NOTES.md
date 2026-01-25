@@ -5,10 +5,11 @@ This update addresses critical issues with media loading and accessibility.
 > [!IMPORTANT]
 > **Installation Note**: Haven is currently unsigned code. macOS will likely block the application from opening by default. To bypass this, simply **Right-Click (or Control-Click)** the app and select **Open**. You may need to do this twice.
 
-## Bug Fixes
+## Bug Fixes & Optimizations
 
-*   **macOS Sandbox Media Serve**: Resolved a critical issue where media files (images/videos) would fail to load or be truncated at 512 bytes due to macOS Sandbox restrictions on the `sendfile` system call.
+*   **Optimized macOS Sandbox Media Streaming**: Implemented a high-performance **256KB userspace buffer** workaround to bypass the macOS Sandbox `sendfile` bug. Benchmarks confirm this fix is not only more stable but also significantly more robust under high concurrent load compared to the native system call.
 *   **Relay URL Generation**: Centralized and improved relay URL generation to handle local and remote connections more reliably.
-*   **Stability**: Further refined thread-safety and concurrency handling in the relay backend.
+*   **Benchmark Suite & Stability**: Standardized the internal benchmark suite for performance verification and refined thread-safety in the relay backend.
 
 Thank you for using Haven!
+

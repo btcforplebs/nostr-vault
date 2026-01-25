@@ -14,7 +14,7 @@ if [ -z "$PROJECT_DIR" ]; then
     PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 fi
 
-GO_SRC_ROOT="${PROJECT_DIR}/.."
+GO_SRC_ROOT="${PROJECT_DIR}/../haven-go"
 
 if [ -z "$BUILT_PRODUCTS_DIR" ]; then
     echo "⚠️ BUILT_PRODUCTS_DIR not set. Using local build directory."
