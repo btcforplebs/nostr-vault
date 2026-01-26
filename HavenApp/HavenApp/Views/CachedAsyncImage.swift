@@ -1,0 +1,75 @@
+import SwiftUI
+
+struct CachedAsyncImage<Placeholder: View>: View {
+    let url: URL
+    let content: (Image) -> Image
+    let placeholder: () -> Placeholder
+    
+    @State private var cachedImage: NSImage? = nil
+    @State private var isLoading = false
+    @State private var id = UUID() // Force refresh if URL changes
+    
+    init(
+        url: URL,
+        @ViewBuilder content: @escaping (Image) -> Image,
+        @ViewBuilder placeholder: @escaping () -> Placeholder
+    ) {
+        self.url = url
+        self.content = content
+        self.placeholder = placeholder
+    }
+    
+    var body: some View {
+        ZStack {
+            if let nsImage = cachedImage {
+                content(Image(nsImage: nsImage))
+            } else {
+                placeholder()
+                    .onAppear {
+                        load()
+                    }
+            }
+        }
+        .id(url) // Reset state when URL changes
+    }
+    
+    private func load() {
+        if isLoading { return }
+        
+        // 1. Check disk cache synchronously (it's fast enough for main thread usually, or we could dispatch)
+        if let data = MediaCacheService.shared.loadFromCache(url: url),
+           let image = NSImage(data: data) {
+            self.cachedImage = image
+            return
+        }
+        
+        // 2. Download if not cached
+        isLoading = true
+        
+        let operation = BlockOperation {
+            // Using a simple URLSession task
+            let task = URLSession.shared.dataTask(with: url) { data, response, error in
+                defer { 
+                    DispatchQueue.main.async { self.isLoading = false }
+                }
+                
+                guard let data = data, error == nil,
+                      let image = NSImage(data: data) else {
+                    return
+                }
+                
+                // Save to cache
+                MediaCacheService.shared.saveToCache(url: url, data: data)
+                
+                // Update UI
+                DispatchQueue.main.async {
+                    self.cachedImage = image
+                }
+            }
+            task.resume()
+        }
+        
+        // Use the shared queue to avoid thread explosions
+        MediaCacheService.shared.downloadQueue.addOperation(operation)
+    }
+}

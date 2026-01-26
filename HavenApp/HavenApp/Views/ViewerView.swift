@@ -13,6 +13,13 @@ struct ViewerView: View {
     @State private var selectedMedia: MediaItem? = nil
     @State private var initialLoad = false
     @State private var isLoadingMore = false
+    @State private var contentFilter: ContentFilter = .all
+    
+    enum ContentFilter {
+        case all
+        case mine
+        case tagged
+    }
     
     enum ViewMode {
         case notes
@@ -21,9 +28,15 @@ struct ViewerView: View {
     
     var filteredNotes: [NostrEvent] {
         let displayableEvents = nostrService.events.filter { event in
-            // Only show text notes (kind 1) in the notes view.
-            // File metadata (1063) is handled in the Media tab.
-            return event.kind == 1
+            // Basic Filter: Only View 1 (Text Notes)
+            if event.kind != 1 { return false }
+            
+            // Content Filter
+            switch contentFilter {
+            case .all: return true
+            case .mine: return event.pubkey == nostrService.ownerHexPubkey
+            case .tagged: return event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
+            }
         }
         
         if searchText.isEmpty {
@@ -35,9 +48,25 @@ struct ViewerView: View {
     var allMediaItems: [MediaItem] {
         var items: [MediaItem] = []
         if relayManager.isRunning {
-            items.append(contentsOf: blossomMedia)
+            // Blossom media is always considered "mine" as it is hosted locally
+            if contentFilter == .all || contentFilter == .mine {
+                items.append(contentsOf: blossomMedia)
+            }
         }
-        items.append(contentsOf: nostrService.noteMedia)
+        
+        // Filter remote media based on the event it came from
+        let remoteItems = nostrService.noteMedia.filter { item in
+            switch contentFilter {
+            case .all: return true
+            case .mine: return item.pubkey == nostrService.ownerHexPubkey
+            case .tagged: 
+                if let tags = item.tags {
+                    return tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
+                }
+                return false
+            }
+        }
+        items.append(contentsOf: remoteItems)
         
         // Group by URL and pick the latest date for each
         var latestItems: [URL: MediaItem] = [:]
@@ -83,25 +112,21 @@ struct ViewerView: View {
                     
                     Spacer()
                     
-                    // Connection Status
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(statusColor)
-                            .frame(width: 8, height: 8)
-                        Text(nostrService.connectionStatus)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    // Filter Tabs
+                    HStack(spacing: 2) {
+                        FilterButton(title: "All", color: .secondary, isSelected: contentFilter == .all) {
+                            contentFilter = .all
+                        }
+                        FilterButton(title: "My Notes", color: .havenPurple, isSelected: contentFilter == .mine) {
+                            contentFilter = .mine
+                        }
+                        FilterButton(title: "Tagged", color: .blue, isSelected: contentFilter == .tagged) {
+                            contentFilter = .tagged
+                        }
                     }
-                    .padding(.trailing, 8)
-                    
-                    Button(action: {
-                        refreshAll()
-                    }) {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
+                    .padding(4)
+                    .background(Color.primary.opacity(0.05))
+                    .cornerRadius(8)
                 }
                 
                 HStack {
@@ -177,19 +202,9 @@ struct ViewerView: View {
                         .foregroundColor(.secondary)
                     Text("No notes found")
                         .font(.headline)
-                    
-                    if relayManager.isBooting {
-                        VStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Relay is booting...")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Text(relayManager.isRunning ? "Waiting for incoming events..." : "Start the relay to see notes.")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
+                    Text("Try changing your filter settings.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 .padding(.top, 100)
             } else {
@@ -212,7 +227,7 @@ struct ViewerView: View {
                         .foregroundColor(.secondary)
                     Text("No media found")
                         .font(.headline)
-                    Text("Hosted images or images in notes will appear here.")
+                    Text("Try changing your filter settings or upload media.")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -343,12 +358,33 @@ struct ViewerView: View {
                 let date = (attributes?[.creationDate] as? Date) ?? (attributes?[.modificationDate] as? Date) ?? Date()
                 
                 let mediaType: MediaItem.MediaType = serveURL.isVideo ? .video : .image
-                return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date)
+                // Local files are implicitly "mine"
+                return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: nostrService.ownerHexPubkey, tags: nil)
             }
             self.blossomMedia = items
         } catch {
             print("Error loading blossom media: \(error)")
         }
+    }
+}
+
+struct FilterButton: View {
+    let title: String
+    let color: Color
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: isSelected ? .bold : .regular))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .foregroundColor(isSelected ? .white : .primary)
+                .background(isSelected ? color : Color.clear)
+                .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -399,13 +435,14 @@ struct NoteRow: View {
         Button(action: {
             if let url = event.njumpURL {
                 NSWorkspace.shared.open(url)
+                NSApplication.shared.hide(nil)
             }
         }) {
             VStack(alignment: .leading, spacing: 12) {
                 // Header with profile and timestamp
                 HStack {
                     if let pictureURL = nostrService.profilePictures[event.pubkey] {
-                        AsyncImage(url: pictureURL) { image in
+                        CachedAsyncImage(url: pictureURL) { image in
                             image.resizable().aspectRatio(contentMode: .fill)
                         } placeholder: {
                             Circle().fill(isOwner ? Color.havenPurple : Color.blue)
@@ -831,5 +868,80 @@ struct SourceIndicatorView: View {
                 }
             }
         }.resume()
+    }
+}
+
+// MARK: - CachedAsyncImage
+struct CachedAsyncImage<Content: View, Placeholder: View>: View {
+    let url: URL
+    let content: (Image) -> Content
+    let placeholder: () -> Placeholder
+    
+    @State private var cachedImage: NSImage? = nil
+    @State private var isLoading = false
+    @State private var id = UUID() // Force refresh if URL changes
+    
+    init(
+        url: URL,
+        @ViewBuilder content: @escaping (Image) -> Content,
+        @ViewBuilder placeholder: @escaping () -> Placeholder
+    ) {
+        self.url = url
+        self.content = content
+        self.placeholder = placeholder
+    }
+    
+    var body: some View {
+        ZStack {
+            if let nsImage = cachedImage {
+                content(Image(nsImage: nsImage))
+            } else {
+                placeholder()
+                    .onAppear {
+                        load()
+                    }
+            }
+        }
+        .id(url) // Reset state when URL changes
+    }
+    
+    private func load() {
+        if isLoading { return }
+        
+        // 1. Check disk cache synchronously (it's fast enough for main thread usually, or we could dispatch)
+        if let data = MediaCacheService.shared.loadFromCache(url: url),
+           let image = NSImage(data: data) {
+            self.cachedImage = image
+            return
+        }
+        
+        // 2. Download if not cached
+        isLoading = true
+        
+        let operation = BlockOperation {
+            // Using a simple URLSession task
+            let task = URLSession.shared.dataTask(with: url) { data, response, error in
+                defer { 
+                    DispatchQueue.main.async { self.isLoading = false }
+                }
+                
+                guard let data = data, error == nil,
+                      let image = NSImage(data: data) else {
+                    return
+                }
+                
+                // Save to cache
+                MediaCacheService.shared.saveToCache(url: url, data: data)
+                
+                // Update UI
+                DispatchQueue.main.async {
+                    self.cachedImage = image
+                }
+            }
+            task.resume()
+        }
+        
+        // Use the shared queue to avoid thread explosions
+        MediaCacheService.shared.downloadQueue.addOperation(operation)
     }
 }

@@ -34,6 +34,7 @@
 
 /* Begin PBXFileReference section */
 		8DAF2C2F2F2019EF001149F2 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
+		AAAA9001 /* StatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsService.swift; sourceTree = "<group>"; };
 		FFFF0001 /* HavenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp.swift; sourceTree = "<group>"; };
 		FFFF0002 /* HavenConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenConfig.swift; sourceTree = "<group>"; };
 		FFFF0003 /* NostrEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrEvent.swift; sourceTree = "<group>"; };
@@ -55,9 +56,8 @@
 		FFFF0019 /* AnimatedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedImage.swift; sourceTree = "<group>"; };
 		FFFF0020 /* HavenApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HavenApp.entitlements; sourceTree = "<group>"; };
 		FFFF0021 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		FFFF0099 /* HavenApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HavenApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FFFF0099 /* HavenApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = HavenApp.app; path = HAVEN.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FFFF0100 /* WelcomeWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindowView.swift; sourceTree = "<group>"; };
-		AAAA9001 /* StatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -99,8 +99,8 @@
 				FFFF0005 /* ConfigService.swift */,
 				FFFF0006 /* RelayProcessManager.swift */,
 				FFFF0007 /* WebSocketClient.swift */,
-			
-				AAAA9001 /* StatsService.swift */,);
+				AAAA9001 /* StatsService.swift */,
+			);
 			path = HavenApp/Services;
 			sourceTree = "<group>";
 		};
@@ -208,6 +208,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		BBBB0001 /* Sign Go Binary */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -224,7 +225,6 @@
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-			alwaysOutOfDate = 1;
 			shellPath = /bin/bash;
 			shellScript = "\"$PROJECT_DIR/HavenApp/App/sign_haven.sh\"\n";
 		};
@@ -254,8 +254,8 @@
 				AAAA0018 /* ColorExtension.swift in Sources */,
 				AAAA0100 /* WelcomeWindowView.swift in Sources */,
 				AAAA0021 /* AppDelegate.swift in Sources */,
-			
-				AAAA9002 /* StatsService.swift in Sources */,);
+				AAAA9002 /* StatsService.swift in Sources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
@@ -404,7 +404,7 @@
 				);
 				MARKETING_VERSION = 2.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
-				PRODUCT_NAME = "HAVEN";
+				PRODUCT_NAME = HAVEN;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -433,7 +433,7 @@
 				);
 				MARKETING_VERSION = 2.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
-				PRODUCT_NAME = "HAVEN";
+				PRODUCT_NAME = HAVEN;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

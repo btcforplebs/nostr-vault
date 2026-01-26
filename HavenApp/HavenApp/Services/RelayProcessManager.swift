@@ -82,6 +82,7 @@ class RelayProcessManager: ObservableObject {
         // Only reset retry flag if this is a fresh start request, not an auto-retry
         if !isRetry {
             self.retryAttempted = false
+            self.showProcessKillAlert = false
         }
         self.needsLockFix = false
         

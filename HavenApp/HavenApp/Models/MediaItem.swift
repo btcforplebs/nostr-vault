@@ -5,6 +5,8 @@ struct MediaItem: Identifiable, Codable {
     let url: URL
     let type: MediaType
     let dateAdded: Date
+    let pubkey: String? // Author of the event containing this media
+    let tags: [[String]]? // Tags of the event containing this media
     
     enum MediaType: String, Codable {
         case image

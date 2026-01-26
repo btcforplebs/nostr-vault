@@ -21,6 +21,7 @@ struct HavenApp: App {
                 .alert("Startup Error", isPresented: $relayManager.showProcessKillAlert) {
                     Button("Copy Command") {
                         let pasteboard = NSPasteboard.general
+                        pasteboard.clearContents()
                         let success = pasteboard.setString("pkill -9 haven", forType: .string)
                         print("DEBUG: Copy Command result: \(success)")
                         
