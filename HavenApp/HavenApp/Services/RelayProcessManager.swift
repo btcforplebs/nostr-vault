@@ -192,41 +192,40 @@ class RelayProcessManager: ObservableObject {
         logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Env: HOME=\(env["HOME"]?.prefix(25) ?? "")... PORT=\(env["RELAY_PORT"] ?? "") BIND=\(env["RELAY_BIND_ADDRESS"] ?? "")"))
         logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Paths: BLOSSOM=\(env["BLOSSOM_PATH"] ?? "") DB=\(env["DATABASE_PATH"] ?? "")"))
         
-        // Redirect stdout/stderr to a file to prevent pipe buffer blocking
-        let logFileURL = relayDataDir.appendingPathComponent("relay.log")
-        if !FileManager.default.fileExists(atPath: logFileURL.path) {
-            FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
-        }
+        // Use Pipe for stdout/stderr to ensure realtime log delivery
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        process.standardInput = Pipe() // Isolate stdin
         
-        do {
-            let logHandle = try FileHandle(forWritingTo: logFileURL)
-            logHandle.seekToEndOfFile()
-            process.standardOutput = logHandle
-            process.standardError = logHandle
-            
-            // We can still tail this file if needed, or just let the user view it in Console
-            logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Redirecting output to \(logFileURL.path)"))
-            
-            // Tail the log file to restore UI updates
-            let readHandle = try FileHandle(forReadingFrom: logFileURL)
-            // Seek to end so we only read new logs
-            readHandle.seekToEndOfFile()
-            
-            readHandle.readabilityHandler = { [weak self] handle in
-                let data = handle.availableData
-                if let str = String(data: data, encoding: .utf8), !str.isEmpty {
-                    Task { @MainActor in
-                        self?.processOutput(str)
+        // Save outputPipe to keep it alive
+        self.outputPipe = pipe
+        
+        // Read from the pipe
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            if let str = String(data: data, encoding: .utf8), !str.isEmpty {
+                Task { @MainActor in
+                    self?.processOutput(str)
+                    
+                    // Also write to log file for persistence if needed
+                    // (Optional, but good for debugging)
+                    if let logData = str.data(using: .utf8) {
+                         let logFileURL = relayDataDir.appendingPathComponent("relay.log")
+                         if !FileManager.default.fileExists(atPath: logFileURL.path) {
+                             FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
+                         }
+                         if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
+                             fileHandle.seekToEndOfFile()
+                             fileHandle.write(logData)
+                             try? fileHandle.close()
+                         }
                     }
                 }
             }
-            
-            self.logReader = readHandle
-        } catch {
-             logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to create log handle: \(error)"))
         }
         
-        process.standardInput = Pipe()
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Captured output via Pipe"))
         
         self.process = process
         
@@ -747,34 +746,36 @@ class RelayProcessManager: ObservableObject {
                     if let topic = line.components(separatedBy: "to ").last {
                         bootStatusMessage = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
                     }
+                } else if lowerLine.contains("is booting up") { // "HAVEN X.X.X is booting up"
+                     DispatchQueue.main.async { self.bootStatusMessage = "Booting Haven..." }
                 } else if lowerLine.contains("starting") {
                     if let service = line.components(separatedBy: "starting ").last ?? line.components(separatedBy: "Starting ").last {
                          bootStatusMessage = "Starting \(service.trimmingCharacters(in: .punctuationCharacters))..."
                     }
-                } else if lowerLine.contains("loading") {
-                     bootStatusMessage = "Loading databases..."
-                } else if lowerLine.contains("listening on") {
-                     bootStatusMessage = "Establishing listener..."
-                } else if lowerLine.contains("wot") || lowerLine.contains("pubkeys") || lowerLine.contains("analysed") || lowerLine.contains("network size") {
-                    let pattern = "(\\d+)" // Just find digits
+                } else if lowerLine.contains("listening at") || lowerLine.contains("listening on") { // Match both
+                     DispatchQueue.main.async { self.bootStatusMessage = "Relay is Ready" } // Final state
+                } else if lowerLine.contains("building web of trust graph") {
+                     DispatchQueue.main.async { self.bootStatusMessage = "Building Web of Trust..." }
+                } else if lowerLine.contains("analysed") {
+                    let pattern = "analysed (\\d+)"
                     if let regex = try? NSRegularExpression(pattern: pattern, options: []),
-                       let _ = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)) {
-                        let matches = regex.matches(in: line, options: [], range: NSRange(line.startIndex..., in: line))
-                        if let lastMatch = matches.last, let countRange = Range(lastMatch.range(at: 0), in: line) {
-                            let count = line[countRange]
-                            if count.count < 10 { // Avoid long hex/hashes
-                                if lowerLine.contains("analysed") {
-                                    bootStatusMessage = "Analysing \(count) pubkeys..."
-                                } else if lowerLine.contains("network size") {
-                                    bootStatusMessage = "Network: \(count) profiles..."
-                                } else if lowerLine.contains("minimum followers") {
-                                    bootStatusMessage = "WoT: \(count) trusted keys..."
-                                } else {
-                                    bootStatusMessage = "WoT: Loading \(count) keys..."
-                                }
-                            }
-                        }
+                       let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
+                       let range = Range(match.range(at: 1), in: line) {
+                        let count = line[range]
+                        bootStatusMessage = "Analysed \(count) keys..."
                     }
+                } else if lowerLine.contains("network size") {
+                     if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
+                         bootStatusMessage = "Network Size: \(count)"
+                     }
+                } else if lowerLine.contains("relays discovered") {
+                     if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
+                         bootStatusMessage = "Discovered \(count) relays..."
+                     }
+                } else if lowerLine.contains("pubkeys with minimum followers") {
+                     if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: [" ", "k", "e", "y", "s"]) { // Trip "keys" suffix
+                        bootStatusMessage = "Trust Graph: \(count) users"
+                     }
                 }
             }
             

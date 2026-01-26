@@ -63,7 +63,7 @@ struct MenuBarView: View {
                 .background(Color(NSColor.windowBackgroundColor))
                 
                 // MARK: - Tabs
-                HStack(spacing: 0) {
+                HStack(spacing: 8) {
                     TabButton(icon: "gauge", title: "Dashboard", isSelected: selectedTab == .dashboard) {
                         selectedTab = .dashboard
                     }
@@ -307,10 +307,10 @@ struct TabButton: View {
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
             }
-            .foregroundColor(isSelected ? .havenPurple : .secondary)
+            .foregroundColor(isSelected ? .white : .secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .background(isSelected ? Color.havenPurplePale : Color.clear)
+            .background(isSelected ? Color.havenPurple : Color.clear)
             .cornerRadius(6)
             .contentShape(Rectangle())
         }
