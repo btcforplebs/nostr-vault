@@ -21,9 +21,9 @@ struct ViewerView: View {
     
     var filteredNotes: [NostrEvent] {
         let displayableEvents = nostrService.events.filter { event in
-            // Only show text notes and file metadata
-            // Filter out metadata (0), contacts (3), and other system events
-            return event.kind == 1 || event.kind == 1063
+            // Only show text notes (kind 1) in the notes view.
+            // File metadata (1063) is handled in the Media tab.
+            return event.kind == 1
         }
         
         if searchText.isEmpty {
@@ -39,15 +39,19 @@ struct ViewerView: View {
         }
         items.append(contentsOf: nostrService.noteMedia)
         
-        var uniqueItems: [MediaItem] = []
-        var seenURLs = Set<URL>()
+        // Group by URL and pick the latest date for each
+        var latestItems: [URL: MediaItem] = [:]
         for item in items {
-            if !seenURLs.contains(item.url) {
-                uniqueItems.append(item)
-                seenURLs.insert(item.url)
+            if let existing = latestItems[item.url] {
+                if item.dateAdded > existing.dateAdded {
+                    latestItems[item.url] = item
+                }
+            } else {
+                latestItems[item.url] = item
             }
         }
-        return uniqueItems.sorted(by: { $0.dateAdded > $1.dateAdded })
+        
+        return Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
     }
     
     var statusColor: Color {
@@ -328,14 +332,18 @@ struct ViewerView: View {
                 return
             }
             
-            let fileURLs = try FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: nil)
+            let fileURLs = try FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey])
             let items = fileURLs.compactMap { url -> MediaItem? in
                 let filename = url.lastPathComponent
                 if filename.starts(with: ".") || filename == "LOCK" { return nil }
                 // Use the centralized webURL which handles local vs remote correctly
                 guard let serveURL = URL(string: "\(configService.config.webURL)/\(filename)") else { return nil }
+                
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                let date = (attributes?[.creationDate] as? Date) ?? (attributes?[.modificationDate] as? Date) ?? Date()
+                
                 let mediaType: MediaItem.MediaType = serveURL.isVideo ? .video : .image
-                return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: Date())
+                return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date)
             }
             self.blossomMedia = items
         } catch {
@@ -372,10 +380,6 @@ struct NoteRow: View {
     let event: NostrEvent
     @EnvironmentObject var nostrService: NostrService
     
-    var mediaURLs: [URL] {
-        nostrService.extractMediaURLs(from: event.content)
-    }
-    
     var cleanContent: String {
         return event.content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -407,17 +411,6 @@ struct NoteRow: View {
                     .font(.body)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-            
-            // Media attachments
-            let urls = mediaURLs
-            if !urls.isEmpty {
-                VStack(spacing: 8) {
-                    ForEach(urls, id: \.self) { url in
-                        MediaPreviewRow(url: url)
-                    }
-                }
-                .padding(.top, 4)
             }
         }
         .padding()

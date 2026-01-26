@@ -19,6 +19,7 @@ DerivedData/
 *.ipa
 *.xcuserstate
 *.xcarchive
+*.zip
 
 # Swift Package Manager
 .build/
@@ -52,3 +53,6 @@ go.work
 # Build output
 HavenApp/HavenApp.zip
 HavenApp/build-output/
+
+# website
+website/
