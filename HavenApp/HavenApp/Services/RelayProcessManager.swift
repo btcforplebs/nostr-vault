@@ -23,6 +23,9 @@ class RelayProcessManager: ObservableObject {
     @Published var importStatusMessage: String = ""
     @Published var importProgress: Double = 0.0
     
+    // Critical recovery alert
+    @Published var showProcessKillAlert = false
+    
     @Published var logs: [LogEntry] = []
     
     // Metrics
@@ -46,6 +49,11 @@ class RelayProcessManager: ObservableObject {
     private var retryAttempted = false
     private var needsLockFix = false
     
+    // Log throttling
+    private var pendingLogs: [LogEntry] = []
+    private var logUpdateTimer: Timer?
+    // private let logQueue = DispatchQueue(label: "com.haven.logs") // Removed: unnecessary for MainActor
+    
     private var metricsTimer: Timer?
     
     struct LogEntry: Identifiable {
@@ -62,7 +70,7 @@ class RelayProcessManager: ObservableObject {
         }
     }
     
-    func startRelay(config: HavenConfig) {
+    func startRelay(config: HavenConfig, isRetry: Bool = false) {
         // Strict guard: Must be idle and NO process should be running
         guard state == .idle && (process == nil || !process!.isRunning) else {
             logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start relay: current state is \(state) (running: \(process?.isRunning ?? false))"))
@@ -70,8 +78,15 @@ class RelayProcessManager: ObservableObject {
         }
         
         self.lastConfig = config
-        self.retryAttempted = false
+        
+        // Only reset retry flag if this is a fresh start request, not an auto-retry
+        if !isRetry {
+            self.retryAttempted = false
+        }
         self.needsLockFix = false
+        
+        // Start log throttler
+        startLogThrottler()
         
         let relayDataDir = ConfigService.shared.relayDataDir
         try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
@@ -122,7 +137,7 @@ class RelayProcessManager: ObservableObject {
         self.isPortConflict = false
         
         // Always try to clear locks and ensure directories exist
-        cleanupBeforeImport()
+        clearDatabaseLocks()
         let dataDir = relayDataDir.appendingPathComponent("data")
         let dbDir = relayDataDir.appendingPathComponent("db")
         try? FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
@@ -240,18 +255,23 @@ class RelayProcessManager: ObservableObject {
                     return
                 }
                 
-                // Check if we need to auto-fix locks
                 if self.needsLockFix && !self.retryAttempted && previousState != .stopping {
                     self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Database lock detected. Attempting automatic fix..."))
                     self.retryAttempted = true
                     self.clearDatabaseLocks {
                         Task { @MainActor in
                             if let config = self.lastConfig {
-                                self.startRelay(config: config)
+                                // Pass isRetry: true to prevent infinite loops if it fails again
+                                self.startRelay(config: config, isRetry: true)
                             }
                         }
                     }
                     return
+                } else if self.retryAttempted && (self.needsLockFix || exitCode != 0) && previousState != .stopping {
+                    // We tried to fix it, but it failed again. Logic suggests a zombie process or fatal lock.
+                    // Trigger manual intervention alert.
+                    self.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Automatic fix failed. Manual intervention required."))
+                    self.showProcessKillAlert = true
                 }
                 
                 self.isShuttingDown = false
@@ -261,6 +281,7 @@ class RelayProcessManager: ObservableObject {
                 self.isImporting = false
                 
                 self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay process terminated (Exit Code: \(proc.terminationStatus))"))
+                self.stopLogThrottler()
             }
         }
         
@@ -286,23 +307,51 @@ class RelayProcessManager: ObservableObject {
     
     func clearDatabaseLocks(completion: (@Sendable () -> Void)? = nil) {
         let relayDataDir = ConfigService.shared.relayDataDir
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let dbDir = relayDataDir.appendingPathComponent("data")
+        // Run synchronously to ensure locks are gone before we proceed with any new process
+        let dbDir = relayDataDir.appendingPathComponent("data")
+        
+        // Standard data DBs
+        let standardDBs = ["chat", "inbox", "outbox", "private", "wot"] 
+        for name in standardDBs {
+            // Check data/NAME/LOCK
+            let lockFileData = dbDir.appendingPathComponent(name).appendingPathComponent("LOCK")
+            removeLockFile(at: lockFileData)
             
-            // Relays list from init.go: blossom, chat, inbox, outbox, private
-            let dbNames = ["blossom", "chat", "inbox", "outbox", "private"]
-            
-            for name in dbNames {
-                let lockFile = dbDir.appendingPathComponent(name).appendingPathComponent("LOCK")
-                if FileManager.default.fileExists(atPath: lockFile.path) {
-                    try? FileManager.default.removeItem(at: lockFile)
+            // Check db/NAME/LOCK (some configurations use this path)
+            let dbRoot = relayDataDir.appendingPathComponent("db")
+            let lockFileDB = dbRoot.appendingPathComponent(name).appendingPathComponent("LOCK")
+            removeLockFile(at: lockFileDB)
+        }
+        
+        // Blossom DB (check both locations just in case)
+        let blossomDirs = [
+            relayDataDir.appendingPathComponent("blossom"),
+            dbDir.appendingPathComponent("blossom")
+        ]
+        for dir in blossomDirs {
+            let lockFile = dir.appendingPathComponent("LOCK")
+            removeLockFile(at: lockFile)
+        }
+        
+        Task { @MainActor in
+            self.isLocked = false
+            self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared."))
+            completion?()
+        }
+    }
+    
+    private func removeLockFile(at url: URL) {
+        // print("DEBUG: Checking lock file at \(url.path)") // verbose debug
+        if FileManager.default.fileExists(atPath: url.path) {
+            do {
+                try FileManager.default.removeItem(at: url)
+                Task { @MainActor in
+                    self.logs.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "Removed stale lock file at: \(url.path)"))
                 }
-            }
-            
-            Task { @MainActor in
-                self?.isLocked = false
-                self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared. You can now try starting the relay again."))
-                completion?()
+            } catch {
+                Task { @MainActor in
+                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Failed to remove lock file at \(url.path): \(error)"))
+                }
             }
         }
     }
@@ -322,6 +371,7 @@ class RelayProcessManager: ObservableObject {
         self.state = .stopping
         self.isShuttingDown = true
         stopMetricsTimer()
+        stopLogThrottler()
         process.terminate()
         isBooting = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -391,27 +441,9 @@ class RelayProcessManager: ObservableObject {
     }
     
     /// Kills any existing haven processes and clears database locks before import
-    private func cleanupBeforeImport() {
-        // In Sandbox, we cannot use pkill/killall.
-        // Clear database lock files from the correct locations
-        let relayDataDir = ConfigService.shared.relayDataDir
-        let dbDir = relayDataDir.appendingPathComponent("data")
-        
-        // Standard data DBs
-        let standardDBs = ["chat", "inbox", "outbox", "private", "wot"]
-        for name in standardDBs {
-            let lockFile = dbDir.appendingPathComponent(name).appendingPathComponent("LOCK")
-            if FileManager.default.fileExists(atPath: lockFile.path) {
-                try? FileManager.default.removeItem(at: lockFile)
-            }
-        }
-        
-        // Blossom DB is separate (at root of relayDataDir)
-        let blossomLock = relayDataDir.appendingPathComponent("blossom").appendingPathComponent("LOCK")
-        if FileManager.default.fileExists(atPath: blossomLock.path) {
-            try? FileManager.default.removeItem(at: blossomLock)
-        }
-    }
+    // Note: Replaced by forceCleanLocks() but kept as stub if needed for future refactoring, 
+    // or we can remove it. For now, we will use forceCleanLocks() instead.
+    // The usages below will be updated.
     
     func importNotes(config: HavenConfig) {
         // Strict guard: Must be idle and NO process should be running
@@ -433,7 +465,8 @@ class RelayProcessManager: ObservableObject {
         isImporting = true
         
         // Kill any existing haven processes and clear locks before starting import
-        cleanupBeforeImport()
+        // Kill any existing haven processes and clear locks before starting import
+        clearDatabaseLocks()
         
         // Create working directories
         let relayDataDir = ConfigService.shared.relayDataDir
@@ -624,6 +657,8 @@ class RelayProcessManager: ObservableObject {
         guard !lines.isEmpty else { return }
         
         var newEntries: [LogEntry] = []
+        // Note: Logic inside loop needs to be preserved, but append to pendingLogs instead of logs
+
         for line in lines {
             let entry = LogEntry.parse(line)
             newEntries.append(entry)
@@ -764,12 +799,43 @@ class RelayProcessManager: ObservableObject {
             }
         }
         
-        // Batch append logs
-        logs.append(contentsOf: newEntries)
-        if logs.count > 1000 {
-            logs.removeFirst(max(0, logs.count - 1000))
+        // Batch append logs to queue
+        // Batch append logs to queue
+        self.pendingLogs.append(contentsOf: newEntries)
+    }
+    
+    private func startLogThrottler() {
+        stopLogThrottler()
+        DispatchQueue.main.async {
+            self.logUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    self?.flushLogs()
+                }
+            }
         }
     }
+    
+    private func stopLogThrottler() {
+        DispatchQueue.main.async {
+            self.logUpdateTimer?.invalidate()
+            self.logUpdateTimer = nil
+            self.flushLogs() // Flush remaining
+        }
+    }
+    
+    private func flushLogs() {
+        guard !pendingLogs.isEmpty else { return }
+        let batch = pendingLogs
+        pendingLogs.removeAll()
+        
+        self.logs.append(contentsOf: batch)
+        // Keep max buffer
+        if self.logs.count > 1000 {
+            self.logs.removeFirst(max(0, self.logs.count - 1000))
+        }
+    }
+
+
     
     private func calculateProgress(currentDateStr: String) {
         let formatter = DateFormatter()

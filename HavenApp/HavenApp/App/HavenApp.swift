@@ -18,6 +18,21 @@ struct HavenApp: App {
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
+                .alert("Startup Error", isPresented: $relayManager.showProcessKillAlert) {
+                    Button("Copy Command") {
+                        let pasteboard = NSPasteboard.general
+                        let success = pasteboard.setString("pkill -9 haven", forType: .string)
+                        print("DEBUG: Copy Command result: \(success)")
+                        
+                        // Async dismissal to avoid state conflict during button action
+                        DispatchQueue.main.async {
+                            relayManager.showProcessKillAlert = false
+                        }
+                    }
+                    Button("OK", role: .cancel) { }
+                } message: {
+                    Text("HAVEN's last shutdown was done incorrectly, please open the terminal and run 'pkill -9 haven' to clear errors and start the relay")
+                }
         }
         .menuBarExtraStyle(.window)
         
