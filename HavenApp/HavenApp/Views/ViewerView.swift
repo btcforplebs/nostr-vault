@@ -384,38 +384,76 @@ struct NoteRow: View {
         return event.content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
+    var displayName: String {
+        if let name = nostrService.profileNames[event.pubkey] {
+            return name
+        }
+        return event.pubkey.prefix(8) + "..." + event.pubkey.suffix(4)
+    }
+    
+    var isOwner: Bool {
+        return event.pubkey == nostrService.ownerHexPubkey
+    }
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header with profile and timestamp
-            HStack {
-                Circle().fill(Color.havenPurple).frame(width: 32, height: 32)
-                    .overlay(Image(systemName: "person.fill").font(.caption).foregroundColor(.white))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(event.pubkey.prefix(8) + "..." + event.pubkey.suffix(4))
-                        .font(.subheadline.bold())
-                    Text(timeAgo(from: event.createdAtDate))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                Spacer()
-                HStack(spacing: 4) {
-                    Image(systemName: "bubble.left")
-                    Text(event.kindDescription)
-                }
-                .font(.caption2).padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Color.white.opacity(0.1)).cornerRadius(4)
+        Button(action: {
+            if let url = event.njumpURL {
+                NSWorkspace.shared.open(url)
             }
-            
-            // Text content (if any)
-            if !cleanContent.isEmpty {
-                Text(cleanContent)
-                    .font(.body)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+        }) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Header with profile and timestamp
+                HStack {
+                    if let pictureURL = nostrService.profilePictures[event.pubkey] {
+                        AsyncImage(url: pictureURL) { image in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            Circle().fill(isOwner ? Color.havenPurple : Color.blue)
+                                .overlay(Image(systemName: "person.fill").font(.caption).foregroundColor(.white))
+                        }
+                        .frame(width: 32, height: 32)
+                        .clipShape(Circle())
+                    } else {
+                        Circle().fill(isOwner ? Color.havenPurple : Color.blue).frame(width: 32, height: 32)
+                            .overlay(Image(systemName: "person.fill").font(.caption).foregroundColor(.white))
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayName)
+                            .font(.subheadline.bold())
+                        Text(timeAgo(from: event.createdAtDate))
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Image(systemName: isOwner ? "pencil.line" : "tag.fill")
+                            .font(.system(size: 10))
+                        Text(isOwner ? "Text Note" : "Tagged")
+                    }
+                    .font(.caption2.bold()).padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(isOwner ? Color.havenPurple.opacity(0.15) : Color.blue.opacity(0.15))
+                    .foregroundColor(isOwner ? .havenPurple : .blue)
+                    .cornerRadius(4)
+                }
+                
+                // Text content (if any)
+                if !cleanContent.isEmpty {
+                    Text(cleanContent)
+                        .font(.body)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding()
+            .background(Color(NSColor.controlBackgroundColor))
+            .cornerRadius(12)
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            if nostrService.profileNames[event.pubkey] == nil {
+                nostrService.fetchMissingProfiles(for: [event.pubkey])
             }
         }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
     }
     
     func timeAgo(from date: Date) -> String {

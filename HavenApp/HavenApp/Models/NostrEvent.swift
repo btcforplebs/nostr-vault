@@ -48,4 +48,22 @@ struct NostrEvent: Codable, Identifiable {
         default: return "Kind \(kind)"
         }
     }
+    
+    var njumpURL: URL? {
+        // Build TLV for nevent1
+        // Type 0: Event ID (32 bytes)
+        // Type 2: Author Pubkey (32 bytes)
+        guard let idData = Bech32.hexToData(id) else { return nil }
+        var tlv = Bech32.encodeTLV(type: 0, data: idData)
+        
+        if let pubkeyData = Bech32.hexToData(pubkey) {
+            tlv.append(Bech32.encodeTLV(type: 2, data: pubkeyData))
+        }
+        
+        // Encode as nevent1
+        if let nevent = Bech32.encode(hrp: "nevent", data: tlv) {
+            return URL(string: "https://njump.me/\(nevent)")
+        }
+        return nil
+    }
 }
