@@ -680,6 +680,10 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     
     private let blossomDirectory: URL
     
+    // Thread-safe copy of local host for non-isolated access
+    private var localHost: String = ""
+    private let hostLock = NSLock()
+    
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let havenAppSupport = appSupport.appendingPathComponent("Haven", isDirectory: true)
@@ -707,6 +711,12 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     }
     
     func saveToCache(url: URL, data: Data) {
+        // Guard: Don't cache extremely small files which are likely error messages/404 pages
+        guard data.count > 100 else {
+            print("MediaCacheService: Skipping cache for \(url.absoluteString) - data too small (\(data.count) bytes)")
+            return
+        }
+        
         let path = cachePath(for: url)
         do {
             try data.write(to: path)
@@ -717,26 +727,64 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     }
     
     func loadFromCache(url: URL) -> Data? {
+        if let localURL = internalLocalFileURL(for: url) {
+            return try? Data(contentsOf: localURL)
+        }
+        return nil
+    }
+    
+    /// Returns a local file:// URL if the media is cached or exists in Blossom.
+    /// This is essential for AVFoundation which often fails to play from localhost/127.0.0.1
+    /// or requires specific configurations for local network access.
+    func localFileURL(for url: URL) -> URL? {
+        // Guard: For local relay URLs (including domains), we MUST use HTTP(S) to preserve 
+        // the MIME type hints provided by the Blossom server. Resolving to file:// 
+        // causes AVFoundation to fail on extensionless hashed files.
+        if isLocalURL(url) {
+            return nil
+        }
+        return internalLocalFileURL(for: url)
+    }
+
+    /// Internal version that resolves file paths even for local relay URLs.
+    /// Used for components like AVAsset thumbnail generation which can handle raw files.
+    func internalLocalFileURL(for url: URL) -> URL? {
         // 1. Try to find if it's a local Blossom file we already have
-        let hash = self.hash(url: url)
-        if hash.count == 64 {
-            let blossomURL = blossomDirectory.appendingPathComponent(hash)
-            if let data = try? Data(contentsOf: blossomURL) {
-                return data
+        let hashValue = self.hash(url: url)
+        if hashValue.count == 64 {
+            let blossomURL = blossomDirectory.appendingPathComponent(hashValue)
+            if FileManager.default.fileExists(atPath: blossomURL.path) {
+                return blossomURL
             }
         }
         
         // 2. Try the general cache
         let path = cachePath(for: url)
-        return try? Data(contentsOf: path)
+        if FileManager.default.fileExists(atPath: path.path) {
+            return path
+        }
+        
+        return nil
     }
     
     func fetchData(url: URL) async -> Data? {
-        if let cached = loadFromCache(url: url) {
-            return cached
+        // Bypass cache for local relay Blossom URLs to avoid redundant storage and preserve MIME handling
+        if isLocalURL(url) {
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    return data
+                }
+            } catch {
+                print("MediaCacheService: Failed to fetch local URL \(url.absoluteString): \(error.localizedDescription)")
+            }
+            return nil
         }
-        
+
         let filename = hash(url: url)
+        if let cachedData = try? Data(contentsOf: cacheDirectory.appendingPathComponent(filename)) {
+            return cachedData
+        }
         
         return await withCheckedContinuation { continuation in
             downloadLock.lock()
@@ -768,6 +816,43 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
                     }
                 }.resume()
             }
+        }
+    }
+    
+    func updateLocalHost(_ host: String) {
+        hostLock.lock()
+        defer { hostLock.unlock() }
+        self.localHost = host.lowercased()
+        print("MediaCacheService: Updated local host to \(self.localHost)")
+    }
+    
+    private func isLocalURL(_ url: URL) -> Bool {
+        hostLock.lock()
+        let sanitized = self.localHost
+        hostLock.unlock()
+        
+        let host = url.host?.lowercased() ?? ""
+        
+        // Match against localhost, 127.0.0.1
+        if host == "localhost" || host == "127.0.0.1" {
+            return true
+        }
+        
+        if sanitized.isEmpty { return false }
+        
+        // Split by colon to ignore port for comparison
+        let sanitizedHost = sanitized.split(separator: ":").first.map(String.init) ?? sanitized
+        
+        return host == sanitizedHost || host.hasSuffix("." + sanitizedHost)
+    }
+    
+    func getSource(for url: URL) -> MediaSource {
+        if isLocalURL(url) {
+            return .blossom
+        } else if isCached(url: url) {
+            return .cached
+        } else {
+            return .remote
         }
     }
     
@@ -812,6 +897,10 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         case cached = "Cached"
         case remote = "Remote"
         
+        var isLocal: Bool {
+            return self == .blossom
+        }
+        
         var color: Color {
             switch self {
             case .blossom: return .green
@@ -829,15 +918,6 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         }
     }
     
-    func getSource(for url: URL) -> MediaSource {
-        if url.host == "127.0.0.1" || url.host == "localhost" {
-            return .blossom
-        } else if isCached(url: url) {
-            return .cached
-        } else {
-            return .remote
-        }
-    }
 }
 
 struct Bech32 {

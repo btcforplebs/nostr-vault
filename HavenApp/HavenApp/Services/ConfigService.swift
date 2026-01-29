@@ -72,6 +72,9 @@ class ConfigService: ObservableObject {
         if loadedSuccessfully || recovered || !FileManager.default.fileExists(atPath: envURL.path) {
             save()
         }
+        
+        // Push initial host to MediaCacheService for thread-safe access
+        MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
     }
     
     private func loadRelayLists() {
@@ -129,6 +132,9 @@ class ConfigService: ObservableObject {
         } else {
             config.relayURL = trimmedURL
         }
+        
+        // Sync with MediaCacheService for non-main-actor access
+        MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
         
         // Ensure data dir exists
         try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)

@@ -47,15 +47,19 @@ struct ViewerView: View {
     }
     
     var allMediaItems: [MediaItem] {
-        var items: [MediaItem] = []
+        // Group by URL: prioritize remote items (which have note timestamps) over local blossom items (file timestamps)
+        var latestItems: [URL: MediaItem] = [:]
+        
+        // 1. Add blossom items if relevant
         if relayManager.isRunning {
-            // Blossom media is always considered "mine" as it is hosted locally
             if contentFilter == .all || contentFilter == .mine {
-                items.append(contentsOf: blossomMedia)
+                for item in blossomMedia {
+                    latestItems[item.url] = item
+                }
             }
         }
         
-        // Filter remote media based on the event it came from
+        // 2. Add remote items (these have event creation dates), overwriting blossom items for the same URL 
         let remoteItems = nostrService.noteMedia.filter { item in
             switch contentFilter {
             case .all: return true
@@ -68,18 +72,10 @@ struct ViewerView: View {
                 return false
             }
         }
-        items.append(contentsOf: remoteItems)
         
-        // Group by URL and pick the latest date for each
-        var latestItems: [URL: MediaItem] = [:]
-        for item in items {
-            if let existing = latestItems[item.url] {
-                if item.dateAdded > existing.dateAdded {
-                    latestItems[item.url] = item
-                }
-            } else {
-                latestItems[item.url] = item
-            }
+        for item in remoteItems {
+            // Always prefer remote item for its accurate note publication time
+            latestItems[item.url] = item
         }
         
         return Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
@@ -294,16 +290,13 @@ struct ViewerView: View {
                     if item.type == .video {
                         VideoPlayerView(url: item.url)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding()
                     } else if item.url.isGIF {
                         AnimatedImage(url: item.url, contentMode: .fit, shouldAnimate: true)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding()
                     } else {
                         // Default to image for non-video items
                         RetryableAsyncImage(url: item.url, contentMode: .fit)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding()
                     }
                     
                     Spacer()
@@ -711,20 +704,17 @@ struct RetryableAsyncImage: View {
     }
     
     private func checkCache() {
+        // 1. Try to load it directly from disk cache (General cache or Blossom)
         if let data = MediaCacheService.shared.loadFromCache(url: url),
            let image = decode(data: data) {
             self.cachedImage = image
-        } else if targetSize != nil {
-            // Force manual loading for grid items to ensure we downsample
+            return
+        }
+        
+        // 2. If it's a grid item (targetSize set) or not found, try fetching
+        // Note: For local Blossom, fetchData just pulls from local server but does not re-cache
+        if targetSize != nil || self.cachedImage == nil {
             autoCache()
-        } else if url.host == "127.0.0.1" || url.host == "localhost" {
-            // Local Blossom - let AsyncImage handle it directly without caching
-            // This improves performance and reduces memory pressure
-        } else {
-            // Remote and not cached - trigger automatic background cache
-            if !configService.config.disableMediaCache {
-                autoCache()
-            }
         }
     }
     
@@ -825,24 +815,33 @@ struct VideoThumbnailView: View {
         isLoading = true
         
         Task {
-            // Use fetchData to handle deduplication and ensures we have the file locally
-            guard let _ = await MediaCacheService.shared.fetchData(url: url) else {
-                await MainActor.run { self.isLoading = false }
-                return
+            // 1. Check if we already have it locally (cached or blossom)
+            // Use localFileURL: returns HTTP URL for local Blossom (to preserve MIME), 
+            // and file:// for cached remote media.
+            var resolvedURL = MediaCacheService.shared.localFileURL(for: url)
+            
+            // 2. If not local, download it first
+            if resolvedURL == nil && !MediaCacheService.shared.getSource(for: url).isLocal {
+                guard let _ = await MediaCacheService.shared.fetchData(url: url) else {
+                    await MainActor.run { self.isLoading = false }
+                    return
+                }
+                resolvedURL = MediaCacheService.shared.localFileURL(for: url)
             }
             
-            // Now that it is cached, use the local file URL for AVAsset
-            let localURL = MediaCacheService.shared.cachePath(for: url)
-            let asset = AVAsset(url: localURL)
+            let finalURL = resolvedURL ?? url
+            
+            // 3. Generate thumbnail from local asset
+            let asset = AVAsset(url: finalURL)
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 400, height: 400)
             
-            let time = CMTime(seconds: 1, preferredTimescale: 60)
+            // Use a very early timestamp (0.1s) to support short videos
+            let time = CMTime(seconds: 0.1, preferredTimescale: 60)
             
-            // Add a small sleep to ensure the file system has settled after download/write
-            // This helps avoid the -12847 FFR_Common error in AVFoundation
-            try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s
+            // AVAssetImageGenerator can sometimes fail if called too quickly after download
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
             
             generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) { _, image, _, _, _ in
                 DispatchQueue.main.async {

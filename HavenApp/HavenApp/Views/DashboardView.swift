@@ -101,6 +101,22 @@ struct DashboardView: View {
         .onAppear {
             // refreshStats without a URL only updates local disk sizes (storage, blossom, cache)
             statsService.refreshStats()
+            
+            // If already running, also trigger a full refresh with counts
+            let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
+            
+            if relayManager.isRunning && !relayManager.isBooting {
+                statsService.refreshStats(relayURLString: urlString)
+            } else if relayManager.state == .booting || relayManager.isRunning {
+                // If booting or just started, retry after a short delay to allow connections to stabilize
+                print("Dashboard: Relay is booting or just started. Scheduling retry for stats...")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                    if relayManager.isRunning {
+                        print("Dashboard: Retrying initial stats refresh...")
+                        statsService.refreshStats(relayURLString: urlString)
+                    }
+                }
+            }
         }
         .onChange(of: relayManager.isBooting) { oldValue, newValue in
             // When booting finishes, refresh the full stats including remote relay counts
