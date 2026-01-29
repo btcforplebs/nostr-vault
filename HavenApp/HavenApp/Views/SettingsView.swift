@@ -278,6 +278,20 @@ struct AdvancedSettingsView: View {
                     .textSelection(.enabled)
             }
             
+            Section("Media Cache") {
+                Toggle("Disable Media Cache", isOn: $configService.config.disableMediaCache)
+                
+                Button(role: .destructive) {
+                    MediaCacheService.shared.clearCache()
+                } label: {
+                    Label("Clear Media Cache", systemImage: "trash")
+                }
+                
+                Text("Clearing the cache will remove downloaded remote images but won't touch your local Blossom data.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
             Section("Logging") {
                 Picker("Log Level", selection: $configService.config.logLevel) {
                     Text("Debug").tag("DEBUG")

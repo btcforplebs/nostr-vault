@@ -3,6 +3,8 @@ import Combine
 
 @MainActor
 class StatsService: ObservableObject {
+    static let shared = StatsService()
+    
     @Published var storageSize: Int64 = 0
     @Published var blossomSize: Int64 = 0
     @Published var cacheSize: Int64 = 0
@@ -32,13 +34,13 @@ class StatsService: ObservableObject {
                 }
             }
             .store(in: &cancellables)
-            
-        refreshStats()
     }
     
     func refreshStats(relayURLString: String? = nil) {
+        if isUpdatingCount { return }
+        self.isUpdatingCount = true
+        
         Task { @MainActor in
-            self.isUpdatingCount = true
             defer { self.isUpdatingCount = false }
             
             let relayDir = ConfigService.shared.relayDataDir

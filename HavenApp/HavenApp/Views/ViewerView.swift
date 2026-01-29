@@ -13,6 +13,7 @@ struct ViewerView: View {
     @State private var selectedMedia: MediaItem? = nil
     @State private var initialLoad = false
     @State private var isLoadingMore = false
+    @State private var isRefreshingMedia = false
     @State private var contentFilter: ContentFilter = .all
     
     enum ContentFilter {
@@ -35,7 +36,7 @@ struct ViewerView: View {
             switch contentFilter {
             case .all: return true
             case .mine: return event.pubkey == nostrService.ownerHexPubkey
-            case .tagged: return event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
+            case .tagged: return event.pubkey != nostrService.ownerHexPubkey && event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
             }
         }
         
@@ -60,6 +61,7 @@ struct ViewerView: View {
             case .all: return true
             case .mine: return item.pubkey == nostrService.ownerHexPubkey
             case .tagged: 
+                if item.pubkey == nostrService.ownerHexPubkey { return false }
                 if let tags = item.tags {
                     return tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
                 }
@@ -103,7 +105,10 @@ struct ViewerView: View {
                         }
                         ModeButton(title: "Media", icon: "photo.on.rectangle", isSelected: viewMode == .media) {
                             viewMode = .media
-                            loadLocalMedia()
+                            // Only load media if relay is ready
+                            if relayManager.isRunning && !relayManager.isBooting {
+                                loadLocalMedia()
+                            }
                         }
                     }
                     .padding(4)
@@ -180,14 +185,16 @@ struct ViewerView: View {
             nostrService.resetConnections()
         }
         .onChange(of: relayManager.isBooting) { oldValue, newValue in
+            // When booting transitions from true -> false, we refresh
             if !newValue && relayManager.isRunning {
-                // Relay finished booting, connect now
                 refreshAll()
             }
         }
+        // Combined trigger: refresh if we weren't running but now are (and not booting)
         .onChange(of: relayManager.isRunning) { oldValue, newValue in
-            if newValue && !relayManager.isBooting {
+            if newValue && !relayManager.isBooting && !initialLoad {
                 refreshAll()
+                initialLoad = true
             }
         }
         .overlay(fullScreenOverlay)
@@ -283,7 +290,8 @@ struct ViewerView: View {
                     
                     Spacer()
                     
-                    if item.url.isVideo {
+                    // Use item.type instead of url extension checks for Blossom compatibility
+                    if item.type == .video {
                         VideoPlayerView(url: item.url)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding()
@@ -291,7 +299,8 @@ struct ViewerView: View {
                         AnimatedImage(url: item.url, contentMode: .fit, shouldAnimate: true)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding()
-                    } else if item.url.isImage {
+                    } else {
+                        // Default to image for non-video items
                         RetryableAsyncImage(url: item.url, contentMode: .fit)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding()
@@ -310,6 +319,12 @@ struct ViewerView: View {
     }
     
     func refreshAll() {
+        // Only proceed if relay is actually ready
+        guard relayManager.isRunning && !relayManager.isBooting else {
+            print("ViewerView: Skipping refresh - relay not ready")
+            return
+        }
+        
         nostrService.resetConnections()
         // Use the centralized nostrURL which handles local vs remote correctly
         let urls = [
@@ -336,34 +351,75 @@ struct ViewerView: View {
     }
     
     func loadLocalMedia() {
-        // Use the actual data directory from ConfigService
-        let relayDataDir = configService.relayDataDir
-        let blossomDir = relayDataDir.appendingPathComponent(configService.config.blossomPath)
+        // Concurrency guard
+        if isRefreshingMedia { return }
         
-        do {
-            if !FileManager.default.fileExists(atPath: blossomDir.path) {
-                try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
-                self.blossomMedia = []
-                return
-            }
-            
-            let fileURLs = try FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey])
-            let items = fileURLs.compactMap { url -> MediaItem? in
-                let filename = url.lastPathComponent
-                if filename.starts(with: ".") || filename == "LOCK" { return nil }
-                // Use the centralized webURL which handles local vs remote correctly
-                guard let serveURL = URL(string: "\(configService.config.webURL)/\(filename)") else { return nil }
+        // Only load if relay is ready
+        guard relayManager.isRunning && !relayManager.isBooting else {
+            print("ViewerView: Skipping media load - relay not ready")
+            self.blossomMedia = []
+            return
+        }
+        
+        self.isRefreshingMedia = true
+        
+        // Use a Task for non-blocking I/O
+        Task {
+            let relayDataDir = configService.relayDataDir
+            let blossomPath = configService.config.blossomPath
+            let ownerHex = nostrService.ownerHexPubkey
+            let webURL = configService.config.webURL
+
+            let result = await Task.detached(priority: .background) { () -> [MediaItem] in
+                let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
+                if !FileManager.default.fileExists(atPath: blossomDir.path) {
+                    try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
+                    return []
+                }
                 
-                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-                let date = (attributes?[.creationDate] as? Date) ?? (attributes?[.modificationDate] as? Date) ?? Date()
+                guard let fileURLs = try? FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: [.creationDateKey]) else {
+                    return []
+                }
                 
-                let mediaType: MediaItem.MediaType = serveURL.isVideo ? .video : .image
-                // Local files are implicitly "mine"
-                return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: nostrService.ownerHexPubkey, tags: nil)
+                return fileURLs.compactMap { fileURL -> MediaItem? in
+                    let filename = fileURL.lastPathComponent
+                    if filename.starts(with: ".") || filename == "LOCK" { return nil }
+                    guard let serveURL = URL(string: "\(webURL)/\(filename)") else { return nil }
+                    
+                    let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+                    let date = (attributes?[.creationDate] as? Date) ?? (attributes?[.modificationDate] as? Date) ?? Date()
+                    
+                    var mediaType: MediaItem.MediaType = .image
+                    if serveURL.pathExtension.isEmpty {
+                        if let handle = try? FileHandle(forReadingFrom: fileURL),
+                           let data = try? handle.read(upToCount: 12),
+                           data.count >= 12 {
+                            try? handle.close()
+                            let bytes = [UInt8](data)
+                            if bytes.count >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
+                                mediaType = .video
+                            } else if bytes.count >= 4 && bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3 {
+                                mediaType = .video
+                            } else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+                                        bytes[8] == 0x41 && bytes[9] == 0x56 && bytes[10] == 0x49 {
+                                mediaType = .video
+                            }
+                        }
+                    } else {
+                        mediaType = serveURL.isVideo ? .video : .image
+                    }
+                    
+                    return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil)
+                }
+            }.value
+
+            await MainActor.run {
+                if self.blossomMedia.count != result.count {
+                    print("ViewerView: Loaded \(result.count) Blossom media items")
+                }
+                self.blossomMedia = result
+                self.isRefreshingMedia = false
             }
-            self.blossomMedia = items
-        } catch {
-            print("Error loading blossom media: \(error)")
         }
     }
 }
@@ -534,27 +590,18 @@ struct MediaGridItem: View {
     var body: some View {
         ZStack {
             Group {
-                if item.url.isVideo {
+                // Use item.type instead of url extension checks for Blossom compatibility
+                if item.type == .video {
                     VideoThumbnailView(url: item.url)
                         // VideoThumbnailView internally uses .fill and resizable
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if item.url.isGIF {
                     AnimatedImage(url: item.url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 200, height: 200))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if item.url.isImage {
+                } else {
+                    // Default to image for non-video items
                     RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 200, height: 200))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    // Fallback using GeometryReader to fill space
-                    GeometryReader { geo in
-                        ZStack {
-                            Rectangle().fill(Color.gray.opacity(0.1))
-                            Text(item.url.pathExtension.uppercased())
-                                .font(.caption2.bold())
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(width: geo.size.width, height: geo.size.height)
-                    }
                 }
             }
         }
@@ -577,6 +624,7 @@ struct MediaGridItem: View {
 }
 
 struct RetryableAsyncImage: View {
+    @EnvironmentObject var configService: ConfigService
     let url: URL
     let contentMode: ContentMode
     var targetSize: CGSize? = nil
@@ -670,30 +718,31 @@ struct RetryableAsyncImage: View {
             // Force manual loading for grid items to ensure we downsample
             autoCache()
         } else if url.host == "127.0.0.1" || url.host == "localhost" {
-            // It's local blossom, AsyncImage handles it fine
+            // Local Blossom - let AsyncImage handle it directly without caching
+            // This improves performance and reduces memory pressure
         } else {
             // Remote and not cached - trigger automatic background cache
-            autoCache()
+            if !configService.config.disableMediaCache {
+                autoCache()
+            }
         }
     }
     
     private func autoCache() {
-        let downloadRequest = BlockOperation {
-            let semaphore = DispatchSemaphore(value: 0)
-            URLSession.shared.dataTask(with: url) { data, response, _ in
-                if let data = data, let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                    MediaCacheService.shared.saveToCache(url: url, data: data)
-                    if let image = self.decode(data: data) {
-                        DispatchQueue.main.async {
-                            self.cachedImage = image
-                        }
-                    }
+        isLoading = true
+        Task {
+            if let data = await MediaCacheService.shared.fetchData(url: url),
+               let image = decode(data: data) {
+                await MainActor.run {
+                    self.cachedImage = image
+                    self.isLoading = false
                 }
-                semaphore.signal()
-            }.resume()
-            semaphore.wait()
+            } else {
+                await MainActor.run {
+                    self.isLoading = false
+                }
+            }
         }
-        MediaCacheService.shared.downloadQueue.addOperation(downloadRequest)
     }
     
     nonisolated private func decode(data: Data) -> NSImage? {
@@ -773,35 +822,35 @@ struct VideoThumbnailView: View {
     }
     
     private func loadThumbnail() {
-        // Check cache first
-        if let cachedData = MediaCacheService.shared.loadFromCache(url: url),
-           let image = NSImage(data: cachedData) {
-            self.thumbnail = image
-            self.isLoading = false
-            return
-        }
-        
         isLoading = true
-        let asset = AVAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 400, height: 400)
         
-        let time = CMTime(seconds: 1, preferredTimescale: 60)
-        generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) { _, image, _, _, _ in
-            DispatchQueue.main.async {
-                if let image = image {
-                    let nsImage = NSImage(cgImage: image, size: NSZeroSize)
-                    self.thumbnail = nsImage
-                    
-                    // Save to cache
-                    if let tiffData = nsImage.tiffRepresentation,
-                       let bitmap = NSBitmapImageRep(data: tiffData),
-                       let pngData = bitmap.representation(using: .png, properties: [:]) {
-                        MediaCacheService.shared.saveToCache(url: self.url, data: pngData)
+        Task {
+            // Use fetchData to handle deduplication and ensures we have the file locally
+            guard let _ = await MediaCacheService.shared.fetchData(url: url) else {
+                await MainActor.run { self.isLoading = false }
+                return
+            }
+            
+            // Now that it is cached, use the local file URL for AVAsset
+            let localURL = MediaCacheService.shared.cachePath(for: url)
+            let asset = AVAsset(url: localURL)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 400, height: 400)
+            
+            let time = CMTime(seconds: 1, preferredTimescale: 60)
+            
+            // Add a small sleep to ensure the file system has settled after download/write
+            // This helps avoid the -12847 FFR_Common error in AVFoundation
+            try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s
+            
+            generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) { _, image, _, _, _ in
+                DispatchQueue.main.async {
+                    if let image = image {
+                        self.thumbnail = NSImage(cgImage: image, size: NSZeroSize)
                     }
+                    self.isLoading = false
                 }
-                self.isLoading = false
             }
         }
     }

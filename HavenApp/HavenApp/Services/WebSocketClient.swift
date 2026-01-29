@@ -13,7 +13,9 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
 
     private var webSocketTask: URLSessionWebSocketTask?
     @Published var connectionState: ConnectionState = .disconnected
-    @Published var lastError: String?
+    private var lastError: String?
+    private var isClosing = false
+    var isTemporary = false
     let messageSubject = PassthroughSubject<String, Never>()
     
     private var url: URL?
@@ -27,13 +29,19 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
         self.url = url
         disconnect()
         
-        print("WebSocketClient: Connecting to \(url.absoluteString)")
+        if !isTemporary {
+            print("WebSocketClient: Connecting to \(url.absoluteString)")
+        }
+        isClosing = false
         DispatchQueue.main.async {
             self.connectionState = .connecting
             self.lastError = nil
         }
         
-        let task = Self.session.webSocketTask(with: url)
+        var request = URLRequest(url: url)
+        request.setValue("Haven/1.0", forHTTPHeaderField: "User-Agent")
+        
+        let task = Self.session.webSocketTask(with: request)
         task.delegate = self
         webSocketTask = task
         task.resume()
@@ -41,6 +49,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
     }
     
     func disconnect() {
+        isClosing = true
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         DispatchQueue.main.async {
@@ -62,10 +71,12 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
         task.receive { [weak self] result in
             switch result {
             case .failure(let error):
-                print("WebSocket receive failure: \(error.localizedDescription)")
-                Task { @MainActor in
-                    self?.connectionState = .error
-                    self?.lastError = error.localizedDescription
+                if self?.isClosing == false {
+                    print("WebSocket receive failure: \(error.localizedDescription)")
+                    Task { @MainActor in
+                        self?.connectionState = .error
+                        self?.lastError = error.localizedDescription
+                    }
                 }
             case .success(let message):
                 switch message {
@@ -84,13 +95,19 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
     
     // MARK: - URLSessionWebSocketDelegate
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        print("WebSocketClient: Connected to \(url?.absoluteString ?? "unknown")")
+        if !isTemporary {
+            print("WebSocketClient: Connected to \(url?.absoluteString ?? "unknown")")
+        }
         DispatchQueue.main.async { self.connectionState = .connected }
     }
     
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        print("WebSocketClient: Closed with code \(closeCode)")
-        DispatchQueue.main.async { self.connectionState = .disconnected }
+        if !isClosing {
+            print("WebSocketClient: Closed with code \(closeCode)")
+        }
+        DispatchQueue.main.async {
+            self.connectionState = .disconnected
+        }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -129,6 +146,12 @@ class NostrService: ObservableObject {
     // Batching updates to the UI
     private let eventUpdateSubject = PassthroughSubject<Void, Never>()
     
+    // Pagination tracking
+    private var activeSubscriptionCount = 0
+    private var profilesInFlight = Set<String>()
+    private var profileFetchQueue = Set<String>()
+    private var profileFlushCancellable: AnyCancellable?
+    
     init() {
         setupThrottling()
         loadProfiles()
@@ -144,6 +167,57 @@ class NostrService: ObservableObject {
         if let hex = Bech32.decode(npub)?.hexString {
             self.ownerHexPubkey = hex
             print("NostrService: Owner Hex Pubkey: \(hex)")
+        }
+    }
+    
+    private func setupMetadataFlusher() {
+        profileFlushCancellable = Timer.publish(every: 0.5, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                self?.flushMetadataRequests()
+            }
+    }
+    
+    private func flushMetadataRequests() {
+        guard !profileFetchQueue.isEmpty else { return }
+        let pubkeys = Array(profileFetchQueue)
+        profileFetchQueue.removeAll()
+        
+        // Use blastr relays or defaults if empty
+        var relays = ConfigService.shared.config.blastrRelays
+        if relays.isEmpty {
+            relays = ["wss://relay.damus.io", "wss://relay.primal.net", "wss://nos.lol"]
+        }
+        
+        print("NostrService: Batch fetching metadata for \(pubkeys.count) pubkeys from \(relays.count) Blastr relays")
+        
+        let uniqueRelays = Array(Set(relays)).compactMap { URL(string: $0) }
+        
+        for url in uniqueRelays {
+            let client = WebSocketClient()
+            client.isTemporary = true
+            
+            client.messageSubject
+                .receive(on: processingQueue)
+                .sink { [weak self] message in
+                    self?.processMessage(message)
+                }
+                .store(in: &cancellables)
+            
+            client.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] state in
+                    if state == .connected {
+                        self?.sendProfileRequest(to: client, pubkeys: pubkeys)
+                        // Disconnect after results come in (or reasonable timeout)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                            client.disconnect()
+                        }
+                    }
+                }
+                .store(in: &cancellables)
+            
+            client.connect(url: url)
         }
     }
     
@@ -177,43 +251,16 @@ class NostrService: ObservableObject {
     }
     
     func fetchMissingProfiles(for pubkeys: [String]) {
-        let missing = pubkeys.filter { profileNames[$0] == nil }
+        let missing = pubkeys.filter { profileNames[$0] == nil && !profilesInFlight.contains($0) }
         guard !missing.isEmpty else { return }
         
-        // Use blastr relays or defaults if empty
-        var relays = ConfigService.shared.config.blastrRelays
-        if relays.isEmpty {
-            relays = ["wss://relay.damus.io", "wss://relay.primal.net", "wss://nos.lol"]
+        for pubkey in missing {
+            profilesInFlight.insert(pubkey)
+            profileFetchQueue.insert(pubkey)
         }
         
-        print("NostrService: Fetching metadata for \(missing.count) pubkeys from \(relays.count) Blastr relays")
-        
-        let uniqueRelays = Array(Set(relays)).compactMap { URL(string: $0) }
-        
-        for url in uniqueRelays {
-            let client = WebSocketClient()
-            
-            client.messageSubject
-                .receive(on: processingQueue)
-                .sink { [weak self] message in
-                    self?.processMessage(message)
-                }
-                .store(in: &cancellables)
-            
-            client.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] state in
-                    if state == .connected {
-                        self?.sendProfileRequest(to: client, pubkeys: missing)
-                        // Disconnect after a short delay
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                            client.disconnect()
-                        }
-                    }
-                }
-                .store(in: &cancellables)
-            
-            client.connect(url: url)
+        if profileFlushCancellable == nil {
+            setupMetadataFlusher()
         }
     }
     
@@ -250,8 +297,12 @@ class NostrService: ObservableObject {
             .store(in: &cancellables)
     }
     
+    
     func fetchNotes(from relayURLs: [URL], until: Int64? = nil) {
-        DispatchQueue.main.async { self.isFetching = true }
+        DispatchQueue.main.async { 
+            self.isFetching = true 
+            self.activeSubscriptionCount = relayURLs.count
+        }
         for url in relayURLs {
             let urlString = url.absoluteString
             
@@ -341,9 +392,14 @@ class NostrService: ObservableObject {
             
             if type == "EOSE" {
                 DispatchQueue.main.async { [weak self] in
-                    self?.isFetching = false
-                    self?.events.sort(by: { $0.created_at > $1.created_at })
-                    self?.eventUpdateSubject.send()
+                    guard let self = self else { return }
+                    self.activeSubscriptionCount -= 1
+                    if self.activeSubscriptionCount <= 0 {
+                        self.isFetching = false
+                        self.activeSubscriptionCount = 0
+                    }
+                    self.events.sort(by: { $0.created_at > $1.created_at })
+                    self.eventUpdateSubject.send()
                 }
             }
         }
@@ -374,6 +430,7 @@ class NostrService: ObservableObject {
                         }
                         
                         if changed {
+                            self?.profilesInFlight.remove(event.pubkey)
                             self?.saveProfiles()
                             self?.eventUpdateSubject.send()
                         }
@@ -448,7 +505,9 @@ class NostrService: ObservableObject {
                             return (existing, false)
                         } else {
                             print("NostrService [\(relayTag)]: Creating new client")
-                            return (WebSocketClient(), true)
+                            let newClient = WebSocketClient()
+                            newClient.isTemporary = true
+                            return (newClient, true)
                         }
                     }
                     
@@ -584,23 +643,6 @@ class NostrService: ObservableObject {
             }
         }
         
-        // Also look for potential blossom hashes that might be split from their hostname
-        let hashPattern = #"\b([a-f0-9]{64}(?:\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic|tiff))?)\b"#
-        if let hashRegex = try? NSRegularExpression(pattern: hashPattern, options: .caseInsensitive) {
-            let matches = hashRegex.matches(in: content, options: [], range: NSRange(location: 0, length: nsString.length))
-            for match in matches {
-                let potentialHash = nsString.substring(with: match.range)
-                // If we find a hash and it's not already part of a URL, assume it's for the local relay
-                if !urls.contains(where: { $0.absoluteString.contains(potentialHash) }) {
-                    // Try to resolve against the current webURL
-                    let webURLString = ConfigService.shared.config.webURL
-                    if let fullURL = URL(string: "\(webURLString)/\(potentialHash)") {
-                        urls.append(fullURL)
-                    }
-                }
-            }
-        }
-        
         return urls.map { url in
             var finalURL = url
             
@@ -626,6 +668,9 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     static let shared = MediaCacheService()
     
     private let cacheDirectory: URL
+    private var inFlightDownloads: [String: [CheckedContinuation<Data?, Never>]] = [:]
+    private let downloadLock = NSLock()
+    
     let downloadQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "MediaCacheDownloadQueue"
@@ -686,6 +731,46 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         return try? Data(contentsOf: path)
     }
     
+    func fetchData(url: URL) async -> Data? {
+        if let cached = loadFromCache(url: url) {
+            return cached
+        }
+        
+        let filename = hash(url: url)
+        
+        return await withCheckedContinuation { continuation in
+            downloadLock.lock()
+            if var waiters = inFlightDownloads[filename] {
+                waiters.append(continuation)
+                inFlightDownloads[filename] = waiters
+                downloadLock.unlock()
+            } else {
+                inFlightDownloads[filename] = [continuation]
+                downloadLock.unlock()
+                
+                print("MediaCacheService: Starting download for \(filename) (URL: \(url.absoluteString))")
+                // Start the actual download
+                URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+                    self?.downloadLock.lock()
+                    let waiters = self?.inFlightDownloads[filename] ?? []
+                    self?.inFlightDownloads.removeValue(forKey: filename)
+                    self?.downloadLock.unlock()
+                    
+                    if let data = data, let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                        self?.saveToCache(url: url, data: data)
+                        for waiter in waiters {
+                            waiter.resume(returning: data)
+                        }
+                    } else {
+                        for waiter in waiters {
+                            waiter.resume(returning: nil)
+                        }
+                    }
+                }.resume()
+            }
+        }
+    }
+    
     private func hash(url: URL) -> String {
         // Optimization: If the URL contains a 64-char Blossom hash, use it directly as the cache key.
         // This aligns with how the Go relay stores files and allows different URLs for the same
@@ -705,6 +790,22 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         let hashed = SHA256.hash(data: inputData)
         return hashed.compactMap { String(format: "%02x", $0) }.joined()
     }
+    
+    /// Clears the media cache directory while preserving Blossom data
+    func clearCache() {
+        do {
+            let cacheContents = try FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)
+            var deletedCount = 0
+            for fileURL in cacheContents {
+                try FileManager.default.removeItem(at: fileURL)
+                deletedCount += 1
+            }
+            print("MediaCacheService: Cleared \(deletedCount) cached files (Blossom data preserved)")
+        } catch {
+            print("MediaCacheService: Failed to clear cache: \(error.localizedDescription)")
+        }
+    }
+    
     
     enum MediaSource: String {
         case blossom = "Local"

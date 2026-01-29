@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		8D8CEECD2F2A96C90038A62B /* MediaTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D8CEECC2F2A96C90038A62B /* MediaTypeDetector.swift */; };
 		8DAF2C302F2019EF001149F2 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DAF2C2F2F2019EF001149F2 /* VideoPlayerView.swift */; };
 		AAAA0001 /* HavenApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFF0001 /* HavenApp.swift */; };
 		AAAA0002 /* HavenConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFF0002 /* HavenConfig.swift */; };
@@ -33,6 +34,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		8D8CEECC2F2A96C90038A62B /* MediaTypeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTypeDetector.swift; sourceTree = "<group>"; };
 		8DAF2C2F2F2019EF001149F2 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
 		AAAA9001 /* StatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsService.swift; sourceTree = "<group>"; };
 		FFFF0001 /* HavenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp.swift; sourceTree = "<group>"; };
@@ -56,7 +58,7 @@
 		FFFF0019 /* AnimatedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedImage.swift; sourceTree = "<group>"; };
 		FFFF0020 /* HavenApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HavenApp.entitlements; sourceTree = "<group>"; };
 		FFFF0021 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		FFFF0099 /* HavenApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = HavenApp.app; path = HAVEN.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FFFF0099 /* HAVEN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HAVEN.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FFFF0100 /* WelcomeWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindowView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -116,6 +118,7 @@
 				FFFF0013 /* RelayListEditor.swift */,
 				FFFF0014 /* LogsView.swift */,
 				FFFF0019 /* AnimatedImage.swift */,
+				8D8CEECC2F2A96C90038A62B /* MediaTypeDetector.swift */,
 				FFFF0100 /* WelcomeWindowView.swift */,
 			);
 			path = HavenApp/Views;
@@ -135,7 +138,7 @@
 		GGGG0099 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				FFFF0099 /* HavenApp.app */,
+				FFFF0099 /* HAVEN.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -157,7 +160,7 @@
 			);
 			name = HavenApp;
 			productName = HavenApp;
-			productReference = FFFF0099 /* HavenApp.app */;
+			productReference = FFFF0099 /* HAVEN.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -255,6 +258,7 @@
 				AAAA0100 /* WelcomeWindowView.swift in Sources */,
 				AAAA0021 /* AppDelegate.swift in Sources */,
 				AAAA9002 /* StatsService.swift in Sources */,
+				8D8CEECD2F2A96C90038A62B /* MediaTypeDetector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -395,6 +399,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
@@ -402,7 +407,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.1.1;
+				MARKETING_VERSION = 2.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
 				PRODUCT_NAME = HAVEN;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -424,6 +429,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
@@ -431,7 +437,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.1.1;
+				MARKETING_VERSION = 2.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
 				PRODUCT_NAME = HAVEN;
 				SWIFT_EMIT_LOC_STRINGS = YES;

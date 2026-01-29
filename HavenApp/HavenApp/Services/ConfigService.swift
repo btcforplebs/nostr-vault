@@ -26,26 +26,52 @@ class ConfigService: ObservableObject {
         // Create databases directory in Application Support (Sandboxed)
         relayDataDir = havenAppSupport.appendingPathComponent("haven_database", isDirectory: true)
         
+        var loadedSuccessfully = false
+        
         // Load existing config or create default
-        if let data = try? Data(contentsOf: configURL),
-           let loaded = try? JSONDecoder().decode(HavenConfig.self, from: data) {
-            config = loaded
-            
-            // Ensure defaults are applied for empty arrays
-            if config.importSeedRelays.isEmpty {
-                config.importSeedRelays = HavenConfig.default.importSeedRelays
-            }
-            if config.blastrRelays.isEmpty {
-                config.blastrRelays = HavenConfig.default.blastrRelays
+        if let data = try? Data(contentsOf: configURL) {
+            do {
+                let loaded = try JSONDecoder().decode(HavenConfig.self, from: data)
+                config = loaded
+                loadedSuccessfully = true
+                print("ConfigService: Successfully loaded configuration from disk")
+                
+                // Ensure defaults are applied for empty arrays
+                if config.importSeedRelays.isEmpty {
+                    config.importSeedRelays = HavenConfig.default.importSeedRelays
+                }
+                if config.blastrRelays.isEmpty {
+                    config.blastrRelays = HavenConfig.default.blastrRelays
+                }
+            } catch {
+                print("ConfigService: Error decoding configuration: \(error)")
+                config = HavenConfig.default
             }
         } else {
+            print("ConfigService: No config.json found at \(configURL.path), using defaults")
             config = HavenConfig.default
+        }
+        
+        // Setup Recovery: If hasCompletedSetup is false but .env exists, then setup was actually done
+        var recovered = false
+        let envURL = relayDataDir.appendingPathComponent(".env")
+        if !config.hasCompletedSetup && FileManager.default.fileExists(atPath: envURL.path) {
+            print("ConfigService: .env detected but hasCompletedSetup is false. Auto-recovering settings.")
+            recoverFromEnv()
+            recovered = true
         }
         
         loadRelayLists()
         
-        // Ensure configuration is synced to disk (updates .env with new defaults if code changed)
-        saveRelayLists()
+        // Ensure ownerNpub is sanitized (remove invisible junk characters like non-breaking spaces)
+        config.ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+            .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
+        
+        // Only save if we loaded successfully, recovered, or if it's a fresh install (no .env)
+        // This prevents overwriting a "broken" config.json with empty defaults on every startup
+        if loadedSuccessfully || recovered || !FileManager.default.fileExists(atPath: envURL.path) {
+            save()
+        }
     }
     
     private func loadRelayLists() {
@@ -68,6 +94,10 @@ class ConfigService: ObservableObject {
     }
     
     func save() {
+        // Ensure ownerNpub is sanitized (remove invisible junk characters like non-breaking spaces)
+        config.ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+            .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
+            
         do {
             let data = try JSONEncoder().encode(config)
             try data.write(to: configURL)
@@ -122,11 +152,6 @@ class ConfigService: ObservableObject {
                 try? data.write(to: blastrURL)
             }
         }
-        
-        // Also update .env just in case important paths changed
-        let envContent = generateEnvFile()
-        let envURL = relayDataDir.appendingPathComponent(".env")
-        try? envContent.write(to: envURL, atomically: true, encoding: String.Encoding.utf8)
     }
     
     private func updateLaunchAtLogin() {
@@ -142,14 +167,13 @@ class ConfigService: ObservableObject {
             }
         }
     }
-    
     /// Create the required files for Haven to run (.env, relay JSON files)
     func createRequiredFiles() {
         // Create relay data directory if needed
         try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
         
-        // Create .env file
-        let envContent = generateEnvFile()
+        // Create .env file - handled by RelayProcessManager on first run/setup
+        let envContent = RelayProcessManager.shared.generateMinimalEnv(config: config)
         let envURL = relayDataDir.appendingPathComponent(".env")
         try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
         
@@ -210,109 +234,64 @@ class ConfigService: ObservableObject {
         }
     }
     
-    private func generateEnvFile() -> String {
-        return """
-        OWNER_NPUB="\(config.ownerNpub)"
-        RELAY_URL="\(config.relayURL)"
-        RELAY_PORT=\(config.relayPort)
-        RELAY_BIND_ADDRESS="0.0.0.0"
-        DB_ENGINE="\(config.dbEngine)"
-        LMDB_MAPSIZE=0
-        // DATABASE_PATH and BLOSSOM_PATH are injected via environment for absolute paths
+    /// Reconstructs critical configuration from the existing .env file
+    private func recoverFromEnv() {
+        let envURL = relayDataDir.appendingPathComponent(".env")
+        guard let content = try? String(contentsOf: envURL, encoding: .utf8) else { return }
         
-        ## Private Relay Settings
-        PRIVATE_RELAY_NAME="\(config.privateRelayName)"
-        PRIVATE_RELAY_NPUB="\(config.ownerNpub)"
-        PRIVATE_RELAY_DESCRIPTION="\(config.privateRelayDescription)"
-        PRIVATE_RELAY_ICON="\(config.privateRelayIcon)"
-        PRIVATE_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL=50
-        PRIVATE_RELAY_EVENT_IP_LIMITER_INTERVAL=1
-        PRIVATE_RELAY_EVENT_IP_LIMITER_MAX_TOKENS=100
-        PRIVATE_RELAY_ALLOW_EMPTY_FILTERS=true
-        PRIVATE_RELAY_ALLOW_COMPLEX_FILTERS=true
-        PRIVATE_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL=3
-        PRIVATE_RELAY_CONNECTION_RATE_LIMITER_INTERVAL=5
-        PRIVATE_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS=9
+        let lines = content.components(separatedBy: .newlines)
+        for line in lines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedLine.isEmpty && !trimmedLine.hasPrefix("#") && !trimmedLine.hasPrefix("//") else { continue }
+            
+            let parts = trimmedLine.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            guard parts.count == 2 else { continue }
+            
+            let key = parts[0]
+            var value = parts[1]
+            
+            // Remove quotes if present, handling cases where there might be spaces inside/outside quotes
+            if value.hasPrefix("\"") {
+                value = String(value.dropFirst())
+                if value.hasSuffix("\"") {
+                    value = String(value.dropLast())
+                }
+            } else if value.hasPrefix("'") {
+                value = String(value.dropFirst())
+                if value.hasSuffix("'") {
+                    value = String(value.dropLast())
+                }
+            }
+            
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            switch key {
+            case "OWNER_NPUB": 
+                // Sanitize recovered npub immediately
+                config.ownerNpub = value.filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
+            case "RELAY_URL": config.relayURL = value
+            case "RELAY_PORT": config.relayPort = Int(value) ?? config.relayPort
+            case "DB_ENGINE": config.dbEngine = value
+            case "PRIVATE_RELAY_NAME": config.privateRelayName = value
+            case "PRIVATE_RELAY_DESCRIPTION": config.privateRelayDescription = value
+            case "PRIVATE_RELAY_ICON": config.privateRelayIcon = value
+            case "CHAT_RELAY_NAME": config.chatRelayName = value
+            case "CHAT_RELAY_DESCRIPTION": config.chatRelayDescription = value
+            case "CHAT_RELAY_ICON": config.chatRelayIcon = value
+            case "OUTBOX_RELAY_NAME": config.outboxRelayName = value
+            case "OUTBOX_RELAY_DESCRIPTION": config.outboxRelayDescription = value
+            case "OUTBOX_RELAY_ICON": config.outboxRelayIcon = value
+            case "INBOX_RELAY_NAME": config.inboxRelayName = value
+            case "INBOX_RELAY_DESCRIPTION": config.inboxRelayDescription = value
+            case "INBOX_RELAY_ICON": config.inboxRelayIcon = value
+            default: break
+            }
+        }
         
-        ## Chat Relay Settings
-        CHAT_RELAY_NAME="\(config.chatRelayName)"
-        CHAT_RELAY_NPUB="\(config.ownerNpub)"
-        CHAT_RELAY_DESCRIPTION="\(config.chatRelayDescription)"
-        CHAT_RELAY_ICON="\(config.chatRelayIcon)"
-        CHAT_RELAY_WOT_DEPTH=\(config.chatRelayWotDepth)
-        CHAT_RELAY_WOT_REFRESH_INTERVAL_HOURS=\(config.chatRelayWotRefreshHours)
-        CHAT_RELAY_MINIMUM_FOLLOWERS=\(config.chatRelayMinFollowers)
-        CHAT_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL=50
-        CHAT_RELAY_EVENT_IP_LIMITER_INTERVAL=1
-        CHAT_RELAY_EVENT_IP_LIMITER_MAX_TOKENS=100
-        CHAT_RELAY_ALLOW_EMPTY_FILTERS=false
-        CHAT_RELAY_ALLOW_COMPLEX_FILTERS=false
-        CHAT_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL=3
-        CHAT_RELAY_CONNECTION_RATE_LIMITER_INTERVAL=3
-        CHAT_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS=9
-        
-        ## Outbox Relay Settings
-        OUTBOX_RELAY_NAME="\(config.outboxRelayName)"
-        OUTBOX_RELAY_NPUB="\(config.ownerNpub)"
-        OUTBOX_RELAY_DESCRIPTION="\(config.outboxRelayDescription)"
-        OUTBOX_RELAY_ICON="\(config.outboxRelayIcon)"
-        OUTBOX_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL=10
-        OUTBOX_RELAY_EVENT_IP_LIMITER_INTERVAL=60
-        OUTBOX_RELAY_EVENT_IP_LIMITER_MAX_TOKENS=100
-        OUTBOX_RELAY_ALLOW_EMPTY_FILTERS=true
-        OUTBOX_RELAY_ALLOW_COMPLEX_FILTERS=true
-        OUTBOX_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL=3
-        OUTBOX_RELAY_CONNECTION_RATE_LIMITER_INTERVAL=1
-        OUTBOX_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS=9
-        
-        ## Inbox Relay Settings
-        INBOX_RELAY_NAME="\(config.inboxRelayName)"
-        INBOX_RELAY_NPUB="\(config.ownerNpub)"
-        INBOX_RELAY_DESCRIPTION="\(config.inboxRelayDescription)"
-        INBOX_RELAY_ICON="\(config.inboxRelayIcon)"
-        INBOX_PULL_INTERVAL_SECONDS=\(config.inboxPullIntervalSeconds)
-        INBOX_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL=10
-        INBOX_RELAY_EVENT_IP_LIMITER_INTERVAL=1
-        INBOX_RELAY_EVENT_IP_LIMITER_MAX_TOKENS=20
-        INBOX_RELAY_ALLOW_EMPTY_FILTERS=true
-        INBOX_RELAY_ALLOW_COMPLEX_FILTERS=true
-        INBOX_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL=3
-        INBOX_RELAY_CONNECTION_RATE_LIMITER_INTERVAL=1
-        INBOX_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS=9
-        
-        ## Import Settings
-        IMPORT_START_DATE="\(config.importStartDate)"
-        IMPORT_QUERY_INTERVAL_SECONDS=600
-        IMPORT_OWNER_NOTES_FETCH_TIMEOUT_SECONDS=60
-        IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS=120
-        IMPORT_SEED_RELAYS_FILE="relays_import.json"
-        
-        ## Backup Settings
-        BACKUP_PROVIDER="\(config.backupProvider)"
-        BACKUP_INTERVAL_HOURS=\(config.backupIntervalHours)
-        
-        ## Blastr Settings
-        BLASTR_RELAYS_FILE="relays_blastr.json"
-        
-        ## WOT Settings
-        WOT_FETCH_TIMEOUT_SECONDS=60
-        
-        ## LOGGING
-        HAVEN_LOG_LEVEL="\(config.logLevel)"
-        
-        ## Cloud Backup Settings
-        AWS_ACCESS_KEY_ID="\(config.awsAccessKeyId)"
-        AWS_SECRET_ACCESS_KEY="\(config.awsSecretAccessKey)"
-        AWS_REGION="\(config.awsRegion)"
-        AWS_BUCKET="\(config.awsBucket)"
-        
-        S3_ACCESS_KEY_ID="\(config.s3AccessKeyId)"
-        S3_SECRET_KEY="\(config.s3SecretKey)"
-        S3_ENDPOINT="\(config.s3Endpoint)"
-        S3_BUCKET_NAME="\(config.s3BucketName)"
-        S3_REGION="\(config.s3Region)"
-        
-        GCP_BUCKET_NAME="\(config.gcpBucketName)"
-        """
+        config.hasCompletedSetup = true
+        print("ConfigService: Successfully recovered critical settings from .env")
     }
+    
+    
+
 }

@@ -89,26 +89,56 @@ class RelayProcessManager: ObservableObject {
         // Start log throttler
         startLogThrottler()
         
-        let relayDataDir = ConfigService.shared.relayDataDir
-        try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
-        
-        // Ensure critical subdirectories exist for the Go relay
-        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("data"), withIntermediateDirectories: true)
-        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("blossom"), withIntermediateDirectories: true)
-        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("cache"), withIntermediateDirectories: true)
-        
-        // Copy templates directory
-        if let templatesPath = Bundle.main.path(forResource: "templates", ofType: "") {
-             let destURL = relayDataDir.appendingPathComponent("templates")
-             // Always update templates on start (clean up old first)
-             if FileManager.default.fileExists(atPath: destURL.path) {
-                 try? FileManager.default.removeItem(at: destURL)
-             }
-             try? FileManager.default.copyItem(at: URL(fileURLWithPath: templatesPath), to: destURL)
-             logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Copied templates to \(destURL.path)"))
-        } else {
-             logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Templates folder not found in Bundle"))
+        // Background setup task
+        Task {
+            let relayDataDir = ConfigService.shared.relayDataDir
+            
+            // 1. Ensure directories exist (I/O)
+            try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("data"), withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("blossom"), withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("cache"), withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("db"), withIntermediateDirectories: true)
+
+            // 2. Clear Database Locks (Crucial - must happen before start)
+            self.performClearDatabaseLocks(at: relayDataDir)
+            
+            // 3. Copy templates directory (only if missing or update needed)
+            let destURL = relayDataDir.appendingPathComponent("templates")
+            if let templatesPath = Bundle.main.path(forResource: "templates", ofType: "") {
+                let shouldCopy: Bool
+                if !FileManager.default.fileExists(atPath: destURL.path) {
+                    shouldCopy = true
+                } else {
+                    // Check if it's empty or needs refresh (optional, but let's be safe and check if it exists)
+                    let contents = (try? FileManager.default.contentsOfDirectory(atPath: destURL.path)) ?? []
+                    shouldCopy = contents.isEmpty
+                }
+                
+                if shouldCopy {
+                    if FileManager.default.fileExists(atPath: destURL.path) {
+                        try? FileManager.default.removeItem(at: destURL)
+                    }
+                    try? FileManager.default.copyItem(at: URL(fileURLWithPath: templatesPath), to: destURL)
+                    await MainActor.run {
+                        self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Copied templates to \(destURL.path)"))
+                    }
+                }
+            } else {
+                await MainActor.run {
+                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Templates folder not found in Bundle"))
+                }
+            }
+
+            // Continue with the rest of the startup on the MainActor
+            await MainActor.run {
+                self.continueStartRelay(config: config, relayDataDir: relayDataDir)
+            }
         }
+    }
+    
+    private func continueStartRelay(config: HavenConfig, relayDataDir: URL) {
+        // Write/Update essential relay files (relays list, blastr relays)
 
         // Write/Update essential relay files (relays list, blastr relays)
         // We stop writing .env to disk and use environment variables instead
@@ -136,13 +166,6 @@ class RelayProcessManager: ObservableObject {
         
         // Reset conflict state
         self.isPortConflict = false
-        
-        // Always try to clear locks and ensure directories exist
-        clearDatabaseLocks()
-        let dataDir = relayDataDir.appendingPathComponent("data")
-        let dbDir = relayDataDir.appendingPathComponent("db")
-        try? FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
-        try? FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
         
         // Ensure executable permissions
         do {
@@ -307,6 +330,17 @@ class RelayProcessManager: ObservableObject {
     
     func clearDatabaseLocks(completion: (@Sendable () -> Void)? = nil) {
         let relayDataDir = ConfigService.shared.relayDataDir
+        Task {
+            self.performClearDatabaseLocks(at: relayDataDir)
+            await MainActor.run {
+                self.isLocked = false
+                self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared."))
+                completion?()
+            }
+        }
+    }
+    
+    private nonisolated func performClearDatabaseLocks(at relayDataDir: URL) {
         // Run synchronously to ensure locks are gone before we proceed with any new process
         let dbDir = relayDataDir.appendingPathComponent("data")
         
@@ -332,26 +366,15 @@ class RelayProcessManager: ObservableObject {
             let lockFile = dir.appendingPathComponent("LOCK")
             removeLockFile(at: lockFile)
         }
-        
-        Task { @MainActor in
-            self.isLocked = false
-            self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared."))
-            completion?()
-        }
     }
     
-    private func removeLockFile(at url: URL) {
-        // print("DEBUG: Checking lock file at \(url.path)") // verbose debug
+    private nonisolated func removeLockFile(at url: URL) {
         if FileManager.default.fileExists(atPath: url.path) {
             do {
                 try FileManager.default.removeItem(at: url)
-                Task { @MainActor in
-                    self.logs.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "Removed stale lock file at: \(url.path)"))
-                }
+                // We minimize MainActor hops here by not logging DEBUG info for every lock check
             } catch {
-                Task { @MainActor in
-                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Failed to remove lock file at \(url.path): \(error)"))
-                }
+                // Ignore errors for individual lock files
             }
         }
     }
@@ -637,14 +660,18 @@ class RelayProcessManager: ObservableObject {
         }
     }
     
-    private func generateMinimalEnv(config: HavenConfig) -> String {
+    func generateMinimalEnv(config: HavenConfig) -> String {
         let envDict = generateEnvDictionary(config: config)
         var content = ""
         for (key, value) in envDict.sorted(by: { $0.key < $1.key }) {
-            // Values should NOT be quoted in most shell-agnostic parsers unless they have spaces
-            // Nostr-rs-relay/Haven parser might be strict.
-            if value.contains(" ") {
-                content += "\(key)=\"\(value)\"\n"
+            // Robust quoting: 
+            // 1. If contains spaces, wrap in double quotes
+            // 2. If contains double quotes, escape them
+            if value.contains(" ") || value.contains("\"") {
+                let escapedValue = value.replacingOccurrences(of: "\"", with: "\\\"")
+                content += "\(key)=\"\(escapedValue)\"\n"
+            } else if value.isEmpty {
+                content += "\(key)=\"\"\n"
             } else {
                 content += "\(key)=\(value)\n"
             }
@@ -753,7 +780,7 @@ class RelayProcessManager: ObservableObject {
                          bootStatusMessage = "Starting \(service.trimmingCharacters(in: .punctuationCharacters))..."
                     }
                 } else if lowerLine.contains("listening at") || lowerLine.contains("listening on") { // Match both
-                     DispatchQueue.main.async { self.bootStatusMessage = "Relay is Ready" } // Final state
+                     DispatchQueue.main.async { self.bootStatusMessage = " initializing" } // Final state
                 } else if lowerLine.contains("building web of trust graph") {
                      DispatchQueue.main.async { self.bootStatusMessage = "Building Web of Trust..." }
                 } else if lowerLine.contains("analysed") {
@@ -856,8 +883,12 @@ class RelayProcessManager: ObservableObject {
     }
     
     private func generateEnvDictionary(config: HavenConfig) -> [String: String] {
+        // Double-check sanitization here just in case ConfigService.save() wasn't called
+        let cleanNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+            .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
+            
         return [
-            "OWNER_NPUB": config.ownerNpub,
+            "OWNER_NPUB": cleanNpub,
             "RELAY_URL": config.relayURL,
             "RELAY_PORT": String(config.relayPort),
             "RELAY_BIND_ADDRESS": "127.0.0.1",

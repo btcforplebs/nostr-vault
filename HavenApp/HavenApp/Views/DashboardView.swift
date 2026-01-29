@@ -99,23 +99,14 @@ struct DashboardView: View {
             .padding(.vertical)
         }
         .onAppear {
-            let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
-            statsService.refreshStats(relayURLString: urlString)
-        }
-        .onChange(of: relayManager.isRunning) { oldValue, newValue in
-            if newValue && !relayManager.isBooting {
-                let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    statsService.refreshStats(relayURLString: urlString)
-                }
-            }
+            // refreshStats without a URL only updates local disk sizes (storage, blossom, cache)
+            statsService.refreshStats()
         }
         .onChange(of: relayManager.isBooting) { oldValue, newValue in
+            // When booting finishes, refresh the full stats including remote relay counts
             if !newValue && relayManager.isRunning {
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    statsService.refreshStats(relayURLString: urlString)
-                }
+                statsService.refreshStats(relayURLString: urlString)
             }
         }
         .onChange(of: relayManager.importCompleted) { oldValue, newValue in

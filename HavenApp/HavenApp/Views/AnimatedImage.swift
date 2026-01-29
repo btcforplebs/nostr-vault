@@ -65,20 +65,13 @@ struct AnimatedImage: NSViewRepresentable {
             return
         }
         
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            guard let data = data, error == nil,
-                  let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                return
+        Task {
+            if let data = await MediaCacheService.shared.fetchData(url: url) {
+                DispatchQueue.main.async {
+                    self.display(data: data, into: view)
+                }
             }
-            
-            // Cache successful downloads
-            MediaCacheService.shared.saveToCache(url: url, data: data)
-            
-            DispatchQueue.main.async {
-                self.display(data: data, into: view)
-            }
-        }.resume()
+        }
     }
     
     private func display(data: Data, into view: AspectFillImageView) {
@@ -196,3 +189,4 @@ extension URL {
         return false
     }
 }
+

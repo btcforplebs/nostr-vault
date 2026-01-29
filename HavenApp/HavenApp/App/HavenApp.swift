@@ -9,7 +9,7 @@ struct HavenApp: App {
     @StateObject private var configService = ConfigService.shared
     @StateObject private var relayManager = RelayProcessManager.shared
     @StateObject private var nostrService = NostrService.shared
-    @StateObject private var statsService = StatsService()
+    @StateObject private var statsService = StatsService.shared
     
     var body: some Scene {
         MenuBarExtra("Haven", systemImage: "server.rack") {
