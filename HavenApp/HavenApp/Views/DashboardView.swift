@@ -99,23 +99,31 @@ struct DashboardView: View {
             .padding(.vertical)
         }
         .onAppear {
-            // refreshStats without a URL only updates local disk sizes (storage, blossom, cache)
-            statsService.refreshStats()
-            
-            // If already running, also trigger a full refresh with counts
-            let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
+            // Consolidated refresh:
+            // If relay is running, we pass the URL to get BOTH disk stats and network counts.
+            // If not running, we pass nil to get ONLY disk stats.
             
             if relayManager.isRunning && !relayManager.isBooting {
+                let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
+                print("Dashboard: Relay running, requesting full stats refresh from \(urlString)")
                 statsService.refreshStats(relayURLString: urlString)
-            } else if relayManager.state == .booting || relayManager.isRunning {
-                // If booting or just started, retry after a short delay to allow connections to stabilize
-                print("Dashboard: Relay is booting or just started. Scheduling retry for stats...")
+            } else if relayManager.state == .booting {
+                print("Dashboard: Relay booting, scheduling retry...")
+                // Initial disk-only fetch while booting
+                statsService.refreshStats()
+                
+                // Retry full fetch after delay
+                let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
                 DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
                     if relayManager.isRunning {
-                        print("Dashboard: Retrying initial stats refresh...")
+                        print("Dashboard: Retrying full stats refresh...")
                         statsService.refreshStats(relayURLString: urlString)
                     }
                 }
+            } else {
+                // Not running, just get disk stats
+                print("Dashboard: Relay not running, fetching disk stats only")
+                statsService.refreshStats()
             }
         }
         .onChange(of: relayManager.isBooting) { oldValue, newValue in

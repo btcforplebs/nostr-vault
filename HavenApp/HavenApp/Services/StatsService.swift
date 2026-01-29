@@ -9,7 +9,7 @@ class StatsService: ObservableObject {
     @Published var blossomSize: Int64 = 0
     @Published var cacheSize: Int64 = 0
     @Published var loadedNotesCount: Int = UserDefaults.standard.integer(forKey: "haven.stats.noteCount")
-    @Published var isUpdatingCount: Bool = UserDefaults.standard.integer(forKey: "haven.stats.noteCount") == 0
+    @Published var isUpdatingCount: Bool = false
     
     private var nostrService = NostrService.shared
     private var relayManager = RelayProcessManager.shared
