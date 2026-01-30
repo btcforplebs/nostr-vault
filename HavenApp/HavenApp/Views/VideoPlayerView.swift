@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import AVFoundation
 
 struct VideoPlayerView: View {
     let url: URL
@@ -27,14 +28,16 @@ struct VideoPlayerView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minWidth: 300, minHeight: 200) // Avoid AVPlayerView constraint warnings
             .onChange(of: geo.size) { oldValue, newSize in
-                if viewSize == .zero && newSize != .zero {
+                // Strict size gate: Don't load player unless we have enough width for the controls
+                if viewSize == .zero && newSize.width > 300 {
                     viewSize = newSize
                     setupPlayer()
                 }
             }
             .onAppear {
-                if geo.size != .zero {
+                if geo.size.width > 300 {
                     viewSize = geo.size
                     setupPlayer()
                 }
@@ -76,17 +79,21 @@ struct VideoPlayerView: View {
     }
     
     private func setupPlayer() {
-        let finalURL = MediaCacheService.shared.localFileURL(for: url) ?? url
+        // Use the new helper to get a guaranteed playable URL (with extension)
+        let finalURL = MediaCacheService.shared.preparePlayableURL(for: url) ?? url
         
         // Safety check for local files
         if finalURL.isFileURL {
-            if !FileManager.default.fileExists(atPath: finalURL.path) {
-                print("VideoPlayerView: Local file missing at \(finalURL.path)")
+            // Start by checking the file at the path (resolving symlinks if needed)
+            let actualPath = finalURL.resolvingSymlinksInPath().path
+            
+            if !FileManager.default.fileExists(atPath: actualPath) {
+                print("VideoPlayerView: Local file missing at \(actualPath)")
                 loadError = "Local file not found."
                 return
             }
             
-            if let attr = try? FileManager.default.attributesOfItem(atPath: finalURL.path),
+            if let attr = try? FileManager.default.attributesOfItem(atPath: actualPath),
                let size = attr[.size] as? UInt64, size < 200 {
                 print("VideoPlayerView: File too small (\(size) bytes)")
                 loadError = "Video file is invalid or too small."
@@ -94,16 +101,7 @@ struct VideoPlayerView: View {
             }
         }
         
-        // Use AVURLAsset with explicit type hints for Blossom (hashed) media 
-        // to help AVFoundation identify the format when no extension is present.
-        let asset: AVURLAsset
-        if url.pathExtension.isEmpty {
-            // Provide a hint that this is likely some video format
-            asset = AVURLAsset(url: finalURL, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        } else {
-            asset = AVURLAsset(url: finalURL)
-        }
-        
+        let asset = AVURLAsset(url: finalURL)
         let playerItem = AVPlayerItem(asset: asset)
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

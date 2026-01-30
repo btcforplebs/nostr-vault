@@ -781,11 +781,14 @@ class RelayProcessManager: ObservableObject {
                     }
                 } else if lowerLine.contains("listening at") || lowerLine.contains("listening on") { // Match both
                      DispatchQueue.main.async { self.bootStatusMessage = " initializing" } // Final state
-                } else if lowerLine.contains("building web of trust graph") {
+                } else if lowerLine.contains("building web of trust graph") || lowerLine.contains("initializing wot") {
                      DispatchQueue.main.async { self.bootStatusMessage = "Building Web of Trust..." }
-                } else if lowerLine.contains("analysed") {
-                    let pattern = "analysed (\\d+)"
-                    if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+                } else if lowerLine.contains("analysed") || lowerLine.contains("analysing nostr events") {
+                    // OLD: analysed 123
+                    // NEW: analysing Nostr events count=123
+                    // Broad match for digits
+                    let pattern = "(?:analysed|count=)(\\d+)"
+                    if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
                        let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
                        let range = Range(match.range(at: 1), in: line) {
                         let count = line[range]
@@ -795,12 +798,27 @@ class RelayProcessManager: ObservableObject {
                      if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
                          bootStatusMessage = "Network Size: \(count)"
                      }
+                } else if lowerLine.contains("totals") && lowerLine.contains("pubkeys") {
+                    // NEW: totals pubkeys=123 relays=456
+                    let pattern = "pubkeys=(\\d+)"
+                    if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                       let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
+                       let range = Range(match.range(at: 1), in: line) {
+                        let count = line[range]
+                        bootStatusMessage = "Network Size: \(count)"
+                    }
                 } else if lowerLine.contains("relays discovered") {
                      if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
                          bootStatusMessage = "Discovered \(count) relays..."
                      }
-                } else if lowerLine.contains("pubkeys with minimum followers") {
-                     if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: [" ", "k", "e", "y", "s"]) { // Trip "keys" suffix
+                } else if lowerLine.contains("pubkeys with minimum followers") || lowerLine.contains("eliminating pubkeys") {
+                     // NEW: eliminating pubkeys ... kept=123
+                     // OLD: pubkeys with minimum followers: 123
+                     let pattern = "(?:kept=|followers: )(\\d+)"
+                     if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+                        let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
+                        let range = Range(match.range(at: 1), in: line) {
+                        let count = line[range]
                         bootStatusMessage = "Trust Graph: \(count) users"
                      }
                 }
@@ -921,6 +939,7 @@ class RelayProcessManager: ObservableObject {
             "CHAT_RELAY_ICON": config.chatRelayIcon,
             "CHAT_RELAY_WOT_DEPTH": String(config.chatRelayWotDepth),
             "CHAT_RELAY_WOT_REFRESH_INTERVAL_HOURS": String(config.chatRelayWotRefreshHours),
+            "WOT_REFRESH_INTERVAL": "\(config.chatRelayWotRefreshHours)h", // Replaced/New config for WOT
             "CHAT_RELAY_MINIMUM_FOLLOWERS": String(config.chatRelayMinFollowers),
             "CHAT_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL": "50",
             "CHAT_RELAY_EVENT_IP_LIMITER_INTERVAL": "1",

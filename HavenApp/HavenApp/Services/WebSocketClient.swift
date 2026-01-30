@@ -667,6 +667,10 @@ class NostrService: ObservableObject {
 class MediaCacheService: ObservableObject, @unchecked Sendable {
     static let shared = MediaCacheService()
     
+    // Cache for temporary playback URLs (symlinks)
+    private var playableURLs: [URL: URL] = [:]
+    private let playableLock = NSLock()
+    
     private let cacheDirectory: URL
     private var inFlightDownloads: [String: [CheckedContinuation<Data?, Never>]] = [:]
     private let downloadLock = NSLock()
@@ -765,6 +769,43 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         }
         
         return nil
+    }
+    
+    /// Ensures the local file has a proper extension for AVFoundation playback.
+    /// If the file is extensionless (Blossom), creates a temporary symlink with .mp4 extension.
+    func preparePlayableURL(for url: URL) -> URL? {
+        guard let localURL = internalLocalFileURL(for: url) else { return nil }
+        
+        // If it already has an extension, we're good
+        if !localURL.pathExtension.isEmpty {
+            return localURL
+        }
+        
+        playableLock.lock()
+        defer { playableLock.unlock() }
+        
+        if let existingInfo = playableURLs[localURL], FileManager.default.fileExists(atPath: existingInfo.path) {
+            return existingInfo
+        }
+        
+        // Create a temp symlink with .mp4 extension
+        let tempDir = FileManager.default.temporaryDirectory
+        let symlinkName = localURL.lastPathComponent + ".mp4"
+        let symlinkURL = tempDir.appendingPathComponent(symlinkName)
+        
+        do {
+            // Remove existing if any
+            if FileManager.default.fileExists(atPath: symlinkURL.path) {
+                try FileManager.default.removeItem(at: symlinkURL)
+            }
+            try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: localURL)
+            playableURLs[localURL] = symlinkURL
+            print("MediaCacheService: Created playable symlink at \(symlinkURL.path)")
+            return symlinkURL
+        } catch {
+            print("MediaCacheService: Failed to create symlink: \(error)")
+            return localURL // Fallback to original
+        }
     }
     
     func fetchData(url: URL) async -> Data? {

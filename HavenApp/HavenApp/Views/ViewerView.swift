@@ -47,19 +47,33 @@ struct ViewerView: View {
     }
     
     var allMediaItems: [MediaItem] {
-        // Group by URL: prioritize remote items (which have note timestamps) over local blossom items (file timestamps)
-        var latestItems: [URL: MediaItem] = [:]
+        // STRICTLY use remote items (from Nostr events) to ensure we use the Note's "CreatedAt" timestamp for sorting.
+        // We do NOT use local blossom files because their "File Creation Date" is random (sync time) and messes up the order.
+        var latestItems: [String: MediaItem] = [:]
         
-        // 1. Add blossom items if relevant
-        if relayManager.isRunning {
-            if contentFilter == .all || contentFilter == .mine {
-                for item in blossomMedia {
-                    latestItems[item.url] = item
-                }
+        func normalizedKey(for url: URL) -> String {
+            // Robustly extract the 64-character hash from the URL
+            // This handles cases like:
+            // - http://local/hash
+            // - https://remote/hash.jpg
+            // - https://remote/hash?token=123
+            
+            let urlString = url.absoluteString
+            
+            // Look for 64 hex characters
+            let pattern = "[a-f0-9]{64}"
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+               let match = regex.firstMatch(in: urlString, options: [], range: NSRange(urlString.startIndex..., in: urlString)),
+               let range = Range(match.range, in: urlString) {
+                return String(urlString[range])
             }
+            
+            // Fallback for non-standard filenames: strip query and extension
+            return url.deletingPathExtension().lastPathComponent
         }
         
-        // 2. Add remote items (these have event creation dates), overwriting blossom items for the same URL 
+        // We SKIP local `blossomMedia` entirely.
+        // 1. Filter remote items based on content filter
         let remoteItems = nostrService.noteMedia.filter { item in
             switch contentFilter {
             case .all: return true
@@ -73,9 +87,9 @@ struct ViewerView: View {
             }
         }
         
+        // 2. Deduplicate remote items
         for item in remoteItems {
-            // Always prefer remote item for its accurate note publication time
-            latestItems[item.url] = item
+            latestItems[normalizedKey(for: item.url)] = item
         }
         
         return Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
@@ -289,6 +303,7 @@ struct ViewerView: View {
                     // Use item.type instead of url extension checks for Blossom compatibility
                     if item.type == .video {
                         VideoPlayerView(url: item.url)
+                            .frame(minWidth: 480, minHeight: 320)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if item.url.isGIF {
                         AnimatedImage(url: item.url, contentMode: .fit, shouldAnimate: true)
@@ -829,10 +844,11 @@ struct VideoThumbnailView: View {
                 resolvedURL = MediaCacheService.shared.localFileURL(for: url)
             }
             
-            let finalURL = resolvedURL ?? url
+            // For AVAsset operations, use the playable URL (symlink if needed) logic
+            let playableURL = MediaCacheService.shared.preparePlayableURL(for: url) ?? resolvedURL ?? url
             
-            // 3. Generate thumbnail from local asset
-            let asset = AVAsset(url: finalURL)
+            // 3. Generate thumbnail
+            let asset = AVAsset(url: playableURL)
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 400, height: 400)
