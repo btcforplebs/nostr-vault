@@ -185,10 +185,9 @@ struct RelaySettingsView: View {
                     )
                     
                     Section("Web of Trust") {
-                        Stepper("WoT Depth: \(configService.config.chatRelayWotDepth)", 
-                               value: $configService.config.chatRelayWotDepth, in: 1...5)
-                        Stepper("Min Followers: \(configService.config.chatRelayMinFollowers)",
-                               value: $configService.config.chatRelayMinFollowers, in: 0...100)
+                        Text("Web of Trust settings have moved to the Advanced tab.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
@@ -288,6 +287,24 @@ struct AdvancedSettingsView: View {
                 }
                 
                 Text("Clearing the cache will remove downloaded remote images but won't touch your local Blossom data.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Section("WoT (Web of Trust)") {
+                Stepper("Depth: \(configService.config.chatRelayWotDepth)", 
+                       value: $configService.config.chatRelayWotDepth, in: 1...5)
+                Stepper("Minimum Followers: \(configService.config.chatRelayMinFollowers)",
+                       value: $configService.config.chatRelayMinFollowers, in: 0...100)
+                
+                Picker("Refresh Interval", selection: $configService.config.wotRefreshInterval) {
+                    Text("1 Hour").tag("1h")
+                    Text("12 Hours").tag("12h")
+                    Text("24 Hours").tag("24h")
+                    Text("7 Days").tag("168h")
+                }
+                
+                Text("WoT determines who can post to your inbox and chat relays. Lower depth is more private.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

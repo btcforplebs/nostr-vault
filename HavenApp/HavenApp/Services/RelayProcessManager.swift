@@ -213,6 +213,7 @@ class RelayProcessManager: ObservableObject {
         process.environment = env
         
         logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Env: HOME=\(env["HOME"]?.prefix(25) ?? "")... PORT=\(env["RELAY_PORT"] ?? "") BIND=\(env["RELAY_BIND_ADDRESS"] ?? "")"))
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "WOT Settings: DEPTH=\(env["WOT_DEPTH"] ?? "") REFRESH=\(env["WOT_REFRESH_INTERVAL"] ?? "")"))
         logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Paths: BLOSSOM=\(env["BLOSSOM_PATH"] ?? "") DB=\(env["DATABASE_PATH"] ?? "")"))
         
         // Use Pipe for stdout/stderr to ensure realtime log delivery
@@ -939,7 +940,9 @@ class RelayProcessManager: ObservableObject {
             "CHAT_RELAY_ICON": config.chatRelayIcon,
             "CHAT_RELAY_WOT_DEPTH": String(config.chatRelayWotDepth),
             "CHAT_RELAY_WOT_REFRESH_INTERVAL_HOURS": String(config.chatRelayWotRefreshHours),
-            "WOT_REFRESH_INTERVAL": "\(config.chatRelayWotRefreshHours)h", // Replaced/New config for WOT
+            "WOT_REFRESH_INTERVAL": config.wotRefreshInterval,
+            "WOT_DEPTH": String(config.chatRelayWotDepth),
+            "WOT_MINIMUM_FOLLOWERS": String(config.chatRelayMinFollowers),
             "CHAT_RELAY_MINIMUM_FOLLOWERS": String(config.chatRelayMinFollowers),
             "CHAT_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL": "50",
             "CHAT_RELAY_EVENT_IP_LIMITER_INTERVAL": "1",
