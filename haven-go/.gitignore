@@ -1,0 +1,11 @@
+.DS_Store
+.env
+.idea/
+blossom/
+db.zip
+db/
+dist/
+haven
+relays_blastr.json
+relays_import.json
+whitelisted_npubs.json
