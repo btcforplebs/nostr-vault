@@ -61,26 +61,20 @@ struct HavenConfig: Codable, Equatable {
         "wss://nostr.wine"
     ]
     
+    // Whitelisted Npubs (multi-npub support)
+    var whitelistedNpubs: [String] = []
+    var whitelistedNpubsFile: String = "whitelisted_npubs.json"
+
     // Backup
-    var backupProvider: String = "none" // none, s3, aws, gcp
+    var backupProvider: String = "none" // none, s3
     var backupIntervalHours: Int = 24
-    
+
     // S3
     var s3AccessKeyId: String = ""
     var s3SecretKey: String = ""
     var s3Endpoint: String = ""
     var s3Region: String = ""
     var s3BucketName: String = ""
-    
-    // AWS
-    var awsAccessKeyId: String = ""
-    var awsSecretAccessKey: String = ""
-    var awsRegion: String = ""
-    var awsBucket: String = ""
-    
-    // GCP
-    var gcpBucketName: String = ""
-    var gcpCredentialsPath: String = ""
     
     static let `default` = HavenConfig()
     
@@ -95,10 +89,9 @@ struct HavenConfig: Codable, Equatable {
         case inboxRelayName, inboxRelayDescription, inboxRelayIcon, inboxPullIntervalSeconds
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
         case blastrRelaysFile, blastrRelays
+        case whitelistedNpubs, whitelistedNpubsFile
         case backupProvider, backupIntervalHours
         case s3AccessKeyId, s3SecretKey, s3Endpoint, s3Region, s3BucketName
-        case awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket
-        case gcpBucketName, gcpCredentialsPath
     }
     
     init() {}
@@ -151,22 +144,17 @@ struct HavenConfig: Codable, Equatable {
         blastrRelaysFile = try container.decodeIfPresent(String.self, forKey: .blastrRelaysFile) ?? defaults.blastrRelaysFile
         blastrRelays = try container.decodeIfPresent([String].self, forKey: .blastrRelays) ?? defaults.blastrRelays
         
+        whitelistedNpubs = try container.decodeIfPresent([String].self, forKey: .whitelistedNpubs) ?? defaults.whitelistedNpubs
+        whitelistedNpubsFile = try container.decodeIfPresent(String.self, forKey: .whitelistedNpubsFile) ?? defaults.whitelistedNpubsFile
+
         backupProvider = try container.decodeIfPresent(String.self, forKey: .backupProvider) ?? defaults.backupProvider
         backupIntervalHours = try container.decodeIfPresent(Int.self, forKey: .backupIntervalHours) ?? defaults.backupIntervalHours
-        
+
         s3AccessKeyId = try container.decodeIfPresent(String.self, forKey: .s3AccessKeyId) ?? defaults.s3AccessKeyId
         s3SecretKey = try container.decodeIfPresent(String.self, forKey: .s3SecretKey) ?? defaults.s3SecretKey
         s3Endpoint = try container.decodeIfPresent(String.self, forKey: .s3Endpoint) ?? defaults.s3Endpoint
         s3Region = try container.decodeIfPresent(String.self, forKey: .s3Region) ?? defaults.s3Region
         s3BucketName = try container.decodeIfPresent(String.self, forKey: .s3BucketName) ?? defaults.s3BucketName
-        
-        awsAccessKeyId = try container.decodeIfPresent(String.self, forKey: .awsAccessKeyId) ?? defaults.awsAccessKeyId
-        awsSecretAccessKey = try container.decodeIfPresent(String.self, forKey: .awsSecretAccessKey) ?? defaults.awsSecretAccessKey
-        awsRegion = try container.decodeIfPresent(String.self, forKey: .awsRegion) ?? defaults.awsRegion
-        awsBucket = try container.decodeIfPresent(String.self, forKey: .awsBucket) ?? defaults.awsBucket
-        
-        gcpBucketName = try container.decodeIfPresent(String.self, forKey: .gcpBucketName) ?? defaults.gcpBucketName
-        gcpCredentialsPath = try container.decodeIfPresent(String.self, forKey: .gcpCredentialsPath) ?? defaults.gcpCredentialsPath
     }
     
     // MARK: - Protocol Selection Logic

@@ -122,13 +122,12 @@ struct WelcomeWindowView: View {
                 .padding(.bottom, 40)
             }
         }
-        .frame(width: 500, height: 550)
+        .frame(width: 500, height: 650)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 NSApp.activate(ignoringOtherApps: true)
                 if let window = NSApplication.shared.windows.first(where: { $0.title == "Welcome to Haven" }) {
-                    window.level = .floating
                     window.makeKeyAndOrderFront(nil)
                     window.center()
                 }

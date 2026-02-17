@@ -37,6 +37,7 @@ class RelayProcessManager: ObservableObject {
     private var process: Process?
     private var outputPipe: Pipe?
     private var logReader: FileHandle?
+    private var logBuffer = Data() // Buffer for incomplete log lines
     
     // Track if we are in the middle of a shutdown to prevent recursive restarts
     private var isShuttingDown = false
@@ -48,6 +49,11 @@ class RelayProcessManager: ObservableObject {
     @Published var lastConfig: HavenConfig?
     private var retryAttempted = false
     private var needsLockFix = false
+
+    // PID file for killing orphaned processes across app launches
+    private var pidFileURL: URL {
+        ConfigService.shared.relayDataDir.appendingPathComponent(".haven_pid")
+    }
     
     // Log throttling
     private var pendingLogs: [LogEntry] = []
@@ -76,23 +82,29 @@ class RelayProcessManager: ObservableObject {
             logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start relay: current state is \(state) (running: \(process?.isRunning ?? false))"))
             return
         }
-        
+
+        // Immediately claim the state so no second call can slip through
+        // while the Task below does async setup work.
+        self.state = .booting
         self.lastConfig = config
-        
+
         // Only reset retry flag if this is a fresh start request, not an auto-retry
         if !isRetry {
             self.retryAttempted = false
             self.showProcessKillAlert = false
         }
         self.needsLockFix = false
-        
+
         // Start log throttler
         startLogThrottler()
-        
+
         // Background setup task
         Task {
             let relayDataDir = ConfigService.shared.relayDataDir
-            
+
+            // 0. Kill any orphaned haven process from a previous app session
+            self.killOrphanedProcess()
+
             // 1. Ensure directories exist (I/O)
             try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
             try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("data"), withIntermediateDirectories: true)
@@ -154,6 +166,14 @@ class RelayProcessManager: ObservableObject {
         if let data = try? encoder.encode(config.blastrRelays) {
             try? data.write(to: blastrRelaysURL)
         }
+        
+        // Write whitelisted_npubs.json (Required by new binary)
+        let whitelistURL = relayDataDir.appendingPathComponent("whitelisted_npubs.json")
+        if let data = try? encoder.encode(config.whitelistedNpubs) {
+            try? data.write(to: whitelistURL)
+        }
+        
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Config: \(config.importSeedRelays.count) import relays, \(config.blastrRelays.count) blastr relays, \(config.whitelistedNpubs.count) whitelisted npubs"))
 
         // Check bundle for the binary
         guard let executablePath = Bundle.main.path(forResource: "haven", ofType: ""),
@@ -228,23 +248,24 @@ class RelayProcessManager: ObservableObject {
         // Read from the pipe
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            if let str = String(data: data, encoding: .utf8), !str.isEmpty {
-                Task { @MainActor in
-                    self?.processOutput(str)
-                    
-                    // Also write to log file for persistence if needed
-                    // (Optional, but good for debugging)
-                    if let logData = str.data(using: .utf8) {
-                         let logFileURL = relayDataDir.appendingPathComponent("relay.log")
-                         if !FileManager.default.fileExists(atPath: logFileURL.path) {
-                             FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
+            guard !data.isEmpty else { return }
+            
+            Task { @MainActor in
+                self?.processBufferedOutput(data)
+                
+                // Also write to log file for persistence if needed
+                if let str = String(data: data, encoding: .utf8) {
+                     let logFileURL = relayDataDir.appendingPathComponent("relay.log")
+                     if !FileManager.default.fileExists(atPath: logFileURL.path) {
+                         FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
+                     }
+                     if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
+                         fileHandle.seekToEndOfFile()
+                         if let data = str.data(using: .utf8) {
+                             fileHandle.write(data)
                          }
-                         if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
-                             fileHandle.seekToEndOfFile()
-                             fileHandle.write(logData)
-                             try? fileHandle.close()
-                         }
-                    }
+                         try? fileHandle.close()
+                     }
                 }
             }
         }
@@ -280,21 +301,18 @@ class RelayProcessManager: ObservableObject {
                 }
                 
                 if self.needsLockFix && !self.retryAttempted && previousState != .stopping {
-                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Database lock detected. Attempting automatic fix..."))
+                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Database lock detected. Force-cleaning and restarting..."))
                     self.retryAttempted = true
-                    self.clearDatabaseLocks {
-                        Task { @MainActor in
-                            if let config = self.lastConfig {
-                                // Pass isRetry: true to prevent infinite loops if it fails again
-                                self.startRelay(config: config, isRetry: true)
-                            }
-                        }
+                    // Use forceCleanAndRestart which SIGKILLs any stale process,
+                    // clears lock files, and restarts cleanly.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        self.forceCleanAndRestart()
                     }
                     return
                 } else if self.retryAttempted && (self.needsLockFix || exitCode != 0) && previousState != .stopping {
-                    // We tried to fix it, but it failed again. Logic suggests a zombie process or fatal lock.
-                    // Trigger manual intervention alert.
-                    self.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Automatic fix failed. Manual intervention required."))
+                    // Force clean already ran once and it still failed.
+                    // Show alert so the user can trigger another attempt.
+                    self.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Automatic recovery failed. Tap 'Fix & Restart' to try again."))
                     self.showProcessKillAlert = true
                 }
                 
@@ -317,6 +335,8 @@ class RelayProcessManager: ObservableObject {
         // Launch the process (non-blocking)
         do {
             try process.run()
+            savePID(process.processIdentifier)
+            logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay process started (PID: \(process.processIdentifier))"))
         } catch {
             logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to launch relay process: \(error.localizedDescription)"))
             self.state = .idle
@@ -326,6 +346,8 @@ class RelayProcessManager: ObservableObject {
         }
         isLocked = false
         startDate = Date()
+        
+        // Start metrics timer
         startMetricsTimer()
     }
     
@@ -380,9 +402,48 @@ class RelayProcessManager: ObservableObject {
         }
     }
     
-    nonisolated private func killAllHavenProcesses() {
-        // No-op in Sandbox: We cannot use pkill/killall.
-        // We rely on process.terminate() for our managed process.
+    private func savePID(_ pid: Int32) {
+        try? "\(pid)".write(to: pidFileURL, atomically: true, encoding: .utf8)
+    }
+
+    private nonisolated func clearSavedPID(at pidURL: URL) {
+        try? FileManager.default.removeItem(at: pidURL)
+    }
+
+    /// Kill ALL haven processes system-wide using pkill.
+    /// This catches orphans we don't have a PID for (e.g. from previous app sessions
+    /// where the PID file was lost). Fails silently if sandbox blocks it.
+    private nonisolated func killAllHavenProcesses() {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        proc.arguments = ["-9", "haven"]
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+        } catch {
+            // Sandbox may block pkill — that's OK, we tried
+        }
+    }
+
+    /// Kill any orphaned haven process from a previous app session using the saved PID file.
+    /// Must be called from MainActor (reads pidFileURL which depends on ConfigService.shared).
+    func killOrphanedProcess() {
+        let pidURL = pidFileURL
+        DispatchQueue.global().async {
+            guard let pidStr = try? String(contentsOf: pidURL, encoding: .utf8),
+                  let pid = Int32(pidStr.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  pid > 0 else { return }
+
+            // Check if the process is still alive (signal 0 = check existence)
+            if kill(pid, 0) == 0 {
+                kill(pid, SIGKILL)
+                // Give the OS a moment to release file locks
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            try? FileManager.default.removeItem(at: pidURL)
+        }
     }
     
     func stopRelay(completion: (() -> Void)? = nil) {
@@ -396,13 +457,103 @@ class RelayProcessManager: ObservableObject {
         self.isShuttingDown = true
         stopMetricsTimer()
         stopLogThrottler()
+        let pid = process.processIdentifier
         process.terminate()
         isBooting = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            completion?()
+
+        // Capture URL on MainActor before going to background
+        let savedPidURL = pidFileURL
+
+        // Wait for process to actually exit; escalate to SIGKILL if needed
+        DispatchQueue.global().async { [weak self] in
+            let deadline = Date().addingTimeInterval(5.0)
+            while process.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            if process.isRunning {
+                kill(pid, SIGKILL)
+                // Brief wait for OS to reclaim resources / release flocks
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            self?.clearSavedPID(at: savedPidURL)
+            DispatchQueue.main.async {
+                completion?()
+            }
         }
     }
     
+    /// Aggressively kill any running haven process, clear all database locks, reset state, and restart.
+    /// This replaces the old "pkill -9 haven" manual step.
+    func forceCleanAndRestart() {
+        // Immediately claim stopping state to prevent concurrent starts
+        self.state = .stopping
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Force clean & restart initiated..."))
+
+        // 1. Kill managed process with SIGKILL
+        let managedPid = process?.processIdentifier ?? 0
+        if let process = process, process.isRunning {
+            process.terminate()
+        }
+
+        // 2. Also kill any orphaned process from a previous run
+        let savedPidURL = pidFileURL
+        var orphanPid: Int32 = 0
+        if let pidStr = try? String(contentsOf: savedPidURL, encoding: .utf8),
+           let pid = Int32(pidStr.trimmingCharacters(in: .whitespacesAndNewlines)),
+           pid > 0 && pid != managedPid {
+            orphanPid = pid
+        }
+
+        // Capture relayDataDir on MainActor before going to background
+        let relayDataDir = ConfigService.shared.relayDataDir
+
+        DispatchQueue.global().async { [weak self] in
+            // Force kill managed process
+            if managedPid > 0 {
+                kill(managedPid, SIGKILL)
+            }
+            // Force kill orphan
+            if orphanPid > 0 && kill(orphanPid, 0) == 0 {
+                kill(orphanPid, SIGKILL)
+            }
+
+            // 3. Kill ALL haven processes system-wide (catches unknown orphans)
+            self?.killAllHavenProcesses()
+
+            // Wait for OS to release file locks
+            Thread.sleep(forTimeInterval: 1.5)
+
+            // Clear all lock files
+            guard let self = self else { return }
+            self.performClearDatabaseLocks(at: relayDataDir)
+            self.clearSavedPID(at: savedPidURL)
+
+            DispatchQueue.main.async {
+                // Reset all state
+                self.process = nil
+                self.outputPipe = nil
+                self.state = .idle
+                self.isRunning = false
+                self.isBooting = false
+                self.isImporting = false
+                self.isLocked = false
+                self.needsLockFix = false
+                // NOTE: Do NOT reset retryAttempted here. It must survive so the
+                // termination handler can detect a second failure and show the alert
+                // instead of looping forever.
+                self.showProcessKillAlert = false
+                self.isShuttingDown = false
+
+                self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Cleanup complete. Restarting relay..."))
+
+                // Restart if we have a config — mark as retry so we don't loop
+                if let config = self.lastConfig {
+                    self.startRelay(config: config, isRetry: true)
+                }
+            }
+        }
+    }
+
     func cancelImport() {
         guard let process = process, process.isRunning else {
             isImporting = false
@@ -470,6 +621,8 @@ class RelayProcessManager: ObservableObject {
     // The usages below will be updated.
     
     func importNotes(config: HavenConfig) {
+        logs.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "importNotes called. Current State: \(state), Process Running: \(process?.isRunning ?? false)"))
+        
         // Strict guard: Must be idle and NO process should be running
         guard state == .idle && (process == nil || !process!.isRunning) else {
             if (state == .running || state == .booting) && (process != nil && process!.isRunning) {
@@ -516,6 +669,12 @@ class RelayProcessManager: ObservableObject {
             try? data.write(to: blastrRelaysURL)
         }
         
+        // Write whitelisted_npubs.json (Required by new binary)
+        let whitelistURL = relayDataDir.appendingPathComponent("whitelisted_npubs.json")
+        if let data = try? encoder.encode(config.whitelistedNpubs) {
+            try? data.write(to: whitelistURL)
+        }
+        
         // Check bundle for the binary
         guard let executablePath = Bundle.main.path(forResource: "haven", ofType: ""),
               FileManager.default.fileExists(atPath: executablePath) else {
@@ -551,7 +710,7 @@ class RelayProcessManager: ObservableObject {
         
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = ["--import"]
+        process.arguments = ["import"]
         process.currentDirectoryURL = relayDataDir
         
         // Write .env file for import as well
@@ -597,10 +756,10 @@ class RelayProcessManager: ObservableObject {
         
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            if let str = String(data: data, encoding: .utf8), !str.isEmpty {
-                Task { @MainActor in
-                    self?.processOutput(str)
-                }
+            guard !data.isEmpty else { return }
+            
+            Task { @MainActor in
+                self?.processBufferedOutput(data)
             }
         }
         
@@ -621,7 +780,7 @@ class RelayProcessManager: ObservableObject {
                 let exitCode = proc.terminationStatus
                 self.logs.append(LogEntry(timestamp: Date(), level: exitCode == 0 ? "INFO" : "ERROR", message: "Import process terminated with exit code: \(exitCode)"))
                 
-                if exitCode == 0 || self.importCompleted {
+                if (exitCode == 0 || exitCode == 15) && self.importCompleted {
                     self.importProgress = 1.0
                     self.importStatusMessage = "Import Complete!"
                     self.importCompleted = true
@@ -637,9 +796,6 @@ class RelayProcessManager: ObservableObject {
                 } else {
                     self.importStatusMessage = "Import Failed (Exit Code \(exitCode))"
                     self.importCompleted = false
-                    
-                    // Even if import failed, we might want to try starting the relay anyway?
-                    // For now, let's keep it safe but allow manual restart by resetting state
                     self.pendingImportConfig = nil
                 }
                 
@@ -647,17 +803,43 @@ class RelayProcessManager: ObservableObject {
             }
         }
         
-        // Launch the process (non-blocking)
-        do {
-            try process.run()
-            logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import process started (PID: \(process.processIdentifier))"))
-        } catch {
-            let errorMsg = "Failed to launch import process: \(error.localizedDescription)"
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: errorMsg))
-            DispatchQueue.main.async {
-                self.isImporting = false
-                self.importStatusMessage = "Launch failed: \(error.localizedDescription)"
+        // Unconditionally add raw logging to readabilityHandler (re-applying explicitly to ensure it's there)
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            
+             if let str = String(data: data, encoding: .utf8) {
+                 Task { @MainActor in
+                     self?.logs.append(LogEntry(timestamp: Date(), level: "RAW", message: "Received \(data.count) bytes: \(str)"))
+                 }
             }
+
+            Task { @MainActor in
+                self?.processBufferedOutput(data)
+            }
+        }
+        
+        // Wait for locks to clear before running
+        clearDatabaseLocks { [weak self] in
+             Task { @MainActor in
+                 guard let self = self else { return }
+                 
+                 // Check if we were cancelled while waiting
+                 if self.state != .importing { return }
+                 
+                 // Check if process was already created (it was, above)
+                 // But we need to run it NOW.
+                 
+                 do {
+                     try process.run()
+                     self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import process started (PID: \(process.processIdentifier))"))
+                 } catch {
+                     let errorMsg = "Failed to launch import process: \(error.localizedDescription)"
+                     self.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: errorMsg))
+                     self.isImporting = false
+                     self.importStatusMessage = "Launch failed: \(error.localizedDescription)"
+                 }
+             }
         }
     }
     
@@ -678,6 +860,26 @@ class RelayProcessManager: ObservableObject {
             }
         }
         return content
+    }
+    
+    private func processBufferedOutput(_ data: Data) {
+        logBuffer.append(data)
+        
+        // Find the last newline character
+        guard let range = logBuffer.range(of: Data([0x0A]), options: .backwards) else {
+            // No newline yet, keep buffering
+            return
+        }
+        
+        // Extract all complete lines
+        let validData = logBuffer.subdata(in: 0..<range.upperBound)
+        
+        // Keep the remainder in the buffer
+        logBuffer = logBuffer.subdata(in: range.upperBound..<logBuffer.endIndex)
+        
+        if let output = String(data: validData, encoding: .utf8) {
+            processOutput(output)
+        }
     }
     
     private func processOutput(_ output: String) {
@@ -705,9 +907,29 @@ class RelayProcessManager: ObservableObject {
                    } else {
                        importStatusMessage = "Found notes..."
                    }
+               } else if line.contains("Initializing WoT") || line.contains("building WoT") || line.contains("fetching Nostr events") {
+                   importStatusMessage = "Building Web of Trust..."
+                   importProgress = 0.2
+               } else if line.contains("analysing Nostr events") {
+                   importStatusMessage = "Analysing Web of Trust..."
+                   importProgress = 0.3
                } else if line.contains("importing inbox notes") || line.contains("Importing inbox notes") {
                    importStatusMessage = "Importing tagged notes..."
                    importProgress = 0.85 // More conservative estimate
+               } else if line.contains("subscribing to inbox") || line.contains("tagged import complete") {
+                   // Import is effectively done when it starts subscribing or explicitly says complete
+                   self.isImporting = false
+                   self.importCompleted = true
+                   importProgress = 1.0
+                   importStatusMessage = "Import Complete!"
+                   
+                   // Force terminate the process so we can switch to normal relay mode
+                   DispatchQueue.main.async {
+                       if let process = self.process, process.isRunning {
+                           self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import phase finished, transitioning to relay..."))
+                           process.terminate()
+                       }
+                   }
                } else if line.contains("imported") && line.contains("tagged notes") {
                    // Tagged notes import completed
                    importProgress = 0.95
@@ -724,8 +946,11 @@ class RelayProcessManager: ObservableObject {
                     if line.contains("tagged import complete") {
                         self.isImporting = false
                         self.importCompleted = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        
+                        // Give Go a chance to exit naturally, but force kill if it hangs
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             if let process = self.process, process.isRunning {
+                                self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Import process didn't exit naturally, forcing termination..."))
                                 process.terminate()
                             }
                         }
@@ -905,7 +1130,7 @@ class RelayProcessManager: ObservableObject {
         // Double-check sanitization here just in case ConfigService.save() wasn't called
         let cleanNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
-            
+
         return [
             "OWNER_NPUB": cleanNpub,
             "RELAY_URL": config.relayURL,
@@ -918,7 +1143,10 @@ class RelayProcessManager: ObservableObject {
             "HAVEN_LOG_LEVEL": config.logLevel,
             "LOG_FORMAT": "$$host $$remote_addr - $$remote_user [$$time_local] \"$$request\" $$status $$body_bytes_sent \"$$http_referer\" \"$$http_user_agent\" \"$$upstream_addr\"",
             "TZ": "UTC",
-            
+
+            // Whitelisted Npubs
+            "WHITELISTED_NPUBS_FILE": config.whitelistedNpubsFile,
+
             // Private Relay
             "PRIVATE_RELAY_NAME": config.privateRelayName,
             "PRIVATE_RELAY_NPUB": config.ownerNpub,
@@ -932,7 +1160,7 @@ class RelayProcessManager: ObservableObject {
             "PRIVATE_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL": "3",
             "PRIVATE_RELAY_CONNECTION_RATE_LIMITER_INTERVAL": "5",
             "PRIVATE_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS": "9",
-            
+
             // Chat Relay
             "CHAT_RELAY_NAME": config.chatRelayName,
             "CHAT_RELAY_NPUB": config.ownerNpub,
@@ -952,7 +1180,7 @@ class RelayProcessManager: ObservableObject {
             "CHAT_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL": "3",
             "CHAT_RELAY_CONNECTION_RATE_LIMITER_INTERVAL": "3",
             "CHAT_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS": "9",
-            
+
             // Outbox Relay
             "OUTBOX_RELAY_NAME": config.outboxRelayName,
             "OUTBOX_RELAY_NPUB": config.ownerNpub,
@@ -968,7 +1196,7 @@ class RelayProcessManager: ObservableObject {
             "OUTBOX_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL": "3",
             "OUTBOX_RELAY_CONNECTION_RATE_LIMITER_INTERVAL": "1",
             "OUTBOX_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS": "9",
-            
+
             // Inbox Relay
             "INBOX_RELAY_NAME": config.inboxRelayName,
             "INBOX_RELAY_NPUB": config.ownerNpub,
@@ -983,14 +1211,14 @@ class RelayProcessManager: ObservableObject {
             "INBOX_RELAY_CONNECTION_RATE_LIMITER_TOKENS_PER_INTERVAL": "3",
             "INBOX_RELAY_CONNECTION_RATE_LIMITER_INTERVAL": "1",
             "INBOX_RELAY_CONNECTION_RATE_LIMITER_MAX_TOKENS": "9",
-            
+
             // Import
             "IMPORT_START_DATE": config.importStartDate,
             "IMPORT_SEED_RELAYS_FILE": config.importSeedRelaysFile,
             "IMPORT_QUERY_INTERVAL_SECONDS": "600",
-            "IMPORT_OWNER_NOTES_FETCH_TIMEOUT_SECONDS": "300", // Increased from 60
-            "IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS": "600", // Increased from 120
-            
+            "IMPORT_OWNER_NOTES_FETCH_TIMEOUT_SECONDS": "300",
+            "IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS": "600",
+
             // Backup
             "BACKUP_PROVIDER": config.backupProvider,
             "BACKUP_INTERVAL_HOURS": String(config.backupIntervalHours),
@@ -999,14 +1227,207 @@ class RelayProcessManager: ObservableObject {
             "S3_ENDPOINT": config.s3Endpoint,
             "S3_REGION": config.s3Region,
             "S3_BUCKET_NAME": config.s3BucketName,
-            
+
             // Blastr
             "BLASTR_RELAYS_FILE": config.blastrRelaysFile,
-            
+
             // WoT
             "WOT_FETCH_TIMEOUT_SECONDS": "60"
         ]
     }
-    
-    // pkill removed to ensure consistent behavior across debug and release builds
+
+    // MARK: - Backup / Restore helpers
+
+    /// Runs the haven binary with `backup` subcommand to export to a local .zip file
+    func runBackupExport(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
+        // Must stop relay first to release DB locks
+        let wasRunning = self.isRunning
+        
+        let executeBackup = {
+            // Force clear locks before running backup to avoid "resource temporarily unavailable"
+            self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
+            
+            self.runHavenSubcommand(config: config, arguments: ["backup", outputPath]) { exitCode in
+                Task { @MainActor in
+                    completion(exitCode == 0)
+                    // Restart if it was running
+                    if wasRunning {
+                        self.startRelay(config: config)
+                    }
+                }
+            }
+        }
+        
+        if wasRunning {
+            self.stopRelay {
+                executeBackup()
+            }
+        } else {
+            executeBackup()
+        }
+    }
+
+    /// Runs the haven binary with `restore` subcommand to import from a local .zip file
+    func runBackupRestore(config: HavenConfig, inputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
+        // Must stop relay first to release DB locks
+        let wasRunning = self.isRunning
+        
+        let executeRestore = {
+            self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
+            
+            self.runHavenSubcommand(config: config, arguments: ["restore", inputPath]) { exitCode in
+                Task { @MainActor in
+                    completion(exitCode == 0)
+                    // Restart if it was running (and restore succeeded? maybe always restart to be safe)
+                    if wasRunning {
+                        // Add a delay to ensure port release and prevent race conditions
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            self.startRelay(config: config)
+                        }
+                    }
+                }
+            }
+        }
+        
+        if wasRunning {
+            self.stopRelay {
+                executeRestore()
+            }
+        } else {
+            executeRestore()
+        }
+    }
+
+    /// Runs the haven binary with `backup --to-cloud`
+    func runBackupToCloud(config: HavenConfig) {
+        let wasRunning = self.isRunning
+        
+        let executeBackup = {
+            self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
+            
+            self.runHavenSubcommand(config: config, arguments: ["backup", "--to-cloud"]) { exitCode in
+                Task { @MainActor in
+                    let msg = exitCode == 0 ? "Cloud backup complete" : "Cloud backup failed (exit \(exitCode))"
+                    self.logs.append(LogEntry(timestamp: Date(), level: exitCode == 0 ? "INFO" : "ERROR", message: msg))
+                    
+                    if wasRunning {
+                        self.startRelay(config: config)
+                    }
+                }
+            }
+        }
+        
+        if wasRunning {
+            self.stopRelay {
+                executeBackup()
+            }
+        } else {
+            executeBackup()
+        }
+    }
+
+    /// Runs the haven binary with `restore --from-cloud`
+    func runRestoreFromCloud(config: HavenConfig) {
+        let wasRunning = self.isRunning
+        
+        let executeRestore = {
+            self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
+            
+            self.runHavenSubcommand(config: config, arguments: ["restore", "--from-cloud"]) { exitCode in
+                Task { @MainActor in
+                    let msg = exitCode == 0 ? "Cloud restore complete" : "Cloud restore failed (exit \(exitCode))"
+                    self.logs.append(LogEntry(timestamp: Date(), level: exitCode == 0 ? "INFO" : "ERROR", message: msg))
+                    
+                    if wasRunning {
+                        self.startRelay(config: config)
+                    }
+                }
+            }
+        }
+        
+        if wasRunning {
+            self.stopRelay {
+                executeRestore()
+            }
+        } else {
+            executeRestore()
+        }
+    }
+
+    /// Generic helper to run haven binary with given arguments in a fire-and-forget subprocess
+    private func runHavenSubcommand(config: HavenConfig, arguments: [String], completion: @escaping @Sendable (Int32) -> Void) {
+        let relayDataDir = ConfigService.shared.relayDataDir
+
+        guard let executablePath = Bundle.main.path(forResource: "haven", ofType: ""),
+              FileManager.default.fileExists(atPath: executablePath) else {
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "haven binary not found for subcommand"))
+            completion(1)
+            return
+        }
+
+        // Ensure config files are up to date
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+
+        let importRelaysURL = relayDataDir.appendingPathComponent(config.importSeedRelaysFile)
+        if let data = try? encoder.encode(config.importSeedRelays) {
+            try? data.write(to: importRelaysURL)
+        }
+
+        // Write whitelisted npubs file
+        let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
+        if let data = try? encoder.encode(config.whitelistedNpubs) {
+            try? data.write(to: npubsURL)
+        }
+
+        // Write .env
+        let envURL = relayDataDir.appendingPathComponent(".env")
+        let envContent = generateMinimalEnv(config: config)
+        try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: executablePath)
+        proc.arguments = arguments
+        proc.currentDirectoryURL = relayDataDir
+
+        var env: [String: String] = [:]
+        let sysEnv = ProcessInfo.processInfo.environment
+        env["PATH"] = sysEnv["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        env["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
+        env["TMPDIR"] = NSTemporaryDirectory()
+        env["USER"] = sysEnv["USER"] ?? "haven"
+
+        let configEnv = generateEnvDictionary(config: config)
+        for (key, value) in configEnv {
+            env[key] = value
+        }
+        env["RELAY_BIND_ADDRESS"] = "127.0.0.1"
+        proc.environment = env
+
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = pipe
+        proc.standardInput = Pipe()
+
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            if let str = String(data: data, encoding: .utf8), !str.isEmpty {
+                Task { @MainActor in
+                    self?.processOutput(str)
+                }
+            }
+        }
+
+        proc.terminationHandler = { p in
+            completion(p.terminationStatus)
+        }
+
+        do {
+            try proc.run()
+            logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Running: haven \(arguments.joined(separator: " "))"))
+        } catch {
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to run haven subcommand: \(error)"))
+            completion(1)
+        }
+    }
 }

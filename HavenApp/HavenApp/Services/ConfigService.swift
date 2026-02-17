@@ -77,6 +77,32 @@ class ConfigService: ObservableObject {
         MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
     }
     
+    func reload() {
+        if let data = try? Data(contentsOf: configURL) {
+            do {
+                let loaded = try JSONDecoder().decode(HavenConfig.self, from: data)
+                self.config = loaded
+                print("ConfigService: Successfully reloaded configuration from disk")
+                
+                // Ensure defaults are applied for empty arrays
+                if config.importSeedRelays.isEmpty {
+                    config.importSeedRelays = HavenConfig.default.importSeedRelays
+                }
+                if config.blastrRelays.isEmpty {
+                    config.blastrRelays = HavenConfig.default.blastrRelays
+                }
+                
+                // Reload lists
+                loadRelayLists()
+                
+                // Sync host
+                MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
+            } catch {
+                print("ConfigService: Error reloading configuration: \(error)")
+            }
+        }
+    }
+    
     private func loadRelayLists() {
         // Use separate data dir
         let importURL = relayDataDir.appendingPathComponent(config.importSeedRelaysFile)
@@ -86,7 +112,7 @@ class ConfigService: ObservableObject {
             config.importSeedRelays = list
         }
         // If file doesn't exist or is empty, keep the defaults from HavenConfig
-        
+
         let blastrURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
         if let data = try? Data(contentsOf: blastrURL),
            let list = try? JSONDecoder().decode([String].self, from: data),
@@ -94,6 +120,13 @@ class ConfigService: ObservableObject {
             config.blastrRelays = list
         }
         // If file doesn't exist or is empty, keep the defaults from HavenConfig
+
+        // Load whitelisted npubs
+        let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
+        if let data = try? Data(contentsOf: npubsURL),
+           let list = try? JSONDecoder().decode([String].self, from: data) {
+            config.whitelistedNpubs = list
+        }
     }
     
     func save() {
@@ -150,12 +183,31 @@ class ConfigService: ObservableObject {
             if let data = try? encoder.encode(config.importSeedRelays) {
                 try? data.write(to: importURL)
             }
+        } else {
+             // If empty, write empty array to clear previous contents
+             let importURL = relayDataDir.appendingPathComponent(config.importSeedRelaysFile)
+             if let data = try? encoder.encode([String]()) {
+                 try? data.write(to: importURL)
+             }
         }
         
         if !config.blastrRelays.isEmpty {
             let blastrURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
             if let data = try? encoder.encode(config.blastrRelays) {
                 try? data.write(to: blastrURL)
+            }
+        } else {
+             let blastrURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
+             if let data = try? encoder.encode([String]()) {
+                 try? data.write(to: blastrURL)
+             }
+        }
+
+        // Save whitelisted npubs
+        if !config.whitelistedNpubs.isEmpty {
+            let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
+            if let data = try? encoder.encode(config.whitelistedNpubs) {
+                try? data.write(to: npubsURL)
             }
         }
     }
@@ -290,12 +342,32 @@ class ConfigService: ObservableObject {
             case "INBOX_RELAY_NAME": config.inboxRelayName = value
             case "INBOX_RELAY_DESCRIPTION": config.inboxRelayDescription = value
             case "INBOX_RELAY_ICON": config.inboxRelayIcon = value
+            case "INBOX_PULL_INTERVAL_SECONDS": config.inboxPullIntervalSeconds = Int(value) ?? config.inboxPullIntervalSeconds
+            case "WHITELISTED_NPUBS_FILE": config.whitelistedNpubsFile = value
             default: break
             }
         }
         
         config.hasCompletedSetup = true
         print("ConfigService: Successfully recovered critical settings from .env")
+    }
+    
+    /// Returns a Set of hex pubkeys derived from the whitelisted npubs
+    var whitelistedHexPubkeys: Set<String> {
+        var hexKeys = Set<String>()
+        for npub in config.whitelistedNpubs {
+            let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
+            if clean.isEmpty { continue }
+            
+            // Decodes bech32 and returns (hrp, data) tuple.
+            // We need to convert data to hex string if possible.
+            // Assuming Bech32 helper has a .hexString property on the return tuple or similar.
+            // Based on NostrService usage: if let hex = Bech32.decode(npub)?.hexString
+            if let decoded = Bech32.decode(clean) {
+                hexKeys.insert(decoded.hexString)
+            }
+        }
+        return hexKeys
     }
     
     

@@ -244,6 +244,61 @@ struct MenuBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             stopInactivityTimer()
         }
+        
+        // Critical Process Kill Alert Overlay
+        if relayManager.showProcessKillAlert {
+            Color.black.opacity(0.6)
+                .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.orange)
+
+                VStack(spacing: 6) {
+                    Text("Startup Error")
+                        .font(.title2.bold())
+                        .foregroundColor(.white)
+
+                    Text("Haven didn't shut down correctly. Tap below to fix it automatically.")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.white.opacity(0.9))
+                }
+
+                HStack(spacing: 12) {
+                    Button(action: {
+                        relayManager.forceCleanAndRestart()
+                    }) {
+                        Text("Fix & Restart")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(width: 140, height: 36)
+                            .background(Color.orange)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        relayManager.showProcessKillAlert = false
+                    }) {
+                        Text("Close")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(width: 80, height: 36)
+                            .background(Color.white.opacity(0.2))
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(30)
+            .frame(width: 400)
+            .background(Color.black.opacity(0.9))
+            .cornerRadius(16)
+            .shadow(radius: 20)
+            .transition(.scale.combined(with: .opacity))
+            .zIndex(100)
+        }
     }
     
     private func startInactivityTimer() {

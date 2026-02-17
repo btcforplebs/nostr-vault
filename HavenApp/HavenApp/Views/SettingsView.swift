@@ -114,23 +114,90 @@ struct SettingsView: View {
 
 struct IdentitySettingsView: View {
     @EnvironmentObject var configService: ConfigService
-    
+    @State private var newNpub: String = ""
+
     var body: some View {
-        Form {
-            Section("Owner Identity") {
-                TextField("Owner npub", text: $configService.config.ownerNpub)
-                    .help("Your Nostr public key in npub format")
+        VStack(spacing: 0) {
+            Form {
+                Section("Owner Identity") {
+                    TextField("Owner npub", text: $configService.config.ownerNpub)
+                        .help("Your Nostr public key in npub format")
+                }
+
+                Section("Connection") {
+                    TextField("Hostname", text: $configService.config.relayURL)
+                        .help("Public hostname for your relay (e.g., relay.example.com). Do not include the port.")
+
+                    TextField("Port", value: $configService.config.relayPort, formatter: NumberFormatter.noSeparator)
+                }
             }
-            
-            Section("Connection") {
-                TextField("Hostname", text: $configService.config.relayURL)
-                    .help("Public hostname for your relay (e.g., relay.example.com). Do not include the port.")
-                
-                TextField("Port", value: $configService.config.relayPort, formatter: NumberFormatter.noSeparator)
+            .formStyle(.grouped)
+            .frame(height: 220)
+
+            Divider()
+
+            VStack(alignment: .leading) {
+                Text("Whitelisted Npubs")
+                    .font(.headline)
+                    .padding(.horizontal)
+                    .padding(.top)
+
+                Text("Additional npubs that can write to your private relay. Your owner npub is always included.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+
+                NpubListEditor(npubs: $configService.config.whitelistedNpubs)
             }
         }
-        .formStyle(.grouped)
-        .padding()
+    }
+}
+
+struct NpubListEditor: View {
+    @Binding var npubs: [String]
+    @State private var newNpub: String = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                TextField("npub1...", text: $newNpub)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { addNpub() }
+
+                Button(action: addNpub) {
+                    Image(systemName: "plus.circle.fill")
+                }
+                .disabled(newNpub.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
+            List {
+                ForEach(npubs, id: \.self) { npub in
+                    HStack {
+                        Text(npub)
+                            .font(.system(.body, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button {
+                            npubs.removeAll { $0 == npub }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundColor(.red)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func addNpub() {
+        let trimmed = newNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !npubs.contains(trimmed) else { return }
+        npubs.append(trimmed)
+        newNpub = ""
     }
 }
 
@@ -427,27 +494,55 @@ struct BlastrSettingsView: View {
 
 struct BackupSettingsView: View {
     @EnvironmentObject var configService: ConfigService
-    @State private var showFileImporter = false
-    
+    @EnvironmentObject var relayManager: RelayProcessManager
+    @State private var isExporting = false
+    @State private var isImportingBackup = false
+    @State private var backupStatusMessage = ""
+
     var body: some View {
         Form {
-            Section("Backup Provider") {
+            Section("JSONL Export / Import") {
+                HStack {
+                    Button("Export Backup") {
+                        exportBackup()
+                    }
+                    .disabled(isExporting || isImportingBackup)
+
+                    Button("Import Backup") {
+                        importBackup()
+                    }
+                    .disabled(isExporting || isImportingBackup)
+
+                    if isExporting || isImportingBackup {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
+                if !backupStatusMessage.isEmpty {
+                    Text(backupStatusMessage)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Text("Export creates a .zip file containing all relay databases in JSONL format. Import restores from a .zip or .jsonl file.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Section("Cloud Backup Provider") {
                 Picker("Provider", selection: $configService.config.backupProvider) {
                     Text("None").tag("none")
                     Text("S3 Compatible").tag("s3")
-                    Text("AWS S3").tag("aws")
-                    Text("Google Cloud Storage").tag("gcp")
                 }
             }
-            
-            if configService.config.backupProvider != "none" {
-                 Section("Schedule") {
+
+            if configService.config.backupProvider == "s3" {
+                Section("Schedule") {
                     Stepper("Backup every \(configService.config.backupIntervalHours) hours",
                            value: $configService.config.backupIntervalHours, in: 1...168)
                 }
-            }
-            
-            if configService.config.backupProvider == "s3" {
+
                 Section("S3 Configuration") {
                     TextField("Access Key ID", text: $configService.config.s3AccessKeyId)
                     SecureField("Secret Key", text: $configService.config.s3SecretKey)
@@ -455,26 +550,21 @@ struct BackupSettingsView: View {
                     TextField("Region", text: $configService.config.s3Region)
                     TextField("Bucket Name", text: $configService.config.s3BucketName)
                 }
-            } else if configService.config.backupProvider == "aws" {
-                Section("AWS Configuration") {
-                    TextField("Access Key ID", text: $configService.config.awsAccessKeyId)
-                    SecureField("Secret Access Key", text: $configService.config.awsSecretAccessKey)
-                    TextField("Region", text: $configService.config.awsRegion)
-                    TextField("Bucket Name", text: $configService.config.awsBucket)
-                }
-            } else if configService.config.backupProvider == "gcp" {
-                Section("GCP Configuration") {
-                    TextField("Bucket Name", text: $configService.config.gcpBucketName)
-                    
+
+                Section("Cloud Actions") {
                     HStack {
-                        TextField("Credentials JSON", text: $configService.config.gcpCredentialsPath)
-                            .disabled(true) // Read-only, set via button
-                        
-                        Button("Browse...") {
-                            showFileImporter = true
+                        Button("Backup to Cloud") {
+                            relayManager.runBackupToCloud(config: configService.config)
                         }
+                        .disabled(!relayManager.isRunning)
+
+                        Button("Restore from Cloud") {
+                            relayManager.runRestoreFromCloud(config: configService.config)
+                        }
+                        .disabled(relayManager.isRunning)
                     }
-                    Text("Select your Service Account JSON key file.")
+
+                    Text("Backup uploads a JSONL snapshot to your S3 bucket. Restore downloads and imports from the latest cloud backup.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -482,21 +572,42 @@ struct BackupSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
-        .fileImporter(
-            isPresented: $showFileImporter,
-            allowedContentTypes: [.json],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first {
-                    // We need to access security scoped resource
-                    guard url.startAccessingSecurityScopedResource() else { return }
-                    configService.config.gcpCredentialsPath = url.path
-                    url.stopAccessingSecurityScopedResource()
-                }
-            case .failure(let error):
-                print("Error selecting file: \(error.localizedDescription)")
+    }
+
+    private func exportBackup() {
+        let panel = NSSavePanel()
+        panel.title = "Export Relay Backup"
+        panel.nameFieldStringValue = "haven-backup.zip"
+        panel.allowedContentTypes = [.zip]
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        isExporting = true
+        backupStatusMessage = "Exporting..."
+        relayManager.runBackupExport(config: configService.config, outputPath: url.path) { [self] success in
+            Task { @MainActor in
+                isExporting = false
+                backupStatusMessage = success ? "Export complete: \(url.lastPathComponent)" : "Export failed. Check logs."
+            }
+        }
+    }
+
+    private func importBackup() {
+        let panel = NSOpenPanel()
+        panel.title = "Import Relay Backup"
+        panel.allowedContentTypes = [.zip]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        isImportingBackup = true
+        backupStatusMessage = "Importing..."
+        relayManager.runBackupRestore(config: configService.config, inputPath: url.path) { [self] success in
+            Task { @MainActor in
+                isImportingBackup = false
+                backupStatusMessage = success ? "Import complete: \(url.lastPathComponent)" : "Import failed. Check logs."
             }
         }
     }
