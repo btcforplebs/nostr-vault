@@ -5,6 +5,7 @@ blossom/
 db.zip
 db/
 dist/
+blacklisted_npubs.json
 haven
 relays_blastr.json
 relays_import.json

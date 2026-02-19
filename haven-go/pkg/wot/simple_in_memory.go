@@ -214,9 +214,9 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 	}
 
 	// Filter out pubkeys with less than minimum followers
-	minimumFollowers := wt.MinFollowers
+	minimumFollowers := int64(wt.MinFollowers)
 	pubkeyFollowers.Range(func(pubkey string, followers *atomic.Int64) bool {
-		if int(followers.Load()) >= minimumFollowers {
+		if followers.Load() >= minimumFollowers {
 			newWot[pubkey] = true
 		}
 		return true

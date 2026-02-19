@@ -24,6 +24,9 @@ HAVEN (High Availability Vault for Events on Nostr) is the most sovereign person
 
 **Web of Trust**: Protected from DM and Inbox spam by using a Web of Trust (WoT). See the [Web of Trust Documentation](docs/wot.md) for more details.
 
+**Access Control**: Whitelist and blacklist npubs. See the [Access 
+Control Documentation](docs/access-control.md) for more details.
+
 **Inbox Relay**: Notes are pulled from other relays and stored in the inbox relay.
 
 **Blastr**: Notes sent to the outbox are also blasted to other relays.
@@ -86,17 +89,12 @@ cp relays_blastr.example.json relays_blastr.json
 
 The JSON should contain an array of relay URLs, which default to wss:// if you don't explicitly specify the protocol.
 
-### 4. Create the Whitelisted npubs JSON file (optional)
+### 4. Configure Access Control (optional)
 
-If you want to whitelist additional pubkeys to have the same permissions as the relay owner (private relay access, 
-outbox publishing, writing to blossom, etc.), create a `whitelisted_npubs.json` file:
+Haven allows you to whitelist specific npubs to grant them full relay access, or blacklist them to prevent any 
+interaction with your relay. 
 
-```bash
-cp whitelisted_npubs.example.json whitelisted_npubs.json
-```
-
-> [!NOTE]
-> The relay owner pubkey is automatically added to the whitelist, there is no need to repeat it in the whitelist file.
+See the [Access Control Documentation](docs/access-control.md) for more details on how to set up whitelists and blacklists.
 
 ### 5. Run on System Startup
 

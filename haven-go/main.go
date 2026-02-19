@@ -66,7 +66,9 @@ func main() {
 
 	log.Println("🚀 HAVEN", config.RelayVersion, "is booting up")
 	defer log.Println("🔌 HAVEN is shutting down")
-	log.Printf("👥 Number of whitelisted pubkeys: %v\n", len(config.WhitelistedPubKeys))
+	log.Println("👥 Number of whitelisted pubkeys:", len(config.WhitelistedPubKeys))
+	log.Println("🚷 Number of blacklisted pubkeys:", len(config.BlacklistedPubKeys))
+
 	ensureImportRelays()
 	wotModel := wot.NewSimpleInMemory(
 		pool,

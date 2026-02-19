@@ -24,7 +24,6 @@ type S3Config struct {
 type Config struct {
 	OwnerNpub                            string              `json:"owner_npub"`
 	OwnerPubKey                          string              `json:"owner_pubkey"`
-	WhitelistedPubKeys                   map[string]struct{} `json:"whitelisted_pubkeys"`
 	DBEngine                             string              `json:"db_engine"`
 	LmdbMapSize                          int64               `json:"lmdb_map_size"`
 	BlossomPath                          string              `json:"blossom_path"`
@@ -53,7 +52,6 @@ type Config struct {
 	ImportStartDate                      string              `json:"import_start_date"`
 	ImportOwnerNotesFetchTimeoutSeconds  int                 `json:"import_owned_notes_fetch_timeout_seconds"`
 	ImportTaggedNotesFetchTimeoutSeconds int                 `json:"import_tagged_fetch_timeout_seconds"`
-	ImportQueryIntervalSeconds           int                 `json:"import_query_interval_seconds"`
 	ImportSeedRelays                     []string            `json:"import_seed_relays"`
 	BackupProvider                       string              `json:"backup_provider"`
 	BackupIntervalHours                  int                 `json:"backup_interval_hours"`
@@ -61,6 +59,8 @@ type Config struct {
 	WotMinimumFollowers                  int                 `json:"wot_minimum_followers"`
 	WotFetchTimeoutSeconds               int                 `json:"wot_fetch_timeout_seconds"`
 	WotRefreshInterval                   time.Duration       `json:"wot_refresh_interval"`
+	WhitelistedPubKeys                   map[string]struct{} `json:"whitelisted_pubkeys"`
+	BlacklistedPubKeys                   map[string]struct{} `json:"blacklisted_pubkeys"`
 	LogLevel                             string              `json:"log_level"`
 	BlastrRelays                         []string            `json:"blastr_relays"`
 	S3Config                             *S3Config           `json:"s3_config"`
@@ -69,10 +69,9 @@ type Config struct {
 func loadConfig() Config {
 	_ = godotenv.Load(".env")
 
-	return Config{
+	cfg := Config{
 		OwnerNpub:                            getEnv("OWNER_NPUB"),
 		OwnerPubKey:                          nPubToPubkey(getEnv("OWNER_NPUB")),
-		WhitelistedPubKeys:                   getNpubsFromFile(getEnvString("WHITELISTED_NPUBS_FILE", "")),
 		DBEngine:                             getEnvString("DB_ENGINE", "lmdb"),
 		LmdbMapSize:                          getEnvInt64("LMDB_MAPSIZE", 0),
 		BlossomPath:                          getEnvString("BLOSSOM_PATH", "blossom"),
@@ -99,9 +98,8 @@ func loadConfig() Config {
 		InboxRelayIcon:                       getEnv("INBOX_RELAY_ICON"),
 		InboxPullIntervalSeconds:             getEnvInt("INBOX_PULL_INTERVAL_SECONDS", 3600),
 		ImportStartDate:                      getEnv("IMPORT_START_DATE"),
-		ImportOwnerNotesFetchTimeoutSeconds:  getEnvInt("IMPORT_OWNER_NOTES_FETCH_TIMEOUT_SECONDS", 30),
+		ImportOwnerNotesFetchTimeoutSeconds:  getEnvInt("IMPORT_OWNER_NOTES_FETCH_TIMEOUT_SECONDS", 60),
 		ImportTaggedNotesFetchTimeoutSeconds: getEnvInt("IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS", 120),
-		ImportQueryIntervalSeconds:           getEnvInt("IMPORT_QUERY_INTERVAL_SECONDS", 360000),
 		ImportSeedRelays:                     getRelayListFromFile(getEnv("IMPORT_SEED_RELAYS_FILE")),
 		BackupProvider:                       getEnvString("BACKUP_PROVIDER", "none"),
 		BackupIntervalHours:                  getEnvInt("BACKUP_INTERVAL_HOURS", 24),
@@ -109,10 +107,18 @@ func loadConfig() Config {
 		WotMinimumFollowers:                  getEnvInt("WOT_MINIMUM_FOLLOWERS", 0),
 		WotFetchTimeoutSeconds:               getEnvInt("WOT_FETCH_TIMEOUT_SECONDS", 30),
 		WotRefreshInterval:                   getEnvDuration("WOT_REFRESH_INTERVAL", 24*time.Hour),
+		WhitelistedPubKeys:                   getNpubsFromFile(getEnvString("WHITELISTED_NPUBS_FILE", "")),
+		BlacklistedPubKeys:                   getNpubsFromFile(getEnvString("BLACKLISTED_NPUBS_FILE", "")),
 		LogLevel:                             getEnvString("HAVEN_LOG_LEVEL", "INFO"),
 		BlastrRelays:                         getRelayListFromFile(getEnv("BLASTR_RELAYS_FILE")),
 		S3Config:                             getS3Config(),
 	}
+
+	// Relay owner is always whitelisted
+	cfg.WhitelistedPubKeys[cfg.OwnerPubKey] = struct{}{}
+
+	return cfg
+
 }
 
 func getVersion() string {
@@ -161,11 +167,10 @@ func getRelayListFromFile(filePath string) []string {
 }
 
 func getNpubsFromFile(filePath string) map[string]struct{} {
-	whitelist := map[string]struct{}{}
-	whitelist[nPubToPubkey(getEnv("OWNER_NPUB"))] = struct{}{}
+	pubKeys := map[string]struct{}{}
 	if filePath == "" {
-		// No whitelist file, only owner will be whitelisted"
-		return whitelist
+		// No pubKeys file, only owner will be whitelisted"
+		return pubKeys
 	}
 	file, err := os.ReadFile(filePath)
 	if err != nil {
@@ -179,9 +184,9 @@ func getNpubsFromFile(filePath string) map[string]struct{} {
 
 	for _, npub := range npubs {
 		npub = strings.TrimSpace(npub)
-		whitelist[nPubToPubkey(npub)] = struct{}{}
+		pubKeys[nPubToPubkey(npub)] = struct{}{}
 	}
-	return whitelist
+	return pubKeys
 }
 
 func getEnv(key string) string {

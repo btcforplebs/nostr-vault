@@ -15,8 +15,6 @@ import (
 	"github.com/fiatjaf/khatru/blossom"
 	"github.com/fiatjaf/khatru/policies"
 	"github.com/nbd-wtf/go-nostr"
-
-	"github.com/bitvora/haven/pkg/wot"
 )
 
 var (
@@ -118,10 +116,10 @@ func initRelays(ctx context.Context) {
 	if !privateRelayLimits.AllowEmptyFilters {
 		privateRelay.RejectFilter = append(privateRelay.RejectFilter, policies.NoEmptyFilters)
 	}
-
 	if !privateRelayLimits.AllowComplexFilters {
 		privateRelay.RejectFilter = append(privateRelay.RejectFilter, policies.NoComplexFilters)
 	}
+	privateRelay.RejectFilter = append(privateRelay.RejectFilter, policies.MustAuth, MustBeWhitelistedToQuery)
 
 	privateRelay.RejectEvent = append(privateRelay.RejectEvent,
 		policies.RejectEventsWithBase64Media,
@@ -130,6 +128,7 @@ func initRelays(ctx context.Context) {
 			time.Minute*time.Duration(privateRelayLimits.EventIPLimiterInterval),
 			privateRelayLimits.EventIPLimiterMaxTokens,
 		),
+		MustBeWhitelistedToPost,
 	)
 
 	privateRelay.RejectConnection = append(privateRelay.RejectConnection,
@@ -140,34 +139,13 @@ func initRelays(ctx context.Context) {
 		),
 	)
 
-	privateRelay.OnConnect = append(privateRelay.OnConnect, func(ctx context.Context) {
-		khatru.RequestAuth(ctx)
-	})
+	privateRelay.OnConnect = append(privateRelay.OnConnect, khatru.RequestAuth)
 
 	privateRelay.StoreEvent = append(privateRelay.StoreEvent, privateDB.SaveEvent)
 	privateRelay.QueryEvents = append(privateRelay.QueryEvents, privateDB.QueryEvents)
 	privateRelay.DeleteEvent = append(privateRelay.DeleteEvent, privateDB.DeleteEvent)
 	privateRelay.CountEvents = append(privateRelay.CountEvents, privateDB.CountEvents)
 	privateRelay.ReplaceEvent = append(privateRelay.ReplaceEvent, privateDB.ReplaceEvent)
-
-	privateRelay.RejectFilter = append(privateRelay.RejectFilter, func(ctx context.Context, filter nostr.Filter) (bool, string) {
-		authenticatedUser := khatru.GetAuthed(ctx)
-		if _, ok := config.WhitelistedPubKeys[authenticatedUser]; ok {
-			return false, ""
-		}
-
-		return true, "auth-required: this query requires you to be authenticated"
-	})
-
-	privateRelay.RejectEvent = append(privateRelay.RejectEvent, func(ctx context.Context, event *nostr.Event) (bool, string) {
-		authenticatedUser := khatru.GetAuthed(ctx)
-
-		if _, ok := config.WhitelistedPubKeys[authenticatedUser]; ok {
-			return false, ""
-		}
-
-		return true, "auth-required: publishing this event requires authentication"
-	})
 
 	mux := privateRelay.Router()
 
@@ -201,10 +179,10 @@ func initRelays(ctx context.Context) {
 	if !chatRelayLimits.AllowEmptyFilters {
 		chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.NoEmptyFilters)
 	}
-
 	if !chatRelayLimits.AllowComplexFilters {
 		chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.NoComplexFilters)
 	}
+	chatRelay.RejectFilter = append(chatRelay.RejectFilter, policies.MustAuth, MustBeInWotToQuery)
 
 	chatRelay.RejectEvent = append(chatRelay.RejectEvent,
 		policies.RejectEventsWithBase64Media,
@@ -213,6 +191,9 @@ func initRelays(ctx context.Context) {
 			time.Minute*time.Duration(chatRelayLimits.EventIPLimiterInterval),
 			chatRelayLimits.EventIPLimiterMaxTokens,
 		),
+		MustNotBeBlacklistedToPost,
+		MustBeInWotToPost,
+		EventMustBeChatRelated,
 	)
 
 	chatRelay.RejectConnection = append(chatRelay.RejectConnection,
@@ -223,61 +204,13 @@ func initRelays(ctx context.Context) {
 		),
 	)
 
-	chatRelay.OnConnect = append(chatRelay.OnConnect, func(ctx context.Context) {
-		khatru.RequestAuth(ctx)
-	})
+	chatRelay.OnConnect = append(chatRelay.OnConnect, khatru.RequestAuth)
 
 	chatRelay.StoreEvent = append(chatRelay.StoreEvent, chatDB.SaveEvent)
 	chatRelay.QueryEvents = append(chatRelay.QueryEvents, chatDB.QueryEvents)
 	chatRelay.DeleteEvent = append(chatRelay.DeleteEvent, chatDB.DeleteEvent)
 	chatRelay.CountEvents = append(chatRelay.CountEvents, chatDB.CountEvents)
 	chatRelay.ReplaceEvent = append(chatRelay.ReplaceEvent, chatDB.ReplaceEvent)
-
-	chatRelay.RejectFilter = append(chatRelay.RejectFilter, func(ctx context.Context, filter nostr.Filter) (bool, string) {
-		authenticatedUser := khatru.GetAuthed(ctx)
-
-		if !wot.GetInstance().Has(ctx, authenticatedUser) {
-			return true, "you must be in the web of trust to write to this relay"
-		}
-
-		return false, ""
-	})
-
-	allowedKinds := map[int]struct{}{
-		// Regular kinds
-		nostr.KindSimpleGroupChatMessage:   struct{}{},
-		nostr.KindSimpleGroupThreadedReply: struct{}{},
-		nostr.KindSimpleGroupThread:        struct{}{},
-		nostr.KindSimpleGroupReply:         struct{}{},
-		nostr.KindChannelMessage:           struct{}{},
-		nostr.KindChannelHideMessage:       struct{}{},
-
-		nostr.KindGiftWrap: struct{}{},
-
-		nostr.KindSimpleGroupPutUser:      struct{}{},
-		nostr.KindSimpleGroupRemoveUser:   struct{}{},
-		nostr.KindSimpleGroupEditMetadata: struct{}{},
-		nostr.KindSimpleGroupDeleteEvent:  struct{}{},
-		nostr.KindSimpleGroupCreateGroup:  struct{}{},
-		nostr.KindSimpleGroupDeleteGroup:  struct{}{},
-		nostr.KindSimpleGroupCreateInvite: struct{}{},
-		nostr.KindSimpleGroupJoinRequest:  struct{}{},
-		nostr.KindSimpleGroupLeaveRequest: struct{}{},
-
-		// Addressable kinds
-		nostr.KindSimpleGroupMetadata: struct{}{},
-		nostr.KindSimpleGroupAdmins:   struct{}{},
-		nostr.KindSimpleGroupMembers:  struct{}{},
-		nostr.KindSimpleGroupRoles:    struct{}{},
-	}
-
-	chatRelay.RejectEvent = append(chatRelay.RejectEvent, func(ctx context.Context, event *nostr.Event) (bool, string) {
-		if _, has := allowedKinds[event.Kind]; has {
-			return false, ""
-		}
-
-		return true, "only chat related events are allowed"
-	})
 
 	mux = chatRelay.Router()
 
@@ -311,7 +244,6 @@ func initRelays(ctx context.Context) {
 	if !outboxRelayLimits.AllowEmptyFilters {
 		outboxRelay.RejectFilter = append(outboxRelay.RejectFilter, policies.NoEmptyFilters)
 	}
-
 	if !outboxRelayLimits.AllowComplexFilters {
 		outboxRelay.RejectFilter = append(outboxRelay.RejectFilter, policies.NoComplexFilters)
 	}
@@ -323,6 +255,7 @@ func initRelays(ctx context.Context) {
 			time.Minute*time.Duration(outboxRelayLimits.EventIPLimiterInterval),
 			outboxRelayLimits.EventIPLimiterMaxTokens,
 		),
+		MustBeWhitelistedToPost,
 	)
 
 	outboxRelay.RejectConnection = append(outboxRelay.RejectConnection,
@@ -341,13 +274,6 @@ func initRelays(ctx context.Context) {
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
 	outboxRelay.CountEvents = append(outboxRelay.CountEvents, outboxDB.CountEvents)
 	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent)
-
-	outboxRelay.RejectEvent = append(outboxRelay.RejectEvent, func(ctx context.Context, event *nostr.Event) (bool, string) {
-		if _, ok := config.WhitelistedPubKeys[event.PubKey]; ok {
-			return false, ""
-		}
-		return true, "only notes signed by npubs whilested in this relay are allowed"
-	})
 
 	mux = outboxRelay.Router()
 
@@ -412,7 +338,6 @@ func initRelays(ctx context.Context) {
 	if !inboxRelayLimits.AllowEmptyFilters {
 		inboxRelay.RejectFilter = append(inboxRelay.RejectFilter, policies.NoEmptyFilters)
 	}
-
 	if !inboxRelayLimits.AllowComplexFilters {
 		inboxRelay.RejectFilter = append(inboxRelay.RejectFilter, policies.NoComplexFilters)
 	}
@@ -424,6 +349,10 @@ func initRelays(ctx context.Context) {
 			time.Minute*time.Duration(inboxRelayLimits.EventIPLimiterInterval),
 			inboxRelayLimits.EventIPLimiterMaxTokens,
 		),
+		OnlyGiftWrappedDMs,
+		MustNotBeBlacklistedToPost,
+		MustBeInWotToPost,
+		MustTagWhitelistedPubKey,
 	)
 
 	inboxRelay.RejectConnection = append(inboxRelay.RejectConnection,
@@ -439,22 +368,6 @@ func initRelays(ctx context.Context) {
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)
 	inboxRelay.CountEvents = append(inboxRelay.CountEvents, inboxDB.CountEvents)
 	inboxRelay.ReplaceEvent = append(inboxRelay.ReplaceEvent, inboxDB.ReplaceEvent)
-
-	inboxRelay.RejectEvent = append(inboxRelay.RejectEvent, func(ctx context.Context, event *nostr.Event) (bool, string) {
-		if !wot.GetInstance().Has(ctx, event.PubKey) {
-			return true, "you must be in the web of trust to post to this relay"
-		}
-
-		if event.Kind == nostr.KindEncryptedDirectMessage {
-			return true, "only gift wrapped DMs are supported"
-		}
-
-		if event.Tags.FindWithValue("p", inboxRelay.Info.PubKey) != nil {
-			return false, ""
-		}
-
-		return true, "you can only post notes if you've tagged a whitelisted pubkey in this relay"
-	})
 
 	mux = inboxRelay.Router()
 
