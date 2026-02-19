@@ -46,6 +46,13 @@ build_output_debug.txt
 *~
 
 # Go
+.env
+.idea/
+blossom/
+db.zip
+db/
+dist/
+blacklisted_npubs.json
 haven
 vendor/
 go.work
@@ -53,6 +60,7 @@ go.work
 # Build output
 HavenApp/HavenApp.zip
 HavenApp/build-output/
+HavenApp/build_data/
 
 # website
 website/
