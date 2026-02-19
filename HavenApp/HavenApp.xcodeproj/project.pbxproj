@@ -150,6 +150,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = CCCC0001 /* Build configuration list for PBXNativeTarget "HavenApp" */;
 			buildPhases = (
+				BBBB0002 /* Build Go Binary */,
 				PPPP0001 /* Sources */,
 				PPPP0002 /* Resources */,
 				BBBB0001 /* Sign Go Binary */,
@@ -230,6 +231,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "\"$PROJECT_DIR/HavenApp/App/sign_haven.sh\"\n";
+		};
+		BBBB0002 /* Build Go Binary */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Go Binary";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"$PROJECT_DIR/HavenApp/App/build_haven.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

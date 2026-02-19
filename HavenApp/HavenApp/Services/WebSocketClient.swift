@@ -645,13 +645,13 @@ class NostrService: ObservableObject {
         
         return urls.map { url in
             var finalURL = url
-            
+
             // Normalize potential local/development URLs to use HTTP instead of HTTPS
             // We check for localhost, 127.0.0.1, and any URL that matches the current relayURL if it's local
-            let isKnownLocal = finalURL.host == "localhost" || 
-                               finalURL.host == "127.0.0.1" || 
+            let isKnownLocal = finalURL.host == "localhost" ||
+                               finalURL.host == "127.0.0.1" ||
                                ConfigService.shared.config.isLocal
-            
+
             if finalURL.scheme == "https" && isKnownLocal {
                 var components = URLComponents(url: finalURL, resolvingAgainstBaseURL: false)
                 components?.scheme = "http"
@@ -683,10 +683,11 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     }()
     
     private let blossomDirectory: URL
-    
+
     // Thread-safe copy of local host for non-isolated access
     private var localHost: String = ""
     private let hostLock = NSLock()
+
     
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -866,27 +867,27 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         self.localHost = host.lowercased()
         print("MediaCacheService: Updated local host to \(self.localHost)")
     }
-    
+
     private func isLocalURL(_ url: URL) -> Bool {
         hostLock.lock()
         let sanitized = self.localHost
         hostLock.unlock()
-        
+
         let host = url.host?.lowercased() ?? ""
-        
+
         // Match against localhost, 127.0.0.1
         if host == "localhost" || host == "127.0.0.1" {
             return true
         }
-        
+
         if sanitized.isEmpty { return false }
-        
+
         // Split by colon to ignore port for comparison
         let sanitizedHost = sanitized.split(separator: ":").first.map(String.init) ?? sanitized
-        
+
         return host == sanitizedHost || host.hasSuffix("." + sanitizedHost)
     }
-    
+
     func getSource(for url: URL) -> MediaSource {
         if isLocalURL(url) {
             return .blossom

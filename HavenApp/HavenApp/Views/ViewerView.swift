@@ -54,19 +54,19 @@ struct ViewerView: View {
     }
     
     var allMediaItems: [MediaItem] {
-        // STRICTLY use remote items (from Nostr events) to ensure we use the Note's "CreatedAt" timestamp for sorting.
-        // We do NOT use local blossom files because their "File Creation Date" is random (sync time) and messes up the order.
+        // Use Nostr event items (noteMedia) as the primary source for proper timestamps,
+        // then include local blossom files that don't have a corresponding event.
         var latestItems: [String: MediaItem] = [:]
-        
+
         func normalizedKey(for url: URL) -> String {
             // Robustly extract the 64-character hash from the URL
             // This handles cases like:
             // - http://local/hash
             // - https://remote/hash.jpg
             // - https://remote/hash?token=123
-            
+
             let urlString = url.absoluteString
-            
+
             // Look for 64 hex characters
             let pattern = "[a-f0-9]{64}"
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
@@ -74,22 +74,21 @@ struct ViewerView: View {
                let range = Range(match.range, in: urlString) {
                 return String(urlString[range])
             }
-            
+
             // Fallback for non-standard filenames: strip query and extension
             return url.deletingPathExtension().lastPathComponent
         }
-        
-        // We SKIP local `blossomMedia` entirely.
-        // 1. Filter remote items based on content filter
+
+        // 1. Filter remote items (from Nostr events) based on content filter
         let remoteItems = nostrService.noteMedia.filter { item in
             switch contentFilter {
-            case .all: 
+            case .all:
                 // User requested "All" to just be "Mine + Tagged"
                 let isMine = item.pubkey == nostrService.ownerHexPubkey
                 let isTagged = item.tags?.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey } ?? false
                 return isMine || isTagged
             case .mine: return item.pubkey == nostrService.ownerHexPubkey
-            case .tagged: 
+            case .tagged:
                 if item.pubkey == nostrService.ownerHexPubkey { return false }
                 if let tags = item.tags {
                     return tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
@@ -102,12 +101,23 @@ struct ViewerView: View {
                 return false
             }
         }
-        
-        // 2. Deduplicate remote items
+
+        // 2. Add remote items (these have proper event timestamps)
         for item in remoteItems {
             latestItems[normalizedKey(for: item.url)] = item
         }
-        
+
+        // 3. Include local blossom files that don't already have a corresponding event.
+        //    Only for "All" and "Mine" filters since local blobs are owned by this relay.
+        if contentFilter == .all || contentFilter == .mine {
+            for item in blossomMedia {
+                let key = normalizedKey(for: item.url)
+                if latestItems[key] == nil {
+                    latestItems[key] = item
+                }
+            }
+        }
+
         return Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
     }
     

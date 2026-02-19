@@ -72,8 +72,8 @@ class ConfigService: ObservableObject {
         if loadedSuccessfully || recovered || !FileManager.default.fileExists(atPath: envURL.path) {
             save()
         }
-        
-        // Push initial host to MediaCacheService for thread-safe access
+
+        // Sync relay info to MediaCacheService for thread-safe access
         MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
     }
     
@@ -94,8 +94,8 @@ class ConfigService: ObservableObject {
                 
                 // Reload lists
                 loadRelayLists()
-                
-                // Sync host
+
+                // Sync relay info
                 MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
             } catch {
                 print("ConfigService: Error reloading configuration: \(error)")
@@ -155,7 +155,7 @@ class ConfigService: ObservableObject {
     }
     
     private func saveRelayLists() {
-        // Sanitize relayURL: strip schemes and trailing slashes
+        // Sanitize relayURL: strip schemes and trailing slashes, but preserve the value
         var trimmedURL = config.relayURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let schemes = ["wss://", "ws://", "https://", "http://"]
         for scheme in schemes {
@@ -166,16 +166,11 @@ class ConfigService: ObservableObject {
         while trimmedURL.hasSuffix("/") {
             trimmedURL = String(trimmedURL.dropLast())
         }
-        
-        if trimmedURL.isEmpty || trimmedURL == "localhost" || trimmedURL == "127.0.0.1" {
-            config.relayURL = "127.0.0.1:\(config.relayPort)"
-        } else {
-            config.relayURL = trimmedURL
-        }
-        
-        // Sync with MediaCacheService for non-main-actor access
+        config.relayURL = trimmedURL
+
+        // Sync relay info to MediaCacheService
         MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
-        
+
         // Ensure data dir exists
         try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
         

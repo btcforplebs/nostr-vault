@@ -195,17 +195,15 @@ struct HavenConfig: Codable, Equatable {
     /// Returns the appropriate WebSocket URL (ws:// for local, wss:// for remote)
     var nostrURL: String {
         if isLocal {
-            // Force 127.0.0.1 for local connections
             return "ws://127.0.0.1:\(relayPort)"
         } else {
             return "wss://\(sanitizedRelayURL)"
         }
     }
-    
+
     /// Returns the appropriate Web/Blossom URL (http:// for local, https:// for remote)
     var webURL: String {
         if isLocal {
-            // Force 127.0.0.1 for local connections
             return "http://127.0.0.1:\(relayPort)"
         } else {
             return "https://\(sanitizedRelayURL)"

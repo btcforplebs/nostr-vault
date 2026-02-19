@@ -6,8 +6,6 @@
 set -e
 
 # The Go source is at the root of the workspace (one level up from HavenApp project dir)
-
-# The Go source is at the root of the workspace (one level up from HavenApp project dir)
 # If PROJECT_DIR is not set, determine it relative to this script
 if [ -z "$PROJECT_DIR" ]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,15 +20,13 @@ if [ -z "$BUILT_PRODUCTS_DIR" ]; then
     CONTENTS_FOLDER_PATH="Haven.app/Contents"
 fi
 
-HAVEN_OUT_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources"
-HAVEN_OUT_PATH="${HAVEN_OUT_DIR}/haven"
+# Build into the Xcode source Resources directory so the "Copy Bundle Resources"
+# phase picks up the freshly compiled binary automatically.
+HAVEN_SRC_PATH="${PROJECT_DIR}/HavenApp/Resources/haven"
 
 echo "🚀 Building Go haven binary from source..."
 echo "📍 Source root: $GO_SRC_ROOT"
-echo "📍 Output path: $HAVEN_OUT_PATH"
-
-# Ensure output directory exists
-mkdir -p "$HAVEN_OUT_DIR"
+echo "📍 Output path: $HAVEN_SRC_PATH"
 
 # Map Xcode architecture to Go architecture
 # NATIVE_ARCH_ACTUAL is usually set by Xcode
@@ -47,19 +43,24 @@ fi
 export GOOS="darwin"
 export GOARCH="$GOARCH"
 export CGO_ENABLED=1
+# Match the Xcode deployment target to silence linker version warnings
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
+export CGO_LDFLAGS="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 
-# Find Go executable (common locations)
-GO_BIN=$(which go || echo "/usr/local/go/bin/go")
+# Xcode uses a minimal PATH — add common Go install locations
+export PATH="/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$HOME/go/bin:$PATH"
 
-if ! command -v "$GO_BIN" &> /dev/null; then
+GO_BIN=$(which go 2>/dev/null || true)
+
+if [ -z "$GO_BIN" ]; then
     echo "❌ Error: 'go' command not found. Please install Go (https://go.dev/doc/install)."
     exit 1
 fi
 
 # Run the build
 cd "$GO_SRC_ROOT"
-echo "🛠️ Running: go build -v -ldflags=\"-s -w\" -o $HAVEN_OUT_PATH"
-"$GO_BIN" build -v -ldflags="-s -w" -o "$HAVEN_OUT_PATH"
+echo "🛠️ Running: go build -v -ldflags=\"-s -w\" -o $HAVEN_SRC_PATH"
+"$GO_BIN" build -v -ldflags="-s -w" -o "$HAVEN_SRC_PATH"
 
 if [ $? -eq 0 ]; then
     echo "✅ Successfully built haven binary for $GOARCH."
