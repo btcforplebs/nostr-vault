@@ -22,6 +22,7 @@ struct SettingsView: View {
     
     enum SettingsTab: String, CaseIterable {
         case identity = "Identity"
+        case accessControl = "Access Control"
         case relays = "Relays"
         case importNotes = "Import"
         case blastr = "Blastr"
@@ -36,7 +37,11 @@ struct SettingsView: View {
                 IdentitySettingsView()
                     .tabItem { Label("Identity", systemImage: "person") }
                     .tag(SettingsTab.identity)
-                
+
+                AccessControlSettingsView()
+                    .tabItem { Label("Access Control", systemImage: "shield.lefthalf.filled") }
+                    .tag(SettingsTab.accessControl)
+
                 RelaySettingsView()
                     .tabItem { Label("Relays", systemImage: "server.rack") }
                     .tag(SettingsTab.relays)
@@ -117,53 +122,75 @@ struct SettingsView: View {
 
 struct IdentitySettingsView: View {
     @EnvironmentObject var configService: ConfigService
-    @State private var newNpub: String = ""
 
     var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                Section("Owner Identity") {
-                    TextField("Owner npub", text: $configService.config.ownerNpub)
-                        .help("Your Nostr public key in npub format")
-                }
-
-                Section("Connection") {
-                    TextField("Hostname", text: $configService.config.relayURL)
-                        .help("Public hostname for your relay (e.g., relay.example.com). Do not include the port.")
-
-                    TextField("Port", value: $configService.config.relayPort, formatter: NumberFormatter.noSeparator)
-                }
+        Form {
+            Section("Owner Identity") {
+                TextField("Owner npub", text: $configService.config.ownerNpub)
+                    .help("Your Nostr public key in npub format")
             }
-            .formStyle(.grouped)
-            .frame(height: 220)
+
+            Section("Connection") {
+                TextField("Hostname", text: $configService.config.relayURL)
+                    .help("Public hostname for your relay (e.g., relay.example.com). Do not include the port.")
+
+                TextField("Port", value: $configService.config.relayPort, formatter: NumberFormatter.noSeparator)
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
+struct AccessControlSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    @State private var selectedList: ListType = .whitelist
+
+    enum ListType: String, CaseIterable {
+        case whitelist = "Whitelist"
+        case blacklist = "Blacklist"
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            List(ListType.allCases, id: \.self, selection: $selectedList) { listType in
+                Label(listType.rawValue, systemImage: listType == .whitelist ? "checkmark.shield" : "xmark.shield")
+            }
+            .frame(width: 140)
+            .listStyle(.sidebar)
 
             Divider()
 
             VStack(alignment: .leading) {
-                Text("Whitelisted Npubs")
-                    .font(.headline)
-                    .padding(.horizontal)
-                    .padding(.top)
+                switch selectedList {
+                case .whitelist:
+                    Text("Whitelisted Npubs")
+                        .font(.headline)
+                        .padding(.horizontal)
+                        .padding(.top)
 
-                Text("Additional npubs that can write to your private relay. Your owner npub is always included.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
+                    Text("Additional npubs that can write to your private relay. Your owner npub is always included.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
 
-                NpubListEditor(npubs: $configService.config.whitelistedNpubs)
+                    NpubListEditor(npubs: $configService.config.whitelistedNpubs)
 
-                Text("Blacklisted Npubs")
-                    .font(.headline)
-                    .padding(.horizontal)
-                    .padding(.top)
+                case .blacklist:
+                    Text("Blacklisted Npubs")
+                        .font(.headline)
+                        .padding(.horizontal)
+                        .padding(.top)
 
-                Text("Npubs that are explicitly blocked from your Chat and Inbox relays.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
+                    Text("Npubs that are explicitly blocked from your Chat and Inbox relays.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
 
-                NpubListEditor(npubs: $configService.config.blacklistedNpubs)
+                    NpubListEditor(npubs: $configService.config.blacklistedNpubs)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 }

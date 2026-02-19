@@ -36,10 +36,11 @@ struct ViewerView: View {
             // Content Filter
             switch contentFilter {
             case .all: 
-                // User requested "All" to just be "Mine + Tagged"
+                // User requested "All" to include Mine + Tagged + Whitelisted
                 let isMine = event.pubkey == nostrService.ownerHexPubkey
                 let isTagged = event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
-                return isMine || isTagged
+                let isWhitelisted = configService.whitelistedHexPubkeys.contains(event.pubkey)
+                return isMine || isTagged || isWhitelisted
             case .mine: return event.pubkey == nostrService.ownerHexPubkey
             case .tagged: return event.pubkey != nostrService.ownerHexPubkey && event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
             case .whitelist:
@@ -83,10 +84,11 @@ struct ViewerView: View {
         let remoteItems = nostrService.noteMedia.filter { item in
             switch contentFilter {
             case .all:
-                // User requested "All" to just be "Mine + Tagged"
+                // User requested "All" to include Mine + Tagged + Whitelisted
                 let isMine = item.pubkey == nostrService.ownerHexPubkey
                 let isTagged = item.tags?.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey } ?? false
-                return isMine || isTagged
+                let isWhitelisted = item.pubkey != nil && configService.whitelistedHexPubkeys.contains(item.pubkey!)
+                return isMine || isTagged || isWhitelisted
             case .mine: return item.pubkey == nostrService.ownerHexPubkey
             case .tagged:
                 if item.pubkey == nostrService.ownerHexPubkey { return false }
