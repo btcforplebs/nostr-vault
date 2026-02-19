@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UniformTypeIdentifiers
 
 @MainActor
 class RelayProcessManager: ObservableObject {
@@ -1826,33 +1827,54 @@ class RelayProcessManager: ObservableObject {
         }
     }
     
-    // Helper to get extension
+    // Helper to get extension from file magic bytes
     private func getExtension(for url: URL) -> String {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/file")
-        // --extension: output a slash-separated list of extensions
-        // -b: brief mode
-        proc.arguments = ["--extension", "-b", url.path]
-        
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        
-        do {
-            try proc.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8) {
-                let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                // Output might be "jpeg/jpg/jpe/jfif". Take the first one.
-                // Or "???" if unknown.
-                if trimmed == "???" { return "bin" }
-                
-                let extensions = trimmed.components(separatedBy: "/")
-                if let first = extensions.first, !first.isEmpty {
-                    return first
-                }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return "bin" }
+        defer { handle.closeFile() }
+        let header = handle.readData(ofLength: 12)
+        guard header.count >= 4 else { return "bin" }
+        let bytes = [UInt8](header)
+
+        let mime: String
+        if bytes.starts(with: [0xFF, 0xD8, 0xFF]) {
+            mime = "image/jpeg"
+        } else if bytes.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
+            mime = "image/png"
+        } else if bytes.starts(with: [0x47, 0x49, 0x46, 0x38]) {
+            mime = "image/gif"
+        } else if bytes.count >= 12,
+                  bytes[0] == 0x52, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x46 {
+            // RIFF container — check subtype at offset 8
+            if bytes[8] == 0x57, bytes[9] == 0x45, bytes[10] == 0x42, bytes[11] == 0x50 {
+                mime = "image/webp"    // RIFF....WEBP
+            } else if bytes[8] == 0x57, bytes[9] == 0x41, bytes[10] == 0x56, bytes[11] == 0x45 {
+                mime = "audio/wav"     // RIFF....WAVE
+            } else {
+                return "bin"
             }
-        } catch {
+        } else if bytes.count >= 12,
+                  bytes[4] == 0x66, bytes[5] == 0x74, bytes[6] == 0x79, bytes[7] == 0x70 {
+            // ftyp container — check brand at offset 8
+            if bytes[8] == 0x71, bytes[9] == 0x74, bytes[10] == 0x20, bytes[11] == 0x20 {
+                mime = "video/quicktime"  // ftyp qt  → .mov
+            } else {
+                mime = "video/mp4"
+            }
+        } else if bytes.starts(with: [0x1A, 0x45, 0xDF, 0xA3]) {
+            mime = "video/webm"
+        } else if bytes.starts(with: [0x25, 0x50, 0x44, 0x46]) {
+            mime = "application/pdf"
+        } else if bytes.starts(with: [0x49, 0x44, 0x33]) {
+            mime = "audio/mpeg"        // ID3 tag → .mp3
+        } else if bytes.count >= 2, bytes[0] == 0xFF, bytes[1] & 0xE0 == 0xE0 {
+            mime = "audio/mpeg"        // MPEG sync word → .mp3
+        } else {
             return "bin"
+        }
+
+        if let utType = UTType(mimeType: mime),
+           let ext = utType.preferredFilenameExtension {
+            return ext
         }
         return "bin"
     }
