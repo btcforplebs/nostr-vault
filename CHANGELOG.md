@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.3.0] - 2026-02-19
 
 ### Added
-- **Blossom File Extensions**: Media exports now automatically include the correct file extension (e.g., .jpg, .png) for better usability, detected via file content analysis.
+- **Blossom File Extensions**: Media exports now use a trust-but-verify system — querying the relay for MIME metadata and cross-checking against file magic bytes — to apply accurate file extensions. Supports virtually all file types via UTType, with magic-byte verification for JPEG, PNG, GIF, WebP, AVIF, HEIC, TIFF, BMP, MP4, MOV, WebM, MP3, WAV, FLAC, OGG, ZIP, APK, GZIP, and PDF. Additional fallback coverage for AAC, Opus, M4A, MKV, SVG, TAR, DOCX, XLSX, PPTX, and JAR.
 - **Blossom Import**: Importing media automatically strips extensions to ensure compatibility with the relay.
 - **Dashboard Quick Actions**: Added "Export JSONL" and "Export Blossom" buttons directly to the Dashboard for easier backups.
 - **Import Button Rename**: Clarified the "Import" button on the Dashboard to "Import Notes".

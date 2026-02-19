@@ -107,7 +107,7 @@ struct DashboardView: View {
                         ActionButton(icon: "photo.stack", title: "Export Blossom", isLoading: isBackingUpBlossom) {
                             exportBlossom()
                         }
-                        .disabled(isExporting || isBackingUpBlossom)
+                        .disabled(isExporting || isBackingUpBlossom || !relayManager.isRunning)
                     }
                     
                     if !exportStatusMessage.isEmpty {

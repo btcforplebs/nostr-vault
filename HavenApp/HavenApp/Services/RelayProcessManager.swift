@@ -1625,8 +1625,14 @@ class RelayProcessManager: ObservableObject {
     // MARK: - Blossom Extensions Logic
     
     func runBlossomExportWithExtensions(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
+        guard isRunning else {
+            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot export: relay must be running to detect file types."))
+            completion(false)
+            return
+        }
+
         let blossomDir = ConfigService.shared.relayDataDir.appendingPathComponent(config.blossomPath)
-        
+
         guard FileManager.default.fileExists(atPath: blossomDir.path) else {
             logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
             completion(false)
@@ -1649,13 +1655,17 @@ class RelayProcessManager: ObservableObject {
             for fileURL in fileURLs {
                 // Ignore hidden files
                 if fileURL.lastPathComponent.hasPrefix(".") { continue }
-                
-                // Determine extension using 'file --extension'
-                let ext = getExtension(for: fileURL)
-                
-                let newFilename = fileURL.lastPathComponent + (ext.isEmpty ? "" : ".\(ext)")
+
+                let sha256 = fileURL.lastPathComponent
+                let proof = detectMimeFromBytes(for: fileURL)
+                let claim = fetchMimeFromRelay(config: config, sha256: sha256)
+                let resolvedMime = resolveMime(claim: claim, proof: proof)
+                let ext = mimeToExtension(resolvedMime)
+                logs.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "Export \(sha256.prefix(8))...: claim=\(claim ?? "nil") proof=\(proof) resolved=\(resolvedMime) ext=.\(ext)"))
+
+                let newFilename = sha256 + (ext == "bin" ? "" : ".\(ext)")
                 let destURL = stagingDir.appendingPathComponent(newFilename)
-                
+
                 try FileManager.default.copyItem(at: fileURL, to: destURL)
             }
             
@@ -1827,55 +1837,181 @@ class RelayProcessManager: ObservableObject {
         }
     }
     
-    // Helper to get extension from file magic bytes
-    private func getExtension(for url: URL) -> String {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return "bin" }
+    // Detect MIME type from file magic bytes (the "proof")
+    private func detectMimeFromBytes(for url: URL) -> String {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return "application/octet-stream" }
         defer { handle.closeFile() }
-        let header = handle.readData(ofLength: 12)
-        guard header.count >= 4 else { return "bin" }
+        let header = handle.readData(ofLength: 64)
+        guard header.count >= 4 else { return "application/octet-stream" }
         let bytes = [UInt8](header)
 
-        let mime: String
         if bytes.starts(with: [0xFF, 0xD8, 0xFF]) {
-            mime = "image/jpeg"
+            return "image/jpeg"
         } else if bytes.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
-            mime = "image/png"
+            return "image/png"
         } else if bytes.starts(with: [0x47, 0x49, 0x46, 0x38]) {
-            mime = "image/gif"
+            return "image/gif"
         } else if bytes.count >= 12,
                   bytes[0] == 0x52, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x46 {
-            // RIFF container — check subtype at offset 8
             if bytes[8] == 0x57, bytes[9] == 0x45, bytes[10] == 0x42, bytes[11] == 0x50 {
-                mime = "image/webp"    // RIFF....WEBP
+                return "image/webp"
             } else if bytes[8] == 0x57, bytes[9] == 0x41, bytes[10] == 0x56, bytes[11] == 0x45 {
-                mime = "audio/wav"     // RIFF....WAVE
-            } else {
-                return "bin"
+                return "audio/wav"
             }
         } else if bytes.count >= 12,
                   bytes[4] == 0x66, bytes[5] == 0x74, bytes[6] == 0x79, bytes[7] == 0x70 {
-            // ftyp container — check brand at offset 8
-            if bytes[8] == 0x71, bytes[9] == 0x74, bytes[10] == 0x20, bytes[11] == 0x20 {
-                mime = "video/quicktime"  // ftyp qt  → .mov
-            } else {
-                mime = "video/mp4"
-            }
+            return classifyFtyp(bytes)
         } else if bytes.starts(with: [0x1A, 0x45, 0xDF, 0xA3]) {
-            mime = "video/webm"
+            return "video/webm"
         } else if bytes.starts(with: [0x25, 0x50, 0x44, 0x46]) {
-            mime = "application/pdf"
+            return "application/pdf"
         } else if bytes.starts(with: [0x49, 0x44, 0x33]) {
-            mime = "audio/mpeg"        // ID3 tag → .mp3
+            return "audio/mpeg"
         } else if bytes.count >= 2, bytes[0] == 0xFF, bytes[1] & 0xE0 == 0xE0 {
-            mime = "audio/mpeg"        // MPEG sync word → .mp3
-        } else {
-            return "bin"
+            return "audio/mpeg"
+        } else if bytes.count >= 4,
+                  bytes[0] == 0x49, bytes[1] == 0x49, bytes[2] == 0x2A, bytes[3] == 0x00 {
+            return "image/tiff"
+        } else if bytes.count >= 4,
+                  bytes[0] == 0x4D, bytes[1] == 0x4D, bytes[2] == 0x00, bytes[3] == 0x2A {
+            return "image/tiff"
+        } else if bytes.starts(with: [0x42, 0x4D]) {
+            return "image/bmp"
+        } else if bytes.starts(with: [0x66, 0x4C, 0x61, 0x43]) {
+            return "audio/flac"
+        } else if bytes.starts(with: [0x4F, 0x67, 0x67, 0x53]) {
+            return "audio/ogg"
+        } else if bytes.starts(with: [0x50, 0x4B, 0x03, 0x04]) {
+            return "application/zip"
+        } else if bytes.starts(with: [0x1F, 0x8B]) {
+            return "application/gzip"
+        }
+        return "application/octet-stream"
+    }
+
+    // Classify an ftyp box by scanning major brand + all compatible brands
+    private func classifyFtyp(_ bytes: [UInt8]) -> String {
+        // ftyp box size is at bytes 0-3 (big-endian)
+        let boxSize = min(
+            Int(bytes[0]) << 24 | Int(bytes[1]) << 16 | Int(bytes[2]) << 8 | Int(bytes[3]),
+            bytes.count
+        )
+
+        // Collect all 4-byte brand strings: major brand @ 8, compatible brands @ 16,20,24...
+        var brands: [String] = []
+        // Major brand at offset 8
+        if boxSize >= 12 {
+            brands.append(String(bytes: bytes[8..<12], encoding: .ascii) ?? "")
+        }
+        // Compatible brands start at offset 16 (after 4-byte minor version)
+        var offset = 16
+        while offset + 4 <= boxSize {
+            brands.append(String(bytes: bytes[offset..<(offset + 4)], encoding: .ascii) ?? "")
+            offset += 4
         }
 
+        let brandSet = Set(brands)
+
+        // Check most specific first
+        if brandSet.contains("avif") || brandSet.contains("avis") {
+            return "image/avif"
+        }
+        if brandSet.contains("heic") || brandSet.contains("heix") || brandSet.contains("hevc") {
+            return "image/heic"
+        }
+        if brandSet.contains("qt  ") {
+            return "video/quicktime"
+        }
+        return "video/mp4"
+    }
+
+    // Fetch MIME type from the running relay via HEAD request (the "claim")
+    private func fetchMimeFromRelay(config: HavenConfig, sha256: String) -> String? {
+        guard let url = URL(string: "\(config.webURL)/\(sha256)") else { return nil }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 3
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var contentType: String?
+
+        let task = URLSession.shared.dataTask(with: request) { _, response, _ in
+            if let httpResponse = response as? HTTPURLResponse,
+               httpResponse.statusCode == 200,
+               let ct = httpResponse.value(forHTTPHeaderField: "Content-Type") {
+                // Strip parameters (e.g. "image/jpeg; charset=utf-8" → "image/jpeg")
+                contentType = ct.components(separatedBy: ";").first?.trimmingCharacters(in: .whitespaces)
+            }
+            semaphore.signal()
+        }
+        task.resume()
+        _ = semaphore.wait(timeout: .now() + 5)
+        return contentType
+    }
+
+    // Broad MIME types that allow more specific refinements from relay metadata
+    private static let subsetRules: [String: Set<String>] = [
+        "application/zip": [
+            "application/vnd.android.package-archive",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/java-archive",
+        ],
+        "video/mp4": [
+            "audio/mp4", "audio/x-m4a", "audio/aac",
+        ],
+        "application/octet-stream": [], // empty set = allow anything
+    ]
+
+    // Resolve claim (relay) vs proof (magic bytes) using trust-but-verify
+    private func resolveMime(claim: String?, proof: String) -> String {
+        guard let claim = claim else { return proof }
+        if claim == proof { return claim }
+
+        // octet-stream from bytes means we couldn't identify it — trust the relay
+        if proof == "application/octet-stream" { return claim }
+
+        // Check if proof allows claim as a valid refinement
+        if let allowed = Self.subsetRules[proof] {
+            if allowed.isEmpty || allowed.contains(claim) {
+                return claim
+            }
+        }
+
+        // Same broad category (e.g. both video/*, both image/*) — trust relay
+        let proofType = proof.components(separatedBy: "/").first
+        let claimType = claim.components(separatedBy: "/").first
+        if proofType == claimType { return claim }
+
+        // Hard mismatch — trust the bytes
+        return proof
+    }
+
+    // Fallback map for MIME types that UTType may not know on all macOS versions
+    private static let extensionFallbacks: [String: String] = [
+        "application/vnd.android.package-archive": "apk",
+        "application/java-archive": "jar",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+        "audio/x-m4a": "m4a",
+        "audio/mp4": "m4a",
+        "audio/aac": "aac",
+        "audio/opus": "opus",
+        "video/x-matroska": "mkv",
+        "image/svg+xml": "svg",
+        "application/x-tar": "tar",
+        "application/gzip": "gz",
+    ]
+
+    // Convert MIME type to file extension
+    private func mimeToExtension(_ mime: String) -> String {
         if let utType = UTType(mimeType: mime),
            let ext = utType.preferredFilenameExtension {
             return ext
         }
-        return "bin"
+        return Self.extensionFallbacks[mime] ?? "bin"
     }
 }
