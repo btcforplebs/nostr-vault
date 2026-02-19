@@ -514,6 +514,7 @@ struct ModeButton: View {
 struct NoteRow: View {
     let event: NostrEvent
     @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var configService: ConfigService
     
     var cleanContent: String {
         return event.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -526,8 +527,44 @@ struct NoteRow: View {
         return event.pubkey.prefix(8) + "..." + event.pubkey.suffix(4)
     }
     
-    var isOwner: Bool {
-        return event.pubkey == nostrService.ownerHexPubkey
+    enum NoteType {
+        case mine
+        case whitelisted
+        case tagged
+        
+        var label: String {
+            switch self {
+            case .mine: return "My Note"
+            case .whitelisted: return "Whitelisted"
+            case .tagged: return "Tagged"
+            }
+        }
+        
+        var icon: String {
+            switch self {
+            case .mine: return "pencil.line"
+            case .whitelisted: return "checkmark.seal.fill" 
+            case .tagged: return "tag.fill"
+            }
+        }
+        
+        var color: Color {
+            switch self {
+            case .mine: return .havenPurple
+            case .whitelisted: return .green
+            case .tagged: return .blue
+            }
+        }
+    }
+    
+    var noteType: NoteType {
+        if event.pubkey == nostrService.ownerHexPubkey {
+            return .mine
+        }
+        if configService.whitelistedHexPubkeys.contains(event.pubkey) {
+            return .whitelisted
+        }
+        return .tagged
     }
     
     var body: some View {
@@ -544,13 +581,13 @@ struct NoteRow: View {
                         CachedAsyncImage(url: pictureURL) { image in
                             image.resizable().aspectRatio(contentMode: .fill)
                         } placeholder: {
-                            Circle().fill(isOwner ? Color.havenPurple : Color.blue)
+                            Circle().fill(noteType.color)
                                 .overlay(Image(systemName: "person.fill").font(.caption).foregroundColor(.white))
                         }
                         .frame(width: 32, height: 32)
                         .clipShape(Circle())
                     } else {
-                        Circle().fill(isOwner ? Color.havenPurple : Color.blue).frame(width: 32, height: 32)
+                        Circle().fill(noteType.color).frame(width: 32, height: 32)
                             .overlay(Image(systemName: "person.fill").font(.caption).foregroundColor(.white))
                     }
                     
@@ -562,13 +599,13 @@ struct NoteRow: View {
                     }
                     Spacer()
                     HStack(spacing: 4) {
-                        Image(systemName: isOwner ? "pencil.line" : "tag.fill")
+                        Image(systemName: noteType.icon)
                             .font(.system(size: 10))
-                        Text(isOwner ? "Text Note" : "Tagged")
+                        Text(noteType.label)
                     }
                     .font(.caption2.bold()).padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(isOwner ? Color.havenPurple.opacity(0.15) : Color.blue.opacity(0.15))
-                    .foregroundColor(isOwner ? .havenPurple : .blue)
+                    .background(noteType.color.opacity(0.15))
+                    .foregroundColor(noteType.color)
                     .cornerRadius(4)
                 }
                 
