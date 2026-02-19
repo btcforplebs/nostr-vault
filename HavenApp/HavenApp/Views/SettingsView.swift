@@ -109,6 +109,9 @@ struct SettingsView: View {
                 }
             }
         }
+        .onDisappear {
+            saveTask?.cancel()
+        }
     }
 }
 
@@ -148,6 +151,18 @@ struct IdentitySettingsView: View {
                     .padding(.horizontal)
 
                 NpubListEditor(npubs: $configService.config.whitelistedNpubs)
+
+                Text("Blacklisted Npubs")
+                    .font(.headline)
+                    .padding(.horizontal)
+                    .padding(.top)
+
+                Text("Npubs that are explicitly blocked from your Chat and Inbox relays.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+
+                NpubListEditor(npubs: $configService.config.blacklistedNpubs)
             }
         }
     }
@@ -358,7 +373,7 @@ struct AdvancedSettingsView: View {
                     .foregroundColor(.secondary)
             }
             
-            Section("WoT (Web of Trust)") {
+            Section("Global Web of Trust") {
                 Stepper("Depth: \(configService.config.chatRelayWotDepth)", 
                        value: $configService.config.chatRelayWotDepth, in: 1...5)
                 Stepper("Minimum Followers: \(configService.config.chatRelayMinFollowers)",

@@ -7,22 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-02-17
+
 ### Added
-- **Whitelist Tab**: Added a dedicated "Whitelisted" tab to the Viewer to display notes and media from trusted npubs (excluding own notes).
-- **Multi-Npub Support**: Expanded configuration and UI to support multiple whitelisted npubs.
+- **Whitelist & Blacklist Management**: Added multi-npub whitelist and blacklist editors in Settings, with corresponding config fields written to JSON files for the relay binary.
+- **DB Engine Selection**: Added a database engine step to the Setup Wizard allowing users to choose between storage backends.
+- **JSONL Export/Import**: Replaced the old cloud-only backup UI with local JSONL export and import via native save/open panels in Settings.
 - **PID Persistence**: Haven process PIDs are now saved to disk, allowing the app to find and kill orphaned processes from previous sessions on startup.
-- **Automatic Lock Recovery**: When a database lock is detected, the app now automatically SIGKILLs stale processes, clears Badger lock files, and restarts the relay without user intervention.
-- **"Fix & Restart" Button**: Replaced the manual "open Terminal and run pkill" error overlay with a one-click "Fix & Restart" button that handles cleanup automatically.
-- **Improved "All" Tab**: Refined the global feed to prioritize user notes and mentions, creating a more relevant default view.
-- **Metadata Caching**: Implemented batched metadata fetching with local caching to improve Viewer loading times.
+- **Automatic Lock Recovery**: When a database lock is detected, the app now force-kills stale processes, clears lock files, and restarts the relay automatically.
+- **"Fix & Restart" Button**: Replaced the multi-step "open Terminal and run pkill" error overlay with a one-click Retry button that handles cleanup automatically.
+- **Backup Restore from Setup Wizard**: Users can now restore from a `.zip` or `.jsonl` backup during initial setup, with port conflict detection and retry support.
+
+### Changed
+- **Setup Wizard Overhaul**: Rewrote the setup flow with ScrollView support, a new identity step with inline whitelist editing, and a dedicated database engine step.
+- **Backup Settings Simplified**: Removed AWS and GCP backup providers; streamlined to S3-compatible only for cloud backups.
+- **Welcome Window**: The pre-setup menu bar view now shows a simple "Start Setup" prompt that opens the wizard in a dedicated window, rather than embedding the full wizard inline.
+- **Process Startup**: `state = .booting` is now set immediately and synchronously before any async work, preventing a race where two relay processes could launch simultaneously.
+- **Shutdown Reliability**: `stopRelay()` now waits up to 5 seconds for the process to exit and escalates to SIGKILL if SIGTERM is ignored. App termination wait increased from 0.2s to 1.0s.
 
 ### Fixed
-- **Database Lock Boot Loop**: Fixed a critical race condition where two haven processes could start simultaneously (due to `state = .booting` being set inside an async Task instead of immediately), causing them to fight over Badger locks and loop forever.
-- **Stop Relay Reliability**: `stopRelay()` now waits up to 5 seconds for the process to exit and escalates to SIGKILL if SIGTERM is ignored, preventing orphaned processes that hold database locks.
-- **Swift 6 Sendable Fixes**: Fixed MainActor isolation violations in backup/restore completion handlers in SettingsView and SetupWizardView.
-- **Viewer Text Overflow**: Fixed "Whitelisted" and "Media" button labels wrapping to multiple lines in the Viewer tab bar.
-- **Import Robustness**: Fixed a critical hang during note import by implementing a byte-level log buffer to handle multibyte characters and split lines.
-- **Git History Restoration**: Used `git subtree` to cleanly merge upstream history into `haven-go/`, ensuring proper attribution and easier future updates.
+- **Database Lock Boot Loop**: Fixed a critical race condition where two haven processes could start simultaneously, causing them to fight over database locks and loop forever.
+- **Inactivity Timer**: Replaced broken `Timer`-based implementation (which couldn't mutate SwiftUI struct state) with a proper `Task.sleep` approach that correctly resets to the dashboard tab.
+- **Import Log Parsing**: Added a byte-level log buffer (`processBufferedOutput`) to handle multibyte characters and incomplete lines during note import, preventing hangs.
+- **Duplicate readabilityHandler**: Removed a dead first pipe handler in `importNotes` that was immediately overwritten by a second one.
+- **Settings Save Leak**: Added `onDisappear` cancellation of the debounced save task in SettingsView.
 
 ## [2.2.1] - 2026-02-07
 

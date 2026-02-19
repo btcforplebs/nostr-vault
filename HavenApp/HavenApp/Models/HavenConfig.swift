@@ -64,6 +64,10 @@ struct HavenConfig: Codable, Equatable {
     // Whitelisted Npubs (multi-npub support)
     var whitelistedNpubs: [String] = []
     var whitelistedNpubsFile: String = "whitelisted_npubs.json"
+    
+    // Blacklisted Npubs
+    var blacklistedNpubs: [String] = []
+    var blacklistedNpubsFile: String = "blacklisted_npubs.json"
 
     // Backup
     var backupProvider: String = "none" // none, s3
@@ -90,6 +94,7 @@ struct HavenConfig: Codable, Equatable {
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
         case blastrRelaysFile, blastrRelays
         case whitelistedNpubs, whitelistedNpubsFile
+        case blacklistedNpubs, blacklistedNpubsFile
         case backupProvider, backupIntervalHours
         case s3AccessKeyId, s3SecretKey, s3Endpoint, s3Region, s3BucketName
     }
@@ -146,6 +151,9 @@ struct HavenConfig: Codable, Equatable {
         
         whitelistedNpubs = try container.decodeIfPresent([String].self, forKey: .whitelistedNpubs) ?? defaults.whitelistedNpubs
         whitelistedNpubsFile = try container.decodeIfPresent(String.self, forKey: .whitelistedNpubsFile) ?? defaults.whitelistedNpubsFile
+        
+        blacklistedNpubs = try container.decodeIfPresent([String].self, forKey: .blacklistedNpubs) ?? defaults.blacklistedNpubs
+        blacklistedNpubsFile = try container.decodeIfPresent(String.self, forKey: .blacklistedNpubsFile) ?? defaults.blacklistedNpubsFile
 
         backupProvider = try container.decodeIfPresent(String.self, forKey: .backupProvider) ?? defaults.backupProvider
         backupIntervalHours = try container.decodeIfPresent(Int.self, forKey: .backupIntervalHours) ?? defaults.backupIntervalHours

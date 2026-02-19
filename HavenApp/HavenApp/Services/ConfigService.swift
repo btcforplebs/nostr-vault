@@ -127,6 +127,13 @@ class ConfigService: ObservableObject {
            let list = try? JSONDecoder().decode([String].self, from: data) {
             config.whitelistedNpubs = list
         }
+        
+        // Load blacklisted npubs
+        let blacklistedURL = relayDataDir.appendingPathComponent(config.blacklistedNpubsFile)
+        if let data = try? Data(contentsOf: blacklistedURL),
+           let list = try? JSONDecoder().decode([String].self, from: data) {
+            config.blacklistedNpubs = list
+        }
     }
     
     func save() {
@@ -208,6 +215,14 @@ class ConfigService: ObservableObject {
             let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
             if let data = try? encoder.encode(config.whitelistedNpubs) {
                 try? data.write(to: npubsURL)
+            }
+        }
+        
+        // Save blacklisted npubs
+        if !config.blacklistedNpubs.isEmpty {
+            let blacklistedURL = relayDataDir.appendingPathComponent(config.blacklistedNpubsFile)
+            if let data = try? encoder.encode(config.blacklistedNpubs) {
+                try? data.write(to: blacklistedURL)
             }
         }
     }
@@ -344,6 +359,7 @@ class ConfigService: ObservableObject {
             case "INBOX_RELAY_ICON": config.inboxRelayIcon = value
             case "INBOX_PULL_INTERVAL_SECONDS": config.inboxPullIntervalSeconds = Int(value) ?? config.inboxPullIntervalSeconds
             case "WHITELISTED_NPUBS_FILE": config.whitelistedNpubsFile = value
+            case "BLACKLISTED_NPUBS_FILE": config.blacklistedNpubsFile = value
             default: break
             }
         }

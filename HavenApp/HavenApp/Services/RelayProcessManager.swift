@@ -101,9 +101,14 @@ class RelayProcessManager: ObservableObject {
         // Background setup task
         Task {
             let relayDataDir = ConfigService.shared.relayDataDir
+            let pidURL = self.pidFileURL
 
             // 0. Kill any orphaned haven process from a previous app session
-            self.killOrphanedProcess()
+            //    Runs on a background thread and blocks until the orphan is dead
+            //    and file locks are released.
+            await Task.detached {
+                self.killOrphanedProcessSync(pidURL: pidURL)
+            }.value
 
             // 1. Ensure directories exist (I/O)
             try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
@@ -151,8 +156,6 @@ class RelayProcessManager: ObservableObject {
     
     private func continueStartRelay(config: HavenConfig, relayDataDir: URL) {
         // Write/Update essential relay files (relays list, blastr relays)
-
-        // Write/Update essential relay files (relays list, blastr relays)
         // We stop writing .env to disk and use environment variables instead
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
@@ -171,6 +174,12 @@ class RelayProcessManager: ObservableObject {
         let whitelistURL = relayDataDir.appendingPathComponent("whitelisted_npubs.json")
         if let data = try? encoder.encode(config.whitelistedNpubs) {
             try? data.write(to: whitelistURL)
+        }
+        
+        // Write blacklisted_npubs.json
+        let blacklistURL = relayDataDir.appendingPathComponent("blacklisted_npubs.json")
+        if let data = try? encoder.encode(config.blacklistedNpubs) {
+            try? data.write(to: blacklistURL)
         }
         
         logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Config: \(config.importSeedRelays.count) import relays, \(config.blastrRelays.count) blastr relays, \(config.whitelistedNpubs.count) whitelisted npubs"))
@@ -410,40 +419,71 @@ class RelayProcessManager: ObservableObject {
         try? FileManager.default.removeItem(at: pidURL)
     }
 
-    /// Kill ALL haven processes system-wide using pkill.
-    /// This catches orphans we don't have a PID for (e.g. from previous app sessions
-    /// where the PID file was lost). Fails silently if sandbox blocks it.
+    /// Kill ALL haven Go binary processes system-wide.
+    /// Uses pgrep -x for exact name match to avoid killing "HavenApp" (the Swift host).
+    /// Falls back to killall -KILL as a second attempt.
     private nonisolated func killAllHavenProcesses() {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        proc.arguments = ["-9", "haven"]
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
+        // 1. Use pgrep -x to find PIDs with the exact process name "haven"
+        let pgrep = Process()
+        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        pgrep.arguments = ["-x", "haven"]
+        let pipe = Pipe()
+        pgrep.standardOutput = pipe
+        pgrep.standardError = FileHandle.nullDevice
         do {
-            try proc.run()
-            proc.waitUntilExit()
+            try pgrep.run()
+            pgrep.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8) {
+                for line in output.components(separatedBy: .newlines) {
+                    if let pid = Int32(line.trimmingCharacters(in: .whitespaces)), pid > 0 {
+                        kill(pid, SIGKILL)
+                    }
+                }
+            }
         } catch {
-            // Sandbox may block pkill — that's OK, we tried
+            // pgrep failed, try killall as fallback
+        }
+
+        // 2. Fallback: killall with exact match
+        let killall = Process()
+        killall.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        killall.arguments = ["-9", "-m", "^haven$"]
+        killall.standardOutput = FileHandle.nullDevice
+        killall.standardError = FileHandle.nullDevice
+        do {
+            try killall.run()
+            killall.waitUntilExit()
+        } catch {
+            // Fallback also failed — nothing more we can do
         }
     }
 
-    /// Kill any orphaned haven process from a previous app session using the saved PID file.
-    /// Must be called from MainActor (reads pidFileURL which depends on ConfigService.shared).
+    /// Fire-and-forget version for AppDelegate launch cleanup.
+    /// Non-blocking: dispatches to a background queue.
     func killOrphanedProcess() {
         let pidURL = pidFileURL
         DispatchQueue.global().async {
-            guard let pidStr = try? String(contentsOf: pidURL, encoding: .utf8),
-                  let pid = Int32(pidStr.trimmingCharacters(in: .whitespacesAndNewlines)),
-                  pid > 0 else { return }
+            self.killOrphanedProcessSync(pidURL: pidURL)
+        }
+    }
 
-            // Check if the process is still alive (signal 0 = check existence)
+    private nonisolated func killOrphanedProcessSync(pidURL: URL) {
+        // 1. Kill by saved PID
+        if let pidStr = try? String(contentsOf: pidURL, encoding: .utf8),
+           let pid = Int32(pidStr.trimmingCharacters(in: .whitespacesAndNewlines)),
+           pid > 0 {
             if kill(pid, 0) == 0 {
                 kill(pid, SIGKILL)
-                // Give the OS a moment to release file locks
-                Thread.sleep(forTimeInterval: 0.5)
             }
             try? FileManager.default.removeItem(at: pidURL)
         }
+
+        // 2. Also kill any haven processes we don't have a PID for (e.g. PID file was lost)
+        killAllHavenProcesses()
+
+        // 3. Wait for OS to fully release file locks
+        Thread.sleep(forTimeInterval: 1.0)
     }
     
     func stopRelay(completion: (() -> Void)? = nil) {
@@ -642,7 +682,6 @@ class RelayProcessManager: ObservableObject {
         isImporting = true
         
         // Kill any existing haven processes and clear locks before starting import
-        // Kill any existing haven processes and clear locks before starting import
         clearDatabaseLocks()
         
         // Create working directories
@@ -673,6 +712,12 @@ class RelayProcessManager: ObservableObject {
         let whitelistURL = relayDataDir.appendingPathComponent("whitelisted_npubs.json")
         if let data = try? encoder.encode(config.whitelistedNpubs) {
             try? data.write(to: whitelistURL)
+        }
+        
+        // Write blacklisted_npubs.json
+        let blacklistURL = relayDataDir.appendingPathComponent("blacklisted_npubs.json")
+        if let data = try? encoder.encode(config.blacklistedNpubs) {
+            try? data.write(to: blacklistURL)
         }
         
         // Check bundle for the binary
@@ -754,15 +799,6 @@ class RelayProcessManager: ObservableObject {
             self.importStatusMessage = "Starting import for \(config.ownerNpub.prefix(12))..."
         }
         
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            
-            Task { @MainActor in
-                self?.processBufferedOutput(data)
-            }
-        }
-        
         process.terminationHandler = { [weak self] proc in
             Task { @MainActor in
                 guard let self = self else { return }
@@ -803,7 +839,6 @@ class RelayProcessManager: ObservableObject {
             }
         }
         
-        // Unconditionally add raw logging to readabilityHandler (re-applying explicitly to ensure it's there)
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
@@ -1073,7 +1108,6 @@ class RelayProcessManager: ObservableObject {
         }
         
         // Batch append logs to queue
-        // Batch append logs to queue
         self.pendingLogs.append(contentsOf: newEntries)
     }
     
@@ -1145,7 +1179,11 @@ class RelayProcessManager: ObservableObject {
             "TZ": "UTC",
 
             // Whitelisted Npubs
+            // Whitelisted Npubs
             "WHITELISTED_NPUBS_FILE": config.whitelistedNpubsFile,
+            
+            // Blacklisted Npubs
+            "BLACKLISTED_NPUBS_FILE": config.blacklistedNpubsFile,
 
             // Private Relay
             "PRIVATE_RELAY_NAME": config.privateRelayName,
@@ -1378,6 +1416,12 @@ class RelayProcessManager: ObservableObject {
         let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
         if let data = try? encoder.encode(config.whitelistedNpubs) {
             try? data.write(to: npubsURL)
+        }
+        
+        // Write blacklisted npubs file
+        let blacklistedURL = relayDataDir.appendingPathComponent(config.blacklistedNpubsFile)
+        if let data = try? encoder.encode(config.blacklistedNpubs) {
+            try? data.write(to: blacklistedURL)
         }
 
         // Write .env

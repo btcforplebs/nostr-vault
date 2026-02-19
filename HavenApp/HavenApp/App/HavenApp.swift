@@ -18,8 +18,6 @@ struct HavenApp: App {
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
-                .environmentObject(nostrService)
-                .environmentObject(statsService)
         }
         .menuBarExtraStyle(.window)
         
@@ -118,12 +116,11 @@ struct MenuBarContent: View {
                         }
                 }
             }
-            .disabled(relayManager.showProcessKillAlert) // Disable main content when error is shown
-            .blur(radius: relayManager.showProcessKillAlert ? 2 : 0)
-            
+            .disabled(relayManager.showProcessKillAlert)
+
             // Custom Error Overlay
             if relayManager.showProcessKillAlert {
-                Color.black.opacity(0.6)
+                Color.black
                     .ignoresSafeArea()
                     .onTapGesture { }
 
@@ -137,42 +134,54 @@ struct MenuBarContent: View {
                             .font(.title2.bold())
                             .foregroundColor(.white)
 
-                        Text("Haven didn't shut down correctly. Tap below to fix it automatically.")
+                        Text("A previous Haven process is still running. Run the following command in Terminal to stop it, then relaunch the app.")
                             .multilineTextAlignment(.center)
                             .foregroundColor(.white.opacity(0.9))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        Text("pkill -9 haven")
+                            .font(.system(size: 14, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(6)
+
                         Button(action: {
-                            relayManager.forceCleanAndRestart()
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString("pkill -9 haven", forType: .string)
                         }) {
-                            Text("Fix & Restart")
-                                .font(.headline)
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 14))
                                 .foregroundColor(.white)
-                                .frame(width: 140, height: 36)
+                                .frame(width: 36, height: 36)
                                 .background(Color.orange)
-                                .cornerRadius(8)
+                                .cornerRadius(6)
                         }
                         .buttonStyle(.plain)
-
-                        Button(action: {
-                            relayManager.showProcessKillAlert = false
-                        }) {
-                            Text("Close")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(width: 80, height: 36)
-                                .background(Color.white.opacity(0.2))
-                                .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
+                        .help("Copy to clipboard")
                     }
+
+                    Button(action: {
+                        relayManager.showProcessKillAlert = false
+                        relayManager.forceCleanAndRestart()
+                    }) {
+                        Text("Retry")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(width: 140, height: 36)
+                            .background(Color.orange)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(30)
                 .frame(width: 400)
-                .background(Color(NSColor.windowBackgroundColor).opacity(0.98))
+                .background(Color.black)
                 .cornerRadius(16)
-                .shadow(radius: 20)
                 .transition(.scale.combined(with: .opacity))
             }
         }
