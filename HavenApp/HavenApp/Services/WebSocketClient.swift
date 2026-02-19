@@ -2,6 +2,8 @@ import Foundation
 import Combine
 import SwiftUI
 import CryptoKit
+import AVFoundation
+import CoreMedia
 
 class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, @unchecked Sendable {
     enum ConnectionState: String {
@@ -682,6 +684,14 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         return queue
     }()
     
+    // Throttling for CPU-intensive thumbnail generation
+    let thumbnailQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "MediaCacheThumbnailQueue"
+        queue.maxConcurrentOperationCount = 2 // Limit concurrent AVAssetImageGenerator instances
+        return queue
+    }()
+    
     private let blossomDirectory: URL
 
     // Thread-safe copy of local host for non-isolated access
@@ -858,6 +868,38 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
                     }
                 }.resume()
             }
+        }
+    }
+    
+    func generateThumbnail(for url: URL) async -> NSImage? {
+        // Resolve local file first to see if we can just use it directly
+        // This is important for "Local" (Blossom) files where preparePlayableURL might try to make a symlink
+        let resolvedURL = self.localFileURL(for: url)
+        
+        return await withCheckedContinuation { continuation in
+            let operation = BlockOperation {
+                // 2. Prepare playable URL (handling symlinks if needed)
+                let playableURL = self.preparePlayableURL(for: url) ?? resolvedURL ?? url
+                
+                // 3. Generate
+                let asset = AVAsset(url: playableURL)
+                let generator = AVAssetImageGenerator(asset: asset)
+                generator.appliesPreferredTrackTransform = true
+                generator.maximumSize = CGSize(width: 400, height: 400)
+                
+                let time = CMTime(seconds: 0.1, preferredTimescale: 60)
+                
+                do {
+                     let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
+                     let image = NSImage(cgImage: cgImage, size: NSZeroSize)
+                     continuation.resume(returning: image)
+                } catch {
+                     print("MediaCacheService: Thumbnail generation failed for \(url.lastPathComponent): \(error)")
+                     continuation.resume(returning: nil)
+                }
+            }
+            
+            self.thumbnailQueue.addOperation(operation)
         }
     }
     

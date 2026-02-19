@@ -1474,4 +1474,386 @@ class RelayProcessManager: ObservableObject {
             completion(1)
         }
     }
+    
+    // MARK: - Blossom Backup
+    
+    func runBlossomBackup(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
+        let blossomDir = ConfigService.shared.relayDataDir.appendingPathComponent(config.blossomPath)
+        
+        // Ensure blossom directory exists
+        guard FileManager.default.fileExists(atPath: blossomDir.path) else {
+            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
+            completion(false)
+            return
+        }
+        
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom backup..."))
+        
+        // Create a temporary file path
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempZipURL = tempDir.appendingPathComponent("blossom_backup_\(UUID().uuidString).zip")
+        
+        // Use /usr/bin/zip to archive to TEMP first
+        // This avoids sandbox issues where the subprocess cannot write to the user-selected URL directly
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        
+        proc.currentDirectoryURL = blossomDir
+        // -r: recursive
+        proc.arguments = ["-r", tempZipURL.path, "."]
+        
+        // Capture output for debugging
+        let pipeOut = Pipe()
+        let pipeErr = Pipe()
+        proc.standardOutput = pipeOut
+        proc.standardError = pipeErr
+        
+        proc.terminationHandler = { [weak self] p in
+            // Read data before notification
+            _ = pipeOut.fileHandleForReading.readDataToEndOfFile()
+            let errData = pipeErr.fileHandleForReading.readDataToEndOfFile()
+            
+            Task { @MainActor in
+                if let errStr = String(data: errData, encoding: .utf8), !errStr.isEmpty {
+                     self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Zip Error: \(errStr)"))
+                }
+                
+                let success = p.terminationStatus == 0
+                if success {
+                    // Now move/copy the temp file to the actual destination
+                    do {
+                        let destURL = URL(fileURLWithPath: outputPath)
+                        // Remove destination if it exists (overwrite)
+                        if FileManager.default.fileExists(atPath: destURL.path) {
+                            try FileManager.default.removeItem(at: destURL)
+                        }
+                        try FileManager.default.moveItem(at: tempZipURL, to: destURL)
+                        self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom backup saved to \(outputPath)"))
+                        completion(true)
+                    } catch {
+                        self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move backup to destination: \(error.localizedDescription)"))
+                        // Try to clean up temp
+                        try? FileManager.default.removeItem(at: tempZipURL)
+                        completion(false)
+                    }
+                } else {
+                    self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom backup failed (exit \(p.terminationStatus))"))
+                    try? FileManager.default.removeItem(at: tempZipURL)
+                    completion(false)
+                }
+            }
+        }
+        
+        do {
+            try proc.run()
+        } catch {
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to run zip command: \(error)"))
+            completion(false)
+        }
+    }
+    
+    func runBlossomImport(config: HavenConfig, inputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
+        let blossomDir = ConfigService.shared.relayDataDir.appendingPathComponent(config.blossomPath)
+        
+        // Ensure blossom directory exists
+        try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
+        
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import..."))
+        
+        // Copy to temp first to avoid sandbox issues with unzip subprocess
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempZipURL = tempDir.appendingPathComponent("blossom_import_\(UUID().uuidString).zip")
+        
+        do {
+            if FileManager.default.fileExists(atPath: tempZipURL.path) {
+                try FileManager.default.removeItem(at: tempZipURL)
+            }
+            try FileManager.default.copyItem(atPath: inputPath, toPath: tempZipURL.path)
+        } catch {
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to copy import file to temp: \(error)"))
+            completion(false)
+            return
+        }
+        
+        // Use /usr/bin/unzip
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        // -o: overwrite existing files without prompting
+        // -d: extract to directory
+        proc.arguments = ["-o", tempZipURL.path, "-d", blossomDir.path]
+        
+        let pipeOut = Pipe()
+        let pipeErr = Pipe()
+        proc.standardOutput = pipeOut
+        proc.standardError = pipeErr
+        
+        proc.terminationHandler = { [weak self] p in
+             _ = pipeOut.fileHandleForReading.readDataToEndOfFile()
+             let errData = pipeErr.fileHandleForReading.readDataToEndOfFile()
+            
+            Task { @MainActor in
+                if let errStr = String(data: errData, encoding: .utf8), !errStr.isEmpty {
+                     // Check if it's actually an error or just warning
+                     if errStr.contains("checkdir error") || errStr.contains("cannot create") {
+                         self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip Error: \(errStr)"))
+                     }
+                }
+                
+                // Cleanup temp
+                try? FileManager.default.removeItem(at: tempZipURL)
+                
+                let success = p.terminationStatus == 0
+                if success {
+                    self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete."))
+                } else {
+                    self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom import failed (exit \(p.terminationStatus))"))
+                }
+                completion(success)
+            }
+        }
+        
+        do {
+            try proc.run()
+        } catch {
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to run unzip command: \(error)"))
+            try? FileManager.default.removeItem(at: tempZipURL)
+            completion(false)
+        }
+    }
+    
+    // MARK: - Blossom Extensions Logic
+    
+    func runBlossomExportWithExtensions(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
+        let blossomDir = ConfigService.shared.relayDataDir.appendingPathComponent(config.blossomPath)
+        
+        guard FileManager.default.fileExists(atPath: blossomDir.path) else {
+            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
+            completion(false)
+            return
+        }
+        
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom export with extensions..."))
+        
+        // Create temp dir for staging files with extensions
+        let tempDir = FileManager.default.temporaryDirectory
+        let stagingDir = tempDir.appendingPathComponent("BlossomExport_\(UUID().uuidString)")
+        let tempZipURL = tempDir.appendingPathComponent("blossom_export_temp_\(UUID().uuidString).zip")
+        
+        do {
+            try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+            
+            // Iterate files in blossomDir
+            let fileURLs = try FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: nil)
+            
+            for fileURL in fileURLs {
+                // Ignore hidden files
+                if fileURL.lastPathComponent.hasPrefix(".") { continue }
+                
+                // Determine extension using 'file --extension'
+                let ext = getExtension(for: fileURL)
+                
+                let newFilename = fileURL.lastPathComponent + (ext.isEmpty ? "" : ".\(ext)")
+                let destURL = stagingDir.appendingPathComponent(newFilename)
+                
+                try FileManager.default.copyItem(at: fileURL, to: destURL)
+            }
+            
+            // Zip the staging directory content
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+            proc.currentDirectoryURL = stagingDir
+            // -r: recursive, -j: junk paths (flatten) - not using -j so structure is preserved if any, but flat here
+            proc.arguments = ["-r", tempZipURL.path, "."]
+            
+            let pipeOut = Pipe()
+            let pipeErr = Pipe()
+            proc.standardOutput = pipeOut
+            proc.standardError = pipeErr
+            
+            proc.terminationHandler = { [weak self] p in
+                // Cleanup staging
+                try? FileManager.default.removeItem(at: stagingDir)
+                
+                 _ = pipeOut.fileHandleForReading.readDataToEndOfFile()
+                 let errData = pipeErr.fileHandleForReading.readDataToEndOfFile()
+                
+                Task { @MainActor in
+                    if let errStr = String(data: errData, encoding: .utf8), !errStr.isEmpty {
+                         self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Zip Error: \(errStr)"))
+                    }
+                    
+                    let success = p.terminationStatus == 0
+                    if success {
+                        // Move zip to final destination
+                        do {
+                            let destURL = URL(fileURLWithPath: outputPath)
+                            if FileManager.default.fileExists(atPath: destURL.path) {
+                                try FileManager.default.removeItem(at: destURL)
+                            }
+                            try FileManager.default.moveItem(at: tempZipURL, to: destURL)
+                            self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom export saved to \(outputPath)"))
+                            completion(true)
+                        } catch {
+                            self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move export to destination: \(error.localizedDescription)"))
+                            try? FileManager.default.removeItem(at: tempZipURL)
+                            completion(false)
+                        }
+                    } else {
+                        self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom export failed (exit \(p.terminationStatus))"))
+                        try? FileManager.default.removeItem(at: tempZipURL)
+                        completion(false)
+                    }
+                }
+            }
+            
+            try proc.run()
+            
+        } catch {
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Export failed: \(error.localizedDescription)"))
+            try? FileManager.default.removeItem(at: stagingDir)
+            completion(false)
+        }
+    }
+    
+    func runBlossomImportStrippingExtensions(config: HavenConfig, inputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
+        let blossomDir = ConfigService.shared.relayDataDir.appendingPathComponent(config.blossomPath)
+        
+        // Ensure blossom directory exists
+        try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
+        
+        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import (stripping extensions)..."))
+        
+        // 1. Copy input zip to temp
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempZipURL = tempDir.appendingPathComponent("blossom_import_source_\(UUID().uuidString).zip")
+        let stagingDir = tempDir.appendingPathComponent("BlossomImport_\(UUID().uuidString)")
+        
+        do {
+            if FileManager.default.fileExists(atPath: tempZipURL.path) {
+                try FileManager.default.removeItem(at: tempZipURL)
+            }
+            try FileManager.default.copyItem(atPath: inputPath, toPath: tempZipURL.path)
+            try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        } catch {
+            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to setup temp dirs: \(error)"))
+            completion(false)
+            return
+        }
+        
+        // 2. Unzip to staging
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        proc.arguments = ["-o", tempZipURL.path, "-d", stagingDir.path]
+        
+        let pipeOut = Pipe()
+        let pipeErr = Pipe()
+        proc.standardOutput = pipeOut
+        proc.standardError = pipeErr
+        
+        proc.terminationHandler = { [weak self] p in
+             // Cleanup zip copy
+             try? FileManager.default.removeItem(at: tempZipURL)
+             
+             _ = pipeOut.fileHandleForReading.readDataToEndOfFile()
+             let errData = pipeErr.fileHandleForReading.readDataToEndOfFile()
+            
+            Task { @MainActor in
+                if let errStr = String(data: errData, encoding: .utf8), !errStr.isEmpty {
+                     if errStr.contains("checkdir error") || errStr.contains("cannot create") {
+                         self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip Error: \(errStr)"))
+                     }
+                }
+                
+                if p.terminationStatus == 0 {
+                    // 3. Process files in staging
+                    do {
+                        let fileURLs = try FileManager.default.contentsOfDirectory(at: stagingDir, includingPropertiesForKeys: nil)
+                        var count = 0
+                        
+                        for fileURL in fileURLs {
+                            // Recursively find files if unzip created subdirs? 
+                            // For now assume flat or verify if unzip -j was needed. 
+                            // Actually backup used -r, so structure is preserved. 
+                            // If structure is flat (current backup), we are good.
+                            // If user provides arbitrary zip, we might need deep scan.
+                            // Sticking to basic flat scan for now as per plan.
+                            
+                            if fileURL.hasDirectoryPath { continue }
+                            if fileURL.lastPathComponent.hasPrefix(".") { continue }
+                            if fileURL.lastPathComponent == "__MACOSX" { continue }
+                            
+                            // Strip extension
+                            let filename = fileURL.deletingPathExtension().lastPathComponent
+                            
+                            // Validate SHA256 (64 hex chars)
+                            if filename.count == 64 && filename.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil {
+                                let destURL = blossomDir.appendingPathComponent(filename)
+                                // Overwrite
+                                if FileManager.default.fileExists(atPath: destURL.path) {
+                                    try FileManager.default.removeItem(at: destURL)
+                                }
+                                try FileManager.default.moveItem(at: fileURL, to: destURL)
+                                count += 1
+                            } else {
+                                self?.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Skipping invalid blossom file: \(fileURL.lastPathComponent)"))
+                            }
+                        }
+                        
+                        self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete. Imported \(count) files."))
+                        try? FileManager.default.removeItem(at: stagingDir)
+                        completion(true)
+                        
+                    } catch {
+                         self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Error processing imported files: \(error)"))
+                         try? FileManager.default.removeItem(at: stagingDir)
+                         completion(false)
+                    }
+                } else {
+                    self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip failed (exit \(p.terminationStatus))"))
+                    try? FileManager.default.removeItem(at: stagingDir)
+                    completion(false)
+                }
+            }
+        }
+        
+        do {
+            try proc.run()
+        } catch {
+             try? FileManager.default.removeItem(at: tempZipURL)
+             try? FileManager.default.removeItem(at: stagingDir)
+             logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to run unzip: \(error)"))
+             completion(false)
+        }
+    }
+    
+    // Helper to get extension
+    private func getExtension(for url: URL) -> String {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/file")
+        // --extension: output a slash-separated list of extensions
+        // -b: brief mode
+        proc.arguments = ["--extension", "-b", url.path]
+        
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        
+        do {
+            try proc.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8) {
+                let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Output might be "jpeg/jpg/jpe/jfif". Take the first one.
+                // Or "???" if unknown.
+                if trimmed == "???" { return "bin" }
+                
+                let extensions = trimmed.components(separatedBy: "/")
+                if let first = extensions.first, !first.isEmpty {
+                    return first
+                }
+            }
+        } catch {
+            return "bin"
+        }
+        return "bin"
+    }
 }

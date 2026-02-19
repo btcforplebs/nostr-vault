@@ -15,6 +15,14 @@ struct ViewerView: View {
     @State private var isLoadingMore = false
     @State private var isRefreshingMedia = false
     @State private var contentFilter: ContentFilter = .all
+    @State private var mediaSourceFilter: MediaSourceFilter = .all
+    
+    // Cached display data (computed in background)
+    @State private var displayNotes: [NostrEvent] = []
+    @State private var displayMedia: [MediaItem] = []
+    
+    // Static regex pattern to avoid recompilation
+    nonisolated private static let hexPattern = try! NSRegularExpression(pattern: "[a-f0-9]{64}", options: .caseInsensitive)
     
     enum ContentFilter {
         case all
@@ -28,99 +36,119 @@ struct ViewerView: View {
         case media
     }
     
-    var filteredNotes: [NostrEvent] {
-        let displayableEvents = nostrService.events.filter { event in
-            // Basic Filter: Only View 1 (Text Notes)
-            if event.kind != 1 { return false }
-            
-            // Content Filter
-            switch contentFilter {
-            case .all: 
-                // User requested "All" to include Mine + Tagged + Whitelisted
-                let isMine = event.pubkey == nostrService.ownerHexPubkey
-                let isTagged = event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
-                let isWhitelisted = configService.whitelistedHexPubkeys.contains(event.pubkey)
-                return isMine || isTagged || isWhitelisted
-            case .mine: return event.pubkey == nostrService.ownerHexPubkey
-            case .tagged: return event.pubkey != nostrService.ownerHexPubkey && event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
-            case .whitelist:
-                return configService.whitelistedHexPubkeys.contains(event.pubkey) && event.pubkey != nostrService.ownerHexPubkey
-            }
-        }
-        
-        if searchText.isEmpty {
-            return displayableEvents
-        }
-        return displayableEvents.filter { $0.content.localizedCaseInsensitiveContains(searchText) }
+    enum MediaSourceFilter {
+        case all
+        case blossom
+        case cache
     }
     
-    var allMediaItems: [MediaItem] {
-        // Use Nostr event items (noteMedia) as the primary source for proper timestamps,
-        // then include local blossom files that don't have a corresponding event.
-        var latestItems: [String: MediaItem] = [:]
-
-        func normalizedKey(for url: URL) -> String {
-            // Robustly extract the 64-character hash from the URL
-            // This handles cases like:
-            // - http://local/hash
-            // - https://remote/hash.jpg
-            // - https://remote/hash?token=123
-
-            let urlString = url.absoluteString
-
-            // Look for 64 hex characters
-            let pattern = "[a-f0-9]{64}"
-            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-               let match = regex.firstMatch(in: urlString, options: [], range: NSRange(urlString.startIndex..., in: urlString)),
-               let range = Range(match.range, in: urlString) {
-                return String(urlString[range])
-            }
-
-            // Fallback for non-standard filenames: strip query and extension
-            return url.deletingPathExtension().lastPathComponent
-        }
-
-        // 1. Filter remote items (from Nostr events) based on content filter
-        let remoteItems = nostrService.noteMedia.filter { item in
-            switch contentFilter {
-            case .all:
-                // User requested "All" to include Mine + Tagged + Whitelisted
-                let isMine = item.pubkey == nostrService.ownerHexPubkey
-                let isTagged = item.tags?.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey } ?? false
-                let isWhitelisted = item.pubkey != nil && configService.whitelistedHexPubkeys.contains(item.pubkey!)
-                return isMine || isTagged || isWhitelisted
-            case .mine: return item.pubkey == nostrService.ownerHexPubkey
-            case .tagged:
-                if item.pubkey == nostrService.ownerHexPubkey { return false }
-                if let tags = item.tags {
-                    return tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == nostrService.ownerHexPubkey }
+    // MARK: - Background Processing
+    
+    
+    private func updateDisplayData() {
+        // Capture current state strongly for the background task
+        let currentFilter = contentFilter
+        let currentSearch = searchText
+        let currentEvents = nostrService.events
+        let currentNoteMedia = nostrService.noteMedia
+        let currentBlossom = blossomMedia
+        let owner = nostrService.ownerHexPubkey
+        let whitelist = configService.whitelistedHexPubkeys
+        let currentMode = viewMode
+        let sourceFilter = mediaSourceFilter
+        
+        Task.detached(priority: .userInitiated) {
+            if currentMode == .notes {
+                // Compute Notes
+                let filtered = currentEvents.filter { event in
+                    if event.kind != 1 { return false }
+                    
+                    switch currentFilter {
+                    case .all:
+                        let isMine = event.pubkey == owner
+                        let isTagged = event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner }
+                        let isWhitelisted = whitelist.contains(event.pubkey)
+                        return isMine || isTagged || isWhitelisted
+                    case .mine: return event.pubkey == owner
+                    case .tagged: return event.pubkey != owner && event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner }
+                    case .whitelist:
+                        return whitelist.contains(event.pubkey) && event.pubkey != owner
+                    }
                 }
-                return false
-            case .whitelist:
-                if let pubkey = item.pubkey {
-                    return configService.whitelistedHexPubkeys.contains(pubkey) && pubkey != nostrService.ownerHexPubkey
+                
+                let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
+                
+                await MainActor.run {
+                    self.displayNotes = result
                 }
-                return false
+            } else {
+                // Compute Media
+                var latestItems: [String: MediaItem] = [:]
+                
+                let remoteItems = currentNoteMedia.filter { item in
+                    switch currentFilter {
+                    case .all:
+                        let isMine = item.pubkey == owner
+                        let isTagged = item.tags?.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner } ?? false
+                        let isWhitelisted = item.pubkey != nil && whitelist.contains(item.pubkey!)
+                        return isMine || isTagged || isWhitelisted
+                    case .mine: return item.pubkey == owner
+                    case .tagged:
+                        if item.pubkey == owner { return false }
+                        return item.tags?.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner } ?? false
+                    case .whitelist:
+                        guard let pk = item.pubkey else { return false }
+                        return whitelist.contains(pk) && pk != owner
+                    }
+                }
+                
+                if sourceFilter == .all || sourceFilter == .cache {
+                     for item in remoteItems {
+                        // We can call normalizedKey here (it's stateless/pure now)
+                        // But we need to make normalizedKey accessible or duplicate it.
+                        // It is an instance method, so we can't call it from detached task easily unless self is captured (which creates race on Self.hexPattern? No, hexPattern is static).
+                        // Best to make normalizedKey static or non-self dependent.
+                        // Actually, let's just duplicate the static ref usage or make normalizedKey static.
+                        // Since I made it an instance method in step 2... 
+                        // Let's refactor normalizedKey to be static or just use a helper.
+                        // To follow my own code above: I defined normalizedKey as instance method.
+                        // I'll make it static in the next chunk or just implement logic here.
+                        // I will implement logic here to be safe.
+                        let key = self.normalizedKeyStatic(for: item.url)
+                        latestItems[key] = item
+                    }
+                }
+                
+                if (currentFilter == .all || currentFilter == .mine) && (sourceFilter == .all || sourceFilter == .blossom) {
+                    for item in currentBlossom {
+                        let key = self.normalizedKeyStatic(for: item.url)
+                        if latestItems[key] == nil {
+                            latestItems[key] = item
+                        }
+                    }
+                }
+                
+                let result = Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
+                
+                await MainActor.run {
+                    self.displayMedia = result
+                }
             }
         }
-
-        // 2. Add remote items (these have proper event timestamps)
-        for item in remoteItems {
-            latestItems[normalizedKey(for: item.url)] = item
+    }
+    
+    // Helper for detached task
+    private nonisolated func normalizedKeyStatic(for url: URL) -> String {
+        let urlString = url.absoluteString
+        let lastComponent = url.lastPathComponent
+        if lastComponent.count == 64 && lastComponent.allSatisfy({ $0.isHexDigit }) {
+             return lastComponent
         }
-
-        // 3. Include local blossom files that don't already have a corresponding event.
-        //    Only for "All" and "Mine" filters since local blobs are owned by this relay.
-        if contentFilter == .all || contentFilter == .mine {
-            for item in blossomMedia {
-                let key = normalizedKey(for: item.url)
-                if latestItems[key] == nil {
-                    latestItems[key] = item
-                }
-            }
+        if let match = Self.hexPattern.firstMatch(in: urlString, options: [], range: NSRange(urlString.startIndex..., in: urlString)),
+           let range = Range(match.range, in: urlString) {
+            return String(urlString[range])
         }
-
-        return Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
+        return url.deletingPathExtension().lastPathComponent
     }
     
     var statusColor: Color {
@@ -176,10 +204,26 @@ struct ViewerView: View {
                 }
                 
                 HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
-                    TextField("Search notes...", text: $searchText)
-                        .textFieldStyle(.plain)
+                    if viewMode == .notes {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.secondary)
+                        TextField("Search notes...", text: $searchText)
+                            .textFieldStyle(.plain)
+                    } else {
+                        // Media Source Filter
+                        HStack(spacing: 2) {
+                            FilterButton(title: "All Sources", color: .secondary, isSelected: mediaSourceFilter == .all) {
+                                mediaSourceFilter = .all
+                            }
+                            FilterButton(title: "Blossom", color: .pink, isSelected: mediaSourceFilter == .blossom) {
+                                mediaSourceFilter = .blossom
+                            }
+                            FilterButton(title: "Cache", color: .orange, isSelected: mediaSourceFilter == .cache) {
+                                mediaSourceFilter = .cache
+                            }
+                        }
+                        Spacer()
+                    }
                 }
                 .padding(10)
                 .background(Color(NSColor.controlBackgroundColor))
@@ -201,12 +245,12 @@ struct ViewerView: View {
                 }
                 .padding()
                 
-                if !filteredNotes.isEmpty || !allMediaItems.isEmpty {
+                if !displayNotes.isEmpty || !displayMedia.isEmpty {
                     Color.clear
                         .frame(height: 1)
                         .padding(.bottom, 20)
                         .onAppear {
-                            if !nostrService.isFetching && (!filteredNotes.isEmpty || !allMediaItems.isEmpty) {
+                            if !nostrService.isFetching && (!displayNotes.isEmpty || !displayMedia.isEmpty) {
                                 loadMore()
                             }
                         }
@@ -239,11 +283,22 @@ struct ViewerView: View {
             }
         }
         .overlay(fullScreenOverlay)
+        .onChange(of: searchText) { _, _ in updateDisplayData() }
+        .onChange(of: contentFilter) { _, _ in updateDisplayData() }
+        .onChange(of: mediaSourceFilter) { _, _ in updateDisplayData() }
+        .onChange(of: viewMode) { _, _ in updateDisplayData() }
+        .onChange(of: nostrService.events.count) { _, _ in updateDisplayData() } // Rough trigger
+        .onReceive(nostrService.objectWillChange) { _ in updateDisplayData() } // Better trigger
+        .onChange(of: blossomMedia.count) { _, _ in updateDisplayData() }
+        .task {
+            // Initial load
+            updateDisplayData()
+        }
     }
     
     private var notesList: some View {
         Group {
-            if filteredNotes.isEmpty {
+            if displayNotes.isEmpty {
                 VStack(spacing: 16) {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 48))
@@ -257,7 +312,7 @@ struct ViewerView: View {
                 .padding(.top, 100)
             } else {
                 LazyVStack(spacing: 12) {
-                    ForEach(filteredNotes) { event in
+                    ForEach(displayNotes) { event in
                         NoteRow(event: event)
                     }
                 }
@@ -266,7 +321,7 @@ struct ViewerView: View {
     }
     
     private var mediaGrid: some View {
-        let items = allMediaItems
+        let items = displayMedia
         return Group {
             if items.isEmpty {
                 VStack(spacing: 16) {
@@ -903,39 +958,21 @@ struct VideoThumbnailView: View {
         
         Task {
             // 1. Check if we already have it locally (cached or blossom)
-            // Use localFileURL: returns HTTP URL for local Blossom (to preserve MIME), 
-            // and file:// for cached remote media.
-            var resolvedURL = MediaCacheService.shared.localFileURL(for: url)
-            
-            // 2. If not local, download it first
-            if resolvedURL == nil && !MediaCacheService.shared.getSource(for: url).isLocal {
+            if !MediaCacheService.shared.isCached(url: url) && !MediaCacheService.shared.getSource(for: url).isLocal {
                 guard let _ = await MediaCacheService.shared.fetchData(url: url) else {
                     await MainActor.run { self.isLoading = false }
                     return
                 }
-                resolvedURL = MediaCacheService.shared.localFileURL(for: url)
             }
             
-            // For AVAsset operations, use the playable URL (symlink if needed) logic
-            let playableURL = MediaCacheService.shared.preparePlayableURL(for: url) ?? resolvedURL ?? url
-            
-            // 3. Generate thumbnail
-            let asset = AVAsset(url: playableURL)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 400, height: 400)
-            
-            // Use a very early timestamp (0.1s) to support short videos
-            let time = CMTime(seconds: 0.1, preferredTimescale: 60)
-            
-            // AVAssetImageGenerator can sometimes fail if called too quickly after download
-            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-            
-            generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) { _, image, _, _, _ in
-                DispatchQueue.main.async {
-                    if let image = image {
-                        self.thumbnail = NSImage(cgImage: image, size: NSZeroSize)
-                    }
+            // 2. Generate using the throttled service
+            if let image = await MediaCacheService.shared.generateThumbnail(for: url) {
+                await MainActor.run {
+                    self.thumbnail = image
+                    self.isLoading = false
+                }
+            } else {
+                await MainActor.run {
                     self.isLoading = false
                 }
             }

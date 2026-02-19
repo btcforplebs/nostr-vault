@@ -539,6 +539,7 @@ struct BackupSettingsView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var isExporting = false
     @State private var isImportingBackup = false
+    @State private var isBackingUpBlossom = false
     @State private var backupStatusMessage = ""
 
     var body: some View {
@@ -548,12 +549,12 @@ struct BackupSettingsView: View {
                     Button("Export Backup") {
                         exportBackup()
                     }
-                    .disabled(isExporting || isImportingBackup)
+                    .disabled(isExporting || isImportingBackup || isBackingUpBlossom)
 
                     Button("Import Backup") {
                         importBackup()
                     }
-                    .disabled(isExporting || isImportingBackup)
+                    .disabled(isExporting || isImportingBackup || isBackingUpBlossom)
 
                     if isExporting || isImportingBackup {
                         ProgressView()
@@ -568,6 +569,42 @@ struct BackupSettingsView: View {
                 }
 
                 Text("Export creates a .zip file containing all relay databases in JSONL format. Import restores from a .zip or .jsonl file.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Section("Media Backup") {
+                HStack {
+                    Button("Backup Blossom Data") {
+                        backupBlossom()
+                    }
+                    .disabled(isExporting || isImportingBackup || isBackingUpBlossom)
+                    
+                    if isBackingUpBlossom {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(.leading, 8)
+                    }
+                }
+                
+                Text("Creates a .zip archive of all your local media files (images & videos).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    
+                HStack {
+                    Button("Import Blossom Data") {
+                        importBlossom()
+                    }
+                    .disabled(isExporting || isImportingBackup || isBackingUpBlossom)
+                    
+                    if isImportingBackup && backupStatusMessage.contains("Blossom") {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(.leading, 8)
+                    }
+                }
+                
+                Text("Restores media files from a .zip archive. Existing files with same names will be overwritten.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -650,6 +687,48 @@ struct BackupSettingsView: View {
             Task { @MainActor in
                 isImportingBackup = false
                 backupStatusMessage = success ? "Import complete: \(url.lastPathComponent)" : "Import failed. Check logs."
+            }
+        }
+    }
+    
+    private func backupBlossom() {
+        let panel = NSSavePanel()
+        panel.title = "Back up Blossom Data"
+        panel.nameFieldStringValue = "blossom-backup.zip"
+        panel.allowedContentTypes = [.zip]
+        panel.canCreateDirectories = true
+        
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        
+        isBackingUpBlossom = true
+        // Clear status from other backup ops
+        backupStatusMessage = "Backing up Blossom media..."
+        
+        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: url.path) { [self] success in
+            Task { @MainActor in
+                isBackingUpBlossom = false
+                backupStatusMessage = success ? "Blossom backup complete: \(url.lastPathComponent)" : "Blossom backup failed."
+            }
+        }
+    }
+    
+    private func importBlossom() {
+        let panel = NSOpenPanel()
+        panel.title = "Import Blossom Data"
+        panel.allowedContentTypes = [.zip]
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        
+        isImportingBackup = true
+        backupStatusMessage = "Importing Blossom media..."
+        
+        relayManager.runBlossomImportStrippingExtensions(config: configService.config, inputPath: url.path) { success in
+            Task { @MainActor in
+                isImportingBackup = false
+                backupStatusMessage = success ? "Blossom import complete." : "Blossom import failed."
             }
         }
     }

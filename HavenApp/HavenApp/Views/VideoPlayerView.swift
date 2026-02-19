@@ -16,7 +16,7 @@ struct VideoPlayerView: View {
                     // ... error view ...
                     errorContent
                 } else if let player = player {
-                    VideoPlayer(player: player)
+                    NativeVideoPlayer(player: player)
                         .onAppear {
                             player.play()
                         }
@@ -101,19 +101,45 @@ struct VideoPlayerView: View {
             }
         }
         
+        // Strict Constraint Safety: 
+        // AVPlayerViewController (AppKit backend) throws constraint exceptions if initialized 
+        // with near-zero frames. We must ensure we are ready.
+        if viewSize.width < 100 || viewSize.height < 100 {
+            print("VideoPlayerView: Skipping setup - view too small (\(viewSize))")
+            return
+        }
+        
+        print("VideoPlayerView: Setting up player for \(finalURL.lastPathComponent)")
         let asset = AVURLAsset(url: finalURL)
         let playerItem = AVPlayerItem(asset: asset)
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            let newPlayer = AVPlayer(playerItem: playerItem)
-            self.player = newPlayer
-            
-            // Watch for failures
-            NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: playerItem,
-                queue: .main
-            ) { _ in }
+        // Initialize immediately - removing the async delay which caused race conditions
+        let newPlayer = AVPlayer(playerItem: playerItem)
+        self.player = newPlayer
+        
+        // Watch for failures
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { _ in }
+    }
+}
+
+struct NativeVideoPlayer: NSViewRepresentable {
+    let player: AVPlayer
+    
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = player
+        view.controlsStyle = .floating
+        view.allowedTouchTypes = .indirect // standard for mac
+        return view
+    }
+    
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        if nsView.player != player {
+            nsView.player = player
         }
     }
 }

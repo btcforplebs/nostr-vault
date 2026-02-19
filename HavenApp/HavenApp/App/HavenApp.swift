@@ -165,18 +165,7 @@ struct MenuBarContent: View {
                         .help("Copy to clipboard")
                     }
 
-                    Button(action: {
-                        relayManager.showProcessKillAlert = false
-                        relayManager.forceCleanAndRestart()
-                    }) {
-                        Text("Retry")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(width: 140, height: 36)
-                            .background(Color.orange)
-                            .cornerRadius(8)
-                    }
-                    .buttonStyle(.plain)
+
                 }
                 .padding(30)
                 .frame(width: 400)

@@ -6,6 +6,10 @@ struct DashboardView: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var statsService: StatsService
     
+    @State private var isExporting = false
+    @State private var isBackingUpBlossom = false
+    @State private var exportStatusMessage = ""
+    
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -80,16 +84,36 @@ struct DashboardView: View {
                 }
                 
                 // MARK: - Actions
-                HStack(spacing: 12) {
-                    ActionButton(icon: "safari", title: "Browser") {
-                        if let url = URL(string: configService.config.webURL) {
-                            NSWorkspace.shared.open(url)
+                VStack(spacing: 8) {
+                    HStack(spacing: 12) {
+                        ActionButton(icon: "safari", title: "Browser") {
+                            if let url = URL(string: configService.config.webURL) {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        
+                        ActionButton(icon: "arrow.down.circle", title: "Import Notes") {
+                            let config = configService.config
+                            relayManager.importNotes(config: config)
                         }
                     }
                     
-                    ActionButton(icon: "arrow.down.circle", title: "Import") {
-                        let config = configService.config
-                        relayManager.importNotes(config: config)
+                    HStack(spacing: 12) {
+                        ActionButton(icon: "arrow.up.doc.fill", title: "Export JSONL", isLoading: isExporting) {
+                            exportBackup()
+                        }
+                        .disabled(isExporting || isBackingUpBlossom)
+                        
+                        ActionButton(icon: "photo.stack", title: "Export Blossom", isLoading: isBackingUpBlossom) {
+                            exportBlossom()
+                        }
+                        .disabled(isExporting || isBackingUpBlossom)
+                    }
+                    
+                    if !exportStatusMessage.isEmpty {
+                        Text(exportStatusMessage)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
                 .padding(.horizontal)
@@ -138,6 +162,57 @@ struct DashboardView: View {
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                     statsService.refreshStats(relayURLString: urlString)
+                }
+            }
+        }
+    }
+    
+    private func exportBackup() {
+        let panel = NSSavePanel()
+        panel.title = "Export Relay Backup"
+        panel.nameFieldStringValue = "haven-backup.zip"
+        panel.allowedContentTypes = [.zip]
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        isExporting = true
+        exportStatusMessage = "Exporting JSONL..."
+        relayManager.runBackupExport(config: configService.config, outputPath: url.path) { success in
+            Task { @MainActor in
+                isExporting = false
+                exportStatusMessage = success ? "Export complete" : "Export failed"
+                // Clear message after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    if exportStatusMessage.contains("Export complete") || exportStatusMessage.contains("Export failed") {
+                        exportStatusMessage = ""
+                    }
+                }
+            }
+        }
+    }
+    
+    private func exportBlossom() {
+        let panel = NSSavePanel()
+        panel.title = "Export Blossom Media"
+        panel.nameFieldStringValue = "blossom-backup.zip"
+        panel.allowedContentTypes = [.zip]
+        panel.canCreateDirectories = true
+        
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        
+        isBackingUpBlossom = true
+        exportStatusMessage = "Exporting Blossom..."
+        
+        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: url.path) { success in
+            Task { @MainActor in
+                isBackingUpBlossom = false
+                exportStatusMessage = success ? "Blossom Export complete" : "Blossom Export failed"
+                // Clear message after delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    if exportStatusMessage.contains("Blossom Export") {
+                        exportStatusMessage = ""
+                    }
                 }
             }
         }
@@ -200,14 +275,22 @@ struct RelayRow: View {
 struct ActionButton: View {
     let icon: String
     let title: String
+    var isLoading: Bool = false
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(.white)
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .colorScheme(.dark) // Make spinner light to contrast with purple button
+                        // .tint(.white) // Valid in newer SwiftUI, but colorScheme works for now
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.white)
+                }
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
