@@ -34,7 +34,9 @@ class ConfigService: ObservableObject {
                 let loaded = try JSONDecoder().decode(HavenConfig.self, from: data)
                 config = loaded
                 loadedSuccessfully = true
+                #if DEBUG
                 print("ConfigService: Successfully loaded configuration from disk")
+                #endif
                 
                 // Ensure defaults are applied for empty arrays
                 if config.importSeedRelays.isEmpty {
@@ -44,11 +46,15 @@ class ConfigService: ObservableObject {
                     config.blastrRelays = HavenConfig.default.blastrRelays
                 }
             } catch {
+                #if DEBUG
                 print("ConfigService: Error decoding configuration: \(error)")
+                #endif
                 config = HavenConfig.default
             }
         } else {
+            #if DEBUG
             print("ConfigService: No config.json found at \(configURL.path), using defaults")
+            #endif
             config = HavenConfig.default
         }
         
@@ -56,7 +62,9 @@ class ConfigService: ObservableObject {
         var recovered = false
         let envURL = relayDataDir.appendingPathComponent(".env")
         if !config.hasCompletedSetup && FileManager.default.fileExists(atPath: envURL.path) {
+            #if DEBUG
             print("ConfigService: .env detected but hasCompletedSetup is false. Auto-recovering settings.")
+            #endif
             recoverFromEnv()
             recovered = true
         }
@@ -82,7 +90,9 @@ class ConfigService: ObservableObject {
             do {
                 let loaded = try JSONDecoder().decode(HavenConfig.self, from: data)
                 self.config = loaded
+                #if DEBUG
                 print("ConfigService: Successfully reloaded configuration from disk")
+                #endif
                 
                 // Ensure defaults are applied for empty arrays
                 if config.importSeedRelays.isEmpty {
@@ -98,7 +108,9 @@ class ConfigService: ObservableObject {
                 // Sync relay info
                 MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
             } catch {
+                #if DEBUG
                 print("ConfigService: Error reloading configuration: \(error)")
+                #endif
             }
         }
     }
@@ -150,7 +162,9 @@ class ConfigService: ObservableObject {
             // Update launch at login if changed
             updateLaunchAtLogin()
         } catch {
+            #if DEBUG
             print("Failed to save config: \(error)")
+            #endif
         }
     }
     
@@ -273,7 +287,9 @@ class ConfigService: ObservableObject {
         let blossomDir = relayDataDir.appendingPathComponent("blossom")
         try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
         
+        #if DEBUG
         print("Created Haven config files at: \(relayDataDir.path)")
+        #endif
     }
     
     /// Perform a factory reset: delete data and config using FileManager
@@ -360,7 +376,9 @@ class ConfigService: ObservableObject {
         }
         
         config.hasCompletedSetup = true
+        #if DEBUG
         print("ConfigService: Successfully recovered critical settings from .env")
+        #endif
     }
     
     /// Returns a Set of hex pubkeys derived from the whitelisted npubs

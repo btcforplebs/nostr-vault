@@ -88,14 +88,18 @@ struct VideoPlayerView: View {
             let actualPath = finalURL.resolvingSymlinksInPath().path
             
             if !FileManager.default.fileExists(atPath: actualPath) {
+                #if DEBUG
                 print("VideoPlayerView: Local file missing at \(actualPath)")
+                #endif
                 loadError = "Local file not found."
                 return
             }
             
             if let attr = try? FileManager.default.attributesOfItem(atPath: actualPath),
                let size = attr[.size] as? UInt64, size < 200 {
+                #if DEBUG
                 print("VideoPlayerView: File too small (\(size) bytes)")
+                #endif
                 loadError = "Video file is invalid or too small."
                 return
             }
@@ -105,11 +109,15 @@ struct VideoPlayerView: View {
         // AVPlayerViewController (AppKit backend) throws constraint exceptions if initialized 
         // with near-zero frames. We must ensure we are ready.
         if viewSize.width < 100 || viewSize.height < 100 {
+            #if DEBUG
             print("VideoPlayerView: Skipping setup - view too small (\(viewSize))")
+            #endif
             return
         }
         
+        #if DEBUG
         print("VideoPlayerView: Setting up player for \(finalURL.lastPathComponent)")
+        #endif
         let asset = AVURLAsset(url: finalURL)
         let playerItem = AVPlayerItem(asset: asset)
         

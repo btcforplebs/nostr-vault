@@ -32,7 +32,9 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
         disconnect()
         
         if !isTemporary {
+            #if DEBUG
             print("WebSocketClient: Connecting to \(url.absoluteString)")
+            #endif
         }
         isClosing = false
         DispatchQueue.main.async {
@@ -63,7 +65,9 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
         let message = URLSessionWebSocketTask.Message.string(text)
         webSocketTask?.send(message) { error in
             if let error = error {
+                #if DEBUG
                 print("WebSocket send error: \(error)")
+                #endif
             }
         }
     }
@@ -74,7 +78,9 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             switch result {
             case .failure(let error):
                 if self?.isClosing == false {
+                    #if DEBUG
                     print("WebSocket receive failure: \(error.localizedDescription)")
+                    #endif
                     Task { @MainActor in
                         self?.connectionState = .error
                         self?.lastError = error.localizedDescription
@@ -83,7 +89,9 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             case .success(let message):
                 switch message {
                 case .string(let text):
+                    #if DEBUG
                     print("WebSocketClient [\(self?.url?.lastPathComponent ?? "root")]: Received: \(text.prefix(100))")
+                    #endif
                     self?.messageSubject.send(text)
                 case .data(_):
                     break
@@ -98,14 +106,18 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
     // MARK: - URLSessionWebSocketDelegate
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         if !isTemporary {
+            #if DEBUG
             print("WebSocketClient: Connected to \(url?.absoluteString ?? "unknown")")
+            #endif
         }
         DispatchQueue.main.async { self.connectionState = .connected }
     }
     
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         if !isClosing {
+            #if DEBUG
             print("WebSocketClient: Closed with code \(closeCode)")
+            #endif
         }
         DispatchQueue.main.async {
             self.connectionState = .disconnected
@@ -114,7 +126,9 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
+            #if DEBUG
             print("WebSocketClient: Completed with error: \(error.localizedDescription)")
+            #endif
             DispatchQueue.main.async { 
                 self.connectionState = .error
                 self.lastError = error.localizedDescription
@@ -168,7 +182,9 @@ class NostrService: ObservableObject {
         let npub = ConfigService.shared.config.ownerNpub
         if let hex = Bech32.decode(npub)?.hexString {
             self.ownerHexPubkey = hex
+            #if DEBUG
             print("NostrService: Owner Hex Pubkey: \(hex)")
+            #endif
         }
     }
     
@@ -191,7 +207,9 @@ class NostrService: ObservableObject {
             relays = ["wss://relay.damus.io", "wss://relay.primal.net", "wss://nos.lol"]
         }
         
+        #if DEBUG
         print("NostrService: Batch fetching metadata for \(pubkeys.count) pubkeys from \(relays.count) Blastr relays")
+        #endif
         
         let uniqueRelays = Array(Set(relays)).compactMap { URL(string: $0) }
         
@@ -232,7 +250,9 @@ class NostrService: ObservableObject {
            let loaded = try? JSONDecoder().decode(ProfileCache.self, from: data) {
             self.profileNames = loaded.names
             self.profilePictures = loaded.pictures
+            #if DEBUG
             print("NostrService: Loaded \(profileNames.count) names and \(profilePictures.count) pictures from cache")
+            #endif
         }
     }
     
@@ -358,7 +378,9 @@ class NostrService: ObservableObject {
         let req = ["REQ", subscriptionId, filter] as [Any]
         if let reqData = try? JSONSerialization.data(withJSONObject: req),
            let reqString = String(data: reqData, encoding: .utf8) {
+            #if DEBUG
             print("NostrService: Sending REQ to \(url.absoluteString): \(reqString)")
+            #endif
             client.send(text: reqString)
         }
     }
@@ -385,12 +407,16 @@ class NostrService: ObservableObject {
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               json.count >= 2,
               let type = json[0] as? String else { 
+            #if DEBUG
             print("NostrService: Failed to parse message: \(message.prefix(100))...")
+            #endif
             return 
         }
 
         if type != "EVENT" {
+            #if DEBUG
             print("NostrService: Received \(type) from relay: \(message)")
+            #endif
             
             if type == "EOSE" {
                 DispatchQueue.main.async { [weak self] in
@@ -487,7 +513,9 @@ class NostrService: ObservableObject {
     }
     
     func fetchCount(from relayURLs: [URL], filter: [String: Any] = [:]) async -> Int? {
+        #if DEBUG
         print("NostrService: Starting aggregate fetchCount for \(relayURLs.count) relays")
+        #endif
         var totalCount: Int? = nil
         
         let safeFilter = UncheckedSendable(value: filter)
@@ -499,14 +527,20 @@ class NostrService: ObservableObject {
                     let urlString = url.absoluteString
                     let relayTag = url.lastPathComponent.isEmpty ? "outbox" : url.lastPathComponent
                     
+                    #if DEBUG
                     print("NostrService [\(relayTag)]: Task started")
+                    #endif
                     
                     let (client, isNew) = await MainActor.run { () -> (WebSocketClient?, Bool) in
                         if let existing = self.clients[urlString] {
+                            #if DEBUG
                             print("NostrService [\(relayTag)]: Using existing client")
+                            #endif
                             return (existing, false)
                         } else {
+                            #if DEBUG
                             print("NostrService [\(relayTag)]: Creating new client")
+                            #endif
                             let newClient = WebSocketClient()
                             newClient.isTemporary = true
                             return (newClient, true)
@@ -514,13 +548,17 @@ class NostrService: ObservableObject {
                     }
                     
                     guard let client = client else { 
+                        #if DEBUG
                         print("NostrService [\(relayTag)]: Failed to get client")
+                        #endif
                         return nil 
                     }
                     
                     // 1. Wait for connection if needed
                     if client.connectionState != .connected {
+                        #if DEBUG
                         print("NostrService [\(relayTag)]: Not connected. Connecting now...")
+                        #endif
                         client.connect(url: url)
                         
                         var cancellable: AnyCancellable?
@@ -534,14 +572,18 @@ class NostrService: ObservableObject {
                                     if !hasResumed {
                                         hasResumed = true
                                         if case .failure = completion {
+                                            #if DEBUG
                                             print("NostrService [\(relayTag)]: Connection timeout")
+                                            #endif
                                         }
                                         continuation.resume(returning: false)
                                     }
                                 } receiveValue: { state in
                                     if !hasResumed {
                                         hasResumed = true
+                                        #if DEBUG
                                         print("NostrService [\(relayTag)]: Connection state reached: \(state)")
+                                        #endif
                                         continuation.resume(returning: state == .connected)
                                     }
                                 }
@@ -549,7 +591,9 @@ class NostrService: ObservableObject {
                         _ = cancellable // Hold it until await finishes
                         
                         if !didConnect {
+                            #if DEBUG
                             print("NostrService [\(relayTag)]: Failed to connect during fetchCount")
+                            #endif
                             if isNew { await MainActor.run { client.disconnect() } }
                             return nil
                         }
@@ -557,7 +601,9 @@ class NostrService: ObservableObject {
                     
                     // 2. Send COUNT and wait for response
                     let subscriptionId = "count-\(UUID().uuidString.prefix(6))"
+                    #if DEBUG
                     print("NostrService [\(relayTag)]: Sending COUNT with subId: \(subscriptionId)")
+                    #endif
                     
                     var messageCancellable: AnyCancellable?
                     let countResult = await withCheckedContinuation { (continuation: CheckedContinuation<Int?, Never>) in
@@ -571,16 +617,22 @@ class NostrService: ObservableObject {
                                 if !hasResumed {
                                     hasResumed = true
                                     if case .failure = completion {
+                                        #if DEBUG
                                         print("NostrService [\(relayTag)]: COUNT response timeout")
+                                        #endif
                                     } else {
+                                        #if DEBUG
                                         print("NostrService [\(relayTag)]: Message stream finished before COUNT")
+                                        #endif
                                     }
                                     continuation.resume(returning: nil)
                                 }
                             } receiveValue: { msg in
                                 if !hasResumed {
                                     hasResumed = true
+                                    #if DEBUG
                                     print("NostrService [\(relayTag)]: Received response: \(msg.prefix(200))")
+                                    #endif
                                     
                                     if let data = msg.data(using: .utf8),
                                        let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
@@ -589,7 +641,9 @@ class NostrService: ObservableObject {
                                        let count = (result["count"] as? Int) ?? (result["count"] as? NSNumber)?.intValue {
                                         continuation.resume(returning: count)
                                     } else {
+                                        #if DEBUG
                                         print("NostrService [\(relayTag)]: Failed to parse COUNT JSON")
+                                        #endif
                                         continuation.resume(returning: nil)
                                     }
                                 }
@@ -610,11 +664,15 @@ class NostrService: ObservableObject {
                     _ = messageCancellable // Hold it until await finishes
                     
                     if isNew { 
+                        #if DEBUG
                         print("NostrService [\(relayTag)]: Disconnecting temporary client")
+                        #endif
                         await MainActor.run { client.disconnect() }
                     }
                     
+                    #if DEBUG
                     print("NostrService [\(relayTag)]: Returning count: \(String(describing: countResult))")
+                    #endif
                     return countResult
                 }
             }
@@ -626,7 +684,9 @@ class NostrService: ObservableObject {
             }
         }
         
+        #if DEBUG
         print("NostrService: Final aggregated count: \(String(describing: totalCount))")
+        #endif
         return totalCount
     }
 
@@ -728,16 +788,22 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     func saveToCache(url: URL, data: Data) {
         // Guard: Don't cache extremely small files which are likely error messages/404 pages
         guard data.count > 100 else {
+            #if DEBUG
             print("MediaCacheService: Skipping cache for \(url.absoluteString) - data too small (\(data.count) bytes)")
+            #endif
             return
         }
         
         let path = cachePath(for: url)
         do {
             try data.write(to: path)
+            #if DEBUG
             print("MediaCacheService: Cached \(url.lastPathComponent) to \(path.path)")
+            #endif
         } catch {
+            #if DEBUG
             print("MediaCacheService: Failed to cache \(url.absoluteString): \(error.localizedDescription)")
+            #endif
         }
     }
     
@@ -811,10 +877,14 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
             }
             try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: localURL)
             playableURLs[localURL] = symlinkURL
+            #if DEBUG
             print("MediaCacheService: Created playable symlink at \(symlinkURL.path)")
+            #endif
             return symlinkURL
         } catch {
+            #if DEBUG
             print("MediaCacheService: Failed to create symlink: \(error)")
+            #endif
             return localURL // Fallback to original
         }
     }
@@ -828,7 +898,9 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
                     return data
                 }
             } catch {
+                #if DEBUG
                 print("MediaCacheService: Failed to fetch local URL \(url.absoluteString): \(error.localizedDescription)")
+                #endif
             }
             return nil
         }
@@ -848,7 +920,9 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
                 inFlightDownloads[filename] = [continuation]
                 downloadLock.unlock()
                 
+                #if DEBUG
                 print("MediaCacheService: Starting download for \(filename) (URL: \(url.absoluteString))")
+                #endif
                 // Start the actual download
                 URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
                     self?.downloadLock.lock()
@@ -894,7 +968,9 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
                      let image = NSImage(cgImage: cgImage, size: NSZeroSize)
                      continuation.resume(returning: image)
                 } catch {
+                     #if DEBUG
                      print("MediaCacheService: Thumbnail generation failed for \(url.lastPathComponent): \(error)")
+                     #endif
                      continuation.resume(returning: nil)
                 }
             }
@@ -907,7 +983,9 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         hostLock.lock()
         defer { hostLock.unlock() }
         self.localHost = host.lowercased()
+        #if DEBUG
         print("MediaCacheService: Updated local host to \(self.localHost)")
+        #endif
     }
 
     private func isLocalURL(_ url: URL) -> Bool {
@@ -969,9 +1047,13 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
                 try FileManager.default.removeItem(at: fileURL)
                 deletedCount += 1
             }
+            #if DEBUG
             print("MediaCacheService: Cleared \(deletedCount) cached files (Blossom data preserved)")
+            #endif
         } catch {
+            #if DEBUG
             print("MediaCacheService: Failed to clear cache: \(error.localizedDescription)")
+            #endif
         }
     }
     

@@ -20,6 +20,7 @@ struct ViewerView: View {
     // Cached display data (computed in background)
     @State private var displayNotes: [NostrEvent] = []
     @State private var displayMedia: [MediaItem] = []
+    @State private var keyMonitor: Any? = nil
     
     // Static regex pattern to avoid recompilation
     nonisolated private static let hexPattern = try! NSRegularExpression(pattern: "[a-f0-9]{64}", options: .caseInsensitive)
@@ -339,7 +340,7 @@ struct ViewerView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
                     ForEach(items) { item in
                         MediaGridItem(item: item) {
-                            selectedMedia = item
+                            withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = item }
                         }
                     }
                 }
@@ -353,7 +354,7 @@ struct ViewerView: View {
             ZStack {
                 Color.black.opacity(0.9)
                     .edgesIgnoringSafeArea(.all)
-                    .onTapGesture { selectedMedia = nil }
+                    .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = nil } }
                 
                 VStack {
                     VStack(alignment: .leading, spacing: 12) {
@@ -374,7 +375,7 @@ struct ViewerView: View {
                             
                             Spacer()
                             
-                            Button(action: { selectedMedia = nil }) {
+                            Button(action: { withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = nil } }) {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.title)
                                     .foregroundColor(.white.opacity(0.6))
@@ -386,18 +387,24 @@ struct ViewerView: View {
                     
                     Spacer()
                     
-                    // Use item.type instead of url extension checks for Blossom compatibility
                     if item.type == .video {
                         VideoPlayerView(url: item.url)
                             .frame(minWidth: 480, minHeight: 320)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .id(item.url)
+                    } else if item.type == .audio {
+                        AudioPlayerView(url: item.url)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .id(item.url)
                     } else if item.url.isGIF {
                         AnimatedImage(url: item.url, contentMode: .fit, shouldAnimate: true)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .id(item.url)
                     } else {
-                        // Default to image for non-video items
+                        // Default to image for non-video/audio items
                         RetryableAsyncImage(url: item.url, contentMode: .fit)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .id(item.url)
                     }
                     
                     Spacer()
@@ -409,13 +416,52 @@ struct ViewerView: View {
                 }
             }
             .transition(.opacity)
+            .onAppear { installKeyMonitor() }
+            .onDisappear { removeKeyMonitor() }
         }
     }
-    
+
+    private func navigateMedia(direction: Int) {
+        guard let current = selectedMedia,
+              let index = displayMedia.firstIndex(where: { $0.id == current.id }) else { return }
+        let newIndex = index + direction
+        guard displayMedia.indices.contains(newIndex) else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = displayMedia[newIndex] }
+    }
+
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard selectedMedia != nil else { return event }
+            switch event.keyCode {
+            case 123: // left arrow — previous item in grid
+                navigateMedia(direction: -1)
+                return nil
+            case 124: // right arrow — next item in grid
+                navigateMedia(direction: 1)
+                return nil
+            case 53: // escape
+                withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = nil }
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
+    }
+
     func refreshAll() {
         // Only proceed if relay is actually ready
         guard relayManager.isRunning && !relayManager.isBooting else {
+            #if DEBUG
             print("ViewerView: Skipping refresh - relay not ready")
+            #endif
             return
         }
         
@@ -436,7 +482,9 @@ struct ViewerView: View {
         guard let oldestTimestamp = nostrService.events.last?.created_at else { return }
         
         // Request events strictly older than the last one we have
+        #if DEBUG
         print("ViewerView: Requesting older events until: \(oldestTimestamp - 1)")
+        #endif
         let urls = [
             URL(string: configService.config.nostrURL)!,
             URL(string: configService.config.nostrURL + "/inbox")!
@@ -450,7 +498,9 @@ struct ViewerView: View {
         
         // Only load if relay is ready
         guard relayManager.isRunning && !relayManager.isBooting else {
+            #if DEBUG
             print("ViewerView: Skipping media load - relay not ready")
+            #endif
             self.blossomMedia = []
             return
         }
@@ -490,17 +540,35 @@ struct ViewerView: View {
                            data.count >= 12 {
                             try? handle.close()
                             let bytes = [UInt8](data)
-                            if bytes.count >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
+                            // ID3 for MP3s
+                            if bytes.count >= 3 && bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33 {
+                                mediaType = .audio
+                            }
+                            // RIFF/WAVE for WAVs
+                            else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+                                      bytes[8] == 0x57 && bytes[9] == 0x41 && bytes[10] == 0x56 && bytes[11] == 0x45 {
+                                mediaType = .audio
+                            }
+                            // MP4 / WebM
+                            else if bytes.count >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
                                 mediaType = .video
                             } else if bytes.count >= 4 && bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3 {
                                 mediaType = .video
-                            } else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+                            } 
+                            // RIFF/AVI
+                            else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
                                         bytes[8] == 0x41 && bytes[9] == 0x56 && bytes[10] == 0x49 {
                                 mediaType = .video
                             }
                         }
                     } else {
-                        mediaType = serveURL.isVideo ? .video : .image
+                        if serveURL.isVideo {
+                            mediaType = .video
+                        } else if serveURL.isAudio {
+                            mediaType = .audio
+                        } else {
+                            mediaType = .image
+                        }
                     }
                     
                     return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil)
@@ -509,7 +577,9 @@ struct ViewerView: View {
 
             await MainActor.run {
                 if self.blossomMedia.count != result.count {
+                    #if DEBUG
                     print("ViewerView: Loaded \(result.count) Blossom media items")
+                    #endif
                 }
                 self.blossomMedia = result
                 self.isRefreshingMedia = false
@@ -535,6 +605,7 @@ struct FilterButton: View {
                 .foregroundColor(isSelected ? .white : .primary)
                 .background(isSelected ? color : Color.clear)
                 .cornerRadius(4)
+                .animation(.easeInOut(duration: 0.15), value: isSelected)
         }
         .buttonStyle(.plain)
     }
@@ -545,7 +616,7 @@ struct ModeButton: View {
     let icon: String
     let isSelected: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
@@ -561,6 +632,7 @@ struct ModeButton: View {
             .background(isSelected ? Color.havenPurple : Color.clear)
             .cornerRadius(20)
             .contentShape(Rectangle())
+            .animation(.easeInOut(duration: 0.2), value: isSelected)
         }
         .buttonStyle(.plain)
     }
@@ -570,6 +642,7 @@ struct NoteRow: View {
     let event: NostrEvent
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
+    @State private var isHovered = false
     
     var cleanContent: String {
         return event.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -673,10 +746,13 @@ struct NoteRow: View {
                 }
             }
             .padding()
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(isHovered ? noteType.color.opacity(0.06) : Color(NSColor.controlBackgroundColor))
             .cornerRadius(12)
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
+        }
         .onAppear {
             if nostrService.profileNames[event.pubkey] == nil {
                 nostrService.fetchMissingProfiles(for: [event.pubkey])
@@ -721,7 +797,8 @@ struct MediaPreviewRow: View {
 struct MediaGridItem: View {
     let item: MediaItem
     let onSelect: () -> Void
-    
+    @State private var isHovered = false
+
     var body: some View {
         ZStack {
             Group {
@@ -730,11 +807,19 @@ struct MediaGridItem: View {
                     VideoThumbnailView(url: item.url)
                         // VideoThumbnailView internally uses .fill and resizable
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if item.type == .audio {
+                    ZStack {
+                        Rectangle().fill(Color.gray.opacity(0.1))
+                        Image(systemName: "waveform")
+                            .font(.system(size: 40))
+                            .foregroundColor(.havenPurple)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if item.url.isGIF {
                     AnimatedImage(url: item.url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 200, height: 200))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    // Default to image for non-video items
+                    // Default to image for non-video/audio items
                     RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 200, height: 200))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -745,6 +830,9 @@ struct MediaGridItem: View {
         .background(Color.black.opacity(0.1)) // Placeholder bg
         .clipped() // STRICT CLIPPING IS KEY
         .cornerRadius(8)
+        .scaleEffect(isHovered ? 1.03 : 1.0)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .onHover { hovering in isHovered = hovering }
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }
         .contextMenu {
@@ -847,12 +935,25 @@ struct RetryableAsyncImage: View {
     
     private func checkCache() {
         // 1. Try to load it directly from disk cache (General cache or Blossom)
-        if let data = MediaCacheService.shared.loadFromCache(url: url),
-           let image = decode(data: data) {
-            self.cachedImage = image
+        if let data = MediaCacheService.shared.loadFromCache(url: url) {
+            Task {
+                if let image = await decode(data: data) {
+                    await MainActor.run {
+                        self.cachedImage = image
+                    }
+                } else {
+                    await handleMissedCache()
+                }
+            }
             return
         }
         
+        Task {
+            await handleMissedCache()
+        }
+    }
+    
+    private func handleMissedCache() async {
         // 2. If it's a grid item (targetSize set) or not found, try fetching
         // Note: For local Blossom, fetchData just pulls from local server but does not re-cache
         if targetSize != nil || self.cachedImage == nil {
@@ -864,7 +965,7 @@ struct RetryableAsyncImage: View {
         isLoading = true
         Task {
             if let data = await MediaCacheService.shared.fetchData(url: url),
-               let image = decode(data: data) {
+               let image = await decode(data: data) {
                 await MainActor.run {
                     self.cachedImage = image
                     self.isLoading = false
@@ -877,12 +978,14 @@ struct RetryableAsyncImage: View {
         }
     }
     
-    nonisolated private func decode(data: Data) -> NSImage? {
+    nonisolated private func decode(data: Data) async -> NSImage? {
         if let targetSize = targetSize,
-           let downsampled = ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height)) {
+           let downsampled = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height)) {
             return downsampled
         }
-        return NSImage(data: data)
+        return await Task.detached(priority: .utility) {
+            NSImage(data: data)
+        }.value
     }
 }
 

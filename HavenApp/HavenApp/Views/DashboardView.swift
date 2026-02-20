@@ -9,61 +9,79 @@ struct DashboardView: View {
     @State private var isExporting = false
     @State private var isBackingUpBlossom = false
     @State private var exportStatusMessage = ""
+    @State private var relaysExpanded = false
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(spacing: 14) {
                 // MARK: - Relays List
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Relays")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.secondary)
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            relaysExpanded.toggle()
+                        }
+                    }) {
+                        HStack {
+                            Text("Relays")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Image(systemName: relaysExpanded ? "eye.fill" : "eye.slash")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
                         .padding(.horizontal)
-                    
-                    VStack(spacing: 1) {
-                        RelayRow(
-                            name: "Outbox",
-                            subtitle: "Public notes",
-                            icon: "arrow.up.doc",
-                            uri: configService.config.nostrURL,
-                            endpoint: ""
-                        )
-                        
-                        RelayRow(
-                            name: "Private",
-                            subtitle: "Drafts & eCash",
-                            icon: "lock.fill",
-                            uri: configService.config.nostrURL,
-                            endpoint: "/private"
-                        )
-                        
-                        RelayRow(
-                            name: "Inbox",
-                            subtitle: "Tagged notes",
-                            icon: "arrow.down.doc",
-                            uri: configService.config.nostrURL,
-                            endpoint: "/inbox"
-                        )
-                        
-                        RelayRow(
-                            name: "Chat",
-                            subtitle: "Private DMs",
-                            icon: "bubble.left.and.bubble.right",
-                            uri: configService.config.nostrURL,
-                            endpoint: "/chat"
-                        )
-                        
-                        RelayRow(
-                            name: "Blossom",
-                            subtitle: "Media Storage",
-                            icon: "photo.stack",
-                            uri: configService.config.webURL,
-                            endpoint: ""
-                        )
+                        .contentShape(Rectangle())
                     }
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(8)
-                    .padding(.horizontal)
+                    .buttonStyle(.plain)
+
+                    if relaysExpanded {
+                        VStack(spacing: 1) {
+                            RelayRow(
+                                name: "Outbox",
+                                subtitle: "Public notes",
+                                icon: "arrow.up.doc",
+                                uri: configService.config.nostrURL,
+                                endpoint: ""
+                            )
+
+                            RelayRow(
+                                name: "Private",
+                                subtitle: "Drafts & eCash",
+                                icon: "lock.fill",
+                                uri: configService.config.nostrURL,
+                                endpoint: "/private"
+                            )
+
+                            RelayRow(
+                                name: "Inbox",
+                                subtitle: "Tagged notes",
+                                icon: "arrow.down.doc",
+                                uri: configService.config.nostrURL,
+                                endpoint: "/inbox"
+                            )
+
+                            RelayRow(
+                                name: "Chat",
+                                subtitle: "Private DMs",
+                                icon: "bubble.left.and.bubble.right",
+                                uri: configService.config.nostrURL,
+                                endpoint: "/chat"
+                            )
+
+                            RelayRow(
+                                name: "Blossom",
+                                subtitle: "Media Storage",
+                                icon: "photo.stack",
+                                uri: configService.config.webURL,
+                                endpoint: ""
+                            )
+                        }
+                        .background(Color(NSColor.controlBackgroundColor))
+                        .cornerRadius(8)
+                        .padding(.horizontal)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
 
 
@@ -74,7 +92,7 @@ struct DashboardView: View {
                         .foregroundColor(.secondary)
                         .padding(.horizontal)
                     
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                         StatsCard(title: "Total Notes", value: "\(statsService.loadedNotesCount)", icon: "doc.text.fill", color: .havenPurple, isLoading: statsService.isUpdatingCount && statsService.loadedNotesCount == 0)
                         StatsCard(title: "Storage Used", value: statsService.formattedStorageSize, icon: "internaldrive.fill", color: .blue)
                         StatsCard(title: "Blossom Storage", value: statsService.formattedBlossomSize, icon: "server.rack", color: .green)
@@ -84,43 +102,46 @@ struct DashboardView: View {
                 }
                 
                 // MARK: - Actions
-                VStack(spacing: 8) {
-                    HStack(spacing: 12) {
+                Spacer(minLength: 8) // Allows the stats to pin to the top and actions to sit further down if there's dead space
+                
+                VStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         ActionButton(icon: "safari", title: "Browser") {
                             if let url = URL(string: configService.config.webURL) {
                                 NSWorkspace.shared.open(url)
                             }
                         }
-                        
+
                         ActionButton(icon: "arrow.down.circle", title: "Import Notes") {
                             let config = configService.config
                             relayManager.importNotes(config: config)
                         }
                     }
-                    
-                    HStack(spacing: 12) {
+
+                    HStack(spacing: 8) {
                         ActionButton(icon: "arrow.up.doc.fill", title: "Export JSONL", isLoading: isExporting) {
                             exportBackup()
                         }
                         .disabled(isExporting || isBackingUpBlossom)
-                        
+
                         ActionButton(icon: "photo.stack", title: "Export Blossom", isLoading: isBackingUpBlossom) {
                             exportBlossom()
                         }
-                        .disabled(isExporting || isBackingUpBlossom || !relayManager.isRunning)
+                        .disabled(isExporting || isBackingUpBlossom)
                     }
-                    
+
                     if !exportStatusMessage.isEmpty {
                         Text(exportStatusMessage)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
-                .padding(.horizontal)
-                
+                .disabled(!relayManager.isRunning)
+                .opacity(relayManager.isRunning ? 1.0 : 0.5)
                 .padding(.horizontal)
             }
-            .padding(.vertical)
+            .padding(.vertical, 10)
+            .frame(minHeight: 350, maxHeight: .infinity, alignment: .top)
         }
         .onAppear {
             // Consolidated refresh:
@@ -129,10 +150,14 @@ struct DashboardView: View {
             
             if relayManager.isRunning && !relayManager.isBooting {
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
+                #if DEBUG
                 print("Dashboard: Relay running, requesting full stats refresh from \(urlString)")
+                #endif
                 statsService.refreshStats(relayURLString: urlString)
             } else if relayManager.state == .booting {
+                #if DEBUG
                 print("Dashboard: Relay booting, scheduling retry...")
+                #endif
                 // Initial disk-only fetch while booting
                 statsService.refreshStats()
                 
@@ -140,13 +165,17 @@ struct DashboardView: View {
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
                 DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
                     if relayManager.isRunning {
+                        #if DEBUG
                         print("Dashboard: Retrying full stats refresh...")
+                        #endif
                         statsService.refreshStats(relayURLString: urlString)
                     }
                 }
             } else {
                 // Not running, just get disk stats
+                #if DEBUG
                 print("Dashboard: Relay not running, fetching disk stats only")
+                #endif
                 statsService.refreshStats()
             }
         }
@@ -226,18 +255,20 @@ struct RelayRow: View {
     let icon: String
     let uri: String
     let endpoint: String
-    
+
+    @State private var copied = false
+
     var fullURI: String {
         return uri + endpoint
     }
-    
+
     var body: some View {
         HStack {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundColor(.havenPurple)
                 .frame(width: 28)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
                     .font(.system(size: 13, weight: .semibold))
@@ -245,9 +276,9 @@ struct RelayRow: View {
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
-            
+
             Text(fullURI)
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(.secondary)
@@ -255,13 +286,17 @@ struct RelayRow: View {
                 .padding(.vertical, 3)
                 .background(Color.havenPurplePale)
                 .cornerRadius(4)
-                
+
             Button(action: {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(fullURI, forType: .string)
+                withAnimation(.easeInOut(duration: 0.2)) { copied = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    withAnimation(.easeInOut(duration: 0.2)) { copied = false }
+                }
             }) {
-                Image(systemName: "doc.on.doc")
-                    .foregroundColor(.secondary)
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .foregroundColor(copied ? .green : .secondary)
             }
             .buttonStyle(.plain)
             .padding(.leading, 8)
@@ -296,7 +331,7 @@ struct ActionButton: View {
                     .foregroundColor(.white)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 10)
             .background(
                 LinearGradient(
                     gradient: Gradient(colors: [.havenPurple, .havenPurpleDark]),
@@ -316,7 +351,9 @@ struct StatsCard: View {
     let icon: String
     let color: Color
     var isLoading: Bool = false
-    
+
+    @State private var isHovered = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -325,7 +362,7 @@ struct StatsCard: View {
                     .font(.system(size: 16))
                 Spacer()
             }
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 if isLoading {
                     ProgressView()
@@ -341,8 +378,11 @@ struct StatsCard: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(12)
-        .background(Color(NSColor.controlBackgroundColor))
+        .padding(10)
+        .background(isHovered ? color.opacity(0.06) : Color(NSColor.controlBackgroundColor))
         .cornerRadius(8)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
+        }
     }
 }

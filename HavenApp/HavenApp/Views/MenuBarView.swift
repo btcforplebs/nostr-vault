@@ -9,6 +9,7 @@ struct MenuBarView: View {
     var isPoppedOut: Bool = false
     
     @State private var inactivityTask: Task<Void, Never>?
+    @State private var statusPulse = false
     
     enum Tab {
         case dashboard
@@ -48,6 +49,11 @@ struct MenuBarView: View {
                             Circle()
                                 .fill(relayManager.isBooting ? Color.yellow : (relayManager.isRunning ? Color.green : Color.red))
                                 .frame(width: 8, height: 8)
+                                .scaleEffect(relayManager.isRunning && !relayManager.isBooting && statusPulse ? 1.4 : 1.0)
+                                .opacity(relayManager.isRunning && !relayManager.isBooting && statusPulse ? 0.5 : 1.0)
+                                .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: statusPulse)
+                                .onAppear { statusPulse = true }
+                                .onChange(of: relayManager.isRunning) { _, running in statusPulse = running }
                             Text(relayManager.isBooting ? "Booting Relay" : (relayManager.isRunning ? "Stop Relay" : "Start Relay"))
                                 .font(.system(size: 12, weight: .semibold))
                         }
@@ -86,11 +92,14 @@ struct MenuBarView: View {
                     switch selectedTab {
                     case .dashboard:
                         DashboardView()
+                            .transition(.opacity)
                     case .viewer:
                         ViewerView()
+                            .transition(.opacity)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(.easeInOut(duration: 0.2), value: selectedTab)
                 
                 Divider()
                 

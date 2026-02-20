@@ -5,37 +5,39 @@ import ImageIO
 struct ImageDownsampler {
     /// Downsamples image data to a specific maximum dimension using ImageIO.
     /// This avoids decoding the full image into memory.
-    static func downsample(data: Data, maxDimension: CGFloat) -> NSImage? {
-        // Create an image source from the data
-        let options = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithData(data as CFData, options) else {
-            return nil
-        }
-        
-        // Calculate the desired pixel size
-        // We use a scale factor (e.g. 2x for Retina) to ensure it looks sharp
-        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
-        let maxPixelSize = Int(maxDimension * scale)
-        
-        // Downsample options - Key note: ImageIO expects CFNumber/CFBoolean, not pure Swift types sometimes.
-        // We cast numeric/bool values to be safe.
-        let downsampleOptions = [
-            kCGImageSourceCreateThumbnailFromImageAlways: kCFBooleanTrue,
-            kCGImageSourceCreateThumbnailWithTransform: kCFBooleanTrue, 
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize as NSNumber
-        ] as CFDictionary
-        
-        // Generate the thumbnail
-        if CGImageSourceGetCount(source) < 1 {
-            return nil
-        }
-        
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else {
-            return nil
-        }
-        
-        // Convert back to NSImage
-        return NSImage(cgImage: cgImage, size: NSZeroSize)
+    static func downsample(data: Data, maxDimension: CGFloat) async -> NSImage? {
+        return await Task.detached(priority: .utility) {
+            // Create an image source from the data
+            let options = [kCGImageSourceShouldCache: false] as CFDictionary
+            guard let source = CGImageSourceCreateWithData(data as CFData, options) else {
+                return nil
+            }
+            
+            // Calculate the desired pixel size
+            // We use a scale factor (e.g. 2x for Retina) to ensure it looks sharp
+            let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+            let maxPixelSize = Int(maxDimension * scale)
+            
+            // Downsample options - Key note: ImageIO expects CFNumber/CFBoolean, not pure Swift types sometimes.
+            // We cast numeric/bool values to be safe.
+            let downsampleOptions = [
+                kCGImageSourceCreateThumbnailFromImageAlways: kCFBooleanTrue,
+                kCGImageSourceCreateThumbnailWithTransform: kCFBooleanTrue, 
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize as NSNumber
+            ] as CFDictionary
+            
+            // Generate the thumbnail
+            if CGImageSourceGetCount(source) < 1 {
+                return nil
+            }
+            
+            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions) else {
+                return nil
+            }
+            
+            // Convert back to NSImage
+            return NSImage(cgImage: cgImage, size: NSZeroSize)
+        }.value
     }
 }
 
@@ -59,27 +61,30 @@ struct AnimatedImage: NSViewRepresentable {
     }
     
     private func loadAsync(url: URL, into view: AspectFillImageView) {
-        // Check cache first
-        if let data = MediaCacheService.shared.loadFromCache(url: url) {
-            display(data: data, into: view)
-            return
-        }
-        
-        Task {
-            if let data = await MediaCacheService.shared.fetchData(url: url) {
-                DispatchQueue.main.async {
-                    self.display(data: data, into: view)
-                }
+        // Use utility priority to avoid priority inversions with ImageIO on the cooperative thread pool
+        Task.detached(priority: .utility) {
+            // Check cache first
+            let data: Data?
+            if let cached = MediaCacheService.shared.loadFromCache(url: url) {
+                data = cached
+            } else {
+                data = await MediaCacheService.shared.fetchData(url: url)
             }
-        }
-    }
-    
-    private func display(data: Data, into view: AspectFillImageView) {
-        if let targetSize = targetSize,
-           let downsampled = ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height)) {
-            view.image = downsampled
-        } else if let image = NSImage(data: data) {
-            view.image = image
+
+            guard let data else { return }
+
+            // Decode/downsample off main thread
+            let image: NSImage?
+            if let targetSize = self.targetSize {
+                image = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height))
+            } else {
+                image = NSImage(data: data)
+            }
+
+            guard let image else { return }
+            await MainActor.run {
+                view.image = image
+            }
         }
     }
 }
@@ -174,6 +179,11 @@ extension URL {
     
     var isWebP: Bool {
         return self.pathExtension.lowercased() == "webp"
+    }
+    
+    var isAudio: Bool {
+        let ext = self.pathExtension.lowercased()
+        return ["mp3", "wav", "m4a", "aac", "flac", "ogg"].contains(ext)
     }
     
     var isImage: Bool {

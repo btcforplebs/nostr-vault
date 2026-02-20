@@ -71,7 +71,9 @@ struct LogsView: View {
     // Copy all logs functionality for debugging
     func copyLogs() {
         let logsSnapshot = relayManager.logs
+        #if DEBUG
         print("DEBUG: Copying \(logsSnapshot.count) logs...")
+        #endif
         
         DispatchQueue.global(qos: .userInitiated).async {
             let logString = logsSnapshot.map { log in
@@ -82,7 +84,9 @@ struct LogsView: View {
             DispatchQueue.main.async {
                 NSPasteboard.general.clearContents()
                 let success = NSPasteboard.general.setString(logString, forType: .string)
+                #if DEBUG
                 print("DEBUG: Copy to pasteboard success: \(success)")
+                #endif
                 
                 if success {
                     showCopiedScrub = true

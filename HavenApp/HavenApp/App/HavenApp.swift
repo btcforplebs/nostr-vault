@@ -41,6 +41,7 @@ struct HavenApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
+        .defaultSize(width: 600, height: 700)
         .defaultPosition(.center)
         
         Settings {
@@ -69,24 +70,37 @@ struct MenuBarContent: View {
     @ObservedObject var relayManager: RelayProcessManager
     @Environment(\.openWindow) var openWindow
     
+    @State private var isVisible = false
+    
     var body: some View {
         ZStack {
             // Main Content layer
             Group {
                 if !configService.config.hasCompletedSetup {
-                    VStack(spacing: 20) {
+                    VStack(spacing: 24) {
                         Image(systemName: "server.rack")
-                            .font(.system(size: 48))
+                            .font(.system(size: 56, weight: .light))
                             .foregroundColor(.havenPurple)
+                            .offset(y: isVisible ? 0 : 20)
+                            .opacity(isVisible ? 1 : 0)
+                            .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.1), value: isVisible)
                         
-                        Text("Welcome to Haven")
-                            .font(.title3.bold())
-                        
-                        Text("Please complete the setup to start your relay.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
+                        VStack(spacing: 8) {
+                            Text("Welcome to Haven")
+                                .font(.system(.title2, design: .rounded).bold())
+                                .offset(y: isVisible ? 0 : 15)
+                                .opacity(isVisible ? 1 : 0)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.2), value: isVisible)
+                            
+                            Text("Please complete the setup to start your relay.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                                .offset(y: isVisible ? 0 : 10)
+                                .opacity(isVisible ? 1 : 0)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.3), value: isVisible)
+                        }
                         
                         Button("Start Setup") {
                             openWindow(id: "setup")
@@ -95,6 +109,10 @@ struct MenuBarContent: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.havenPurple)
                         .controlSize(.large)
+                        .scaleEffect(isVisible ? 1 : 0.9)
+                        .opacity(isVisible ? 1 : 0)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.4), value: isVisible)
+                        .padding(.top, 8)
                         
                         Button("Quit") {
                             NSApp.terminate(nil)
@@ -102,15 +120,21 @@ struct MenuBarContent: View {
                         .buttonStyle(.plain)
                         .foregroundColor(.secondary)
                         .font(.caption)
+                        .opacity(isVisible ? 1 : 0)
+                        .animation(.easeIn(duration: 0.3).delay(0.6), value: isVisible)
                     }
-                    .padding(30)
-                    .padding(30)
+                    .padding(40)
+                    .onAppear {
+                        isVisible = true
+                    }
                 } else {
                     MenuBarView(configService: configService, relayManager: relayManager)
                         .onAppear {
                             // Auto-start relay if setup is done and we are idle
                             if configService.config.hasCompletedSetup && relayManager.state == .idle {
+                                #if DEBUG
                                 print("Auto-starting relay on launch...")
+                                #endif
                                 relayManager.startRelay(config: configService.config)
                             }
                         }

@@ -11,5 +11,6 @@ struct MediaItem: Identifiable, Codable {
     enum MediaType: String, Codable {
         case image
         case video
+        case audio
     }
 }

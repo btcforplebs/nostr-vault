@@ -18,7 +18,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationWillTerminate(_ notification: Notification) {
         // Ensure child processes are killed cleanly
+        #if DEBUG
         print("Application terminating, stopping relay...")
+        #endif
         RelayProcessManager.shared.stopRelay()
         // Give it time to SIGTERM -> wait -> SIGKILL if needed
         Thread.sleep(forTimeInterval: 1.0)
@@ -31,14 +33,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Create the window
         // Use a larger size for the SetupWizard
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 650),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
             styleMask: [.titled, .closable, .fullSizeContentView, .resizable],
             backing: .buffered,
             defer: false
         )
         
         window.center()
-        window.setFrameAutosaveName("Haven Setup Window")
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -47,7 +48,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Prepare the content view with shared environment objects
         let contentView = SetupWizardView { [weak window] in
             // On complete:
+            #if DEBUG
             print("Setup complete, starting relay from AppDelegate...")
+            #endif
             Task { @MainActor in
                 RelayProcessManager.shared.startRelay(config: ConfigService.shared.config)
             }

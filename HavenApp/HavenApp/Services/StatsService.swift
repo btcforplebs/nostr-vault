@@ -68,7 +68,9 @@ class StatsService: ObservableObject {
                 // even if config.nostrURL is set to a public domain.
                 let baseURLString = "ws://127.0.0.1:\(config.relayPort)"
                 guard let baseURL = URL(string: baseURLString) else {
+                    #if DEBUG
                     print("StatsService: ❌ Invalid baseURL for stats: \(baseURLString)")
+                    #endif
                     return
                 }
                 
@@ -77,47 +79,67 @@ class StatsService: ObservableObject {
                     baseURL.appendingPathComponent("inbox")
                 ]
                 
+                #if DEBUG
                 print("StatsService: 🔄 Starting full count refresh from: \(relayURLs.map { $0.absoluteString })")
+                #endif
                 
                 // Now on MainActor, we can safely access RelayProcessManager.shared
                 if RelayProcessManager.shared.isRunning {
                     let filter: [String: Any] = ["kinds": [1, 6, 1063]]
                     
+                    #if DEBUG
                     print("StatsService: 📡 Calling fetchCount...")
+                    #endif
                     var count = await self.nostrService.fetchCount(from: relayURLs, filter: filter)
+                    #if DEBUG
                     print("StatsService: 📩 fetchCount returned: \(String(describing: count))")
+                    #endif
                     
                     // If we get 0, but previously had a much higher count, be skeptical.
                     if (count ?? 0) == 0 && self.loadedNotesCount > 0 {
+                        #if DEBUG
                         print("StatsService: ⚠️ Fetch returned 0 while previous count was \(self.loadedNotesCount). Retrying with delay...")
+                        #endif
                         for i in 1...3 {
                             try? await Task.sleep(nanoseconds: UInt64(i) * 2 * 1_000_000_000)
+                            #if DEBUG
                             print("StatsService: 🔄 Retry \(i)...")
+                            #endif
                             count = await self.nostrService.fetchCount(from: relayURLs, filter: filter)
                             if (count ?? 0) > 0 { 
+                                #if DEBUG
                                 print("StatsService: ✅ Retry \(i) succeeded with \(count!)")
+                                #endif
                                 break 
                             }
                         }
                     } else if (count ?? 0) == 0 && !RelayProcessManager.shared.isBooting {
+                        #if DEBUG
                         print("StatsService: ⚠️ Fetch returned 0. Retrying once to confirm...")
+                        #endif
                         try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
                         count = await self.nostrService.fetchCount(from: relayURLs, filter: filter)
                     }
                     
                     // Guard: Only update if we have a valid non-zero count, or if our current count is 0
                     if let confirmedCount = count, (confirmedCount > 0 || self.loadedNotesCount == 0) {
+                        #if DEBUG
                         print("StatsService: ✨ Total aggregated count: \(confirmedCount)")
+                        #endif
                         self.baseDbCount = confirmedCount
                         self.baseRelayEventsStored = RelayProcessManager.shared.eventsStored
                         
                         self.loadedNotesCount = confirmedCount
                         UserDefaults.standard.set(confirmedCount, forKey: "haven.stats.noteCount")
                     } else {
+                        #if DEBUG
                         print("StatsService: ❌ Fetch failed or returned 0. Keeping old count: \(self.loadedNotesCount)")
+                        #endif
                     }
                 } else {
+                    #if DEBUG
                     print("StatsService: ⏭️ Skipping fetch - relay not running (State: \(RelayProcessManager.shared.state))")
+                    #endif
                     
                     // If it's NOT running but we are still updating, let's at least clear the spinner if count is 0
                     if self.loadedNotesCount == 0 {
@@ -125,7 +147,9 @@ class StatsService: ObservableObject {
                     }
                 }
             } else {
+                #if DEBUG
                 print("StatsService: ℹ️ refreshStats called without relayURLString, only updated disk sizes.")
+                #endif
             }
         }
     }
