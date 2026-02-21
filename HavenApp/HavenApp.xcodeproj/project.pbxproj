@@ -443,7 +443,7 @@
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/build";
 				MARKETING_VERSION = 2.3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.btcforplebs.HavenApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
 				PRODUCT_NAME = HAVEN;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp/HavenApp-Bridging-Header.h";
@@ -477,7 +477,7 @@
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/build";
 				MARKETING_VERSION = 2.3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.btcforplebs.HavenApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
 				PRODUCT_NAME = HAVEN;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp/HavenApp-Bridging-Header.h";
