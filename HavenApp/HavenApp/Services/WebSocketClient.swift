@@ -473,17 +473,26 @@ class NostrService: ObservableObject {
             var items: [MediaItem] = []
             
             if event.kind == 1063 {
-                // Parse KIND 1063 url tag
+                // Parse KIND 1063 — NIP-94 file metadata with "url" and "m" (mime) tags
                 if let urlTag = event.tags.first(where: { $0.count >= 2 && $0[0] == "url" }),
                    let url = URL(string: urlTag[1]) {
-                    let mediaType: MediaItem.MediaType = url.isVideo ? .video : (url.isAudio ? .audio : .image)
-                    items.append(MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags))
+                    let mimeTag = event.tags.first(where: { $0.count >= 2 && $0[0] == "m" })?[1]
+                    let mediaType: MediaItem.MediaType
+                    if let mime = mimeTag?.lowercased() {
+                        if mime.hasPrefix("video/") { mediaType = .video }
+                        else if mime.hasPrefix("audio/") { mediaType = .audio }
+                        else if mime.hasPrefix("image/") { mediaType = .image }
+                        else { mediaType = .unknown }
+                    } else {
+                        mediaType = url.isVideo ? .video : (url.isAudio ? .audio : .image)
+                    }
+                    items.append(MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags, mimeType: mimeTag))
                 }
             } else {
                 let urls = extractMediaURLs(from: event.content)
                 items = urls.map { url in
                     let mediaType: MediaItem.MediaType = url.isVideo ? .video : (url.isAudio ? .audio : .image)
-                    return MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags)
+                    return MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags, mimeType: nil)
                 }
             }
             

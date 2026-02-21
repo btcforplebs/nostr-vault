@@ -401,9 +401,15 @@ struct ViewerView: View {
                             Image(systemName: "doc.fill")
                                 .font(.system(size: 64))
                                 .foregroundColor(.havenPurple.opacity(0.6))
-                            Text("Unsupported Format")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
+                            if let mime = item.mimeType {
+                                Text(mime)
+                                    .font(.system(size: 14, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("Unknown Format")
+                                    .font(.headline)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if item.url.isGIF {
@@ -544,6 +550,7 @@ struct ViewerView: View {
                     let date = (attributes?[.creationDate] as? Date) ?? (attributes?[.modificationDate] as? Date) ?? Date()
                     
                     var mediaType: MediaItem.MediaType = .image
+                    var mimeType: String? = nil
                     if serveURL.pathExtension.isEmpty {
                         // No extension — inspect magic bytes to determine type
                         mediaType = .unknown
@@ -554,62 +561,60 @@ struct ViewerView: View {
                             let bytes = [UInt8](data)
 
                             // --- Audio ---
-                            // ID3 → MP3
                             if bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33 {
-                                mediaType = .audio
+                                mediaType = .audio; mimeType = "audio/mpeg"
                             }
-                            // RIFF/WAVE → WAV
                             else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
                                       bytes[8] == 0x57 && bytes[9] == 0x41 && bytes[10] == 0x56 && bytes[11] == 0x45 {
-                                mediaType = .audio
+                                mediaType = .audio; mimeType = "audio/wav"
                             }
-                            // fLaC → FLAC
                             else if bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43 {
-                                mediaType = .audio
+                                mediaType = .audio; mimeType = "audio/flac"
                             }
-                            // OggS → OGG (Vorbis/Opus)
                             else if bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53 {
-                                mediaType = .audio
+                                mediaType = .audio; mimeType = "audio/ogg"
                             }
                             // ftyp container — check brand for M4A (audio) vs MP4 (video)
                             else if bytes.count >= 12 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
-                                // M4A brand → audio
                                 if bytes[8] == 0x4D && bytes[9] == 0x34 && bytes[10] == 0x41 && bytes[11] == 0x20 {
-                                    mediaType = .audio
+                                    mediaType = .audio; mimeType = "audio/mp4"
                                 } else {
-                                    mediaType = .video
+                                    mediaType = .video; mimeType = "video/mp4"
                                 }
                             }
-                            // EBML → WebM/MKV
+                            // --- Video ---
                             else if bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3 {
-                                mediaType = .video
+                                mediaType = .video; mimeType = "video/webm"
                             }
-                            // RIFF/AVI
                             else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
                                         bytes[8] == 0x41 && bytes[9] == 0x56 && bytes[10] == 0x49 {
-                                mediaType = .video
+                                mediaType = .video; mimeType = "video/avi"
                             }
                             // --- Image ---
-                            // JPEG
                             else if bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
-                                mediaType = .image
+                                mediaType = .image; mimeType = "image/jpeg"
                             }
-                            // PNG
                             else if bytes.count >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 &&
                                       bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A {
-                                mediaType = .image
+                                mediaType = .image; mimeType = "image/png"
                             }
-                            // GIF
                             else if bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 {
-                                mediaType = .image
+                                mediaType = .image; mimeType = "image/gif"
                             }
-                            // WebP (RIFF/WEBP)
                             else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
                                       bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50 {
-                                mediaType = .image
+                                mediaType = .image; mimeType = "image/webp"
+                            }
+                            // --- Documents ---
+                            else if bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46 {
+                                mediaType = .unknown; mimeType = "application/pdf"
+                            }
+                            else if bytes[0] == 0x50 && bytes[1] == 0x4B && bytes[2] == 0x03 && bytes[3] == 0x04 {
+                                mediaType = .unknown; mimeType = "application/zip"
                             }
                         }
                     } else {
+                        let ext = serveURL.pathExtension.lowercased()
                         if serveURL.isVideo {
                             mediaType = .video
                         } else if serveURL.isAudio {
@@ -617,9 +622,10 @@ struct ViewerView: View {
                         } else {
                             mediaType = .image
                         }
+                        mimeType = Self.mimeTypeFromExtension(ext)
                     }
-                    
-                    return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil)
+
+                    return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil, mimeType: mimeType)
                 }
             }.value
 
@@ -632,6 +638,31 @@ struct ViewerView: View {
                 self.blossomMedia = result
                 self.isRefreshingMedia = false
             }
+        }
+    }
+
+    private static func mimeTypeFromExtension(_ ext: String) -> String? {
+        switch ext {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        case "heic": return "image/heic"
+        case "tiff", "tif": return "image/tiff"
+        case "svg": return "image/svg+xml"
+        case "mp4": return "video/mp4"
+        case "mov": return "video/quicktime"
+        case "webm": return "video/webm"
+        case "avi": return "video/avi"
+        case "mkv": return "video/x-matroska"
+        case "mp3": return "audio/mpeg"
+        case "wav": return "audio/wav"
+        case "m4a", "aac": return "audio/mp4"
+        case "flac": return "audio/flac"
+        case "ogg": return "audio/ogg"
+        case "pdf": return "application/pdf"
+        case "zip": return "application/zip"
+        default: return nil
         }
     }
 }
@@ -866,9 +897,16 @@ struct MediaGridItem: View {
                 } else if item.type == .unknown {
                     ZStack {
                         Rectangle().fill(Color.gray.opacity(0.1))
-                        Image(systemName: "doc.fill")
-                            .font(.system(size: 40))
-                            .foregroundColor(.havenPurple.opacity(0.6))
+                        VStack(spacing: 4) {
+                            Image(systemName: "doc.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.havenPurple.opacity(0.6))
+                            if let mime = item.mimeType {
+                                Text(mime)
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if item.url.isGIF {
