@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.3.0] - 2026-02-20
 
+> [!IMPORTANT]
+> **Installation Note**: Haven is currently unsigned code. macOS will likely block the application from opening by default. To bypass this, open **Settings → Privacy & Security**, scroll down to **Security**, and click **Open Anyway**.
+
+> [!NOTE]
+> **Coming Soon**: The next release will move to a **C-shared relay architecture**, compiling the Go relay directly into the Swift app as a single process. This is required for App Store and TestFlight distribution. See [C_SHARED_RELAY.md](docs/C_SHARED_RELAY.md) for details on what's changing.
+
 ### Added
 - **Audio Playback**: The media viewer now supports playing `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, and `.ogg` audio files with a dedicated player UI featuring play/pause, seek controls, and a progress scrubber. Audio files are also detected via magic bytes (ID3, RIFF/WAVE) for extensionless Blossom items.
 - **Blossom File Extensions**: Media exports now use a trust-but-verify system — querying the relay for MIME metadata and cross-checking against file magic bytes — to apply accurate file extensions. Supports virtually all file types via UTType, with magic-byte verification for JPEG, PNG, GIF, WebP, AVIF, HEIC, TIFF, BMP, MP4, MOV, WebM, MP3, WAV, FLAC, OGG, ZIP, APK, GZIP, and PDF. Additional fallback coverage for AAC, Opus, M4A, MKV, SVG, TAR, DOCX, XLSX, PPTX, and JAR.
@@ -23,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Backup Restore from Setup Wizard**: Users can now restore from a `.zip` or `.jsonl` backup during initial setup, with port conflict detection and retry support.
 - **Setup Wizard: Blossom Media Restore**: Added Blossom media import as a dedicated setup wizard step (previously only available in Settings).
 - **Floating Menu Bar Arrow**: After setup completion, a floating animated purple arrow with a glow effect points at the menu bar relay icon with a "Your relay lives here" label, helping new users locate the app.
-- **C-Shared Relay Architecture** *(TestFlight / `feat/c-shared-relay`)*: The Go relay is now compiled as a static C library (`libhaven.a`) and linked directly into the Swift app — making HAVEN a single-process application. This eliminates child process management, orphaned processes, and PID tracking. Required for App Store / TestFlight distribution. Available as `v2.3.0-tf` for early testing.
+- **C-Shared Relay Architecture** *(in development on `feat/c-shared-relay`)*: The Go relay is now compiled as a static C library (`libhaven.a`) and linked directly into the Swift app — making HAVEN a single-process application. This eliminates child process management, orphaned processes, and PID tracking. Required for App Store / TestFlight distribution.
 - **Upstream Sync**: Pulled latest upstream changes from `bitvora/haven` into `haven-go/`.
 - **Project Documentation**: Added `docs/RELEASE_PROCESS.md` (step-by-step release guide), `docs/C_SHARED_RELAY.md` (architecture overview of the c-shared approach), and `docs/upstream-sync.md` (subtree sync instructions).
 

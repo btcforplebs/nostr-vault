@@ -3,7 +3,7 @@
 This major update introduces the **Whitelist Tab**, improved process management, robust media handling, and critical reliability fixes for the database and relay.
 
 > [!IMPORTANT]
-> **Installation Note**: Haven is currently unsigned code. macOS will likely block the application from opening by default. To bypass this, simply **Right-Click (or Control-Click)** the app and select **Open**. You may need to do this twice.
+> **Installation Note**: Haven is currently unsigned code. macOS will likely block the application from opening by default. To bypass this, open **Settings → Privacy & Security**, scroll down to **Security**, and click **Open Anyway**.
 
 ## Key Features & Improvements
 
@@ -26,10 +26,8 @@ This major update introduces the **Whitelist Tab**, improved process management,
 
 ## What's Next: App Store & TestFlight
 
-We are actively working toward **App Store distribution**. The `v2.3.0-tf` build (available on the `feat/c-shared-relay` branch) replaces the sub-process architecture with a **C-shared library** approach — compiling the Go relay directly into the Swift app as a single process. This is required for Apple's App Store and TestFlight.
+We are actively working toward **App Store distribution**. The upcoming release will replace the sub-process architecture with a **C-shared library** approach — compiling the Go relay directly into the Swift app as a single process. This is required for Apple's App Store and TestFlight.
 
-If you'd like to help test the TestFlight version, check out the `v2.3.0-tf` tag or watch for the TestFlight link once approved.
-
-For technical details, see [`docs/C_SHARED_RELAY.md`](../docs/C_SHARED_RELAY.md).
+For technical details on what's changing, see [`docs/C_SHARED_RELAY.md`](../docs/C_SHARED_RELAY.md).
 
 Thank you for using Haven!
