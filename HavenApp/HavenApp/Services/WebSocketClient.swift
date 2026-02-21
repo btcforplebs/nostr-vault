@@ -476,13 +476,13 @@ class NostrService: ObservableObject {
                 // Parse KIND 1063 url tag
                 if let urlTag = event.tags.first(where: { $0.count >= 2 && $0[0] == "url" }),
                    let url = URL(string: urlTag[1]) {
-                    let mediaType: MediaItem.MediaType = url.isVideo ? .video : .image
+                    let mediaType: MediaItem.MediaType = url.isVideo ? .video : (url.isAudio ? .audio : .image)
                     items.append(MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags))
                 }
             } else {
                 let urls = extractMediaURLs(from: event.content)
                 items = urls.map { url in
-                    let mediaType: MediaItem.MediaType = url.isVideo ? .video : .image
+                    let mediaType: MediaItem.MediaType = url.isVideo ? .video : (url.isAudio ? .audio : .image)
                     return MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags)
                 }
             }
