@@ -5,26 +5,25 @@
 Haven provides tools for backing up and restoring your relay data. This is essential for several use cases:
 
 * **Disaster Recovery**: Protect your data against hardware failure or accidental deletion.
-* **Switching Databases**: Easily move your data when migrating to a new server or database provider. Move your notes
-  from LMDB to BadgerDB or vice versa.
+* **Switching Databases**: Move your data when migrating to a new server or database provider. Move your notes from 
+  LMDB to BadgerDB or vice versa.
 * **Importing/Exporting Data**: Move data between Haven and other Nostr relays.
 
 > [!IMPORTANT]
 > When importing data from external JSONL files, Haven will trust all events contained within the file and will not try
 > to validate or split the data. For example, it will allow notes from other people to be imported into your Outbox 
 > relay, bypassing [WoT](wot.md) checks and other safeguards. This is intentional to allow for maximum flexibility when 
-> importing  data, but it also means that you should be careful when importing data from untrusted sources.
+> importing data, but it also means that you should be careful when importing data from untrusted sources.
 
 > [!TIP]
 > For simple imports from external relays, you may prefer to use the
-> [`./haven import`](../README.md#8-run-the-import-optional) command instead.
+> [`./haven import`](../README.md#8-import-your-old-notes-optional) command instead.
 
 ---
 
-
 ## Manual Backup
 
-If you want to backup all relay data to a JSONL zip file, run the following command:
+If you want to back up all relay data to a JSONL zip file, run the following command:
 
 ```bash
 ./haven backup
@@ -48,7 +47,7 @@ You can also specify a filename with `--to-cloud`:
 ./haven backup --to-cloud mybackup.zip
 ```
 
-To backup a specific relay to a JSONL file:
+To back up a specific relay to a JSONL file:
 
 ```bash
 ./haven backup --relay outbox outbox.jsonl
@@ -107,7 +106,7 @@ To back up your database to S3 compatible storage such as [AWS S3](https://aws.a
 [DigitalOcean Spaces](https://www.digitalocean.com/products/spaces) or
 [Cloudflare R2](https://www.cloudflare.com/developer-platform/r2/).
 
-First you need to create the bucket on your provider. After creating the Bucket you will be provided with:
+First, you need to create the bucket on your provider. After creating the Bucket, you will be provided with:
 
 - Access Key ID
 - Secret Key
@@ -144,4 +143,4 @@ See [Cloud Storage Provider Specific Instructions](cloud-storage.md) for more de
 
 ---
 
-[README](../README.md)
+[README](../README.md) | [Cloud Storage](cloud-storage.md) 
