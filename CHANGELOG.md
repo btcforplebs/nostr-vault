@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Duplicate readabilityHandler**: Removed a dead first pipe handler in `importNotes` that was immediately overwritten by a second one.
 - **Settings Save Leak**: Added `onDisappear` cancellation of the debounced save task in SettingsView.
 
+### Known Issues
+- This release is not eligible for App Store distribution. The following changes are in progress on `feat/c-shared-relay`:
+  - Embed the Go relay as a C-shared library (replacing the separate helper process) for full App Sandbox compliance
+  - Remove disallowed entitlements (`allow-jit`, `allow-unsigned-executable-memory`, `disable-library-validation`)
+  - Add required Privacy Manifest (`PrivacyInfo.xcprivacy`)
+  - Replace blanket `NSAllowsArbitraryLoads` with `NSAllowsLocalNetworking`
+  - Add `ITSAppUsesNonExemptEncryption` declaration
+
 ## [2.2.1] - 2026-02-07
 
 ### Added
