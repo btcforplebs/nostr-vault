@@ -27,20 +27,7 @@ echo "🚀 Building Go libhaven.a from source..."
 echo "📍 Source root: $GO_SRC_ROOT"
 echo "📍 Output path: $HAVEN_LIB_PATH"
 
-# Map Xcode architecture to Go architecture
-# NATIVE_ARCH_ACTUAL is usually set by Xcode
-if [ "$ARCHS" == "arm64" ]; then
-    GOARCH="arm64"
-elif [ "$ARCHS" == "x86_64" ]; then
-    GOARCH="amd64"
-else
-    # Fallback to native arch
-    GOARCH=$(uname -m)
-    if [ "$GOARCH" == "x86_64" ]; then GOARCH="amd64"; fi
-fi
-
 export GOOS="darwin"
-export GOARCH="$GOARCH"
 export CGO_ENABLED=1
 # Match the Xcode deployment target to silence linker version warnings
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
@@ -56,14 +43,55 @@ if [ -z "$GO_BIN" ]; then
     exit 1
 fi
 
-# Run the build
 cd "$GO_SRC_ROOT"
-echo "🛠️ Running: go build -v -tags cshared -buildmode=c-archive -ldflags=\"-s -w\" -o $HAVEN_LIB_PATH"
-"$GO_BIN" build -v -tags cshared -buildmode=c-archive -ldflags="-s -w" -o "$HAVEN_LIB_PATH"
 
-if [ $? -eq 0 ]; then
-    echo "✅ Successfully built libhaven.a for $GOARCH."
+# Determine which architectures to build
+# ARCHS may contain "arm64", "x86_64", or "arm64 x86_64"
+NEED_ARM64=false
+NEED_X86_64=false
+
+for arch in $ARCHS; do
+    case "$arch" in
+        arm64)  NEED_ARM64=true ;;
+        x86_64) NEED_X86_64=true ;;
+    esac
+done
+
+# Fallback: if ARCHS is empty/unset, build for native arch
+if ! $NEED_ARM64 && ! $NEED_X86_64; then
+    NATIVE=$(uname -m)
+    if [ "$NATIVE" == "arm64" ]; then
+        NEED_ARM64=true
+    else
+        NEED_X86_64=true
+    fi
+fi
+
+build_for_arch() {
+    local goarch=$1
+    local label=$2
+    local output=$3
+    echo "🛠️ Building for $label (GOARCH=$goarch)..."
+    GOARCH="$goarch" "$GO_BIN" build -tags cshared -buildmode=c-archive -ldflags="-s -w" -o "$output"
+    echo "✅ Built $label slice."
+}
+
+if $NEED_ARM64 && $NEED_X86_64; then
+    # Universal build — build both slices and combine with lipo
+    ARM64_LIB="${PROJECT_DIR}/build/libhaven-arm64.a"
+    X86_64_LIB="${PROJECT_DIR}/build/libhaven-x86_64.a"
+
+    build_for_arch arm64 arm64 "$ARM64_LIB"
+    build_for_arch amd64 x86_64 "$X86_64_LIB"
+
+    echo "🔗 Creating universal binary with lipo..."
+    lipo -create "$ARM64_LIB" "$X86_64_LIB" -output "$HAVEN_LIB_PATH"
+    rm -f "$ARM64_LIB" "$X86_64_LIB"
+    echo "✅ Successfully built universal libhaven.a (arm64 + x86_64)."
+elif $NEED_ARM64; then
+    build_for_arch arm64 arm64 "$HAVEN_LIB_PATH"
+    echo "✅ Successfully built libhaven.a for arm64."
 else
-    echo "❌ Failed to build libhaven.a."
-    exit 1
+    build_for_arch amd64 x86_64 "$HAVEN_LIB_PATH"
+    echo "✅ Successfully built libhaven.a for x86_64."
 fi

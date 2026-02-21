@@ -423,10 +423,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = HavenApp/App/HavenApp.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 100;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = KAD7WNBGH2;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -440,12 +441,12 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				"LIBRARY_SEARCH_PATHS[arch=*]" = "$(PROJECT_DIR)/build";
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/build";
 				MARKETING_VERSION = 2.3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.btcforplebs.HavenApp;
 				PRODUCT_NAME = HAVEN;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				"SWIFT_OBJC_BRIDGING_HEADER[arch=*]" = "HavenApp/HavenApp-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp/HavenApp-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -456,10 +457,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = HavenApp/App/HavenApp.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 100;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = KAD7WNBGH2;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -473,10 +475,12 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/build";
 				MARKETING_VERSION = 2.3.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.btcforplebs.HavenApp;
 				PRODUCT_NAME = HAVEN;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp/HavenApp-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
