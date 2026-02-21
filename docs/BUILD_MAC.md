@@ -1,60 +1,52 @@
-# Building & Verifying HAVEN for Mac
+# Building HAVEN for Mac
 
-This guide is for users who want to build Haven themselves to verify the source code or contribute.
+HAVEN for Mac is a native Swift wrapper around the [bitvora/haven](https://github.com/bitvora/haven) Go relay. The Go code is compiled into a static library (`libhaven.a`) and linked directly into the Swift app.
 
 ## Prerequisites
 
-- **Go 1.21+**: [Install Go](https://go.dev/doc/install)
-- **Xcode 15+**: Available on the Mac App Store.
-- **Git**
+- [Go 1.24+](https://go.dev/dl/)
+- macOS 14.0+
+- Xcode 15+
 
-## Step 1: Verify & Build the Go Core
+## Build & Run (Development)
 
-The Go binary is the "brain" of Haven. You can build it independently to verify it matches the source code.
-
-1.  **Clone the Repository**:
+1.  Clone the repository:
     ```bash
     git clone https://github.com/btcforplebs/haven-mac.git
     cd haven-mac
     ```
 
-2.  **Build the Go Binary**:
-    ```bash
-    go build -o haven_core
-    ```
-    This generates a file named `haven_core`. This is 99% of the project's logic.
-
-## Step 2: Build the Mac App (Xcode)
-
-The Mac App is the Swift wrapper that launches the Go binary.
-
-1.  **Open the project in Xcode**:
+2.  Open the project in Xcode:
     ```bash
     open HavenApp/HavenApp.xcodeproj
     ```
 
-2.  **Select the Scheme**:
-    - Choose **HavenApp** and set the destination to **My Mac**.
+3.  Select the **HavenApp** scheme, set the destination to **My Mac**, and press **Cmd+R**.
 
-3.  **Run Build**:
-    - Press `Cmd + B` to build or `Cmd + R` to run.
+Xcode automatically runs `build_haven.sh` during the build phase. This script:
+1.  Navigates to the `haven-go/` directory.
+2.  Builds the Go code as a C-archive (`go build -tags cshared -buildmode=c-archive`).
+3.  Produces `libhaven.a` + `libhaven.h` which are linked into the app via a bridging header.
 
-### How Xcode includes the Go Binary
-Xcode automatically runs the script `HavenApp/HavenApp/App/build_haven.sh` during the build process. This script:
-1.  Navigate to the root directory.
-2.  Runs `go build`.
-3.  Injects the resulting binary into the `Haven.app` bundle in the `Resources` folder.
+For archive builds (universal distribution), the script builds separate arm64 and x86_64 slices and combines them with `lipo`.
 
-## Manual Verification of a Release Build
+## Archive Build (Release)
 
-If you downloaded a `HavenApp.zip` and want to verify the Go binary inside it:
+1.  In Xcode, select **Product > Archive**.
+2.  When the Organizer opens, select the archive and click **Distribute App**.
+3.  Choose **Custom** > **Copy App** (or **App Store Connect** for TestFlight).
+4.  Save `HAVEN.app` to your desired location.
 
-1.  **Extract the app**.
-2.  **Find the binary**: `HavenApp.app/Contents/Resources/haven`
-3.  **Compare hashes**:
-    Build your own binary as shown in Step 1 and compare the SHA256 hash:
-    ```bash
-    shasum -a 256 HavenApp.app/Contents/Resources/haven
-    shasum -a 256 ./haven_core
-    ```
-    *Note: Small differences in hashes may occur due to build timestamps or paths, but you can inspect the code to ensure no malicious changes were made.*
+## Verifying the Go Source
+
+The Go code under `haven-go/` is the same code from [bitvora/haven](https://github.com/bitvora/haven), managed via `git subtree`. You can verify this by comparing commits:
+
+```bash
+git log --oneline haven-go/
+```
+
+Upstream commits appear on a separate branch line in the git graph. See [upstream-sync.md](./upstream-sync.md) for details.
+
+---
+
+**HAVEN for Mac** - Powered by [bitvora/haven](https://github.com/bitvora/haven)
