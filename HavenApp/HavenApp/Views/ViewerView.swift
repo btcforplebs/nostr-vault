@@ -58,6 +58,7 @@ struct ViewerView: View {
         let blacklist = configService.blacklistedHexPubkeys
         let currentMode = viewMode
         let sourceFilter = mediaSourceFilter
+        let rpm = relayManager
         
         Task.detached(priority: .userInitiated) {
             if currentMode == .notes {
@@ -107,34 +108,37 @@ struct ViewerView: View {
                     }
                 }
                 
-                if sourceFilter == .all || sourceFilter == .cache {
-                     for item in remoteItems {
-                        // We can call normalizedKey here (it's stateless/pure now)
-                        // But we need to make normalizedKey accessible or duplicate it.
-                        // It is an instance method, so we can't call it from detached task easily unless self is captured (which creates race on Self.hexPattern? No, hexPattern is static).
-                        // Best to make normalizedKey static or non-self dependent.
-                        // Actually, let's just duplicate the static ref usage or make normalizedKey static.
-                        // Since I made it an instance method in step 2... 
-                        // Let's refactor normalizedKey to be static or just use a helper.
-                        // To follow my own code above: I defined normalizedKey as instance method.
-                        // I'll make it static in the next chunk or just implement logic here.
-                        // I will implement logic here to be safe.
+                // Add blossom items first — they have accurate mime detection from local bytes + relay
+                if (currentFilter == .all || currentFilter == .mine) && (sourceFilter == .all || sourceFilter == .blossom) {
+                    for item in currentBlossom {
                         let key = self.normalizedKeyStatic(for: item.url)
                         latestItems[key] = item
                     }
                 }
-                
-                if (currentFilter == .all || currentFilter == .mine) && (sourceFilter == .all || sourceFilter == .blossom) {
-                    for item in currentBlossom {
+
+                if sourceFilter == .all || sourceFilter == .cache {
+                    for item in remoteItems {
                         let key = self.normalizedKeyStatic(for: item.url)
+                        // Only fill in remote items if blossom didn't already provide a better detection
                         if latestItems[key] == nil {
                             latestItems[key] = item
                         }
                     }
                 }
                 
-                let result = Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
-                
+                var result = Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
+
+                // Fix up items with missing or octet-stream mime types by sniffing remote bytes
+                for i in result.indices {
+                    let item = result[i]
+                    let needsSniff = item.type == .unknown ||
+                        (item.mimeType == nil && item.url.pathExtension.isEmpty) ||
+                        item.mimeType?.lowercased() == "application/octet-stream"
+                    if needsSniff, let sniffed = NostrService.sniffRemoteMime(url: item.url, rpm: rpm) {
+                        result[i] = MediaItem(id: item.id, url: item.url, type: sniffed.type, dateAdded: item.dateAdded, pubkey: item.pubkey, tags: item.tags, mimeType: sniffed.mime)
+                    }
+                }
+
                 await MainActor.run {
                     self.displayMedia = result
                 }
@@ -327,8 +331,18 @@ struct ViewerView: View {
     
     private var mediaGrid: some View {
         let items = displayMedia
+        let isLoading = isRefreshingMedia || nostrService.isFetching
         return Group {
-            if items.isEmpty {
+            if items.isEmpty && isLoading {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("Loading media...")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 100)
+            } else if items.isEmpty {
                 VStack(spacing: 16) {
                     Image(systemName: "photo.on.rectangle")
                         .font(.system(size: 48))
@@ -533,6 +547,8 @@ struct ViewerView: View {
             let blossomPath = configService.config.blossomPath
             let ownerHex = nostrService.ownerHexPubkey
             let webURL = configService.config.webURL
+            let config = configService.config
+            let rpm = relayManager
 
             let result = await Task.detached(priority: .background) { () -> [MediaItem] in
                 let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
@@ -553,80 +569,20 @@ struct ViewerView: View {
                     let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
                     let date = (attributes?[.creationDate] as? Date) ?? (attributes?[.modificationDate] as? Date) ?? Date()
                     
-                    var mediaType: MediaItem.MediaType = .image
-                    var mimeType: String? = nil
-                    if serveURL.pathExtension.isEmpty {
-                        // No extension — inspect magic bytes to determine type
-                        mediaType = .unknown
-                        if let handle = try? FileHandle(forReadingFrom: fileURL),
-                           let data = try? handle.read(upToCount: 12),
-                           data.count >= 4 {
-                            try? handle.close()
-                            let bytes = [UInt8](data)
+                    // Same detection pipeline as blossom export: proof (bytes) + claim (relay) → resolve
+                    let proof = rpm.detectMimeFromBytes(for: fileURL)
+                    let claim = rpm.fetchMimeFromRelay(config: config, sha256: filename)
+                    let resolvedMime = rpm.resolveMime(claim: claim, proof: proof)
+                    let mimeType = resolvedMime == "application/octet-stream" ? nil : resolvedMime
 
-                            // --- Audio ---
-                            if bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33 {
-                                mediaType = .audio; mimeType = "audio/mpeg"
-                            }
-                            else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
-                                      bytes[8] == 0x57 && bytes[9] == 0x41 && bytes[10] == 0x56 && bytes[11] == 0x45 {
-                                mediaType = .audio; mimeType = "audio/wav"
-                            }
-                            else if bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43 {
-                                mediaType = .audio; mimeType = "audio/flac"
-                            }
-                            else if bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53 {
-                                mediaType = .audio; mimeType = "audio/ogg"
-                            }
-                            // ftyp container — check brand for M4A (audio) vs MP4 (video)
-                            else if bytes.count >= 12 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
-                                if bytes[8] == 0x4D && bytes[9] == 0x34 && bytes[10] == 0x41 && bytes[11] == 0x20 {
-                                    mediaType = .audio; mimeType = "audio/mp4"
-                                } else {
-                                    mediaType = .video; mimeType = "video/mp4"
-                                }
-                            }
-                            // --- Video ---
-                            else if bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3 {
-                                mediaType = .video; mimeType = "video/webm"
-                            }
-                            else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
-                                        bytes[8] == 0x41 && bytes[9] == 0x56 && bytes[10] == 0x49 {
-                                mediaType = .video; mimeType = "video/avi"
-                            }
-                            // --- Image ---
-                            else if bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
-                                mediaType = .image; mimeType = "image/jpeg"
-                            }
-                            else if bytes.count >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 &&
-                                      bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A {
-                                mediaType = .image; mimeType = "image/png"
-                            }
-                            else if bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 {
-                                mediaType = .image; mimeType = "image/gif"
-                            }
-                            else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
-                                      bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50 {
-                                mediaType = .image; mimeType = "image/webp"
-                            }
-                            // --- Documents ---
-                            else if bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46 {
-                                mediaType = .unknown; mimeType = "application/pdf"
-                            }
-                            else if bytes[0] == 0x50 && bytes[1] == 0x4B && bytes[2] == 0x03 && bytes[3] == 0x04 {
-                                mediaType = .unknown; mimeType = "application/zip"
-                            }
-                        }
+                    let mediaType: MediaItem.MediaType
+                    if let mime = mimeType {
+                        if mime.hasPrefix("video/") { mediaType = .video }
+                        else if mime.hasPrefix("audio/") { mediaType = .audio }
+                        else if mime.hasPrefix("image/") { mediaType = .image }
+                        else { mediaType = .unknown }
                     } else {
-                        let ext = serveURL.pathExtension.lowercased()
-                        if serveURL.isVideo {
-                            mediaType = .video
-                        } else if serveURL.isAudio {
-                            mediaType = .audio
-                        } else {
-                            mediaType = .image
-                        }
-                        mimeType = Self.mimeTypeFromExtension(ext)
+                        mediaType = .unknown
                     }
 
                     return MediaItem(id: UUID(), url: serveURL, type: mediaType, dateAdded: date, pubkey: ownerHex, tags: nil, mimeType: mimeType)
@@ -645,30 +601,6 @@ struct ViewerView: View {
         }
     }
 
-    private static func mimeTypeFromExtension(_ ext: String) -> String? {
-        switch ext {
-        case "jpg", "jpeg": return "image/jpeg"
-        case "png": return "image/png"
-        case "gif": return "image/gif"
-        case "webp": return "image/webp"
-        case "heic": return "image/heic"
-        case "tiff", "tif": return "image/tiff"
-        case "svg": return "image/svg+xml"
-        case "mp4": return "video/mp4"
-        case "mov": return "video/quicktime"
-        case "webm": return "video/webm"
-        case "avi": return "video/avi"
-        case "mkv": return "video/x-matroska"
-        case "mp3": return "audio/mpeg"
-        case "wav": return "audio/wav"
-        case "m4a", "aac": return "audio/mp4"
-        case "flac": return "audio/flac"
-        case "ogg": return "audio/ogg"
-        case "pdf": return "application/pdf"
-        case "zip": return "application/zip"
-        default: return nil
-        }
-    }
 }
 
 struct FilterButton: View {

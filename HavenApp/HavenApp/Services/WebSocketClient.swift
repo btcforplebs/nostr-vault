@@ -477,22 +477,16 @@ class NostrService: ObservableObject {
                 if let urlTag = event.tags.first(where: { $0.count >= 2 && $0[0] == "url" }),
                    let url = URL(string: urlTag[1]) {
                     let mimeTag = event.tags.first(where: { $0.count >= 2 && $0[0] == "m" })?[1]
-                    let mediaType: MediaItem.MediaType
-                    if let mime = mimeTag?.lowercased() {
-                        if mime.hasPrefix("video/") { mediaType = .video }
-                        else if mime.hasPrefix("audio/") { mediaType = .audio }
-                        else if mime.hasPrefix("image/") { mediaType = .image }
-                        else { mediaType = .unknown }
-                    } else {
-                        mediaType = url.isVideo ? .video : (url.isAudio ? .audio : .image)
-                    }
-                    items.append(MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags, mimeType: mimeTag))
+                    let mime = mimeTag ?? Self.mimeFromExtension(url)
+                    let mediaType = Self.mediaTypeFromMime(mime, url: url)
+                    items.append(MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags, mimeType: mime))
                 }
             } else {
                 let urls = extractMediaURLs(from: event.content)
                 items = urls.map { url in
-                    let mediaType: MediaItem.MediaType = url.isVideo ? .video : (url.isAudio ? .audio : .image)
-                    return MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags, mimeType: nil)
+                    let mime = Self.mimeFromExtension(url)
+                    let mediaType = Self.mediaTypeFromMime(mime, url: url)
+                    return MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags, mimeType: mime)
                 }
             }
             
@@ -697,6 +691,72 @@ class NostrService: ObservableObject {
         print("NostrService: Final aggregated count: \(String(describing: totalCount))")
         #endif
         return totalCount
+    }
+
+    private static func mimeFromExtension(_ url: URL) -> String? {
+        let ext = url.pathExtension.lowercased()
+        switch ext {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        case "heic": return "image/heic"
+        case "tiff", "tif": return "image/tiff"
+        case "svg": return "image/svg+xml"
+        case "mp4": return "video/mp4"
+        case "mov": return "video/quicktime"
+        case "webm": return "video/webm"
+        case "mp3": return "audio/mpeg"
+        case "wav": return "audio/wav"
+        case "m4a", "aac": return "audio/mp4"
+        case "flac": return "audio/flac"
+        case "ogg": return "audio/ogg"
+        default: return nil
+        }
+    }
+
+    private nonisolated static func mediaTypeFromMime(_ mime: String?, url: URL) -> MediaItem.MediaType {
+        if let mime = mime?.lowercased() {
+            if mime.hasPrefix("video/") { return .video }
+            if mime.hasPrefix("audio/") { return .audio }
+            if mime.hasPrefix("image/") { return .image }
+            if mime != "application/octet-stream" { return .unknown }
+        }
+        // Fallback to extension-based detection
+        if url.isVideo { return .video }
+        if url.isAudio { return .audio }
+        return .image
+    }
+
+    /// Sniff the first 64 bytes of a remote URL via HTTP Range request to detect mime type.
+    /// Returns (resolvedMime, mediaType) or nil if the request fails.
+    nonisolated static func sniffRemoteMime(url: URL, rpm: RelayProcessManager) -> (mime: String, type: MediaItem.MediaType)? {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("bytes=0-63", forHTTPHeaderField: "Range")
+        request.timeoutInterval = 5
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var resultMime: String?
+
+        let task = URLSession.shared.dataTask(with: request) { data, _, _ in
+            if let data = data, data.count >= 4 {
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try? data.write(to: tempURL)
+                let detected = rpm.detectMimeFromBytes(for: tempURL)
+                try? FileManager.default.removeItem(at: tempURL)
+                if detected != "application/octet-stream" {
+                    resultMime = detected
+                }
+            }
+            semaphore.signal()
+        }
+        task.resume()
+        _ = semaphore.wait(timeout: .now() + 6)
+
+        guard let mime = resultMime else { return nil }
+        let type = mediaTypeFromMime(mime, url: url)
+        return (mime, type)
     }
 
     func extractMediaURLs(from content: String) -> [URL] {
