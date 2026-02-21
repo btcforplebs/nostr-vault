@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -17,35 +18,31 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 )
 
+// Relay instances — re-created on each initRelays() call so HTTP muxes are fresh.
 var (
-	privateRelay = khatru.NewRelay()
-	privateDB    = newDBBackend("db/private")
+	privateRelay *khatru.Relay
+	privateDB    DBBackend
 )
 
 var (
-	chatRelay = khatru.NewRelay()
-	chatDB    = newDBBackend("db/chat")
+	chatRelay *khatru.Relay
+	chatDB    DBBackend
 )
 
 var (
-	outboxRelay = khatru.NewRelay()
-	outboxDB    = newDBBackend("db/outbox")
+	outboxRelay *khatru.Relay
+	outboxDB    DBBackend
 )
 
 var (
-	inboxRelay = khatru.NewRelay()
-	inboxDB    = newDBBackend("db/inbox")
+	inboxRelay *khatru.Relay
+	inboxDB    DBBackend
 )
 
-var blossomDB = newDBBackend("db/blossom")
-
-var dbs = map[string]DBBackend{
-	"blossom": blossomDB,
-	"chat":    chatDB,
-	"inbox":   inboxDB,
-	"outbox":  outboxDB,
-	"private": privateDB,
-}
+var (
+	blossomDB DBBackend
+	dbs       map[string]DBBackend
+)
 
 type DBBackend interface {
 	Init() error
@@ -78,30 +75,67 @@ func newLMDBBackend(path string) *lmdb.LMDBBackend {
 	}
 }
 
-func initDBs() {
+func initDBs() error {
+	privateDB = newDBBackend("db/private")
+	chatDB = newDBBackend("db/chat")
+	outboxDB = newDBBackend("db/outbox")
+	inboxDB = newDBBackend("db/inbox")
+	blossomDB = newDBBackend("db/blossom")
+
+	dbs = map[string]DBBackend{
+		"blossom": blossomDB,
+		"chat":    chatDB,
+		"inbox":   inboxDB,
+		"outbox":  outboxDB,
+		"private": privateDB,
+	}
+
 	if err := privateDB.Init(); err != nil {
-		panic(err)
+		return fmt.Errorf("privateDB init failed: %w", err)
 	}
 
 	if err := chatDB.Init(); err != nil {
-		panic(err)
+		return fmt.Errorf("chatDB init failed: %w", err)
 	}
 
 	if err := outboxDB.Init(); err != nil {
-		panic(err)
+		return fmt.Errorf("outboxDB init failed: %w", err)
 	}
 
 	if err := inboxDB.Init(); err != nil {
-		panic(err)
+		return fmt.Errorf("inboxDB init failed: %w", err)
 	}
 
 	if err := blossomDB.Init(); err != nil {
-		panic(err)
+		return fmt.Errorf("blossomDB init failed: %w", err)
+	}
+
+	return nil
+}
+
+func CloseDBs() {
+	if dbs != nil {
+		for name, db := range dbs {
+			if db != nil {
+				slog.Info("Closing database", "name", name)
+				db.Close()
+			}
+		}
 	}
 }
 
-func initRelays(ctx context.Context) {
-	initDBs()
+func initRelays(ctx context.Context) error {
+	// Re-create relay instances on each call so their internal HTTP muxes are fresh.
+	// This prevents "pattern already registered" panics when the relay is restarted
+	// in C-shared mode (e.g. after import completes).
+	privateRelay = khatru.NewRelay()
+	chatRelay = khatru.NewRelay()
+	outboxRelay = khatru.NewRelay()
+	inboxRelay = khatru.NewRelay()
+
+	if err := initDBs(); err != nil {
+		return err
+	}
 
 	initRelayLimits()
 
@@ -387,4 +421,5 @@ func initRelays(ctx context.Context) {
 		}
 	})
 
+	return nil
 }

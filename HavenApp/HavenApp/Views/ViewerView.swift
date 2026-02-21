@@ -55,6 +55,7 @@ struct ViewerView: View {
         let currentBlossom = blossomMedia
         let owner = nostrService.ownerHexPubkey
         let whitelist = configService.whitelistedHexPubkeys
+        let blacklist = configService.blacklistedHexPubkeys
         let currentMode = viewMode
         let sourceFilter = mediaSourceFilter
         
@@ -63,7 +64,8 @@ struct ViewerView: View {
                 // Compute Notes
                 let filtered = currentEvents.filter { event in
                     if event.kind != 1 { return false }
-                    
+                    if blacklist.contains(event.pubkey) { return false }
+
                     switch currentFilter {
                     case .all:
                         let isMine = event.pubkey == owner
@@ -87,6 +89,8 @@ struct ViewerView: View {
                 var latestItems: [String: MediaItem] = [:]
                 
                 let remoteItems = currentNoteMedia.filter { item in
+                    if let pk = item.pubkey, blacklist.contains(pk) { return false }
+
                     switch currentFilter {
                     case .all:
                         let isMine = item.pubkey == owner
@@ -753,13 +757,31 @@ struct NoteRow: View {
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
         }
+        .contextMenu {
+            if noteType != .mine {
+                Button(action: {
+                    blockUser(hexPubkey: event.pubkey)
+                }) {
+                    Label("Block User", systemImage: "hand.raised.fill")
+                }
+            }
+        }
         .onAppear {
             if nostrService.profileNames[event.pubkey] == nil {
                 nostrService.fetchMissingProfiles(for: [event.pubkey])
             }
         }
     }
-    
+
+    private func blockUser(hexPubkey: String) {
+        guard let data = Bech32.hexToData(hexPubkey),
+              let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+        if !configService.config.blacklistedNpubs.contains(npub) {
+            configService.config.blacklistedNpubs.append(npub)
+            configService.save()
+        }
+    }
+
     func timeAgo(from date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
@@ -797,6 +819,8 @@ struct MediaPreviewRow: View {
 struct MediaGridItem: View {
     let item: MediaItem
     let onSelect: () -> Void
+    @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var nostrService: NostrService
     @State private var isHovered = false
 
     var body: some View {
@@ -841,6 +865,18 @@ struct MediaGridItem: View {
                 NSPasteboard.general.setString(item.url.absoluteString, forType: .string)
             }) {
                 Label("Copy Link", systemImage: "doc.on.doc")
+            }
+            if let pubkey = item.pubkey, pubkey != nostrService.ownerHexPubkey {
+                Button(action: {
+                    guard let data = Bech32.hexToData(pubkey),
+                          let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+                    if !configService.config.blacklistedNpubs.contains(npub) {
+                        configService.config.blacklistedNpubs.append(npub)
+                        configService.save()
+                    }
+                }) {
+                    Label("Block User", systemImage: "hand.raised.fill")
+                }
             }
         }
     }

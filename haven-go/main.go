@@ -19,11 +19,15 @@ import (
 
 var (
 	pool   *nostr.SimplePool
-	config = loadConfig()
+	config Config
 	fs     afero.Fs
 )
 
 func main() {
+	if isCShared() {
+		return
+	}
+	config = loadConfig()
 	nostr.InfoLogger = log.New(io.Discard, "", 0)
 	slog.SetLogLoggerLevel(getLogLevelFromConfig())
 	green := "\033[32m"
@@ -73,6 +77,7 @@ func main() {
 
 	log.Println("🚀 HAVEN", config.RelayVersion, "is booting up")
 	defer log.Println("🔌 HAVEN is shutting down")
+	defer CloseDBs()
 	log.Println("👥 Number of whitelisted pubkeys:", len(config.WhitelistedPubKeys))
 	log.Println("🚷 Number of blacklisted pubkeys:", len(config.BlacklistedPubKeys))
 
@@ -86,8 +91,9 @@ func main() {
 		config.WotFetchTimeoutSeconds,
 	)
 	wot.Initialize(mainCtx, wotModel)
-	initRelays(mainCtx)
-
+	if err := initRelays(mainCtx); err != nil {
+		log.Fatal("🚫 error initializing databases/relays:", err)
+	}
 	go func() {
 		go subscribeInboxAndChat(mainCtx)
 		go startPeriodicCloudBackups(mainCtx)

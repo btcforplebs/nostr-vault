@@ -20,13 +20,12 @@ if [ -z "$BUILT_PRODUCTS_DIR" ]; then
     CONTENTS_FOLDER_PATH="Haven.app/Contents"
 fi
 
-# Build into the Xcode source Resources directory so the "Copy Bundle Resources"
-# phase picks up the freshly compiled binary automatically.
-HAVEN_SRC_PATH="${PROJECT_DIR}/HavenApp/Resources/haven"
+# Build into the Xcode project build directory so it can be linked.
+HAVEN_LIB_PATH="${PROJECT_DIR}/build/libhaven.a"
 
-echo "🚀 Building Go haven binary from source..."
+echo "🚀 Building Go libhaven.a from source..."
 echo "📍 Source root: $GO_SRC_ROOT"
-echo "📍 Output path: $HAVEN_SRC_PATH"
+echo "📍 Output path: $HAVEN_LIB_PATH"
 
 # Map Xcode architecture to Go architecture
 # NATIVE_ARCH_ACTUAL is usually set by Xcode
@@ -59,12 +58,12 @@ fi
 
 # Run the build
 cd "$GO_SRC_ROOT"
-echo "🛠️ Running: go build -v -ldflags=\"-s -w\" -o $HAVEN_SRC_PATH"
-"$GO_BIN" build -v -ldflags="-s -w" -o "$HAVEN_SRC_PATH"
+echo "🛠️ Running: go build -v -tags cshared -buildmode=c-archive -ldflags=\"-s -w\" -o $HAVEN_LIB_PATH"
+"$GO_BIN" build -v -tags cshared -buildmode=c-archive -ldflags="-s -w" -o "$HAVEN_LIB_PATH"
 
 if [ $? -eq 0 ]; then
-    echo "✅ Successfully built haven binary for $GOARCH."
+    echo "✅ Successfully built libhaven.a for $GOARCH."
 else
-    echo "❌ Failed to build haven binary."
+    echo "❌ Failed to build libhaven.a."
     exit 1
 fi

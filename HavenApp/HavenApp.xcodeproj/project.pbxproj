@@ -7,8 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		8D8CEECD2F2A96C90038A62B /* MediaTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D8CEECC2F2A96C90038A62B /* MediaTypeDetector.swift */; };
 		22622340D20B47E791706E0A /* AudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 813B608A3CA34232B8E239B0 /* AudioPlayerView.swift */; };
+		8D6B30292F48BA26003A21DB /* libhaven.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8D6B30282F48BA26003A21DB /* libhaven.a */; };
+		8D8CEECD2F2A96C90038A62B /* MediaTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D8CEECC2F2A96C90038A62B /* MediaTypeDetector.swift */; };
+		8D9878902F49300800A2FDE2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8D98788F2F49300800A2FDE2 /* PrivacyInfo.xcprivacy */; };
 		8DAF2C302F2019EF001149F2 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DAF2C2F2F2019EF001149F2 /* VideoPlayerView.swift */; };
 		AAAA0001 /* HavenApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFF0001 /* HavenApp.swift */; };
 		AAAA0002 /* HavenConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFF0002 /* HavenConfig.swift */; };
@@ -36,8 +38,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		8D8CEECC2F2A96C90038A62B /* MediaTypeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTypeDetector.swift; sourceTree = "<group>"; };
 		813B608A3CA34232B8E239B0 /* AudioPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerView.swift; sourceTree = "<group>"; };
+		8D6B30282F48BA26003A21DB /* libhaven.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven.a; path = "../haven-go/libhaven.a"; sourceTree = "<group>"; };
+		8D8CEECC2F2A96C90038A62B /* MediaTypeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTypeDetector.swift; sourceTree = "<group>"; };
+		8D98788F2F49300800A2FDE2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		8DAF2C2F2F2019EF001149F2 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
 		AAAA9001 /* StatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsService.swift; sourceTree = "<group>"; };
 		FFFF0001 /* HavenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp.swift; sourceTree = "<group>"; };
@@ -66,15 +70,36 @@
 		FFFF0101 /* FloatingArrowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingArrowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFrameworksBuildPhase section */
+		8D6B30262F48B9C2003A21DB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8D6B30292F48BA26003A21DB /* libhaven.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
 /* Begin PBXGroup section */
+		8D6B30272F48BA26003A21DB /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8D6B30282F48BA26003A21DB /* libhaven.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		GGGG0001 = {
 			isa = PBXGroup;
 			children = (
+				8D98788F2F49300800A2FDE2 /* PrivacyInfo.xcprivacy */,
 				GGGG0002 /* HavenApp/App */,
 				GGGG0003 /* HavenApp/Models */,
 				GGGG0004 /* HavenApp/Services */,
 				GGGG0005 /* HavenApp/Views */,
 				GGGG0006 /* HavenApp/Resources */,
+				8D6B30272F48BA26003A21DB /* Frameworks */,
 				GGGG0099 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -159,7 +184,7 @@
 				BBBB0002 /* Build Go Binary */,
 				PPPP0001 /* Sources */,
 				PPPP0002 /* Resources */,
-				BBBB0001 /* Sign Go Binary */,
+				8D6B30262F48B9C2003A21DB /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -209,6 +234,7 @@
 			files = (
 				AAAA0015 /* Assets.xcassets in Resources */,
 				AAAA0016 /* haven in Resources */,
+				8D9878902F49300800A2FDE2 /* PrivacyInfo.xcprivacy in Resources */,
 				AAAA0017 /* templates in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -216,28 +242,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		BBBB0001 /* Sign Go Binary */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(PROJECT_DIR)/HavenApp/App/sign_haven.sh",
-				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/haven",
-				"$(PROJECT_DIR)/HavenApp/App/HavenApp.entitlements",
-			);
-			name = "Sign Go Binary";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/bash;
-			shellScript = "\"$PROJECT_DIR/HavenApp/App/sign_haven.sh\"\n";
-		};
 		BBBB0002 /* Build Go Binary */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -427,6 +431,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				"INFOPLIST_FILE[sdk=*]" = HavenApp/App/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -435,10 +440,12 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				"LIBRARY_SEARCH_PATHS[arch=*]" = "$(PROJECT_DIR)/build";
 				MARKETING_VERSION = 2.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
 				PRODUCT_NAME = HAVEN;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				"SWIFT_OBJC_BRIDGING_HEADER[arch=*]" = "HavenApp/HavenApp-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -457,6 +464,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				"INFOPLIST_FILE[sdk=*]" = HavenApp/App/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

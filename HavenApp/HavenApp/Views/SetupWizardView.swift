@@ -7,6 +7,7 @@ struct SetupWizardView: View {
     @State private var npub = ""
     @State private var relayURL = ""
     @State private var dbEngine = "badger"
+    @State private var hasAcceptedToS = false
     let onComplete: () -> Void
     
     var body: some View {
@@ -30,7 +31,7 @@ struct SetupWizardView: View {
             
             // Progress
             HStack(spacing: 4) {
-                ForEach(0..<8) { step in
+                ForEach(0..<9) { step in
                     Capsule()
                         .fill(step <= currentStep ? Color.havenPurple : Color.gray.opacity(0.3))
                         .frame(height: 4)
@@ -52,18 +53,20 @@ struct SetupWizardView: View {
                         case 0:
                             WelcomeStep()
                         case 1:
-                            IdentityStep(npub: $npub, whitelistedNpubs: $configService.config.whitelistedNpubs)
+                            TermsOfServiceStep(hasAccepted: $hasAcceptedToS)
                         case 2:
-                            RelayURLStep(relayURL: $relayURL)
+                            IdentityStep(npub: $npub, whitelistedNpubs: $configService.config.whitelistedNpubs)
                         case 3:
-                            DatabaseStep(dbEngine: $dbEngine)
+                            RelayURLStep(relayURL: $relayURL)
                         case 4:
-                            SetupImportStep(currentStep: $currentStep)
+                            DatabaseStep(dbEngine: $dbEngine)
                         case 5:
-                            SetupRestoreNotesStep(currentStep: $currentStep)
+                            SetupImportStep(currentStep: $currentStep)
                         case 6:
-                            SetupRestoreMediaStep(currentStep: $currentStep)
+                            SetupRestoreNotesStep(currentStep: $currentStep)
                         case 7:
+                            SetupRestoreMediaStep(currentStep: $currentStep)
+                        case 8:
                             SetupSuccessStep()
                         default:
                             EmptyView()
@@ -153,22 +156,25 @@ struct SetupWizardView: View {
                 
                 Spacer()
                 
-                if currentStep < 7 {
+                if currentStep < 8 {
                     // Hide buttons when import is complete (we show Continue button in the content area)
-                    if !(currentStep == 4 && relayManager.importCompleted) {
+                    if !(currentStep == 5 && relayManager.importCompleted) {
                         Button(navButtonLabel) {
-                            if currentStep == 4 && relayManager.isImporting {
+                            if currentStep == 5 && relayManager.isImporting {
                                 relayManager.cancelImport()
                             } else {
-                                if currentStep == 3 {
+                                if currentStep == 4 {
                                     saveIntermediateConfig()
+                                }
+                                if currentStep == 1 {
+                                    configService.config.hasAcceptedToS = true
                                 }
                                 currentStep += 1
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(currentStep == 4 && relayManager.isImporting ? .red : .havenPurple)
-                        .disabled(!canContinue && !(currentStep == 4 && relayManager.isImporting))
+                        .tint(currentStep == 5 && relayManager.isImporting ? .red : .havenPurple)
+                        .disabled(!canContinue && !(currentStep == 5 && relayManager.isImporting))
                     }
                 } else {
                     Button("Launch Haven") {
@@ -186,10 +192,12 @@ struct SetupWizardView: View {
     @Environment(\.dismiss) var dismiss // Add dismiss environment
     
     var navButtonLabel: String {
-        if currentStep == 4 && relayManager.isImporting {
+        if currentStep == 5 && relayManager.isImporting {
             return "Cancel Import"
-        } else if currentStep == 4 || currentStep == 5 || currentStep == 6 {
+        } else if currentStep == 5 || currentStep == 6 || currentStep == 7 {
             return "Skip"
+        } else if currentStep == 1 {
+            return "I Agree"
         } else {
             return "Continue"
         }
@@ -197,7 +205,8 @@ struct SetupWizardView: View {
 
     var canContinue: Bool {
         switch currentStep {
-        case 1: return !npub.isEmpty && npub.hasPrefix("npub")
+        case 1: return hasAcceptedToS
+        case 2: return !npub.isEmpty && npub.hasPrefix("npub")
         default: return true
         }
     }
@@ -271,6 +280,87 @@ struct WelcomeStep: View {
         }
         .padding()
         .onAppear { appeared = true }
+    }
+}
+
+struct TermsOfServiceStep: View {
+    @Binding var hasAccepted: Bool
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "doc.text.fill")
+                .font(.system(size: 48))
+                .foregroundColor(.havenPurple)
+                .scaleEffect(appeared ? 1.0 : 0.5)
+                .opacity(appeared ? 1 : 0)
+                .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.05), value: appeared)
+
+            Text("Terms of Service")
+                .font(.title2.bold())
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 12)
+                .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.1), value: appeared)
+
+            Text("Please review and accept before continuing")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 12)
+                .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.15), value: appeared)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    tosSection(
+                        title: "User-Generated Content",
+                        body: "Haven displays content from the Nostr network, which is decentralized and uncensored. You are solely responsible for the content you publish through your relay."
+                    )
+
+                    tosSection(
+                        title: "Content Moderation",
+                        body: "Haven provides tools to manage content on your relay, including the ability to block users via the blacklist. You can block any user by right-clicking their content and selecting \"Block User\". Blocked users are prevented from posting to your Chat and Inbox relays."
+                    )
+
+                    tosSection(
+                        title: "Web of Trust",
+                        body: "Haven uses a Web of Trust system to filter incoming content on your Chat and Inbox relays. Only users within your trust network can interact with these relays."
+                    )
+
+                    tosSection(
+                        title: "Your Responsibility",
+                        body: "As the relay operator, you are responsible for managing access to your relay. Haven is provided as-is, without warranty. You agree to use Haven in compliance with applicable laws."
+                    )
+                }
+                .padding()
+            }
+            .frame(maxWidth: 450, maxHeight: 200)
+            .background(Color(NSColor.controlBackgroundColor))
+            .cornerRadius(12)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
+            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.2), value: appeared)
+
+            Toggle(isOn: $hasAccepted) {
+                Text("I have read and agree to the Terms of Service")
+                    .font(.subheadline)
+            }
+            .toggleStyle(.checkbox)
+            .opacity(appeared ? 1 : 0)
+            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.3), value: appeared)
+        }
+        .padding()
+        .onAppear { appeared = true }
+    }
+
+    private func tosSection(title: String, body: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.bold())
+            Text(body)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -614,7 +704,7 @@ struct SetupImportStep: View {
             Button("Change Port", role: .none) {
                 relayManager.isPortConflict = false
                 relayManager.cancelImport()
-                currentStep = 2
+                currentStep = 3
             }
 
             Button("Cancel", role: .cancel) {

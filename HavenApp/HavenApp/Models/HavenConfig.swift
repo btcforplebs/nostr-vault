@@ -11,6 +11,7 @@ struct HavenConfig: Codable, Equatable {
     var autoStartRelay: Bool = true
     var hasCompletedSetup: Bool = false
     var hasSeenWelcome: Bool = false
+    var hasAcceptedToS: Bool = false
     var disableMediaCache: Bool = false
     
     // Private Relay
@@ -86,7 +87,7 @@ struct HavenConfig: Codable, Equatable {
     
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
-        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, disableMediaCache
+        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, disableMediaCache
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
@@ -115,6 +116,7 @@ struct HavenConfig: Codable, Equatable {
         autoStartRelay = try container.decodeIfPresent(Bool.self, forKey: .autoStartRelay) ?? defaults.autoStartRelay
         hasCompletedSetup = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedSetup) ?? defaults.hasCompletedSetup
         hasSeenWelcome = try container.decodeIfPresent(Bool.self, forKey: .hasSeenWelcome) ?? defaults.hasSeenWelcome
+        hasAcceptedToS = try container.decodeIfPresent(Bool.self, forKey: .hasAcceptedToS) ?? defaults.hasAcceptedToS
         disableMediaCache = try container.decodeIfPresent(Bool.self, forKey: .disableMediaCache) ?? defaults.disableMediaCache
         
         privateRelayName = try container.decodeIfPresent(String.self, forKey: .privateRelayName) ?? defaults.privateRelayName

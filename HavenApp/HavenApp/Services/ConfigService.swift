@@ -398,7 +398,18 @@ class ConfigService: ObservableObject {
         }
         return hexKeys
     }
-    
-    
+
+    /// Returns a Set of hex pubkeys derived from the blacklisted npubs
+    var blacklistedHexPubkeys: Set<String> {
+        var hexKeys = Set<String>()
+        for npub in config.blacklistedNpubs {
+            let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
+            if clean.isEmpty { continue }
+            if let decoded = Bech32.decode(clean) {
+                hexKeys.insert(decoded.hexString)
+            }
+        }
+        return hexKeys
+    }
 
 }

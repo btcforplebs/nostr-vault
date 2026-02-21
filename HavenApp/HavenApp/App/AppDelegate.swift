@@ -6,9 +6,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     // We don't need to store them here as properties if we use singletons consistently
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Kill any orphaned haven process left over from a previous app session
-        RelayProcessManager.shared.killOrphanedProcess()
-
         // Check if setup is complete
         // We use the shared ConfigService which loads from disk on init
         if !ConfigService.shared.config.hasCompletedSetup {
