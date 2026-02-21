@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+ ## [2.3.0-tf1] - 2026-02-21 (Pre-release)
+
+### Changed
+- **C-Shared Library Architecture**: Embedded the Go relay as a C-archive (`libhaven.a`) linked directly into the Swift app, replacing the separate helper process. This eliminates the need for `Process()` spawning, PID file management, and orphan process cleanup.
+- **Universal Binary Build**: `build_haven.sh` now builds with `-buildmode=c-archive` and uses `lipo` to produce a universal (arm64 + x86_64) static library.
+- **Entitlements Tightened**: Removed `allow-jit`, `allow-unsigned-executable-memory`, and `disable-library-validation` entitlements required for App Store compliance.
+- **App Transport Security**: Replaced blanket `NSAllowsArbitraryLoads` with `NSAllowsLocalNetworking` and added a `NSLocalNetworkUsageDescription` string.
+
+### Added
+- **Privacy Manifest**: Added `PrivacyInfo.xcprivacy` declaring accessed API types (FileTimestamp, UserDefaults) as required by Apple.
+- **Export Compliance**: Added `ITSAppUsesNonExemptEncryption = false` to Info.plist.
+- **Bridging Header**: Added `HavenApp-Bridging-Header.h` for Swift-to-C interop with the Go library.
+- **Go C-Shared Entry Points**: New `cshared.go` exposing relay lifecycle functions (`StartRelay`, `StopRelay`, etc.) via cgo exports.
+
+### Removed
+- **Helper Process**: Removed `HavenHelper.entitlements` and `sign_haven.sh` — no longer needed without a separate binary.
+
 ## [2.3.0] - 2026-02-20
 
 ### Added
