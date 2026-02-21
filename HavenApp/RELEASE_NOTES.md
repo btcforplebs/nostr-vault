@@ -24,4 +24,12 @@ This major update introduces the **Whitelist Tab**, improved process management,
 *   **Swift 6 Isolation**: Fixed MainActor violations and concurrency issues to ensure stability on modern macOS.
 *   **Viewer Layout**: Resolved text overflow and layout "crunch" errors in the viewer and video player.
 
+## What's Next: App Store & TestFlight
+
+We are actively working toward **App Store distribution**. The `v2.3.0-tf` build (available on the `feat/c-shared-relay` branch) replaces the sub-process architecture with a **C-shared library** approach — compiling the Go relay directly into the Swift app as a single process. This is required for Apple's App Store and TestFlight.
+
+If you'd like to help test the TestFlight version, check out the `v2.3.0-tf` tag or watch for the TestFlight link once approved.
+
+For technical details, see [`docs/C_SHARED_RELAY.md`](../docs/C_SHARED_RELAY.md).
+
 Thank you for using Haven!
