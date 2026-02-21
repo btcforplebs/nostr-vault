@@ -6,26 +6,40 @@
 [![CI](https://github.com/bitvora/haven/actions/workflows/lint.yml/badge.svg)](https://github.com/bitvora/haven/actions/workflows/lint.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/bitvora/haven)](https://goreportcard.com/report/github.com/bitvora/haven)
 
-HAVEN (High Availability Vault for Events on Nostr) is the most sovereign personal relay for the Nostr protocol, for storing and backing up sensitive notes like eCash, private chats and drafts. It is a relay that is not so dumb, with features like web of trust, inbox relay, cloud backups, blastr and the ability to import old notes. It even includes it's own blossom media server!
+HAVEN (High Availability Vault for Events on Nostr) is the most sovereign personal relay for the Nostr protocol, for 
+storing and backing up sensitive notes like eCash, private chats, and drafts. It is a relay that is not so dumb, with 
+features like web of trust, whitelisting, blacklisting, JSONL backup / restore (including periodic backups to the 
+cloud), blastr note to others relays, and importing your old notes from other relays. It even includes its own 
+blossom media server!
 
 ## Four Relays in One + Blossom Media Server
 
-**Private Relay**: This relay is only accessible by the owner of the relay. It is used for drafts, ecash and other private notes that nobody can read or write to. It is protected by Auth.
+**Private Relay**: This relay is only accessible by the owner of the relay and whitelisted npubs. It is used for 
+drafts, ecash, and other private notes that nobody else can read or write to. It is protected by Auth.
 
-**Chat Relay**: This relay is used to contact the owner by DM. Only people in the web of trust can interact with this relay, protected by Auth. It only accepts encrypted DMs and group chat kinds.
+**Chat Relay**: This relay is used to contact the owner of the relay and whitelisted npubs by DM. Only people in the 
+web of trust can interact with this relay, protected by Auth. It only accepts encrypted DMs and group chat kinds.
 
-**Inbox Relay**: This relay is where the owner of the relay reads from. Send your zaps, reactions and replies to this relay when you're tagging the owner. You can also pull notes from this relay if you want notes where the owner is tagged. This relay automatically pulls notes from other relays. Only notes where the owner is tagged will be accepted to this relay.
+**Inbox Relay**: This relay is where the owner of the relay and whitelisted npubs reads from. Send your zaps, 
+reactions, and replies to this relay when you're tagging the owner or one of the whitelisted npubs. You can also pull 
+notes from this relay if you want notes where the owner or whitelisted npub are tagged. This relay automatically pulls 
+notes from other relays. Only notes where the owner or whitelisted npubs are tagged will be accepted to this relay.
 
-**Outbox Relay**: This relay is where the owner's notes all live and are publicly accessible. You can import all your old notes to this relay. All notes sent to this relay are blasted to other relays. Only the owner can send to this relay, but anyone can read.
+**Outbox Relay**: This relay is where the owner's and whitelisted npubs notes all live and are publicly accessible. You 
+can import all your old notes to this relay. All notes sent to this relay are blasted to other relays. Only the 
+owner and whitelisted npubs can send to this relay, but anyone can read.
 
-**Blossom Media Server**: This relay also includes a media server for hosting images and videos. You can upload images and videos to this relay and get a link to share them. Only the relay owner can upload to this relay, but anyone can view the images and videos.
+**Blossom Media Server**: This relay also includes a media server for hosting images and videos. You can upload images 
+and videos to this relay and get a link to share them. Only the relay owner and whitelisted npubs can upload to this 
+relay, but anyone can view the images and videos.
 
 ## Not So Dumb Relay Features
 
-**Web of Trust**: Protected from DM and Inbox spam by using a Web of Trust (WoT). See the [Web of Trust Documentation](docs/wot.md) for more details.
+**Web of Trust**: Protected from DM and Inbox spam by using a Web of Trust (WoT). See the [Web of Trust 
+Documentation](docs/wot.md) for more details.
 
-**Access Control**: Whitelist and blacklist npubs. See the [Access 
-Control Documentation](docs/access-control.md) for more details.
+**Access Control**: Whitelist and blacklist npubs. See the [Access Control Documentation](docs/access-control.md) 
+for more details.
 
 **Inbox Relay**: Notes are pulled from other relays and stored in the inbox relay.
 
@@ -33,7 +47,8 @@ Control Documentation](docs/access-control.md) for more details.
 
 **Import Old Notes**: Import your old notes and notes you're tagged in from other relays.
 
-**Backup/Recover**: It is your data, manually export or import data JSONL at any time. Set periodic backups to the cloud for easy recovery if the relay is lost. See [Backup Documentation](docs/backup.md) for more details.
+**Backup/Recover**: It is your data, manually export or import data JSONL at any time. Set periodic backups to the cloud 
+for easy recovery. See [Backup Documentation](docs/backup.md) for more details.
 
 ## Installation
 
@@ -57,7 +72,27 @@ instructions on how to verify the authenticity of the binaries using GPG signatu
    ```
 ### Option 2: Build from Source
 
-If you prefer to build Haven from source or need to customize the build, please see the [Build Documentation](docs/build.md).
+If you prefer to build Haven from source or need to customize the build, please see the [BuildDocumentation](docs/build.md).
+
+### Option 3:
+
+Check out some of the external community-built tools for managing Haven relays:
+
+1. [**Haven Docker**](https://github.com/HolgerHatGarKeineNode/haven-docker): A lightweight Docker Compose setup 
+   with a TUI for configuration and management
+2. [**HAVEN For Mac**](https://github.com/btcforplebs/haven-mac): A user-friendly macOS application for managing 
+   your Haven relay with a native GUI and a ton of extra features
+3. [**Haven Start9 Wrapper**](https://github.com/higedamc/haven-start9-wrapper): A Tor-only Start9 wrapper for Haven 
+   with its own Dashboard and Web UI
+4. [**HAVEN Kit**](https://github.com/Letdown2491/haven-kit): Simple configuration tool to set up a HAVEN Nostr 
+   relay in Umbrel Docker or Podman with just a few clicks 
+
+If you have built a Haven relay management tool that you would like to share, please open a PR to add it to this list!
+
+> [!IMPORTANT]
+> The Haven team does not officially support the tools listed above. They are community-built and maintained by 
+> third parties. Please refer to the respective repositories for installation instructions, documentation, and 
+> support. If you encounter any issues with these tools, please open an issue in their respective repositories.
 
 ## Setup Instructions
 
@@ -87,102 +122,129 @@ cp relays_import.example.json relays_import.json
 cp relays_blastr.example.json relays_blastr.json
 ```
 
-The JSON should contain an array of relay URLs, which default to wss:// if you don't explicitly specify the protocol.
+Customise the list of relays above as needed for your setup. The JSON should contain an array of relay URLs, which
+default to wss:// if you don't explicitly specify the protocol.
+
+> [!TIP]
+> It is hard to keep an up-to-date list of working Nostr relays. Keep an eye on Haven's logs to see if any of the 
+> relays you're using are no longer working and replace them accordingly. There is no guarantee that the example relays 
+> will be up and running at all times (or at all), and it is up to the user to keep their relay list up to date.
+
 
 ### 4. Configure Access Control (optional)
 
-Haven allows you to whitelist specific npubs to grant them full relay access, or blacklist them to prevent any 
+Haven allows you to whitelist specific npubs to grant them full relay access or blacklist them to prevent any 
 interaction with your relay. 
 
 See the [Access Control Documentation](docs/access-control.md) for more details on how to set up whitelists and blacklists.
 
 ### 5. Run on System Startup
 
-### Linux - Create a Systemd Service
-To have the relay run as a service, create a systemd unit file. Make sure to limit the memory usage to less than your system's total memory to prevent the relay from crashing the system.
-Replace the values for `ExecStart` and `WorkingDirectory` with the actual paths where you installed Haven and stored the `.env` file.
+#### Linux – Create a Systemd Service
 
+<details><summary>Click here to view the installation routine for Systemd</summary>
+<p>
+
+To have the relay run as a service, create a systemd unit file. Make sure to limit the memory usage to less than your 
+system's total memory to prevent the relay from crashing the system. Replace the values for `ExecStart` and
+`WorkingDirectory` with the actual paths where you installed Haven and stored the `.env` file.
 
 1. Create the file:
 
-```bash
-sudo nano /etc/systemd/system/haven.service
-```
+   ```bash
+   sudo nano /etc/systemd/system/haven.service
+   ```
 
 2. Add the following contents:
 
-```ini
-[Unit]
-Description=Haven Relay
-After=network.target
-
-[Service]
-ExecStart=/home/ubuntu/haven/haven #Edit path to point to where you installed Haven
-WorkingDirectory=/home/ubuntu/haven #Edit path to point to where you installed Haven
-MemoryMax=1000M  # Example, Limit memory usage to 1000 MB | Edit this to fit your machine
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
+   ```ini
+   [Unit]
+   Description=Haven Relay
+   After=network.target
+   
+   [Service]
+   ExecStart=/home/ubuntu/haven/haven #Edit path to point to where you installed Haven
+   WorkingDirectory=/home/ubuntu/haven #Edit path to point to where you installed Haven
+   MemoryMax=1000M  # Example, Limit memory usage to 1000 MB | Edit this to fit your machine
+   Restart=always
+   
+   [Install]
+   WantedBy=multi-user.target
+   ```
 
 3. Reload systemd to recognize the new service:
 
-```bash
-sudo systemctl daemon-reload
-```
+   ```bash
+   sudo systemctl daemon-reload
+   ```
 
 4. Start the service:
 
-```bash
-sudo systemctl start haven
-```
+   ```bash
+   sudo systemctl start haven
+   ```
 
 5. (Optional) Enable the service to start on boot:
 
-```bash
-sudo systemctl enable haven
-```
+   ```bash
+   sudo systemctl enable haven
+   ```
 
-### MacOS - Create a login item App
-To have the relay run on boot, create a script that will open terminal and run the haven binary, the termainal will remain open and the relay running with it. Be sure the download /haven directory is locacted in the MacOS home folder ~/
+</p>
+</details>
+
+#### macOS - Create a login item App
+
+<details><summary>Click here to view the installation routine for macOS</summary>
+<p>
+
+To have the relay run on boot, create a script that will open the terminal and run the haven binary, the terminal will 
+remain open and the relay running with it. Be sure the download `/haven` directory is located in the macOS home 
+folder `~/`
 
 1. Create the App: Open Script Editor
 
 2. Add the following contents:
 
-```ini
-tell application "Terminal"
-  activate
-  do script "cd \"$HOME/haven\"; ./haven; exec $SHELL"
-end tell
-```
-3. Save in Applications folder
+   ```ini
+   tell application "Terminal"
+     activate
+     do script "cd \"$HOME/haven\"; ./haven; exec $SHELL"
+   end tell
+   ```
+3. Save in the Applications folder
 
-4. Open System Settings - General - Login Items
-   Hit the plus, add run_haven from Applications folder
+4. Open System - Settings - General - Login Items
+   Hit the plus, add run_haven from the Applications folder
 
-5. Reboot - On initial restart and terminal auto-open choose “allow”
+5. Reboot – On initial restart and terminal auto-open, choose “allow”
 
-6. Reboot again to test login item
+6. Reboot again to test the login item
 
-### 5. Serving over nginx or apache (optional)
+</p>
+</details>
 
-To have a domain name (example: relay.domain.com) point to your machine, you will need to setup an nginx.
+### 6. Set up a Reverse Proxy (optional)
+
+To have a domain name (example: relay.domain.com) point to your machine, you will need to set up a reverse proxy.
+
+#### Nginx
+
+<details><summary>Click here to view the installation routine for Nginx</summary>
+<p>
 
 1. Install nginx on your relay:
 
-```bash
-sudo apt-get update 
-sudo apt-get install nginx
-```
+   ```bash
+   sudo apt-get update 
+   sudo apt-get install nginx
+   ```
 
 2. Remove default config: `sudo rm -rf /etc/nginx/sites-available/default`
 
 3. Create new default config: `sudo nano /etc/nginx/sites-available/default` 
 
-4. Add new reverse proxy config by adding the following configuration to your nginx configuration file:
+4. Add a new reverse proxy config by adding the following configuration to your nginx configuration file:
 
 ```nginx
 server {
@@ -203,35 +265,13 @@ server {
 }
 ```
 
-Or apache configuration file:
-```apache
-<VirtualHost *:80>
-        ServerName yourdomain.com
-
-        RewriteEngine On
-        RewriteCond %{HTTP:Upgrade} websocket [NC]
-        RewriteCond %{HTTP:Connection} upgrade [NC]
-        RewriteRule ^/?(.*) "ws://localhost:3355/$1" [P,L]
-
-        # Proxy for HTTP traffic (NIP-11 relay info page)
-        ProxyPass / http://localhost:3355/
-        ProxyPassReverse / http://localhost:3355/
-
-        # Optional: Add HSTS header for enhanced security
-        Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-
-        # Optional: Set appropriate WebSocket headers
-        RequestHeader set Upgrade "websocket"
-        RequestHeader set Connection "Upgrade"
-</VirtualHost>
-```
-
 Replace `yourdomain.com` with your actual domain name.
 
 > [!NOTE]
-> [`client_max_body_size`](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size) is set to 100m
-> to allow for larger media files to be uploaded to Blossom. `0` can be used to allow for unlimited file sizes. If you are 
-> using Cloudflare proxy, be mindful of [upload limits](https://community.cloudflare.com/t/maximum-upload-size-is-limit/418490/2).
+> [`client_max_body_size`](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size) is set to 
+> `100m` to allow for larger media files to be uploaded to Blossom. `0` can be used to allow for unlimited file 
+> sizes. If you are using Cloudflare proxy, be mindful of 
+> [upload limits](https://community.cloudflare.com/t/maximum-upload-size-is-limit/418490/2).
 
 After adding the configuration, restart nginx:
 
@@ -239,12 +279,48 @@ After adding the configuration, restart nginx:
 sudo systemctl restart nginx
 ```
 
-Apache:
+</p>
+</details>
+
+#### Apache
+
+<details><summary>Click here to view the installation routine for Apache</summary>
+<p>
+
+1. Install Apache on your server
+2. Set up a virtual host:
+   ```apache
+   <VirtualHost *:80>
+           ServerName yourdomain.com
+   
+           RewriteEngine On
+           RewriteCond %{HTTP:Upgrade} websocket [NC]
+           RewriteCond %{HTTP:Connection} upgrade [NC]
+           RewriteRule ^/?(.*) "ws://localhost:3355/$1" [P,L]
+   
+           # Proxy for HTTP traffic (NIP-11 relay info page)
+           ProxyPass / http://localhost:3355/
+           ProxyPassReverse / http://localhost:3355/
+   
+           # Optional: Add HSTS header for enhanced security
+           Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+   
+           # Optional: Set appropriate WebSocket headers
+           RequestHeader set Upgrade "websocket"
+           RequestHeader set Connection "Upgrade"
+   </VirtualHost>
+   ```
+
+Replace `yourdomain.com` with your actual domain name.
+
 ```bash
 sudo systemctl restart httpd
 ```
 
-### Alternative: Serving over Caddy
+</p>
+</details>
+
+#### Caddy
 <details><summary>Click here to view the installation routine for Caddy</summary>
 <p>
 
@@ -252,45 +328,45 @@ Preparation: Set the A record (for your domain) to point to the server's IP addr
 
 1. Install caddy:
 
-```bash
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update
-sudo apt install caddy
-```
+   ```bash
+   sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+   sudo apt update
+   sudo apt install caddy
+   ```
 
 2. Open Caddyfile:
 
-```bash
-sudo nano /etc/caddy/Caddyfile
-```
+   ```bash
+   sudo nano /etc/caddy/Caddyfile
+   ```
 
 3. Add configuration:
 
-```bash
-# Configuration for HAVEN Relay
-yourdomain.com {
-    reverse_proxy localhost:3355 {
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-        transport http {
-            versions 1.1
-        }
-    }
-    request_body {
-        max_size 100MB
-    }
-}
-```
+   ```bash
+   # Configuration for HAVEN Relay
+   yourdomain.com {
+       reverse_proxy localhost:3355 {
+           header_up Host {host}
+           header_up X-Real-IP {remote_host}
+           header_up X-Forwarded-For {remote_host}
+           header_up X-Forwarded-Proto {scheme}
+           transport http {
+               versions 1.1
+           }
+       }
+       request_body {
+           max_size 100MB
+       }
+   }
+   ```
 
 4. Reload Caddy:
 
-```bash
-sudo systemctl reload caddy
-```
+   ```bash
+   sudo systemctl reload caddy
+   ```
 
 5. Check status logs:
 
@@ -327,10 +403,11 @@ sudo certbot --apache
 
 Follow the instructions to generate the certificate.
 
-Note: Command will fail if the Domain you added to nginx is not yet pointing at your machine's IP address. 
+> [!NOTE]
+> The `cerbot` command will fail if the Domain you added to nginx is not yet pointing at your machine's IP address. 
 This is done by adding an A record subdomain pointing to your IP address through your DNS recrods Manager.
 
-### 8. Run The Import (optional)
+### 8. Import your old notes (optional)
 
 If you want to import your old notes and notes you're tagged in from other relays, run the following command:
 
@@ -387,19 +464,26 @@ BadgerDB users upgrading from Haven version 1.0.5 or earlier may encounter a cri
 error running migrations: failed to delete index key xxxx: Txn is too big to fit into one request
 ```
 
-As a workaround, you can delete the `db` folder and start fresh, optionally [re-importing](#8-run-the-import-optional)
+As a workaround, you can delete the `db` folder and start fresh, optionally [re-importing](#8-import-your-old-notes-optional) your
 previous notes.
 
 ## Blossom Media Server
 
-The outbox relay also functions as a media server for hosting images and videos. You can upload media files to the relay and obtain a shareable link.  
-Only the relay owner has upload permissions to the media server, but anyone can view the hosted images and videos.
+The outbox relay also functions as a media server for hosting images and videos. You can upload media files to the relay 
+and get a shareable link. Only the relay owner and whitelisted npubs have upload permissions to the media server, 
+but anyone can view the hosted images and videos.
 
-Media files are stored in the file system based on the `BLOSSOM_PATH` environment variable set in the `.env` file. The default path is `./blossom`.
+Media files are stored in the file system based on the `BLOSSOM_PATH` environment variable set in the `.env` file. 
+The default path is `./blossom`.
 
 ## Cloud Backups
 
-The relay automatically backs up your database to a cloud provider of your choice. See [Backup Documentation](docs/backup.md#periodic-cloud-backups) for more details.
+Haven can back up and restore your notes using a portable JSONL format. This can be done either with the built-in
+`./haven backup` and `./haven restore` commands, or with a scheduled backup periodically uploaded to your cloud 
+storage.
+
+See [Backup Documentation](docs/backup.md#periodic-cloud-backups) and
+[Cloud Storage Provider Specific Instructions](docs/cloud-storage.md) for further details.
 
 ## License
 

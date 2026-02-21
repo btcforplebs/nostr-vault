@@ -3,18 +3,21 @@
 To protect your Inbox and Chat relays from spam and unwanted messages, Haven implements a Web of Trust (WoT) system.
 This allows you to control who can write to these relays based on your follow list.
 
+Note that this is different and complementary to [whitelisting / blacklisting](access-control.md) which allows you to 
+explicitly allow or block specific npubs regardless of their position in your WoT graph.
+
 ## Configuration
 
 The WoT depth can be configured using the `WOT_DEPTH` environment variable:
 
-* **Level 0**: Disabled. Anyone on Nostr who tags the relay owner can write to the Inbox relay or send messages to 
-  the Chat relay.
-* **Level 1**: Private. Only the relay owner can write to the Inbox and Chat relays.
-* **Level 2**: Following. Only the relay owner and the people they follow directly can write to the Inbox and Chat 
-  relays.
-* **Level 3**: Connections of connections. The relay owner, the people they follow, and the people followed by them can 
-  write to the Inbox and Chat relays. Connections of connections must have a minimum number of common followers to be 
-  included in the Web of Trust. This is the default setting.
+* **Level 0**: Disabled. Anyone on Nostr who tags the relay owner or whitelisted npubs can write to the Inbox relay or 
+  send messages to the Chat relay.
+* **Level 1**: Private. Only the relay owner and whitelisted npubs can write to the Inbox and Chat relays.
+* **Level 2**: Following. Only the relay owner, whitelisted pubs, and the people they follow directly can write to the 
+  Inbox and Chat relays.
+* **Level 3**: Connections of connections. The relay owner, whitelisted npubs, the people they follow, and the people 
+  followed by them can write to the Inbox and Chat relays. Connections of connections must have a minimum number of 
+  common followers to be included in the Web of Trust. This is the default setting.
 
 ```mermaid
 flowchart TD
@@ -77,18 +80,18 @@ interactions.
 
 If you prefer not to store other people’s notes, Level 1 is the most private setting.
 
-Level 2 provides direct control by allowing only people directed followed by the relay owner to write to their relays, 
-but will exclude everyone else.
+Level 2 provides direct control by allowing only people directed followed by the relay owner and whitelisted npubs to 
+write to their relays, but will exclude everyone else.
 
 Level 3 offers a good balance between privacy and spam protection by allowing connections of connections to interact 
-with the relay owner while filtering out users without a minimum number of common followers. However, it also 
-requires heavier and potentially slower computation to calculate the WoT graph.
+with the relay owner and whitelisted npubs while filtering out users without a minimum number of common followers. 
+However, it also requires heavier and potentially slower computation to calculate the WoT graph.
 
 Most users should start with Level 3 and adjust the `WOT_MINIMUM_FOLLOWERS` to make the WoT more or less restrictive 
 based on their preferences and the size of their follow graph.
 
 > [!NOTE]
-> When multiple pubkeys are whitelisted their connections are merged when calculating the WoT graph. Meaning that 
+> When multiple pubkeys are whitelisted, their connections are merged when calculating the WoT graph. Meaning that 
 > "trust" is shared between all pubkeys, and any connections deemed "trusted" by one pubkey will be trusted by all.
 
 
@@ -101,3 +104,6 @@ based on their preferences and the size of their follow graph.
 * `WOT_REFRESH_INTERVAL`: How often the relay should refresh its Web of Trust data. Supports duration strings such as
   `24h` and `1h`. Default is `24h`.
 
+---
+
+[README](../README.md)

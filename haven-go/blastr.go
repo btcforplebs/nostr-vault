@@ -2,25 +2,34 @@ package main
 
 import (
 	"context"
-	"log"
+	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
 )
 
 func blast(ctx context.Context, ev *nostr.Event) {
+	var successCount int
 	for _, url := range config.BlastrRelays {
-		ctx, cancel := context.WithTimeout(ctx, time.Second*5)
+		timeout := time.Second * time.Duration(config.BlastrTimeoutSeconds)
+		ctx, cancel := context.WithTimeout(ctx, timeout)
 		relay, err := pool.EnsureRelay(url)
 		if err != nil {
 			cancel()
-			log.Println("error connecting to relay", relay, err)
+			slog.Error("⛓️‍💥 error connecting to relay", "relay", url, "error", err)
 			continue
 		}
 		if err := relay.Publish(ctx, *ev); err != nil {
-			log.Println("🚫 error publishing to relay", relay, err)
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				slog.Error("🚫 timeout publishing to relay", "relay", url, "timeout", timeout)
+			} else {
+				slog.Error("🚫 error publishing to relay", "relay", url, "error", err)
+			}
+		} else {
+			successCount++
 		}
 		cancel()
 	}
-	log.Println("🔫 blasted", ev.ID, "to", len(config.BlastrRelays), "relays")
+	slog.Info("🔫 blasted event", "id", ev.ID, "relays", successCount)
 }

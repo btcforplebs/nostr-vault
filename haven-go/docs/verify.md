@@ -4,7 +4,8 @@ This document provides instructions on how to verify the authenticity of Haven b
 
 ## Obtaining Release Files
 
-The release binaries, along with `checksums.txt` and `checksums.txt.sig` files, can be downloaded from the official GitHub releases page:
+The release binaries, along with `checksums.txt` and `checksums.txt.sig` files, can be downloaded from the official 
+GitHub releases page:
 
 [https://github.com/bitvora/haven/releases](https://github.com/bitvora/haven/releases)
 
@@ -16,15 +17,15 @@ Before verifying the binaries, you need to obtain the Haven PGP keys. You can do
 
 1. From the OpenPGP keyserver:
 
-```bash
-gpg --keyserver hkps://keys.openpgp.org --recv-keys 19243581B019B2452DA2F82870FF859890221E23
-```
+    ```bash
+    gpg --keyserver hkps://keys.openpgp.org --recv-keys 19243581B019B2452DA2F82870FF859890221E23
+    ```
 
 2. Directly from the Haven repository:
 
-```bash
-curl https://raw.githubusercontent.com/bitvora/haven/master/haven.asc -sSL | gpg --import -
-```
+    ```bash
+    curl https://raw.githubusercontent.com/bitvora/haven/master/haven.asc -sSL | gpg --import -
+    ```
 
 ## Verifying the Checksums File
 
@@ -44,7 +45,7 @@ Primary key fingerprint: 1924 3581 B019 B245 2DA2  F828 70FF 8598 9022 1E23
      Subkey fingerprint: 59F3 BB93 E8F4 097C C43E  D03C 6686 5E93 3089 774D
 ```
 
-Make sure the fingerprints match the expected values and that you see "Good signature".
+Make sure the fingerprints match the expected values and that you see "Good signature."
 
 ## Verifying the Binary Files
 
@@ -99,9 +100,9 @@ that you (or your trusted introducers) have not attested ownership of this key.
 
 #### Is it safe to proceed?
 
-* For the purposes of verifying the Haven binary, a Good signature from Haven’s latest signing subkey (currently
+* To verify the Haven binary, a Good signature from Haven’s latest signing subkey (currently
 `59F3 BB93 E8F4 097C C43E  D03C 6686 5E93 3089 774D`), with the primary fingerprint
-`1924 3581 B019 B245 2DA2  F828 70FF 8598 9022 1E23`, is sufficient.
+`1924 3581 B019 B245 2DA2  F828 70FF 8598 9022 1E23`, is enough.
 * Always ensure the fingerprints in the output match exactly what is shown above.
 
 ### Optional: sign and publish the key
@@ -127,7 +128,7 @@ attestations.
     gpg --local-user YOUR_SIGNING_KEY_ID --sign-key 19243581B019B2452DA2F82870FF859890221E23
     ```
 
-3. Optionally publish the signed key to keys.openpgp.org:
+3. Optionally, publish the signed key to keys.openpgp.org:
 
     ```bash
     gpg --keyserver hkps://keys.openpgp.org --send-keys 19243581B019B2452DA2F82870FF859890221E23
@@ -145,3 +146,7 @@ verified, uploading the key still publishes updated signatures.
 
   Then use the `trust` command to set trust level `5` (ultimate). This works around the warning, but it is 
 **not recommended**, as ultimate trust should be reserved for your own keys.
+
+---
+
+[README](../README.md)

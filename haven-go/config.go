@@ -65,6 +65,7 @@ type Config struct {
 	BlacklistedPubKeys                   map[string]struct{} `json:"blacklisted_pubkeys"`
 	LogLevel                             string              `json:"log_level"`
 	BlastrRelays                         []string            `json:"blastr_relays"`
+	BlastrTimeoutSeconds                 int                 `json:"blastr_timeout_seconds"`
 	S3Config                             *S3Config           `json:"s3_config"`
 }
 
@@ -116,6 +117,7 @@ func loadConfig() Config {
 		BlacklistedPubKeys:                   getNpubsFromFile(getEnvString("BLACKLISTED_NPUBS_FILE", "")),
 		LogLevel:                             getEnvString("HAVEN_LOG_LEVEL", "INFO"),
 		BlastrRelays:                         getRelayListFromFile(getEnv("BLASTR_RELAYS_FILE")),
+		BlastrTimeoutSeconds:                 getEnvInt("BLASTR_TIMEOUT_SECONDS", 5),
 		S3Config:                             getS3Config(),
 	}
 

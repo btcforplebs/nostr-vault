@@ -46,3 +46,7 @@ go build
 ```
 
 After building the project, you can proceed with the [setup instructions](../README.md#setup-instructions) in the main README.
+
+---
+
+[README](../README.md)

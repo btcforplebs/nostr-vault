@@ -8,7 +8,7 @@ Whitelisting grants specific npubs the same permissions as the relay owner.
 
 ### Permissions granted to whitelisted npubs:
 - **Outbox Publishing**: Ability to publish notes to your outbox relay.
-- **Blossom Media Server**: Ability to upload images and videos to your Blossom server.
+- **Blossom Media Server**: Ability to upload to your Blossom server.
 - **Private Relay Access**: Ability to read and write to your private relay (`/private`).
 - **Web of Trust Bypass**: Whitelisted users are automatically trusted and do not need to be part of your Web of Trust 
   to interact with your Chat and Inbox relays.
@@ -36,9 +36,9 @@ otherwise be allowed by the Web of Trust.
 
 ### Effects of Blacklisting:
 - **Chat Relay**: Blacklisted users cannot send DMs or messages to your Chat relay.
-- **Inbox Relay**: Notes from blacklisted users will be rejected by your Inbox relay.
+- **Inbox Relay**: Your Inbox relay will reject notes from blacklisted users.
 - **Import**: Events from blacklisted users will be skipped when importing from external relays (e.g., using 
-- `./haven import` or from the live subscription to import relays).
+ `./haven import` or from the live subscription to import relays).
 
 > [!NOTE]
 > Blacklisting does not affect Blossom Media Server access, Outbox publishing, or private relay access. In theory, you 
@@ -59,3 +59,7 @@ otherwise be allowed by the Web of Trust.
    ```env
    BLACKLISTED_NPUBS_FILE=blacklisted_npubs.json
    ```
+
+---
+
+[README](../README.md)
