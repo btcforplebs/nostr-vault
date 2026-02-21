@@ -2,6 +2,21 @@ import Foundation
 import Combine
 import UniformTypeIdentifiers
 
+// Broad MIME types that allow more specific refinements from relay metadata
+private let mimeSubsetRules: [String: Set<String>] = [
+    "application/zip": [
+        "application/vnd.android.package-archive",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/java-archive",
+    ],
+    "video/mp4": [
+        "audio/mp4", "audio/x-m4a", "audio/aac",
+    ],
+    "application/octet-stream": [], // empty set = allow anything
+]
+
 @MainActor
 class RelayProcessManager: ObservableObject {
     static let shared = RelayProcessManager()
@@ -377,28 +392,18 @@ class RelayProcessManager: ObservableObject {
         // Run synchronously to ensure locks are gone before we proceed with any new process
         let dbDir = relayDataDir.appendingPathComponent("data")
         
-        // Standard data DBs
-        let standardDBs = ["chat", "inbox", "outbox", "private", "wot"] 
-        for name in standardDBs {
+        // All known DB names (including blossom)
+        let allDBs = ["chat", "inbox", "outbox", "private", "wot", "blossom"]
+        let dbRoot = relayDataDir.appendingPathComponent("db")
+        for name in allDBs {
             // Check data/NAME/LOCK
-            let lockFileData = dbDir.appendingPathComponent(name).appendingPathComponent("LOCK")
-            removeLockFile(at: lockFileData)
-            
-            // Check db/NAME/LOCK (some configurations use this path)
-            let dbRoot = relayDataDir.appendingPathComponent("db")
-            let lockFileDB = dbRoot.appendingPathComponent(name).appendingPathComponent("LOCK")
-            removeLockFile(at: lockFileDB)
+            removeLockFile(at: dbDir.appendingPathComponent(name).appendingPathComponent("LOCK"))
+            // Check db/NAME/LOCK
+            removeLockFile(at: dbRoot.appendingPathComponent(name).appendingPathComponent("LOCK"))
         }
-        
-        // Blossom DB (check both locations just in case)
-        let blossomDirs = [
-            relayDataDir.appendingPathComponent("blossom"),
-            dbDir.appendingPathComponent("blossom")
-        ]
-        for dir in blossomDirs {
-            let lockFile = dir.appendingPathComponent("LOCK")
-            removeLockFile(at: lockFile)
-        }
+
+        // Also check relayDataDir/blossom/LOCK (legacy path)
+        removeLockFile(at: relayDataDir.appendingPathComponent("blossom").appendingPathComponent("LOCK"))
     }
     
     private nonisolated func removeLockFile(at url: URL) {
@@ -1838,7 +1843,7 @@ class RelayProcessManager: ObservableObject {
     }
     
     // Detect MIME type from file magic bytes (the "proof")
-    private func detectMimeFromBytes(for url: URL) -> String {
+    nonisolated func detectMimeFromBytes(for url: URL) -> String {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return "application/octet-stream" }
         defer { handle.closeFile() }
         let header = handle.readData(ofLength: 64)
@@ -1890,7 +1895,7 @@ class RelayProcessManager: ObservableObject {
     }
 
     // Classify an ftyp box by scanning major brand + all compatible brands
-    private func classifyFtyp(_ bytes: [UInt8]) -> String {
+    private nonisolated func classifyFtyp(_ bytes: [UInt8]) -> String {
         // ftyp box size is at bytes 0-3 (big-endian)
         let boxSize = min(
             Int(bytes[0]) << 24 | Int(bytes[1]) << 16 | Int(bytes[2]) << 8 | Int(bytes[3]),
@@ -1926,7 +1931,7 @@ class RelayProcessManager: ObservableObject {
     }
 
     // Fetch MIME type from the running relay via HEAD request (the "claim")
-    private func fetchMimeFromRelay(config: HavenConfig, sha256: String) -> String? {
+    nonisolated func fetchMimeFromRelay(config: HavenConfig, sha256: String) -> String? {
         guard let url = URL(string: "\(config.webURL)/\(sha256)") else { return nil }
 
         var request = URLRequest(url: url)
@@ -1950,23 +1955,8 @@ class RelayProcessManager: ObservableObject {
         return contentType
     }
 
-    // Broad MIME types that allow more specific refinements from relay metadata
-    private static let subsetRules: [String: Set<String>] = [
-        "application/zip": [
-            "application/vnd.android.package-archive",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "application/java-archive",
-        ],
-        "video/mp4": [
-            "audio/mp4", "audio/x-m4a", "audio/aac",
-        ],
-        "application/octet-stream": [], // empty set = allow anything
-    ]
-
     // Resolve claim (relay) vs proof (magic bytes) using trust-but-verify
-    private func resolveMime(claim: String?, proof: String) -> String {
+    nonisolated func resolveMime(claim: String?, proof: String) -> String {
         guard let claim = claim else { return proof }
         if claim == proof { return claim }
 
@@ -1974,7 +1964,7 @@ class RelayProcessManager: ObservableObject {
         if proof == "application/octet-stream" { return claim }
 
         // Check if proof allows claim as a valid refinement
-        if let allowed = Self.subsetRules[proof] {
+        if let allowed = mimeSubsetRules[proof] {
             if allowed.isEmpty || allowed.contains(claim) {
                 return claim
             }
