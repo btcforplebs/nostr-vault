@@ -396,6 +396,16 @@ struct ViewerView: View {
                         AudioPlayerView(url: item.url)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .id(item.url)
+                    } else if item.type == .unknown {
+                        VStack(spacing: 12) {
+                            Image(systemName: "doc.fill")
+                                .font(.system(size: 64))
+                                .foregroundColor(.havenPurple.opacity(0.6))
+                            Text("Unsupported Format")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if item.url.isGIF {
                         AnimatedImage(url: item.url, contentMode: .fit, shouldAnimate: true)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -406,9 +416,9 @@ struct ViewerView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .id(item.url)
                     }
-                    
+
                     Spacer()
-                    
+
                     Text(item.url.absoluteString)
                         .font(.caption.monospaced())
                         .foregroundColor(.secondary)
@@ -535,30 +545,68 @@ struct ViewerView: View {
                     
                     var mediaType: MediaItem.MediaType = .image
                     if serveURL.pathExtension.isEmpty {
+                        // No extension — inspect magic bytes to determine type
+                        mediaType = .unknown
                         if let handle = try? FileHandle(forReadingFrom: fileURL),
                            let data = try? handle.read(upToCount: 12),
-                           data.count >= 12 {
+                           data.count >= 4 {
                             try? handle.close()
                             let bytes = [UInt8](data)
-                            // ID3 for MP3s
-                            if bytes.count >= 3 && bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33 {
+
+                            // --- Audio ---
+                            // ID3 → MP3
+                            if bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33 {
                                 mediaType = .audio
                             }
-                            // RIFF/WAVE for WAVs
+                            // RIFF/WAVE → WAV
                             else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
                                       bytes[8] == 0x57 && bytes[9] == 0x41 && bytes[10] == 0x56 && bytes[11] == 0x45 {
                                 mediaType = .audio
                             }
-                            // MP4 / WebM
-                            else if bytes.count >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
+                            // fLaC → FLAC
+                            else if bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43 {
+                                mediaType = .audio
+                            }
+                            // OggS → OGG (Vorbis/Opus)
+                            else if bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53 {
+                                mediaType = .audio
+                            }
+                            // ftyp container — check brand for M4A (audio) vs MP4 (video)
+                            else if bytes.count >= 12 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
+                                // M4A brand → audio
+                                if bytes[8] == 0x4D && bytes[9] == 0x34 && bytes[10] == 0x41 && bytes[11] == 0x20 {
+                                    mediaType = .audio
+                                } else {
+                                    mediaType = .video
+                                }
+                            }
+                            // EBML → WebM/MKV
+                            else if bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3 {
                                 mediaType = .video
-                            } else if bytes.count >= 4 && bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3 {
-                                mediaType = .video
-                            } 
+                            }
                             // RIFF/AVI
                             else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
                                         bytes[8] == 0x41 && bytes[9] == 0x56 && bytes[10] == 0x49 {
                                 mediaType = .video
+                            }
+                            // --- Image ---
+                            // JPEG
+                            else if bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+                                mediaType = .image
+                            }
+                            // PNG
+                            else if bytes.count >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 &&
+                                      bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A {
+                                mediaType = .image
+                            }
+                            // GIF
+                            else if bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 {
+                                mediaType = .image
+                            }
+                            // WebP (RIFF/WEBP)
+                            else if bytes.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+                                      bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50 {
+                                mediaType = .image
                             }
                         }
                     } else {
@@ -813,6 +861,14 @@ struct MediaGridItem: View {
                         Image(systemName: "waveform")
                             .font(.system(size: 40))
                             .foregroundColor(.havenPurple)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if item.type == .unknown {
+                    ZStack {
+                        Rectangle().fill(Color.gray.opacity(0.1))
+                        Image(systemName: "doc.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.havenPurple.opacity(0.6))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if item.url.isGIF {

@@ -12,5 +12,6 @@ struct MediaItem: Identifiable, Codable {
         case image
         case video
         case audio
+        case unknown
     }
 }
