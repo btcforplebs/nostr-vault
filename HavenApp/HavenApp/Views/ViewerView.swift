@@ -135,8 +135,9 @@ struct ViewerView: View {
                     }
                 }
 
+                let finalMedia = result
                 await MainActor.run {
-                    self.displayMedia = result
+                    self.displayMedia = finalMedia
                 }
             }
         }
