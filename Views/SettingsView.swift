@@ -258,6 +258,12 @@ struct RestartBanner: View {
 
 struct IdentitySettingsView: View {
     @EnvironmentObject var configService: ConfigService
+    @State private var showUpdateKey = false
+    @State private var newNsec = ""
+    @State private var newPassword = ""
+    @State private var confirmPassword = ""
+    @State private var updateError: String?
+    @State private var updateSuccess = false
 
     var body: some View {
         Form {
@@ -288,31 +294,226 @@ struct IdentitySettingsView: View {
             }
 
             Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    if !configService.config.ownerNcryptsec.isEmpty {
+                        HStack {
+                            Image(systemName: "lock.fill")
+                                .foregroundColor(.green)
+                            Text("Private Key (Encrypted)")
+                                .font(.subheadline.bold())
+                            Spacer()
+                            Button(role: .destructive) {
+                                configService.config.ownerNcryptsec = ""
+                                configService.config.ownerNsec = ""
+                                configService.save()
+                            } label: {
+                                Text("Clear")
+                                    .font(.caption)
+                            }
+                        }
+                        .padding(8)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .cornerRadius(8)
+
+                        Text("Your private key is encrypted with NIP-49. You'll be prompted for your password when signing notes.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else if !configService.config.ownerNsec.isEmpty {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("Private Key (Plaintext)")
+                                .font(.subheadline.bold())
+                            Spacer()
+                            Button(role: .destructive) {
+                                configService.config.ownerNsec = ""
+                                configService.save()
+                            } label: {
+                                Text("Clear")
+                                    .font(.caption)
+                            }
+                        }
+                        .padding(8)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .cornerRadius(8)
+
+                        Text("This key is stored in plaintext for backward compatibility. For security, re-enter it during setup to encrypt with NIP-49.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Image(systemName: "key.slash")
+                                    .foregroundColor(.red)
+                                Text("No private key configured")
+                                    .font(.subheadline.bold())
+                            }
+
+                            Text("Import your nsec (private key) to compose and sign notes")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            Button(action: { showUpdateKey = true }) {
+                                HStack {
+                                    Image(systemName: "plus.circle.fill")
+                                    Text("Import Private Key")
+                                }
+                                .font(.subheadline.bold())
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color.havenPurple)
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(8)
+                        .background(Color.red.opacity(0.05))
+                        .cornerRadius(8)
+                        .border(Color.red.opacity(0.2), width: 1)
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Private Key")
+            }
+
+            #if os(macOS)
+            Section {
                 TextField("relay.example.com", text: $configService.config.relayURL)
-                    #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled(true)
-                    #endif
-                
+
                 HStack {
                     Text("Port")
                     Spacer()
                     TextField("8080", value: $configService.config.relayPort, formatter: NumberFormatter.noSeparator)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
-                        #if os(iOS)
-                        .keyboardType(.numberPad)
-                        #endif
                 }
             } header: {
                 Text("Connection")
             } footer: {
                 Text("The hostname and port where your relay will be accessible.")
             }
+            #endif
         }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .sheet(isPresented: $showUpdateKey) {
+            updateKeySheet
+        }
+    }
+
+    private var updateKeySheet: some View {
+        NavigationView {
+            Form {
+                Section("Enter Private Key") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("nsec (Nostr Secret Key)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextEditor(text: $newNsec)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 80)
+                            .padding(4)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .cornerRadius(6)
+                    }
+                }
+
+                Section("Set Password (NIP-49 Encryption)") {
+                    SecureField("Password", text: $newPassword)
+                    SecureField("Confirm Password", text: $confirmPassword)
+
+                    HStack(spacing: 4) {
+                        Image(systemName: "lock.fill")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                        Text("Password will be securely stored in your Keychain")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+
+                    Text("Haven uses your password to automatically decrypt your key when signing notes. You won't need to enter it each time.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                if let error = updateError {
+                    Section {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+
+                if updateSuccess {
+                    Section {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Password saved to Keychain — Haven will use it automatically when signing notes")
+                                .font(.caption)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import Private Key" : "Update Private Key")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        resetForm()
+                        showUpdateKey = false
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import" : "Update") {
+                        savePrivateKey()
+                    }
+                    .disabled(newNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newPassword.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func savePrivateKey() {
+        let nsecTrimmed = newNsec.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !nsecTrimmed.isEmpty else {
+            updateError = "Private key cannot be empty"
+            return
+        }
+
+        guard newPassword == confirmPassword else {
+            updateError = "Passwords do not match"
+            return
+        }
+
+        guard newPassword.count >= 8 else {
+            updateError = "Password must be at least 8 characters"
+            return
+        }
+
+        do {
+            try configService.config.setEncryptedNsec(nsec: nsecTrimmed, password: newPassword)
+            configService.save()
+            updateSuccess = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                resetForm()
+                showUpdateKey = false
+            }
+        } catch {
+            updateError = "Failed to encrypt key: \(error.localizedDescription)"
+        }
+    }
+
+    private func resetForm() {
+        newNsec = ""
+        newPassword = ""
+        confirmPassword = ""
+        updateError = nil
+        updateSuccess = false
     }
 }
 
@@ -612,6 +813,8 @@ struct AdvancedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var showResetConfirmation = false
+    #if os(iOS)
+    #endif
     
     var body: some View {
         Form {

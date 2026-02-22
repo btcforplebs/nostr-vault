@@ -17,16 +17,16 @@ class StatsService: ObservableObject {
     
     // Tracking for real-time updates
     private var baseDbCount: Int = 0
-    private var baseRelayEventsStored: Int = 0
+    private var baseRelayNotesStored: Int = 0
     
     init() {
-        // Observe RelayProcessManager for new incoming events (real-time updates)
-        relayManager.$eventsStored
+        // Observe RelayProcessManager for new incoming notes (real-time updates)
+        relayManager.$notesStored
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] newEventCount in
+            .sink { [weak self] newNoteCount in
                 guard let self = self else { return }
-                // diff is how many new events came in since we last fetched the DB count
-                let diff = newEventCount - self.baseRelayEventsStored
+                // diff is how many new notes came in since we last fetched the DB count
+                let diff = newNoteCount - self.baseRelayNotesStored
                 if diff >= 0 {
                     let newCount = self.baseDbCount + diff
                     self.loadedNotesCount = newCount
@@ -85,7 +85,7 @@ class StatsService: ObservableObject {
                 
                 // Now on MainActor, we can safely access RelayProcessManager.shared
                 if RelayProcessManager.shared.isRunning {
-                    let filter: [String: Any] = ["kinds": [1, 6, 1063]]
+                    let filter: [String: Any] = ["kinds": [1, 6, 1063, 30023]]
                     
                     #if DEBUG
                     print("StatsService: 📡 Calling fetchCount...")
@@ -95,29 +95,12 @@ class StatsService: ObservableObject {
                     print("StatsService: 📩 fetchCount returned: \(String(describing: count))")
                     #endif
                     
-                    // If we get 0, but previously had a much higher count, be skeptical.
-                    if (count ?? 0) == 0 && self.loadedNotesCount > 0 {
+                    // If we get 0 but previously had a count, retry once after a short delay
+                    if (count ?? 0) == 0 && (self.loadedNotesCount > 0 || !RelayProcessManager.shared.isBooting) {
                         #if DEBUG
-                        print("StatsService: ⚠️ Fetch returned 0 while previous count was \(self.loadedNotesCount). Retrying with delay...")
+                        print("StatsService: ⚠️ Fetch returned 0. Retrying once...")
                         #endif
-                        for i in 1...3 {
-                            try? await Task.sleep(nanoseconds: UInt64(i) * 2 * 1_000_000_000)
-                            #if DEBUG
-                            print("StatsService: 🔄 Retry \(i)...")
-                            #endif
-                            count = await self.nostrService.fetchCount(from: relayURLs, filter: filter)
-                            if (count ?? 0) > 0 { 
-                                #if DEBUG
-                                print("StatsService: ✅ Retry \(i) succeeded with \(count!)")
-                                #endif
-                                break 
-                            }
-                        }
-                    } else if (count ?? 0) == 0 && !RelayProcessManager.shared.isBooting {
-                        #if DEBUG
-                        print("StatsService: ⚠️ Fetch returned 0. Retrying once to confirm...")
-                        #endif
-                        try? await Task.sleep(nanoseconds: 2 * 1_000_000_000)
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
                         count = await self.nostrService.fetchCount(from: relayURLs, filter: filter)
                     }
                     
@@ -127,7 +110,7 @@ class StatsService: ObservableObject {
                         print("StatsService: ✨ Total aggregated count: \(confirmedCount)")
                         #endif
                         self.baseDbCount = confirmedCount
-                        self.baseRelayEventsStored = RelayProcessManager.shared.eventsStored
+                        self.baseRelayNotesStored = RelayProcessManager.shared.notesStored
                         
                         self.loadedNotesCount = confirmedCount
                         UserDefaults.standard.set(confirmedCount, forKey: "haven.stats.noteCount")

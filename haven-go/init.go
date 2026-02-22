@@ -91,13 +91,15 @@ func GranularInitDBs(names []string) error {
 		dbs = make(map[string]DBBackend)
 	}
 
-	for _, name := range names {
+	for i, name := range names {
 		path := "db/" + name
+		slog.Info(fmt.Sprintf("Initializing %s database (%d/%d)", name, i+1, len(names)))
 		db := newDBBackend(path)
 		if err := db.Init(); err != nil {
 			return fmt.Errorf("%sDB init failed: %w", name, err)
 		}
 		dbs[name] = db
+		slog.Info(fmt.Sprintf("✓ %s database ready", name))
 
 		// Assign to global variables for backward compatibility
 		switch name {

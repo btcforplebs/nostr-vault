@@ -153,46 +153,19 @@ struct DashboardView: View {
                     }
                 }
                 .disabled(!relayManager.isRunning)
-                .opacity(relayManager.isRunning ? 1.0 : 0.5)
                 .padding(.horizontal)
             }
             .padding(.vertical, 10)
             .frame(minHeight: 350, maxHeight: .infinity, alignment: .top)
         }
         .onAppear {
-            // Consolidated refresh:
-            // If relay is running, we pass the URL to get BOTH disk stats and network counts.
-            // If not running, we pass nil to get ONLY disk stats.
+            // Fresh disk-only refresh on appear
+            statsService.refreshStats()
             
+            // If relay is already running AND not booting, get full stats
             if relayManager.isRunning && !relayManager.isBooting {
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
-                #if DEBUG
-                print("Dashboard: Relay running, requesting full stats refresh from \(urlString)")
-                #endif
                 statsService.refreshStats(relayURLString: urlString)
-            } else if relayManager.state == .booting {
-                #if DEBUG
-                print("Dashboard: Relay booting, scheduling retry...")
-                #endif
-                // Initial disk-only fetch while booting
-                statsService.refreshStats()
-                
-                // Retry full fetch after delay
-                let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                    if relayManager.isRunning {
-                        #if DEBUG
-                        print("Dashboard: Retrying full stats refresh...")
-                        #endif
-                        statsService.refreshStats(relayURLString: urlString)
-                    }
-                }
-            } else {
-                // Not running, just get disk stats
-                #if DEBUG
-                print("Dashboard: Relay not running, fetching disk stats only")
-                #endif
-                statsService.refreshStats()
             }
         }
         .onChange(of: relayManager.isBooting) { newValue in
@@ -214,58 +187,81 @@ struct DashboardView: View {
 }
     
     private func exportBackup() {
-        #if os(macOS)
-        let panel = NSSavePanel()
-        panel.title = "Export Relay Backup"
-        panel.nameFieldStringValue = "haven-backup.zip"
-        panel.allowedContentTypes = [.zip]
-        panel.canCreateDirectories = true
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
         isExporting = true
-        exportStatusMessage = "Exporting JSONL..."
-        relayManager.runBackupExport(config: configService.config, outputPath: url.path) { success in
+        exportStatusMessage = "Preparing export..."
+
+        let tempDir = NSTemporaryDirectory()
+        let tempPath = (tempDir as NSString).appendingPathComponent("haven-backup-\(Date().timeIntervalSince1970).zip")
+
+        relayManager.runBackupExport(config: configService.config, outputPath: tempPath) { success in
             Task { @MainActor in
                 isExporting = false
-                exportStatusMessage = success ? "Export complete" : "Export failed"
-                // Clear message after delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    if exportStatusMessage.contains("Export complete") || exportStatusMessage.contains("Export failed") {
+
+                guard success else {
+                    exportStatusMessage = "Export failed"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         exportStatusMessage = ""
                     }
+                    return
                 }
+
+                #if os(macOS)
+                exportStatusMessage = "Export complete"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    exportStatusMessage = ""
+                }
+                #else
+                // iOS: Share the file
+                let fileURL = URL(fileURLWithPath: tempPath)
+                let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+
+                if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = scene.windows.first,
+                   let rootVC = window.rootViewController {
+                    rootVC.present(activityVC, animated: true)
+                }
+                #endif
             }
         }
-        #endif
     }
     
     private func exportBlossom() {
-        #if os(macOS)
-        let panel = NSSavePanel()
-        panel.title = "Export Blossom Media"
-        panel.nameFieldStringValue = "blossom-backup.zip"
-        panel.allowedContentTypes = [.zip]
-        panel.canCreateDirectories = true
-        
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        
         isBackingUpBlossom = true
-        exportStatusMessage = "Exporting Blossom..."
-        
-        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: url.path) { success in
+        exportStatusMessage = "Preparing Blossom export..."
+
+        let tempDir = NSTemporaryDirectory()
+        let tempPath = (tempDir as NSString).appendingPathComponent("blossom-backup-\(Date().timeIntervalSince1970).zip")
+
+        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: tempPath) { success in
             Task { @MainActor in
                 isBackingUpBlossom = false
-                exportStatusMessage = success ? "Blossom Export complete" : "Blossom Export failed"
-                // Clear message after delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    if exportStatusMessage.contains("Blossom Export") {
+
+                guard success else {
+                    exportStatusMessage = "Blossom export failed"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         exportStatusMessage = ""
                     }
+                    return
                 }
+
+                #if os(macOS)
+                exportStatusMessage = "Blossom export complete"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    exportStatusMessage = ""
+                }
+                #else
+                // iOS: Share the file
+                let fileURL = URL(fileURLWithPath: tempPath)
+                let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+
+                if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = scene.windows.first,
+                   let rootVC = window.rootViewController {
+                    rootVC.present(activityVC, animated: true)
+                }
+                #endif
             }
         }
-        #endif
     }
 
     private var relayStatusHeader: some View {
@@ -311,8 +307,8 @@ struct DashboardView: View {
             .background(Color.platformControlBackground)
             .cornerRadius(12)
             
-            if let message = relayManager.logs.last?.message, relayManager.isBooting {
-                 Text(message)
+            if relayManager.isBooting, !relayManager.bootStatusMessage.isEmpty {
+                 Text(relayManager.bootStatusMessage)
                      .font(.caption)
                      .foregroundColor(.secondary)
                      .lineLimit(1)

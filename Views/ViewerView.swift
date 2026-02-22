@@ -171,81 +171,59 @@ struct ViewerView: View {
         default: return .gray
         }
     }
-    
+
     var body: some View {
+        NavigationView {
+            viewContent
+        }
+    }
+
+    private var viewContent: some View {
         VStack(spacing: 0) {
             // MARK: - Header
             VStack(spacing: 12) {
-                HStack {
-                    HStack(spacing: 4) {
-                        ModeButton(title: "Notes", icon: "doc.text", isSelected: viewMode == .notes) {
-                            viewMode = .notes
-                        }
-                        ModeButton(title: "Media", icon: "photo.on.rectangle", isSelected: viewMode == .media) {
-                            viewMode = .media
-                            // Only load media if relay is ready
-                            if relayManager.isRunning && !relayManager.isBooting {
-                                loadLocalMedia()
-                            }
-                        }
+                #if os(iOS)
+                VStack(spacing: 12) {
+                    HStack {
+                        modeView
+                        Spacer()
                     }
-                    .padding(4)
-                    .background(Color.primary.opacity(0.05))
-                    .cornerRadius(24)
-                    
-                    Spacer()
-                    
-                    // Filter Tabs
-                    HStack(spacing: 2) {
-                        FilterButton(title: "All", color: .secondary, isSelected: contentFilter == .all) {
-                            contentFilter = .all
-                        }
-                        FilterButton(title: "My Notes", color: .havenPurple, isSelected: contentFilter == .mine) {
-                            contentFilter = .mine
-                        }
-                        FilterButton(title: "Tagged", color: .blue, isSelected: contentFilter == .tagged) {
-                            contentFilter = .tagged
-                        }
-                        FilterButton(title: "Whitelisted", color: .green, isSelected: contentFilter == .whitelist) {
-                            contentFilter = .whitelist
-                        }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        filterView
                     }
-                    .padding(4)
-                    .background(Color.primary.opacity(0.05))
-                    .cornerRadius(8)
                 }
+                #else
+                HStack {
+                    modeView
+                    Spacer()
+                    filterView
+                }
+                #endif
                 
                 HStack {
                     if viewMode == .notes {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
+                            .font(.system(size: 14, weight: .semibold))
                         TextField("Search notes...", text: $searchText)
                             .textFieldStyle(.plain)
+                            .font(.system(size: 14, weight: .regular))
                     } else {
-                        // Media Source Filter
-                        HStack(spacing: 2) {
-                            FilterButton(title: "All Sources", color: .secondary, isSelected: mediaSourceFilter == .all) {
-                                mediaSourceFilter = .all
-                            }
-                            FilterButton(title: "Blossom", color: .pink, isSelected: mediaSourceFilter == .blossom) {
-                                mediaSourceFilter = .blossom
-                            }
-                            FilterButton(title: "Cache", color: .orange, isSelected: mediaSourceFilter == .cache) {
-                                mediaSourceFilter = .cache
-                            }
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            sourceFilterView
                         }
-                        Spacer()
                     }
                 }
                 .padding(10)
-                .background(Color.platformControlBackground)
+                .background(Color(red: 0.12, green: 0.12, blue: 0.16))
                 .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
             }
             .padding()
-            .background(Color.platformWindowBackground)
-            
+            .background(Color(red: 0.08, green: 0.08, blue: 0.12))
+
             Divider()
-            
+
             // MARK: - List Content
             ScrollView {
                 VStack(spacing: 0) {
@@ -256,7 +234,7 @@ struct ViewerView: View {
                     }
                 }
                 .padding()
-                
+
                 if !displayNotes.isEmpty || !displayMedia.isEmpty {
                     Color.clear
                         .frame(height: 1)
@@ -271,7 +249,7 @@ struct ViewerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color.platformTextBackground)
+        .background(Color(red: 0.08, green: 0.08, blue: 0.12))
         .onAppear {
             if !initialLoad && relayManager.isRunning && !relayManager.isBooting {
                 refreshAll()
@@ -308,9 +286,77 @@ struct ViewerView: View {
         }
     }
     
+    private var modeView: some View {
+        HStack(spacing: 4) {
+            ModeButton(title: "Notes", icon: "doc.text", isSelected: viewMode == .notes) {
+                viewMode = .notes
+            }
+            ModeButton(title: "Media", icon: "photo.on.rectangle", isSelected: viewMode == .media) {
+                viewMode = .media
+                // Only load media if relay is ready
+                if relayManager.isRunning && !relayManager.isBooting {
+                    loadLocalMedia()
+                }
+            }
+        }
+        .padding(4)
+        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .cornerRadius(20)
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+    }
+    
+    private var filterView: some View {
+        HStack(spacing: 2) {
+            FilterButton(title: "All", color: .secondary, isSelected: contentFilter == .all) {
+                contentFilter = .all
+            }
+            FilterButton(title: "My Notes", color: Color(red: 0.8, green: 0.2, blue: 0.6), isSelected: contentFilter == .mine) {
+                contentFilter = .mine
+            }
+            FilterButton(title: "Tagged", color: Color(red: 0.2, green: 0.8, blue: 0.6), isSelected: contentFilter == .tagged) {
+                contentFilter = .tagged
+            }
+            FilterButton(title: "Whitelisted", color: Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.7), isSelected: contentFilter == .whitelist) {
+                contentFilter = .whitelist
+            }
+        }
+        .padding(4)
+        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+    }
+    
+    private var sourceFilterView: some View {
+        HStack(spacing: 2) {
+            FilterButton(title: "All Sources", color: .secondary, isSelected: mediaSourceFilter == .all) {
+                mediaSourceFilter = .all
+            }
+            FilterButton(title: "Blossom", color: Color(red: 0.8, green: 0.2, blue: 0.6), isSelected: mediaSourceFilter == .blossom) {
+                mediaSourceFilter = .blossom
+            }
+            FilterButton(title: "Cache", color: Color(red: 1, green: 0.6, blue: 0.1), isSelected: mediaSourceFilter == .cache) {
+                mediaSourceFilter = .cache
+            }
+        }
+        .padding(4)
+        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+    }
+    
     private var notesList: some View {
-        Group {
-            if displayNotes.isEmpty {
+        let isLoading = nostrService.isFetching || relayManager.isBooting
+        return Group {
+            if displayNotes.isEmpty && isLoading {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text(relayManager.isBooting ? relayManager.bootStatusMessage.isEmpty ? "Starting relay..." : relayManager.bootStatusMessage : "Loading notes...")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 100)
+            } else if displayNotes.isEmpty {
                 VStack(spacing: 16) {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 48))
@@ -325,7 +371,17 @@ struct ViewerView: View {
             } else {
                 LazyVStack(spacing: 12) {
                     ForEach(displayNotes) { event in
-                        NoteRow(event: event)
+                        NavigationLink(destination: NoteDetailView(note: FeedNote(
+                            id: event.id,
+                            pubkey: event.pubkey,
+                            content: event.content,
+                            createdAt: event.createdAtDate,
+                            tags: event.tags,
+                            kind: event.kind
+                        ))) {
+                            NoteRow(event: event)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -717,14 +773,7 @@ struct NoteRow: View {
     }
     
     var body: some View {
-        Button(action: {
-            if let url = event.njumpURL {
-                PlatformURL.open(url)
-                #if os(macOS)
-                NSApplication.shared.hide(nil)
-                #endif
-            }
-        }) {
+        VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 // Header with profile and timestamp
                 HStack {

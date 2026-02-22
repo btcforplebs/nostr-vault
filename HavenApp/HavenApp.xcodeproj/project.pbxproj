@@ -35,6 +35,9 @@
 		AAAA0100 /* WelcomeWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFF0100 /* WelcomeWindowView.swift */; };
 		AAAA0101 /* FloatingArrowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFF0101 /* FloatingArrowController.swift */; };
 		AAAA9002 /* StatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA9001 /* StatsService.swift */; };
+		AAAA9004 /* NIP49Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA9003 /* NIP49Service.swift */; };
+		BBBB9005 /* BlossomService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBB9004 /* BlossomService.swift */; };
+		BBBB9005 /* BlossomService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBB9004 /* BlossomService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +47,9 @@
 		8D98788F2F49300800A2FDE2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		8DAF2C2F2F2019EF001149F2 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
 		AAAA9001 /* StatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsService.swift; sourceTree = "<group>"; };
+		AAAA9003 /* NIP49Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP49Service.swift; sourceTree = "<group>"; };
+		BBBB9004 /* BlossomService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomService.swift; sourceTree = "<group>"; };
+		BBBB9004 /* BlossomService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomService.swift; sourceTree = "<group>"; };
 		FFFF0001 /* HavenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp.swift; sourceTree = "<group>"; };
 		FFFF0002 /* HavenConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenConfig.swift; sourceTree = "<group>"; };
 		FFFF0003 /* NostrEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrEvent.swift; sourceTree = "<group>"; };
@@ -131,6 +137,7 @@
 				FFFF0006 /* RelayProcessManager.swift */,
 				FFFF0007 /* WebSocketClient.swift */,
 				AAAA9001 /* StatsService.swift */,
+				AAAA9003 /* NIP49Service.swift */,
 			);
 			path = HavenApp/Services;
 			sourceTree = "<group>";
@@ -290,6 +297,7 @@
 				AAAA0101 /* FloatingArrowController.swift in Sources */,
 				AAAA0021 /* AppDelegate.swift in Sources */,
 				AAAA9002 /* StatsService.swift in Sources */,
+				AAAA9004 /* NIP49Service.swift in Sources */,
 				8D8CEECD2F2A96C90038A62B /* MediaTypeDetector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -17,16 +17,16 @@ class StatsService: ObservableObject {
     
     // Tracking for real-time updates
     private var baseDbCount: Int = 0
-    private var baseRelayEventsStored: Int = 0
+    private var baseRelayNotesStored: Int = 0
     
     init() {
-        // Observe RelayProcessManager for new incoming events (real-time updates)
-        relayManager.$eventsStored
+        // Observe RelayProcessManager for new incoming notes (real-time updates)
+        relayManager.$notesStored
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] newEventCount in
+            .sink { [weak self] newNoteCount in
                 guard let self = self else { return }
-                // diff is how many new events came in since we last fetched the DB count
-                let diff = newEventCount - self.baseRelayEventsStored
+                // diff is how many new notes came in since we last fetched the DB count
+                let diff = newNoteCount - self.baseRelayNotesStored
                 if diff >= 0 {
                     let newCount = self.baseDbCount + diff
                     self.loadedNotesCount = newCount
@@ -85,7 +85,7 @@ class StatsService: ObservableObject {
                 
                 // Now on MainActor, we can safely access RelayProcessManager.shared
                 if RelayProcessManager.shared.isRunning {
-                    let filter: [String: Any] = ["kinds": [1, 6, 1063]]
+                    let filter: [String: Any] = ["kinds": [1, 6, 1063, 30023]]
                     
                     #if DEBUG
                     print("StatsService: 📡 Calling fetchCount...")
@@ -127,7 +127,7 @@ class StatsService: ObservableObject {
                         print("StatsService: ✨ Total aggregated count: \(confirmedCount)")
                         #endif
                         self.baseDbCount = confirmedCount
-                        self.baseRelayEventsStored = RelayProcessManager.shared.eventsStored
+                        self.baseRelayNotesStored = RelayProcessManager.shared.notesStored
                         
                         self.loadedNotesCount = confirmedCount
                         UserDefaults.standard.set(confirmedCount, forKey: "haven.stats.noteCount")

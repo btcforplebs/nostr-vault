@@ -4,7 +4,7 @@ struct HavenConfig: Codable, Equatable {
     var ownerNpub: String = ""
     var relayURL: String = ""
     var relayPort: Int = 3355
-    var dbEngine: String = "badger"
+    var dbEngine: String = "lmdb"
     var blossomPath: String = "blossom/"
     var logLevel: String = "INFO"
     var launchAtLogin: Bool = false
@@ -13,6 +13,9 @@ struct HavenConfig: Codable, Equatable {
     var hasSeenWelcome: Bool = false
     var hasAcceptedToS: Bool = false
     var disableMediaCache: Bool = false
+    var ownerNcryptsec: String = "" // NIP-49 encrypted private key
+    var ownerNsec: String = "" // Deprecated: kept for migration purposes only
+    var showReplies: Bool = true // Added to toggle visibility of replies in feed
     
     // Private Relay
     var privateRelayName: String = "Haven Private"
@@ -52,7 +55,13 @@ struct HavenConfig: Codable, Equatable {
     ]
     var importOwnerNotesFetchTimeoutSeconds: Int = 60
     var importTaggedNotesFetchTimeoutSeconds: Int = 120
-    
+
+    // Blossom Mirrors
+    var blossomMirrors: [String] = [
+        "https://blossom.kylezien.com",
+        "https://cdn.satellite.earth"
+    ]
+
     // Blastr
     var blastrRelaysFile: String = "relays_blastr.json"
     var blastrRelays: [String] = [
@@ -69,6 +78,7 @@ struct HavenConfig: Codable, Equatable {
     // Blacklisted Npubs
     var blacklistedNpubs: [String] = []
     var blacklistedNpubsFile: String = "blacklisted_npubs.json"
+
 
     // Backup
     var backupProvider: String = "none" // none, s3
@@ -87,12 +97,13 @@ struct HavenConfig: Codable, Equatable {
     
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
-        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, disableMediaCache
+        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, disableMediaCache, ownerNcryptsec, ownerNsec, showReplies
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
         case inboxRelayName, inboxRelayDescription, inboxRelayIcon, inboxPullIntervalSeconds
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
+        case blossomMirrors
         case blastrRelaysFile, blastrRelays
         case whitelistedNpubs, whitelistedNpubsFile
         case blacklistedNpubs, blacklistedNpubsFile
@@ -118,6 +129,9 @@ struct HavenConfig: Codable, Equatable {
         hasSeenWelcome = try container.decodeIfPresent(Bool.self, forKey: .hasSeenWelcome) ?? defaults.hasSeenWelcome
         hasAcceptedToS = try container.decodeIfPresent(Bool.self, forKey: .hasAcceptedToS) ?? defaults.hasAcceptedToS
         disableMediaCache = try container.decodeIfPresent(Bool.self, forKey: .disableMediaCache) ?? defaults.disableMediaCache
+        ownerNcryptsec = try container.decodeIfPresent(String.self, forKey: .ownerNcryptsec) ?? defaults.ownerNcryptsec
+        ownerNsec = try container.decodeIfPresent(String.self, forKey: .ownerNsec) ?? defaults.ownerNsec
+        showReplies = try container.decodeIfPresent(Bool.self, forKey: .showReplies) ?? defaults.showReplies
         
         privateRelayName = try container.decodeIfPresent(String.self, forKey: .privateRelayName) ?? defaults.privateRelayName
         privateRelayDescription = try container.decodeIfPresent(String.self, forKey: .privateRelayDescription) ?? defaults.privateRelayDescription
@@ -147,7 +161,9 @@ struct HavenConfig: Codable, Equatable {
         importSeedRelays = try container.decodeIfPresent([String].self, forKey: .importSeedRelays) ?? defaults.importSeedRelays
         importOwnerNotesFetchTimeoutSeconds = try container.decodeIfPresent(Int.self, forKey: .importOwnerNotesFetchTimeoutSeconds) ?? defaults.importOwnerNotesFetchTimeoutSeconds
         importTaggedNotesFetchTimeoutSeconds = try container.decodeIfPresent(Int.self, forKey: .importTaggedNotesFetchTimeoutSeconds) ?? defaults.importTaggedNotesFetchTimeoutSeconds
-        
+
+        blossomMirrors = try container.decodeIfPresent([String].self, forKey: .blossomMirrors) ?? defaults.blossomMirrors
+
         blastrRelaysFile = try container.decodeIfPresent(String.self, forKey: .blastrRelaysFile) ?? defaults.blastrRelaysFile
         blastrRelays = try container.decodeIfPresent([String].self, forKey: .blastrRelays) ?? defaults.blastrRelays
         
@@ -210,5 +226,61 @@ struct HavenConfig: Codable, Equatable {
         } else {
             return "https://\(sanitizedRelayURL)"
         }
+    }
+
+    /// Returns the hex private key decoded from ownerNsec (fallback for old plaintext keys)
+    var ownerHexKey: String? {
+        let clean = ownerNsec.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.isEmpty { return nil }
+        if let decoded = Bech32.decode(clean), decoded.hrp == "nsec" {
+            return decoded.hexString
+        }
+        // Fallback for raw hex
+        if clean.count == 64 && clean.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil {
+            return clean
+        }
+        return nil
+    }
+
+    /// Decrypts the ncryptsec with a password to get the plaintext nsec
+    /// - Parameter password: The password to decrypt the key
+    /// - Returns: The plaintext nsec if successfully decrypted
+    /// - Throws: NIP49Service.NIP49Error if decryption fails
+    func getDecryptedNsec(password: String) throws -> String {
+        let clean = ownerNcryptsec.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else {
+            // Fall back to plaintext nsec if no encrypted key exists (migration)
+            return ownerNsec
+        }
+        return try NIP49Service.decrypt(ncryptsec: clean, password: password)
+    }
+
+    /// Encrypts an nsec and stores it as ownerNcryptsec
+    /// - Parameters:
+    ///   - nsec: The plaintext nsec to encrypt
+    ///   - password: The password to use for encryption
+    /// - Throws: NIP49Service.NIP49Error if encryption fails
+    mutating func setEncryptedNsec(nsec: String, password: String) throws {
+        ownerNcryptsec = try NIP49Service.encrypt(nsec: nsec, password: password)
+        // Clear plaintext key for security
+        self.ownerNsec = ""
+    }
+
+    /// Gets the hex key by decrypting ncryptsec with a password
+    /// - Parameter password: The password to decrypt the key
+    /// - Returns: The hex private key if decryption succeeds
+    /// - Throws: NIP49Service.NIP49Error if decryption fails
+    func getDecryptedHexKey(password: String) throws -> String {
+        let nsec = try getDecryptedNsec(password: password)
+        let clean = nsec.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let decoded = Bech32.decode(clean), decoded.hrp == "nsec" {
+            return decoded.hexString
+        }
+        // Fallback for raw hex
+        if clean.count == 64 && clean.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil {
+            return clean
+        }
+        throw NIP49Service.NIP49Error.decodingFailed
     }
 }

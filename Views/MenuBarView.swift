@@ -15,6 +15,7 @@ struct MenuBarView: View {
     
     enum Tab {
         case dashboard
+        case feed
         case viewer
     }
     
@@ -76,6 +77,10 @@ struct MenuBarView: View {
                         selectedTab = .dashboard
                     }
                     
+                    TabButton(icon: "list.bullet.rectangle.portrait", title: "Feed", isSelected: selectedTab == .feed) {
+                        selectedTab = .feed
+                    }
+                    
                     TabButton(icon: "doc.text.image", title: "Viewer", isSelected: selectedTab == .viewer) {
                         selectedTab = .viewer
                     }
@@ -94,6 +99,9 @@ struct MenuBarView: View {
                     switch selectedTab {
                     case .dashboard:
                         DashboardView()
+                            .transition(.opacity)
+                    case .feed:
+                        FeedView()
                             .transition(.opacity)
                     case .viewer:
                         ViewerView()

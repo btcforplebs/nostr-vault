@@ -4,6 +4,7 @@ import SwiftUI
 import CryptoKit
 import AVFoundation
 import CoreMedia
+import Darwin
 
 class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, @unchecked Sendable {
     enum ConnectionState: String {
@@ -22,8 +23,17 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
     
     private var url: URL?
     
+    // Keepalive: send a WebSocket ping every 25 s so iOS doesn't kill idle connections
+    // ("Operation timed out" / "Socket is not connected" in the OS log).
+    private var pingTimer: DispatchSourceTimer?
+    private static let pingInterval: TimeInterval = 25
+    
     private static let session: URLSession = {
         let config = URLSessionConfiguration.default
+        // Give the TCP handshake up to 10 s on a local loopback connection.
+        config.timeoutIntervalForRequest = 10
+        // Keep the overall resource alive indefinitely — our pings do that job.
+        config.timeoutIntervalForResource = .infinity
         return URLSession(configuration: config)
     }()
     
@@ -50,12 +60,51 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
         webSocketTask = task
         task.resume()
         receiveMessage()
+        
+        // Track last connect log to avoid spamming (for reconnect scenarios)
+        lastConnectLog = Date()
+    }
+    
+    // Throttle logging to prevent spam during high-frequency events
+    private var lastConnectLog: Date = .distantPast
+    private var lastReceiveLog: Date = .distantPast
+    private var lastClosedLog: Date = .distantPast
+    
+    private func shouldLogConnect() -> Bool {
+        let now = Date()
+        if now.timeIntervalSince(lastConnectLog) > 5.0 {
+            lastConnectLog = now
+            return true
+        }
+        return false
+    }
+    
+    private func shouldLogReceive() -> Bool {
+        let now = Date()
+        if now.timeIntervalSince(lastReceiveLog) > 2.0 {
+            lastReceiveLog = now
+            return true
+        }
+        return false
+    }
+    
+    private func shouldLogClosed() -> Bool {
+        let now = Date()
+        if now.timeIntervalSince(lastClosedLog) > 5.0 {
+            lastClosedLog = now
+            return true
+        }
+        return false
     }
     
     func disconnect() {
+        stopPingTimer()
         isClosing = true
-        webSocketTask?.cancel(with: .normalClosure, reason: nil)
-        webSocketTask = nil
+        // Guard against "Socket is not connected" OS log noise — only cancel if task exists.
+        if let task = webSocketTask {
+            task.cancel(with: .normalClosure, reason: nil)
+            webSocketTask = nil
+        }
         DispatchQueue.main.async {
             self.connectionState = .disconnected
         }
@@ -63,11 +112,52 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
     
     func send(text: String) {
         let message = URLSessionWebSocketTask.Message.string(text)
-        webSocketTask?.send(message) { error in
+        webSocketTask?.send(message) { [weak self] error in
             if let error = error {
+                // Only log send errors occasionally to avoid spam during connectivity issues
                 #if DEBUG
-                print("WebSocket send error: \(error)")
+                if self?.shouldLogReceive() == true {
+                    print("WebSocket send error: \(error)")
+                }
                 #endif
+            }
+        }
+    }
+    
+    // MARK: - Keepalive Ping
+    
+    private func startPingTimer() {
+        stopPingTimer()
+        guard !isTemporary else { return } // Temporary clients don't need keepalive
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + Self.pingInterval, repeating: Self.pingInterval, leeway: .seconds(2))
+        timer.setEventHandler { [weak self] in
+            self?.sendPing()
+        }
+        timer.resume()
+        pingTimer = timer
+    }
+    
+    private func stopPingTimer() {
+        pingTimer?.cancel()
+        pingTimer = nil
+    }
+    
+    private func sendPing() {
+        guard !isClosing, let task = webSocketTask else { return }
+        task.sendPing { [weak self] error in
+            if let error = error {
+                // Ping failed — connection is gone. Transition to error so NostrService retries.
+                guard self?.isClosing == false else { return }
+                #if DEBUG
+                // Reduce ping error spam - only log occasionally
+                if self?.shouldLogClosed() == true {
+                    print("WebSocketClient: Ping failed (\(error.localizedDescription)) — marking error")
+                }
+                #endif
+                Task { @MainActor in
+                    self?.connectionState = .error
+                }
             }
         }
     }
@@ -79,7 +169,10 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             case .failure(let error):
                 if self?.isClosing == false {
                     #if DEBUG
-                    print("WebSocket receive failure: \(error.localizedDescription)")
+                    // Reduce error spam - log less frequently
+                    if self?.shouldLogClosed() == true {
+                        print("WebSocket receive failure: \(error.localizedDescription)")
+                    }
                     #endif
                     Task { @MainActor in
                         self?.connectionState = .error
@@ -89,8 +182,11 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
             case .success(let message):
                 switch message {
                 case .string(let text):
+                    // Only log occasionally to avoid flooding the console during high-frequency events
                     #if DEBUG
-                    print("WebSocketClient [\(self?.url?.lastPathComponent ?? "root")]: Received: \(text.prefix(100))")
+                    if self?.shouldLogReceive() == true {
+                        print("WebSocketClient [\(self?.url?.lastPathComponent ?? "root")]: Received: \(text.prefix(80))")
+                    }
                     #endif
                     self?.messageSubject.send(text)
                 case .data(_):
@@ -107,16 +203,22 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         if !isTemporary {
             #if DEBUG
-            print("WebSocketClient: Connected to \(url?.absoluteString ?? "unknown")")
+            if shouldLogConnect() {
+                print("WebSocketClient: Connected to \(url?.absoluteString ?? "unknown")")
+            }
             #endif
         }
+        startPingTimer()
         DispatchQueue.main.async { self.connectionState = .connected }
     }
     
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        stopPingTimer()
         if !isClosing {
             #if DEBUG
-            print("WebSocketClient: Closed with code \(closeCode)")
+            if shouldLogClosed() {
+                print("WebSocketClient: Closed with code \(closeCode)")
+            }
             #endif
         }
         DispatchQueue.main.async {
@@ -125,9 +227,12 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        stopPingTimer()
         if let error = error {
             #if DEBUG
-            print("WebSocketClient: Completed with error: \(error.localizedDescription)")
+            if shouldLogClosed() {
+                print("WebSocketClient: Completed with error: \(error.localizedDescription)")
+            }
             #endif
             DispatchQueue.main.async { 
                 self.connectionState = .error
@@ -136,6 +241,7 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
         }
     }
 }
+
 
 @MainActor
 class NostrService: ObservableObject {
@@ -156,17 +262,28 @@ class NostrService: ObservableObject {
     
     private var seenEventIds = Set<String>()
     private var clients: [String: WebSocketClient] = [:]
+    private var activeSubscriptions: [String: String] = [:] // [RelayURL: SubID]
     private var cancellables = Set<AnyCancellable>()
     private let processingQueue = DispatchQueue(label: "com.haven.nostr-processing", qos: .userInitiated)
     
     // Batching updates to the UI
     private let eventUpdateSubject = PassthroughSubject<Void, Never>()
-    
+
+    // Buffered event batching — avoids per-event main thread dispatch
+    private var eventBuffer: [(NostrEvent, [MediaItem])] = []
+    private let bufferLock = NSLock()
+    private var bufferFlushTimer: Timer?
+
     // Pagination tracking
     private var activeSubscriptionCount = 0
     private var profilesInFlight = Set<String>()
     private var profileFetchQueue = Set<String>()
     private var profileFlushCancellable: AnyCancellable?
+    
+    // Used to distinguish live incoming events from historical backfill on startup.
+    // Only events newer than this date fire push notifications.
+    // Reset each time the app wakes from a silent push so fresh events are "new".
+    var sessionStartDate: Date = Date()
     
     init() {
         setupThrottling()
@@ -305,35 +422,200 @@ class NostrService: ObservableObject {
             client.disconnect()
         }
         clients.removeAll()
+        activeSubscriptions.removeAll()
         cancellables.removeAll()
+        bufferFlushTimer?.invalidate()
+        bufferFlushTimer = nil
+        bufferLock.lock()
+        eventBuffer.removeAll()
+        bufferLock.unlock()
         setupThrottling()
     }
     
     private func setupThrottling() {
         // Debounce UI updates to prevent main thread saturation and fix NSStatusItem threading crash
         eventUpdateSubject
-            .throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
+            .throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] in
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
     }
+
+    // MARK: - Publishing
     
+    /// Signs an event using the stored nsec via the Go backend
+    /// - Parameters:
+    ///   - kind: The event kind
+    ///   - content: The event content
+    ///   - tags: The event tags
+    ///   - password: Optional password for NIP-49 encrypted keys. If not provided, will attempt to retrieve from Keychain.
+    /// - Returns: The signed NostrEvent, or nil if signing fails
+    func signEvent(kind: Int, content: String, tags: [[String]] = [], password: String? = nil) -> NostrEvent? {
+        var sk: String?
+
+        // Try NIP-49 decryption if ncryptsec exists
+        let config = ConfigService.shared.config
+        if !config.ownerNcryptsec.isEmpty {
+            // Use provided password, or try to get from Keychain
+            let pwd = password ?? NIP49Service.getPasswordFromKeychain()
+            if let pwd = pwd {
+                do {
+                    sk = try config.getDecryptedHexKey(password: pwd)
+                } catch {
+                    print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
+                    return nil
+                }
+            } else {
+                print("NostrService: NIP-49 key exists but no password in Keychain")
+                return nil
+            }
+        } else {
+            // Fallback to plaintext ownerHexKey (backward compatibility)
+            sk = config.ownerHexKey
+        }
+
+        guard let sk = sk, !sk.isEmpty else {
+            print("NostrService: Cannot sign - no private key available (ncryptsec empty=\(config.ownerNcryptsec.isEmpty), nsec empty=\(config.ownerNsec.isEmpty))")
+            return nil
+        }
+
+        let eventDict: [String: Any] = [
+            "pubkey": ownerHexPubkey,
+            "created_at": Int64(Date().timeIntervalSince1970),
+            "kind": kind,
+            "content": content,
+            "tags": tags
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
+              let jsonStr = String(data: jsonData, encoding: .utf8) else {
+            print("NostrService: Failed to serialize event to JSON")
+            return nil
+        }
+
+        // Call Go backend for signing
+        guard let signedCStr = SignEventC(UnsafeMutablePointer(mutating: (jsonStr as NSString).utf8String), UnsafeMutablePointer(mutating: (sk as NSString).utf8String)) else {
+            print("NostrService: SignEventC returned nil (Go signing failed)")
+            return nil
+        }
+
+        let signedJsonStr = String(cString: signedCStr)
+        free(signedCStr)
+
+        guard let signedData = signedJsonStr.data(using: .utf8) else {
+            print("NostrService: Failed to convert signed JSON to Data")
+            return nil
+        }
+
+        do {
+            return try JSONDecoder().decode(NostrEvent.self, from: signedData)
+        } catch {
+            print("NostrService: Failed to decode signed event: \(error) — JSON: \(signedJsonStr.prefix(200))")
+            return nil
+        }
+    }
+    
+    /// Posts an event to the local relay
+    func postEvent(_ event: NostrEvent) {
+        let msg = ["EVENT", [
+            "id": event.id,
+            "pubkey": event.pubkey,
+            "created_at": event.created_at,
+            "kind": event.kind,
+            "tags": event.tags,
+            "content": event.content,
+            "sig": event.sig
+        ] as [String : Any]] as [Any]
+        
+        guard let data = try? JSONSerialization.data(withJSONObject: msg),
+              let str = String(data: data, encoding: .utf8) else { return }
+              
+        let localURL = URL(string: ConfigService.shared.config.nostrURL)!
+        let client = WebSocketClient()
+        client.isTemporary = true
+        
+        client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { state in
+                if state == .connected {
+                    client.send(text: str)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        client.disconnect()
+                    }
+                }
+            }
+            .store(in: &cancellables)
+            
+        client.connect(url: localURL)
+    }
+    
+    // Per-relay reconnection state to implement exponential backoff
+    private var relayReconnectAttempts: [String: Int] = [:]
+    private var relayLastReconnectTime: [String: Date] = [:]
+    private let maxReconnectAttempts = 10
+    private let baseReconnectDelay: TimeInterval = 2.0
+    private let maxReconnectDelay: TimeInterval = 30.0  // Cap at 30s instead of 60s to reduce freeze perception
+    
+    // Check if URL is the local relay
+    private func isLocalRelay(_ url: URL) -> Bool {
+        let host = url.host?.lowercased() ?? ""
+        let port = url.port ?? 80
+        return host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" || 
+               (host == "127.0.0.1" && port == 3355) ||
+               (host == "localhost" && port == 3355)
+    }
+    
+    // Check if local relay is ready (not booting)
+    private var isLocalRelayReady: Bool {
+        // Check if relay manager says it's running AND not booting
+        return RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting
+    }
     
     func fetchNotes(from relayURLs: [URL], until: Int64? = nil) {
-        DispatchQueue.main.async { 
-            self.isFetching = true 
+        DispatchQueue.main.async {
+            self.isFetching = true
             self.activeSubscriptionCount = relayURLs.count
         }
         for url in relayURLs {
             let urlString = url.absoluteString
+
+            // Skip local relay if it's still booting - prevents connection spam during boot
+            // This guard is critical: prevents 10-second timeout freezes during relay boot
+            if isLocalRelay(url) && !isLocalRelayReady {
+                #if DEBUG
+                if shouldLogConnect() {
+                    print("NostrService: Skipping local relay - RelayProcessManager not ready (isRunning=\(RelayProcessManager.shared.isRunning), isBooting=\(RelayProcessManager.shared.isBooting))")
+                }
+                #endif
+                continue
+            }
             
-            // For pagination, we always want to create a new request even if client exists
             if let existing = clients[urlString] {
                 if existing.connectionState == .connected {
                     sendRequest(to: existing, url: url, until: until)
                     continue
                 } else if existing.connectionState == .connecting {
+                    continue
+                }
+            }
+            
+            // Check if we should delay reconnect (exponential backoff)
+            if let lastAttempt = relayLastReconnectTime[urlString],
+               let attempts = relayReconnectAttempts[urlString] {
+                let delay = min(self.baseReconnectDelay * pow(2.0, Double(attempts)), self.maxReconnectDelay)
+                let timeSinceLastAttempt = Date().timeIntervalSince(lastAttempt)
+                
+                if timeSinceLastAttempt < delay {
+                    #if DEBUG
+                    print("NostrService: Skipping reconnect to \(urlString) - backing off (\(attempts) attempts, \(delay - timeSinceLastAttempt)s remaining)")
+                    #endif
+                    // Schedule retry after backoff delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + (delay - timeSinceLastAttempt)) { [weak self] in
+                        guard let self = self else { return }
+                        guard self.clients[urlString] != nil else { return }
+                        self.fetchNotes(from: [url], until: until)
+                    }
                     continue
                 }
             }
@@ -344,16 +626,45 @@ class NostrService: ObservableObject {
             client.messageSubject
                 .receive(on: processingQueue)
                 .sink { [weak self] message in
-                    self?.processMessage(message)
+                    self?.processMessage(message, from: urlString)
                 }
                 .store(in: &cancellables)
             
             client.$connectionState
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] state in
-                    self?.updateAggregatedStatus()
+                .sink { [weak self, weak client] state in
+                    guard let self = self else { return }
+                    self.updateAggregatedStatus()
                     if state == .connected {
-                        self?.sendRequest(to: client, url: url, until: until)
+                        // Reset backoff on successful connection
+                        self.relayReconnectAttempts[urlString] = 0
+                        self.sendRequest(to: client!, url: url, until: until)
+                    } else if state == .error {
+                        // Increment backoff counter
+                        let attempts = (self.relayReconnectAttempts[urlString] ?? 0) + 1
+                        self.relayReconnectAttempts[urlString] = attempts
+                        self.relayLastReconnectTime[urlString] = Date()
+                        
+                        // Check if we've exceeded max attempts - stop hammering
+                        if attempts > self.maxReconnectAttempts {
+                            #if DEBUG
+                            print("NostrService: Max reconnect attempts reached for \(urlString), giving up")
+                            #endif
+                            return
+                        }
+                        
+                        // Calculate exponential backoff delay
+                        let delay = min(self.baseReconnectDelay * pow(2.0, Double(attempts - 1)), self.maxReconnectDelay)
+                        
+                        #if DEBUG
+                        print("NostrService: Reconnecting to \(urlString) in \(delay)s (attempt \(attempts)/\(self.maxReconnectAttempts))")
+                        #endif
+                        
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                            guard let self = self else { return }
+                            guard self.clients[urlString] != nil else { return }
+                            self.fetchNotes(from: [url], until: until)
+                        }
                     }
                 }
                 .store(in: &cancellables)
@@ -361,14 +672,35 @@ class NostrService: ObservableObject {
             client.connect(url: url)
         }
     }
+
     
     private func sendRequest(to client: WebSocketClient, url: URL, until: Int64? = nil) {
-        let subscriptionId = "viewer-\(url.lastPathComponent.isEmpty ? "root" : url.lastPathComponent)-\(UUID().uuidString.prefix(4))"
-        // Request events with a limit to get the latest data. 
-        // Also include common kinds (1: text, 6: repost, 1063: file metadata) to avoid empty filter blocks
-        // Added 0 for profiles
+        let urlString = url.absoluteString
+        let isHistorical = until != nil
+        
+        let context = url.lastPathComponent.isEmpty ? "root" : url.lastPathComponent
+        let subscriptionId: String
+        
+        if isHistorical {
+            // Unique ID for pagination
+            subscriptionId = "viewer-\(context)-hist-\(UUID().uuidString.prefix(4))"
+        } else {
+            // Stable ID for live feed
+            subscriptionId = "viewer-\(context)-live"
+            
+            // Close previous live subscription if it's different (shouldn't happen with stable names, but safer)
+            if let oldId = activeSubscriptions[urlString], oldId != subscriptionId {
+                let closeMsg = ["CLOSE", oldId] as [Any]
+                if let closeData = try? JSONSerialization.data(withJSONObject: closeMsg),
+                   let closeStr = String(data: closeData, encoding: .utf8) {
+                    client.send(text: closeStr)
+                }
+            }
+            activeSubscriptions[urlString] = subscriptionId
+        }
+
         var filter: [String: Any] = [
-            "limit": 500,
+            "limit": isHistorical ? 100 : 100,
             "kinds": [0, 1, 6, 1063]
         ]
         if let until = until {
@@ -379,7 +711,7 @@ class NostrService: ObservableObject {
         if let reqData = try? JSONSerialization.data(withJSONObject: req),
            let reqString = String(data: reqData, encoding: .utf8) {
             #if DEBUG
-            print("NostrService: Sending REQ to \(url.absoluteString): \(reqString)")
+            print("NostrService: Sending REQ (\(subscriptionId)) to \(url.absoluteString)")
             #endif
             client.send(text: reqString)
         }
@@ -402,33 +734,39 @@ class NostrService: ObservableObject {
         }
     }
     
-    private func processMessage(_ message: String) {
+    private func processMessage(_ message: String, from urlString: String) {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               json.count >= 2,
               let type = json[0] as? String else { 
-            #if DEBUG
-            print("NostrService: Failed to parse message: \(message.prefix(100))...")
-            #endif
             return 
         }
 
-        if type != "EVENT" {
-            #if DEBUG
-            print("NostrService: Received \(type) from relay: \(message)")
-            #endif
-            
-            if type == "EOSE" {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.activeSubscriptionCount -= 1
-                    if self.activeSubscriptionCount <= 0 {
-                        self.isFetching = false
-                        self.activeSubscriptionCount = 0
-                    }
-                    self.events.sort(by: { $0.created_at > $1.created_at })
-                    self.eventUpdateSubject.send()
+        if type == "EOSE", let subId = json[1] as? String {
+            // Close historical subscriptions immediately after EOSE
+            if subId.contains("-hist-") {
+                let closeMsg = ["CLOSE", subId] as [Any]
+                if let closeData = try? JSONSerialization.data(withJSONObject: closeMsg),
+                   let closeStr = String(data: closeData, encoding: .utf8),
+                   let client = clients[urlString] {
+                    client.send(text: closeStr)
+                    #if DEBUG
+                    print("NostrService: Closed historical subscription \(subId)")
+                    #endif
                 }
+            }
+            
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                // Flush any buffered events before marking EOSE complete
+                self.flushEventBuffer()
+                self.activeSubscriptionCount -= 1
+                if self.activeSubscriptionCount <= 0 {
+                    self.isFetching = false
+                    self.activeSubscriptionCount = 0
+                }
+                self.events.sort(by: { $0.created_at > $1.created_at })
+                self.eventUpdateSubject.send()
             }
         }
 
@@ -469,9 +807,9 @@ class NostrService: ObservableObject {
 
             if seenEventIds.contains(event.id) { return }
             seenEventIds.insert(event.id)
-            
+
             var items: [MediaItem] = []
-            
+
             if event.kind == 1063 {
                 // Parse KIND 1063 — NIP-94 file metadata with "url" and "m" (mime) tags
                 if let urlTag = event.tags.first(where: { $0.count >= 2 && $0[0] == "url" }),
@@ -489,32 +827,52 @@ class NostrService: ObservableObject {
                     return MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags, mimeType: mime)
                 }
             }
-            
-            // Perform sorting and limiting on main thread to ensure safety
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                
-                // Store all events so they show up in the viewer
-                self.events.append(event)
-                
-                if !items.isEmpty {
-                    self.noteMedia.append(contentsOf: items)
-                }
-                
-                // Only sort occasionally or if we have a burst finished
-                if self.events.count % 20 == 0 || items.count > 0 {
-                    self.events.sort(by: { $0.created_at > $1.created_at })
-                    if self.events.count > 10000 {
-                        self.events = Array(self.events.prefix(10000))
-                    }
-                }
-                
-                // Signal UI update - this will be throttled and sent on main thread
-                self.eventUpdateSubject.send()
+
+            // Buffer event instead of dispatching to main thread per-event
+            bufferLock.lock()
+            eventBuffer.append((event, items))
+            bufferLock.unlock()
+            scheduleBufferFlush()
+        }
+    }
+
+    
+    // MARK: - Batched Event Flushing
+
+    private func scheduleBufferFlush() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.bufferFlushTimer == nil else { return }
+            self.bufferFlushTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+                self?.flushEventBuffer()
             }
         }
     }
-    
+
+    private func flushEventBuffer() {
+        bufferFlushTimer?.invalidate()
+        bufferFlushTimer = nil
+
+        bufferLock.lock()
+        let batch = eventBuffer
+        eventBuffer.removeAll()
+        bufferLock.unlock()
+
+        guard !batch.isEmpty else { return }
+
+        for (event, items) in batch {
+            events.append(event)
+            if !items.isEmpty {
+                noteMedia.append(contentsOf: items)
+            }
+        }
+
+        events.sort(by: { $0.created_at > $1.created_at })
+        if events.count > 10000 {
+            events = Array(events.prefix(10000))
+        }
+        eventUpdateSubject.send()
+    }
+
     func fetchCount(from relayURLs: [URL], filter: [String: Any] = [:]) async -> Int? {
         #if DEBUG
         print("NostrService: Starting aggregate fetchCount for \(relayURLs.count) relays")

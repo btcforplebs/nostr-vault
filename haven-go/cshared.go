@@ -13,8 +13,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/bitvora/haven/pkg/wot"
+	"github.com/mailru/easyjson"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/spf13/afero"
 )
@@ -57,7 +59,7 @@ func StartRelayC(importMode bool) {
 			}),
 	)
 
-	log.Println("🚀 HAVEN", config.RelayVersion, "is booting up (C-Shared Mode)")
+	log.Println("🚀 HAVEN", config.RelayVersion, "is booting up (C-Shared Mode) [1/3]")
 
 	if importMode {
 		if !ensureImportRelays() {
@@ -69,23 +71,28 @@ func StartRelayC(importMode bool) {
 		return
 	}
 
-	if !ensureImportRelays() {
-		log.Println("⚠️ No seed relays reachable — relay will start without inbox subscription")
-	}
-	wotModel := wot.NewSimpleInMemory(
-		pool,
-		config.WhitelistedPubKeys,
-		config.ImportSeedRelays,
-		config.WotDepth,
-		config.WotMinimumFollowers,
-		config.WotFetchTimeoutSeconds,
-	)
-	wot.Initialize(csharedCtx, wotModel)
+	log.Println("⏳ Loading databases [2/3]")
 	if err := initRelays(csharedCtx); err != nil {
 		log.Println("🚫 error initializing databases/relays:", err)
 		return
 	}
+	log.Println("✅ Databases ready")
+
+	log.Println("⏳ Starting background services [3/3]")
 	go func() {
+		// Initialize WOT (can take time, so run in background)
+		log.Println("  → Initializing Web of Trust")
+		wotModel := wot.NewSimpleInMemory(
+			pool,
+			config.WhitelistedPubKeys,
+			config.ImportSeedRelays,
+			config.WotDepth,
+			config.WotMinimumFollowers,
+			config.WotFetchTimeoutSeconds,
+		)
+		wot.Initialize(csharedCtx, wotModel)
+		log.Println("  ✓ Web of Trust ready")
+
 		go subscribeInboxAndChat(csharedCtx)
 		go startPeriodicCloudBackups(csharedCtx)
 		go wot.PeriodicRefresh(csharedCtx, config.WotRefreshInterval)
@@ -100,12 +107,16 @@ func StartRelayC(importMode bool) {
 	addr := fmt.Sprintf("%s:%d", config.RelayBindAddress, config.RelayPort)
 	globalServer = &http.Server{Addr: addr, Handler: mux}
 
-	log.Printf("🔗 listening at %s", addr)
+	// Start server in background and give it a moment to bind before continuing
+	serverReady := make(chan error, 1)
 	go func() {
-		if err := globalServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Println("🚫 error starting server:", err)
-		}
+		serverReady <- globalServer.ListenAndServe()
 	}()
+
+	// Brief delay to ensure server binds to port before returning
+	time.Sleep(100 * time.Millisecond)
+
+	log.Printf("🔗 listening at %s", addr)
 }
 
 //export StopRelayC
@@ -256,4 +267,26 @@ func UnzipDirectoryC(zipPath *C.char, destPath *C.char) C.int {
 		return 1
 	}
 	return 0
+}
+
+//export SignEventC
+func SignEventC(jsonStr *C.char, sk *C.char) *C.char {
+	event := nostr.Event{}
+	if err := easyjson.Unmarshal([]byte(C.GoString(jsonStr)), &event); err != nil {
+		slog.Error("SignEventC: failed to unmarshal event", "error", err)
+		return nil
+	}
+	if err := event.Sign(C.GoString(sk)); err != nil {
+		slog.Error("SignEventC: failed to sign event", "error", err)
+		return nil
+	}
+	res, _ := easyjson.Marshal(event)
+	return C.CString(string(res))
+}
+
+//export GenerateKeyPairC
+func GenerateKeyPairC() *C.char {
+	sk := nostr.GeneratePrivateKey()
+	pk, _ := nostr.GetPublicKey(sk)
+	return C.CString(fmt.Sprintf("%s:%s", sk, pk))
 }

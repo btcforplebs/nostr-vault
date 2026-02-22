@@ -28,6 +28,8 @@
 		8DB4DC622F4A236600348F57 /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DB4DC5F2F4A236600348F57 /* WebSocketClient.swift */; };
 		8DB4DC632F4A236600348F57 /* ConfigService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DB4DC5B2F4A236600348F57 /* ConfigService.swift */; };
 		8DB4DC642F4A236600348F57 /* RelayProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DB4DC5D2F4A236600348F57 /* RelayProcessManager.swift */; };
+		8DB4DC662F4A236700348F57 /* NIP49Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DB4DC602F4A236700348F57 /* NIP49Service.swift */; };
+		8DB4DC672F4A236700348F57 /* BlossomService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DB4DC612F4A236700348F57 /* BlossomService.swift */; };
 		8DB4DC652F4A236600348F57 /* haven.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 8DB4DC5C2F4A236600348F57 /* haven.dylib */; };
 		8DB4DC762F4A237B00348F57 /* favicon.ico in Resources */ = {isa = PBXBuildFile; fileRef = 8DB4DC6A2F4A237B00348F57 /* favicon.ico */; };
 		8DB4DC772F4A237B00348F57 /* mstile-150x150.png in Resources */ = {isa = PBXBuildFile; fileRef = 8DB4DC6D2F4A237B00348F57 /* mstile-150x150.png */; };
@@ -47,7 +49,14 @@
 		IOS0001 /* HavenApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOS0021 /* HavenApp_iOS.swift */; };
 		IOS0002 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOS0022 /* SceneDelegate.swift */; };
 		IOS0003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOS0023 /* ContentView.swift */; };
+		ANTIVW03 /* ComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ANTIVW01 /* ComposeView.swift */; };
+		ANTIVW04 /* NoteDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ANTIVW02 /* NoteDetailView.swift */; };
 		IOS0201 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = IOS0211 /* Assets.xcassets */; };
+		IOS0004 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOS0025 /* AppDelegate.swift */; };
+		IOS0005 /* NotificationNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOS0026 /* NotificationNames.swift */; };
+		IOS0SV01 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOS0SR01 /* FeedService.swift */; };
+		IOS0SV02 /* PushNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOS0SR02 /* PushNotificationService.swift */; };
+		IOS0VW01 /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOS0VR01 /* FeedView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -73,6 +82,8 @@
 		8DB4DC5D2F4A236600348F57 /* RelayProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayProcessManager.swift; sourceTree = "<group>"; };
 		8DB4DC5E2F4A236600348F57 /* StatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsService.swift; sourceTree = "<group>"; };
 		8DB4DC5F2F4A236600348F57 /* WebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketClient.swift; sourceTree = "<group>"; };
+		8DB4DC602F4A236700348F57 /* NIP49Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP49Service.swift; sourceTree = "<group>"; };
+		8DB4DC612F4A236700348F57 /* BlossomService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomService.swift; sourceTree = "<group>"; };
 		8DB4DC662F4A237B00348F57 /* android-chrome-192x192.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "android-chrome-192x192.png"; sourceTree = "<group>"; };
 		8DB4DC672F4A237B00348F57 /* android-chrome-256x256.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "android-chrome-256x256.png"; sourceTree = "<group>"; };
 		8DB4DC682F4A237B00348F57 /* apple-touch-icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "apple-touch-icon.png"; sourceTree = "<group>"; };
@@ -90,10 +101,17 @@
 		IOS0022 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		IOS0023 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		IOS0024 /* HavenApp-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "HavenApp-Bridging-Header.h"; sourceTree = "<group>"; };
+		IOS0025 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		IOS0026 /* NotificationNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationNames.swift; sourceTree = "<group>"; };
+		ANTIVW01 /* ComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeView.swift; sourceTree = "<group>"; };
+		ANTIVW02 /* NoteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteDetailView.swift; sourceTree = "<group>"; };
 		IOS0211 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		IOS0212 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		IOS0311 /* PlatformCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompat.swift; sourceTree = "<group>"; };
 		IOS0119F /* ColorExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorExtension.swift; sourceTree = "<group>"; };
+		IOS0SR01 /* FeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedService.swift; sourceTree = "<group>"; };
+		IOS0SR02 /* PushNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationService.swift; sourceTree = "<group>"; };
+		IOS0VR01 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
 		IOS9999 /* HavenApp-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HavenApp-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -116,6 +134,7 @@
 				8DB4DC382F4A212900348F57 /* AudioPlayerView.swift */,
 				8DB4DC392F4A212900348F57 /* CachedAsyncImage.swift */,
 				8DB4DC3A2F4A212900348F57 /* DashboardView.swift */,
+				IOS0VR01 /* FeedView.swift */,
 				8DB4DC3B2F4A212900348F57 /* FloatingArrowController.swift */,
 				8DB4DC3C2F4A212900348F57 /* LogsView.swift */,
 				8DB4DC3D2F4A212900348F57 /* MediaTypeDetector.swift */,
@@ -127,9 +146,11 @@
 				8DB4DC422F4A212900348F57 /* VideoPlayerView.swift */,
 				8DB4DC432F4A212900348F57 /* ViewerView.swift */,
 				8DB4DC442F4A212900348F57 /* WelcomeWindowView.swift */,
+				ANTIVW01 /* ComposeView.swift */,
+				ANTIVW02 /* NoteDetailView.swift */,
 			);
-			path = Views;
-			sourceTree = "<group>";
+		path = ../Views;
+		sourceTree = SOURCE_ROOT;
 		};
 		8DB4DC572F4A234500348F57 /* Models */ = {
 			isa = PBXGroup;
@@ -149,9 +170,13 @@
 				8DB4DC5D2F4A236600348F57 /* RelayProcessManager.swift */,
 				8DB4DC5E2F4A236600348F57 /* StatsService.swift */,
 				8DB4DC5F2F4A236600348F57 /* WebSocketClient.swift */,
+				8DB4DC602F4A236700348F57 /* NIP49Service.swift */,
+				8DB4DC612F4A236700348F57 /* BlossomService.swift */,
+				IOS0SR01 /* FeedService.swift */,
+				IOS0SR02 /* PushNotificationService.swift */,
 			);
-			path = Services;
-			sourceTree = "<group>";
+		path = ../Services;
+		sourceTree = SOURCE_ROOT;
 		};
 		8DB4DC6F2F4A237B00348F57 /* static */ = {
 			isa = PBXGroup;
@@ -204,6 +229,8 @@
 				IOS0021 /* HavenApp_iOS.swift */,
 				IOS0022 /* SceneDelegate.swift */,
 				IOS0023 /* ContentView.swift */,
+				IOS0025 /* AppDelegate.swift */,
+				IOS0026 /* NotificationNames.swift */,
 				IOS0024 /* HavenApp-Bridging-Header.h */,
 				IOS0212 /* Info.plist */,
 			);
@@ -353,6 +380,8 @@
 				IOS0001 /* HavenApp_iOS.swift in Sources */,
 				IOS0002 /* SceneDelegate.swift in Sources */,
 				IOS0003 /* ContentView.swift in Sources */,
+				IOS0004 /* AppDelegate.swift in Sources */,
+				IOS0005 /* NotificationNames.swift in Sources */,
 				8DB4DC462F4A212900348F57 /* DashboardView.swift in Sources */,
 				8DB4DC472F4A212900348F57 /* SetupWizardView.swift in Sources */,
 				8DB4DC582F4A234500348F57 /* MediaItem.swift in Sources */,
@@ -374,8 +403,15 @@
 				8DB4DC622F4A236600348F57 /* WebSocketClient.swift in Sources */,
 				8DB4DC632F4A236600348F57 /* ConfigService.swift in Sources */,
 				8DB4DC642F4A236600348F57 /* RelayProcessManager.swift in Sources */,
+				8DB4DC662F4A236700348F57 /* NIP49Service.swift in Sources */,
+				8DB4DC672F4A236700348F57 /* BlossomService.swift in Sources */,
 				IOS0301 /* PlatformCompat.swift in Sources */,
 				IOS0119B /* ColorExtension.swift in Sources */,
+				IOS0SV01 /* FeedService.swift in Sources */,
+				IOS0SV02 /* PushNotificationService.swift in Sources */,
+				IOS0VW01 /* FeedView.swift in Sources */,
+				ANTIVW03 /* ComposeView.swift in Sources */,
+				ANTIVW04 /* NoteDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -454,6 +490,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/build/ios",
@@ -541,6 +578,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/build/ios",

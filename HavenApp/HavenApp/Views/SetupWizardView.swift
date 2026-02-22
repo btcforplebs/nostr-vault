@@ -5,9 +5,13 @@ struct SetupWizardView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var currentStep = 0
     @State private var npub = ""
+    @State private var nsec = ""
+    @State private var nsecPassword = ""
     @State private var relayURL = ""
     @State private var dbEngine = "badger"
     @State private var hasAcceptedToS = false
+    @State private var setupError: String?
+    @State private var showSetupError = false
     let onComplete: () -> Void
     
     var body: some View {
@@ -55,7 +59,7 @@ struct SetupWizardView: View {
                         case 1:
                             TermsOfServiceStep(hasAccepted: $hasAcceptedToS)
                         case 2:
-                            IdentityStep(npub: $npub, whitelistedNpubs: $configService.config.whitelistedNpubs)
+                            IdentityStep(npub: $npub, nsec: $nsec, nsecPassword: $nsecPassword, whitelistedNpubs: $configService.config.whitelistedNpubs)
                         case 3:
                             RelayURLStep(relayURL: $relayURL)
                         case 4:
@@ -189,6 +193,11 @@ struct SetupWizardView: View {
             .padding()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .alert("Setup Error", isPresented: $showSetupError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(setupError ?? "An unknown error occurred during setup")
+        }
     }
     
     @Environment(\.dismiss) var dismiss // Add dismiss environment
@@ -217,6 +226,20 @@ struct SetupWizardView: View {
         configService.config.ownerNpub = npub
         configService.config.relayURL = relayURL
         configService.config.dbEngine = dbEngine
+
+        // Encrypt nsec with NIP-49 if provided
+        if !nsec.isEmpty && !nsecPassword.isEmpty {
+            do {
+                configService.config.ownerNcryptsec = try NIP49Service.encrypt(nsec: nsec, password: nsecPassword)
+                configService.config.ownerNsec = "" // Clear plaintext
+                // Store password in Keychain for auto-signing
+                _ = NIP49Service.storePasswordInKeychain(nsecPassword)
+            } catch {
+                setupError = "Failed to encrypt private key: \(error.localizedDescription)"
+                showSetupError = true
+                return
+            }
+        }
         configService.save()
     }
     
@@ -226,6 +249,21 @@ struct SetupWizardView: View {
         configService.config.ownerNpub = npub
         configService.config.relayURL = relayURL
         configService.config.dbEngine = dbEngine
+
+        // Encrypt nsec with NIP-49 if provided
+        if !nsec.isEmpty && !nsecPassword.isEmpty {
+            do {
+                configService.config.ownerNcryptsec = try NIP49Service.encrypt(nsec: nsec, password: nsecPassword)
+                configService.config.ownerNsec = "" // Clear plaintext
+                // Store password in Keychain for auto-signing
+                _ = NIP49Service.storePasswordInKeychain(nsecPassword)
+            } catch {
+                setupError = "Failed to encrypt private key: \(error.localizedDescription)"
+                showSetupError = true
+                return
+            }
+        }
+
         configService.config.hasCompletedSetup = true
         configService.save()
         onComplete()
@@ -370,6 +408,8 @@ struct TermsOfServiceStep: View {
 
 struct IdentityStep: View {
     @Binding var npub: String
+    @Binding var nsec: String
+    @Binding var nsecPassword: String
     @Binding var whitelistedNpubs: [String]
     @State private var appeared = false
 
@@ -407,6 +447,55 @@ struct IdentityStep: View {
                 Label("Must be a valid npub (starts with 'npub')", systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundColor(.orange)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Private Key (Optional)")
+                    .font(.headline)
+                Text("Enter your nsec to compose and sign notes. Your key will be encrypted with NIP-49 using a password you set below.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                SecureField("nsec1...", text: $nsec)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .frame(maxWidth: 350)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
+            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.22), value: appeared)
+
+            if !nsec.isEmpty && !nsec.hasPrefix("nsec") {
+                Label("Must be a valid nsec (starts with 'nsec')", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+
+            if !nsec.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Password (Required)")
+                            .font(.headline)
+                        Image(systemImage: "lock.fill")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                    Text("Set a password to encrypt your private key using NIP-49. You'll need this password each time Haven signs a note.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    SecureField("Enter password...", text: $nsecPassword)
+                        .textFieldStyle(.roundedBorder)
+
+                    if nsecPassword.isEmpty {
+                        Label("Password is required to proceed", systemImage: "exclamationmark.circle.fill")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
+                .frame(maxWidth: 350)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 10)
+                .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.24), value: appeared)
             }
 
             Divider()
