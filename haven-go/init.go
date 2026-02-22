@@ -10,6 +10,7 @@ import (
 	"text/template"
 	"time"
 
+	badgerdb "github.com/dgraph-io/badger/v4"
 	"github.com/fiatjaf/eventstore/badger"
 	"github.com/fiatjaf/eventstore/lmdb"
 	"github.com/fiatjaf/khatru"
@@ -62,6 +63,12 @@ func newDBBackend(path string) DBBackend {
 	case "badger":
 		return &badger.BadgerBackend{
 			Path: path,
+			// Limit vlog file size to 64 MB so iOS can mmap them.
+			// BadgerDB's default is ~2 GB which exceeds the virtual
+			// address space available to sandboxed iOS processes.
+			BadgerOptionsModifier: func(opts badgerdb.Options) badgerdb.Options {
+				return opts.WithValueLogFileSize(1 << 26) // 64 MiB
+			},
 		}
 	default:
 		return newLMDBBackend(path)

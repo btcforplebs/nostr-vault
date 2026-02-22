@@ -109,7 +109,7 @@ struct LogsView: View {
                             .frame(width: 50, alignment: .leading)
                         
                         Text(log.message)
-                            .font(.callout.monospaced())
+                            .font(.system(size: 15, design: .monospaced))
                     }
                     .id(log.id)
                 }
