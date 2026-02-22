@@ -59,7 +59,9 @@ func main() {
 			runRestore(mainCtx)
 			return
 		case "import":
-			ensureImportRelays()
+			if !ensureImportRelays() {
+				log.Fatal("🚫 Import aborted: could not connect to any seed relays")
+			}
 			runImport(mainCtx)
 			return
 		case "help":
@@ -81,7 +83,9 @@ func main() {
 	log.Println("👥 Number of whitelisted pubkeys:", len(config.WhitelistedPubKeys))
 	log.Println("🚷 Number of blacklisted pubkeys:", len(config.BlacklistedPubKeys))
 
-	ensureImportRelays()
+	if !ensureImportRelays() {
+		log.Println("⚠️ No seed relays reachable — starting relay without inbox subscription")
+	}
 	wotModel := wot.NewSimpleInMemory(
 		pool,
 		config.WhitelistedPubKeys,

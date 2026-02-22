@@ -60,13 +60,18 @@ func StartRelayC(importMode bool) {
 	log.Println("🚀 HAVEN", config.RelayVersion, "is booting up (C-Shared Mode)")
 
 	if importMode {
-		ensureImportRelays()
+		if !ensureImportRelays() {
+			log.Println("🚫 Import aborted: could not connect to any seed relays")
+			return
+		}
 		runImport(csharedCtx)
 		log.Println("✅ Import completed in C-Shared mode")
 		return
 	}
 
-	ensureImportRelays()
+	if !ensureImportRelays() {
+		log.Println("⚠️ No seed relays reachable — relay will start without inbox subscription")
+	}
 	wotModel := wot.NewSimpleInMemory(
 		pool,
 		config.WhitelistedPubKeys,
