@@ -21,9 +21,9 @@ class StatsService: ObservableObject {
     
     init() {
         // Observe RelayProcessManager for new incoming notes (real-time updates)
-        relayManager.$notesStored
+        relayManager.$eventsStored
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] newNoteCount in
+            .sink { [weak self] (newNoteCount: Int) in
                 guard let self = self else { return }
                 // diff is how many new notes came in since we last fetched the DB count
                 let diff = newNoteCount - self.baseRelayNotesStored
@@ -110,7 +110,7 @@ class StatsService: ObservableObject {
                         print("StatsService: ✨ Total aggregated count: \(confirmedCount)")
                         #endif
                         self.baseDbCount = confirmedCount
-                        self.baseRelayNotesStored = RelayProcessManager.shared.notesStored
+                        self.baseRelayNotesStored = RelayProcessManager.shared.eventsStored
                         
                         self.loadedNotesCount = confirmedCount
                         UserDefaults.standard.set(confirmedCount, forKey: "haven.stats.noteCount")

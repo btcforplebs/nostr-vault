@@ -1,0 +1,16 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/Views/FloatingArrowController.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Your relay lives here",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 123
+        }
+      }
+    ]
+  },
+  "version": 1
+}

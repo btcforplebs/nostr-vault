@@ -1,0 +1,744 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/Views/SettingsView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Identity",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 37
+        }
+      },
+      {
+        "comment": "",
+        "key": "Relays",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 41
+        }
+      },
+      {
+        "comment": "",
+        "key": "Import",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 45
+        }
+      },
+      {
+        "comment": "",
+        "key": "Blastr",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 49
+        }
+      },
+      {
+        "comment": "",
+        "key": "Advanced",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 53
+        }
+      },
+      {
+        "comment": "",
+        "key": "Backup",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 57
+        }
+      },
+      {
+        "comment": "",
+        "key": "Logs",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 61
+        }
+      },
+      {
+        "comment": "",
+        "key": "Restart required to apply changes",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 73
+        }
+      },
+      {
+        "comment": "",
+        "key": "Save & Restart Relay",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 85
+        }
+      },
+      {
+        "comment": "",
+        "key": "Owner Identity",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 120
+        }
+      },
+      {
+        "comment": "",
+        "key": "Connection",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 125
+        }
+      },
+      {
+        "comment": "",
+        "key": "Owner npub",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 121
+        }
+      },
+      {
+        "comment": "",
+        "key": "Your Nostr public key in npub format",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 122
+        }
+      },
+      {
+        "comment": "",
+        "key": "Hostname",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 126
+        }
+      },
+      {
+        "comment": "",
+        "key": "Public hostname for your relay (e.g., relay.example.com). Do not include the port.",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 127
+        }
+      },
+      {
+        "comment": "",
+        "key": "Port",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 129
+        }
+      },
+      {
+        "comment": "",
+        "key": "Web of Trust",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 187
+        }
+      },
+      {
+        "comment": "",
+        "key": "WoT Depth: %lld",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 188
+        }
+      },
+      {
+        "comment": "",
+        "key": "Min Followers: %lld",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 190
+        }
+      },
+      {
+        "comment": "",
+        "key": "Relay Info",
+        "location": {
+          "startingColumn": 17,
+          "startingLine": 216
+        }
+      },
+      {
+        "comment": "",
+        "key": "Name",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 217
+        }
+      },
+      {
+        "comment": "",
+        "key": "Description",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 218
+        }
+      },
+      {
+        "comment": "",
+        "key": "Icon URL",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 219
+        }
+      },
+      {
+        "comment": "",
+        "key": "Are you sure?",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 323
+        }
+      },
+      {
+        "comment": "",
+        "key": "Public Relay Rate Limits",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 231
+        }
+      },
+      {
+        "comment": "",
+        "key": "Database (DEBUG)",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 243
+        }
+      },
+      {
+        "comment": "",
+        "key": "Media Cache",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 281
+        }
+      },
+      {
+        "comment": "",
+        "key": "Logging",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 295
+        }
+      },
+      {
+        "comment": "",
+        "key": "Startup",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 304
+        }
+      },
+      {
+        "comment": "",
+        "key": "Danger Zone",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 309
+        }
+      },
+      {
+        "comment": "",
+        "key": "These limits help protect your relay from spam and abuse.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 238
+        }
+      },
+      {
+        "comment": "",
+        "key": "Max Events: %lld / min",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 232
+        }
+      },
+      {
+        "comment": "",
+        "key": "Max Connections: %lld / min",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 235
+        }
+      },
+      {
+        "comment": "",
+        "key": "Resolved absolute path: %@",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 275
+        }
+      },
+      {
+        "comment": "",
+        "key": "BadgerDB pre-allocates ~11GB of space. This is normal.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 252
+        }
+      },
+      {
+        "comment": "",
+        "key": "LMDB uses sparse files. Reported file size may be larger than actual usage.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 253
+        }
+      },
+      {
+        "comment": "",
+        "key": "Engine",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 245
+        }
+      },
+      {
+        "comment": "",
+        "key": "BadgerDB",
+        "location": {
+          "startingColumn": 70,
+          "startingLine": 247
+        }
+      },
+      {
+        "comment": "",
+        "key": "LMDB",
+        "location": {
+          "startingColumn": 83,
+          "startingLine": 247
+        }
+      },
+      {
+        "comment": "",
+        "key": "Blossom Path",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 258
+        }
+      },
+      {
+        "comment": "",
+        "key": "Show in Finder",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 270
+        }
+      },
+      {
+        "comment": "",
+        "key": "Clearing the cache will remove downloaded remote images but won't touch your local Blossom data.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 290
+        }
+      },
+      {
+        "comment": "",
+        "key": "Disable Media Cache",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 282
+        }
+      },
+      {
+        "comment": "",
+        "key": "Clear Media Cache",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 287
+        }
+      },
+      {
+        "comment": "",
+        "key": "Log Level",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 296
+        }
+      },
+      {
+        "comment": "",
+        "key": "Debug",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 297
+        }
+      },
+      {
+        "comment": "",
+        "key": "Info",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 298
+        }
+      },
+      {
+        "comment": "",
+        "key": "Warning",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 299
+        }
+      },
+      {
+        "comment": "",
+        "key": "Error",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 300
+        }
+      },
+      {
+        "comment": "",
+        "key": "Launch at Login",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 305
+        }
+      },
+      {
+        "comment": "",
+        "key": "Auto-start Relay",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 306
+        }
+      },
+      {
+        "comment": "",
+        "key": "This will stop the relay, delete all data (database, logs), and reset settings to default.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 316
+        }
+      },
+      {
+        "comment": "",
+        "key": "Factory Reset",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 313
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 324
+        }
+      },
+      {
+        "comment": "",
+        "key": "Reset Everything",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 325
+        }
+      },
+      {
+        "comment": "",
+        "key": "This action cannot be undone. All your relay data will be lost and the app will quit.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 336
+        }
+      },
+      {
+        "comment": "",
+        "key": "The import process will fetch your own notes and notes where you are tagged. Make sure you have your npub set correctly in the Identity tab.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 369
+        }
+      },
+      {
+        "comment": "",
+        "key": "Import Configuration",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 347
+        }
+      },
+      {
+        "comment": "",
+        "key": "Start Date",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 348
+        }
+      },
+      {
+        "comment": "",
+        "key": "Format: YYYY-MM-DD. Notes will be fetched starting from this date.",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 349
+        }
+      },
+      {
+        "comment": "",
+        "key": "Seed Relays File",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 351
+        }
+      },
+      {
+        "comment": "",
+        "key": "The JSON file containing relays to fetch notes from.",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 352
+        }
+      },
+      {
+        "comment": "",
+        "key": "Seed Relays",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 361
+        }
+      },
+      {
+        "comment": "",
+        "key": "Blastr automatically broadcasts your local notes to these external relays.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 402
+        }
+      },
+      {
+        "comment": "",
+        "key": "Blastr Configuration",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 383
+        }
+      },
+      {
+        "comment": "",
+        "key": "Blastr Relays File",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 384
+        }
+      },
+      {
+        "comment": "",
+        "key": "The JSON file containing relays to broadcast notes to.",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 385
+        }
+      },
+      {
+        "comment": "",
+        "key": "Broadcast Relays",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 394
+        }
+      },
+      {
+        "comment": "",
+        "key": "Backup Provider",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 417
+        }
+      },
+      {
+        "comment": "",
+        "key": "Schedule",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 427
+        }
+      },
+      {
+        "comment": "",
+        "key": "S3 Configuration",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 434
+        }
+      },
+      {
+        "comment": "",
+        "key": "AWS Configuration",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 442
+        }
+      },
+      {
+        "comment": "",
+        "key": "GCP Configuration",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 449
+        }
+      },
+      {
+        "comment": "",
+        "key": "Provider",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 418
+        }
+      },
+      {
+        "comment": "",
+        "key": "None",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 419
+        }
+      },
+      {
+        "comment": "",
+        "key": "S3 Compatible",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 420
+        }
+      },
+      {
+        "comment": "",
+        "key": "AWS S3",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 421
+        }
+      },
+      {
+        "comment": "",
+        "key": "Google Cloud Storage",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 422
+        }
+      },
+      {
+        "comment": "",
+        "key": "Backup every %lld hours",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 428
+        }
+      },
+      {
+        "comment": "",
+        "key": "Access Key ID",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 435
+        }
+      },
+      {
+        "comment": "",
+        "key": "Secret Key",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 436
+        }
+      },
+      {
+        "comment": "",
+        "key": "Endpoint",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 437
+        }
+      },
+      {
+        "comment": "",
+        "key": "Region",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 438
+        }
+      },
+      {
+        "comment": "",
+        "key": "Bucket Name",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 439
+        }
+      },
+      {
+        "comment": "",
+        "key": "Access Key ID",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 443
+        }
+      },
+      {
+        "comment": "",
+        "key": "Secret Access Key",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 444
+        }
+      },
+      {
+        "comment": "",
+        "key": "Region",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 445
+        }
+      },
+      {
+        "comment": "",
+        "key": "Bucket Name",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 446
+        }
+      },
+      {
+        "comment": "",
+        "key": "Select your Service Account JSON key file.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 460
+        }
+      },
+      {
+        "comment": "",
+        "key": "Bucket Name",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 450
+        }
+      },
+      {
+        "comment": "",
+        "key": "Credentials JSON",
+        "location": {
+          "startingColumn": 35,
+          "startingLine": 453
+        }
+      },
+      {
+        "comment": "",
+        "key": "Browse...",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 456
+        }
+      }
+    ]
+  },
+  "version": 1
+}

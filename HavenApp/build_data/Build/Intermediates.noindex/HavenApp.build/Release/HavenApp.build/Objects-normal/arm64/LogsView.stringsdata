@@ -1,0 +1,40 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/Views/LogsView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "System Logs",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 9
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copy logs to clipboard",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 23
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copied!",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 17
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copy Logs",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 19
+        }
+      }
+    ]
+  },
+  "version": 1
+}

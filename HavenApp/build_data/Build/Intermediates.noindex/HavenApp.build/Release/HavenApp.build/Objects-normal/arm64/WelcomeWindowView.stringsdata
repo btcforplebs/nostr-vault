@@ -1,0 +1,80 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/Views/WelcomeWindowView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Welcome to Haven",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 27
+        }
+      },
+      {
+        "comment": "",
+        "key": "Your Personal Nostr Relay",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 31
+        }
+      },
+      {
+        "comment": "",
+        "key": "Haven lives in your menu bar",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 45
+        }
+      },
+      {
+        "comment": "",
+        "key": "Look for the",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 48
+        }
+      },
+      {
+        "comment": "",
+        "key": " ",
+        "location": {
+          "startingColumn": 36,
+          "startingLine": 51
+        }
+      },
+      {
+        "comment": "",
+        "key": " icon in the top-right corner of your screen",
+        "location": {
+          "startingColumn": 36,
+          "startingLine": 55
+        }
+      },
+      {
+        "comment": "",
+        "key": "Click the icon to get started",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 72
+        }
+      },
+      {
+        "comment": "",
+        "key": "Set up your relay and start storing your Nostr notes locally",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 75
+        }
+      },
+      {
+        "comment": "",
+        "key": "Get Started",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 104
+        }
+      }
+    ]
+  },
+  "version": 1
+}

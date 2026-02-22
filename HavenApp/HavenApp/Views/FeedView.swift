@@ -473,7 +473,7 @@ struct FeedNoteRow: View {
 
 struct FeedMediaThumbnail: View {
     let url: URL
-    @State private var image: UIImage?
+    @State private var image: PlatformImage?
     @State private var isVideo = false
 
     var body: some View {
@@ -484,7 +484,7 @@ struct FeedMediaThumbnail: View {
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
 
             if let image = image {
-                Image(uiImage: image)
+                Image(platformImage: image)
                     .resizable()
                     .scaledToFill()
                     .frame(width: 90, height: 90)
@@ -507,7 +507,7 @@ struct FeedMediaThumbnail: View {
         guard !isVideo && image == nil else { return }
 
         URLSession.shared.dataTask(with: url) { data, _, _ in
-            if let data = data, let img = UIImage(data: data) {
+            if let data = data, let img = PlatformImage(data: data) {
                 DispatchQueue.main.async { image = img }
             }
         }.resume()
@@ -519,7 +519,7 @@ struct FeedMediaThumbnail: View {
 struct AvatarView: View {
     let url: URL?
     let pubkey: String
-    @State private var image: UIImage?
+    @State private var image: PlatformImage?
 
     var body: some View {
         ZStack {
@@ -528,7 +528,7 @@ struct AvatarView: View {
                 .frame(width: 40, height: 40)
 
             if let image = image {
-                Image(uiImage: image)
+                Image(platformImage: image)
                     .resizable()
                     .scaledToFill()
                     .frame(width: 40, height: 40)
@@ -565,7 +565,7 @@ struct AvatarView: View {
     private func loadImage() {
         guard let url = url, image == nil else { return }
         URLSession.shared.dataTask(with: url) { data, _, _ in
-            if let data = data, let img = UIImage(data: data) {
+            if let data = data, let img = PlatformImage(data: data) {
                 DispatchQueue.main.async { image = img }
             }
         }.resume()

@@ -1,0 +1,32 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/Views/VideoPlayerView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Failed to load video",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 57
+        }
+      },
+      {
+        "comment": "",
+        "key": "Try Again",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 65
+        }
+      },
+      {
+        "comment": "",
+        "key": "Loading video...",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 76
+        }
+      }
+    ]
+  },
+  "version": 1
+}

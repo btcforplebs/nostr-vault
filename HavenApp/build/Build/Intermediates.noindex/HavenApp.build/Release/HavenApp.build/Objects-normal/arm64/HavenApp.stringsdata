@@ -1,0 +1,128 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/App/HavenApp.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Haven",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 15
+        }
+      },
+      {
+        "comment": "",
+        "key": "Welcome to Haven",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 28
+        }
+      },
+      {
+        "comment": "",
+        "key": "Haven",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 47
+        }
+      },
+      {
+        "comment": "",
+        "key": "Startup Error",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 102
+        }
+      },
+      {
+        "comment": "",
+        "key": "Haven didn't shut down correctly and needs a quick fix.",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 106
+        }
+      },
+      {
+        "comment": "",
+        "key": "1.",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 113
+        }
+      },
+      {
+        "comment": "",
+        "key": "Press **Command + Space** to open Spotlight.",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 116
+        }
+      },
+      {
+        "comment": "",
+        "key": "2.",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 121
+        }
+      },
+      {
+        "comment": "",
+        "key": "Type \"Terminal\" and press Enter.",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 124
+        }
+      },
+      {
+        "comment": "",
+        "key": "3.",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 129
+        }
+      },
+      {
+        "comment": "",
+        "key": "Click **Copy Command** below, paste it into the Terminal window, and press Enter.",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 133
+        }
+      },
+      {
+        "comment": "",
+        "key": "pkill -9 haven",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 137
+        }
+      },
+      {
+        "comment": "",
+        "key": "Close",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 158
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copied!",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 199
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copy Command",
+        "location": {
+          "startingColumn": 45,
+          "startingLine": 199
+        }
+      }
+    ]
+  },
+  "version": 1
+}

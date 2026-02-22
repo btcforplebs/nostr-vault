@@ -1,0 +1,384 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/Views/SetupWizardView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Welcome to Haven",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 20
+        }
+      },
+      {
+        "comment": "",
+        "key": "Let's set up your personal Nostr relay",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 22
+        }
+      },
+      {
+        "comment": "",
+        "key": "Startup Error",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 76
+        }
+      },
+      {
+        "comment": "",
+        "key": "A previous Haven process is still running. Run the following command in Terminal to stop it, then relaunch the app.",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 80
+        }
+      },
+      {
+        "comment": "",
+        "key": "pkill -9 haven",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 87
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copy to clipboard",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 108
+        }
+      },
+      {
+        "comment": "",
+        "key": "Retry",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 115
+        }
+      },
+      {
+        "comment": "",
+        "key": "Back",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 137
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel Import",
+        "location": {
+          "startingColumn": 79,
+          "startingLine": 147
+        }
+      },
+      {
+        "comment": "",
+        "key": "Skip & Finish",
+        "location": {
+          "startingColumn": 117,
+          "startingLine": 147
+        }
+      },
+      {
+        "comment": "",
+        "key": "Continue",
+        "location": {
+          "startingColumn": 135,
+          "startingLine": 147
+        }
+      },
+      {
+        "comment": "",
+        "key": "Launch Haven",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 163
+        }
+      },
+      {
+        "comment": "",
+        "key": "Your Nostr Identity",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 246
+        }
+      },
+      {
+        "comment": "",
+        "key": "Enter your public key (npub) to identify yourself as the relay owner",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 249
+        }
+      },
+      {
+        "comment": "",
+        "key": "npub1...",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 254
+        }
+      },
+      {
+        "comment": "",
+        "key": "Must be a valid npub (starts with 'npub')",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 259
+        }
+      },
+      {
+        "comment": "",
+        "key": "Whitelisted Npubs (Optional)",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 267
+        }
+      },
+      {
+        "comment": "",
+        "key": "Add other npubs that can write to your relay",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 269
+        }
+      },
+      {
+        "comment": "",
+        "key": "Relay URL",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 295
+        }
+      },
+      {
+        "comment": "",
+        "key": "Enter the public URL where your relay will be accessible",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 298
+        }
+      },
+      {
+        "comment": "",
+        "key": "Leave blank if running locally only",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 307
+        }
+      },
+      {
+        "comment": "",
+        "key": "relay.example.com",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 303
+        }
+      },
+      {
+        "comment": "",
+        "key": "Database Engine",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 324
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choose how to store your relay data",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 327
+        }
+      },
+      {
+        "comment": "",
+        "key": "This choice is permanent. Switching later requires a full reset.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 348
+        }
+      },
+      {
+        "comment": "",
+        "key": "Port Already in Use",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 532
+        }
+      },
+      {
+        "comment": "",
+        "key": "Restore Failed",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 570
+        }
+      },
+      {
+        "comment": "",
+        "key": "Import Your Data",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 373
+        }
+      },
+      {
+        "comment": "",
+        "key": "Restore from backup or pull from relays",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 375
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%%",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 395
+        }
+      },
+      {
+        "comment": "",
+        "key": "Done!",
+        "location": {
+          "startingColumn": 69,
+          "startingLine": 391
+        }
+      },
+      {
+        "comment": "",
+        "key": "Importing...",
+        "location": {
+          "startingColumn": 79,
+          "startingLine": 391
+        }
+      },
+      {
+        "comment": "",
+        "key": "Finish Setup",
+        "location": {
+          "startingColumn": 39,
+          "startingLine": 436
+        }
+      },
+      {
+        "comment": "",
+        "key": "Seed Relays",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 470
+        }
+      },
+      {
+        "comment": "",
+        "key": "Start Date",
+        "location": {
+          "startingColumn": 36,
+          "startingLine": 454
+        }
+      },
+      {
+        "comment": "",
+        "key": "Start Initial Import",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 492
+        }
+      },
+      {
+        "comment": "",
+        "key": "OR",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 504
+        }
+      },
+      {
+        "comment": "",
+        "key": "Restore from Backup",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 516
+        }
+      },
+      {
+        "comment": "",
+        "key": "Retry",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 533
+        }
+      },
+      {
+        "comment": "",
+        "key": "Change Port",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 540
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 549
+        }
+      },
+      {
+        "comment": "",
+        "key": "Port %lld is currently in use by another process. You can either stop that process manually or choose a different port for Haven.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 554
+        }
+      },
+      {
+        "comment": "",
+        "key": "OK",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 571
+        }
+      },
+      {
+        "comment": "",
+        "key": "This may take a few moments.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 578
+        }
+      },
+      {
+        "comment": "",
+        "key": "Restoring Backup...",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 577
+        }
+      },
+      {
+        "comment": "",
+        "key": "You're All Set!",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 651
+        }
+      },
+      {
+        "comment": "",
+        "key": "Your Haven relay is configured and ready to go.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 653
+        }
+      }
+    ]
+  },
+  "version": 1
+}

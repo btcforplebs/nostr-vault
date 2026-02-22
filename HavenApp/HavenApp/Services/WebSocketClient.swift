@@ -295,6 +295,16 @@ class NostrService: ObservableObject {
     private(set) var profilePictures: [String: URL] = [:]
     private(set) var ownerHexPubkey: String = ""
     
+    private var lastConnectLog: Date = .distantPast
+    private func shouldLogConnect() -> Bool {
+        let now = Date()
+        if now.timeIntervalSince(lastConnectLog) > 5.0 {
+            lastConnectLog = now
+            return true
+        }
+        return false
+    }
+
     private func updateOwnerHex() {
         let npub = ConfigService.shared.config.ownerNpub
         if let hex = Bech32.decode(npub)?.hexString {
@@ -334,10 +344,11 @@ class NostrService: ObservableObject {
             let client = WebSocketClient()
             client.isTemporary = true
             
+            let urlString = url.absoluteString
             client.messageSubject
                 .receive(on: processingQueue)
                 .sink { [weak self] message in
-                    self?.processMessage(message)
+                    self?.processMessage(message, from: urlString)
                 }
                 .store(in: &cancellables)
             

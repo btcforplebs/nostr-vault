@@ -124,8 +124,8 @@ struct ComposeView: View {
             HStack(spacing: 8) {
                 ForEach(attachments) { attachment in
                     ZStack(alignment: .topTrailing) {
-                        if let uiImage = UIImage(data: attachment.data) {
-                            Image(uiImage: uiImage)
+                        if let img = PlatformImage(data: attachment.data) {
+                            Image(platformImage: img)
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: 100, height: 100)

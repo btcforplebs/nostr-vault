@@ -1,0 +1,12 @@
+{
+  "/Users/logandetty/haven/HavenApp/HavenApp/App/HavenApp.swift" : {
+    "abi-baseline-json" : "/Users/logandetty/haven/HavenApp/build/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HAVEN.abi.json",
+    "const-values" : "/Users/logandetty/haven/HavenApp/build/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp-primary.swiftconstvalues",
+    "dependencies" : "/Users/logandetty/haven/HavenApp/build/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp-primary.d",
+    "diagnostics" : "/Users/logandetty/haven/HavenApp/build/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp-primary.dia",
+    "objc-header" : "/Users/logandetty/haven/HavenApp/build/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HAVEN-Swift.h",
+    "swiftdoc" : "/Users/logandetty/haven/HavenApp/build/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HAVEN.swiftdoc",
+    "swiftmodule" : "/Users/logandetty/haven/HavenApp/build/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HAVEN.swiftmodule",
+    "swiftsourceinfo" : "/Users/logandetty/haven/HavenApp/build/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HAVEN.swiftsourceinfo"
+  }
+}

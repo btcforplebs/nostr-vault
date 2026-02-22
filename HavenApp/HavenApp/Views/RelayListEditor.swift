@@ -14,6 +14,7 @@ struct RelayListEditor: View {
         }
     }
     
+    #if os(iOS)
     private var iOSContent: some View {
         Group {
             ForEach(relays, id: \.self) { relay in
@@ -47,7 +48,8 @@ struct RelayListEditor: View {
             }
         }
     }
-    
+    #endif
+
     private var macOSContent: some View {
         VStack(spacing: 0) {
             List {

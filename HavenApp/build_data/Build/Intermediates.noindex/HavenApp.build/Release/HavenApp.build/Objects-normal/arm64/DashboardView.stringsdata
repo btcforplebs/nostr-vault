@@ -1,0 +1,24 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/Views/DashboardView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Relays",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 18
+        }
+      },
+      {
+        "comment": "",
+        "key": "Statistics",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 72
+        }
+      }
+    ]
+  },
+  "version": 1
+}

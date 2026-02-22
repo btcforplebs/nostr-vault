@@ -1,0 +1,136 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/Views/ViewerView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Search notes...",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 150
+        }
+      },
+      {
+        "comment": "",
+        "key": "No notes found",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 220
+        }
+      },
+      {
+        "comment": "",
+        "key": "Try changing your filter settings.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 222
+        }
+      },
+      {
+        "comment": "",
+        "key": "No media found",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 245
+        }
+      },
+      {
+        "comment": "",
+        "key": "Try changing your filter settings or upload media.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 247
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copy Link",
+        "location": {
+          "startingColumn": 39,
+          "startingLine": 279
+        }
+      },
+      {
+        "comment": "",
+        "key": "Text Note",
+        "location": {
+          "startingColumn": 40,
+          "startingLine": 532
+        }
+      },
+      {
+        "comment": "",
+        "key": "Tagged",
+        "location": {
+          "startingColumn": 54,
+          "startingLine": 532
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copy Link",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 628
+        }
+      },
+      {
+        "comment": "",
+        "key": "Media Missing",
+        "location": {
+          "startingColumn": 46,
+          "startingLine": 682
+        }
+      },
+      {
+        "comment": "",
+        "key": "Error 404",
+        "location": {
+          "startingColumn": 46,
+          "startingLine": 684
+        }
+      },
+      {
+        "comment": "",
+        "key": "Try Again",
+        "location": {
+          "startingColumn": 46,
+          "startingLine": 695
+        }
+      },
+      {
+        "comment": "",
+        "key": "No Preview",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 795
+        }
+      },
+      {
+        "comment": "",
+        "key": "Error 404",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 797
+        }
+      },
+      {
+        "comment": "",
+        "key": "Try Again",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 807
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cache Locally",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 902
+        }
+      }
+    ]
+  },
+  "version": 1
+}

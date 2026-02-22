@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HAVEN for Mac - The Native Experience</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="assets/haven_icon.png">
+</head>
+
+<body>
+
+    <nav>
+        <div class="logo">
+            <img src="assets/haven_icon.png" alt="Haven Logo">
+            <span>HAVEN</span>
+        </div>
+        <div class="actions">
+            <a href="https://github.com/btcforplebs/haven-mac" class="btn-download">GitHub</a>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <h1>The Native Mac<br>Experience for Haven</h1>
+        <p class="fade-in-up delay-100">Powered by the original Go codebase. Fast, secure, and beautiful.</p>
+
+        <div class="hero-buttons fade-in-up delay-200">
+            <a href="https://github.com/btcforplebs/haven-mac/releases" class="btn btn-primary">Download</a>
+            <a href="#showcase" class="btn btn-secondary">Explore</a>
+        </div>
+    </header>
+
+    <div class="sticky-scroll-wrapper">
+        <div class="sticky-view">
+            <div class="hero-image-container">
+                <img src="assets/fullscreen-view-no-haven.jpeg" alt="Haven Fullscreen" class="hero-image"
+                    id="zoom-image-bg">
+                <img src="assets/dashboard.png" alt="Haven Dashboard" class="hero-image-overlay" id="zoom-image-fg">
+            </div>
+        </div>
+    </div>
+
+    <section class="features" id="features">
+        <div class="grid">
+            <div class="card fade-in-up">
+                <h3>Native Swift UI</h3>
+                <p>Built exclusively for macOS using Swift, delivering a seamless and responsive user experience that
+                    feels right at home.</p>
+            </div>
+            <div class="card fade-in-up delay-100">
+                <h3>Verified Core</h3>
+                <p>Runs the exact same Go code as the CLI version. 100% open source and verifiable build process.</p>
+            </div>
+            <div class="card fade-in-up delay-200">
+                <h3>Private Relay</h3>
+                <p>Effortlessly start and manage your own private Nostr relay directly from your Mac menu bar.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="showcase" id="showcase">
+        <h2 class="fade-in-up">Visual Excellence</h2>
+
+        <div class="gallery">
+            <div class="gallery-item large fade-in-up">
+                <img src="assets/popout-dashboard.png" alt="Popout Dashboard">
+            </div>
+            <div class="gallery-item small fade-in-up delay-100">
+                <img src="assets/popout-viewer.png" alt="Popout Viewer">
+            </div>
+            <div class="gallery-item small fade-in-up delay-200">
+                <img src="assets/menubar-viewer-media.png" alt="Menubar Media">
+            </div>
+            <div class="gallery-item small fade-in-up">
+                <img src="assets/settings.png" alt="Settings">
+            </div>
+            <div class="gallery-item small fade-in-up delay-100">
+                <img src="assets/menubar-viewer-notes.png" alt="Menubar Notes">
+            </div>
+        </div>
+    </section>
+
+    <section class="cta-section">
+        <h2 class="fade-in-up">Ready to join?</h2>
+        <div class="fade-in-up delay-100">
+            <a href="https://github.com/btcforplebs/haven-mac" class="btn btn-primary">Get Haven for Mac</a>
+        </div>
+    </section>
+
+    <footer>
+        <p>&copy; 2026 Haven. Built on top of the incredible work by <a
+                href="https://github.com/bitvora/haven">bitvora</a>.</p>
+        <p style="margin-top: 10px; font-size: 0.8rem; opacity: 0.6;">Designed with passion.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

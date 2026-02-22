@@ -475,7 +475,7 @@ struct IdentityStep: View {
                     HStack {
                         Text("Password (Required)")
                             .font(.headline)
-                        Image(systemImage: "lock.fill")
+                        Image(systemName: "lock.fill")
                             .font(.caption)
                             .foregroundColor(.orange)
                     }

@@ -1,0 +1,96 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/App/HavenApp.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Haven",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 15
+        }
+      },
+      {
+        "comment": "",
+        "key": "Haven Setup",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 25
+        }
+      },
+      {
+        "comment": "",
+        "key": "Haven",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 54
+        }
+      },
+      {
+        "comment": "",
+        "key": "Start Setup",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 104
+        }
+      },
+      {
+        "comment": "",
+        "key": "Quit",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 116
+        }
+      },
+      {
+        "comment": "",
+        "key": "Welcome to Haven",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 88
+        }
+      },
+      {
+        "comment": "",
+        "key": "Please complete the setup to start your relay.",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 94
+        }
+      },
+      {
+        "comment": "",
+        "key": "Startup Error",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 154
+        }
+      },
+      {
+        "comment": "",
+        "key": "A previous Haven process is still running. Run the following command in Terminal to stop it, then relaunch the app.",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 158
+        }
+      },
+      {
+        "comment": "",
+        "key": "pkill -9 haven",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 165
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copy to clipboard",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 186
+        }
+      }
+    ]
+  },
+  "version": 1
+}

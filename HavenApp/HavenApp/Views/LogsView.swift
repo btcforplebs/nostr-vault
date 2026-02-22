@@ -12,6 +12,7 @@ struct LogsView: View {
         #endif
     }
     
+    #if os(iOS)
     private var iOSBody: some View {
         ScrollViewReader { proxy in
             List(relayManager.logs) { log in
@@ -67,7 +68,8 @@ struct LogsView: View {
             }
         }
     }
-    
+    #endif
+
     private var macOSBody: some View {
         VStack(spacing: 0) {
             // Header

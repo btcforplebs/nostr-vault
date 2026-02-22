@@ -1,0 +1,121 @@
+{
+  "" : {
+    "const-values" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp-primary.swiftconstvalues",
+    "dependencies" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp-primary.d",
+    "diagnostics" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp-primary.dia",
+    "emit-module-dependencies" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp-primary-emit-module.dia",
+    "pch" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp-primary.swiftdeps"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/App/AppDelegate.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/AppDelegate.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/AppDelegate.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/AppDelegate.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/App/HavenApp.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenApp.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Models/HavenConfig.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenConfig.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenConfig.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/HavenConfig.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Models/MediaItem.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/MediaItem.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/MediaItem.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/MediaItem.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Models/NostrEvent.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/NostrEvent.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/NostrEvent.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/NostrEvent.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Resources/ColorExtension.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/ColorExtension.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/ColorExtension.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/ColorExtension.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Services/ConfigService.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/ConfigService.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/ConfigService.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/ConfigService.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Services/RelayProcessManager.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/RelayProcessManager.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/RelayProcessManager.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/RelayProcessManager.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Services/StatsService.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/StatsService.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/StatsService.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/StatsService.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Services/WebSocketClient.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/WebSocketClient.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/WebSocketClient.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/WebSocketClient.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/AnimatedImage.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/AnimatedImage.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/AnimatedImage.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/AnimatedImage.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/DashboardView.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/DashboardView.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/DashboardView.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/DashboardView.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/LogsView.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/LogsView.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/LogsView.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/LogsView.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/MediaTypeDetector.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/MediaTypeDetector.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/MediaTypeDetector.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/MediaTypeDetector.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/MenuBarView.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/MenuBarView.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/MenuBarView.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/MenuBarView.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/RelayListEditor.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/RelayListEditor.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/RelayListEditor.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/RelayListEditor.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/SettingsView.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/SettingsView.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/SettingsView.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/SettingsView.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/SetupWizardView.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/SetupWizardView.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/SetupWizardView.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/SetupWizardView.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/VideoPlayerView.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/VideoPlayerView.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/VideoPlayerView.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/VideoPlayerView.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/ViewerView.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/ViewerView.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/ViewerView.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/ViewerView.o"
+  },
+  "/Users/logandetty/haven/HavenApp/HavenApp/Views/WelcomeWindowView.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/WelcomeWindowView.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/WelcomeWindowView.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/WelcomeWindowView.o"
+  },
+  "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/logandetty/haven/HavenApp/build_data/Build/Intermediates.noindex/HavenApp.build/Release/HavenApp.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  }
+}

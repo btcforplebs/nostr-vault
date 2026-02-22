@@ -1,0 +1,16 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/Views/RelayListEditor.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "wss://relay.example.com",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 31
+        }
+      }
+    ]
+  },
+  "version": 1
+}

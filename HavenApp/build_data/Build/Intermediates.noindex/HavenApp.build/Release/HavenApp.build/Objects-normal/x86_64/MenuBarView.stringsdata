@@ -1,0 +1,176 @@
+{
+  "source": "/Users/logandetty/haven/HavenApp/HavenApp/Views/MenuBarView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Haven",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 24
+        }
+      },
+      {
+        "comment": "",
+        "key": "Booting Relay",
+        "location": {
+          "startingColumn": 59,
+          "startingLine": 51
+        }
+      },
+      {
+        "comment": "",
+        "key": "Stop Relay",
+        "location": {
+          "startingColumn": 103,
+          "startingLine": 51
+        }
+      },
+      {
+        "comment": "",
+        "key": "Start Relay",
+        "location": {
+          "startingColumn": 118,
+          "startingLine": 51
+        }
+      },
+      {
+        "comment": "",
+        "key": "Settings",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 112
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pop Out",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 136
+        }
+      },
+      {
+        "comment": "",
+        "key": "Quit Haven",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 141
+        }
+      },
+      {
+        "comment": "",
+        "key": "Importing Notes",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 160
+        }
+      },
+      {
+        "comment": "",
+        "key": "Please keep the app open.",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 197
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld%%",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 171
+        }
+      },
+      {
+        "comment": "",
+        "key": "Close",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 208
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel Import",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 222
+        }
+      },
+      {
+        "comment": "",
+        "key": "Startup Error",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 252
+        }
+      },
+      {
+        "comment": "",
+        "key": "A previous Haven process is still running. Run the following command in Terminal to stop it, then relaunch the app.",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 256
+        }
+      },
+      {
+        "comment": "",
+        "key": "pkill -9 haven",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 263
+        }
+      },
+      {
+        "comment": "",
+        "key": "Copy to clipboard",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 284
+        }
+      },
+      {
+        "comment": "",
+        "key": "Retry",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 291
+        }
+      },
+      {
+        "comment": "",
+        "key": "Startup Error",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 326
+        }
+      },
+      {
+        "comment": "",
+        "key": "Haven didn't shut down correctly. Tap below to fix it automatically.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 330
+        }
+      },
+      {
+        "comment": "",
+        "key": "Fix & Restart",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 339
+        }
+      },
+      {
+        "comment": "",
+        "key": "Close",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 351
+        }
+      }
+    ]
+  },
+  "version": 1
+}
