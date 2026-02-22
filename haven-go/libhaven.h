@@ -82,8 +82,13 @@ typedef struct { void *data; GoInt len; GoInt cap; } GoSlice;
 extern "C" {
 #endif
 
+extern void SetHavenEnvC(char* key, char* value);
 extern void StartRelayC(GoUint8 importMode);
 extern void StopRelayC(void);
+extern int BackupDatabaseC(char* outputPath);
+extern int RestoreDatabaseC(char* inputPath);
+extern int BackupToCloudC(void);
+extern int RestoreFromCloudC(void);
 
 #ifdef __cplusplus
 }

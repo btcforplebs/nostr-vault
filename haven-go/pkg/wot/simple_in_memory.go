@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"runtime/debug"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -158,6 +159,7 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 		case <-timeoutCtx.Done():
 			slog.Error("🚫 timeout while fetching events, moving to the next batch")
 		}
+		debug.FreeOSMemory()
 	}
 
 	// Split analysis into batches of 100 pubkeys
@@ -225,13 +227,14 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 	slog.Info("🫥 pruned pubkeys without minimum common followers", "🚧minimum", minimumFollowers, "🫂kept", len(newWot), "🗑️eliminated", pubkeyFollowers.Size()-len(newWot))
 
 	wt.pubkeys.Store(&newWot)
+	debug.FreeOSMemory()
 }
 
-func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEvent, counter *atomic.Int64) <-chan nostr.RelayEvent {
-	ch := make(chan nostr.RelayEvent)
+func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEvent, counter *atomic.Int64) <-chan *nostr.Event {
+	ch := make(chan *nostr.Event)
 	go func() {
 		defer close(ch)
-		latestEvents := make(map[string]nostr.RelayEvent)
+		latestEvents := make(map[string]*nostr.Event)
 		for ev := range events {
 			select {
 			case <-ctx.Done():
@@ -240,7 +243,7 @@ func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEv
 				counter.Add(1)
 				key := fmt.Sprintf("%d:%s", ev.Kind, ev.PubKey)
 				if old, ok := latestEvents[key]; !ok || ev.CreatedAt > old.CreatedAt {
-					latestEvents[key] = ev
+					latestEvents[key] = ev.Event
 				}
 			}
 		}

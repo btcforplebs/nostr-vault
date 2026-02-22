@@ -76,38 +76,35 @@ func newLMDBBackend(path string) *lmdb.LMDBBackend {
 }
 
 func initDBs() error {
-	privateDB = newDBBackend("db/private")
-	chatDB = newDBBackend("db/chat")
-	outboxDB = newDBBackend("db/outbox")
-	inboxDB = newDBBackend("db/inbox")
-	blossomDB = newDBBackend("db/blossom")
+	return GranularInitDBs([]string{"private", "chat", "outbox", "inbox", "blossom"})
+}
 
-	dbs = map[string]DBBackend{
-		"blossom": blossomDB,
-		"chat":    chatDB,
-		"inbox":   inboxDB,
-		"outbox":  outboxDB,
-		"private": privateDB,
+func GranularInitDBs(names []string) error {
+	if dbs == nil {
+		dbs = make(map[string]DBBackend)
 	}
 
-	if err := privateDB.Init(); err != nil {
-		return fmt.Errorf("privateDB init failed: %w", err)
-	}
+	for _, name := range names {
+		path := "db/" + name
+		db := newDBBackend(path)
+		if err := db.Init(); err != nil {
+			return fmt.Errorf("%sDB init failed: %w", name, err)
+		}
+		dbs[name] = db
 
-	if err := chatDB.Init(); err != nil {
-		return fmt.Errorf("chatDB init failed: %w", err)
-	}
-
-	if err := outboxDB.Init(); err != nil {
-		return fmt.Errorf("outboxDB init failed: %w", err)
-	}
-
-	if err := inboxDB.Init(); err != nil {
-		return fmt.Errorf("inboxDB init failed: %w", err)
-	}
-
-	if err := blossomDB.Init(); err != nil {
-		return fmt.Errorf("blossomDB init failed: %w", err)
+		// Assign to global variables for backward compatibility
+		switch name {
+		case "private":
+			privateDB = db
+		case "chat":
+			chatDB = db
+		case "outbox":
+			outboxDB = db
+		case "inbox":
+			inboxDB = db
+		case "blossom":
+			blossomDB = db
+		}
 	}
 
 	return nil
@@ -119,6 +116,7 @@ func CloseDBs() {
 			if db != nil {
 				slog.Info("Closing database", "name", name)
 				db.Close()
+				dbs[name] = nil
 			}
 		}
 	}

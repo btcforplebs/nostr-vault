@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"runtime/debug"
 	"slices"
 	"time"
 
@@ -53,7 +54,7 @@ func runImport(ctx context.Context) {
 		return
 	}
 
-	initDBs()
+	GranularInitDBs([]string{"chat", "outbox", "inbox"})
 	wotModel := wot.NewSimpleInMemory(
 		pool,
 		config.WhitelistedPubKeys,
@@ -143,6 +144,7 @@ func importOwnerNotes(ctx context.Context) {
 
 		time.Sleep(1 * time.Second) // Avoid bombarding relays with too many requests
 	}
+	debug.FreeOSMemory()
 }
 
 func importTaggedNotes(ctx context.Context) {
@@ -204,6 +206,7 @@ func importTaggedNotes(ctx context.Context) {
 	}
 
 	log.Println("✅ tagged import complete")
+	debug.FreeOSMemory()
 }
 
 func subscribeInboxAndChat(ctx context.Context) {

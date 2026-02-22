@@ -230,3 +230,25 @@ func RestoreFromCloudC() C.int {
 	log.Println("✅ Cloud restore complete")
 	return 0
 }
+
+//export ZipDirectoryC
+func ZipDirectoryC(dirPath *C.char, zipPath *C.char) C.int {
+	goDirPath := C.GoString(dirPath)
+	goZipPath := C.GoString(zipPath)
+	if err := ZipDirectory(goDirPath, goZipPath); err != nil {
+		log.Printf("🚫 zip failed: %v", err)
+		return 1
+	}
+	return 0
+}
+
+//export UnzipDirectoryC
+func UnzipDirectoryC(zipPath *C.char, destPath *C.char) C.int {
+	goZipPath := C.GoString(zipPath)
+	goDestPath := C.GoString(destPath)
+	if err := UnzipDirectory(goZipPath, goDestPath); err != nil {
+		log.Printf("🚫 unzip failed: %v", err)
+		return 1
+	}
+	return 0
+}

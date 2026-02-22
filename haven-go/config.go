@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -74,6 +75,11 @@ const relaySoftware = "https://github.com/bitvora/haven"
 func loadConfig() Config {
 	_ = godotenv.Load(".env")
 
+	defaultWotDepth := 3
+	if runtime.GOOS == "ios" || runtime.GOOS == "android" {
+		defaultWotDepth = 2 // Level 3 is too heavy for mobile OOM
+	}
+
 	cfg := Config{
 		OwnerNpub:                            getEnv("OWNER_NPUB"),
 		OwnerPubKey:                          nPubToPubkey(getEnv("OWNER_NPUB")),
@@ -109,7 +115,7 @@ func loadConfig() Config {
 		ImportSeedRelays:                     getRelayListFromFile(getEnv("IMPORT_SEED_RELAYS_FILE")),
 		BackupProvider:                       getEnvString("BACKUP_PROVIDER", "none"),
 		BackupIntervalHours:                  getEnvInt("BACKUP_INTERVAL_HOURS", 24),
-		WotDepth:                             getEnvInt("WOT_DEPTH", 3),
+		WotDepth:                             getEnvInt("WOT_DEPTH", defaultWotDepth),
 		WotMinimumFollowers:                  getEnvInt("WOT_MINIMUM_FOLLOWERS", 0),
 		WotFetchTimeoutSeconds:               getEnvInt("WOT_FETCH_TIMEOUT_SECONDS", 30),
 		WotRefreshInterval:                   getEnvDuration("WOT_REFRESH_INTERVAL", 24*time.Hour),
