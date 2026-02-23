@@ -2,7 +2,9 @@ import SwiftUI
 
 @main
 struct HavenApp: App {
+    #if os(macOS)
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    #endif
     
     // Use shared instances directly, but observe them if needed for top-level updates.
     // However, ObservableObjects in environment usually suffice.
@@ -12,6 +14,7 @@ struct HavenApp: App {
     @StateObject private var statsService = StatsService.shared
     
     var body: some Scene {
+        #if os(macOS)
         MenuBarExtra("Haven", systemImage: "server.rack") {
             MenuBarContent(configService: configService, relayManager: relayManager)
                 .environmentObject(configService)
@@ -20,7 +23,7 @@ struct HavenApp: App {
                 .environmentObject(statsService)
         }
         .menuBarExtraStyle(.window)
-        
+
         // Window for Setup / Welcome
         Window("Haven Setup", id: "setup") {
             SetupWizardView {
@@ -43,7 +46,7 @@ struct HavenApp: App {
         .windowResizability(.contentSize)
         .defaultSize(width: 600, height: 700)
         .defaultPosition(.center)
-        
+
         Settings {
             SettingsView()
                 .environmentObject(configService)
@@ -51,7 +54,7 @@ struct HavenApp: App {
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
         }
-        
+
         Window("Haven", id: "viewer-window") {
             MenuBarView(configService: configService, relayManager: relayManager, isPoppedOut: true)
                 .environmentObject(configService)
@@ -61,6 +64,15 @@ struct HavenApp: App {
                 .frame(minWidth: 600, minHeight: 500)
         }
         .defaultSize(width: 900, height: 700)
+        #else
+        WindowGroup {
+            MenuBarContent(configService: configService, relayManager: relayManager)
+                .environmentObject(configService)
+                .environmentObject(relayManager)
+                .environmentObject(nostrService)
+                .environmentObject(statsService)
+        }
+        #endif
     }
 }
 
@@ -104,7 +116,9 @@ struct MenuBarContent: View {
                         
                         Button("Start Setup") {
                             openWindow(id: "setup")
+                            #if os(macOS)
                             NSApp.activate(ignoringOtherApps: true)
+                            #endif
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.havenPurple)
@@ -115,7 +129,9 @@ struct MenuBarContent: View {
                         .padding(.top, 8)
                         
                         Button("Quit") {
+                            #if os(macOS)
                             NSApp.terminate(nil)
+                            #endif
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.secondary)
@@ -175,8 +191,12 @@ struct MenuBarContent: View {
                             .cornerRadius(6)
 
                         Button(action: {
+                            #if os(macOS)
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString("pkill -9 haven", forType: .string)
+                            #else
+                            UIPasteboard.general.string = "pkill -9 haven"
+                            #endif
                         }) {
                             Image(systemName: "doc.on.doc")
                                 .font(.system(size: 14))
@@ -186,7 +206,9 @@ struct MenuBarContent: View {
                                 .cornerRadius(6)
                         }
                         .buttonStyle(.plain)
+                        #if os(macOS)
                         .help("Copy to clipboard")
+                        #endif
                     }
 
 
@@ -198,7 +220,9 @@ struct MenuBarContent: View {
                 .transition(.scale.combined(with: .opacity))
             }
         }
+        #if os(macOS)
         .frame(width: 480, height: 640)
+        #endif
     }
 }
 

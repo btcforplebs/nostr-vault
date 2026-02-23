@@ -220,7 +220,7 @@ class RelayProcessManager: ObservableObject {
         logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Captured output natively"))
 
         self.state = .booting
-        isRunning = false  // Will be set to true once "WoT initialized" is logged AND WebSocket responds
+        isRunning = true
         isBooting = true
         bootStatusMessage = "Starting system..."
         

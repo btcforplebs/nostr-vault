@@ -35,7 +35,9 @@ struct SetupWizardView: View {
             
             // Progress
             HStack(spacing: 4) {
-                ForEach(0..<9) { step in
+                let visibleSteps = isIOSDevice ? [0, 1, 2, 5, 6, 7, 8] : [0, 1, 2, 3, 4, 5, 6, 7, 8]
+                
+                ForEach(visibleSteps, id: \.self) { step in
                     Capsule()
                         .fill(step <= currentStep ? Color.havenPurple : Color.gray.opacity(0.3))
                         .frame(height: 4)
@@ -156,7 +158,15 @@ struct SetupWizardView: View {
             HStack {
                 if currentStep > 0 {
                     Button("Back") {
-                        currentStep -= 1
+                        if isIOSDevice {
+                            if currentStep == 5 {
+                                currentStep -= 3
+                            } else {
+                                currentStep -= 1
+                            }
+                        } else {
+                            currentStep -= 1
+                        }
                     }
                 }
                 
@@ -175,7 +185,16 @@ struct SetupWizardView: View {
                                 if currentStep == 1 {
                                     configService.config.hasAcceptedToS = true
                                 }
-                                currentStep += 1
+                                if isIOSDevice {
+                                    if currentStep == 2 {
+                                        saveIntermediateConfig()
+                                        currentStep += 3
+                                    } else {
+                                        currentStep += 1
+                                    }
+                                } else {
+                                    currentStep += 1
+                                }
                             }
                         }
                         .buttonStyle(.borderedProminent)

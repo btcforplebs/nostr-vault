@@ -24,6 +24,7 @@ struct SettingsView: View {
         case identity = "Identity"
         case accessControl = "Access Control"
         case relays = "Relays"
+        case feed = "Feed"
         case importNotes = "Import"
         case blastr = "Blastr"
         case advanced = "Advanced"
@@ -37,6 +38,7 @@ struct SettingsView: View {
             case .identity: return "person.badge.key"
             case .accessControl: return "shield.lefthalf.filled"
             case .relays: return "server.rack"
+            case .feed: return "newspaper"
             case .importNotes: return "square.and.arrow.down"
             case .blastr: return "paperplane"
             case .advanced: return "gearshape.2"
@@ -54,7 +56,7 @@ struct SettingsView: View {
             macOSBody
             #endif
         }
-        .onChange(of: configService.config) { newValue in
+        .onChange(of: configService.config) { _ in
             saveTask?.cancel()
             saveTask = Task {
                 try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second debounce
@@ -82,9 +84,10 @@ struct SettingsView: View {
             
             footer
         }
-        .frame(width: 600, height: 500)
+        .frame(width: 800, height: 600)
     }
     
+    #if os(iOS)
     private var iOSBody: some View {
         List {
             Section {
@@ -102,6 +105,7 @@ struct SettingsView: View {
             
             Section("Relay Configuration") {
                 tabLink(.relays)
+                tabLink(.feed)
                 tabLink(.blastr)
                 tabLink(.importNotes)
             }
@@ -128,7 +132,8 @@ struct SettingsView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Settings")
     }
-    
+    #endif
+
     private func tabLink(_ tab: SettingsTab) -> some View {
         NavigationLink(destination: destinationFor(tab)) {
             Label {
@@ -152,6 +157,7 @@ struct SettingsView: View {
         case .identity: return .blue
         case .accessControl: return .green
         case .relays: return .purple
+        case .feed: return .pink
         case .importNotes: return .orange
         case .blastr: return .cyan
         case .advanced: return .gray
@@ -178,6 +184,7 @@ struct SettingsView: View {
             case .identity: IdentitySettingsView()
             case .accessControl: AccessControlSettingsView()
             case .relays: RelaySettingsView()
+            case .feed: FeedSettingsView()
             case .importNotes: ImportSettingsView()
             case .blastr: BlastrSettingsView()
             case .advanced: AdvancedSettingsView()
@@ -186,7 +193,9 @@ struct SettingsView: View {
             }
         }
         .navigationTitle(tab.rawValue)
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
     
     private var footer: some View {
@@ -272,12 +281,13 @@ struct IdentitySettingsView: View {
                     Text("Owner npub")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+
                     
                     TextEditor(text: $configService.config.ownerNpub)
                         .font(.system(.body, design: .monospaced))
                         .frame(minHeight: 100)
                         .padding(8)
-                        .background(Color(.secondarySystemGroupedBackground))
+                        .background(Color.platformControlBackground)
                         .cornerRadius(8)
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
@@ -320,7 +330,7 @@ struct IdentitySettingsView: View {
                             }
                         }
                         .padding(8)
-                        .background(Color(.secondarySystemGroupedBackground))
+                        .background(Color.platformControlBackground)
                         .cornerRadius(8)
 
                         Text("Your private key is encrypted with NIP-49. You'll be prompted for your password when signing notes.")
@@ -350,7 +360,7 @@ struct IdentitySettingsView: View {
                             }
                         }
                         .padding(8)
-                        .background(Color(.secondarySystemGroupedBackground))
+                        .background(Color.platformControlBackground)
                         .cornerRadius(8)
 
                         Text("This key is stored in plaintext. For security, update it to encrypt with NIP-49.")
@@ -412,6 +422,7 @@ struct IdentitySettingsView: View {
             }
             #endif
         }
+        .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -434,12 +445,12 @@ struct IdentitySettingsView: View {
                                 .font(.system(.body, design: .monospaced))
                                 .frame(minHeight: 80)
                                 .padding(4)
-                                .background(Color(.secondarySystemGroupedBackground))
+                                .background(Color.platformControlBackground)
                                 .cornerRadius(6)
-                                .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .disableAutocorrection(true)
                                 #if os(iOS)
+                                .textInputAutocapitalization(.never)
                                 .keyboardType(.asciiCapable)
                                 #endif
                             
@@ -513,8 +524,12 @@ struct IdentitySettingsView: View {
                     }
                 }
             }
+            .groupedFormStyleCompat()
             .navigationTitle(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import Private Key" : "Update Private Key")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
+            #if os(iOS)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
@@ -529,6 +544,7 @@ struct IdentitySettingsView: View {
                     .disabled(newNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newPassword.isEmpty)
                 }
             }
+            #endif
         }
     }
 
@@ -616,12 +632,16 @@ struct AccessControlSettingsView: View {
 
             Divider()
 
-            content(for: selectedList)
-                .padding()
+            Form {
+                content(for: selectedList)
+            }
+            .groupedFormStyleCompat()
+            .padding()
         }
     }
     #endif
 
+    #if os(iOS)
     private var iOSBody: some View {
         Form {
             Section {
@@ -637,7 +657,9 @@ struct AccessControlSettingsView: View {
 
             content(for: selectedList)
         }
+        .groupedFormStyleCompat()
     }
+    #endif
 
     @ViewBuilder
     private func content(for type: ListType) -> some View {
@@ -677,6 +699,7 @@ struct NpubListEditor: View {
         }
     }
 
+    #if os(iOS)
     private var iOSContent: some View {
         Group {
             ForEach(npubs.indices, id: \.self) { index in
@@ -694,13 +717,13 @@ struct NpubListEditor: View {
                     }
                 }
             }
-            
+
             HStack {
                 TextField("Add npub1...", text: $newNpub)
                     .font(.system(.body, design: .monospaced))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
-                
+
                 Button(action: addNpub) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.havenPurple)
@@ -710,6 +733,7 @@ struct NpubListEditor: View {
             }
         }
     }
+    #endif
 
     private var macOSContent: some View {
         VStack(spacing: 0) {
@@ -774,6 +798,7 @@ struct RelaySettingsView: View {
         #endif
     }
 
+    #if os(iOS)
     private var iOSBody: some View {
         Form {
             Section {
@@ -789,7 +814,9 @@ struct RelaySettingsView: View {
 
             detailContent
         }
+        .groupedFormStyleCompat()
     }
+    #endif
 
     #if os(macOS)
     private var macOSBody: some View {
@@ -804,18 +831,11 @@ struct RelaySettingsView: View {
             Divider()
             
             // Detail
-            if #available(macOS 13.0, *) {
-                Form {
-                    detailContent
-                }
-                .formStyle(.grouped)
-                .padding()
-            } else {
-                Form {
-                    detailContent
-                }
-                .padding()
+            Form {
+                detailContent
             }
+            .groupedFormStyleCompat()
+            .padding()
         }
     }
     #endif
@@ -884,6 +904,7 @@ struct AdvancedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var showResetConfirmation = false
+    @State private var newMirrorURL = ""
     #if os(iOS)
     #endif
     
@@ -948,14 +969,12 @@ struct AdvancedSettingsView: View {
             }
 
             Section {
+                // Existing mirrors list
                 ForEach(configService.config.blossomMirrors.indices, id: \.self) { index in
                     HStack {
-                        TextField("https://example.com", text: $configService.config.blossomMirrors[index])
-                            #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled(true)
-                            #endif
-
+                        Text(configService.config.blossomMirrors[index])
+                            .lineLimit(1)
+                        Spacer()
                         Button(role: .destructive) {
                             configService.config.blossomMirrors.remove(at: index)
                             configService.save()
@@ -966,14 +985,26 @@ struct AdvancedSettingsView: View {
                     }
                 }
 
-                Button(action: {
-                    configService.config.blossomMirrors.append("")
-                }) {
-                    HStack {
+                // Add new mirror
+                HStack {
+                    TextField("https://example.com", text: $newMirrorURL)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        #endif
+
+                    Button(action: {
+                        let trimmed = newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            configService.config.blossomMirrors.append(trimmed)
+                            configService.save()
+                            newMirrorURL = ""
+                        }
+                    }) {
                         Image(systemName: "plus.circle.fill")
                             .foregroundColor(.green)
-                        Text("Add Mirror")
                     }
+                    .disabled(newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             } header: {
                 Text("Blossom Mirrors")
@@ -1026,6 +1057,7 @@ struct AdvancedSettingsView: View {
                 Text("This will stop the relay, delete all data (database, logs), and reset settings to default.")
             }
         }
+        .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -1067,6 +1099,27 @@ struct ImportSettingsView: View {
                 Text("The import process will fetch your own notes and notes where you are tagged. Make sure you have your npub set correctly in the Identity tab.")
             }
         }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+}
+
+struct FeedSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    
+    var body: some View {
+        Form {
+            Section {
+                RelayListEditor(relays: $configService.config.feedRelays)
+            } header: {
+                Text("Feed Relays")
+            } footer: {
+                Text("Your local relay fetches posts directly from these relays to build your feed. Connect to relays your followers are actively using.")
+            }
+        }
+        .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -1094,6 +1147,7 @@ struct BlastrSettingsView: View {
                 Text("Blastr automatically broadcasts your local notes to these external relays.")
             }
         }
+        .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -1148,14 +1202,16 @@ struct BackupSettingsView: View {
             }
 
             #if os(macOS)
-            Section("Local Export / Import") {
+            Section {
                 Button("Export Database Backup (.zip)") { exportBackup() }
                 Button("Import Database Backup (.zip)") { importBackup() }
-                
+
                 Divider()
-                
+
                 Button("Backup Blossom Media (.zip)") { backupBlossom() }
                 Button("Import Blossom Media (.zip)") { importBlossom() }
+            } header: {
+                Text("Local Export / Import")
             } footer: {
                 Text("Local backup is currently available on macOS.")
             }
@@ -1169,6 +1225,7 @@ struct BackupSettingsView: View {
                 }
             }
         }
+        .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

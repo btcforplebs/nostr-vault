@@ -27,6 +27,27 @@ struct FeedNote: Identifiable {
         tags.filter { $0.count >= 2 && $0[0] == "e" }.count
     }
 
+    var note1: String {
+        guard let data = Bech32.hexToData(id) else { return id }
+        return Bech32.encode(hrp: "note", data: data) ?? id
+    }
+
+    var nevent: String {
+        guard let idData = Bech32.hexToData(id),
+              let pubData = Bech32.hexToData(pubkey) else { return note1 }
+        
+        var tlv = Data()
+        // Type 0: Event ID
+        tlv.append(Bech32.encodeTLV(type: 0, data: idData))
+        // Type 2: Author Pubkey
+        tlv.append(Bech32.encodeTLV(type: 2, data: pubData))
+        // Type 3: Kind
+        let kindBytes = withUnsafeBytes(of: UInt32(kind).bigEndian) { Data($0) }
+        tlv.append(Bech32.encodeTLV(type: 3, data: kindBytes))
+        
+        return Bech32.encode(hrp: "nevent", data: tlv) ?? note1
+    }
+
     var mediaURLs: [URL] {
         let pattern = #"https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic)(?:\?\S+)?"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
@@ -36,19 +57,7 @@ struct FeedNote: Identifiable {
     }
 }
 
-struct FeedProfile {
-    let pubkey: String
-    var name: String?
-    var displayName: String?
-    var pictureURL: URL?
-    var nip05: String?
-
-    var bestName: String {
-        if let d = displayName, !d.isEmpty { return d }
-        if let n = name, !n.isEmpty { return n }
-        return "npub…" + String(pubkey.suffix(6))
-    }
-}
+// MARK: - FeedService
 
 // MARK: - FeedService
 
@@ -62,12 +71,12 @@ class FeedService: ObservableObject {
     static let shared = FeedService()
 
     @Published var notes: [FeedNote] = []
-    @Published var profiles: [String: FeedProfile] = [:]
     @Published var followedPubkeys: [String] = []
     @Published var isLoadingContacts = false
     @Published var isLoadingFeed    = false
     @Published var connectionStatus = "Disconnected"
     @Published var newNoteCount: Int = 0
+    @Published var likedEventIds: Set<String> = []
 
     // One client per relay URL
     private var feedClients: [String: WebSocketClient] = [:]
@@ -91,13 +100,13 @@ class FeedService: ObservableObject {
     /// Public relays used to supplement the local relay.
     /// Uses Blastr relays if configured, otherwise well-known defaults.
     private var externalRelayURLs: [URL] {
-        let configured = ConfigService.shared.config.blastrRelays
+        let configured = ConfigService.shared.config.feedRelays
         let strs = configured.isEmpty ? [
             "wss://relay.damus.io",
             "wss://relay.primal.net",
             "wss://nos.lol",
         ] : configured
-        return strs.prefix(3).compactMap { URL(string: $0) }
+        return strs.compactMap { URL(string: $0) }
     }
 
     // Batched note buffer — avoids per-event @Published mutations
@@ -108,7 +117,17 @@ class FeedService: ObservableObject {
     private var profileFetchQueue = Set<String>()
     private var profileFlushTimer: Timer?
 
-    private init() {}
+    // Batched note fetching (e.g. for parent events in threads)
+    private var fetchingNoteIds = Set<String>()
+    private var noteFetchQueue  = Set<String>()
+    private var noteFetchTimer: Timer?
+
+    // Profile saving
+    private var profileSaveTimer: Timer?
+
+    private init() {
+        // FeedService no longer manages profiles; NostrService does.
+    }
 
     // MARK: - Public API
 
@@ -124,6 +143,22 @@ class FeedService: ObservableObject {
     func markViewed() {
         newNoteCount = 0
         newSinceLastView = Date()
+    }
+
+    func addNote(_ note: FeedNote) {
+        if !notes.contains(where: { $0.id == note.id }) {
+            notes.insert(note, at: 0)
+            seenIds.insert(note.id)
+        }
+    }
+
+    /// Requests a fetch for a note that is missing from the local state.
+    /// Used for resolving thread parents.
+    func fetchMissingNote(id: String) {
+        guard !seenIds.contains(id), !fetchingNoteIds.contains(id) else { return }
+        fetchingNoteIds.insert(id)
+        noteFetchQueue.insert(id)
+        scheduleNoteFetchFlush()
     }
 
     /// Load older notes (pagination) — fetches the page before the oldest note currently shown.
@@ -246,7 +281,11 @@ class FeedService: ObservableObject {
             }
 
             DispatchQueue.main.async { [weak self] in
-                self?.followedPubkeys = pubkeys
+                var finalPubkeys = pubkeys
+                if !finalPubkeys.contains(ownerHex) {
+                    finalPubkeys.append(ownerHex)
+                }
+                self?.followedPubkeys = finalPubkeys
                 self?.isLoadingContacts = false
                 client.disconnect()
                 self?.connectionStatus = pubkeys.isEmpty ? "No contacts found" : "Loaded \(pubkeys.count) contacts"
@@ -351,7 +390,7 @@ class FeedService: ObservableObject {
     private func sendFeedSubscription(client: WebSocketClient, label: String, until: Int64? = nil) {
         let since = Int64(Date().timeIntervalSince1970) - (30 * 24 * 3600) // last 30 days
         var filter: [String: Any] = [
-            "kinds": [1, 6, 30023],
+            "kinds": [1, 6, 7, 30023],
             "authors": followedPubkeys,
             "since": since,
             "limit": 50
@@ -394,10 +433,37 @@ class FeedService: ObservableObject {
               let tags      = ev["tags"]        as? [[String]]
         else { return }
 
+        // Handle Reactions (Kind 7)
+        if kind == 7 {
+            if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
+                DispatchQueue.main.async { [weak self] in
+                    let ownerHex = NostrService.shared.ownerHexPubkey
+                    if pubkey == ownerHex {
+                        self?.likedEventIds.insert(targetId)
+                    }
+                }
+            }
+            return
+        }
+
+        var parsedContent = content
+        var originalPubkey: String? = nil
+        
+        if kind == 6 {
+            if let data = content.data(using: .utf8),
+               let inner = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let innerContent = inner["content"] as? String {
+                parsedContent = innerContent
+                originalPubkey = inner["pubkey"] as? String
+            } else {
+                parsedContent = ""
+            }
+        }
+
         let note = FeedNote(
             id: id,
-            pubkey: pubkey,
-            content: content,
+            pubkey: originalPubkey ?? pubkey,
+            content: parsedContent,
             createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
             tags: tags,
             kind: kind
@@ -411,8 +477,11 @@ class FeedService: ObservableObject {
             self.noteBuffer.append(note)
             self.scheduleNoteFlush()
 
-            if self.profiles[pubkey] == nil {
-                self.queueProfileFetch(for: pubkey)
+            if NostrService.shared.profiles[pubkey] == nil {
+                NostrService.shared.fetchMissingProfiles(for: [pubkey])
+            }
+            if let op = originalPubkey, NostrService.shared.profiles[op] == nil {
+                NostrService.shared.fetchMissingProfiles(for: [op])
             }
         }
     }
@@ -422,7 +491,9 @@ class FeedService: ObservableObject {
     private func scheduleNoteFlush() {
         guard noteFlushTimer == nil else { return }
         noteFlushTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
-            self?.flushNoteBuffer()
+            Task { @MainActor in
+                self?.flushNoteBuffer()
+            }
         }
     }
 
@@ -434,8 +505,8 @@ class FeedService: ObservableObject {
         let batch = noteBuffer
         noteBuffer.removeAll()
 
-        // Count new notes before merging
-        let newCount = batch.filter { $0.createdAt > newSinceLastView }.count
+        // Count new notes before merging (excluding replies)
+        let newCount = batch.filter { $0.createdAt > newSinceLastView && !$0.isReply }.count
         newNoteCount += newCount
 
         // O(n log n) merge instead of O(n²) per-note insertion
@@ -443,90 +514,63 @@ class FeedService: ObservableObject {
         notes.sort { $0.createdAt > $1.createdAt }
     }
 
-    // MARK: - Batched Profile Fetch
+    // MARK: - Note Fetching logic
 
-    private var fetchingProfiles = Set<String>()
-
-    private func queueProfileFetch(for pubkey: String) {
-        guard !fetchingProfiles.contains(pubkey) else { return }
-        fetchingProfiles.insert(pubkey)
-        profiles[pubkey] = FeedProfile(pubkey: pubkey)
-        profileFetchQueue.insert(pubkey)
-        scheduleProfileFlush()
-    }
-
-    private func scheduleProfileFlush() {
-        guard profileFlushTimer == nil else { return }
-        profileFlushTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            self?.flushProfileRequests()
+    private func scheduleNoteFetchFlush() {
+        guard noteFetchTimer == nil else { return }
+        noteFetchTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.flushNoteFetchRequests()
+            }
         }
     }
 
-    private func flushProfileRequests() {
-        profileFlushTimer?.invalidate()
-        profileFlushTimer = nil
-        guard !profileFetchQueue.isEmpty else { return }
+    private func flushNoteFetchRequests() {
+        noteFetchTimer?.invalidate()
+        noteFetchTimer = nil
+        guard !noteFetchQueue.isEmpty else { return }
 
-        let pubkeys = Array(profileFetchQueue)
-        profileFetchQueue.removeAll()
+        let ids = Array(noteFetchQueue)
+        noteFetchQueue.removeAll()
 
-        // Use a single WebSocket per relay for the entire batch
-        let candidates: [URL] = ([localRelayURL] + [externalRelayURLs.first]).compactMap { $0 }
+        let candidates: [URL] = ([localRelayURL] + externalRelayURLs).compactMap { $0 }
+        
+        #if DEBUG
+        print("FeedService: Fetching \(ids.count) missing notes for threading")
+        #endif
+
         for url in candidates {
             let c = WebSocketClient()
             c.isTemporary = true
-
+            
             c.messageSubject
-                .receive(on: DispatchQueue.main)
+                .receive(on: processingQueue)
                 .sink { [weak self] msg in
-                    self?.handleBatchProfileMsg(msg)
+                    // Re-use background handler; totalRelays 1 is safe for temporary fetching
+                    self?.handleFeedMsgBackground(msg, totalRelays: 1)
                 }
                 .store(in: &cancellables)
 
             c.$connectionState
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] state in
+                .sink { state in
                     if state == .connected {
-                        let filter: [String: Any] = ["kinds": [0], "authors": pubkeys]
-                        let subId = "pbatch-\(UUID().uuidString.prefix(6))"
-                        let req = ["REQ", subId, filter] as [Any]
+                        let filter: [String: Any] = ["ids": ids]
+                        let req = ["REQ", "tfetch-\(UUID().uuidString.prefix(6))", filter] as [Any]
                         if let data = try? JSONSerialization.data(withJSONObject: req),
                            let str = String(data: data, encoding: .utf8) {
                             c.send(text: str)
+                        }
+                        
+                        // Self-destruct after delay
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                            c.disconnect()
                         }
                     }
                 }
                 .store(in: &cancellables)
 
             c.connect(url: url)
-
-            // Disconnect after a reasonable timeout
-            DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-                c.disconnect()
-            }
         }
-    }
-
-    private func handleBatchProfileMsg(_ msg: String) {
-        guard let data = msg.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json[0] as? String, type == "EVENT",
-              json.count >= 3,
-              let ev = json[2] as? [String: Any],
-              let kind = ev["kind"] as? Int, kind == 0,
-              let pubkey = ev["pubkey"] as? String,
-              let contentStr = ev["content"] as? String,
-              let metaData = contentStr.data(using: .utf8),
-              let meta = try? JSONSerialization.jsonObject(with: metaData) as? [String: Any]
-        else { return }
-
-        let profile = FeedProfile(
-            pubkey: pubkey,
-            name: meta["name"] as? String,
-            displayName: meta["display_name"] as? String,
-            pictureURL: (meta["picture"] as? String).flatMap { URL(string: $0) },
-            nip05: meta["nip05"] as? String
-        )
-        profiles[pubkey] = profile
     }
 }

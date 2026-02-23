@@ -67,6 +67,7 @@ struct MenuBarView: View {
                         .cornerRadius(12)
                     }
                     .buttonStyle(.plain)
+                    .disabled(relayManager.isBooting)
                 }
                 .padding()
                 .background(Color.platformControlBackground)

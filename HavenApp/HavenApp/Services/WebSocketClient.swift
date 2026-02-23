@@ -6,6 +6,59 @@ import AVFoundation
 import CoreMedia
 import Darwin
 
+/// URLSessionDelegate that trusts self-signed certificates for localhost
+class LocalhostTrustDelegate: NSObject, URLSessionDelegate {
+    private func isLocalhost(_ host: String?) -> Bool {
+        guard let host = host else { return false }
+        // Match localhost, 127.0.0.1, ::1, and [::1] (IPv6)
+        return host == "localhost" ||
+               host == "127.0.0.1" ||
+               host == "::1" ||
+               host == "[::1]"
+    }
+
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let host = challenge.protectionSpace.host
+        let authMethod = challenge.protectionSpace.authenticationMethod
+
+        // Only trust self-signed certs for localhost
+        if isLocalhost(host) {
+            // For server trust challenges (TLS/SSL), accept self-signed certificates
+            if authMethod == NSURLAuthenticationMethodServerTrust {
+                if let serverTrust = challenge.protectionSpace.serverTrust {
+                    // For localhost, always trust self-signed certificates
+                    let credential = URLCredential(trust: serverTrust)
+                    completionHandler(.useCredential, credential)
+                    return
+                }
+            }
+        }
+
+        // For remote servers or other challenges, use default validation
+        completionHandler(.performDefaultHandling, nil)
+    }
+}
+
+/// Centralized service for media loading with proper certificate handling for localhost
+class MediaSessionService {
+    static let shared = MediaSessionService()
+
+    private let localhostDelegate: LocalhostTrustDelegate
+    let session: URLSession
+
+    private init() {
+        // Configure session with timeouts suitable for media downloads
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 60  // 60 seconds for individual requests
+        config.timeoutIntervalForResource = 600  // 10 minutes for full resource
+        config.waitsForConnectivity = true
+
+        // Create delegate that trusts self-signed certs for localhost
+        self.localhostDelegate = LocalhostTrustDelegate()
+        self.session = URLSession(configuration: config, delegate: localhostDelegate, delegateQueue: nil)
+    }
+}
+
 class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, @unchecked Sendable {
     enum ConnectionState: String {
         case disconnected
@@ -34,7 +87,8 @@ class WebSocketClient: NSObject, ObservableObject, URLSessionWebSocketDelegate, 
         config.timeoutIntervalForRequest = 10
         // Keep the overall resource alive indefinitely — our pings do that job.
         config.timeoutIntervalForResource = .infinity
-        return URLSession(configuration: config)
+        let delegate = LocalhostTrustDelegate()
+        return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }()
     
     func connect(url: URL) {
@@ -289,10 +343,18 @@ class NostrService: ObservableObject {
         setupThrottling()
         loadProfiles()
         updateOwnerHex()
+        
+        // Handle npub changes (e.g. after setup)
+        ConfigService.shared.$config
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                self.updateOwnerHex()
+            }
+            .store(in: &cancellables)
     }
     
-    private(set) var profileNames: [String: String] = [:]
-    private(set) var profilePictures: [String: URL] = [:]
+    @Published var profiles: [String: FeedProfile] = [:]
     private(set) var ownerHexPubkey: String = ""
     
     private var lastConnectLog: Date = .distantPast
@@ -312,6 +374,8 @@ class NostrService: ObservableObject {
             #if DEBUG
             print("NostrService: Owner Hex Pubkey: \(hex)")
             #endif
+        } else {
+            self.ownerHexPubkey = ""
         }
     }
     
@@ -319,7 +383,8 @@ class NostrService: ObservableObject {
         profileFlushCancellable = Timer.publish(every: 0.5, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
-                self?.flushMetadataRequests()
+                guard let self = self else { return }
+                self.flushMetadataRequests()
             }
     }
     
@@ -355,8 +420,9 @@ class NostrService: ObservableObject {
             client.$connectionState
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] state in
+                    guard let self = self else { return }
                     if state == .connected {
-                        self?.sendProfileRequest(to: client, pubkeys: pubkeys)
+                        self.sendProfileRequest(to: client, pubkeys: pubkeys)
                         // Disconnect after results come in (or reasonable timeout)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                             client.disconnect()
@@ -375,33 +441,28 @@ class NostrService: ObservableObject {
         let profileURL = havenDir.appendingPathComponent("profiles.json")
         
         if let data = try? Data(contentsOf: profileURL),
-           let loaded = try? JSONDecoder().decode(ProfileCache.self, from: data) {
-            self.profileNames = loaded.names
-            self.profilePictures = loaded.pictures
+           let loaded = try? JSONDecoder().decode([String: FeedProfile].self, from: data) {
+            self.profiles = loaded
             #if DEBUG
-            print("NostrService: Loaded \(profileNames.count) names and \(profilePictures.count) pictures from cache")
+            print("NostrService: Loaded \(profiles.count) profiles from cache")
             #endif
         }
     }
     
-    private struct ProfileCache: Codable {
-        let names: [String: String]
-        let pictures: [String: URL]
-    }
+    // Unified cache structure
     
     private func saveProfiles() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
         let profileURL = havenDir.appendingPathComponent("profiles.json")
         
-        let cache = ProfileCache(names: profileNames, pictures: profilePictures)
-        if let data = try? JSONEncoder().encode(cache) {
+        if let data = try? JSONEncoder().encode(profiles) {
             try? data.write(to: profileURL)
         }
     }
     
     func fetchMissingProfiles(for pubkeys: [String]) {
-        let missing = pubkeys.filter { profileNames[$0] == nil && !profilesInFlight.contains($0) }
+        let missing = pubkeys.filter { profiles[$0] == nil && !profilesInFlight.contains($0) }
         guard !missing.isEmpty else { return }
         
         for pubkey in missing {
@@ -527,8 +588,31 @@ class NostrService: ObservableObject {
         }
     }
     
-    /// Posts an event to the local relay
+    /// Posts an event to the local relay and broadcasts to configured relays
     func postEvent(_ event: NostrEvent) {
+        // Update local state immediately for instant feedback
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if !self.seenEventIds.contains(event.id) {
+                self.seenEventIds.insert(event.id)
+                self.events.insert(event, at: 0)
+                self.events.sort(by: { $0.created_at > $1.created_at })
+                
+                // Extract media URLs and add to noteMedia
+                let urls = self.extractMediaURLs(from: event.content)
+                let items = urls.map { url in
+                    let mime = Self.mimeFromExtension(url)
+                    let mediaType = Self.mediaTypeFromMime(mime, url: url)
+                    return MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags, mimeType: mime)
+                }
+                if !items.isEmpty {
+                    self.noteMedia.append(contentsOf: items)
+                }
+                
+                self.eventUpdateSubject.send()
+            }
+        }
+
         let msg = ["EVENT", [
             "id": event.id,
             "pubkey": event.pubkey,
@@ -542,23 +626,51 @@ class NostrService: ObservableObject {
         guard let data = try? JSONSerialization.data(withJSONObject: msg),
               let str = String(data: data, encoding: .utf8) else { return }
               
+        // 1. Post to local relay
         let localURL = URL(string: ConfigService.shared.config.nostrURL)!
-        let client = WebSocketClient()
-        client.isTemporary = true
+        let localClient = WebSocketClient()
+        localClient.isTemporary = true
         
-        client.$connectionState
+        localClient.$connectionState
             .receive(on: DispatchQueue.main)
             .sink { state in
                 if state == .connected {
-                    client.send(text: str)
+                    localClient.send(text: str)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                        client.disconnect()
+                        localClient.disconnect()
                     }
                 }
             }
             .store(in: &cancellables)
             
-        client.connect(url: localURL)
+        localClient.connect(url: localURL)
+
+        // 2. Broadcast to Blastr relays
+        let blastrRelays = ConfigService.shared.config.blastrRelays
+        if !blastrRelays.isEmpty {
+            for relayURLString in blastrRelays {
+                guard let url = URL(string: relayURLString) else { continue }
+                let broadcastClient = WebSocketClient()
+                broadcastClient.isTemporary = true
+
+                broadcastClient.$connectionState
+                    .receive(on: DispatchQueue.main)
+                    .sink { state in
+                        if state == .connected {
+                            #if DEBUG
+                            print("NostrService: Broadcasting event \(event.id.prefix(8)) to \(relayURLString)")
+                            #endif
+                            broadcastClient.send(text: str)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                broadcastClient.disconnect()
+                            }
+                        }
+                    }
+                    .store(in: &cancellables)
+                
+                broadcastClient.connect(url: url)
+            }
+        }
     }
     
     // Per-relay reconnection state to implement exponential backoff
@@ -792,24 +904,38 @@ class NostrService: ObservableObject {
             if event.kind == 0 {
                 // Handling Kind 0 (Metadata)
                 if let metadata = try? JSONSerialization.jsonObject(with: event.content.data(using: .utf8) ?? Data()) as? [String: Any] {
-                    let name = (metadata["display_name"] as? String) ?? (metadata["name"] as? String) ?? (metadata["username"] as? String)
+                    let name = metadata["name"] as? String
+                    let displayName = metadata["display_name"] as? String
                     let picture = (metadata["picture"] as? String).flatMap { URL(string: $0) }
+                    let nip05 = metadata["nip05"] as? String
                     
                     DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        var profile = self.profiles[event.pubkey] ?? FeedProfile(pubkey: event.pubkey)
+                        
                         var changed = false
-                        if let name = name, !name.isEmpty {
-                            self?.profileNames[event.pubkey] = name
+                        if profile.name != name {
+                            profile.name = name
                             changed = true
                         }
-                        if let picture = picture {
-                            self?.profilePictures[event.pubkey] = picture
+                        if profile.displayName != displayName {
+                            profile.displayName = displayName
+                            changed = true
+                        }
+                        if profile.pictureURL != picture {
+                            profile.pictureURL = picture
+                            changed = true
+                        }
+                        if profile.nip05 != nip05 {
+                            profile.nip05 = nip05
                             changed = true
                         }
                         
                         if changed {
-                            self?.profilesInFlight.remove(event.pubkey)
-                            self?.saveProfiles()
-                            self?.eventUpdateSubject.send()
+                            self.profiles[event.pubkey] = profile
+                            self.profilesInFlight.remove(event.pubkey)
+                            self.saveProfiles()
+                            self.eventUpdateSubject.send()
                         }
                     }
                 }
@@ -854,7 +980,9 @@ class NostrService: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.bufferFlushTimer == nil else { return }
             self.bufferFlushTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
-                self?.flushEventBuffer()
+                Task { @MainActor in
+                    self?.flushEventBuffer()
+                }
             }
         }
     }

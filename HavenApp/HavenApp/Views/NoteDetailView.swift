@@ -15,6 +15,9 @@ struct NoteDetailView: View {
     @State private var isLoadingParents = false
     @State private var threadClient: WebSocketClient?
     @State private var cancellables = Set<AnyCancellable>()
+    @State private var showingProfilePubkey: String?
+    @State private var showingNoteId: String?
+    @State private var showingMediaUrl: IdentifiableURL?
 
     var body: some View {
         ScrollView {
@@ -36,9 +39,11 @@ struct NoteDetailView: View {
             .padding()
         }
         .navigationTitle("Note")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .automatic) {
                 Button {
                     showingReplyCompose = true
                 } label: {
@@ -54,20 +59,43 @@ struct NoteDetailView: View {
         .onAppear {
             fetchParents()
             fetchReplies()
+            let profile = nostrService.profiles[note.pubkey]
+            if profile == nil {
+                nostrService.fetchMissingProfiles(for: [note.pubkey])
+            }
         }
         .onDisappear {
             threadClient?.disconnect()
             cancellables.removeAll()
         }
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
+            set: { showingProfilePubkey = $0?.id }
+        )) { p in
+            ProfileView(pubkey: p.id)
+        }
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { showingNoteId.map { IdentifiableString(id: $0) } },
+            set: { showingNoteId = $0?.id }
+        )) { noteId in
+            NoteDetailViewWrapper(noteId: noteId.id)
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
+        .sheet(item: $showingMediaUrl) { media in
+            FeedMediaViewer(url: media.url)
+        }
     }
     
     private var mainNoteSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let profile = nostrService.profiles[note.pubkey]
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                AvatarView(url: feedService.profiles[note.pubkey]?.pictureURL, pubkey: note.pubkey)
+                AvatarView(url: profile?.pictureURL, pubkey: note.pubkey)
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(feedService.profiles[note.pubkey]?.bestName ?? "npub…" + String(note.pubkey.suffix(6)))
+                    let profileName = profile?.bestName ?? "npub…" + String(note.pubkey.suffix(6))
+                    Text(profileName)
                         .font(.headline)
                     Text(relativeTime(note.createdAt))
                         .font(.caption)
@@ -76,16 +104,34 @@ struct NoteDetailView: View {
                 Spacer()
             }
             
-            Text(note.content)
+            Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs))
                 .font(.body)
                 .textSelection(.enabled)
+                .environment(\.openURL, OpenURLAction { url in
+                    if url.scheme == "nostr" {
+                        let identifier = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
+                        if identifier.hasPrefix("npub1") || identifier.hasPrefix("nprofile1") {
+                            self.showingProfilePubkey = identifier
+                            return .handled
+                        } else if identifier.hasPrefix("note1") || identifier.hasPrefix("nevent1") {
+                            self.showingNoteId = identifier
+                            return .handled
+                        }
+                    }
+                    return .systemAction
+                })
             
             if !note.mediaURLs.isEmpty {
                 VStack(spacing: 8) {
                     ForEach(note.mediaURLs, id: \.absoluteString) { url in
-                        FeedMediaThumbnail(url: url)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 300)
+                        Button(action: {
+                            showingMediaUrl = IdentifiableURL(url: url)
+                        }) {
+                            FeedMediaThumbnail(url: url)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 300)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -100,6 +146,17 @@ struct NoteDetailView: View {
                 actionButton(icon: "heart", count: nil) {
                     likeNote()
                 }
+                
+                 ShareLink(
+                    item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
+                    subject: Text("Nostr Note"),
+                    message: Text("Check out this note on Nostr")
+                ) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                
                 Spacer()
             }
             .padding(.top, 8)
@@ -108,17 +165,11 @@ struct NoteDetailView: View {
     
     private var threadSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "arrow.turn.down.right")
-                    .foregroundColor(.secondary)
-                Text("Thread Context")
-                    .font(.headline)
-            }
-            .padding(.bottom, 4)
 
             ForEach(parentNotes) { parent in
                 NavigationLink(destination: NoteDetailView(note: parent)) {
-                    CompactNoteRow(note: parent, profile: feedService.profiles[parent.pubkey])
+                    let parentProfile = nostrService.profiles[parent.pubkey]
+                    CompactNoteRow(note: parent, profile: parentProfile)
                 }
                 .buttonStyle(.plain)
             }
@@ -150,7 +201,8 @@ struct NoteDetailView: View {
             } else {
                 ForEach(replies) { reply in
                     NavigationLink(destination: NoteDetailView(note: reply)) {
-                        FeedNoteRow(note: reply, profile: feedService.profiles[reply.pubkey])
+                        let replyProfile = nostrService.profiles[reply.pubkey]
+                        FeedNoteRow(note: reply, profile: replyProfile, showParent: false)
                     }
                     .buttonStyle(.plain)
                 }
@@ -196,33 +248,47 @@ struct NoteDetailView: View {
         guard let parentId = note.parentEventId, !isLoadingParents else { return }
         isLoadingParents = true
 
-        let relayURL = URL(string: configService.config.nostrURL)!
-        let client = WebSocketClient()
-        threadClient = client
+        // Try local relay AND external relays to find the parent
+        var relayURLs: [URL] = [URL(string: configService.config.nostrURL)!]
+        let externalStrs = configService.config.feedRelays.isEmpty ? [
+            "wss://relay.damus.io",
+            "wss://relay.primal.net",
+            "wss://nos.lol",
+        ] : configService.config.feedRelays
+        relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
-        client.messageSubject
-            .receive(on: DispatchQueue.main)
-            .sink { msg in
-                self.handleParentMessage(msg, client: client)
-            }
-            .store(in: &cancellables)
+        for url in relayURLs {
+            let client = WebSocketClient()
+            client.isTemporary = true // Clean up when done
 
-        client.$connectionState
-            .receive(on: DispatchQueue.main)
-            .sink { state in
-                if state == .connected {
-                    // Request the parent note
-                    let filter: [String: Any] = ["ids": [parentId], "limit": 1]
-                    let req = ["REQ", "thread-\(UUID().uuidString.prefix(8))", filter] as [Any]
-                    if let data = try? JSONSerialization.data(withJSONObject: req),
-                       let str = String(data: data, encoding: .utf8) {
-                        client.send(text: str)
+            client.messageSubject
+                .receive(on: DispatchQueue.main)
+                .sink { msg in
+                    self.handleParentMessage(msg, client: client)
+                }
+                .store(in: &cancellables)
+
+            client.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { state in
+                    if state == .connected {
+                        let filter: [String: Any] = ["ids": [parentId], "limit": 1]
+                        let req = ["REQ", "thread-\(UUID().uuidString.prefix(8))", filter] as [Any]
+                        if let data = try? JSONSerialization.data(withJSONObject: req),
+                           let str = String(data: data, encoding: .utf8) {
+                            client.send(text: str)
+                        }
                     }
                 }
-            }
-            .store(in: &cancellables)
+                .store(in: &cancellables)
 
-        client.connect(url: relayURL)
+            client.connect(url: url)
+            
+            // Auto-disconnect if nothing found after some time
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                client.disconnect()
+            }
+        }
     }
 
     private func handleParentMessage(_ msg: String, client: WebSocketClient) {
@@ -248,20 +314,24 @@ struct NoteDetailView: View {
                 kind: kind
             )
 
-            // Insert parent at the beginning to maintain chronological order
-            parentNotes.insert(parent, at: 0)
+            if !parentNotes.contains(where: { $0.id == id }) {
+                // Insert parent at the beginning to maintain chronological order
+                parentNotes.insert(parent, at: 0)
+                parentNotes.sort { $0.createdAt < $1.createdAt }
 
-            // Recursively fetch the parent's parent
-            if let grandparentId = parent.parentEventId {
-                fetchParentNote(id: grandparentId, client: client)
-            } else {
-                isLoadingParents = false
-                client.disconnect()
+                // Recursively fetch the parent's parent
+                if let grandparentId = parent.parentEventId {
+                    fetchParentNote(id: grandparentId, client: client)
+                } else {
+                    isLoadingParents = false
+                    client.disconnect()
+                }
             }
 
             // Fetch profile for the parent note author
-            if feedService.profiles[pubkey] == nil {
-                fetchProfile(for: pubkey)
+            let parentAuthorProfile = nostrService.profiles[pubkey]
+            if parentAuthorProfile == nil {
+                nostrService.fetchMissingProfiles(for: [pubkey])
             }
         } else if type == "EOSE" {
             isLoadingParents = false
@@ -278,64 +348,6 @@ struct NoteDetailView: View {
         }
     }
 
-    private func fetchProfile(for pubkey: String) {
-        let client = WebSocketClient()
-        var got = false
-
-        client.messageSubject
-            .receive(on: DispatchQueue.main)
-            .sink { msg in
-                guard !got else { return }
-                self.handleProfileMessage(msg, pubkey: pubkey, client: client, onSuccess: { got = true })
-            }
-            .store(in: &cancellables)
-
-        client.$connectionState
-            .receive(on: DispatchQueue.main)
-            .sink { state in
-                if state == .connected {
-                    let filter: [String: Any] = ["kinds": [0], "authors": [pubkey], "limit": 1]
-                    let req = ["REQ", "p-\(pubkey.prefix(6))", filter] as [Any]
-                    if let data = try? JSONSerialization.data(withJSONObject: req),
-                       let str = String(data: data, encoding: .utf8) {
-                        client.send(text: str)
-                    }
-                }
-            }
-            .store(in: &cancellables)
-
-        client.connect(url: URL(string: configService.config.nostrURL)!)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            client.disconnect()
-        }
-    }
-
-    private func handleProfileMessage(
-        _ msg: String, pubkey: String, client: WebSocketClient, onSuccess: (() -> Void)? = nil
-    ) {
-        guard let data = msg.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json[0] as? String, type == "EVENT",
-              json.count >= 3,
-              let ev = json[2] as? [String: Any],
-              let kind = ev["kind"] as? Int, kind == 0,
-              let contentStr = ev["content"] as? String,
-              let metaData = contentStr.data(using: .utf8),
-              let meta = try? JSONSerialization.jsonObject(with: metaData) as? [String: Any]
-        else { return }
-
-        let profile = FeedProfile(
-            pubkey: pubkey,
-            name: meta["name"] as? String,
-            displayName: meta["display_name"] as? String,
-            pictureURL: (meta["picture"] as? String).flatMap { URL(string: $0) },
-            nip05: meta["nip05"] as? String
-        )
-        feedService.profiles[pubkey] = profile
-        onSuccess?()
-        client.disconnect()
-    }
     
     private func relativeTime(_ date: Date) -> String {
         let fmt = DateFormatter()
@@ -367,13 +379,13 @@ struct CompactNoteRow: View {
                     .foregroundColor(.secondary)
             }
 
-            Text(note.content)
+            Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs))
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .lineLimit(3)
         }
         .padding(10)
-        .background(Color(.tertiarySystemGroupedBackground))
+        .background(Color.platformControlBackground)
         .cornerRadius(10)
     }
 
@@ -382,5 +394,138 @@ struct CompactNoteRow: View {
         fmt.dateStyle = .short
         fmt.timeStyle = .short
         return fmt.string(from: date)
+    }
+}
+
+// MARK: - NoteDetailViewWrapper
+
+struct NoteDetailViewWrapper: View {
+    let noteId: String
+    @State private var resolvedNote: FeedNote?
+    @State private var isLoading = true
+    @State private var error: String?
+    
+    @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var configService: ConfigService
+    @StateObject private var feedService = FeedService.shared
+    @State private var cancellables = Set<AnyCancellable>()
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if let note = resolvedNote {
+                    NoteDetailView(note: note)
+                } else if isLoading {
+                    VStack {
+                        ProgressView()
+                        Text("Fetching note...")
+                            .foregroundColor(.secondary)
+                            .padding()
+                    }
+                } else if let error = error {
+                    VStack {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.largeTitle)
+                        Text(error)
+                            .padding()
+                    }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        // Dismiss handled by sheet binding
+                    }
+                }
+            }
+        }
+        .onAppear {
+            fetchNote()
+        }
+    }
+
+    private func fetchNote() {
+        if let existing = feedService.notes.first(where: { $0.id == noteId }) {
+            self.resolvedNote = existing
+            self.isLoading = false
+            return
+        }
+
+        let hexId: String
+        if noteId.hasPrefix("note1") {
+            hexId = Bech32.decode(noteId)?.hexString ?? noteId
+        } else if noteId.hasPrefix("nevent1") {
+            hexId = noteId // Simplified
+        } else {
+            hexId = noteId
+        }
+
+        let relays = [URL(string: configService.config.nostrURL)!] + 
+                     [URL(string: "wss://relay.damus.io")!, URL(string: "wss://relay.primal.net")!]
+
+        for url in relays {
+            let client = WebSocketClient()
+            client.isTemporary = true
+            
+            client.messageSubject
+                .receive(on: DispatchQueue.main)
+                .sink { msg in
+                    self.handleNoteMessage(msg, client: client)
+                }
+                .store(in: &cancellables)
+                
+            client.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { state in
+                    if state == .connected {
+                        let filter: [String: Any] = ["ids": [hexId], "limit": 1]
+                        let req = ["REQ", "load-\(UUID().uuidString.prefix(8))", filter] as [Any]
+                        if let data = try? JSONSerialization.data(withJSONObject: req),
+                           let str = String(data: data, encoding: .utf8) {
+                            client.send(text: str)
+                        }
+                    }
+                }
+                .store(in: &cancellables)
+            
+            client.connect(url: url)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            if self.isLoading {
+                self.isLoading = false
+                if self.resolvedNote == nil {
+                    self.error = "Could not find note"
+                }
+            }
+        }
+    }
+
+    private func handleNoteMessage(_ msg: String, client: WebSocketClient) {
+        guard let data = msg.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              let type = json[0] as? String, type == "EVENT",
+              let ev = json[2] as? [String: Any],
+              let id = ev["id"] as? String,
+              let pubkey = ev["pubkey"] as? String,
+              let content = ev["content"] as? String,
+              let createdAt = ev["created_at"] as? Int64,
+              let kind = ev["kind"] as? Int,
+              let tags = ev["tags"] as? [[String]] else { return }
+
+        let note = FeedNote(
+            id: id,
+            pubkey: pubkey,
+            content: content,
+            createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
+            tags: tags,
+            kind: kind
+        )
+        
+        DispatchQueue.main.async {
+            self.resolvedNote = note
+            self.isLoading = false
+            client.disconnect()
+        }
     }
 }

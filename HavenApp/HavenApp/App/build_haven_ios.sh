@@ -26,9 +26,9 @@ if [ -z "$BUILT_PRODUCTS_DIR" ]; then
 fi
 
 # Build into the Xcode project build directory so it can be linked.
-HAVEN_LIB_PATH="${PROJECT_DIR}/build/ios/libhaven.a"
+HAVEN_LIB_PATH="${PROJECT_DIR}/build/ios/libhaven_ios.a"
 
-echo "🚀 Building Go libhaven.a for iOS from source..."
+echo "🚀 Building Go libhaven_ios.a for iOS from source..."
 echo "📍 Source root: $GO_SRC_ROOT"
 echo "📍 Output path: $HAVEN_LIB_PATH"
 
@@ -109,6 +109,7 @@ build_for_arch() {
     export CGO_CFLAGS="-isysroot $SDK_PATH -target $target"
     export CGO_LDFLAGS="-isysroot $SDK_PATH -target $target"
     
+    rm -f "$output"
     GOARCH="$goarch" "$GO_BIN" build -tags cshared -buildmode=c-archive -ldflags="-s -w" -o "$output"
     echo "✅ Built iOS $label slice for target $target."
 }
@@ -135,11 +136,11 @@ else
 fi
 
 # Verify the generated header exists (c-archive produces it alongside the .a)
-GENERATED_HEADER="${PROJECT_DIR}/build/ios/libhaven.h"
+GENERATED_HEADER="${PROJECT_DIR}/build/ios/libhaven_ios.h"
 if [ -f "$GENERATED_HEADER" ]; then
-    echo "✅ libhaven.h generated at $GENERATED_HEADER"
+    echo "✅ libhaven_ios.h generated at $GENERATED_HEADER"
 else
-    echo "⚠️ Warning: libhaven.h not found at $GENERATED_HEADER — bridging header may fail."
+    echo "⚠️ Warning: libhaven_ios.h not found at $GENERATED_HEADER — bridging header may fail."
 fi
 
 echo "🎉 iOS build complete!"

@@ -89,6 +89,10 @@ extern int BackupDatabaseC(char* outputPath);
 extern int RestoreDatabaseC(char* inputPath);
 extern int BackupToCloudC(void);
 extern int RestoreFromCloudC(void);
+extern int ZipDirectoryC(char* dirPath, char* zipPath);
+extern int UnzipDirectoryC(char* zipPath, char* destPath);
+extern char* SignEventC(char* jsonStr, char* sk);
+extern char* GenerateKeyPairC(void);
 
 #ifdef __cplusplus
 }

@@ -1,8 +1,0 @@
-Command line invocation:
-    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project HavenApp/HavenApp.xcodeproj -scheme HavenApp-iOS -configuration Debug -sdk iphoneos build
-
-Build settings from command line:
-    SDKROOT = iphoneos26.2
-
-2026-02-21 15:28:28.088 xcodebuild[88086:1337144] Writing error result bundle to /var/folders/gk/b5g6r9x52ybb30bwwxt0_8fh0000gn/T/ResultBundle_2026-21-02_15-28-0028.xcresult
-xcodebuild: error: The project named "HavenApp" does not contain a scheme named "HavenApp-iOS". The "-list" option can be used to find the names of the schemes in the project.

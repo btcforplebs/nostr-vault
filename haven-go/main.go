@@ -1,6 +1,9 @@
+//go:build !cshared
+
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -9,18 +12,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
-	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/spf13/afero"
 
 	"github.com/bitvora/haven/pkg/wot"
-)
-
-var (
-	pool   *nostr.SimplePool
-	config Config
-	fs     afero.Fs
 )
 
 func main() {
@@ -105,7 +102,30 @@ func main() {
 	}()
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("templates/static"))))
-	http.HandleFunc("/", dynamicRelayHandler)
+
+	// Blossom + relay router - check method and route accordingly
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Blossom media endpoints (PUT, GET, DELETE on root paths)
+		path := r.URL.Path
+		isWebSocket := r.Header.Get("Sec-WebSocket-Key") != ""
+
+		if path != "" && path != "/" && !isWebSocket {
+			// Not a WebSocket request, check if it's Blossom
+			switch r.Method {
+			case "PUT":
+				handleBlossomUpload(w, r)
+				return
+			case "GET":
+				handleBlossomDownload(w, r)
+				return
+			case "DELETE":
+				handleBlossomDelete(w, r)
+				return
+			}
+		}
+		// Fall through to relay handler
+		dynamicRelayHandler(w, r)
+	})
 
 	addr := fmt.Sprintf("%s:%d", config.RelayBindAddress, config.RelayPort)
 
@@ -131,37 +151,105 @@ func printHelp() {
 	fmt.Println("run 'haven [command] --help' for more information on a command.")
 }
 
-func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
-	var relay *khatru.Relay
-	relayType := r.URL.Path
 
-	switch relayType {
-	case "/private":
-		relay = privateRelay
-	case "/chat":
-		relay = chatRelay
-	case "/inbox":
-		relay = inboxRelay
-	case "":
-		relay = outboxRelay
-	default:
-		relay = outboxRelay
+func handleBlossomUpload(w http.ResponseWriter, r *http.Request) {
+	// Extract SHA256 from path (e.g., /013725e4cfa79cdc4a7e108c3799b739d72b86eadf23586cf5e103b04ae3257f)
+	sha256 := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/"), "")
+	if sha256 == "" || len(sha256) != 64 {
+		http.Error(w, "Invalid SHA256 hash", http.StatusBadRequest)
+		return
 	}
 
-	relay.ServeHTTP(w, r)
+	// Verify NIP-98 auth header
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+		return
+	}
+
+	// TODO: Verify NIP-98 signature
+	// For now, accept any auth (in production, validate the signature)
+
+	// Read body and store
+	defer r.Body.Close()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read body", http.StatusBadRequest)
+		return
+	}
+
+	// Store to filesystem
+	file, err := fs.Create(config.BlossomPath + sha256)
+	if err != nil {
+		slog.Error("Failed to create blob file", "sha256", sha256, "error", err)
+		http.Error(w, "Failed to store blob", http.StatusInternalServerError)
+		return
+	}
+	if _, err := io.Copy(file, bytes.NewReader(body)); err != nil {
+		file.Close()
+		slog.Error("Failed to write blob file", "sha256", sha256, "error", err)
+		http.Error(w, "Failed to store blob", http.StatusInternalServerError)
+		return
+	}
+	file.Close()
+
+	slog.Debug("stored blob", "sha256", sha256, "size", len(body))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	fmt.Fprintf(w, `{"status":"ok","hash":"%s","url":"https://%s/%s"}`, sha256, config.RelayURL, sha256)
 }
 
-func getLogLevelFromConfig() slog.Level {
-	switch config.LogLevel {
-	case "DEBUG":
-		return slog.LevelDebug
-	case "INFO":
-		return slog.LevelInfo
-	case "WARN":
-		return slog.LevelWarn
-	case "ERROR":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo // Default level
+func handleBlossomDownload(w http.ResponseWriter, r *http.Request) {
+	// Extract SHA256 from path
+	sha256 := strings.TrimPrefix(r.URL.Path, "/")
+	if sha256 == "" || len(sha256) != 64 {
+		http.Error(w, "Invalid SHA256 hash", http.StatusBadRequest)
+		return
 	}
+
+	// Load blob from filesystem
+	file, err := fs.Open(config.BlossomPath + sha256)
+	if err != nil {
+		slog.Debug("Blob not found", "sha256", sha256)
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	defer file.Close()
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.WriteHeader(http.StatusOK)
+	io.Copy(w, file)
 }
+
+func handleBlossomDelete(w http.ResponseWriter, r *http.Request) {
+	// Extract SHA256 from path
+	sha256 := strings.TrimPrefix(r.URL.Path, "/")
+	if sha256 == "" || len(sha256) != 64 {
+		http.Error(w, "Invalid SHA256 hash", http.StatusBadRequest)
+		return
+	}
+
+	// Verify NIP-98 auth header
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+		return
+	}
+
+	// TODO: Verify NIP-98 signature and ownership
+
+	// Delete from filesystem
+	if err := fs.Remove(config.BlossomPath + sha256); err != nil {
+		slog.Error("Failed to delete blob", "sha256", sha256, "error", err)
+		http.Error(w, "Failed to delete blob", http.StatusInternalServerError)
+		return
+	}
+
+	slog.Debug("deleted blob", "sha256", sha256)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status":"ok"}`)
+}
+

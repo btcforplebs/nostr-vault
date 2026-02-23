@@ -1,5 +1,9 @@
 import SwiftUI
 
+struct IdentifiableString: Identifiable {
+    let id: String
+}
+
 // MARK: - FeedView
 
 struct FeedView: View {
@@ -10,94 +14,102 @@ struct FeedView: View {
     @State private var showingCompose = false
     @State private var replyToNote: FeedNote?
     @State private var showingRelayStatus = false
+    @State private var showingNoteId: String?
 
     var body: some View {
+        #if os(iOS)
         NavigationView {
-            ZStack {
-                // Dark sophisticated background
-                Color(red: 0.08, green: 0.08, blue: 0.12).ignoresSafeArea()
+            rootContent
+                .navigationTitle("Feed")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(Color.platformControlBackground, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+        }
+        .navigationViewStyle(.stack)
+        #else
+        rootContent
+        #endif
+    }
 
-                Group {
-                    if feedService.isLoadingContacts {
-                        loadingContactsView
-                    } else if feedService.followedPubkeys.isEmpty && !feedService.isLoadingFeed {
-                        emptyStateView
-                    } else {
-                        feedList
-                    }
-                }
-            }
-            .navigationTitle("Feed")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(red: 0.08, green: 0.08, blue: 0.12), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { showingRelayStatus = true }) {
-                        Circle()
-                            .fill(feedService.connectionStatus == "Live" ? Color(red: 0.2, green: 0.8, blue: 0.6) : Color(red: 1, green: 0.6, blue: 0.1))
-                            .frame(width: 8, height: 8)
-                            .shadow(color: feedService.connectionStatus == "Live" ? Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.6) : Color(red: 1, green: 0.6, blue: 0.1).opacity(0.4), radius: 3)
-                    }
-                    .buttonStyle(.plain)
-                }
+    @ViewBuilder
+    private var rootContent: some View {
+        ZStack {
+            // Match the platform theme background
+            Color.platformControlBackground.ignoresSafeArea()
 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 12) {
-                        Button {
-                            replyToNote = nil
-                            showingCompose = true
-                        } label: {
-                            Image(systemName: "square.and.pencil")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.secondary)
-                        }
-
-                        if feedService.newNoteCount > 0 && !configService.config.showReplies {
-                            Button {
-                                feedService.refresh()
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Text("\(feedService.newNoteCount)")
-                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                    Image(systemName: "arrow.up")
-                                        .font(.system(size: 12, weight: .semibold))
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color(red: 0.2, green: 0.8, blue: 0.6))
-                                )
-                            }
-                        } else {
-                            Button {
-                                feedService.refresh()
-                            } label: {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(Color(red: 0.8, green: 0.2, blue: 0.6))
-                                    .rotationEffect(.degrees(feedService.isLoadingFeed ? 360 : 0))
-                                    .animation(
-                                        feedService.isLoadingFeed ?
-                                            .linear(duration: 1).repeatForever(autoreverses: false) :
-                                            .default,
-                                        value: feedService.isLoadingFeed
-                                    )
-                            }
-                            .disabled(feedService.isLoadingContacts || feedService.isLoadingFeed)
-                        }
-
-                        Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
-                            Image(systemName: configService.config.showReplies ? "message.fill" : "message")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(configService.config.showReplies ? Color(red: 0.8, green: 0.2, blue: 0.6) : .secondary)
-                        }
-                    }
+            Group {
+                if feedService.isLoadingContacts {
+                    loadingContactsView
+                } else if feedService.followedPubkeys.isEmpty && !feedService.isLoadingFeed {
+                    emptyStateView
+                } else {
+                    feedList
                 }
             }
         }
+        #if os(iOS)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { showingRelayStatus = true }) {
+                    Circle()
+                        .fill(feedService.connectionStatus == "Live" ? Color(red: 0.2, green: 0.8, blue: 0.6) : Color(red: 1, green: 0.6, blue: 0.1))
+                        .frame(width: 8, height: 8)
+                        .shadow(color: feedService.connectionStatus == "Live" ? Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.6) : Color(red: 1, green: 0.6, blue: 0.1).opacity(0.4), radius: 3)
+                }
+                .buttonStyle(.plain)
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                HStack(spacing: 12) {
+                    if feedService.newNoteCount > 0 && !configService.config.showReplies {
+                        Button {
+                            // The actual scroll happens via the ScrollViewReader in feedList
+                            NotificationCenter.default.post(name: NSNotification.Name("ScrollToTop"), object: nil)
+                            feedService.refresh()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("\(feedService.newNoteCount)")
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color(red: 0.2, green: 0.8, blue: 0.6))
+                            )
+                        }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    } else {
+                        Button {
+                            feedService.refresh()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(Color.havenPurple)
+                                .rotationEffect(.degrees(feedService.isLoadingFeed ? 360 : 0))
+                                .animation(
+                                    feedService.isLoadingFeed ?
+                                        .linear(duration: 1).repeatForever(autoreverses: false) :
+                                        .default,
+                                    value: feedService.isLoadingFeed
+                                )
+                        }
+                        .disabled(feedService.isLoadingContacts || feedService.isLoadingFeed)
+                    }
+
+                    Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
+                        Image(systemName: configService.config.showReplies ? "message.fill" : "message")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                    }
+                }
+                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: feedService.newNoteCount)
+            }
+        }
+        #endif
         .preferredColorScheme(.dark)
         .onAppear {
             feedService.markViewed()
@@ -122,6 +134,14 @@ struct FeedView: View {
                 .environmentObject(relayManager)
                 .environmentObject(configService)
         }
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { showingNoteId.map { IdentifiableString(id: $0) } },
+            set: { showingNoteId = $0?.id }
+        )) { noteId in
+            NoteDetailViewWrapper(noteId: noteId.id)
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
     }
 
     // MARK: - Loading Contacts
@@ -131,7 +151,7 @@ struct FeedView: View {
             VStack(spacing: 16) {
                 ProgressView()
                     .controlSize(.large)
-                    .tint(Color(red: 0.8, green: 0.2, blue: 0.6))
+                    .tint(Color.havenPurple)
 
                 VStack(spacing: 8) {
                     Text("Synchronizing")
@@ -149,7 +169,7 @@ struct FeedView: View {
                 .tracking(0.5)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(red: 0.08, green: 0.08, blue: 0.12))
+        .background(Color.platformControlBackground)
     }
 
     // MARK: - Empty State
@@ -161,10 +181,7 @@ struct FeedView: View {
                     .font(.system(size: 56, weight: .thin))
                     .foregroundStyle(
                         LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color(red: 0.8, green: 0.2, blue: 0.6),
-                                Color(red: 0.2, green: 0.8, blue: 0.6)
-                            ]),
+                            gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -195,10 +212,7 @@ struct FeedView: View {
                 .padding(.vertical, 14)
                 .background(
                     LinearGradient(
-                        gradient: Gradient(colors: [
-                            Color(red: 0.8, green: 0.2, blue: 0.6),
-                            Color(red: 1.0, green: 0.3, blue: 0.4)
-                        ]),
+                        gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -206,69 +220,106 @@ struct FeedView: View {
                 .cornerRadius(10)
             }
         }
-        .padding(48)
+        .padding(max(16, min(48, 24))) // Adaptive padding
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(red: 0.08, green: 0.08, blue: 0.12))
+        .background(Color.platformControlBackground)
     }
 
     // MARK: - Feed List
 
     private var feedList: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                // Loading header
-                if feedService.isLoadingFeed && feedService.notes.isEmpty {
-                    ForEach(0..<5, id: \.self) { _ in
-                        FeedNoteSkeletonRow()
-                            .padding(.horizontal, 16)
-                    }
-                }
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    // Anchor for scroll-to-top
+                    Color.clear
+                        .frame(height: 0)
+                        .id("top")
 
-                ForEach(feedService.notes.filter { note in
-                    configService.config.showReplies || !note.isReply
-                }) { note in
-                    NavigationLink(destination: NoteDetailView(note: note)) {
-                        FeedNoteRow(note: note, profile: feedService.profiles[note.pubkey], onReply: {
-                            replyToNote = note
-                            showingCompose = true
-                        })
-                        .padding(.horizontal, 16)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // Load more
-                if !feedService.notes.isEmpty {
-                    Button {
-                        feedService.loadMore()
-                    } label: {
-                        HStack(spacing: 8) {
-                            if feedService.isLoadingFeed {
-                                ProgressView().controlSize(.small).tint(Color(red: 0.8, green: 0.2, blue: 0.6))
-                            } else {
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            Text(feedService.isLoadingFeed ? "Loading..." : "Show earlier")
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    // Loading header
+                    if feedService.isLoadingFeed && feedService.notes.isEmpty {
+                        ForEach(0..<5, id: \.self) { _ in
+                            FeedNoteSkeletonRow()
+                                .padding(.horizontal, 16)
                         }
-                        .foregroundColor(.secondary)
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: .infinity)
-                        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
-                        .cornerRadius(10)
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 1))
-                        .padding(.horizontal, 16)
                     }
-                    .disabled(feedService.isLoadingFeed)
-                }
 
-                Color.clear.frame(height: 20)
+                    ForEach(feedService.notes.filter { note in
+                        configService.config.showReplies || !note.isReply
+                    }, id: \.id) { note in
+                        NavigationLink(destination: NoteDetailView(note: note)) {
+                            let profile = nostrService.profiles[note.pubkey]
+                            FeedNoteRow(note: note, profile: profile, onReply: {
+                                replyToNote = note
+                                showingCompose = true
+                            })
+                            .padding(.horizontal, 16)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // Load more
+                    if !feedService.notes.isEmpty {
+                        Button {
+                            feedService.loadMore()
+                        } label: {
+                            HStack(spacing: 8) {
+                                if feedService.isLoadingFeed {
+                                    ProgressView().controlSize(.small).tint(Color.havenPurple)
+                                } else {
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                Text(feedService.isLoadingFeed ? "Loading..." : "Show earlier")
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            }
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity)
+                            .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+                            .cornerRadius(10)
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 1))
+                            .padding(.horizontal, 16)
+                        }
+                        .disabled(feedService.isLoadingFeed)
+                    }
+
+                    Color.clear.frame(height: 80) // Space for floating button
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
             }
-            .padding(.vertical, 16)
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ScrollToTop"))) { _ in
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                    proxy.scrollTo("top", anchor: .top)
+                }
+            }
         }
-        .refreshable {
-            feedService.refresh()
+        .overlay(alignment: .bottomTrailing) {
+            #if os(iOS)
+            Button {
+                replyToNote = nil
+                showingCompose = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.black)
+                    .frame(width: 56, height: 56)
+                    .background(
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .shadow(color: Color.havenPurple.opacity(0.4), radius: 8, x: 0, y: 4)
+                    )
+            }
+            .padding(24)
+            .padding(.bottom, 8) // Adjust for tab bar if present
+            #endif
         }
     }
 }
@@ -279,28 +330,81 @@ struct FeedNoteRow: View {
     let note: FeedNote
     let profile: FeedProfile?
     var onReply: (() -> Void)? = nil
+    var showParent: Bool = true
 
     @StateObject private var feedService = FeedService.shared
     @EnvironmentObject var nostrService: NostrService
 
-    @State private var isExpanded = false
-    @State private var isHovered = false
-    private let maxCollapsedLines = 5
+    @State private var showingProfileKey: IdentifiableString?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Header
-            HStack(alignment: .center, spacing: 12) {
-                AvatarView(url: profile?.pictureURL, pubkey: note.pubkey)
-                    .frame(width: 40, height: 40)
+            // Threading View: Parent Note Preview (shows above the current note)
+            if showParent, let pId = note.parentEventId {
+                if let parent = feedService.notes.first(where: { $0.id == pId }) {
+                    NavigationLink(destination: NoteDetailView(note: parent)) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(spacing: 0) {
+                                    let parentProfile = nostrService.profiles[parent.pubkey]
+                                    AvatarView(url: parentProfile?.pictureURL, pubkey: parent.pubkey)
+                                        .frame(width: 28, height: 28)
+                                        .opacity(0.8)
+                                    
+                                    Rectangle()
+                                        .fill(Color.havenPurple.opacity(0.3))
+                                        .frame(width: 2)
+                                        .frame(minHeight: 12)
+                                }
+                                .frame(width: 40) // Match main avatar container width
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    let parentProfile = nostrService.profiles[parent.pubkey]
+                                    Text(parentProfile?.bestName ?? "Someone")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                    
+                                    Text(NostrContentFormatter.format(parent.content, mediaURLs: parent.mediaURLs))
+                                        .font(.system(size: 13, weight: .regular))
+                                        .foregroundColor(.secondary.opacity(0.8))
+                                        .lineLimit(2)
+                                }
+                                .padding(.top, 2)
+                                .padding(.bottom, 8)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    // Request parent if missing
+                    Color.clear
+                        .frame(height: 0)
+                        .onAppear {
+                            feedService.fetchMissingNote(id: pId)
+                        }
+                }
+            }
+
+            // Main Note Content
+            HStack(alignment: .top, spacing: 12) {
+                VStack(spacing: 0) {
+                    if let pId = note.parentEventId, feedService.notes.contains(where: { $0.id == pId }) {
+                        Rectangle()
+                            .fill(Color.havenPurple.opacity(0.3))
+                            .frame(width: 2, height: 10)
+                    }
+
+                    AvatarView(url: nostrService.profiles[note.pubkey]?.pictureURL, pubkey: note.pubkey)
+                        .frame(width: 40, height: 40)
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(profile?.bestName ?? shortKey(note.pubkey))
+                        Text(nostrService.profiles[note.pubkey]?.bestName ?? shortKey(note.pubkey))
                             .font(.system(size: 14, weight: .semibold, design: .default))
                             .lineLimit(1)
-
-                        if let nip05 = profile?.nip05, !nip05.isEmpty {
+                        
+                        if let profile = nostrService.profiles[note.pubkey], let nip05 = profile.nip05, !nip05.isEmpty {
                             Image(systemName: "checkmark.seal.fill")
                                 .font(.caption2)
                                 .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
@@ -313,13 +417,14 @@ struct FeedNoteRow: View {
                             .foregroundColor(.secondary)
                             .tracking(0.2)
                     }
+                    .padding(.top, 4)
 
                     // Reply indicator - subtle
                     if note.isReply {
                         HStack(spacing: 3) {
                             Image(systemName: "arrowshape.turn.up.left.fill")
                                 .font(.system(size: 9, weight: .semibold))
-                                .foregroundColor(Color(red: 0.8, green: 0.2, blue: 0.6).opacity(0.6))
+                                .foregroundColor(Color.havenPurple.opacity(0.6))
 
                             if let rPubkey = note.replyToPubkey {
                                 Text("reply to \(shortKey(rPubkey))")
@@ -332,62 +437,27 @@ struct FeedNoteRow: View {
                 }
             }
 
-            // Parent Note Preview (if reply)
-            if let pId = note.parentEventId, let parent = feedService.notes.first(where: { $0.id == pId }) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 4) {
-                        Rectangle()
-                            .fill(Color(red: 0.8, green: 0.2, blue: 0.6).opacity(0.3))
-                            .frame(width: 2)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(feedService.profiles[parent.pubkey]?.bestName ?? "Someone")
-                                .font(.system(size: 11, weight: .semibold, design: .default))
-                            Text(parent.content)
-                                .font(.system(size: 11, weight: .regular, design: .default))
-                                .foregroundColor(.secondary.opacity(0.8))
-                                .lineLimit(2)
-                        }
-                    }
-                }
-                .padding(10)
-                .background(Color(red: 0.15, green: 0.15, blue: 0.2))
-                .cornerRadius(8)
-            }
-
-            // Content
+            // Content Body
             VStack(alignment: .leading, spacing: 8) {
-                Text(formattedContent(note.content))
+                Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs))
                     .font(.system(size: 15, weight: .regular, design: .default))
                     .lineSpacing(2)
-                    .lineLimit(isExpanded ? nil : maxCollapsedLines)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
-                    .onTapGesture { isExpanded.toggle() }
-
-                // Expand button
-                if needsExpansion && !isExpanded {
-                    Button("expand") {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            isExpanded = true
-                        }
-                    }
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundColor(Color(red: 0.8, green: 0.2, blue: 0.6).opacity(0.8))
-                    .tracking(0.2)
-                }
             }
 
             // Media previews
             if !note.mediaURLs.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(note.mediaURLs.prefix(3), id: \.absoluteString) { url in
-                            FeedMediaThumbnail(url: url)
-                        }
+                let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: min(note.mediaURLs.count, 3))
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                    ForEach(note.mediaURLs.prefix(3), id: \.absoluteString) { url in
+                        FeedMediaThumbnail(url: url)
+                            .aspectRatio(1, contentMode: .fill)
+                            .frame(maxWidth: .infinity)
+                            .cornerRadius(8)
                     }
                 }
-                .frame(height: 110)
-                .clipped()
+                .padding(.top, 4)
             }
 
             // Actions row - minimal and clean
@@ -395,7 +465,29 @@ struct FeedNoteRow: View {
                 actionButton(icon: "message", action: { onReply?() })
                 actionButton(icon: "arrow.2.squarepath", action: { repostNote() })
                 actionButton(icon: "quote.closing", action: { quoteNote() })
-                actionButton(icon: "heart", action: { likeNote() })
+                
+                let isLiked = feedService.likedEventIds.contains(note.id)
+                actionButton(
+                    icon: isLiked ? "heart.fill" : "heart",
+                    color: isLiked ? .red : .secondary,
+                    action: { likeNote() }
+                )
+                .scaleEffect(isLiked ? 1.2 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isLiked)
+                
+                ShareLink(
+                    item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
+                    subject: Text("Nostr Note"),
+                    message: Text("Check out this note on Nostr")
+                ) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .frame(width: 32, height: 32)
+                        .background(Color.secondary.opacity(0.1))
+                        .clipShape(Circle())
+                }
+                
                 Spacer()
             }
             .padding(.top, 4)
@@ -408,20 +500,53 @@ struct FeedNoteRow: View {
                 .stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: note.isReply ? 1.2 : 0.8)
         )
         .contentShape(RoundedRectangle(cornerRadius: 12))
+        #if os(iOS)
         .hoverEffect(.lift)
+        #endif
         .clipped()
-    }
-
-    private func actionButton(icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.secondary.opacity(0.7))
-                .frame(width: 28, height: 28)
+        .environment(\.openURL, OpenURLAction { url in
+            if url.scheme == "nostr" {
+                let identifier = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
+                if identifier.hasPrefix("npub1") || identifier.hasPrefix("nprofile1") {
+                    if let decoded = Bech32.decode(identifier) {
+                        showingProfileKey = IdentifiableString(id: decoded.hexString)
+                    } else {
+                        // Fallback: show profile view with string if we can't decode (unlikely)
+                        showingProfileKey = IdentifiableString(id: identifier)
+                    }
+                    return .handled
+                }
+                // Future: handle note1/nevent1 navigation here too
+            }
+            return .systemAction
+        })
+        .sheet(item: Binding<IdentifiableString?>(get: { showingProfileKey }, set: { showingProfileKey = $0 })) { p in
+            ProfileView(pubkey: p.id)
         }
     }
 
+    private func actionButton(icon: String, color: Color = .secondary, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(color)
+                .frame(width: 32, height: 32)
+                .background(color.opacity(color == .secondary ? 0.1 : 0.15))
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        #if os(macOS)
+        .onHover { inside in
+            // Handle hover state if needed, though .hoverEffect handles it on iOS
+        }
+        #endif
+    }
+
     private func likeNote() {
+        if !feedService.likedEventIds.contains(note.id) {
+            feedService.likedEventIds.insert(note.id)
+        }
         guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", note.id, "", "root"], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
     }
@@ -432,12 +557,8 @@ struct FeedNoteRow: View {
     }
 
     private func quoteNote() {
-        let quoteContent = "nostr:note\(note.id)\n\n—\n"
+        // Future: implement quote content properly in ComposeView
         onReply?()
-    }
-
-    private var needsExpansion: Bool {
-        note.content.count > 400
     }
 
     private func shortKey(_ key: String) -> String {
@@ -445,13 +566,34 @@ struct FeedNoteRow: View {
         return "npub…" + String(key.suffix(6))
     }
 
-    private func formattedContent(_ content: String) -> String {
+    private func formattedContent(_ content: String) -> AttributedString {
         // Strip bare image/video URLs from text (they'll show as thumbnails)
         var text = content
         for url in note.mediaURLs {
             text = text.replacingOccurrences(of: url.absoluteString, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let npubRegex = try! NSRegularExpression(pattern: "nostr:(npub1[a-z0-9]+)")
+        text = npubRegex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[@user](nostr:$1)")
+        
+        let nprofileRegex = try! NSRegularExpression(pattern: "nostr:(nprofile1[a-z0-9]+)")
+        text = nprofileRegex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[@user](nostr:$1)")
+
+        let neventRegex = try! NSRegularExpression(pattern: "nostr:(nevent1[a-z0-9]+)")
+        text = neventRegex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Quote](nostr:$1)")
+
+        let noteRegex = try! NSRegularExpression(pattern: "nostr:(note1[a-z0-9]+)")
+        text = noteRegex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Quote](nostr:$1)")
+
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        do {
+            var attrString = try AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+            attrString.foregroundColor = .primary
+            return attrString
+        } catch {
+            return AttributedString(text)
+        }
     }
 
     private func relativeTime(_ date: Date) -> String {
@@ -477,27 +619,29 @@ struct FeedMediaThumbnail: View {
     @State private var isVideo = false
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(red: 0.15, green: 0.15, blue: 0.2))
-                .frame(width: 90, height: 90)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
+        GeometryReader { geo in
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(red: 0.15, green: 0.15, blue: 0.2))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
 
-            if let image = image {
-                Image(platformImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 90, height: 90)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
+                if let image = image {
+                    Image(platformImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
 
-            if isVideo {
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(.white.opacity(0.95))
-                    .shadow(color: .black.opacity(0.5), radius: 4)
+                if isVideo {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white.opacity(0.95))
+                        .shadow(color: .black.opacity(0.5), radius: 4)
+                }
             }
         }
+        .aspectRatio(1, contentMode: .fill)
         .onAppear { loadThumbnail() }
     }
 
@@ -640,108 +784,124 @@ struct RelayStatusSheet: View {
     @EnvironmentObject var configService: ConfigService
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Main Relay Status
-                        Section {
-                            VStack(spacing: 12) {
-                                HStack(spacing: 12) {
-                                    Circle()
-                                        .fill(relayManager.isRunning ? Color(red: 0.2, green: 0.8, blue: 0.6) : Color(red: 1, green: 0.6, blue: 0.1))
-                                        .frame(width: 12, height: 12)
+        VStack(spacing: 0) {
+            #if os(macOS)
+            HStack {
+                Text("Relay Status")
+                    .font(.headline)
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+            #endif
 
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Haven Relay")
-                                            .font(.system(size: 16, weight: .bold))
-                                        Text(relayManager.isBooting ? "Booting..." : (relayManager.isRunning ? "Connected" : "Disconnected"))
-                                            .font(.system(size: 13, design: .monospaced))
-                                            .foregroundColor(.secondary)
-                                    }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Main Relay Status
+                    Section {
+                        VStack(spacing: 12) {
+                            HStack(spacing: 12) {
+                                Circle()
+                                    .fill(relayManager.isRunning ? Color.green : Color.orange)
+                                    .frame(width: 12, height: 12)
 
-                                    Spacer()
-
-                                    Text("127.0.0.1:\(configService.config.relayPort)")
-                                        .font(.system(size: 12, design: .monospaced))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Haven Relay")
+                                        .font(.system(size: 16, weight: .bold))
+                                    Text(relayManager.isBooting ? "Booting..." : (relayManager.isRunning ? "Connected" : "Disconnected"))
+                                        .font(.system(size: 13, design: .monospaced))
                                         .foregroundColor(.secondary)
                                 }
-                                .padding(12)
-                                .background(Color(red: 0.12, green: 0.12, blue: 0.16))
-                                .cornerRadius(10)
-                            }
-                        } header: {
-                            Text("Write Relay")
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.secondary.opacity(0.7))
-                                .tracking(0.5)
-                        }
-                        .padding(.horizontal)
 
-                        Divider()
-                            .padding(.vertical, 8)
+                                Spacer()
 
-                        // Blastr Distribution
-                        Section {
-                            VStack(spacing: 8) {
-                                Text("Configured for distribution to \(configService.config.blastrRelays.count) relays")
-                                    .font(.system(size: 13, design: .monospaced))
+                                Text("127.0.0.1:\(configService.config.relayPort)")
+                                    .font(.system(size: 12, design: .monospaced))
                                     .foregroundColor(.secondary)
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    ForEach(configService.config.blastrRelays.prefix(5), id: \.self) { relay in
-                                        HStack(spacing: 8) {
-                                            Circle()
-                                                .fill(Color(red: 0.8, green: 0.2, blue: 0.6).opacity(0.3))
-                                                .frame(width: 4, height: 4)
-
-                                            Text(relay)
-                                                .font(.system(size: 11, design: .monospaced))
-                                                .foregroundColor(.secondary.opacity(0.8))
-                                                .lineLimit(1)
-                                        }
-                                    }
-
-                                    if configService.config.blastrRelays.count > 5 {
-                                        Text("+ \(configService.config.blastrRelays.count - 5) more")
-                                            .font(.system(size: 11, design: .monospaced))
-                                            .foregroundColor(.secondary.opacity(0.6))
-                                            .padding(.top, 4)
-                                    }
-                                }
                             }
                             .padding(12)
                             .background(Color(red: 0.12, green: 0.12, blue: 0.16))
                             .cornerRadius(10)
-                        } header: {
-                            Text("Blastr Distribution")
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.secondary.opacity(0.7))
-                                .tracking(0.5)
                         }
-                        .padding(.horizontal)
+                    } header: {
+                        Text("Write Relay")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .tracking(0.5)
                     }
-                    .padding(.vertical)
-                }
+                    .padding(.horizontal)
 
-                Divider()
+                    Divider()
+                        .padding(.vertical, 8)
 
-                Button {
-                    dismiss()
-                } label: {
-                    Text("Done")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color(red: 0.8, green: 0.2, blue: 0.6))
+                    // Feed Relays
+                    Section {
+                        VStack(spacing: 8) {
+                            Text("Configured to read from \(configService.config.feedRelays.count) external relays")
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundColor(.secondary)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(configService.config.feedRelays.prefix(5), id: \.self) { relay in
+                                    HStack(spacing: 8) {
+                                        Circle()
+                                            .fill(Color.havenPurple.opacity(0.3))
+                                            .frame(width: 4, height: 4)
+
+                                        Text(relay)
+                                            .font(.system(size: 11, design: .monospaced))
+                                            .foregroundColor(.secondary.opacity(0.8))
+                                            .lineLimit(1)
+                                    }
+                                }
+
+                                if configService.config.feedRelays.count > 5 {
+                                    Text("+ \(configService.config.feedRelays.count - 5) more")
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(.secondary.opacity(0.6))
+                                        .padding(.top, 4)
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .background(Color(red: 0.12, green: 0.12, blue: 0.16))
                         .cornerRadius(10)
+                    } header: {
+                        Text("Feed Reading Relays")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .tracking(0.5)
+                    }
+                    .padding(.horizontal)
                 }
-                .padding()
+                .padding(.vertical)
             }
-            .navigationTitle("Relay Status")
-            .navigationBarTitleDisplayMode(.inline)
-            .background(Color(red: 0.08, green: 0.08, blue: 0.12))
+
+            #if os(iOS)
+            Divider()
+            Button {
+                dismiss()
+            } label: {
+                Text("Done")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.havenPurple)
+                    .cornerRadius(10)
+            }
+            .padding()
+            #endif
         }
+        #if os(iOS)
+        .navigationTitle("Relay Status")
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .background(Color.platformControlBackground)
+        .frame(minWidth: 400, minHeight: 500)
     }
 }

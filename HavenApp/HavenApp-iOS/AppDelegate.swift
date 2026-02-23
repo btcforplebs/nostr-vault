@@ -6,6 +6,8 @@ import UserNotifications
 /// BGTaskSchedulerPermittedIdentifiers.
 private let kBGProcessingTaskID = "com.haven.relay.processing"
 
+private let kBGRefreshTaskID = "com.haven.relay.refresh"
+
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
@@ -22,19 +24,25 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             Self.handleBackgroundProcessingTask(task as! BGProcessingTask)
         }
         
-        // Enable Background App Refresh — iOS will call performFetch on its schedule
-        // (typically every 15-30 min) without any push server needed.
-        UIApplication.shared.setMinimumBackgroundFetchInterval(UIApplication.backgroundFetchIntervalMinimum)
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: kBGRefreshTaskID,
+            using: nil
+        ) { task in
+            Self.handleAppRefreshTask(task as! BGAppRefreshTask)
+        }
 
         return true
     }
 
     // MARK: - Background App Refresh (no push server needed!)
 
-    /// iOS calls this periodically when Background App Refresh is enabled in Settings.
-    /// We connect directly to public Nostr relays to look for new notes from followed
-    /// pubkeys. If new ones arrive, we show a local notification.
-    func application(_ application: UIApplication, performFetchWithCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+    static func handleAppRefreshTask(_ task: BGAppRefreshTask) {
+        scheduleAppRefresh()
+        
+        task.expirationHandler = {
+            task.setTaskCompleted(success: false)
+        }
+        
         Task { @MainActor in
             let countBefore = FeedService.shared.notes.count
             FeedService.shared.refresh()
@@ -42,11 +50,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             try? await Task.sleep(nanoseconds: 25_000_000_000)
             let newCount = FeedService.shared.notes.count - countBefore
             if newCount > 0 {
-                completionHandler(.newData)
+                task.setTaskCompleted(success: true)
             } else {
-                completionHandler(.noData)
+                task.setTaskCompleted(success: true)
             }
         }
+    }
+    
+    static func scheduleAppRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: kBGRefreshTaskID)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 minutes
+        try? BGTaskScheduler.shared.submit(request)
     }
 
 

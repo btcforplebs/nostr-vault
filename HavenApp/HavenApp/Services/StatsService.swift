@@ -66,7 +66,8 @@ class StatsService: ObservableObject {
                 // Construct internal URLs for Outbox (root) and Inbox (tagged notes)
                 // We ALWAYS use 127.0.0.1 for the internal stats fetch to bypass loopback/domain issues
                 // even if config.nostrURL is set to a public domain.
-                let baseURLString = "ws://127.0.0.1:\(config.relayPort)"
+                // Use wss:// (secure WebSocket) since the relay server is HTTPS
+                let baseURLString = "wss://127.0.0.1:\(config.relayPort)"
                 guard let baseURL = URL(string: baseURLString) else {
                     #if DEBUG
                     print("StatsService: ❌ Invalid baseURL for stats: \(baseURLString)")

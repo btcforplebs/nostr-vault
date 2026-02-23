@@ -47,8 +47,8 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
         isLoading = true
         
         let operation = BlockOperation {
-            // Using a simple URLSession task
-            let task = URLSession.shared.dataTask(with: url) { data, response, error in
+            // Using MediaSessionService which handles localhost certificates
+            let task = MediaSessionService.shared.session.dataTask(with: url) { data, response, error in
                 defer { 
                     DispatchQueue.main.async { self.isLoading = false }
                 }

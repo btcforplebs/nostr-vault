@@ -33,8 +33,8 @@ class MediaTypeDetector {
             
             let semaphore = DispatchSemaphore(value: 0)
             var detectedType: String?
-            
-            let task = URLSession.shared.dataTask(with: request) { _, response, error in
+
+            let task = MediaSessionService.shared.session.dataTask(with: request) { _, response, error in
                 if let httpResponse = response as? HTTPURLResponse,
                    httpResponse.statusCode == 200,
                    let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") {

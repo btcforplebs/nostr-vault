@@ -57,10 +57,7 @@ struct HavenConfig: Codable, Equatable {
     var importTaggedNotesFetchTimeoutSeconds: Int = 120
 
     // Blossom Mirrors
-    var blossomMirrors: [String] = [
-        "https://blossom.kylezien.com",
-        "https://cdn.satellite.earth"
-    ]
+    var blossomMirrors: [String] = []
 
     // Blastr
     var blastrRelaysFile: String = "relays_blastr.json"
@@ -69,6 +66,13 @@ struct HavenConfig: Codable, Equatable {
         "wss://relay.primal.net",
         "wss://nos.lol",
         "wss://nostr.wine"
+    ]
+    
+    // Feed Reading
+    var feedRelays: [String] = [
+        "wss://relay.damus.io",
+        "wss://relay.primal.net",
+        "wss://nos.lol"
     ]
     
     // Whitelisted Npubs (multi-npub support)
@@ -105,6 +109,7 @@ struct HavenConfig: Codable, Equatable {
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
         case blossomMirrors
         case blastrRelaysFile, blastrRelays
+        case feedRelays
         case whitelistedNpubs, whitelistedNpubsFile
         case blacklistedNpubs, blacklistedNpubsFile
         case backupProvider, backupIntervalHours
@@ -167,6 +172,8 @@ struct HavenConfig: Codable, Equatable {
         blastrRelaysFile = try container.decodeIfPresent(String.self, forKey: .blastrRelaysFile) ?? defaults.blastrRelaysFile
         blastrRelays = try container.decodeIfPresent([String].self, forKey: .blastrRelays) ?? defaults.blastrRelays
         
+        feedRelays = try container.decodeIfPresent([String].self, forKey: .feedRelays) ?? defaults.feedRelays
+        
         whitelistedNpubs = try container.decodeIfPresent([String].self, forKey: .whitelistedNpubs) ?? defaults.whitelistedNpubs
         whitelistedNpubsFile = try container.decodeIfPresent(String.self, forKey: .whitelistedNpubsFile) ?? defaults.whitelistedNpubsFile
         
@@ -213,16 +220,18 @@ struct HavenConfig: Codable, Equatable {
     /// Returns the appropriate WebSocket URL (ws:// for local, wss:// for remote)
     var nostrURL: String {
         if isLocal {
-            return "ws://127.0.0.1:\(relayPort)"
+            // Use wss:// (secure WebSocket) for local HTTPS relay server
+            return "wss://127.0.0.1:\(relayPort)"
         } else {
             return "wss://\(sanitizedRelayURL)"
         }
     }
 
-    /// Returns the appropriate Web/Blossom URL (http:// for local, https:// for remote)
+    /// Returns the appropriate Web/Blossom URL (https:// for both local and remote)
     var webURL: String {
         if isLocal {
-            return "http://127.0.0.1:\(relayPort)"
+            // Use https:// for local relay server (self-signed cert)
+            return "https://127.0.0.1:\(relayPort)"
         } else {
             return "https://\(sanitizedRelayURL)"
         }

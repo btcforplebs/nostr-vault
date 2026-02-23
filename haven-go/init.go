@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"text/template"
 	"time"
 
@@ -17,6 +18,14 @@ import (
 	"github.com/fiatjaf/khatru/blossom"
 	"github.com/fiatjaf/khatru/policies"
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/spf13/afero"
+)
+
+// Global variables used by both desktop (main.go) and iOS (cshared.go)
+var (
+	pool   *nostr.SimplePool
+	config Config
+	fs     afero.Fs
 )
 
 // Relay instances — re-created on each initRelays() call so HTTP muxes are fresh.
@@ -41,8 +50,9 @@ var (
 )
 
 var (
-	blossomDB DBBackend
-	dbs       map[string]DBBackend
+	blossomDB     DBBackend
+	blossomServer *blossom.BlossomServer
+	dbs           map[string]DBBackend
 )
 
 type DBBackend interface {
@@ -76,9 +86,14 @@ func newDBBackend(path string) DBBackend {
 }
 
 func newLMDBBackend(path string) *lmdb.LMDBBackend {
+	mapSize := config.LmdbMapSize
+	if mapSize == 0 && runtime.GOOS == "ios" {
+		// iOS has strict memory mapping limits per process
+		mapSize = 256 << 20 // 256 MB
+	}
 	return &lmdb.LMDBBackend{
 		Path:    path,
-		MapSize: config.LmdbMapSize,
+		MapSize: mapSize,
 	}
 }
 
@@ -338,9 +353,9 @@ func initRelays(ctx context.Context) error {
 		}
 	})
 
-	bl := blossom.New(outboxRelay, "https://"+config.RelayURL)
-	bl.Store = blossom.EventStoreBlobIndexWrapper{Store: blossomDB, ServiceURL: bl.ServiceURL}
-	bl.StoreBlob = append(bl.StoreBlob, func(ctx context.Context, sha256 string, ext string, body []byte) error {
+	blossomServer = blossom.New(outboxRelay, "https://"+config.RelayURL)
+	blossomServer.Store = blossom.EventStoreBlobIndexWrapper{Store: blossomDB, ServiceURL: blossomServer.ServiceURL}
+	blossomServer.StoreBlob = append(blossomServer.StoreBlob, func(ctx context.Context, sha256 string, ext string, body []byte) error {
 		slog.Debug("storing blob", "sha256", sha256, "ext", ext)
 		file, err := fs.Create(config.BlossomPath + sha256)
 		if err != nil {
@@ -351,19 +366,19 @@ func initRelays(ctx context.Context) error {
 		}
 		return nil
 	})
-	bl.LoadBlob = append(bl.LoadBlob, loadBlob)
-	bl.DeleteBlob = append(bl.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
+	blossomServer.LoadBlob = append(blossomServer.LoadBlob, loadBlob)
+	blossomServer.DeleteBlob = append(blossomServer.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
 		slog.Debug("deleting blob", "sha256", sha256, "ext", ext)
 		return fs.Remove(config.BlossomPath + sha256)
 	})
-	bl.RejectUpload = append(bl.RejectUpload, func(ctx context.Context, event *nostr.Event, size int, ext string) (bool, string, int) {
+	blossomServer.RejectUpload = append(blossomServer.RejectUpload, func(ctx context.Context, event *nostr.Event, size int, ext string) (bool, string, int) {
 		if _, ok := config.WhitelistedPubKeys[event.PubKey]; ok {
 			return false, ext, size
 		}
 
 		return true, "only media signed by whitelisted pubkeys are allowed", 403
 	})
-	migrateBlossomMetadata(ctx, bl)
+	migrateBlossomMetadata(ctx, blossomServer)
 
 	inboxRelay.Info.Name = config.InboxRelayName
 	inboxRelay.Info.PubKey = nPubToPubkey(config.InboxRelayNpub)
@@ -429,4 +444,41 @@ func initRelays(ctx context.Context) error {
 	})
 
 	return nil
+}
+
+// Shared helper functions used by both main.go and cshared.go
+
+func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
+	var relay *khatru.Relay
+	relayType := r.URL.Path
+
+	switch relayType {
+	case "/private":
+		relay = privateRelay
+	case "/chat":
+		relay = chatRelay
+	case "/inbox":
+		relay = inboxRelay
+	case "":
+		relay = outboxRelay
+	default:
+		relay = outboxRelay
+	}
+
+	relay.ServeHTTP(w, r)
+}
+
+func getLogLevelFromConfig() slog.Level {
+	switch config.LogLevel {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "INFO":
+		return slog.LevelInfo
+	case "WARN":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo // Default level
+	}
 }

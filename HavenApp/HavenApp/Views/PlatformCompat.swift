@@ -9,8 +9,10 @@ import UIKit
 
 #if canImport(AppKit)
 typealias PlatformImage = NSImage
+let isIOSDevice = false
 #elseif canImport(UIKit)
 typealias PlatformImage = UIImage
+let isIOSDevice = true
 #endif
 
 extension Image {

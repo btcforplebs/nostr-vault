@@ -42,13 +42,23 @@ class ConfigService: ObservableObject {
                 #if DEBUG
                 print("ConfigService: Successfully loaded configuration from disk")
                 #endif
-                
+
                 // Ensure defaults are applied for empty arrays
                 if config.importSeedRelays.isEmpty {
                     config.importSeedRelays = HavenConfig.default.importSeedRelays
                 }
                 if config.blastrRelays.isEmpty {
                     config.blastrRelays = HavenConfig.default.blastrRelays
+                }
+                if config.blossomMirrors.isEmpty {
+                    config.blossomMirrors = HavenConfig.default.blossomMirrors
+                    #if DEBUG
+                    print("ConfigService: Applied default Blossom mirrors: \(config.blossomMirrors)")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("ConfigService: Loaded \(config.blossomMirrors.count) Blossom mirrors: \(config.blossomMirrors)")
+                    #endif
                 }
             } catch {
                 #if DEBUG
@@ -98,7 +108,7 @@ class ConfigService: ObservableObject {
                 #if DEBUG
                 print("ConfigService: Successfully reloaded configuration from disk")
                 #endif
-                
+
                 // Ensure defaults are applied for empty arrays
                 if config.importSeedRelays.isEmpty {
                     config.importSeedRelays = HavenConfig.default.importSeedRelays
@@ -106,7 +116,17 @@ class ConfigService: ObservableObject {
                 if config.blastrRelays.isEmpty {
                     config.blastrRelays = HavenConfig.default.blastrRelays
                 }
-                
+                if config.blossomMirrors.isEmpty {
+                    config.blossomMirrors = HavenConfig.default.blossomMirrors
+                    #if DEBUG
+                    print("ConfigService: Applied default Blossom mirrors on reload: \(config.blossomMirrors)")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("ConfigService: Reloaded \(config.blossomMirrors.count) Blossom mirrors: \(config.blossomMirrors)")
+                    #endif
+                }
+
                 // Reload lists
                 loadRelayLists()
 
@@ -157,11 +177,15 @@ class ConfigService: ObservableObject {
         // Ensure ownerNpub is sanitized (remove invisible junk characters like non-breaking spaces)
         config.ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
-            
+
         do {
             let data = try JSONEncoder().encode(config)
             try data.write(to: configURL)
-            
+
+            #if DEBUG
+            print("ConfigService: Saved config with \(config.blossomMirrors.count) mirrors: \(config.blossomMirrors)")
+            #endif
+
             saveRelayLists()
             
             // Update launch at login if changed
