@@ -336,6 +336,9 @@ struct MenuBarView: View {
             }
         }
         #if os(macOS)
+        .onAppear {
+            FloatingArrowController.shared.dismiss()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             startInactivityTimer()
         }

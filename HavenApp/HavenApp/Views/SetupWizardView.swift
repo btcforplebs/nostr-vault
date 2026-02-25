@@ -263,7 +263,6 @@ struct SetupWizardView: View {
     }
     
     func saveAndComplete() {
-        FloatingArrowController.shared.dismiss()
 
         configService.config.ownerNpub = npub
         configService.config.relayURL = relayURL
@@ -1241,11 +1240,6 @@ struct SetupSuccessStep: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 FloatingArrowController.shared.show()
             }
-            #endif
-        }
-        .onDisappear {
-            #if os(macOS)
-            FloatingArrowController.shared.dismiss()
             #endif
         }
     }

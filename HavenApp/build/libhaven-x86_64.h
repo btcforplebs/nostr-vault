@@ -93,6 +93,9 @@ extern int ZipDirectoryC(char* dirPath, char* zipPath);
 extern int UnzipDirectoryC(char* zipPath, char* destPath);
 extern char* SignEventC(char* jsonStr, char* sk);
 extern char* GenerateKeyPairC(void);
+extern char* GetPublicKeyC(char* sk);
+extern char* EncryptNIP04C(char* plaintext, char* pubkey, char* privkey);
+extern char* DecryptNIP04C(char* ciphertext, char* pubkey, char* privkey);
 
 #ifdef __cplusplus
 }
