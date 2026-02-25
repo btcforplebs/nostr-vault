@@ -450,14 +450,33 @@ class NostrService: ObservableObject {
     }
     
     // Unified cache structure
+    private var lastProfileSave: Date = .distantPast
+    private let profileSaveThrottle: TimeInterval = 5.0
+
+    private func saveProfilesThrottled() {
+        let now = Date()
+        if now.timeIntervalSince(lastProfileSave) > profileSaveThrottle {
+            lastProfileSave = now
+            saveProfiles()
+        }
+    }
     
     private func saveProfiles() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
-        let profileURL = havenDir.appendingPathComponent("profiles.json")
-        
-        if let data = try? JSONEncoder().encode(profiles) {
-            try? data.write(to: profileURL)
+        let profilesCopy = profiles
+        DispatchQueue.global(qos: .utility).async {
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
+            
+            // Ensure directory exists
+            try? FileManager.default.createDirectory(at: havenDir, withIntermediateDirectories: true)
+            let profileURL = havenDir.appendingPathComponent("profiles.json")
+            
+            if let data = try? JSONEncoder().encode(profilesCopy) {
+                try? data.write(to: profileURL)
+                #if DEBUG
+                // print("NostrService: Saved \(profilesCopy.count) profiles to cache")
+                #endif
+            }
         }
     }
     
@@ -672,6 +691,59 @@ class NostrService: ObservableObject {
             }
         }
     }
+
+    /// Reports an event using Kind 1984
+    /// - Parameters:
+    ///   - eventId: The ID of the event being reported
+    ///   - pubkey: The pubkey of the event author
+    ///   - reason: Short reason for reporting (e.g., "spam", "illegal")
+    ///   - description: Optional additional details
+    func reportEvent(eventId: String, pubkey: String, reason: String, description: String? = nil) {
+        var tags = [
+            ["e", eventId, "", "report"],
+            ["p", pubkey]
+        ]
+        
+        // Add reason-specific tag if provided
+        if !reason.isEmpty {
+            tags.append(["reason", reason])
+        }
+
+        guard let signed = signEvent(kind: 1984, content: description ?? "Reported for \(reason)", tags: tags) else {
+            print("NostrService: Failed to sign reporting event")
+            return
+        }
+        
+        postEvent(signed)
+        #if DEBUG
+        print("NostrService: Posted Kind 1984 report for event \(eventId)")
+        #endif
+    }
+
+    /// Reports a user using Kind 1984
+    /// - Parameters:
+    ///   - pubkey: The pubkey of the user being reported
+    ///   - reason: Short reason for reporting (e.g., "spam", "illegal")
+    ///   - description: Optional additional details
+    func reportUser(pubkey: String, reason: String, description: String? = nil) {
+        var tags = [
+            ["p", pubkey]
+        ]
+        
+        if !reason.isEmpty {
+            tags.append(["reason", reason])
+        }
+
+        guard let signed = signEvent(kind: 1984, content: description ?? "Reported user for \(reason)", tags: tags) else {
+            print("NostrService: Failed to sign user reporting event")
+            return
+        }
+        
+        postEvent(signed)
+        #if DEBUG
+        print("NostrService: Posted Kind 1984 report for user \(pubkey)")
+        #endif
+    }
     
     // Per-relay reconnection state to implement exponential backoff
     private var relayReconnectAttempts: [String: Int] = [:]
@@ -695,7 +767,7 @@ class NostrService: ObservableObject {
         return RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting
     }
     
-    func fetchNotes(from relayURLs: [URL], until: Int64? = nil) {
+    func fetchNotes(from relayURLs: [URL], until: Int64? = nil, authors: [String]? = nil) {
         DispatchQueue.main.async {
             self.isFetching = true
             self.activeSubscriptionCount = relayURLs.count
@@ -716,7 +788,7 @@ class NostrService: ObservableObject {
             
             if let existing = clients[urlString] {
                 if existing.connectionState == .connected {
-                    sendRequest(to: existing, url: url, until: until)
+                    sendRequest(to: existing, url: url, until: until, authors: authors)
                     continue
                 } else if existing.connectionState == .connecting {
                     continue
@@ -737,7 +809,7 @@ class NostrService: ObservableObject {
                     DispatchQueue.main.asyncAfter(deadline: .now() + (delay - timeSinceLastAttempt)) { [weak self] in
                         guard let self = self else { return }
                         guard self.clients[urlString] != nil else { return }
-                        self.fetchNotes(from: [url], until: until)
+                        self.fetchNotes(from: [url], until: until, authors: authors)
                     }
                     continue
                 }
@@ -761,7 +833,7 @@ class NostrService: ObservableObject {
                     if state == .connected {
                         // Reset backoff on successful connection
                         self.relayReconnectAttempts[urlString] = 0
-                        self.sendRequest(to: client!, url: url, until: until)
+                        self.sendRequest(to: client!, url: url, until: until, authors: authors)
                     } else if state == .error {
                         // Increment backoff counter
                         let attempts = (self.relayReconnectAttempts[urlString] ?? 0) + 1
@@ -786,7 +858,7 @@ class NostrService: ObservableObject {
                         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                             guard let self = self else { return }
                             guard self.clients[urlString] != nil else { return }
-                            self.fetchNotes(from: [url], until: until)
+                            self.fetchNotes(from: [url], until: until, authors: authors)
                         }
                     }
                 }
@@ -797,7 +869,7 @@ class NostrService: ObservableObject {
     }
 
     
-    private func sendRequest(to client: WebSocketClient, url: URL, until: Int64? = nil) {
+    private func sendRequest(to client: WebSocketClient, url: URL, until: Int64? = nil, authors: [String]? = nil) {
         let urlString = url.absoluteString
         let isHistorical = until != nil
         
@@ -828,6 +900,9 @@ class NostrService: ObservableObject {
         ]
         if let until = until {
             filter["until"] = until
+        }
+        if let authors = authors, !authors.isEmpty {
+            filter["authors"] = authors
         }
         
         let req = ["REQ", subscriptionId, filter] as [Any]
@@ -934,7 +1009,7 @@ class NostrService: ObservableObject {
                         if changed {
                             self.profiles[event.pubkey] = profile
                             self.profilesInFlight.remove(event.pubkey)
-                            self.saveProfiles()
+                            self.saveProfilesThrottled()
                             self.eventUpdateSubject.send()
                         }
                     }
@@ -998,14 +1073,23 @@ class NostrService: ObservableObject {
 
         guard !batch.isEmpty else { return }
 
+        var newEvents: [NostrEvent] = []
         for (event, items) in batch {
-            events.append(event)
+            newEvents.append(event)
             if !items.isEmpty {
                 noteMedia.append(contentsOf: items)
             }
         }
 
-        events.sort(by: { $0.created_at > $1.created_at })
+        // Efficiently merge and sort
+        events.append(contentsOf: newEvents)
+        
+        // Only sort if we have a significant number of new events or the list is out of order
+        // This is a trade-off: keep it snappy vs perfectly sorted at all times.
+        if events.count > 1 {
+            events.sort(by: { $0.created_at > $1.created_at })
+        }
+        
         if events.count > 10000 {
             events = Array(events.prefix(10000))
         }
@@ -1236,7 +1320,9 @@ class NostrService: ObservableObject {
         let semaphore = DispatchSemaphore(value: 0)
         var resultMime: String?
 
-        let task = URLSession.shared.dataTask(with: request) { data, _, _ in
+        // Use a session that ignores TLS errors for localhost
+        let session = TLSSkipSession.shared
+        let task = session.dataTask(with: request) { data, _, _ in
             if let data = data, data.count >= 4 {
                 let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                 try? data.write(to: tempURL)
@@ -1793,5 +1879,31 @@ struct Bech32 {
             }
         }
         return data
+    }
+}
+
+// MARK: - TLS Trust Bypass for Local Relay
+
+/// A URLSession wrapper that bypasses TLS certificate verification for localhost/127.0.0.1.
+/// This is necessary because the local Haven relay uses a self-signed certificate.
+class TLSSkipSession: NSObject, URLSessionDelegate {
+    static let shared: URLSession = {
+        let delegate = TLSSkipSession()
+        let configuration = URLSessionConfiguration.default
+        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+    }()
+    
+    nonisolated func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        // If the host is local, we allow the self-signed certificate
+        if let host = challenge.protectionSpace.host.lowercased() as String?,
+           host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" {
+            if let serverTrust = challenge.protectionSpace.serverTrust {
+                completionHandler(.useCredential, URLCredential(trust: serverTrust))
+                return
+            }
+        }
+        
+        // Otherwise, use default handling
+        completionHandler(.performDefaultHandling, nil)
     }
 }

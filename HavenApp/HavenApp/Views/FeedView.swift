@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct IdentifiableString: Identifiable {
     let id: String
@@ -60,53 +63,11 @@ struct FeedView: View {
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 12) {
-                    if feedService.newNoteCount > 0 && !configService.config.showReplies {
-                        Button {
-                            // The actual scroll happens via the ScrollViewReader in feedList
-                            NotificationCenter.default.post(name: NSNotification.Name("ScrollToTop"), object: nil)
-                            feedService.refresh()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("\(feedService.newNoteCount)")
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                Image(systemName: "arrow.up")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color(red: 0.2, green: 0.8, blue: 0.6))
-                            )
-                        }
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    } else {
-                        Button {
-                            feedService.refresh()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Color.havenPurple)
-                                .rotationEffect(.degrees(feedService.isLoadingFeed ? 360 : 0))
-                                .animation(
-                                    feedService.isLoadingFeed ?
-                                        .linear(duration: 1).repeatForever(autoreverses: false) :
-                                        .default,
-                                    value: feedService.isLoadingFeed
-                                )
-                        }
-                        .disabled(feedService.isLoadingContacts || feedService.isLoadingFeed)
-                    }
-
-                    Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
-                        Image(systemName: configService.config.showReplies ? "message.fill" : "message")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
-                    }
+                Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
+                    Image(systemName: configService.config.showReplies ? "message.fill" : "message")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
                 }
-                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: feedService.newNoteCount)
             }
         }
         #endif
@@ -119,7 +80,7 @@ struct FeedView: View {
                 }
             }
         }
-        .onChange(of: relayManager.isRunning) { running in
+        .onChange(of: relayManager.isRunning) { _, running in
             if running && !relayManager.isBooting && feedService.notes.isEmpty && !feedService.isLoadingContacts {
                 feedService.refresh()
             }
@@ -229,65 +190,113 @@ struct FeedView: View {
 
     private var feedList: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    // Anchor for scroll-to-top
-                    Color.clear
-                        .frame(height: 0)
-                        .id("top")
+            ZStack(alignment: .top) {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        // Anchor for scroll-to-top
+                        Color.clear
+                            .frame(height: 0)
+                            .id("top")
 
-                    // Loading header
-                    if feedService.isLoadingFeed && feedService.notes.isEmpty {
-                        ForEach(0..<5, id: \.self) { _ in
-                            FeedNoteSkeletonRow()
-                                .padding(.horizontal, 16)
-                        }
-                    }
-
-                    ForEach(feedService.notes.filter { note in
-                        configService.config.showReplies || !note.isReply
-                    }, id: \.id) { note in
-                        NavigationLink(destination: NoteDetailView(note: note)) {
-                            let profile = nostrService.profiles[note.pubkey]
-                            FeedNoteRow(note: note, profile: profile, onReply: {
-                                replyToNote = note
-                                showingCompose = true
-                            })
-                            .padding(.horizontal, 16)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    // Load more
-                    if !feedService.notes.isEmpty {
-                        Button {
-                            feedService.loadMore()
-                        } label: {
-                            HStack(spacing: 8) {
-                                if feedService.isLoadingFeed {
-                                    ProgressView().controlSize(.small).tint(Color.havenPurple)
-                                } else {
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 12, weight: .semibold))
-                                }
-                                Text(feedService.isLoadingFeed ? "Loading..." : "Show earlier")
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        // Loading header
+                        if feedService.isLoadingFeed && feedService.notes.isEmpty {
+                            ForEach(0..<5, id: \.self) { _ in
+                                FeedNoteSkeletonRow()
+                                    .padding(.horizontal, 16)
                             }
-                            .foregroundColor(.secondary)
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity)
-                            .background(Color(red: 0.15, green: 0.15, blue: 0.2))
-                            .cornerRadius(10)
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 1))
-                            .padding(.horizontal, 16)
                         }
-                        .disabled(feedService.isLoadingFeed)
-                    }
 
-                    Color.clear.frame(height: 80) // Space for floating button
+                        let filteredNotes = feedService.notes.filter { note in
+                            let isBlacklisted = configService.blacklistedHexPubkeys.contains(note.pubkey)
+                            return !isBlacklisted && (configService.config.showReplies || !note.isReply)
+                        }
+
+                        ForEach(Array(filteredNotes.enumerated()), id: \.element.id) { index, note in
+                            NavigationLink(destination: NoteDetailView(note: note)) {
+                                let profile = nostrService.profiles[note.pubkey]
+                                
+                                // Optimization: If the parent is the very next note in the feed,
+                                // don't show the redundant parent header.
+                                let parentIsNext = index + 1 < filteredNotes.count && 
+                                                 filteredNotes[index+1].id == note.parentEventId
+                                
+                                FeedNoteRow(
+                                    note: note, 
+                                    profile: profile, 
+                                    onReply: {
+                                        replyToNote = note
+                                        showingCompose = true
+                                    },
+                                    showParent: !parentIsNext,
+                                    isReplyToNext: parentIsNext
+                                )
+                                .padding(.horizontal, 16)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        // Load more
+                        if !feedService.notes.isEmpty {
+                            Button {
+                                feedService.loadMore()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    if feedService.isLoadingFeed {
+                                        ProgressView().controlSize(.small).tint(Color.havenPurple)
+                                    } else {
+                                        Image(systemName: "chevron.down")
+                                            .font(.system(size: 12, weight: .semibold))
+                                    }
+                                    Text(feedService.isLoadingFeed ? "Loading..." : "Show earlier")
+                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                }
+                                .foregroundColor(.secondary)
+                                .padding(.vertical, 12)
+                                .frame(maxWidth: .infinity)
+                                .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+                                .cornerRadius(10)
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 1))
+                                .padding(.horizontal, 16)
+                            }
+                            .disabled(feedService.isLoadingFeed)
+                        }
+
+                        Color.clear.frame(height: 80) // Space for floating button
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+
+                // Floating "New Posts" indicator
+                if !feedService.pendingNotes.isEmpty {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            feedService.applyPendingNotes()
+                            proxy.scrollTo("top", anchor: .top)
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 12, weight: .bold))
+                            Text("\(feedService.pendingNotes.count) New Posts")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 20)
+                        .background(
+                            Capsule()
+                                .fill(Color.havenPurple)
+                                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+                        )
+                        .foregroundColor(.white)
+                    }
+                    .padding(.top, 12)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .opacity.combined(with: .scale(scale: 0.8))
+                    ))
+                    .zIndex(1)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ScrollToTop"))) { _ in
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
@@ -331,11 +340,18 @@ struct FeedNoteRow: View {
     let profile: FeedProfile?
     var onReply: (() -> Void)? = nil
     var showParent: Bool = true
+    var isReplyToNext: Bool = false
 
     @StateObject private var feedService = FeedService.shared
     @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var configService: ConfigService
 
     @State private var showingProfileKey: IdentifiableString?
+    @State private var showingMediaUrl: IdentifiableURL?
+    @State private var showingReportDialog = false
+    @State private var showLightning = false
+    @State private var showAmountPicker = false
+    @State private var zapAmountSats: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -396,6 +412,13 @@ struct FeedNoteRow: View {
 
                     AvatarView(url: nostrService.profiles[note.pubkey]?.pictureURL, pubkey: note.pubkey)
                         .frame(width: 40, height: 40)
+                    
+                    if isReplyToNext {
+                        Rectangle()
+                            .fill(Color.havenPurple.opacity(0.3))
+                            .frame(width: 2)
+                            .frame(maxHeight: .infinity)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -439,7 +462,7 @@ struct FeedNoteRow: View {
 
             // Content Body
             VStack(alignment: .leading, spacing: 8) {
-                Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs))
+                Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
                     .font(.system(size: 15, weight: .regular, design: .default))
                     .lineSpacing(2)
                     .lineLimit(nil)
@@ -451,10 +474,37 @@ struct FeedNoteRow: View {
                 let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: min(note.mediaURLs.count, 3))
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                     ForEach(note.mediaURLs.prefix(3), id: \.absoluteString) { url in
-                        FeedMediaThumbnail(url: url)
-                            .aspectRatio(1, contentMode: .fill)
-                            .frame(maxWidth: .infinity)
-                            .cornerRadius(8)
+                        Button(action: {
+                            showingMediaUrl = IdentifiableURL(url: url)
+                        }) {
+                            FeedMediaThumbnail(url: url)
+                                .aspectRatio(1, contentMode: .fill)
+                                .frame(maxWidth: .infinity)
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.top, 4)
+            }
+
+            // Quoted Notes
+            if !note.quotedEventIds.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(note.quotedEventIds, id: \.self) { quoteId in
+                        if let quotedNote = feedService.notes.first(where: { $0.id == quoteId }) {
+                            NavigationLink(destination: NoteDetailView(note: quotedNote)) {
+                                QuotedNoteView(note: quotedNote)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            // Request missing quote
+                            Color.clear
+                                .frame(height: 0)
+                                .onAppear {
+                                    feedService.fetchMissingNote(id: quoteId)
+                                }
+                        }
                     }
                 }
                 .padding(.top, 4)
@@ -474,6 +524,30 @@ struct FeedNoteRow: View {
                 )
                 .scaleEffect(isLiked ? 1.2 : 1.0)
                 .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isLiked)
+                
+                if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
+                    let isZapped = feedService.zappedEventIds.contains(note.id)
+                    // Custom Zap Button to handle both tap and long-press
+                    Button(action: {
+                        Task { await zapNote(lud16: lud16) }
+                    }) {
+                        ZStack {
+                            Image(systemName: isZapped ? "bolt.fill" : "bolt")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(isZapped ? .orange : .secondary)
+                                .frame(width: 32, height: 32)
+                                .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
+                                .clipShape(Circle())
+                        }
+                        .scaleEffect(isZapped ? 1.2 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isZapped)
+                    }
+                    .buttonStyle(.plain)
+                    .onLongPressGesture {
+                        zapAmountSats = String(ConfigService.shared.config.defaultZapAmount / 1000)
+                        showAmountPicker = true
+                    }
+                }
                 
                 ShareLink(
                     item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
@@ -504,6 +578,26 @@ struct FeedNoteRow: View {
         .hoverEffect(.lift)
         #endif
         .clipped()
+        .overlay {
+            LightningAnimationView(isAnimating: $showLightning)
+                .allowsHitTesting(false)
+        }
+        .alert("Zap Amount", isPresented: $showAmountPicker) {
+            TextField("Amount in sats", text: $zapAmountSats)
+                #if os(iOS)
+                .keyboardType(.numberPad)
+                #endif
+            Button("Zap!") {
+                if let amount = Int(zapAmountSats) {
+                    if let lud16 = getLightingAddress(for: note.pubkey) {
+                        Task { await zapNote(lud16: lud16, amount: amount) }
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Enter the amount of sats you want to zap.")
+        }
         .environment(\.openURL, OpenURLAction { url in
             if url.scheme == "nostr" {
                 let identifier = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
@@ -522,6 +616,41 @@ struct FeedNoteRow: View {
         })
         .sheet(item: Binding<IdentifiableString?>(get: { showingProfileKey }, set: { showingProfileKey = $0 })) { p in
             ProfileView(pubkey: p.id)
+        }
+        .sheet(item: $showingMediaUrl) { media in
+            FeedMediaViewer(url: media.url)
+        }
+        .contextMenu {
+            Button(action: {
+                showingReportDialog = true
+            }) {
+                Label("Report Post", systemImage: "flag.fill")
+            }
+            
+            Divider()
+            
+            Button(action: {
+                blockUser(hexPubkey: note.pubkey)
+            }) {
+                Label("Block User", systemImage: "hand.raised.fill")
+            }
+        }
+        .sheet(isPresented: $showingReportDialog) {
+            UGCReportingDialog(eventId: note.id, pubkey: note.pubkey) {
+                // Background refresh/filtering will handle hiding it
+                nostrService.objectWillChange.send()
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
+        }
+    }
+
+    private func blockUser(hexPubkey: String) {
+        guard let data = Bech32.hexToData(hexPubkey),
+              let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+        if !configService.config.blacklistedNpubs.contains(npub) {
+            configService.config.blacklistedNpubs.append(npub)
+            configService.save()
         }
     }
 
@@ -559,6 +688,36 @@ struct FeedNoteRow: View {
     private func quoteNote() {
         // Future: implement quote content properly in ComposeView
         onReply?()
+    }
+    
+    private func getLightingAddress(for pubkey: String) -> String? {
+        if let profile = nostrService.profiles[pubkey] {
+            if let lud16 = profile.lud16, !lud16.isEmpty { return lud16 }
+            if let nip05 = profile.nip05, !nip05.isEmpty { return nip05 } // Many users use nip05 as lud16
+        }
+        return nil
+    }
+    
+    private func zapNote(lud16: String, amount: Int? = nil) async {
+        do {
+            try await ZapService.shared.zapNote(
+                noteId: note.id,
+                notePubkey: note.pubkey,
+                lud16: lud16,
+                amountSats: amount
+            )
+            // Trigger animation and update state on success
+            await MainActor.run {
+                feedService.zappedEventIds.insert(note.id)
+                showLightning = true
+            }
+            #if os(iOS)
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+            #endif
+        } catch {
+            RelayProcessManager.shared.addLog("Zap: Failed to zap note: \(error.localizedDescription)", level: "ERROR")
+        }
     }
 
     private func shortKey(_ key: String) -> String {
@@ -641,20 +800,26 @@ struct FeedMediaThumbnail: View {
                 }
             }
         }
-        .aspectRatio(1, contentMode: .fill)
         .onAppear { loadThumbnail() }
     }
 
     private func loadThumbnail() {
         let ext = url.pathExtension.lowercased()
         isVideo = ["mp4", "mov", "webm", "m4v"].contains(ext)
-        guard !isVideo && image == nil else { return }
+        guard image == nil else { return }
 
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            if let data = data, let img = PlatformImage(data: data) {
-                DispatchQueue.main.async { image = img }
+        Task {
+            if isVideo {
+                if let thumb = await MediaCacheService.shared.generateThumbnail(for: url) {
+                    await MainActor.run { self.image = thumb }
+                }
+            } else {
+                if let data = await MediaCacheService.shared.fetchData(url: url),
+                   let img = PlatformImage(data: data) {
+                    await MainActor.run { self.image = img }
+                }
             }
-        }.resume()
+        }
     }
 }
 
@@ -688,7 +853,7 @@ struct AvatarView: View {
                 .frame(width: 40, height: 40)
         }
         .onAppear { loadImage() }
-        .onChange(of: url) { _ in loadImage() }
+        .onChange(of: url) { _, _ in loadImage() }
     }
 
     private var avatarGradient: LinearGradient {

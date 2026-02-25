@@ -180,14 +180,14 @@ struct DashboardView: View {
                 statsService.refreshStats(relayURLString: urlString)
             }
         }
-        .onChange(of: relayManager.isBooting) { isBooting in
+        .onChange(of: relayManager.isBooting) { _, isBooting in
             // When booting finishes, refresh the full stats including remote relay counts
             if !isBooting && relayManager.isRunning {
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
                 statsService.refreshStats(relayURLString: urlString)
             }
         }
-        .onChange(of: relayManager.importCompleted) { completed in
+        .onChange(of: relayManager.importCompleted) { _, completed in
             if completed {
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {

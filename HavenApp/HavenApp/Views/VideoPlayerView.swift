@@ -29,7 +29,7 @@ struct VideoPlayerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minWidth: 300, minHeight: 200) // Avoid AVPlayerView constraint warnings
-            .onChange(of: geo.size) { newSize in
+            .onChange(of: geo.size) { _, newSize in
                 // Strict size gate: Don't load player unless we have enough width for the controls
                 if viewSize == .zero && newSize.width > 300 {
                     viewSize = newSize

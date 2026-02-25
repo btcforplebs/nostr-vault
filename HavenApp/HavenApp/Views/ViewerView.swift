@@ -6,6 +6,7 @@ struct ViewerView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
+    @StateObject private var feedService = FeedService.shared
     
     @State private var searchText = ""
     @State private var viewMode: ViewMode = .notes
@@ -293,6 +294,10 @@ struct ViewerView: View {
         }
         .onAppear {
             if !initialLoad && relayManager.isRunning && !relayManager.isBooting {
+                // Ensure contacts are loaded first so we have followedPubkeys
+                if feedService.followedPubkeys.isEmpty {
+                    feedService.refresh()
+                }
                 refreshAll()
                 initialLoad = true
             }
@@ -300,25 +305,26 @@ struct ViewerView: View {
         .onDisappear {
             nostrService.resetConnections()
         }
-        .onChange(of: relayManager.isBooting) { isBooting in
+        .onChange(of: relayManager.isBooting) { _, isBooting in
             if !isBooting && relayManager.isRunning && !initialLoad {
                 refreshAll()
                 initialLoad = true
             }
         }
-        .onChange(of: relayManager.isRunning) { isRunning in
+        .onChange(of: relayManager.isRunning) { _, isRunning in
             if isRunning && !relayManager.isBooting && !initialLoad {
                 refreshAll()
                 initialLoad = true
             }
         }
         .overlay(fullScreenOverlay)
-        .onChange(of: searchText) { _ in scheduleUpdateDisplayData() }
-        .onChange(of: contentFilter) { _ in scheduleUpdateDisplayData() }
-        .onChange(of: mediaSourceFilter) { _ in scheduleUpdateDisplayData() }
-        .onChange(of: viewMode) { _ in scheduleUpdateDisplayData() }
-        .onChange(of: nostrService.events.count) { _ in scheduleUpdateDisplayData() }
-        .onChange(of: blossomMedia.count) { _ in scheduleUpdateDisplayData() }
+        .onChange(of: searchText) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: contentFilter) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: mediaSourceFilter) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: viewMode) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: nostrService.events.count) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: configService.config.blacklistedNpubs) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: blossomMedia.count) { _, _ in scheduleUpdateDisplayData() }
         .task {
             updateDisplayData()
         }
@@ -694,7 +700,10 @@ struct ViewerView: View {
             URL(string: configService.config.nostrURL)!,
             URL(string: configService.config.nostrURL + "/inbox")!
         ]
-        nostrService.fetchNotes(from: urls)
+        
+        // Use followed authors from FeedService to filter the feed
+        let authors = feedService.followedPubkeys.isEmpty ? nil : feedService.followedPubkeys
+        nostrService.fetchNotes(from: urls, authors: authors)
         loadLocalMedia()
     }
     
@@ -712,7 +721,10 @@ struct ViewerView: View {
             URL(string: configService.config.nostrURL)!,
             URL(string: configService.config.nostrURL + "/inbox")!
         ]
-        nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1)
+        
+        // Use followed authors from FeedService to filter the feed
+        let authors = feedService.followedPubkeys.isEmpty ? nil : feedService.followedPubkeys
+        nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1, authors: authors)
     }
     
     func loadLocalMedia() {
@@ -856,6 +868,7 @@ struct NoteRow: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     @State private var isHovered = false
+    @State private var showingReportDialog = false
     
     var cleanContent: String {
         return event.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -976,11 +989,27 @@ struct NoteRow: View {
         .contextMenu {
             if noteType != .mine {
                 Button(action: {
+                    showingReportDialog = true
+                }) {
+                    Label("Report Post", systemImage: "flag.fill")
+                }
+                
+                Divider()
+                
+                Button(action: {
                     blockUser(hexPubkey: event.pubkey)
                 }) {
                     Label("Block User", systemImage: "hand.raised.fill")
                 }
             }
+        }
+        .sheet(isPresented: $showingReportDialog) {
+            UGCReportingDialog(eventId: event.id, pubkey: event.pubkey) {
+                // Background refresh will handle hiding it, but we can proactively trigger update
+                nostrService.objectWillChange.send()
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
         }
         .onAppear {
             if nostrService.profiles[event.pubkey] == nil {
@@ -1070,6 +1099,7 @@ struct MediaGridItem: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @State private var isHovered = false
+    @State private var showingReportDialog = false
 
     var body: some View {
         ZStack {
@@ -1130,6 +1160,14 @@ struct MediaGridItem: View {
             }
             if let pubkey = item.pubkey, pubkey != nostrService.ownerHexPubkey {
                 Button(action: {
+                    showingReportDialog = true
+                }) {
+                    Label("Report Media", systemImage: "flag.fill")
+                }
+                
+                Divider()
+                
+                Button(action: {
                     guard let data = Bech32.hexToData(pubkey),
                           let npub = Bech32.encode(hrp: "npub", data: data) else { return }
                     if !configService.config.blacklistedNpubs.contains(npub) {
@@ -1140,6 +1178,13 @@ struct MediaGridItem: View {
                     Label("Block User", systemImage: "hand.raised.fill")
                 }
             }
+        }
+        .sheet(isPresented: $showingReportDialog) {
+            UGCReportingDialog(eventId: nil, pubkey: item.pubkey ?? "") {
+                nostrService.objectWillChange.send()
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
         }
     }
 }

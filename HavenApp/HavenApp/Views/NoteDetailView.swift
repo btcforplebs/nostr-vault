@@ -104,7 +104,7 @@ struct NoteDetailView: View {
                 Spacer()
             }
             
-            Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs))
+            Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
                 .font(.body)
                 .textSelection(.enabled)
                 .environment(\.openURL, OpenURLAction { url in
@@ -130,10 +130,35 @@ struct NoteDetailView: View {
                             FeedMediaThumbnail(url: url)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 300)
+                                .clipped()
+                                .cornerRadius(12)
                         }
                         .buttonStyle(.plain)
                     }
                 }
+            }
+
+            // Quoted Notes
+            if !note.quotedEventIds.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(note.quotedEventIds, id: \.self) { quoteId in
+                        if let quotedNote = feedService.notes.first(where: { $0.id == quoteId }) {
+                            NavigationLink(destination: NoteDetailView(note: quotedNote)) {
+                                QuotedNoteView(note: quotedNote)
+                                    .environmentObject(nostrService)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            // Request missing quote
+                            Color.clear
+                                .frame(height: 0)
+                                .onAppear {
+                                    feedService.fetchMissingNote(id: quoteId)
+                                }
+                        }
+                    }
+                }
+                .padding(.top, 4)
             }
             
             HStack(spacing: 24) {
@@ -145,6 +170,13 @@ struct NoteDetailView: View {
                 }
                 actionButton(icon: "heart", count: nil) {
                     likeNote()
+                }
+                
+                if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
+                    actionButton(icon: "bolt.fill", count: nil) {
+                        Task { await zapNote(lud16: lud16) }
+                    }
+                    .foregroundColor(.orange)
                 }
                 
                  ShareLink(
@@ -240,6 +272,40 @@ struct NoteDetailView: View {
     private func repostNote() {
         guard let signed = nostrService.signEvent(kind: 6, content: "", tags: [["e", note.id], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
+    }
+
+    private func getLightingAddress(for pubkey: String) -> String? {
+        if let profile = nostrService.profiles[pubkey] {
+            if let lud16 = profile.lud16, !lud16.isEmpty { return lud16 }
+            if let nip05 = profile.nip05, !nip05.isEmpty { return nip05 }
+        }
+        return nil
+    }
+    
+    private func zapNote(lud16: String) async {
+        let zapAmountSats = 21 // Default zap amount
+        let amountMsat = zapAmountSats * 1000
+        
+        do {
+            let lnurlResponse = try await LNURLService.resolveAddress(lud16)
+            
+            var tags: [[String]] = [
+                ["relays", ConfigService.shared.config.relayURL],
+                ["amount", String(amountMsat)],
+                ["lnurl", ""]
+            ]
+            
+            if !note.id.isEmpty { tags.append(["e", note.id]) }
+            tags.append(["p", note.pubkey])
+            
+            let signedZapReq: NostrEvent? = nostrService.signEvent(kind: 9734, content: "Zap from Haven", tags: tags)
+            
+            let invoice = try await LNURLService.fetchInvoice(callback: lnurlResponse.callback, amountMsat: amountMsat, zapRequest: signedZapReq)
+            let preimage = try await NWCService.payInvoice(bolt11: invoice)
+            print("Successfully zapped! Preimage: \(preimage)")
+        } catch {
+            print("Zap failed: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Thread Loading

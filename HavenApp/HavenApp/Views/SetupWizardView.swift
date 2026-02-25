@@ -371,8 +371,8 @@ struct TermsOfServiceStep: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     tosSection(
-                        title: "User-Generated Content",
-                        body: "Haven displays content from the Nostr network, which is decentralized and uncensored. You are solely responsible for the content you publish through your relay."
+                        title: "Strict EULA",
+                        body: "Haven displays content from the Nostr network, which is decentralized and uncensored. However, Haven has zero tolerance for objectionable content or abusive users. You are solely responsible for the content you publish, and you agree to use the built-in moderation tools to filter or block any offensive material or abusive accounts."
                     )
 
                     tosSection(
@@ -970,12 +970,22 @@ struct SetupRestoreNotesStep: View {
         let tempDir = FileManager.default.temporaryDirectory
         let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
 
-        do {
-            if FileManager.default.fileExists(atPath: tempFile.path) {
-                try FileManager.default.removeItem(at: tempFile)
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var copyError: Error?
+
+        coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &coordinationError) { safeURL in
+            do {
+                if FileManager.default.fileExists(atPath: tempFile.path) {
+                    try FileManager.default.removeItem(at: tempFile)
+                }
+                try FileManager.default.copyItem(at: safeURL, to: tempFile)
+            } catch {
+                copyError = error
             }
-            try FileManager.default.copyItem(at: url, to: tempFile)
-        } catch {
+        }
+
+        if let error = coordinationError ?? copyError {
             self.restoreError = "Failed to copy backup file: \(error.localizedDescription)"
             self.showRestoreError = true
             self.isRestoring = false

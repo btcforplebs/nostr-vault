@@ -54,7 +54,7 @@ struct LogsView: View {
                     }
                 }
             }
-            .onChange(of: relayManager.logs.count) { _ in
+            .onChange(of: relayManager.logs.count) { _, _ in
                 if let lastId = relayManager.logs.last?.id {
                     withAnimation {
                         proxy.scrollTo(lastId, anchor: .bottom)
@@ -116,7 +116,7 @@ struct LogsView: View {
                     .id(log.id)
                 }
                 .listStyle(.plain)
-                .onChange(of: relayManager.logs.count) { _ in
+                .onChange(of: relayManager.logs.count) { _, _ in
                     if let lastId = relayManager.logs.last?.id {
                         proxy.scrollTo(lastId, anchor: .bottom)
                     }

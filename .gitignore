@@ -1,2 +1,7 @@
 *.bak
 *.bak2
+/HavenApp/build
+/HavenApp/build_data
+*.txt
+/build
+/build_data

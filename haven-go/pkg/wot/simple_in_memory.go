@@ -78,7 +78,6 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 
 	var eventsAnalysed atomic.Int64
 	pubkeyFollowers := xsync.NewMap[string, *atomic.Int64]()
-	relaysDiscovered := xsync.NewMap[string, bool]()
 	oneHopNetwork := make(map[string]bool)
 	newWot := make(map[string]bool)
 
@@ -125,17 +124,22 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 
 	slog.Info("🕸️ analysing Nostr events", "count", eventsAnalysed.Load())
 
-	processBatch := func(pubkeys []string) {
-		timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-		done := make(chan struct{})
+	// Split analysis into batches of 1000 pubkeys and process them sequentially
+	// Process sequentially with yielding to avoid blocking the host app's UI/Events
+	keys := slices.Collect(maps.Keys(oneHopNetwork))
+	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys))
 
-		filter := nostr.Filter{
-			Authors: pubkeys,
-			Kinds:   []int{nostr.KindFollowList, nostr.KindRelayListMetadata},
-		}
+	for batch := range slices.Chunk(keys, 1000) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 
-		go func() {
-			defer cancel()
+			filter := nostr.Filter{
+				Authors: batch,
+				Kinds:   []int{nostr.KindFollowList},
+			}
 
 			events := wt.Pool.FetchMany(timeoutCtx, wt.SeedRelays, filter)
 			for ev := range latestEventByKindAndPubkey(timeoutCtx, events, &eventsAnalysed) {
@@ -145,30 +149,18 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 						followers.Add(1)
 					}
 				}
-
-				for relay := range ev.Tags.FindAll("r") {
-					relaysDiscovered.Store(relay[1], true)
-				}
 			}
-			close(done)
-		}()
+			cancel()
 
-		select {
-		case <-done:
-			slog.Info("🕸️ analysing Nostr events", "count", eventsAnalysed.Load())
-		case <-timeoutCtx.Done():
-			slog.Error("🚫 timeout while fetching events, moving to the next batch")
+			// Only log every batch to avoid flooding the UI thread
+			slog.Info("🕸️ verified identities in community", "count", eventsAnalysed.Load())
+
+			// Yield to the OS scheduler and other goroutines to keep the host app responsive
+			time.Sleep(100 * time.Millisecond)
 		}
-		debug.FreeOSMemory()
 	}
 
-	// Split analysis into batches of 100 pubkeys
-	keys := slices.Collect(maps.Keys(oneHopNetwork))
-	for batch := range slices.Chunk(keys, 100) {
-		processBatch(batch)
-	}
-
-	slog.Info("📈 totals", "🫂pubkeys", pubkeyFollowers.Size(), "🔗relays", relaysDiscovered.Size())
+	slog.Info("📈 community size", "total_keys", pubkeyFollowers.Size())
 
 	// Log Top N pubkeys by follower count for debugging purposes
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {

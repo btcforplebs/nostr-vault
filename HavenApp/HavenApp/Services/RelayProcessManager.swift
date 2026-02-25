@@ -56,6 +56,9 @@ class RelayProcessManager: ObservableObject {
     // Track if we are in the middle of a shutdown to prevent recursive restarts
     private var isShuttingDown: Bool = false
     
+    // Background log processing
+    private let logProcessingQueue = DispatchQueue(label: "com.haven.relay.logs", qos: .utility)
+    
     private var pendingImportConfig: HavenConfig?
     @Published var startDate: Date?
     
@@ -76,11 +79,40 @@ class RelayProcessManager: ObservableObject {
         let timestamp: Date
         let level: String
         let message: String
+        
+        private nonisolated static let logPattern = try? NSRegularExpression(pattern: "^\\d{4}/\\d{2}/\\d{2}\\s\\d{2}:\\d{2}:\\d{2}\\s(INFO|WARN|ERROR|DEBUG)\\s", options: .caseInsensitive)
+        private nonisolated static let kvPattern = try? NSRegularExpression(pattern: "(\\w+)=([^\\s]+)", options: [])
+
         static func parse(_ line: String) -> LogEntry {
-            // Simplified parsing
+            var message = line
+            
+            // 1. Detect level (Simplified parsing from the raw line)
             let level = line.contains("ERROR") ? "ERROR" :
                        line.contains("WARN") ? "WARN" : "INFO"
-            return LogEntry(timestamp: Date(), level: level, message: line)
+            
+            // 2. Strip standard Go slog/log prefix if present
+            if let regex = logPattern {
+                let range = NSRange(location: 0, length: message.utf16.count)
+                message = regex.stringByReplacingMatches(in: message, options: [], range: range, withTemplate: "")
+            }
+            
+            // 3. Strip leading level markers
+            if message.hasPrefix("INFO ") { message = String(message.dropFirst(5)) }
+            else if message.hasPrefix("WARN ") { message = String(message.dropFirst(5)) }
+            else if message.hasPrefix("ERROR ") { message = String(message.dropFirst(6)) }
+            
+            // 4. Simplify Badger/technical prefixes
+            if message.hasPrefix("badger ") {
+                message = message.replacingOccurrences(of: "badger ", with: "💾 ")
+            }
+
+            // 5. Clean up structured log key=value pairs
+            if let kvRegex = kvPattern {
+                let range = NSRange(location: 0, length: message.utf16.count)
+                message = kvRegex.stringByReplacingMatches(in: message, options: [], range: range, withTemplate: "$1: $2")
+            }
+
+            return LogEntry(timestamp: Date(), level: level, message: message.trimmingCharacters(in: .whitespaces))
         }
     }
     
@@ -150,6 +182,19 @@ class RelayProcessManager: ObservableObject {
             // Continue with the rest of the startup on the MainActor
             await MainActor.run {
                 self.continueStartRelay(config: config, relayDataDir: relayDataDir)
+            }
+        }
+    }
+
+    /// Public method to add logs from other services
+    nonisolated func addLog(_ message: String, level: String = "INFO") {
+        let entry = LogEntry(timestamp: Date(), level: level, message: message)
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.logs.append(entry)
+            // Keep log size manageable
+            if self.logs.count > 1000 {
+                self.logs.removeFirst(200)
             }
         }
     }
@@ -529,23 +574,41 @@ class RelayProcessManager: ObservableObject {
             dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
             dup2(pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
             
+            // Local buffer for the background queue to avoid MainActor isolation
+            var localBuffer = Data()
+            
             pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
                 
-                Task { @MainActor in
-                    self?.processBufferedOutput(data)
+                // Process output on a background queue to keep MainActor free
+                self?.logProcessingQueue.async {
+                    localBuffer.append(data)
                     
-                    if String(data: data, encoding: .utf8) != nil {
-                        let logFileURL = directory.appendingPathComponent("relay.log")
-                        if !FileManager.default.fileExists(atPath: logFileURL.path) {
-                            FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
-                        }
-                        if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
-                            fileHandle.seekToEndOfFile()
-                            fileHandle.write(data)
-                            try? fileHandle.close()
-                        }
+                    // Write to file on background
+                    let logFileURL = directory.appendingPathComponent("relay.log")
+                    if !FileManager.default.fileExists(atPath: logFileURL.path) {
+                        FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
+                    }
+                    if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
+                        fileHandle.seekToEndOfFile()
+                        fileHandle.write(data)
+                        try? fileHandle.close()
+                    }
+
+                    // Find the last newline character
+                    guard let range = localBuffer.range(of: Data([0x0A]), options: .backwards) else {
+                        return
+                    }
+                    
+                    // Extract all complete lines
+                    let validData = localBuffer.subdata(in: 0..<range.upperBound)
+                    
+                    // Keep the remainder in the buffer
+                    localBuffer = localBuffer.subdata(in: range.upperBound..<localBuffer.endIndex)
+                    
+                    if let output = String(data: validData, encoding: .utf8) {
+                        self?.processOutputInBackground(output)
                     }
                 }
             }
@@ -571,204 +634,264 @@ class RelayProcessManager: ObservableObject {
         return content
     }
     
-    private func processBufferedOutput(_ data: Data) {
-        logBuffer.append(data)
-        
-        // Find the last newline character
-        guard let range = logBuffer.range(of: Data([0x0A]), options: .backwards) else {
-            // No newline yet, keep buffering
-            return
-        }
-        
-        // Extract all complete lines
-        let validData = logBuffer.subdata(in: 0..<range.upperBound)
-        
-        // Keep the remainder in the buffer
-        logBuffer = logBuffer.subdata(in: range.upperBound..<logBuffer.endIndex)
-        
-        if let output = String(data: validData, encoding: .utf8) {
-            processOutput(output)
-        }
-    }
-    
-    private func processOutput(_ output: String) {
+    private nonisolated func processOutputInBackground(_ output: String) {
         let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
         guard !lines.isEmpty else { return }
         
         var newEntries: [LogEntry] = []
-        // Note: Logic inside loop needs to be preserved, but append to pendingLogs instead of logs
-
         for line in lines {
-            let entry = LogEntry.parse(line)
-            newEntries.append(entry)
+            newEntries.append(LogEntry.parse(line))
             
-            if isImporting {
-               if line.contains("connected successfully") {
-                   importProgress = 0.1
-                   importStatusMessage = "Connected to relays..."
-               } else if line.contains("Imported") && line.contains("notes") {
-                   if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
-                        calculateProgress(currentDateStr: String(dateStr))
-                   }
-                   if let rangeStart = line.range(of: "from ")?.upperBound,
-                      let rangeEnd = line.range(of: " to")?.lowerBound {
-                       importStatusMessage = "Found notes from \(line[rangeStart..<rangeEnd])..."
-                   } else {
-                       importStatusMessage = "Found notes..."
-                   }
-               } else if line.contains("Initializing WoT") || line.contains("building WoT") || line.contains("fetching Nostr events") {
-                   importStatusMessage = "Building Web of Trust..."
-                   importProgress = 0.2
-               } else if line.contains("analysing Nostr events") {
-                   importStatusMessage = "Analysing Web of Trust..."
-                   importProgress = 0.3
-               } else if line.contains("importing inbox notes") || line.contains("Importing inbox notes") {
-                   importStatusMessage = "Importing tagged notes..."
-                   importProgress = 0.85 // More conservative estimate
-               } else if line.contains("subscribing to inbox") || line.contains("tagged import complete") {
-                   // Import is effectively done when it starts subscribing or explicitly says complete
-                   self.isImporting = false
-                   self.importCompleted = true
-                   importProgress = 1.0
-                   importStatusMessage = "Import Complete!"
-               } else if line.contains("imported") && line.contains("tagged notes") {
-                   // Tagged notes import completed
-                   importProgress = 0.95
-                   if let count = line.components(separatedBy: " ").first(where: { Int($0) != nil }) {
-                       importStatusMessage = "Imported \(count) tagged notes"
-                   } else {
-                       importStatusMessage = "Tagged notes imported"
-                   }
-               } else if line.contains("Import complete") || line.contains("import complete") {
-                   importProgress = 1.0
-                   importStatusMessage = "Import Complete!"
-                    
-                    // Tagged import complete — stop the C-shared relay
-                    if line.contains("tagged import complete") {
-                        self.isImporting = false
-                        self.importCompleted = true
-                    }
-               } else if line.contains("No notes found") {
-                   if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
-                       calculateProgress(currentDateStr: String(dateStr))
-                       if let fromIndex = line.components(separatedBy: "for ").last?.prefix(10) {
-                            importStatusMessage = "Checking \(fromIndex)... (No notes found)"
-                       }
-                   } else {
-                        importProgress = min(importProgress + 0.03, 0.85) // Smaller increments, cap at 85%
-                   }
-               }
-            }
-            
-            // Parse event counts from logs
-            if line.contains("Imported") && line.contains("notes") {
-                // Extract number from "Imported X notes from..."
-                let components = line.components(separatedBy: " ")
-                if let importedIndex = components.firstIndex(of: "Imported"),
-                   importedIndex + 1 < components.count,
-                   let count = Int(components[importedIndex + 1]) {
-                    eventsStored += count
+            // Extract state changes on the background thread
+            updateUIStateFromLogInBackground(line)
+        }
+        
+        Task { @MainActor in
+            // Push logs to the throttled buffer
+            self.pendingLogs.append(contentsOf: newEntries)
+        }
+    }
+
+    // Cached regex patterns for performance - marked nonisolated for background access
+    private nonisolated static let analysedPattern = try? NSRegularExpression(pattern: "(?:analysed|count=)(\\d+)", options: .caseInsensitive)
+    private nonisolated static let trustGraphPattern = try? NSRegularExpression(pattern: "(?:kept=|followers: )(\\d+)", options: .caseInsensitive)
+    private nonisolated static let pubkeysPattern = try? NSRegularExpression(pattern: "pubkeys=(\\d+)", options: .caseInsensitive)
+
+    private nonisolated func updateUIStateFromLogInBackground(_ line: String) {
+        // Handle all logic on the background thread, only jumping to MainActor for specific property changes
+        if line.contains("connected successfully") {
+            Task { @MainActor in
+                if self.isImporting {
+                    self.importProgress = 0.1
+                    self.importStatusMessage = "Connected to relays..."
                 }
-            } else if line.contains("imported") && line.contains("tagged notes") {
-                // Extract from "imported X tagged notes"
-                let components = line.components(separatedBy: " ")
-                if let importedIndex = components.firstIndex(of: "imported"),
-                   importedIndex + 1 < components.count,
-                   let count = Int(components[importedIndex + 1]) {
-                    eventsStored += count
-                }
-            } else if line.contains("new note") || line.contains("new reaction") || 
-                      line.contains("new zap") || line.contains("new encrypted message") ||
-                      line.contains("new gift-wrapped") || line.contains("new repost") {
-                // Individual events coming in
-                eventsStored += 1
             }
-            
-            // Booting status
-            if isBooting {
-                let lowerLine = line.lowercased()
-                
-                if lowerLine.contains("subscribing to") {
-                    if let topic = line.components(separatedBy: "to ").last {
-                        bootStatusMessage = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
+        } else if line.contains("Imported") && line.contains("notes") {
+            if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
+                let dateString = String(dateStr)
+                Task { @MainActor in 
+                    if self.isImporting {
+                        self.calculateProgress(currentDateStr: dateString) 
                     }
-                } else if lowerLine.contains("is booting up") { // "HAVEN X.X.X is booting up"
-                     DispatchQueue.main.async { self.bootStatusMessage = "Booting Haven..." }
-                } else if lowerLine.contains("starting") {
-                    if let service = line.components(separatedBy: "starting ").last ?? line.components(separatedBy: "Starting ").last {
-                         bootStatusMessage = "Starting \(service.trimmingCharacters(in: .punctuationCharacters))..."
+                }
+            }
+            if let rangeStart = line.range(of: "from ")?.upperBound,
+               let rangeEnd = line.range(of: " to")?.lowerBound {
+                let status = "Found notes from \(line[rangeStart..<rangeEnd])..."
+                Task { @MainActor in 
+                    if self.isImporting {
+                        self.importStatusMessage = status 
                     }
-                } else if lowerLine.contains("listening at") || lowerLine.contains("listening on") { // Match both
-                     DispatchQueue.main.async { self.bootStatusMessage = " initializing" } // Final state
-                } else if lowerLine.contains("building web of trust graph") || lowerLine.contains("initializing wot") {
-                     DispatchQueue.main.async { self.bootStatusMessage = "Building Web of Trust..." }
-                } else if lowerLine.contains("analysed") || lowerLine.contains("analysing nostr events") {
-                    // OLD: analysed 123
-                    // NEW: analysing Nostr events count=123
-                    // Broad match for digits
-                    let pattern = "(?:analysed|count=)(\\d+)"
-                    if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                       let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
-                       let range = Range(match.range(at: 1), in: line) {
-                        let count = line[range]
-                        bootStatusMessage = "Analysed \(count) keys..."
+                }
+            } else {
+                Task { @MainActor in 
+                    if self.isImporting {
+                        self.importStatusMessage = "Found notes..." 
                     }
-                } else if lowerLine.contains("network size") {
-                     if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
-                         bootStatusMessage = "Network Size: \(count)"
-                     }
-                } else if lowerLine.contains("totals") && lowerLine.contains("pubkeys") {
-                    // NEW: totals pubkeys=123 relays=456
-                    let pattern = "pubkeys=(\\d+)"
-                    if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                       let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
-                       let range = Range(match.range(at: 1), in: line) {
-                        let count = line[range]
-                        bootStatusMessage = "Network Size: \(count)"
+                }
+            }
+        } else if line.contains("Initializing WoT") || line.contains("building WoT") || line.contains("fetching Nostr events") {
+            Task { @MainActor in
+                if self.isImporting {
+                    self.importStatusMessage = "Building Web of Trust..."
+                    self.importProgress = 0.2
+                }
+            }
+        } else if line.contains("analysing Nostr events") {
+            Task { @MainActor in
+                if self.isImporting {
+                    self.importStatusMessage = "Analysing Web of Trust..."
+                    self.importProgress = 0.3
+                }
+            }
+        } else if line.contains("importing inbox notes") || line.contains("Importing inbox notes") {
+            Task { @MainActor in
+                if self.isImporting {
+                    self.importStatusMessage = "Importing tagged notes..."
+                    self.importProgress = 0.85 
+                }
+            }
+        } else if line.contains("subscribing to inbox") || line.contains("tagged import complete") {
+            Task { @MainActor in
+                if self.isImporting {
+                    self.isImporting = false
+                    self.importCompleted = true
+                    self.importProgress = 1.0
+                    self.importStatusMessage = "Import Complete!"
+                }
+            }
+        } else if line.contains("imported") && line.contains("tagged notes") {
+            if let countMatch = line.components(separatedBy: " ").first(where: { Int($0) != nil }) {
+                let status = "Imported \(countMatch) tagged notes"
+                Task { @MainActor in
+                    if self.isImporting {
+                        self.importProgress = 0.95
+                        self.importStatusMessage = status
                     }
-                } else if lowerLine.contains("relays discovered") {
-                     if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
-                         bootStatusMessage = "Discovered \(count) relays..."
-                     }
-                } else if lowerLine.contains("pubkeys with minimum followers") || lowerLine.contains("eliminating pubkeys") {
-                     // NEW: eliminating pubkeys ... kept=123
-                     // OLD: pubkeys with minimum followers: 123
-                     let pattern = "(?:kept=|followers: )(\\d+)"
-                     if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                        let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
-                        let range = Range(match.range(at: 1), in: line) {
-                        let count = line[range]
-                        bootStatusMessage = "Trust Graph: \(count) users"
+                }
+            } else {
+                Task { @MainActor in
+                    if self.isImporting {
+                        self.importProgress = 0.95
+                        self.importStatusMessage = "Tagged notes imported"
+                    }
+                }
+            }
+        } else if line.contains("Import complete") || line.contains("import complete") {
+            Task { @MainActor in
+                if self.isImporting {
+                    self.importProgress = 1.0
+                    self.importStatusMessage = "Import Complete!"
+                }
+            }
+            if line.contains("tagged import complete") {
+                Task { @MainActor in
+                     if self.isImporting {
+                         self.isImporting = false
+                         self.importCompleted = true
                      }
                 }
             }
-            
-            // Connection tracking
-            if line.contains("subscribing to inbox") || line.contains("Subscribing to inbox") {
-                isBooting = false
-                bootStatusMessage = ""
-            }
-            
-            if line.contains("accepted connection") || line.contains("new connection") || line.contains("WS connect") {
-                activeConnections += 1
-            } else if line.contains("connection closed") || line.contains("WS disconnect") || line.contains("disconnected") {
-                activeConnections = max(0, activeConnections - 1)
-            }
-            
-            if line.contains("Cannot acquire directory lock") || line.contains("Another process is using this Badger database") {
-                isLocked = true
-                needsLockFix = true
-            }
-            
-            if line.contains("bind: address already in use") {
-                isPortConflict = true
+        } else if line.contains("No notes found") {
+            if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
+                let dateString = String(dateStr)
+                var status: String?
+                if let fromIndex = line.components(separatedBy: "for ").last?.prefix(10) {
+                     status = "Checking \(fromIndex)... (No notes found)"
+                }
+                Task { @MainActor in
+                    if self.isImporting {
+                        self.calculateProgress(currentDateStr: dateString)
+                        if let status = status { self.importStatusMessage = status }
+                    }
+                }
+            } else {
+                Task { @MainActor in
+                    if self.isImporting {
+                        self.importProgress = min(self.importProgress + 0.03, 0.85)
+                    }
+                }
             }
         }
         
-        // Batch append logs to queue
-        self.pendingLogs.append(contentsOf: newEntries)
+        // Parse event counts
+        if line.contains("Imported") && line.contains("notes") {
+            let components = line.components(separatedBy: " ")
+            if let importedIndex = components.firstIndex(of: "Imported"),
+               importedIndex + 1 < components.count,
+               let count = Int(components[importedIndex + 1]) {
+                Task { @MainActor in self.eventsStored += count }
+            }
+        } else if line.contains("imported") && line.contains("tagged notes") {
+            let components = line.components(separatedBy: " ")
+            if let importedIndex = components.firstIndex(of: "imported"),
+               importedIndex + 1 < components.count,
+               let count = Int(components[importedIndex + 1]) {
+                Task { @MainActor in self.eventsStored += count }
+            }
+        } else if line.contains("new note") || line.contains("new reaction") || 
+                  line.contains("new zap") || line.contains("new encrypted message") ||
+                  line.contains("new gift-wrapped") || line.contains("new repost") {
+            Task { @MainActor in self.eventsStored += 1 }
+        }
+        
+        // Booting status
+        let lowerLine = line.lowercased()
+        if lowerLine.contains("subscribing to") {
+            if let topic = line.components(separatedBy: "to ").last {
+                let status = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
+                Task { @MainActor in 
+                    if self.isBooting { self.bootStatusMessage = status }
+                }
+            }
+        } else if lowerLine.contains("is booting up") {
+             Task { @MainActor in 
+                if self.isBooting { self.bootStatusMessage = "Booting Haven..." }
+             }
+        } else if lowerLine.contains("starting") {
+            if let service = line.components(separatedBy: "starting ").last ?? line.components(separatedBy: "Starting ").last {
+                 let status = "Starting \(service.trimmingCharacters(in: .punctuationCharacters))..."
+                 Task { @MainActor in 
+                    if self.isBooting { self.bootStatusMessage = status }
+                 }
+            }
+        } else if lowerLine.contains("listening at") || lowerLine.contains("listening on") {
+             Task { @MainActor in 
+                if self.isBooting { self.bootStatusMessage = " initializing" }
+             }
+        } else if lowerLine.contains("building web of trust graph") || lowerLine.contains("initializing wot") {
+             Task { @MainActor in 
+                if self.isBooting { self.bootStatusMessage = "Building Web of Trust..." }
+             }
+        } else if lowerLine.contains("analysed") || lowerLine.contains("analysing nostr events") {
+            if let regex = Self.analysedPattern,
+               let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
+               let range = Range(match.range(at: 1), in: line) {
+                let count = String(line[range])
+                Task { @MainActor in 
+                    if self.isBooting { self.bootStatusMessage = "Analysed \(count) keys..." }
+                }
+            }
+        } else if lowerLine.contains("network size") {
+             if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
+                 Task { @MainActor in 
+                    if self.isBooting { self.bootStatusMessage = "Network Size: \(count)" }
+                 }
+             }
+        } else if lowerLine.contains("totals") && lowerLine.contains("pubkeys") {
+            if let regex = Self.pubkeysPattern,
+               let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
+               let range = Range(match.range(at: 1), in: line) {
+                let count = String(line[range])
+                Task { @MainActor in 
+                    if self.isBooting { self.bootStatusMessage = "Network Size: \(count)" }
+                }
+            }
+        } else if lowerLine.contains("relays discovered") {
+             if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
+                 let status = "Discovered \(count) relays..."
+                 Task { @MainActor in 
+                    if self.isBooting { self.bootStatusMessage = status }
+                 }
+             }
+        } else if lowerLine.contains("pubkeys with minimum followers") || lowerLine.contains("eliminating pubkeys") {
+             if let regex = Self.trustGraphPattern,
+                let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
+                let range = Range(match.range(at: 1), in: line) {
+                let count = String(line[range])
+                Task { @MainActor in 
+                    if self.isBooting { self.bootStatusMessage = "Trust Graph: \(count) users" }
+                }
+             }
+        }
+        
+        if line.contains("subscribing to inbox") || line.contains("Subscribing to inbox") {
+            Task { @MainActor in
+                if self.isBooting {
+                    self.isBooting = false
+                    self.bootStatusMessage = ""
+                }
+            }
+        }
+        
+        if line.contains("accepted connection") || line.contains("new connection") || line.contains("WS connect") {
+            Task { @MainActor in self.activeConnections += 1 }
+        } else if line.contains("connection closed") || line.contains("WS disconnect") || line.contains("disconnected") {
+            Task { @MainActor in self.activeConnections = max(0, self.activeConnections - 1) }
+        }
+        
+        if line.contains("Cannot acquire directory lock") || line.contains("Another process is using this Badger database") {
+            Task { @MainActor in
+                self.isLocked = true
+                self.needsLockFix = true
+            }
+        }
+        
+        if line.contains("bind: address already in use") {
+            Task { @MainActor in self.isPortConflict = true }
+        }
     }
-    
+
     private func startLogThrottler() {
         stopLogThrottler()
         DispatchQueue.main.async {
@@ -963,6 +1086,7 @@ class RelayProcessManager: ObservableObject {
         setenv("RELAY_BIND_ADDRESS", "127.0.0.1", 1)
 
         FileManager.default.changeCurrentDirectoryPath(relayDataDir.path)
+        captureOutput(in: relayDataDir)
     }
 
     func runBackupExport(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
@@ -1458,7 +1582,7 @@ class RelayProcessManager: ObservableObject {
     }
 
     // Fallback map for MIME types that UTType may not know on all macOS versions
-    private static let extensionFallbacks: [String: String] = [
+    private nonisolated static let extensionFallbacks: [String: String] = [
         "application/vnd.android.package-archive": "apk",
         "application/java-archive": "jar",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
@@ -1475,7 +1599,7 @@ class RelayProcessManager: ObservableObject {
     ]
 
     // Convert MIME type to file extension
-    private func mimeToExtension(_ mime: String) -> String {
+    private nonisolated func mimeToExtension(_ mime: String) -> String {
         if let utType = UTType(mimeType: mime),
            let ext = utType.preferredFilenameExtension {
             return ext

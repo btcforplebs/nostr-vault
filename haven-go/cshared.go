@@ -20,6 +20,7 @@ import (
 	"github.com/bitvora/haven/pkg/wot"
 	"github.com/mailru/easyjson"
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip04"
 	"github.com/spf13/afero"
 )
 
@@ -64,6 +65,7 @@ func StartRelayC(importMode bool) {
 	log.Println("🚀 HAVEN", config.RelayVersion, "is booting up (C-Shared Mode) [1/3]")
 
 	if importMode {
+		defer CloseDBs()
 		if !ensureImportRelays() {
 			log.Println("🚫 Import aborted: could not connect to any seed relays")
 			return
@@ -335,6 +337,15 @@ func GenerateKeyPairC() *C.char {
 	return C.CString(fmt.Sprintf("%s:%s", sk, pk))
 }
 
+//export GetPublicKeyC
+func GetPublicKeyC(sk *C.char) *C.char {
+	pk, err := nostr.GetPublicKey(C.GoString(sk))
+	if err != nil {
+		return nil
+	}
+	return C.CString(pk)
+}
+
 // Blossom media handlers (iOS only)
 
 func handleBlossomUpload(w http.ResponseWriter, r *http.Request) {
@@ -431,6 +442,38 @@ func handleBlossomDelete(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `{"status":"ok"}`)
+}
+
+//export EncryptNIP04C
+func EncryptNIP04C(plaintext *C.char, pubkey *C.char, privkey *C.char) *C.char {
+	sharedSecret, err := nip04.ComputeSharedSecret(C.GoString(pubkey), C.GoString(privkey))
+	if err != nil {
+		slog.Error("EncryptNIP04C: ComputeSharedSecret failed", "err", err)
+		return nil
+	}
+
+	encrypted, err := nip04.Encrypt(C.GoString(plaintext), sharedSecret)
+	if err != nil {
+		slog.Error("EncryptNIP04C: Encrypt failed", "err", err)
+		return nil
+	}
+	return C.CString(encrypted)
+}
+
+//export DecryptNIP04C
+func DecryptNIP04C(ciphertext *C.char, pubkey *C.char, privkey *C.char) *C.char {
+	sharedSecret, err := nip04.ComputeSharedSecret(C.GoString(pubkey), C.GoString(privkey))
+	if err != nil {
+		slog.Error("DecryptNIP04C: ComputeSharedSecret failed", "err", err)
+		return nil
+	}
+
+	decrypted, err := nip04.Decrypt(C.GoString(ciphertext), sharedSecret)
+	if err != nil {
+		slog.Error("DecryptNIP04C: Decrypt failed", "err", err)
+		return nil
+	}
+	return C.CString(decrypted)
 }
 
 // Dummy main() function required for buildmode=c-archive

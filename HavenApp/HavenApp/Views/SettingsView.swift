@@ -23,12 +23,11 @@ struct SettingsView: View {
     enum SettingsTab: String, CaseIterable, Identifiable {
         case identity = "Identity"
         case accessControl = "Access Control"
-        case relays = "Relays"
-        case feed = "Feed"
+        case feed = "Feed Relays"
         case importNotes = "Import"
         case blastr = "Blastr"
         case advanced = "Advanced"
-        case backup = "Backup"
+        case wallet = "Wallet"
         case logs = "Logs"
         
         var id: String { self.rawValue }
@@ -37,12 +36,11 @@ struct SettingsView: View {
             switch self {
             case .identity: return "person.badge.key"
             case .accessControl: return "shield.lefthalf.filled"
-            case .relays: return "server.rack"
             case .feed: return "newspaper"
             case .importNotes: return "square.and.arrow.down"
             case .blastr: return "paperplane"
             case .advanced: return "gearshape.2"
-            case .backup: return "icloud"
+            case .wallet: return "bitcoinsign.circle"
             case .logs: return "list.bullet.rectangle"
             }
         }
@@ -56,7 +54,7 @@ struct SettingsView: View {
             macOSBody
             #endif
         }
-        .onChange(of: configService.config) { _ in
+        .onChange(of: configService.config) { _, _ in
             saveTask?.cancel()
             saveTask = Task {
                 try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second debounce
@@ -104,25 +102,57 @@ struct SettingsView: View {
             }
             
             Section("Relay Configuration") {
-                tabLink(.relays)
                 tabLink(.feed)
                 tabLink(.blastr)
                 tabLink(.importNotes)
             }
             
             Section("System") {
-                tabLink(.backup)
+                tabLink(.wallet)
                 tabLink(.advanced)
                 tabLink(.logs)
             }
             
-            Section {
+            Section("About") {
                 VStack(spacing: 4) {
                     Text("Haven Relay")
                         .font(.headline)
                     Text("Version 2.3.0")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    VStack(spacing: 8) {
+                        Text("Support & Abuse Reporting")
+                            .font(.subheadline.bold())
+                        
+                        Text("To report objectionable content or abusive users, contact the developer via Nostr")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        Text("npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx")
+                            .font(.system(size: 10, design: .monospaced))
+                            .padding(8)
+                            .background(Color.platformControlBackground)
+                            .cornerRadius(4)
+                            .onTapGesture {
+                                PlatformClipboard.copy("npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx")
+                            }
+                        
+                        Text("(Tap to copy)")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                            
+                        Divider()
+                            .padding(.vertical, 8)
+                            
+                        Link("Privacy Policy", destination: URL(string: "https://havenformac.btcforplebs.com/privacy.html")!)
+                            .font(.caption)
+                            .foregroundColor(.havenPurple)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
@@ -156,12 +186,11 @@ struct SettingsView: View {
         switch tab {
         case .identity: return .blue
         case .accessControl: return .green
-        case .relays: return .purple
         case .feed: return .pink
         case .importNotes: return .orange
         case .blastr: return .cyan
         case .advanced: return .gray
-        case .backup: return .indigo
+        case .wallet: return .orange
         case .logs: return .secondary
         }
     }
@@ -183,12 +212,11 @@ struct SettingsView: View {
             switch tab {
             case .identity: IdentitySettingsView()
             case .accessControl: AccessControlSettingsView()
-            case .relays: RelaySettingsView()
             case .feed: FeedSettingsView()
             case .importNotes: ImportSettingsView()
             case .blastr: BlastrSettingsView()
             case .advanced: AdvancedSettingsView()
-            case .backup: BackupSettingsView()
+            case .wallet: WalletSettingsView()
             case .logs: LogsView()
             }
         }
@@ -199,28 +227,50 @@ struct SettingsView: View {
     }
     
     private var footer: some View {
-        VStack(spacing: 8) {
-            if isRestarting {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Button(action: restartRelay) {
-                    Text("Save & Restart Relay")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.havenPurple)
-                        .cornerRadius(10)
+        VStack(spacing: 0) {
+            VStack(spacing: 8) {
+                if isRestarting {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button(action: restartRelay) {
+                        Text("Save & Restart Relay")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.havenPurple)
+                            .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled((!needsRestart && configService.config == relayManager.lastConfig) || !relayManager.isRunning)
                 }
-                .buttonStyle(.plain)
-                .disabled((!needsRestart && configService.config == relayManager.lastConfig) || !relayManager.isRunning)
             }
+            .padding()
+            #if os(macOS)
+            .background(.ultraThinMaterial)
+            #endif
+            
+            Divider()
+            
+            // About Section for macOS
+            VStack(spacing: 4) {
+                Text("Haven Relay v2.3.0")
+                    .font(.caption.bold())
+                Text("Abuse Reporting: npub1vxlh...g0nvx")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .onTapGesture {
+                        PlatformClipboard.copy("npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx")
+                    }
+                Link("Privacy Policy", destination: URL(string: "https://havenformac.btcforplebs.com/privacy.html")!)
+                    .font(.system(size: 10))
+                    .foregroundColor(.havenPurple)
+                    .padding(.top, 2)
+            }
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity)
         }
-        .padding()
-        #if os(macOS)
-        .background(.ultraThinMaterial)
-        #endif
     }
 }
 
@@ -779,132 +829,11 @@ struct NpubListEditor: View {
     }
 }
 
-struct RelaySettingsView: View {
-    @EnvironmentObject var configService: ConfigService
-    @State private var selectedRelay: RelayType = .outbox
-    
-    enum RelayType: String, CaseIterable {
-        case outbox = "Outbox"
-        case inbox = "Inbox"
-        case privateRelay = "Private"
-        case chat = "Chat"
-    }
-    
-    var body: some View {
-        #if os(iOS)
-        iOSBody
-        #else
-        macOSBody
-        #endif
-    }
-
-    #if os(iOS)
-    private var iOSBody: some View {
-        Form {
-            Section {
-                Picker("Relay Type", selection: $selectedRelay) {
-                    ForEach(RelayType.allCases, id: \.self) { relay in
-                        Text(relay.rawValue).tag(relay)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets())
-
-            detailContent
-        }
-        .groupedFormStyleCompat()
-    }
-    #endif
-
-    #if os(macOS)
-    private var macOSBody: some View {
-        HStack(spacing: 0) {
-            // Sidebar
-            List(RelayType.allCases, id: \.self, selection: $selectedRelay) { relay in
-                Label(relay.rawValue, systemImage: iconFor(relay))
-            }
-            .frame(width: 140)
-            .listStyle(.sidebar)
-            
-            Divider()
-            
-            // Detail
-            Form {
-                detailContent
-            }
-            .groupedFormStyleCompat()
-            .padding()
-        }
-    }
-    #endif
-
-    @ViewBuilder
-    private var detailContent: some View {
-        switch selectedRelay {
-        case .outbox:
-            RelayConfigForm(
-                name: $configService.config.outboxRelayName,
-                description: $configService.config.outboxRelayDescription,
-                icon: $configService.config.outboxRelayIcon
-            )
-        case .inbox:
-            RelayConfigForm(
-                name: $configService.config.inboxRelayName,
-                description: $configService.config.inboxRelayDescription,
-                icon: $configService.config.inboxRelayIcon
-            )
-        case .privateRelay:
-            RelayConfigForm(
-                name: $configService.config.privateRelayName,
-                description: $configService.config.privateRelayDescription,
-                icon: $configService.config.privateRelayIcon
-            )
-        case .chat:
-            RelayConfigForm(
-                name: $configService.config.chatRelayName,
-                description: $configService.config.chatRelayDescription,
-                icon: $configService.config.chatRelayIcon
-            )
-            
-            Section("Web of Trust") {
-                Text("Web of Trust settings have moved to the Advanced tab.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-    
-    func iconFor(_ relay: RelayType) -> String {
-        switch relay {
-        case .outbox: return "arrow.up.doc"
-        case .inbox: return "arrow.down.doc"
-        case .privateRelay: return "lock.fill"
-        case .chat: return "bubble.left.and.bubble.right"
-        }
-    }
-}
-
-struct RelayConfigForm: View {
-    @Binding var name: String
-    @Binding var description: String
-    @Binding var icon: String
-    
-    var body: some View {
-        Section("Relay Info") {
-            TextField("Name", text: $name)
-            TextField("Description", text: $description)
-            TextField("Icon URL", text: $icon)
-        }
-    }
-}
 
 struct AdvancedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var showResetConfirmation = false
-    @State private var newMirrorURL = ""
     #if os(iOS)
     #endif
     
@@ -966,50 +895,6 @@ struct AdvancedSettingsView: View {
                 Text("Media Cache")
             } footer: {
                 Text("Clearing the cache will remove downloaded remote images but won't touch your local Blossom data.")
-            }
-
-            Section {
-                // Existing mirrors list
-                ForEach(configService.config.blossomMirrors.indices, id: \.self) { index in
-                    HStack {
-                        Text(configService.config.blossomMirrors[index])
-                            .lineLimit(1)
-                        Spacer()
-                        Button(role: .destructive) {
-                            configService.config.blossomMirrors.remove(at: index)
-                            configService.save()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.red.opacity(0.6))
-                        }
-                    }
-                }
-
-                // Add new mirror
-                HStack {
-                    TextField("https://example.com", text: $newMirrorURL)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        #endif
-
-                    Button(action: {
-                        let trimmed = newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty {
-                            configService.config.blossomMirrors.append(trimmed)
-                            configService.save()
-                            newMirrorURL = ""
-                        }
-                    }) {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.green)
-                    }
-                    .disabled(newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            } header: {
-                Text("Blossom Mirrors")
-            } footer: {
-                Text("Media uploads are mirrored to these external Blossom servers. Remote users access your media via these mirrors instead of localhost.")
             }
 
             Section {
@@ -1116,7 +1001,7 @@ struct FeedSettingsView: View {
             } header: {
                 Text("Feed Relays")
             } footer: {
-                Text("Your local relay fetches posts directly from these relays to build your feed. Connect to relays your followers are actively using.")
+                Text("The feed reads from multiple relays to build your timeline. Connect to relays your followers are actively using.")
             }
         }
         .groupedFormStyleCompat()
@@ -1128,6 +1013,7 @@ struct FeedSettingsView: View {
 
 struct BlastrSettingsView: View {
     @EnvironmentObject var configService: ConfigService
+    @State private var newMirrorURL = ""
     
     var body: some View {
         Form {
@@ -1146,6 +1032,50 @@ struct BlastrSettingsView: View {
             } footer: {
                 Text("Blastr automatically broadcasts your local notes to these external relays.")
             }
+
+            Section {
+                // Existing mirrors list
+                ForEach(configService.config.blossomMirrors.indices, id: \.self) { index in
+                    HStack {
+                        Text(configService.config.blossomMirrors[index])
+                            .lineLimit(1)
+                        Spacer()
+                        Button(role: .destructive) {
+                            configService.config.blossomMirrors.remove(at: index)
+                            configService.save()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.red.opacity(0.6))
+                        }
+                    }
+                }
+
+                // Add new mirror
+                HStack {
+                    TextField("https://example.com", text: $newMirrorURL)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        #endif
+
+                    Button(action: {
+                        let trimmed = newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            configService.config.blossomMirrors.append(trimmed)
+                            configService.save()
+                            newMirrorURL = ""
+                        }
+                    }) {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.green)
+                    }
+                    .disabled(newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            } header: {
+                Text("Blossom Mirrors")
+            } footer: {
+                Text("Media uploads are mirrored to these external Blossom servers. Remote users access your media via these mirrors instead of localhost.")
+            }
         }
         .groupedFormStyleCompat()
         #if os(iOS)
@@ -1154,74 +1084,98 @@ struct BlastrSettingsView: View {
     }
 }
 
+private struct NewMirrorInputView: View {
+    @Binding var url: String
+    var onAdd: () -> Void
+    
+    var body: some View {
+        HStack {
+            TextField("https://example.com", text: $url)
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                #endif
 
-struct BackupSettingsView: View {
+            Button(action: onAdd) {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundColor(.green)
+            }
+            .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+}
+
+
+
+struct WalletSettingsView: View {
     @EnvironmentObject var configService: ConfigService
-    @EnvironmentObject var relayManager: RelayProcessManager
-    @State private var isExporting = false
-    @State private var isImportingBackup = false
-    @State private var isBackingUpBlossom = false
-    @State private var backupStatusMessage = ""
-
+    @State private var balance: Int? = nil
+    @State private var isFetchingBalance = false
+    @State private var balanceError: String? = nil
+    
     var body: some View {
         Form {
             Section {
-                Picker("Provider", selection: $configService.config.backupProvider) {
-                    Text("None").tag("none")
-                    Text("S3 Compatible").tag("s3")
-                }
-                
-                if configService.config.backupProvider == "s3" {
-                    Stepper("Backup interval: \(configService.config.backupIntervalHours)h",
-                           value: $configService.config.backupIntervalHours, in: 1...168)
-                    
-                    TextField("Access Key ID", text: $configService.config.s3AccessKeyId)
-                    SecureField("Secret Key", text: $configService.config.s3SecretKey)
-                    TextField("Endpoint", text: $configService.config.s3Endpoint)
-                    TextField("Region", text: $configService.config.s3Region)
-                    TextField("Bucket Name", text: $configService.config.s3BucketName)
+                TextEditor(text: $configService.config.nwcURI)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 80)
+                    .padding(4)
+                    .background(Color.platformControlBackground)
+                    .cornerRadius(6)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    #endif
+            } header: {
+                Text("Nostr Wallet Connect (NWC) URI")
+            } footer: {
+                Text("Paste your nostr+walletconnect:// URI here to enable sending Zaps directly from Haven.")
+            }
+            
+            if !configService.config.nwcURI.isEmpty {
+                Section("Wallet Output") {
+                    HStack {
+                        Text("Default Zap Amount")
+                        Spacer()
+                        let amountSats = configService.config.defaultZapAmount / 1000
+                        TextField("Sats", value: Binding(
+                            get: { amountSats },
+                            set: { configService.config.defaultZapAmount = $0 * 1000 }
+                        ), formatter: NumberFormatter())
+                        #if os(iOS)
+                        .keyboardType(.numberPad)
+                        #endif
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                        Text("sats")
+                            .foregroundColor(.secondary)
+                    }
                     
                     HStack {
-                        Button("Backup Now") {
-                            relayManager.runBackupToCloud(config: configService.config)
-                        }
-                        .disabled(!relayManager.isRunning)
-                        
+                        Text("Balance")
                         Spacer()
-                        
-                        Button("Restore Now") {
-                            relayManager.runRestoreFromCloud(config: configService.config)
+                        if isFetchingBalance {
+                            ProgressView().controlSize(.small)
+                        } else if let bal = balance {
+                            Text("\(bal / 1000) sats")
+                                .foregroundColor(.secondary)
+                        } else if let error = balanceError {
+                            Text(error)
+                                .foregroundColor(.red)
+                                .font(.caption)
+                        } else {
+                            Text("Unknown")
+                                .foregroundColor(.secondary)
                         }
-                        .disabled(relayManager.isRunning)
-                        .foregroundColor(.red)
+                        
+                        Button {
+                            fetchBalance()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isFetchingBalance)
                     }
-                    .padding(.vertical, 4)
-                }
-            } footer: {
-               Text("Cloud backup is the recommended way to keep your data safe and synced.")
-            }
-
-            #if os(macOS)
-            Section {
-                Button("Export Database Backup (.zip)") { exportBackup() }
-                Button("Import Database Backup (.zip)") { importBackup() }
-
-                Divider()
-
-                Button("Backup Blossom Media (.zip)") { backupBlossom() }
-                Button("Import Blossom Media (.zip)") { importBlossom() }
-            } header: {
-                Text("Local Export / Import")
-            } footer: {
-                Text("Local backup is currently available on macOS.")
-            }
-            #endif
-
-            if !backupStatusMessage.isEmpty {
-                Section("Status") {
-                    Text(backupStatusMessage)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
             }
         }
@@ -1229,96 +1183,35 @@ struct BackupSettingsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-    }
-
-    private func exportBackup() {
-        #if os(macOS)
-        let panel = NSSavePanel()
-        panel.title = "Export Relay Backup"
-        panel.nameFieldStringValue = "haven-backup.zip"
-        panel.allowedContentTypes = [.zip]
-        panel.canCreateDirectories = true
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        isExporting = true
-        backupStatusMessage = "Exporting..."
-        relayManager.runBackupExport(config: configService.config, outputPath: url.path) { [self] success in
-            Task { @MainActor in
-                isExporting = false
-                backupStatusMessage = success ? "Export complete: \(url.lastPathComponent)" : "Export failed. Check logs."
+        .onAppear {
+            if !configService.config.nwcURI.isEmpty {
+                fetchBalance()
             }
         }
-        #else
-        return
-        #endif
-    }
-
-    private func importBackup() {
-        #if os(macOS)
-        let panel = NSOpenPanel()
-        panel.title = "Import Relay Backup"
-        panel.allowedContentTypes = [.zip]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        isImportingBackup = true
-        backupStatusMessage = "Importing..."
-        relayManager.runBackupRestore(config: configService.config, inputPath: url.path) { [self] success in
-            Task { @MainActor in
-                isImportingBackup = false
-                backupStatusMessage = success ? "Import complete: \(url.lastPathComponent)" : "Import failed. Check logs."
-            }
+        .onChange(of: configService.config.nwcURI) { _, _ in
+            balance = nil
+            balanceError = nil
         }
-        #endif
     }
     
-    private func backupBlossom() {
-        #if os(macOS)
-        let panel = NSSavePanel()
-        panel.title = "Back up Blossom Data"
-        panel.nameFieldStringValue = "blossom-backup.zip"
-        panel.allowedContentTypes = [.zip]
-        panel.canCreateDirectories = true
-        
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        
-        isBackingUpBlossom = true
-        // Clear status from other backup ops
-        backupStatusMessage = "Backing up Blossom media..."
-        
-        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: url.path) { [self] success in
-            Task { @MainActor in
-                isBackingUpBlossom = false
-                backupStatusMessage = success ? "Blossom backup complete: \(url.lastPathComponent)" : "Blossom backup failed."
+    private func fetchBalance() {
+        guard !configService.config.nwcURI.isEmpty else { return }
+        isFetchingBalance = true
+        balanceError = nil
+        Task {
+            do {
+                let msat = try await NWCService.getBalance()
+                await MainActor.run {
+                    self.balance = msat
+                    self.isFetchingBalance = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.balanceError = error.localizedDescription
+                    self.isFetchingBalance = false
+                }
             }
         }
-        #endif
-    }
-    
-    private func importBlossom() {
-        #if os(macOS)
-        let panel = NSOpenPanel()
-        panel.title = "Import Blossom Data"
-        panel.allowedContentTypes = [.zip]
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-        
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        
-        isImportingBackup = true
-        backupStatusMessage = "Importing Blossom media..."
-        
-        relayManager.runBlossomImportStrippingExtensions(config: configService.config, inputPath: url.path) { success in
-            Task { @MainActor in
-                isImportingBackup = false
-                backupStatusMessage = success ? "Blossom import complete." : "Blossom import failed."
-            }
-        }
-        #endif
     }
 }
 

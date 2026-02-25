@@ -56,7 +56,7 @@ struct MenuBarView: View {
                                 .opacity(relayManager.isRunning && !relayManager.isBooting && statusPulse ? 0.5 : 1.0)
                                 .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: statusPulse)
                                 .onAppear { statusPulse = true }
-                                .onChange(of: relayManager.isRunning) { running in statusPulse = running }
+                                .onChange(of: relayManager.isRunning) { _, running in statusPulse = running }
                             Text(relayManager.isBooting ? "Booting Relay" : (relayManager.isRunning ? "Stop Relay" : "Start Relay"))
                                 .font(.system(size: 12, weight: .semibold))
                         }

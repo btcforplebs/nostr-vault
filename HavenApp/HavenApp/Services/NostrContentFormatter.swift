@@ -3,7 +3,7 @@ import Foundation
 
 public struct NostrContentFormatter {
     @MainActor
-    public static func format(_ content: String, mediaURLs: [URL] = []) -> AttributedString {
+    public static func format(_ content: String, mediaURLs: [URL] = [], hideQuotes: Bool = false) -> AttributedString {
         var text = content
         
         // Strip bare image/video URLs from text (they'll show as thumbnails)
@@ -23,14 +23,18 @@ public struct NostrContentFormatter {
         let noteRegex = try! NSRegularExpression(pattern: "nostr:(note1[a-z0-9]+)")
         let neventRegex = try! NSRegularExpression(pattern: "nostr:(nevent1[a-z0-9]+)")
         
-        text = replaceWithLinks(in: text, regex: noteRegex, template: "nostr:$1", label: "Quote")
-        text = replaceWithLinks(in: text, regex: neventRegex, template: "nostr:$1", label: "Quote")
+        if hideQuotes {
+            text = noteRegex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+            text = neventRegex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        } else {
+            text = replaceWithLinks(in: text, regex: noteRegex, template: "nostr:$1", label: "Quote")
+            text = replaceWithLinks(in: text, regex: neventRegex, template: "nostr:$1", label: "Quote")
+        }
 
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         
         do {
-            var attrString = try AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace))
-            attrString.foregroundColor = .primary
+            let attrString = try AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace))
             return attrString
         } catch {
             return AttributedString(text)
@@ -49,32 +53,53 @@ public struct NostrContentFormatter {
             let fullRange = NSRange(location: match.range.location + offset, length: match.range.length)
             let matchedValue = nsString.substring(with: match.range(at: 1))
             
+            var hexPubkey: String?
+            
+            if matchedValue.hasPrefix("npub1") {
+                if let decoded = Bech32.decode(matchedValue) {
+                    hexPubkey = decoded.hexString
+                }
+            } else if matchedValue.hasPrefix("nprofile1") {
+                if let decoded = Bech32.decode(matchedValue) {
+                    // TLV parsing for nprofile: Type 0 is the pubkey (32 bytes)
+                    var data = decoded.data
+                    while data.count >= 2 {
+                        let type = data.removeFirst()
+                        let length = Int(data.removeFirst())
+                        if data.count >= length {
+                            let value = data.prefix(length)
+                            if type == 0 && length == 32 {
+                                hexPubkey = value.map { String(format: "%02x", $0) }.joined()
+                                break
+                            }
+                            data.removeFirst(length)
+                        } else {
+                            break
+                        }
+                    }
+                }
+            }
+
             var displayLabel: String
             if let label = label {
                 displayLabel = label
-            } else {
-                // Try to find a name for this pubkey if it's an npub
-                if matchedValue.hasPrefix("npub1") {
-                    if let decoded = Bech32.decode(matchedValue) {
-                        let hex = decoded.hexString
-                        if let name = NostrService.shared.profiles[hex]?.bestName {
-                            displayLabel = "@\(name)"
-                        } else {
-                            displayLabel = "@user"
-                        }
-                    } else {
-                        displayLabel = "@user"
-                    }
-                } else if matchedValue.hasPrefix("nprofile1") {
-                    // nprofile is more complex (TLV), but for now we'll just say @user
-                    // unless we want to implement TLV decoding
-                    displayLabel = "@user"
+            } else if let hex = hexPubkey {
+                if let name = NostrService.shared.profiles[hex]?.bestName {
+                    displayLabel = "@\(name)"
                 } else {
-                    displayLabel = "@user"
+                    // Use truncated npub as placeholder and trigger fetch
+                    let preview = matchedValue.prefix(12)
+                    displayLabel = "@\(preview)..."
+                    NostrService.shared.fetchMissingProfiles(for: [hex])
                 }
+            } else {
+                // Fallback for failed decodes OR note1/nevent1
+                let preview = matchedValue.prefix(12)
+                displayLabel = "@\(preview)..."
             }
             
-            let markdownLink = "[\(displayLabel)](nostr:\(matchedValue))"
+            // Add markdown bolding so it's even more noticeable
+            let markdownLink = "**[\(displayLabel)](nostr:\(matchedValue))**"
             let prevLength = fullRange.length
             result = (result as NSString).replacingCharacters(in: fullRange, with: markdownLink)
             offset += markdownLink.count - prevLength

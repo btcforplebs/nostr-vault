@@ -25,7 +25,7 @@ struct ComposeView: View {
     struct Attachment: Identifiable {
         let id = UUID()
         let data: Data
-        let type: UTType
+        var type: UTType
         var url: URL?
         var isUploaded: Bool = false
     }
@@ -137,7 +137,7 @@ struct ComposeView: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .onChange(of: selectedItems) { _ in loadSelectedItems() }
+            .onChange(of: selectedItems) { _, _ in loadSelectedItems() }
             
             Spacer()
             
@@ -219,12 +219,37 @@ struct ComposeView: View {
     
     private func loadSelectedItems() {
         for item in selectedItems {
+            // Get the specific content type
+            let contentType = item.supportedContentTypes.first ?? .image
+            
             item.loadTransferable(type: Data.self) { result in
                 switch result {
                 case .success(let data):
                     if let data = data {
                         DispatchQueue.main.async {
-                            self.attachments.append(Attachment(data: data, type: .image))
+                            var finalData = data
+                            var finalType = contentType
+                            
+                            // Convert HEIC/HEIF to JPEG
+                            if contentType.conforms(to: .heic) || contentType.conforms(to: .heif) {
+                                #if os(iOS)
+                                if let image = UIImage(data: data),
+                                   let jpegData = image.jpegData(compressionQuality: 0.8) {
+                                    finalData = jpegData
+                                    finalType = .jpeg
+                                }
+                                #elseif os(macOS)
+                                if let image = NSImage(data: data),
+                                   let tiffData = image.tiffRepresentation,
+                                   let bitmapRep = NSBitmapImageRep(data: tiffData),
+                                   let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
+                                    finalData = jpegData
+                                    finalType = .jpeg
+                                }
+                                #endif
+                            }
+                            
+                            self.attachments.append(Attachment(data: finalData, type: finalType))
                         }
                     }
                 case .failure(let error):

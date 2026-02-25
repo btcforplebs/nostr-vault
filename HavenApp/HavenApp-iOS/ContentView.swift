@@ -61,7 +61,7 @@ struct ContentView: View {
                         relayManager.startRelay(config: configService.config)
                     }
                 }
-                .onChange(of: selectedTab) { tab in
+                .onChange(of: selectedTab) { _, tab in
                     if tab == 1 { feedService.markViewed() }
                 }
             }

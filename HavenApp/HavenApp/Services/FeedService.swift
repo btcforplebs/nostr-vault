@@ -55,6 +55,37 @@ struct FeedNote: Identifiable {
         return regex.matches(in: content, range: NSRange(location: 0, length: ns.length))
             .compactMap { URL(string: ns.substring(with: $0.range)) }
     }
+
+    var quotedEventIds: [String] {
+        let pattern = #"nostr:(note1[a-z0-9]+|nevent1[a-z0-9]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
+        let ns = content as NSString
+        return regex.matches(in: content, range: NSRange(location: 0, length: ns.length))
+            .compactMap { match -> String? in
+                let identifier = ns.substring(with: match.range(at: 1))
+                if identifier.hasPrefix("note1") {
+                    return Bech32.decode(identifier)?.hexString
+                } else if identifier.hasPrefix("nevent1") {
+                    // Extract ID from nevent TLV: Type 0 is the event ID (32 bytes)
+                    guard let decoded = Bech32.decode(identifier) else { return nil }
+                    var data = decoded.data
+                    while data.count >= 2 {
+                        let type = data.removeFirst()
+                        let length = Int(data.removeFirst())
+                        if data.count >= length {
+                            let value = data.prefix(length)
+                            if type == 0 && length == 32 {
+                                return value.map { String(format: "%02x", $0) }.joined()
+                            }
+                            data.removeFirst(length)
+                        } else {
+                            break
+                        }
+                    }
+                }
+                return nil
+            }
+    }
 }
 
 // MARK: - FeedService
@@ -76,7 +107,9 @@ class FeedService: ObservableObject {
     @Published var isLoadingFeed    = false
     @Published var connectionStatus = "Disconnected"
     @Published var newNoteCount: Int = 0
+    @Published var pendingNotes: [FeedNote] = []
     @Published var likedEventIds: Set<String> = []
+    @Published var zappedEventIds: Set<String> = []
 
     // One client per relay URL
     private var feedClients: [String: WebSocketClient] = [:]
@@ -150,6 +183,21 @@ class FeedService: ObservableObject {
             notes.insert(note, at: 0)
             seenIds.insert(note.id)
         }
+    }
+
+    func applyPendingNotes() {
+        guard !pendingNotes.isEmpty else { return }
+        
+        // Merge pending into active notes
+        let newNotes = pendingNotes
+        pendingNotes.removeAll()
+        
+        notes.append(contentsOf: newNotes)
+        notes.sort { $0.createdAt > $1.createdAt }
+        
+        // Update new note count/tracking
+        newSinceLastView = Date()
+        newNoteCount = 0
     }
 
     /// Requests a fetch for a note that is missing from the local state.
@@ -505,13 +553,41 @@ class FeedService: ObservableObject {
         let batch = noteBuffer
         noteBuffer.removeAll()
 
-        // Count new notes before merging (excluding replies)
-        let newCount = batch.filter { $0.createdAt > newSinceLastView && !$0.isReply }.count
-        newNoteCount += newCount
+        // If we have no notes yet, or if we're in the middle of a load/refresh (EOSE not reached),
+        // we allow all notes to be added immediately.
+        if notes.isEmpty || isLoadingFeed {
+            notes.append(contentsOf: batch)
+            notes.sort { $0.createdAt > $1.createdAt }
+            return
+        }
 
-        // O(n log n) merge instead of O(n²) per-note insertion
-        notes.append(contentsOf: batch)
-        notes.sort { $0.createdAt > $1.createdAt }
+        // UX: prevent "jumping" feed by buffering live updates that appear above the fold.
+        // We buffer any Kind 1/6/30023 that is newer than our current top note and not a reply.
+        let newestDate = notes.first?.createdAt ?? Date.distantPast
+        
+        var toAdd: [FeedNote] = []
+        var toPending: [FeedNote] = []
+        
+        for note in batch {
+            // Only buffer top-level notes that would appear at the very top
+            if note.createdAt > newestDate && !note.isReply {
+                toPending.append(note)
+            } else {
+                toAdd.append(note)
+            }
+        }
+
+        if !toAdd.isEmpty {
+            notes.append(contentsOf: toAdd)
+            notes.sort { $0.createdAt > $1.createdAt }
+        }
+        
+        if !toPending.isEmpty {
+            // Merge into pending and deduplicate/sort
+            let updatedPending = pendingNotes + toPending
+            let uniqueMap = Dictionary(updatedPending.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            pendingNotes = uniqueMap.values.sorted { $0.createdAt > $1.createdAt }
+        }
     }
 
     // MARK: - Note Fetching logic

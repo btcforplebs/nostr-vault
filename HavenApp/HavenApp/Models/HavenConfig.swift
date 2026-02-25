@@ -4,7 +4,7 @@ struct HavenConfig: Codable, Equatable {
     var ownerNpub: String = ""
     var relayURL: String = ""
     var relayPort: Int = 3355
-    var dbEngine: String = "lmdb"
+    var dbEngine: String = "badger"
     var blossomPath: String = "blossom/"
     var logLevel: String = "INFO"
     var launchAtLogin: Bool = false
@@ -16,6 +16,10 @@ struct HavenConfig: Codable, Equatable {
     var ownerNcryptsec: String = "" // NIP-49 encrypted private key
     var ownerNsec: String = "" // Deprecated: kept for migration purposes only
     var showReplies: Bool = true // Added to toggle visibility of replies in feed
+    
+    // NWC (Nostr Wallet Connect)
+    var nwcURI: String = ""
+    var defaultZapAmount: Int = 1000 // In millisats (default 1 sat)
     
     // Private Relay
     var privateRelayName: String = "Haven Private"
@@ -101,7 +105,7 @@ struct HavenConfig: Codable, Equatable {
     
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
-        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, disableMediaCache, ownerNcryptsec, ownerNsec, showReplies
+        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, disableMediaCache, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
@@ -137,6 +141,8 @@ struct HavenConfig: Codable, Equatable {
         ownerNcryptsec = try container.decodeIfPresent(String.self, forKey: .ownerNcryptsec) ?? defaults.ownerNcryptsec
         ownerNsec = try container.decodeIfPresent(String.self, forKey: .ownerNsec) ?? defaults.ownerNsec
         showReplies = try container.decodeIfPresent(Bool.self, forKey: .showReplies) ?? defaults.showReplies
+        nwcURI = try container.decodeIfPresent(String.self, forKey: .nwcURI) ?? defaults.nwcURI
+        defaultZapAmount = try container.decodeIfPresent(Int.self, forKey: .defaultZapAmount) ?? defaults.defaultZapAmount
         
         privateRelayName = try container.decodeIfPresent(String.self, forKey: .privateRelayName) ?? defaults.privateRelayName
         privateRelayDescription = try container.decodeIfPresent(String.self, forKey: .privateRelayDescription) ?? defaults.privateRelayDescription
