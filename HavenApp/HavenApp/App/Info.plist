@@ -2,20 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Haven connects to a local Nostr relay running on this Mac to store and serve your notes and media.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Haven uses the camera to scan Nostr QR codes for login and adding contacts.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Haven needs access to your photo library to allow you to upload images and videos to Blossom.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Haven needs permission to save images and videos from Nostr to your photo library.</string>
 </dict>
 </plist>

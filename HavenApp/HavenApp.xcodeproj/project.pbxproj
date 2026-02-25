@@ -608,7 +608,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 2.4.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = HAVEN;
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp/HavenApp-Bridging-Header.h";
@@ -647,7 +647,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 2.4.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = HAVEN;
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp/HavenApp-Bridging-Header.h";
@@ -677,7 +677,7 @@
 					"$(PROJECT_DIR)/build/ios",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp-iOS/HavenApp-Bridging-Header.h";
@@ -708,7 +708,7 @@
 					"$(PROJECT_DIR)/build/ios",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.bitvora.HavenApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp-iOS/HavenApp-Bridging-Header.h";
