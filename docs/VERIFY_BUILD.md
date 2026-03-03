@@ -1,72 +1,62 @@
-# How to Build & Install HAVEN for Mac
+# Verifying HAVEN for Mac
 
-HAVEN for Mac is a native Swift wrapper around the original HAVEN Go implementation. Whether you're a developer or a security-conscious user, you can verify that the code running on your machine is exactly what you expect.
+HAVEN for Mac is fully open-source. You can build it from source to verify that the distributed app matches the code in this repository.
 
-## 1. Verify the Backend (Go)
+## What You're Verifying
 
-The core logic of HAVEN is 100% open-source Go. You don't need to trust our pre-compiled binary. You can build it yourself from this repository.
+The Go relay code from [bitvora/haven](https://github.com/bitvora/haven) is compiled into a static library (`libhaven.a`) and linked into the Swift app at build time. There is no separate binary — the Go code runs in-process.
+
+This means verification is done by building the entire app from source and comparing it to the distributed version.
+
+## Build from Source
 
 ### Prerequisites
 
 - [Go 1.24+](https://go.dev/dl/)
-
-### Build Instructions
-
-1.  Navigate to the Go source directory:
-    ```bash
-    cd haven-go
-    ```
-
-2.  Build the binary:
-    ```bash
-    go build -o haven .
-    ```
-
-3.  (Optional) Verify the hash of the release binary against your local build.
-    > Note: Builds may vary slightly depending on Go version and OS environment. For a deterministic build, ensure you use the exact same Go version and flags as the release.
-
-## 2. Verify the Frontend (Swift/Mac) & Install
-
-The Mac application is a Swift project that embeds the Go binary.
-
-### Prerequisites
-
 - macOS 14.0+
 - Xcode 15+
 
-### Build & Install Instructions
+### Steps
 
-1.  Open the project in Xcode:
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/btcforplebs/haven-mac.git
+    cd haven-mac
+    ```
+
+2.  Check out the release tag you want to verify:
+    ```bash
+    git checkout v2.3.0
+    ```
+
+3.  Open the project and build:
     ```bash
     open HavenApp/HavenApp.xcodeproj
     ```
+    Then **Product > Archive** in Xcode, or **Cmd+B** for a debug build.
 
-2.  **Archive the App**:
-    - Go to `Product` > `Archive` in the menu bar.
-    - Wait for the build to complete.
-    - When the Organizer window appears, select your new archive and click **Distribute App**.
-    - Choose **Custom** -> **Copy App**.
-    - Save `HAVEN.app` to your desktop.
+## Verify the Go Source
 
-3.  **Install**:
-    - Drag `HAVEN.app` into your **Applications** folder.
-    - You're ready to go!
+The Go code under `haven-go/` is managed via `git subtree` from upstream. You can verify it has not been tampered with:
 
-### Quick Build (Run without Installing)
+1.  Compare `haven-go/` against the upstream repo:
+    ```bash
+    git log --oneline haven-go/
+    ```
+    Upstream commits will appear on a separate branch line. Any downstream modifications (for macOS sandbox compatibility) are committed separately and can be individually inspected.
 
-1.  Open the project in Xcode.
-2.  Build and Run (⌘R) to launch the app directly in the simulator or on your device.
-    > Note: The Xcode project includes a run script that automatically builds the Go binary from `haven-go/` and places it into the app bundle.
+2.  Review the downstream modifications. These are documented in [ARCHITECTURE.md](./ARCHITECTURE.md) and are limited to:
+    - `cshared.go` / `cshared_stub.go` — C-export bridge (additive, no upstream conflict)
+    - `load_blob_darwin.go` — macOS sandbox workaround (additive)
+    - `init.go` — Lazy initialization for stop/start cycles
+    - `main.go` — Early-return when running as a library
 
-## Manual Binary Replacement
+## Inspect the Swift Layer
 
-If you downloaded the released `HAVEN.app` but want to use your own self-compiled Go binary:
-
-1.  Build the Go binary as shown in Step 1.
-2.  Right-click `HAVEN.app` in your Applications folder and select "Show Package Contents".
-3.  Navigate to `Contents/Resources`.
-4.  Replace the `haven` executable with your locally built binary.
-5.  Restart the application.
+The Swift code in `HavenApp/` is the UI wrapper. You can inspect it to verify:
+- How environment variables and configuration are passed to Go (`SetHavenEnvC`)
+- How the relay is started and stopped (`StartRelayC`, `StopRelayC`)
+- That no modifications are made to the core relay logic
 
 ---
 

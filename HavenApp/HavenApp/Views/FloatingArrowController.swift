@@ -1,17 +1,22 @@
 import SwiftUI
+#if canImport(AppKit)
 import AppKit
+#endif
 
 /// Manages a floating transparent window that displays a purple arrow
 /// pointing at the menu bar relay icon during setup completion.
 @MainActor
 class FloatingArrowController {
     static let shared = FloatingArrowController()
+    #if canImport(AppKit)
     private var arrowWindow: NSWindow?
+    #endif
 
     private let arrowWidth: CGFloat = 220
     private let arrowHeight: CGFloat = 110
 
     func show() {
+        #if canImport(AppKit)
         guard arrowWindow == nil else { return }
 
         let window = NSWindow(
@@ -39,8 +44,10 @@ class FloatingArrowController {
         }
 
         arrowWindow = window
+        #endif
     }
 
+    #if canImport(AppKit)
     private func positionBelowMenuBarIcon(_ window: NSWindow) {
         guard let screen = NSScreen.main else { return }
 
@@ -98,6 +105,11 @@ class FloatingArrowController {
             }
         })
     }
+    #else
+    func dismiss() {
+        // No-op on iOS
+    }
+    #endif
 }
 
 // MARK: - Arrow View

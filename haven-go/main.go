@@ -1,3 +1,5 @@
+//go:build !cshared
+
 package main
 
 import (
@@ -10,20 +12,17 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/spf13/afero"
 
 	"github.com/bitvora/haven/pkg/wot"
 )
 
-var (
-	pool   *nostr.SimplePool
-	config = loadConfig()
-	fs     afero.Fs
-)
-
 func main() {
+	if isCShared() {
+		return
+	}
+	config = loadConfig()
 	nostr.InfoLogger = log.New(io.Discard, "", 0)
 	slog.SetLogLoggerLevel(getLogLevelFromConfig())
 	green := "\033[32m"
@@ -55,7 +54,9 @@ func main() {
 			runRestore(mainCtx)
 			return
 		case "import":
-			ensureImportRelays()
+			if !ensureImportRelays() {
+				log.Fatal("🚫 Import aborted: could not connect to any seed relays")
+			}
 			runImport(mainCtx)
 			return
 		case "help":
@@ -73,10 +74,13 @@ func main() {
 
 	log.Println("🚀 HAVEN", config.RelayVersion, "is booting up")
 	defer log.Println("🔌 HAVEN is shutting down")
+	defer CloseDBs()
 	log.Println("👥 Number of whitelisted pubkeys:", len(config.WhitelistedPubKeys))
 	log.Println("🚷 Number of blacklisted pubkeys:", len(config.BlacklistedPubKeys))
 
-	ensureImportRelays()
+	if !ensureImportRelays() {
+		log.Println("⚠️ No seed relays reachable — starting relay without inbox subscription")
+	}
 	wotModel := wot.NewSimpleInMemory(
 		pool,
 		config.WhitelistedPubKeys,
@@ -84,10 +88,17 @@ func main() {
 		config.WotDepth,
 		config.WotMinimumFollowers,
 		config.WotFetchTimeoutSeconds,
+		config.WotCachePath,
+		config.WotCacheTTLMinutes,
 	)
-	wot.Initialize(mainCtx, wotModel)
-	initRelays(mainCtx)
 
+	// Try to load from cache first - instant startup
+	// Always initialize asynchronously to avoid blocking relay startup
+	wotModel.LoadFromCache() // Load if available, otherwise starts empty
+	go wot.Initialize(mainCtx, wotModel)
+	if err := initRelays(mainCtx); err != nil {
+		log.Fatal("🚫 error initializing databases/relays:", err)
+	}
 	go func() {
 		go subscribeInboxAndChat(mainCtx)
 		go startPeriodicCloudBackups(mainCtx)
@@ -95,7 +106,22 @@ func main() {
 	}()
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("templates/static"))))
-	http.HandleFunc("/", dynamicRelayHandler)
+
+	// All Blossom endpoints (PUT /upload, GET /<sha256>, DELETE /<sha256>, etc.)
+	// are handled by the khatru/blossom server mounted on outboxRelay in init.go.
+	// We just need to route everything through dynamicRelayHandler and add CORS headers.
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		dynamicRelayHandler(w, r)
+	})
 
 	addr := fmt.Sprintf("%s:%d", config.RelayBindAddress, config.RelayPort)
 
@@ -119,39 +145,4 @@ func printHelp() {
 	fmt.Println("if no command is provided, the relay starts by default.")
 	fmt.Println()
 	fmt.Println("run 'haven [command] --help' for more information on a command.")
-}
-
-func dynamicRelayHandler(w http.ResponseWriter, r *http.Request) {
-	var relay *khatru.Relay
-	relayType := r.URL.Path
-
-	switch relayType {
-	case "/private":
-		relay = privateRelay
-	case "/chat":
-		relay = chatRelay
-	case "/inbox":
-		relay = inboxRelay
-	case "":
-		relay = outboxRelay
-	default:
-		relay = outboxRelay
-	}
-
-	relay.ServeHTTP(w, r)
-}
-
-func getLogLevelFromConfig() slog.Level {
-	switch config.LogLevel {
-	case "DEBUG":
-		return slog.LevelDebug
-	case "INFO":
-		return slog.LevelInfo
-	case "WARN":
-		return slog.LevelWarn
-	case "ERROR":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo // Default level
-	}
 }

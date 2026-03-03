@@ -1,27 +1,44 @@
 # Architecture: HAVEN for Mac
 
-HAVEN for Mac is designed to provide the world-class sovereignty of the `bitvora/haven` Nostr relay with the ease of use of a native macOS application.
+HAVEN for Mac brings the sovereignty of the [bitvora/haven](https://github.com/bitvora/haven) Nostr relay to a native macOS application.
 
-## High-Level Overiew
+## High-Level Overview
 
-The project consists of two primary layers:
+The project consists of two layers:
 
-1.  **Go Core (99% of Codebase)**: The identical, battle-tested Go code from `bitvora/haven`. This handles all Nostr protocol logic, database management (BadgerDB/LMDB), Blossom media serving, and cloud backups.
-2.  **Swift UI Layer**: A lightweight macOS native wrapper built with SwiftUI. It provides a user-friendly interface for configuration, status monitoring (logs/stats), and managing the relay lifecycle.
+1.  **Go Core**: The battle-tested Go code from `bitvora/haven`. This handles all Nostr protocol logic, database management (BadgerDB), Blossom media serving, Web of Trust, and cloud backups.
+2.  **Swift UI Layer**: A native macOS wrapper built with SwiftUI. It provides a user-friendly interface for configuration, status monitoring (logs/stats), media management, and relay lifecycle control.
 
 ## How it Works
 
-- **Embedded Relay**: When you launch HAVEN for Mac, the Swift application starts the Go backend as a sub-process.
-- **Inter-Process Communication**: The Swift UI monitors the Go process via standard output (logs) and communicates configuration changes through environment variables and configuration files.
-- **Native Experience**: By using Swift, Haven integrates perfectly with macOS, supporting native menus, notifications, and the macOS Sandbox.
+- **C-Shared Library**: The Go code is compiled into a static library (`libhaven.a`) that links directly into the Swift app. HAVEN runs as a single process — no child process management, no orphaned processes.
+- **Direct Function Calls**: The Swift app controls the relay via C-exported Go functions (`StartRelayC`, `StopRelayC`, `BackupDatabaseC`, etc.) rather than IPC over pipes.
+- **Configuration**: Environment variables are passed to Go via `SetHavenEnvC()` before starting the relay. The `.env` file is managed by the Swift layer.
+- **Native Experience**: SwiftUI integrates with macOS menus, notifications, and the App Sandbox.
+
+## Go Source Management
+
+The Go code lives under `haven-go/` via `git subtree` (remote: `upstream`). See [upstream-sync.md](./upstream-sync.md) for details on syncing with upstream.
+
+### Downstream Modifications
+
+The following files are added or modified on top of upstream:
+
+| File | Purpose |
+|------|---------|
+| `cshared.go` | C-exported entry points (`StartRelayC`, `StopRelayC`, etc.). Build-tagged `//go:build cshared`. |
+| `cshared_stub.go` | `isCShared() bool { return false }` stub for standalone builds. |
+| `load_blob_darwin.go` | macOS-specific blob loading with `safeReader` to work around Go sendfile sandbox truncation. |
+| `init.go` | Lazy initialization of DB/relay globals to support stop/start cycles. Error returns instead of panics. |
+| `main.go` | Early-return when `isCShared()`. Deferred config loading. |
 
 ## Verifiability
 
-One of our core principles is **Don't Trust, Verify**. 
+One of our core principles is **Don't Trust, Verify**.
 
-Even though we provide a pre-packaged `.app` and `.zip`, any user can:
-1.  Build the Go binary independently from the root of this repository.
-2.  Inspect the Swift code in `HavenApp/` to see exactly how it launches the binary.
-3.  Verify that no modifications have been made to the core logic.
+Even though we provide a pre-packaged `.app`, any user can:
+1.  Build the Go library and Swift app from source.
+2.  Inspect the Swift code in `HavenApp/` to see exactly how it calls into the Go library.
+3.  Verify that no modifications have been made to the core relay logic.
 
-See [BUILD_MAC.md](./BUILD_MAC.md) for instructions on how to build and verify the project yourself.
+See [VERIFY_BUILD.md](./VERIFY_BUILD.md) for instructions on how to build and verify the project yourself.

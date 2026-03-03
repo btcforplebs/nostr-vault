@@ -81,7 +81,7 @@ struct AudioPlayerView: View {
             }
         }
         .padding(30)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.8))
+        .background(Color.platformControlBackground.opacity(0.8))
         .cornerRadius(20)
         .shadow(radius: 10)
         .onAppear {

@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log"
 	"log/slog"
 	"maps"
-	"os"
+	"runtime/debug"
 	"slices"
 	"time"
 
@@ -19,7 +18,11 @@ import (
 
 const layout = "2006-01-02"
 
-func ensureImportRelays() {
+// ensureImportRelays checks connectivity to all import seed relays.
+// Returns false if ALL relays are unreachable (caller should abort).
+// NOTE: never calls os.Exit — in C-shared / iOS embedded mode that would
+// terminate the entire host app process.
+func ensureImportRelays() bool {
 	nErrors := 0
 	log.Println("🧪 Testing import relays")
 	for _, relay := range config.ImportSeedRelays {
@@ -32,28 +35,25 @@ func ensureImportRelays() {
 	}
 	if nErrors == 0 {
 		slog.Info("✅ All relays connected successfully")
+		return true
 	} else if nErrors == len(config.ImportSeedRelays) {
 		slog.Error("🚫 Unable to connect to any import relays, check your connectivity and relays_import.json file")
-		os.Exit(1)
+		return false
 	} else {
 		slog.Warn("⚠️ Some relays failed to connect, proceeding, but this may cause issues")
 		slog.Info("ℹ️ If you always see this message during startup, consider removing the relays that are not working from your relays_import.json file")
+		return true
 	}
 }
 
 func runImport(ctx context.Context) {
-	importCmd := flag.NewFlagSet("import", flag.ExitOnError)
-	importCmd.Usage = func() {
-		_, _ = fmt.Fprintf(os.Stderr, "Usage of import:\n")
-		importCmd.PrintDefaults()
-	}
-	err := importCmd.Parse(os.Args[2:])
-	if err != nil {
-		log.Fatal("🚫 failed to parse import command:", err)
+	// NOTE: do NOT use flag.FlagSet / os.Args here — in C-shared (iOS embedded)
+	// mode os.Args belongs to the host app and index [2:] is garbage.
+	// All configuration is already loaded from environment variables by loadConfig().
+	if err := GranularInitDBs([]string{"chat", "outbox", "inbox"}); err != nil {
+		log.Println("🚫 failed to init import DBs:", err)
 		return
 	}
-
-	initDBs()
 	wotModel := wot.NewSimpleInMemory(
 		pool,
 		config.WhitelistedPubKeys,
@@ -61,8 +61,15 @@ func runImport(ctx context.Context) {
 		config.WotDepth,
 		config.WotMinimumFollowers,
 		config.WotFetchTimeoutSeconds,
+		config.WotCachePath,
+		config.WotCacheTTLMinutes,
 	)
-	wot.Initialize(ctx, wotModel)
+
+	// Try to load from cache first
+	if !wotModel.LoadFromCache() {
+		// Cache miss or invalid, initialize from network
+		wot.Initialize(ctx, wotModel)
+	}
 
 	log.Println("📦 importing notes")
 	importOwnerNotes(ctx)
@@ -143,6 +150,7 @@ func importOwnerNotes(ctx context.Context) {
 
 		time.Sleep(1 * time.Second) // Avoid bombarding relays with too many requests
 	}
+	debug.FreeOSMemory()
 }
 
 func importTaggedNotes(ctx context.Context) {
@@ -204,6 +212,7 @@ func importTaggedNotes(ctx context.Context) {
 	}
 
 	log.Println("✅ tagged import complete")
+	debug.FreeOSMemory()
 }
 
 func subscribeInboxAndChat(ctx context.Context) {

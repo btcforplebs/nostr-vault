@@ -1,17 +1,17 @@
 import SwiftUI
 
-struct CachedAsyncImage<Placeholder: View>: View {
+struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     let url: URL
-    let content: (Image) -> Image
+    let content: (Image) -> Content
     let placeholder: () -> Placeholder
     
-    @State private var cachedImage: NSImage? = nil
+    @State private var cachedImage: PlatformImage? = nil
     @State private var isLoading = false
     @State private var id = UUID() // Force refresh if URL changes
     
     init(
         url: URL,
-        @ViewBuilder content: @escaping (Image) -> Image,
+        @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.url = url
@@ -21,8 +21,8 @@ struct CachedAsyncImage<Placeholder: View>: View {
     
     var body: some View {
         ZStack {
-            if let nsImage = cachedImage {
-                content(Image(nsImage: nsImage))
+            if let platformImage = cachedImage {
+                content(Image(platformImage: platformImage))
             } else {
                 placeholder()
                     .onAppear {
@@ -38,7 +38,7 @@ struct CachedAsyncImage<Placeholder: View>: View {
         
         // 1. Check disk cache synchronously (it's fast enough for main thread usually, or we could dispatch)
         if let data = MediaCacheService.shared.loadFromCache(url: url),
-           let image = NSImage(data: data) {
+           let image = PlatformImage(data: data) {
             self.cachedImage = image
             return
         }
@@ -47,14 +47,14 @@ struct CachedAsyncImage<Placeholder: View>: View {
         isLoading = true
         
         let operation = BlockOperation {
-            // Using a simple URLSession task
-            let task = URLSession.shared.dataTask(with: url) { data, response, error in
+            // Using MediaSessionService which handles localhost certificates
+            let task = MediaSessionService.shared.session.dataTask(with: url) { data, response, error in
                 defer { 
                     DispatchQueue.main.async { self.isLoading = false }
                 }
                 
                 guard let data = data, error == nil,
-                      let image = NSImage(data: data) else {
+                      let image = PlatformImage(data: data) else {
                     return
                 }
                 

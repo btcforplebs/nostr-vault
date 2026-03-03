@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DashboardView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
@@ -8,243 +9,450 @@ struct DashboardView: View {
     
     @State private var isExporting = false
     @State private var isBackingUpBlossom = false
+    @State private var isPreparingImport = false
     @State private var exportStatusMessage = ""
     @State private var relaysExpanded = false
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                // MARK: - Relays List
-                VStack(alignment: .leading, spacing: 8) {
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                            relaysExpanded.toggle()
-                        }
-                    }) {
-                        HStack {
-                            Text("Relays")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Image(systemName: relaysExpanded ? "eye.fill" : "eye.slash")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    if relaysExpanded {
-                        VStack(spacing: 1) {
-                            RelayRow(
-                                name: "Outbox",
-                                subtitle: "Public notes",
-                                icon: "arrow.up.doc",
-                                uri: configService.config.nostrURL,
-                                endpoint: ""
-                            )
-
-                            RelayRow(
-                                name: "Private",
-                                subtitle: "Drafts & eCash",
-                                icon: "lock.fill",
-                                uri: configService.config.nostrURL,
-                                endpoint: "/private"
-                            )
-
-                            RelayRow(
-                                name: "Inbox",
-                                subtitle: "Tagged notes",
-                                icon: "arrow.down.doc",
-                                uri: configService.config.nostrURL,
-                                endpoint: "/inbox"
-                            )
-
-                            RelayRow(
-                                name: "Chat",
-                                subtitle: "Private DMs",
-                                icon: "bubble.left.and.bubble.right",
-                                uri: configService.config.nostrURL,
-                                endpoint: "/chat"
-                            )
-
-                            RelayRow(
-                                name: "Blossom",
-                                subtitle: "Media Storage",
-                                icon: "photo.stack",
-                                uri: configService.config.webURL,
-                                endpoint: ""
-                            )
-                        }
-                        .background(Color(NSColor.controlBackgroundColor))
-                        .cornerRadius(8)
-                        .padding(.horizontal)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-                }
-
-
-                // MARK: - Statistics
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Statistics")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-                    
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        StatsCard(title: "Total Notes", value: "\(statsService.loadedNotesCount)", icon: "doc.text.fill", color: .havenPurple, isLoading: statsService.isUpdatingCount && statsService.loadedNotesCount == 0)
-                        StatsCard(title: "Storage Used", value: statsService.formattedStorageSize, icon: "internaldrive.fill", color: .blue)
-                        StatsCard(title: "Blossom Storage", value: statsService.formattedBlossomSize, icon: "server.rack", color: .green)
-                        StatsCard(title: "Media Cache", value: statsService.formattedCacheSize, icon: "photo.stack.fill", color: .orange)
-                    }
-                    .padding(.horizontal)
-                }
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                #if !os(macOS)
+                relayStatusHeader
+                    .padding(.top, 8)
+                    .background(Color.platformWindowBackground)
+                #endif
                 
-                // MARK: - Actions
-                Spacer(minLength: 8) // Allows the stats to pin to the top and actions to sit further down if there's dead space
-                
-                VStack(spacing: 6) {
-                    HStack(spacing: 8) {
-                        ActionButton(icon: "safari", title: "Browser") {
-                            if let url = URL(string: configService.config.webURL) {
-                                NSWorkspace.shared.open(url)
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // MARK: - Relays List
+                        VStack(alignment: .leading, spacing: 8) {
+                            Button(action: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                    relaysExpanded.toggle()
+                                }
+                            }) {
+                                HStack {
+                                    Text("Relays")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Image(systemName: relaysExpanded ? "eye.fill" : "eye.slash")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            if relaysExpanded {
+                                VStack(spacing: 1) {
+                                    RelayRow(
+                                        name: "Outbox",
+                                        subtitle: "Public notes",
+                                        icon: "arrow.up.doc",
+                                        uri: configService.config.nostrURL,
+                                        endpoint: ""
+                                    )
+
+                                    RelayRow(
+                                        name: "Private",
+                                        subtitle: "Drafts & eCash",
+                                        icon: "lock.fill",
+                                        uri: configService.config.nostrURL,
+                                        endpoint: "/private"
+                                    )
+
+                                    RelayRow(
+                                        name: "Inbox",
+                                        subtitle: "Tagged notes",
+                                        icon: "arrow.down.doc",
+                                        uri: configService.config.nostrURL,
+                                        endpoint: "/inbox"
+                                    )
+
+                                    RelayRow(
+                                        name: "Chat",
+                                        subtitle: "Private DMs",
+                                        icon: "bubble.left.and.bubble.right",
+                                        uri: configService.config.nostrURL,
+                                        endpoint: "/chat"
+                                    )
+
+                                    RelayRow(
+                                        name: "Blossom",
+                                        subtitle: "Media Storage",
+                                        icon: "photo.stack",
+                                        uri: configService.config.webURL,
+                                        endpoint: ""
+                                    )
+                                }
+                                .background(Color.platformControlBackground)
+                                .cornerRadius(8)
+                                .padding(.horizontal)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
                             }
                         }
 
-                        ActionButton(icon: "arrow.down.circle", title: "Import Notes") {
-                            let config = configService.config
-                            relayManager.importNotes(config: config)
-                        }
-                    }
 
-                    HStack(spacing: 8) {
-                        ActionButton(icon: "arrow.up.doc.fill", title: "Export JSONL", isLoading: isExporting) {
-                            exportBackup()
+                        // MARK: - Statistics
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Statistics")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal)
+                            
+                            let columns = geometry.size.width < 400 ? [GridItem(.flexible())] : [GridItem(.flexible()), GridItem(.flexible())]
+                            
+                            LazyVGrid(columns: columns, spacing: 8) {
+                                StatsCard(title: "Total Notes", value: "\(statsService.loadedNotesCount)", icon: "doc.text.fill", color: Color.havenPurple, isLoading: statsService.isUpdatingCount && statsService.loadedNotesCount == 0)
+                                StatsCard(title: "Storage Used", value: statsService.formattedStorageSize, icon: "internaldrive.fill", color: .blue)
+                                StatsCard(title: "Blossom Storage", value: statsService.formattedBlossomSize, icon: "server.rack", color: .green)
+                                StatsCard(title: "Media Cache", value: statsService.formattedCacheSize, icon: "photo.stack.fill", color: .orange)
+                            }
+                            .padding(.horizontal)
                         }
-                        .disabled(isExporting || isBackingUpBlossom)
+                        
+                        // MARK: - Actions
+                        Spacer(minLength: 8)
+                        
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Actions")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal)
 
-                        ActionButton(icon: "photo.stack", title: "Export Blossom", isLoading: isBackingUpBlossom) {
-                            exportBlossom()
+                            if relayManager.isImporting {
+                                importProgressSection
+                            }
+
+                            let actionColumns = geometry.size.width < 450 ? [GridItem(.flexible())] : [GridItem(.flexible()), GridItem(.flexible())]
+                            
+                            LazyVGrid(columns: actionColumns, spacing: 10) {
+                                #if os(macOS)
+                                ActionButton(icon: "safari", title: "Open Browser") {
+                                    if let url = URL(string: configService.config.webURL) {
+                                        #if os(macOS)
+                                        NSWorkspace.shared.open(url)
+                                        #else
+                                        UIApplication.shared.open(url)
+                                        #endif
+                                    }
+                                }
+                                #endif
+
+                                ActionButton(icon: "arrow.down.circle", title: "Import Notes", isLoading: isPreparingImport || relayManager.isImporting) {
+                                    isPreparingImport = true
+                                    relayManager.importNotes(config: configService.config)
+                                }
+                                .disabled(isPreparingImport || relayManager.isImporting)
+
+                                ActionButton(icon: "arrow.up.doc.fill", title: "Export JSONL", isLoading: isExporting) {
+                                    exportBackup()
+                                }
+                                .disabled(isExporting || isBackingUpBlossom)
+
+                                ActionButton(icon: "photo.stack", title: "Export Blossom", isLoading: isBackingUpBlossom) {
+                                    exportBlossom()
+                                }
+                                .disabled(isExporting || isBackingUpBlossom)
+                            }
+                            .padding(.horizontal)
+
+                            if !exportStatusMessage.isEmpty {
+                                Text(exportStatusMessage)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal)
+                            }
                         }
-                        .disabled(isExporting || isBackingUpBlossom)
+                        .disabled(!relayManager.isRunning && !relayManager.isImporting)
+                        .padding(.horizontal)
                     }
-
-                    if !exportStatusMessage.isEmpty {
-                        Text(exportStatusMessage)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 350, maxHeight: .infinity, alignment: .top)
                 }
-                .disabled(!relayManager.isRunning)
-                .opacity(relayManager.isRunning ? 1.0 : 0.5)
-                .padding(.horizontal)
             }
-            .padding(.vertical, 10)
-            .frame(minHeight: 350, maxHeight: .infinity, alignment: .top)
         }
         .onAppear {
-            // Consolidated refresh:
-            // If relay is running, we pass the URL to get BOTH disk stats and network counts.
-            // If not running, we pass nil to get ONLY disk stats.
+            // Fresh disk-only refresh on appear
+            statsService.refreshStats()
             
+            // If relay is already running AND not booting, get full stats
             if relayManager.isRunning && !relayManager.isBooting {
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
-                #if DEBUG
-                print("Dashboard: Relay running, requesting full stats refresh from \(urlString)")
-                #endif
                 statsService.refreshStats(relayURLString: urlString)
-            } else if relayManager.state == .booting {
-                #if DEBUG
-                print("Dashboard: Relay booting, scheduling retry...")
-                #endif
-                // Initial disk-only fetch while booting
-                statsService.refreshStats()
-                
-                // Retry full fetch after delay
-                let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                    if relayManager.isRunning {
-                        #if DEBUG
-                        print("Dashboard: Retrying full stats refresh...")
-                        #endif
-                        statsService.refreshStats(relayURLString: urlString)
-                    }
-                }
-            } else {
-                // Not running, just get disk stats
-                #if DEBUG
-                print("Dashboard: Relay not running, fetching disk stats only")
-                #endif
-                statsService.refreshStats()
             }
         }
-        .onChange(of: relayManager.isBooting) { oldValue, newValue in
+        .onChange(of: relayManager.isBooting) { _, isBooting in
             // When booting finishes, refresh the full stats including remote relay counts
-            if !newValue && relayManager.isRunning {
+            if !isBooting && relayManager.isRunning {
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
                 statsService.refreshStats(relayURLString: urlString)
             }
         }
-        .onChange(of: relayManager.importCompleted) { oldValue, newValue in
-            if newValue {
+        .onChange(of: relayManager.importCompleted) { _, completed in
+            if completed {
+                isPreparingImport = false
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    guard relayManager.isRunning, !relayManager.isBooting else { return }
                     statsService.refreshStats(relayURLString: urlString)
                 }
             }
         }
+        .onChange(of: relayManager.isImporting) { _, isImporting in
+            if isImporting {
+                isPreparingImport = false
+            }
+        }
+    }
+    
+    private func geometryHeight(for width: CGFloat) -> CGFloat {
+        var height: CGFloat = 350
+        if relaysExpanded { height += 250 }
+        if width < 400 { height += 200 } // Stacked stats
+        if width < 350 { height += 150 } // Stacked buttons
+        return height
     }
     
     private func exportBackup() {
-        let panel = NSSavePanel()
-        panel.title = "Export Relay Backup"
-        panel.nameFieldStringValue = "haven-backup.zip"
-        panel.allowedContentTypes = [.zip]
-        panel.canCreateDirectories = true
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
         isExporting = true
-        exportStatusMessage = "Exporting JSONL..."
-        relayManager.runBackupExport(config: configService.config, outputPath: url.path) { success in
+        exportStatusMessage = "Preparing export..."
+
+        let tempDir = NSTemporaryDirectory()
+        let tempPath = (tempDir as NSString).appendingPathComponent("haven-backup-\(Date().timeIntervalSince1970).zip")
+
+        relayManager.runBackupExport(config: configService.config, outputPath: tempPath) { success in
             Task { @MainActor in
                 isExporting = false
-                exportStatusMessage = success ? "Export complete" : "Export failed"
-                // Clear message after delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    if exportStatusMessage.contains("Export complete") || exportStatusMessage.contains("Export failed") {
+
+                guard success else {
+                    exportStatusMessage = "Export failed"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         exportStatusMessage = ""
                     }
+                    return
                 }
+
+                #if os(macOS)
+                let panel = NSSavePanel()
+                panel.title = "Save JSONL Backup"
+                panel.nameFieldStringValue = "haven-backup.zip"
+                panel.allowedContentTypes = [.zip]
+                panel.canCreateDirectories = true
+                
+                if panel.runModal() == .OK, let destURL = panel.url {
+                    let srcURL = URL(fileURLWithPath: tempPath)
+                    do {
+                        if FileManager.default.fileExists(atPath: destURL.path) {
+                            try FileManager.default.removeItem(at: destURL)
+                        }
+                        try FileManager.default.moveItem(at: srcURL, to: destURL)
+                        exportStatusMessage = "Saved to \(destURL.lastPathComponent)"
+                    } catch {
+                        exportStatusMessage = "Failed to save: \(error.localizedDescription)"
+                    }
+                } else {
+                    // User cancelled the save panel
+                    exportStatusMessage = "Export cancelled"
+                    try? FileManager.default.removeItem(atPath: tempPath)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    exportStatusMessage = ""
+                }
+                #else
+                // iOS: Share the file
+                let fileURL = URL(fileURLWithPath: tempPath)
+                let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+
+                if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = scene.windows.first,
+                   let rootVC = window.rootViewController {
+                    rootVC.present(activityVC, animated: true)
+                }
+                #endif
             }
         }
     }
     
     private func exportBlossom() {
-        let panel = NSSavePanel()
-        panel.title = "Export Blossom Media"
-        panel.nameFieldStringValue = "blossom-backup.zip"
-        panel.allowedContentTypes = [.zip]
-        panel.canCreateDirectories = true
-        
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        
         isBackingUpBlossom = true
-        exportStatusMessage = "Exporting Blossom..."
-        
-        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: url.path) { success in
+        exportStatusMessage = "Preparing Blossom export..."
+
+        let tempDir = NSTemporaryDirectory()
+        let tempPath = (tempDir as NSString).appendingPathComponent("blossom-backup-\(Date().timeIntervalSince1970).zip")
+
+        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: tempPath) { success in
             Task { @MainActor in
                 isBackingUpBlossom = false
-                exportStatusMessage = success ? "Blossom Export complete" : "Blossom Export failed"
-                // Clear message after delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    if exportStatusMessage.contains("Blossom Export") {
+
+                guard success else {
+                    exportStatusMessage = "Blossom export failed"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         exportStatusMessage = ""
                     }
+                    return
                 }
+
+                #if os(macOS)
+                let panel = NSSavePanel()
+                panel.title = "Save Blossom Backup"
+                panel.nameFieldStringValue = "blossom-backup.zip"
+                panel.allowedContentTypes = [.zip]
+                panel.canCreateDirectories = true
+                
+                if panel.runModal() == .OK, let destURL = panel.url {
+                    let srcURL = URL(fileURLWithPath: tempPath)
+                    do {
+                        if FileManager.default.fileExists(atPath: destURL.path) {
+                            try FileManager.default.removeItem(at: destURL)
+                        }
+                        try FileManager.default.moveItem(at: srcURL, to: destURL)
+                        exportStatusMessage = "Saved to \(destURL.lastPathComponent)"
+                    } catch {
+                        exportStatusMessage = "Failed to save: \(error.localizedDescription)"
+                    }
+                } else {
+                    exportStatusMessage = "Export cancelled"
+                    try? FileManager.default.removeItem(atPath: tempPath)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    exportStatusMessage = ""
+                }
+                #else
+                // iOS: Share the file
+                let fileURL = URL(fileURLWithPath: tempPath)
+                let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+
+                if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = scene.windows.first,
+                   let rootVC = window.rootViewController {
+                    rootVC.present(activityVC, animated: true)
+                }
+                #endif
             }
         }
+    }
+
+    private var importProgressSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Import Progress")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.secondary)
+                    
+                    Text(relayManager.importStatusMessage)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                Text("\(Int(relayManager.importProgress * 100))%")
+                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .foregroundColor(Color.havenPurple)
+            }
+            
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.havenPurple.opacity(0.1))
+                    
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [.havenPurple, .havenPurpleLight]),
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: geo.size.width * relayManager.importProgress)
+                }
+            }
+            .frame(height: 8)
+            
+            if relayManager.importProgress >= 1.0 || relayManager.importStatusMessage.contains("Complete") {
+                Button(action: {
+                    relayManager.dismissImport()
+                }) {
+                    Text("Dismiss")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.havenPurple)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+            }
+        }
+        .padding()
+        .background(Color.platformControlBackground)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.havenPurple.opacity(0.2), lineWidth: 1)
+        )
+        .padding(.horizontal)
+    }
+
+    private var relayStatusHeader: some View {
+        VStack(spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Relay Status")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.secondary)
+                    
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(relayManager.isBooting ? Color.yellow : (relayManager.isRunning ? Color.green : Color.red))
+                            .frame(width: 10, height: 10)
+                        
+                        Text(relayManager.isBooting ? "Booting..." : (relayManager.isRunning ? "Running" : "Stopped"))
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                    }
+                }
+                
+                Spacer()
+                
+                Button(action: {
+                    if relayManager.isRunning {
+                        relayManager.stopRelay()
+                    } else {
+                        relayManager.startRelay(config: configService.config)
+                    }
+                }) {
+                    Text(relayManager.isRunning ? "Stop" : "Start")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                        .background(relayManager.isRunning ? Color.red : Color.havenPurple)
+                        .cornerRadius(20)
+                }
+                .buttonStyle(.plain)
+                .disabled(relayManager.isBooting)
+            }
+            .padding()
+            .background(Color.platformControlBackground)
+            .cornerRadius(12)
+            
+            if relayManager.isBooting, !relayManager.bootStatusMessage.isEmpty {
+                 Text(relayManager.bootStatusMessage)
+                     .font(.caption)
+                     .foregroundColor(.secondary)
+                     .lineLimit(1)
+                     .truncationMode(.middle)
+            }
+        }
+        .padding(.horizontal)
     }
 }
 
@@ -266,7 +474,7 @@ struct RelayRow: View {
         HStack {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.havenPurple)
+                .foregroundColor(Color.havenPurple)
                 .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -282,14 +490,20 @@ struct RelayRow: View {
             Text(fullURI)
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(Color.havenPurplePale)
                 .cornerRadius(4)
 
             Button(action: {
+                #if os(macOS)
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(fullURI, forType: .string)
+                #else
+                UIPasteboard.general.string = fullURI
+                #endif
                 withAnimation(.easeInOut(duration: 0.2)) { copied = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                     withAnimation(.easeInOut(duration: 0.2)) { copied = false }
@@ -303,7 +517,7 @@ struct RelayRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(Color.platformControlBackground)
     }
 }
 
@@ -313,33 +527,39 @@ struct ActionButton: View {
     var isLoading: Bool = false
     let action: () -> Void
     
+    @Environment(\.controlSize) private var controlSize // Can check size context
+
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 if isLoading {
                     ProgressView()
                         .controlSize(.small)
-                        .colorScheme(.dark) // Make spinner light to contrast with purple button
-                        // .tint(.white) // Valid in newer SwiftUI, but colorScheme works for now
+                        .colorScheme(.dark)
                 } else {
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: 20, weight: .medium))
                         .foregroundColor(.white)
                 }
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.white)
+                    .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .padding(.vertical, 16)
             .background(
                 LinearGradient(
-                    gradient: Gradient(colors: [.havenPurple, .havenPurpleDark]),
-                    startPoint: .top,
-                    endPoint: .bottom
+                    gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleDark]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
             )
-            .cornerRadius(8)
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -379,7 +599,7 @@ struct StatsCard: View {
             }
         }
         .padding(10)
-        .background(isHovered ? color.opacity(0.06) : Color(NSColor.controlBackgroundColor))
+        .background(isHovered ? color.opacity(0.06) : Color.platformControlBackground)
         .cornerRadius(8)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }

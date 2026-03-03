@@ -3,9 +3,12 @@ package wot
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
+	"runtime/debug"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -15,6 +18,11 @@ import (
 )
 
 const DefaultWotLevel = 3
+
+type wotCache struct {
+	Pubkeys   map[string]bool `json:"pubkeys"`
+	Timestamp int64           `json:"timestamp"`
+}
 
 type SimpleInMemory struct {
 	pubkeys atomic.Pointer[map[string]bool]
@@ -26,9 +34,11 @@ type SimpleInMemory struct {
 	WotDepth           int
 	MinFollowers       int
 	WotFetchTimeout    int
+	CachePath          string
+	CacheTTLMinutes    int
 }
 
-func NewSimpleInMemory(pool *nostr.SimplePool, whitelistedPubKeys map[string]struct{}, seedRelays []string, wotDepth int, minFollowers int, wotFetchTimeout int) *SimpleInMemory {
+func NewSimpleInMemory(pool *nostr.SimplePool, whitelistedPubKeys map[string]struct{}, seedRelays []string, wotDepth int, minFollowers int, wotFetchTimeout int, cachePath string, cacheTTLMinutes int) *SimpleInMemory {
 	return &SimpleInMemory{
 		Pool:               pool,
 		WhitelistedPubKeys: whitelistedPubKeys,
@@ -36,6 +46,8 @@ func NewSimpleInMemory(pool *nostr.SimplePool, whitelistedPubKeys map[string]str
 		WotDepth:           wotDepth,
 		MinFollowers:       minFollowers,
 		WotFetchTimeout:    wotFetchTimeout,
+		CachePath:          cachePath,
+		CacheTTLMinutes:    cacheTTLMinutes,
 	}
 }
 
@@ -48,6 +60,66 @@ func (wt *SimpleInMemory) Has(_ context.Context, pubKey string) bool {
 		return false
 	}
 	return (*m)[pubKey]
+}
+
+// LoadFromCache attempts to load WoT from cache file if it exists and is fresh
+func (wt *SimpleInMemory) LoadFromCache() bool {
+	if wt.CachePath == "" {
+		return false
+	}
+
+	data, err := os.ReadFile(wt.CachePath)
+	if err != nil {
+		return false
+	}
+
+	var cache wotCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		slog.Warn("🚫 Failed to parse WoT cache", "error", err)
+		return false
+	}
+
+	// Check if cache is still valid
+	now := time.Now().Unix()
+	age := (now - cache.Timestamp) / 60 // age in minutes
+	if age > int64(wt.CacheTTLMinutes) {
+		slog.Info("⏰ WoT cache expired", "age_minutes", age, "ttl_minutes", wt.CacheTTLMinutes)
+		return false
+	}
+
+	wt.pubkeys.Store(&cache.Pubkeys)
+	slog.Info("💾 Loaded WoT from cache", "pubkeys", len(cache.Pubkeys), "age_minutes", age)
+	return true
+}
+
+// SaveCache writes the current WoT pubkeys to cache file
+func (wt *SimpleInMemory) SaveCache() {
+	if wt.CachePath == "" {
+		return
+	}
+
+	m := wt.pubkeys.Load()
+	if m == nil {
+		return
+	}
+
+	cache := wotCache{
+		Pubkeys:   *m,
+		Timestamp: time.Now().Unix(),
+	}
+
+	data, err := json.Marshal(cache)
+	if err != nil {
+		slog.Error("🚫 Failed to marshal WoT cache", "error", err)
+		return
+	}
+
+	if err := os.WriteFile(wt.CachePath, data, 0644); err != nil {
+		slog.Error("🚫 Failed to write WoT cache", "error", err)
+		return
+	}
+
+	slog.Debug("💾 Saved WoT cache", "pubkeys", len(*m))
 }
 
 func (wt *SimpleInMemory) Init(ctx context.Context) {
@@ -77,7 +149,6 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 
 	var eventsAnalysed atomic.Int64
 	pubkeyFollowers := xsync.NewMap[string, *atomic.Int64]()
-	relaysDiscovered := xsync.NewMap[string, bool]()
 	oneHopNetwork := make(map[string]bool)
 	newWot := make(map[string]bool)
 
@@ -124,17 +195,22 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 
 	slog.Info("🕸️ analysing Nostr events", "count", eventsAnalysed.Load())
 
-	processBatch := func(pubkeys []string) {
-		timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-		done := make(chan struct{})
+	// Split analysis into batches of 1000 pubkeys and process them sequentially
+	// Process sequentially with yielding to avoid blocking the host app's UI/Events
+	keys := slices.Collect(maps.Keys(oneHopNetwork))
+	slog.Info("🕸️ starting deeper Web of Trust analysis", "total_keys", len(keys))
 
-		filter := nostr.Filter{
-			Authors: pubkeys,
-			Kinds:   []int{nostr.KindFollowList, nostr.KindRelayListMetadata},
-		}
+	for batch := range slices.Chunk(keys, 1000) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 
-		go func() {
-			defer cancel()
+			filter := nostr.Filter{
+				Authors: batch,
+				Kinds:   []int{nostr.KindFollowList},
+			}
 
 			events := wt.Pool.FetchMany(timeoutCtx, wt.SeedRelays, filter)
 			for ev := range latestEventByKindAndPubkey(timeoutCtx, events, &eventsAnalysed) {
@@ -144,29 +220,18 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 						followers.Add(1)
 					}
 				}
-
-				for relay := range ev.Tags.FindAll("r") {
-					relaysDiscovered.Store(relay[1], true)
-				}
 			}
-			close(done)
-		}()
+			cancel()
 
-		select {
-		case <-done:
-			slog.Info("🕸️ analysing Nostr events", "count", eventsAnalysed.Load())
-		case <-timeoutCtx.Done():
-			slog.Error("🚫 timeout while fetching events, moving to the next batch")
+			// Only log every batch to avoid flooding the UI thread
+			slog.Info("🕸️ verified identities in community", "count", eventsAnalysed.Load())
+
+			// Yield to the OS scheduler and other goroutines to keep the host app responsive
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 
-	// Split analysis into batches of 100 pubkeys
-	keys := slices.Collect(maps.Keys(oneHopNetwork))
-	for batch := range slices.Chunk(keys, 100) {
-		processBatch(batch)
-	}
-
-	slog.Info("📈 totals", "🫂pubkeys", pubkeyFollowers.Size(), "🔗relays", relaysDiscovered.Size())
+	slog.Info("📈 community size", "total_keys", pubkeyFollowers.Size())
 
 	// Log Top N pubkeys by follower count for debugging purposes
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
@@ -225,13 +290,15 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 	slog.Info("🫥 pruned pubkeys without minimum common followers", "🚧minimum", minimumFollowers, "🫂kept", len(newWot), "🗑️eliminated", pubkeyFollowers.Size()-len(newWot))
 
 	wt.pubkeys.Store(&newWot)
+	wt.SaveCache()
+	debug.FreeOSMemory()
 }
 
-func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEvent, counter *atomic.Int64) <-chan nostr.RelayEvent {
-	ch := make(chan nostr.RelayEvent)
+func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEvent, counter *atomic.Int64) <-chan *nostr.Event {
+	ch := make(chan *nostr.Event)
 	go func() {
 		defer close(ch)
-		latestEvents := make(map[string]nostr.RelayEvent)
+		latestEvents := make(map[string]*nostr.Event)
 		for ev := range events {
 			select {
 			case <-ctx.Done():
@@ -240,7 +307,7 @@ func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEv
 				counter.Add(1)
 				key := fmt.Sprintf("%d:%s", ev.Kind, ev.PubKey)
 				if old, ok := latestEvents[key]; !ok || ev.CreatedAt > old.CreatedAt {
-					latestEvents[key] = ev
+					latestEvents[key] = ev.Event
 				}
 			}
 		}

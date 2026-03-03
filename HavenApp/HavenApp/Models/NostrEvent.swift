@@ -49,21 +49,24 @@ struct NostrEvent: Codable, Identifiable {
         }
     }
     
-    var njumpURL: URL? {
-        // Build TLV for nevent1
-        // Type 0: Event ID (32 bytes)
-        // Type 2: Author Pubkey (32 bytes)
-        guard let idData = Bech32.hexToData(id) else { return nil }
-        var tlv = Bech32.encodeTLV(type: 0, data: idData)
+    var parentEventId: String? {
+        // Look for 'e' tags. NIP-10 says the last 'e' tag is usually the one being replied to
+        // unless there are explicit markers like "reply" or "root".
+        let eTags = tags.filter { $0.count >= 2 && $0[0] == "e" }
+        if eTags.isEmpty { return nil }
         
-        if let pubkeyData = Bech32.hexToData(pubkey) {
-            tlv.append(Bech32.encodeTLV(type: 2, data: pubkeyData))
+        // Check for explicit "reply" marker
+        if let replyTag = eTags.first(where: { $0.count >= 4 && $0[3] == "reply" }) {
+            return replyTag[1]
         }
         
-        // Encode as nevent1
-        if let nevent = Bech32.encode(hrp: "nevent", data: tlv) {
-            return URL(string: "https://njump.me/\(nevent)")
-        }
-        return nil
+        // If no "reply" marker, but there is a "root" marker, and more than one 'e' tag,
+        // the one without "root" is likely the reply. 
+        // For simplicity, we'll take the LAST 'e' tag as per common legacy behavior.
+        return eTags.last?[1]
+    }
+
+    var isReply: Bool {
+        return parentEventId != nil
     }
 }

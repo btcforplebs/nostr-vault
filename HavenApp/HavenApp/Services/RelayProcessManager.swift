@@ -42,21 +42,23 @@ class RelayProcessManager: ObservableObject {
     // Critical recovery alert
     @Published var showProcessKillAlert = false
     
-    @Published var logs: [LogEntry] = []
-    
+    /// Logs are in a separate observable so only LogsView redraws on log changes.
+    let logStore = LogStore()
+
     // Metrics
     @Published var memoryUsage: Double = 0
     @Published var cpuUsage: Double = 0
     @Published var activeConnections: Int = 0
     @Published var eventsStored: Int = 0
     
-    private var process: Process?
     private var outputPipe: Pipe?
-    private var logReader: FileHandle?
     private var logBuffer = Data() // Buffer for incomplete log lines
     
     // Track if we are in the middle of a shutdown to prevent recursive restarts
-    private var isShuttingDown = false
+    private var isShuttingDown: Bool = false
+    
+    // Background log processing
+    private let logProcessingQueue = DispatchQueue(label: "com.haven.relay.logs", qos: .utility)
     
     private var pendingImportConfig: HavenConfig?
     @Published var startDate: Date?
@@ -66,15 +68,7 @@ class RelayProcessManager: ObservableObject {
     private var retryAttempted = false
     private var needsLockFix = false
 
-    // PID file for killing orphaned processes across app launches
-    private var pidFileURL: URL {
-        ConfigService.shared.relayDataDir.appendingPathComponent(".haven_pid")
-    }
-    
-    // Log throttling
-    private var pendingLogs: [LogEntry] = []
-    private var logUpdateTimer: Timer?
-    // private let logQueue = DispatchQueue(label: "com.haven.logs") // Removed: unnecessary for MainActor
+    // (Log throttling moved to LogStore)
     
     private var metricsTimer: Timer?
     
@@ -84,18 +78,46 @@ class RelayProcessManager: ObservableObject {
         let level: String
         let message: String
         
+        private nonisolated static let logPattern = try? NSRegularExpression(pattern: "^\\d{4}/\\d{2}/\\d{2}\\s\\d{2}:\\d{2}:\\d{2}\\s(INFO|WARN|ERROR|DEBUG)\\s", options: .caseInsensitive)
+        private nonisolated static let kvPattern = try? NSRegularExpression(pattern: "(\\w+)=([^\\s]+)", options: [])
+
         static func parse(_ line: String) -> LogEntry {
-            // Simplified parsing
+            var message = line
+            
+            // 1. Detect level (Simplified parsing from the raw line)
             let level = line.contains("ERROR") ? "ERROR" :
                        line.contains("WARN") ? "WARN" : "INFO"
-            return LogEntry(timestamp: Date(), level: level, message: line)
+            
+            // 2. Strip standard Go slog/log prefix if present
+            if let regex = logPattern {
+                let range = NSRange(location: 0, length: message.utf16.count)
+                message = regex.stringByReplacingMatches(in: message, options: [], range: range, withTemplate: "")
+            }
+            
+            // 3. Strip leading level markers
+            if message.hasPrefix("INFO ") { message = String(message.dropFirst(5)) }
+            else if message.hasPrefix("WARN ") { message = String(message.dropFirst(5)) }
+            else if message.hasPrefix("ERROR ") { message = String(message.dropFirst(6)) }
+            
+            // 4. Simplify Badger/technical prefixes
+            if message.hasPrefix("badger ") {
+                message = message.replacingOccurrences(of: "badger ", with: "💾 ")
+            }
+
+            // 5. Clean up structured log key=value pairs
+            if let kvRegex = kvPattern {
+                let range = NSRange(location: 0, length: message.utf16.count)
+                message = kvRegex.stringByReplacingMatches(in: message, options: [], range: range, withTemplate: "$1: $2")
+            }
+
+            return LogEntry(timestamp: Date(), level: level, message: message.trimmingCharacters(in: .whitespaces))
         }
     }
     
     func startRelay(config: HavenConfig, isRetry: Bool = false) {
         // Strict guard: Must be idle and NO process should be running
-        guard state == .idle && (process == nil || !process!.isRunning) else {
-            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start relay: current state is \(state) (running: \(process?.isRunning ?? false))"))
+        guard state == .idle && !isRunning else {
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start relay: current state is \(state) (running: \(isRunning))"))
             return
         }
 
@@ -117,14 +139,6 @@ class RelayProcessManager: ObservableObject {
         // Background setup task
         Task {
             let relayDataDir = ConfigService.shared.relayDataDir
-            let pidURL = self.pidFileURL
-
-            // 0. Kill any orphaned haven process from a previous app session
-            //    Runs on a background thread and blocks until the orphan is dead
-            //    and file locks are released.
-            await Task.detached {
-                self.killOrphanedProcessSync(pidURL: pidURL)
-            }.value
 
             // 1. Ensure directories exist (I/O)
             try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
@@ -132,6 +146,14 @@ class RelayProcessManager: ObservableObject {
             try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("blossom"), withIntermediateDirectories: true)
             try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("cache"), withIntermediateDirectories: true)
             try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("db"), withIntermediateDirectories: true)
+            // Pre-create individual DB subdirectories so LMDB/Badger can mmap them
+            // (Go's MkdirAll may fail silently under macOS App Sandbox)
+            for dbName in ["private", "chat", "outbox", "inbox", "blossom"] {
+                try? FileManager.default.createDirectory(
+                    at: relayDataDir.appendingPathComponent("db/\(dbName)"),
+                    withIntermediateDirectories: true
+                )
+            }
 
             // 2. Clear Database Locks (Crucial - must happen before start)
             self.performClearDatabaseLocks(at: relayDataDir)
@@ -154,12 +176,12 @@ class RelayProcessManager: ObservableObject {
                     }
                     try? FileManager.default.copyItem(at: URL(fileURLWithPath: templatesPath), to: destURL)
                     await MainActor.run {
-                        self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Copied templates to \(destURL.path)"))
+                        self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Copied templates to \(destURL.path)"))
                     }
                 }
             } else {
                 await MainActor.run {
-                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Templates folder not found in Bundle"))
+                    self.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Templates folder not found in Bundle"))
                 }
             }
 
@@ -169,7 +191,15 @@ class RelayProcessManager: ObservableObject {
             }
         }
     }
-    
+
+    /// Public method to add logs from other services
+    nonisolated func addLog(_ message: String, level: String = "INFO") {
+        let entry = LogEntry(timestamp: Date(), level: level, message: message)
+        Task { @MainActor in
+            self.logStore.append(entry)
+        }
+    }
+
     private func continueStartRelay(config: HavenConfig, relayDataDir: URL) {
         // Write/Update essential relay files (relays list, blastr relays)
         // We stop writing .env to disk and use environment variables instead
@@ -198,177 +228,60 @@ class RelayProcessManager: ObservableObject {
             try? data.write(to: blacklistURL)
         }
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Config: \(config.importSeedRelays.count) import relays, \(config.blastrRelays.count) blastr relays, \(config.whitelistedNpubs.count) whitelisted npubs"))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Config: \(config.importSeedRelays.count) import relays, \(config.blastrRelays.count) blastr relays, \(config.whitelistedNpubs.count) whitelisted npubs"))
 
-        // Check bundle for the binary
-        guard let executablePath = Bundle.main.path(forResource: "haven", ofType: ""),
-              FileManager.default.fileExists(atPath: executablePath) else {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "haven binary not found in application bundle"))
-            return
-        }
-        
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting relay from: \(executablePath)"))
-        
         // Reset conflict state
         self.isPortConflict = false
-        
-        // Ensure executable permissions
-        do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: executablePath)
-            if let perms = attributes[.posixPermissions] as? Int {
-                if perms != 0o755 {
-                    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executablePath)
-                     logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Ensured executable permissions for binary"))
-                }
-            }
-        } catch {
-             logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Could not set permissions (might be read-only bundle): \(error)"))
-        }
-        
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.currentDirectoryURL = relayDataDir
-        
+
         let envURL = relayDataDir.appendingPathComponent(".env")
         let envContent = generateMinimalEnv(config: config)
         try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Wrote .env to \(envURL.path)"))
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Working Directory: \(relayDataDir.path)"))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Wrote .env to \(envURL.path)"))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Working Directory: \(relayDataDir.path)"))
         
-        // Prepare environment
-        var env: [String: String] = [:]
-        
-        // Minimal system environment
-        let sysEnv = ProcessInfo.processInfo.environment
-        env["PATH"] = sysEnv["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-        env["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
-        env["TMPDIR"] = NSTemporaryDirectory()
-        env["USER"] = sysEnv["USER"] ?? "haven"
-        
-        // Inject all config variables
+        // Prepare environment for C-Shared lib execution
         let configEnv = generateEnvDictionary(config: config)
         for (key, value) in configEnv {
-            env[key] = value
-        }
-        
-        // Match .env default for consistent behavior with manual runs
-        env["RELAY_BIND_ADDRESS"] = "127.0.0.1"
-        
-        process.environment = env
-        
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Env: HOME=\(env["HOME"]?.prefix(25) ?? "")... PORT=\(env["RELAY_PORT"] ?? "") BIND=\(env["RELAY_BIND_ADDRESS"] ?? "")"))
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "WOT Settings: DEPTH=\(env["WOT_DEPTH"] ?? "") REFRESH=\(env["WOT_REFRESH_INTERVAL"] ?? "")"))
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Paths: BLOSSOM=\(env["BLOSSOM_PATH"] ?? "") DB=\(env["DATABASE_PATH"] ?? "")"))
-        
-        // Use Pipe for stdout/stderr to ensure realtime log delivery
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        process.standardInput = Pipe() // Isolate stdin
-        
-        // Save outputPipe to keep it alive
-        self.outputPipe = pipe
-        
-        // Read from the pipe
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            
-            Task { @MainActor in
-                self?.processBufferedOutput(data)
-                
-                // Also write to log file for persistence if needed
-                if let str = String(data: data, encoding: .utf8) {
-                     let logFileURL = relayDataDir.appendingPathComponent("relay.log")
-                     if !FileManager.default.fileExists(atPath: logFileURL.path) {
-                         FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
-                     }
-                     if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
-                         fileHandle.seekToEndOfFile()
-                         if let data = str.data(using: .utf8) {
-                             fileHandle.write(data)
-                         }
-                         try? fileHandle.close()
-                     }
-                }
+            setenv(key, value, 1)
+            if let cKey = strdup(key), let cValue = strdup(value) {
+                SetHavenEnvC(cKey, cValue)
+                free(cKey)
+                free(cValue)
             }
         }
-        
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Captured output via Pipe"))
-        
-        self.process = process
-        
-        // No readabilityHandler needed for file redirection
-        
-        process.terminationHandler = { [weak self] proc in
-            Task { @MainActor in
-                guard let self = self else { return }
-                
-                // Only handle termination for the CURRENT process
-                guard proc == self.process else {
-                     return
-                }
-                
-                let exitCode = proc.terminationStatus
-                self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Relay Process Terminated with code: \(exitCode)"))
-                
-                let previousState = self.state
-                self.state = .idle
-                self.isRunning = false
-                self.isBooting = false
-                self.isImporting = false
-                
-                // If we were stopping to start an import, trigger it now
-                if let importConfig = self.pendingImportConfig, previousState == .stopping {
-                    self.importNotes(config: importConfig)
-                    return
-                }
-                
-                if self.needsLockFix && !self.retryAttempted && previousState != .stopping {
-                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Database lock detected. Force-cleaning and restarting..."))
-                    self.retryAttempted = true
-                    // Use forceCleanAndRestart which SIGKILLs any stale process,
-                    // clears lock files, and restarts cleanly.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        self.forceCleanAndRestart()
-                    }
-                    return
-                } else if self.retryAttempted && (self.needsLockFix || exitCode != 0) && previousState != .stopping {
-                    // Force clean already ran once and it still failed.
-                    // Show alert so the user can trigger another attempt.
-                    self.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Automatic recovery failed. Tap 'Fix & Restart' to try again."))
-                    self.showProcessKillAlert = true
-                }
-                
-                self.isShuttingDown = false
-                self.state = .idle
-                self.isRunning = false
-                self.isBooting = false
-                self.isImporting = false
-                
-                self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay process terminated (Exit Code: \(proc.terminationStatus))"))
-                self.stopLogThrottler()
-            }
+        let bindAddress = config.allowNetworkAccess ? "0.0.0.0" : "127.0.0.1"
+        setenv("RELAY_BIND_ADDRESS", bindAddress, 1)
+        if let cKey = strdup("RELAY_BIND_ADDRESS"), let cValue = strdup(bindAddress) {
+            SetHavenEnvC(cKey, cValue)
+            free(cKey)
+            free(cValue)
         }
         
+        // Change working directory so Go creates files in relayDataDir
+        FileManager.default.changeCurrentDirectoryPath(relayDataDir.path)
+        
+        // Redirect stdout/stderr to capture Go logs
+        captureOutput(in: relayDataDir)
+        
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Captured output natively"))
+
         self.state = .booting
         isRunning = true
         isBooting = true
         bootStatusMessage = "Starting system..."
         
-        // Launch the process (non-blocking)
-        do {
-            try process.run()
-            savePID(process.processIdentifier)
-            logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay process started (PID: \(process.processIdentifier))"))
-        } catch {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to launch relay process: \(error.localizedDescription)"))
-            self.state = .idle
-            isRunning = false
-            isBooting = false
-            return
+        // Launch the C-Shared relay on a background thread
+        DispatchQueue.global().async { [weak self] in
+            // 0 = false (not in import mode)
+            StartRelayC(0)
+            
+            // StartRelayC returns instantly because http.ListenAndServe runs in a goroutine
+            DispatchQueue.main.async {
+                self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay C-Shared process started"))
+            }
         }
+        
         isLocked = false
         startDate = Date()
         
@@ -382,7 +295,7 @@ class RelayProcessManager: ObservableObject {
             self.performClearDatabaseLocks(at: relayDataDir)
             await MainActor.run {
                 self.isLocked = false
-                self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared."))
+                self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared."))
                 completion?()
             }
         }
@@ -412,117 +325,46 @@ class RelayProcessManager: ObservableObject {
                 try FileManager.default.removeItem(at: url)
                 // We minimize MainActor hops here by not logging DEBUG info for every lock check
             } catch {
-                // Ignore errors for individual lock files
             }
         }
-    }
-    
-    private func savePID(_ pid: Int32) {
-        try? "\(pid)".write(to: pidFileURL, atomically: true, encoding: .utf8)
-    }
-
-    private nonisolated func clearSavedPID(at pidURL: URL) {
-        try? FileManager.default.removeItem(at: pidURL)
-    }
-
-    /// Kill ALL haven Go binary processes system-wide.
-    /// Uses pgrep -x for exact name match to avoid killing "HavenApp" (the Swift host).
-    /// Falls back to killall -KILL as a second attempt.
-    private nonisolated func killAllHavenProcesses() {
-        // 1. Use pgrep -x to find PIDs with the exact process name "haven"
-        let pgrep = Process()
-        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        pgrep.arguments = ["-x", "haven"]
-        let pipe = Pipe()
-        pgrep.standardOutput = pipe
-        pgrep.standardError = FileHandle.nullDevice
-        do {
-            try pgrep.run()
-            pgrep.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8) {
-                for line in output.components(separatedBy: .newlines) {
-                    if let pid = Int32(line.trimmingCharacters(in: .whitespaces)), pid > 0 {
-                        kill(pid, SIGKILL)
-                    }
-                }
-            }
-        } catch {
-            // pgrep failed, try killall as fallback
-        }
-
-        // 2. Fallback: killall with exact match
-        let killall = Process()
-        killall.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-        killall.arguments = ["-9", "-m", "^haven$"]
-        killall.standardOutput = FileHandle.nullDevice
-        killall.standardError = FileHandle.nullDevice
-        do {
-            try killall.run()
-            killall.waitUntilExit()
-        } catch {
-            // Fallback also failed — nothing more we can do
-        }
-    }
-
-    /// Fire-and-forget version for AppDelegate launch cleanup.
-    /// Non-blocking: dispatches to a background queue.
-    func killOrphanedProcess() {
-        let pidURL = pidFileURL
-        DispatchQueue.global().async {
-            self.killOrphanedProcessSync(pidURL: pidURL)
-        }
-    }
-
-    private nonisolated func killOrphanedProcessSync(pidURL: URL) {
-        // 1. Kill by saved PID
-        if let pidStr = try? String(contentsOf: pidURL, encoding: .utf8),
-           let pid = Int32(pidStr.trimmingCharacters(in: .whitespacesAndNewlines)),
-           pid > 0 {
-            if kill(pid, 0) == 0 {
-                kill(pid, SIGKILL)
-            }
-            try? FileManager.default.removeItem(at: pidURL)
-        }
-
-        // 2. Also kill any haven processes we don't have a PID for (e.g. PID file was lost)
-        killAllHavenProcesses()
-
-        // 3. Wait for OS to fully release file locks
-        Thread.sleep(forTimeInterval: 1.0)
     }
     
     func stopRelay(completion: (() -> Void)? = nil) {
-        guard let process = process, process.isRunning else {
+        // Must check if running, booting, or importing
+        guard self.isRunning || self.isBooting || self.isImporting else {
             self.state = .idle
             isRunning = false
             completion?()
             return
         }
+        
         self.state = .stopping
         self.isShuttingDown = true
         stopMetricsTimer()
         stopLogThrottler()
-        let pid = process.processIdentifier
-        process.terminate()
         isBooting = false
-
-        // Capture URL on MainActor before going to background
-        let savedPidURL = pidFileURL
-
-        // Wait for process to actually exit; escalate to SIGKILL if needed
+        
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping C-Shared relay natively..."))
+        
         DispatchQueue.global().async { [weak self] in
-            let deadline = Date().addingTimeInterval(5.0)
-            while process.isRunning && Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.1)
-            }
-            if process.isRunning {
-                kill(pid, SIGKILL)
-                // Brief wait for OS to reclaim resources / release flocks
-                Thread.sleep(forTimeInterval: 0.5)
-            }
-            self?.clearSavedPID(at: savedPidURL)
+            // Tell the Go side to shut down the server and cancel the context
+            StopRelayC()
+
+            // Wait for OS to fully release DB file locks before allowing restart
+            Thread.sleep(forTimeInterval: 1.0)
+
             DispatchQueue.main.async {
+                self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "C-Shared relay natively stopped."))
+                self?.state = .idle
+                self?.isRunning = false
+                self?.isShuttingDown = false
+                
+                // If we were stopping to start an import, trigger it now
+                if let importConfig = self?.pendingImportConfig {
+                    self?.pendingImportConfig = nil
+                    self?.importNotes(config: importConfig)
+                }
+                
                 completion?()
             }
         }
@@ -531,81 +373,44 @@ class RelayProcessManager: ObservableObject {
     /// Aggressively kill any running haven process, clear all database locks, reset state, and restart.
     /// This replaces the old "pkill -9 haven" manual step.
     func forceCleanAndRestart() {
-        // Immediately claim stopping state to prevent concurrent starts
         self.state = .stopping
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Force clean & restart initiated..."))
-
-        // 1. Kill managed process with SIGKILL
-        let managedPid = process?.processIdentifier ?? 0
-        if let process = process, process.isRunning {
-            process.terminate()
-        }
-
-        // 2. Also kill any orphaned process from a previous run
-        let savedPidURL = pidFileURL
-        var orphanPid: Int32 = 0
-        if let pidStr = try? String(contentsOf: savedPidURL, encoding: .utf8),
-           let pid = Int32(pidStr.trimmingCharacters(in: .whitespacesAndNewlines)),
-           pid > 0 && pid != managedPid {
-            orphanPid = pid
-        }
-
-        // Capture relayDataDir on MainActor before going to background
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Force clean & restart initiated..."))
+        
         let relayDataDir = ConfigService.shared.relayDataDir
-
+        
         DispatchQueue.global().async { [weak self] in
-            // Force kill managed process
-            if managedPid > 0 {
-                kill(managedPid, SIGKILL)
-            }
-            // Force kill orphan
-            if orphanPid > 0 && kill(orphanPid, 0) == 0 {
-                kill(orphanPid, SIGKILL)
-            }
-
-            // 3. Kill ALL haven processes system-wide (catches unknown orphans)
-            self?.killAllHavenProcesses()
-
+            StopRelayC()
+            
             // Wait for OS to release file locks
-            Thread.sleep(forTimeInterval: 1.5)
-
-            // Clear all lock files
-            guard let self = self else { return }
-            self.performClearDatabaseLocks(at: relayDataDir)
-            self.clearSavedPID(at: savedPidURL)
-
+            Thread.sleep(forTimeInterval: 0.5)
+            
+            self?.performClearDatabaseLocks(at: relayDataDir)
+            
             DispatchQueue.main.async {
-                // Reset all state
-                self.process = nil
-                self.outputPipe = nil
-                self.state = .idle
-                self.isRunning = false
-                self.isBooting = false
-                self.isImporting = false
-                self.isLocked = false
-                self.needsLockFix = false
-                // NOTE: Do NOT reset retryAttempted here. It must survive so the
-                // termination handler can detect a second failure and show the alert
-                // instead of looping forever.
-                self.showProcessKillAlert = false
-                self.isShuttingDown = false
-
-                self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Cleanup complete. Restarting relay..."))
-
-                // Restart if we have a config — mark as retry so we don't loop
-                if let config = self.lastConfig {
-                    self.startRelay(config: config, isRetry: true)
+                self?.state = .idle
+                self?.isRunning = false
+                self?.isBooting = false
+                self?.isLocked = false
+                self?.needsLockFix = false
+                self?.showProcessKillAlert = false
+                self?.isShuttingDown = false
+                
+                self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Cleanup complete. Restarting relay..."))
+                
+                if let config = self?.lastConfig {
+                    self?.startRelay(config: config, isRetry: true)
                 }
             }
         }
     }
 
     func cancelImport() {
-        guard let process = process, process.isRunning else {
-            isImporting = false
-            return
+        if self.isImporting || self.isRunning {
+             DispatchQueue.global().async {
+                 StopRelayC()
+             }
         }
-        process.terminate()
+        isImporting = false
         DispatchQueue.main.async {
             self.isImporting = false
             self.importProgress = 0.0
@@ -615,8 +420,10 @@ class RelayProcessManager: ObservableObject {
     }
     
     func dismissImport() {
-        if let process = process, process.isRunning {
-            process.terminate()
+        if self.isImporting || self.isRunning {
+             DispatchQueue.global().async {
+                 StopRelayC()
+             }
         }
         DispatchQueue.main.async {
             self.isImporting = false
@@ -667,16 +474,16 @@ class RelayProcessManager: ObservableObject {
     // The usages below will be updated.
     
     func importNotes(config: HavenConfig) {
-        logs.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "importNotes called. Current State: \(state), Process Running: \(process?.isRunning ?? false)"))
+        logStore.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "importNotes called. Current State: \(state), isRunning: \(isRunning)"))
         
-        // Strict guard: Must be idle and NO process should be running
-        guard state == .idle && (process == nil || !process!.isRunning) else {
-            if (state == .running || state == .booting) && (process != nil && process!.isRunning) {
-                logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping running relay to start import..."))
+        // Strict guard: Must be idle and NOT running
+        guard state == .idle && !isRunning else {
+            if (state == .running || state == .booting) && isRunning {
+                logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping running relay to start import..."))
                 self.pendingImportConfig = config
                 stopRelay()
             } else {
-                logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start import: current state is \(state) (running: \(process?.isRunning ?? false))"))
+                logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start import: current state is \(state) (running: \(isRunning))"))
             }
             return
         }
@@ -686,201 +493,137 @@ class RelayProcessManager: ObservableObject {
         isRunning = false
         isBooting = false
         isImporting = true
+        // Reset the log-based event counter so import counts don't
+        // carry over and corrupt the post-import stats refresh.
+        eventsStored = 0
         
-        // Kill any existing haven processes and clear locks before starting import
         clearDatabaseLocks()
         
-        // Create working directories
         let relayDataDir = ConfigService.shared.relayDataDir
         try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("data"), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("blossom"), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("cache"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("db"), withIntermediateDirectories: true)
+        for dbName in ["private", "chat", "outbox", "inbox", "blossom"] {
+            try? FileManager.default.createDirectory(
+                at: relayDataDir.appendingPathComponent("db/\(dbName)"),
+                withIntermediateDirectories: true
+            )
+        }
         
-        // Write/Update all configuration files (except .env) before import
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         
-        // seed relays
-        let importRelaysURL = relayDataDir.appendingPathComponent(config.importSeedRelaysFile)
-        if let data = try? encoder.encode(config.importSeedRelays) {
-            try? data.write(to: importRelaysURL)
-        }
+        if let data = try? encoder.encode(config.importSeedRelays) { try? data.write(to: relayDataDir.appendingPathComponent(config.importSeedRelaysFile)) }
+        if let data = try? encoder.encode(config.blastrRelays.isEmpty ? [] : config.blastrRelays) { try? data.write(to: relayDataDir.appendingPathComponent(config.blastrRelaysFile)) }
+        if let data = try? encoder.encode(config.whitelistedNpubs) { try? data.write(to: relayDataDir.appendingPathComponent("whitelisted_npubs.json")) }
+        if let data = try? encoder.encode(config.blacklistedNpubs) { try? data.write(to: relayDataDir.appendingPathComponent("blacklisted_npubs.json")) }
         
-        // blastr relays
-        let blastrRelaysURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
-        let blastrRelays = config.blastrRelays.isEmpty ? [] : config.blastrRelays
-        if let data = try? encoder.encode(blastrRelays) {
-            try? data.write(to: blastrRelaysURL)
-        }
-        
-        // Write whitelisted_npubs.json (Required by new binary)
-        let whitelistURL = relayDataDir.appendingPathComponent("whitelisted_npubs.json")
-        if let data = try? encoder.encode(config.whitelistedNpubs) {
-            try? data.write(to: whitelistURL)
-        }
-        
-        // Write blacklisted_npubs.json
-        let blacklistURL = relayDataDir.appendingPathComponent("blacklisted_npubs.json")
-        if let data = try? encoder.encode(config.blacklistedNpubs) {
-            try? data.write(to: blacklistURL)
-        }
-        
-        // Check bundle for the binary
-        guard let executablePath = Bundle.main.path(forResource: "haven", ofType: ""),
-              FileManager.default.fileExists(atPath: executablePath) else {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "haven binary not found in application bundle"))
-            self.importStatusMessage = "Binary not found"
-            self.isImporting = false
-            return
-        }
-        
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Launching import process from: \(executablePath) with --import"))
-        
-        // Reset conflict state
-        self.isPortConflict = false
-        
-        // Ensure data directory exist for import
-        let dataDir = relayDataDir.appendingPathComponent("data")
-        let dbDir = relayDataDir.appendingPathComponent("db")
-        try? FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
-        try? FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
-        
-        // Ensure executable permissions
-        do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: executablePath)
-            if let perms = attributes[.posixPermissions] as? Int {
-                if perms != 0o755 {
-                    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executablePath)
-                     logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Ensured executable permissions for binary"))
-                }
-            }
-        } catch {
-             logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Could not set permissions for import binary: \(error)"))
-        }
-        
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = ["import"]
-        process.currentDirectoryURL = relayDataDir
-        
-        // Write .env file for import as well
         let envURL = relayDataDir.appendingPathComponent(".env")
         let envContent = generateMinimalEnv(config: config)
         try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
         
-        // Prepare environment
-        var env: [String: String] = [:]
-        
-        // Minimal system environment
-        let sysEnv = ProcessInfo.processInfo.environment
-        env["PATH"] = sysEnv["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-        env["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
-        env["TMPDIR"] = NSTemporaryDirectory()
-        env["USER"] = sysEnv["USER"] ?? "haven"
-        
-        // Inject all config variables
         let configEnv = generateEnvDictionary(config: config)
         for (key, value) in configEnv {
-            env[key] = value
+            setenv(key, value, 1)
         }
+        setenv("RELAY_BIND_ADDRESS", config.allowNetworkAccess ? "0.0.0.0" : "127.0.0.1", 1)
         
-        // Bind to localhost by default
-        env["RELAY_BIND_ADDRESS"] = "127.0.0.1"
+        FileManager.default.changeCurrentDirectoryPath(relayDataDir.path)
+        captureOutput(in: relayDataDir)
         
-        process.environment = env
-        
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        // Set standardInput to a new pipe to avoid signals like SIGPIPE
-        process.standardInput = Pipe()
-        
-        self.outputPipe = pipe
-        self.process = process
-        
-        // Update @Published properties on main thread
         DispatchQueue.main.async {
             self.importProgress = 0.0
             self.importStatusMessage = "Starting import for \(config.ownerNpub.prefix(12))..."
         }
         
-        process.terminationHandler = { [weak self] proc in
-            Task { @MainActor in
-                guard let self = self else { return }
-                
-                // Only handle termination for the CURRENT process
-                guard proc == self.process else {
-                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Stray import process terminated (PID: \(proc.processIdentifier))"))
-                    return
-                }
-                
-                self.outputPipe?.fileHandleForReading.readabilityHandler = nil
-                self.isImporting = false
-                self.state = .idle // CRITICAL: Reset state so we are no longer stuck in .importing
-                
-                let exitCode = proc.terminationStatus
-                self.logs.append(LogEntry(timestamp: Date(), level: exitCode == 0 ? "INFO" : "ERROR", message: "Import process terminated with exit code: \(exitCode)"))
-                
-                if (exitCode == 0 || exitCode == 15) && self.importCompleted {
-                    self.importProgress = 1.0
-                    self.importStatusMessage = "Import Complete!"
-                    self.importCompleted = true
-                    
-                    // Automatically restart relay if we have a config ready
-                    if let restartConfig = self.pendingImportConfig {
-                        self.pendingImportConfig = nil
-                        self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import successful, restarting relay..."))
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self.startRelay(config: restartConfig)
-                        }
-                    }
-                } else {
-                    self.importStatusMessage = "Import Failed (Exit Code \(exitCode))"
-                    self.importCompleted = false
-                    self.pendingImportConfig = nil
-                }
-                
-                self.isShuttingDown = false
-            }
-        }
-        
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            
-             if let str = String(data: data, encoding: .utf8) {
-                 Task { @MainActor in
-                     self?.logs.append(LogEntry(timestamp: Date(), level: "RAW", message: "Received \(data.count) bytes: \(str)"))
-                 }
-            }
-
-            Task { @MainActor in
-                self?.processBufferedOutput(data)
-            }
-        }
-        
-        // Wait for locks to clear before running
         clearDatabaseLocks { [weak self] in
              Task { @MainActor in
                  guard let self = self else { return }
-                 
-                 // Check if we were cancelled while waiting
                  if self.state != .importing { return }
                  
-                 // Check if process was already created (it was, above)
-                 // But we need to run it NOW.
+                 self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "C-Shared Import sequence started"))
                  
-                 do {
-                     try process.run()
-                     self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import process started (PID: \(process.processIdentifier))"))
-                 } catch {
-                     let errorMsg = "Failed to launch import process: \(error.localizedDescription)"
-                     self.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: errorMsg))
-                     self.isImporting = false
-                     self.importStatusMessage = "Launch failed: \(error.localizedDescription)"
+                 DispatchQueue.global().async {
+                     // 1 = true (importing mode)
+                     StartRelayC(1)
+                     
+                     // When StartRelayC(1) returns, the import is fully complete!
+                     DispatchQueue.main.async {
+                         self.importCompletedSuccessfully()
+                     }
                  }
              }
+        }
+    }
+    
+    private func importCompletedSuccessfully() {
+        self.isImporting = false
+        self.importProgress = 1.0
+        self.importStatusMessage = "Import Complete!"
+        self.importCompleted = true
+        self.state = .idle
+        
+        self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import process terminated successfully."))
+        
+        if let restartConfig = self.pendingImportConfig {
+            self.pendingImportConfig = nil
+            self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import successful, restarting relay..."))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.startRelay(config: restartConfig)
+            }
+        }
+    }
+    
+    /// Redirection mechanism for capturing stdout and stderr from C-Shared bindings
+    private func captureOutput(in directory: URL) {
+        if outputPipe == nil {
+            let pipe = Pipe()
+            outputPipe = pipe
+            
+            // Redirect STDOUT and STDERR to our pipe
+            dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
+            dup2(pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
+            
+            // Local buffer for the background queue to avoid MainActor isolation
+            var localBuffer = Data()
+            
+            pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                
+                // Process output on a background queue to keep MainActor free
+                self?.logProcessingQueue.async {
+                    localBuffer.append(data)
+                    
+                    // Write to file on background
+                    let logFileURL = directory.appendingPathComponent("relay.log")
+                    if !FileManager.default.fileExists(atPath: logFileURL.path) {
+                        FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
+                    }
+                    if let fileHandle = try? FileHandle(forWritingTo: logFileURL) {
+                        fileHandle.seekToEndOfFile()
+                        fileHandle.write(data)
+                        try? fileHandle.close()
+                    }
+
+                    // Find the last newline character
+                    guard let range = localBuffer.range(of: Data([0x0A]), options: .backwards) else {
+                        return
+                    }
+                    
+                    // Extract all complete lines
+                    let validData = localBuffer.subdata(in: 0..<range.upperBound)
+                    
+                    // Keep the remainder in the buffer
+                    localBuffer = localBuffer.subdata(in: range.upperBound..<localBuffer.endIndex)
+                    
+                    if let output = String(data: validData, encoding: .utf8) {
+                        self?.processOutputInBackground(output)
+                    }
+                }
+            }
         }
     }
     
@@ -903,249 +646,250 @@ class RelayProcessManager: ObservableObject {
         return content
     }
     
-    private func processBufferedOutput(_ data: Data) {
-        logBuffer.append(data)
-        
-        // Find the last newline character
-        guard let range = logBuffer.range(of: Data([0x0A]), options: .backwards) else {
-            // No newline yet, keep buffering
-            return
-        }
-        
-        // Extract all complete lines
-        let validData = logBuffer.subdata(in: 0..<range.upperBound)
-        
-        // Keep the remainder in the buffer
-        logBuffer = logBuffer.subdata(in: range.upperBound..<logBuffer.endIndex)
-        
-        if let output = String(data: validData, encoding: .utf8) {
-            processOutput(output)
-        }
+    /// Accumulated state changes from background log parsing — applied in a single MainActor dispatch.
+    private nonisolated struct BatchedStateUpdate {
+        var importProgress: Double?
+        var importStatusMessage: String?
+        var importCompleted: Bool = false
+        var stopImporting: Bool = false
+        var bootStatusMessage: String?
+        var stopBooting: Bool = false
+        var eventsStoredDelta: Int = 0
+        var connectionsDelta: Int = 0
+        var isLocked: Bool = false
+        var isPortConflict: Bool = false
+        var progressDateStr: String?   // for calculateProgress
+        var progressBump: Bool = false  // for "+0.03" bump when no date
     }
-    
-    private func processOutput(_ output: String) {
+
+    private nonisolated func processOutputInBackground(_ output: String) {
         let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
         guard !lines.isEmpty else { return }
-        
+
         var newEntries: [LogEntry] = []
-        // Note: Logic inside loop needs to be preserved, but append to pendingLogs instead of logs
+        var batch = BatchedStateUpdate()
 
         for line in lines {
-            let entry = LogEntry.parse(line)
-            newEntries.append(entry)
-            
-            if isImporting {
-               if line.contains("connected successfully") {
-                   importProgress = 0.1
-                   importStatusMessage = "Connected to relays..."
-               } else if line.contains("Imported") && line.contains("notes") {
-                   if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
-                        calculateProgress(currentDateStr: String(dateStr))
-                   }
-                   if let rangeStart = line.range(of: "from ")?.upperBound,
-                      let rangeEnd = line.range(of: " to")?.lowerBound {
-                       importStatusMessage = "Found notes from \(line[rangeStart..<rangeEnd])..."
-                   } else {
-                       importStatusMessage = "Found notes..."
-                   }
-               } else if line.contains("Initializing WoT") || line.contains("building WoT") || line.contains("fetching Nostr events") {
-                   importStatusMessage = "Building Web of Trust..."
-                   importProgress = 0.2
-               } else if line.contains("analysing Nostr events") {
-                   importStatusMessage = "Analysing Web of Trust..."
-                   importProgress = 0.3
-               } else if line.contains("importing inbox notes") || line.contains("Importing inbox notes") {
-                   importStatusMessage = "Importing tagged notes..."
-                   importProgress = 0.85 // More conservative estimate
-               } else if line.contains("subscribing to inbox") || line.contains("tagged import complete") {
-                   // Import is effectively done when it starts subscribing or explicitly says complete
-                   self.isImporting = false
-                   self.importCompleted = true
-                   importProgress = 1.0
-                   importStatusMessage = "Import Complete!"
-                   
-                   // Force terminate the process so we can switch to normal relay mode
-                   DispatchQueue.main.async {
-                       if let process = self.process, process.isRunning {
-                           self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import phase finished, transitioning to relay..."))
-                           process.terminate()
-                       }
-                   }
-               } else if line.contains("imported") && line.contains("tagged notes") {
-                   // Tagged notes import completed
-                   importProgress = 0.95
-                   if let count = line.components(separatedBy: " ").first(where: { Int($0) != nil }) {
-                       importStatusMessage = "Imported \(count) tagged notes"
-                   } else {
-                       importStatusMessage = "Tagged notes imported"
-                   }
-               } else if line.contains("Import complete") || line.contains("import complete") {
-                   importProgress = 1.0
-                   importStatusMessage = "Import Complete!"
-                    
-                    // Terminate process if tagged import complete (Go doesnt exit)
-                    if line.contains("tagged import complete") {
-                        self.isImporting = false
-                        self.importCompleted = true
-                        
-                        // Give Go a chance to exit naturally, but force kill if it hangs
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            if let process = self.process, process.isRunning {
-                                self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Import process didn't exit naturally, forcing termination..."))
-                                process.terminate()
-                            }
-                        }
-                    }
-               } else if line.contains("No notes found") {
-                   if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
-                       calculateProgress(currentDateStr: String(dateStr))
-                       if let fromIndex = line.components(separatedBy: "for ").last?.prefix(10) {
-                            importStatusMessage = "Checking \(fromIndex)... (No notes found)"
-                       }
-                   } else {
-                        importProgress = min(importProgress + 0.03, 0.85) // Smaller increments, cap at 85%
-                   }
-               }
+            newEntries.append(LogEntry.parse(line))
+            collectStateChanges(from: line, into: &batch)
+        }
+
+        Task { @MainActor in
+            self.logStore.enqueue(newEntries)
+            self.applyBatchedUpdate(batch)
+        }
+    }
+
+    // Cached regex patterns for performance - marked nonisolated for background access
+    private nonisolated static let analysedPattern = try? NSRegularExpression(pattern: "(?:analysed|count=)(\\d+)", options: .caseInsensitive)
+    private nonisolated static let trustGraphPattern = try? NSRegularExpression(pattern: "(?:kept=|followers: )(\\d+)", options: .caseInsensitive)
+    private nonisolated static let pubkeysPattern = try? NSRegularExpression(pattern: "pubkeys=(\\d+)", options: .caseInsensitive)
+
+    /// Collect state changes on the background thread without touching MainActor.
+    private nonisolated func collectStateChanges(from line: String, into batch: inout BatchedStateUpdate) {
+        // Import state
+        if line.contains("connected successfully") {
+            batch.importProgress = 0.1
+            batch.importStatusMessage = "Connected to relays..."
+        } else if line.contains("Imported") && line.contains("notes") {
+            if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
+                batch.progressDateStr = String(dateStr)
             }
-            
-            // Parse event counts from logs
-            if line.contains("Imported") && line.contains("notes") {
-                // Extract number from "Imported X notes from..."
-                let components = line.components(separatedBy: " ")
-                if let importedIndex = components.firstIndex(of: "Imported"),
-                   importedIndex + 1 < components.count,
-                   let count = Int(components[importedIndex + 1]) {
-                    eventsStored += count
-                }
-            } else if line.contains("imported") && line.contains("tagged notes") {
-                // Extract from "imported X tagged notes"
-                let components = line.components(separatedBy: " ")
-                if let importedIndex = components.firstIndex(of: "imported"),
-                   importedIndex + 1 < components.count,
-                   let count = Int(components[importedIndex + 1]) {
-                    eventsStored += count
-                }
-            } else if line.contains("new note") || line.contains("new reaction") || 
-                      line.contains("new zap") || line.contains("new encrypted message") ||
-                      line.contains("new gift-wrapped") || line.contains("new repost") {
-                // Individual events coming in
-                eventsStored += 1
+            if let rangeStart = line.range(of: "from ")?.upperBound,
+               let rangeEnd = line.range(of: " to")?.lowerBound {
+                batch.importStatusMessage = "Found notes from \(line[rangeStart..<rangeEnd])..."
+            } else {
+                batch.importStatusMessage = "Found notes..."
             }
-            
-            // Booting status
-            if isBooting {
-                let lowerLine = line.lowercased()
-                
-                if lowerLine.contains("subscribing to") {
-                    if let topic = line.components(separatedBy: "to ").last {
-                        bootStatusMessage = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
-                    }
-                } else if lowerLine.contains("is booting up") { // "HAVEN X.X.X is booting up"
-                     DispatchQueue.main.async { self.bootStatusMessage = "Booting Haven..." }
-                } else if lowerLine.contains("starting") {
-                    if let service = line.components(separatedBy: "starting ").last ?? line.components(separatedBy: "Starting ").last {
-                         bootStatusMessage = "Starting \(service.trimmingCharacters(in: .punctuationCharacters))..."
-                    }
-                } else if lowerLine.contains("listening at") || lowerLine.contains("listening on") { // Match both
-                     DispatchQueue.main.async { self.bootStatusMessage = " initializing" } // Final state
-                } else if lowerLine.contains("building web of trust graph") || lowerLine.contains("initializing wot") {
-                     DispatchQueue.main.async { self.bootStatusMessage = "Building Web of Trust..." }
-                } else if lowerLine.contains("analysed") || lowerLine.contains("analysing nostr events") {
-                    // OLD: analysed 123
-                    // NEW: analysing Nostr events count=123
-                    // Broad match for digits
-                    let pattern = "(?:analysed|count=)(\\d+)"
-                    if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                       let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
-                       let range = Range(match.range(at: 1), in: line) {
-                        let count = line[range]
-                        bootStatusMessage = "Analysed \(count) keys..."
-                    }
-                } else if lowerLine.contains("network size") {
-                     if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
-                         bootStatusMessage = "Network Size: \(count)"
-                     }
-                } else if lowerLine.contains("totals") && lowerLine.contains("pubkeys") {
-                    // NEW: totals pubkeys=123 relays=456
-                    let pattern = "pubkeys=(\\d+)"
-                    if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                       let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
-                       let range = Range(match.range(at: 1), in: line) {
-                        let count = line[range]
-                        bootStatusMessage = "Network Size: \(count)"
-                    }
-                } else if lowerLine.contains("relays discovered") {
-                     if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
-                         bootStatusMessage = "Discovered \(count) relays..."
-                     }
-                } else if lowerLine.contains("pubkeys with minimum followers") || lowerLine.contains("eliminating pubkeys") {
-                     // NEW: eliminating pubkeys ... kept=123
-                     // OLD: pubkeys with minimum followers: 123
-                     let pattern = "(?:kept=|followers: )(\\d+)"
-                     if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                        let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
-                        let range = Range(match.range(at: 1), in: line) {
-                        let count = line[range]
-                        bootStatusMessage = "Trust Graph: \(count) users"
-                     }
-                }
+        } else if line.contains("Initializing WoT") || line.contains("building WoT") || line.contains("fetching Nostr events") {
+            batch.importStatusMessage = "Building Web of Trust..."
+            batch.importProgress = 0.2
+        } else if line.contains("analysing Nostr events") {
+            batch.importStatusMessage = "Analysing Web of Trust..."
+            batch.importProgress = 0.3
+        } else if line.contains("importing inbox notes") || line.contains("Importing inbox notes") {
+            batch.importStatusMessage = "Importing tagged notes..."
+            batch.importProgress = 0.85
+        } else if line.contains("subscribing to inbox") || line.contains("tagged import complete") {
+            batch.stopImporting = true
+            batch.importCompleted = true
+            batch.importProgress = 1.0
+            batch.importStatusMessage = "Import Complete!"
+        } else if line.contains("imported") && line.contains("tagged notes") {
+            if let countMatch = line.components(separatedBy: " ").first(where: { Int($0) != nil }) {
+                batch.importProgress = 0.95
+                batch.importStatusMessage = "Imported \(countMatch) tagged notes"
+            } else {
+                batch.importProgress = 0.95
+                batch.importStatusMessage = "Tagged notes imported"
             }
-            
-            // Connection tracking
-            if line.contains("subscribing to inbox") || line.contains("Subscribing to inbox") {
+        } else if line.contains("Import complete") || line.contains("import complete") {
+            batch.importProgress = 1.0
+            batch.importStatusMessage = "Import Complete!"
+            if line.contains("tagged import complete") {
+                batch.stopImporting = true
+                batch.importCompleted = true
+            }
+        } else if line.contains("No notes found") {
+            if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
+                batch.progressDateStr = String(dateStr)
+                if let fromIndex = line.components(separatedBy: "for ").last?.prefix(10) {
+                    batch.importStatusMessage = "Checking \(fromIndex)... (No notes found)"
+                }
+            } else {
+                batch.progressBump = true
+            }
+        }
+
+        // Event counts
+        if line.contains("Imported") && line.contains("notes") {
+            let components = line.components(separatedBy: " ")
+            if let importedIndex = components.firstIndex(of: "Imported"),
+               importedIndex + 1 < components.count,
+               let count = Int(components[importedIndex + 1]) {
+                batch.eventsStoredDelta += count
+            }
+        } else if line.contains("imported") && line.contains("tagged notes") {
+            let components = line.components(separatedBy: " ")
+            if let importedIndex = components.firstIndex(of: "imported"),
+               importedIndex + 1 < components.count,
+               let count = Int(components[importedIndex + 1]) {
+                batch.eventsStoredDelta += count
+            }
+        } else if line.contains("new note") || line.contains("new reaction") ||
+                  line.contains("new zap") || line.contains("new encrypted message") ||
+                  line.contains("new gift-wrapped") || line.contains("new repost") {
+            batch.eventsStoredDelta += 1
+        }
+
+        // Booting status — last match wins for the batch
+        let lowerLine = line.lowercased()
+        if lowerLine.contains("subscribing to") {
+            if let topic = line.components(separatedBy: "to ").last {
+                batch.bootStatusMessage = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
+            }
+        } else if lowerLine.contains("is booting up") {
+            batch.bootStatusMessage = "Booting Haven..."
+        } else if lowerLine.contains("starting deeper web of trust") {
+            batch.bootStatusMessage = "Analyzing trust graph..."
+        } else if lowerLine.contains("starting") {
+            if let service = line.components(separatedBy: "starting ").last ?? line.components(separatedBy: "Starting ").last {
+                let cleanService = service.components(separatedBy: "\"").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? service
+                batch.bootStatusMessage = "Starting \(cleanService.trimmingCharacters(in: .punctuationCharacters))..."
+            }
+        } else if lowerLine.contains("listening at") || lowerLine.contains("listening on") {
+            batch.bootStatusMessage = "Initializing network listeners..."
+        } else if lowerLine.contains("building web of trust graph") || lowerLine.contains("initializing wot") {
+            batch.bootStatusMessage = "Building trust network..."
+        } else if lowerLine.contains("analysed") || lowerLine.contains("analysing nostr events") {
+            if let regex = Self.analysedPattern,
+               let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
+               let range = Range(match.range(at: 1), in: line) {
+                batch.bootStatusMessage = "Analyzing network connections (\(String(line[range])) profiles)..."
+            }
+        } else if lowerLine.contains("network size") {
+            if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
+                batch.bootStatusMessage = "Discovered \(count) network peers"
+            }
+        } else if lowerLine.contains("totals") && lowerLine.contains("pubkeys") {
+            if let regex = Self.pubkeysPattern,
+               let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
+               let range = Range(match.range(at: 1), in: line) {
+                batch.bootStatusMessage = "Discovered \(String(line[range])) network peers"
+            }
+        } else if lowerLine.contains("relays discovered") {
+            if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
+                batch.bootStatusMessage = "Connecting to \(count) remote relays..."
+            }
+        } else if lowerLine.contains("pubkeys with minimum followers") || lowerLine.contains("eliminating pubkeys") {
+            if let regex = Self.trustGraphPattern,
+               let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
+               let range = Range(match.range(at: 1), in: line) {
+                batch.bootStatusMessage = "Securing feed for \(String(line[range])) trusted users"
+            }
+        }
+
+        if line.contains("subscribing to inbox") || line.contains("Subscribing to inbox") {
+            batch.stopBooting = true
+        }
+
+        // Connection tracking
+        if line.contains("accepted connection") || line.contains("new connection") || line.contains("WS connect") {
+            batch.connectionsDelta += 1
+        } else if line.contains("connection closed") || line.contains("WS disconnect") || line.contains("disconnected") {
+            batch.connectionsDelta -= 1
+        }
+
+        // Error states
+        if line.contains("Cannot acquire directory lock") || line.contains("Another process is using this Badger database") {
+            batch.isLocked = true
+        }
+        if line.contains("bind: address already in use") {
+            batch.isPortConflict = true
+        }
+        // LMDB permission error — sandbox or filesystem prevents mmap
+        if line.contains("mdb_env_open") && line.contains("operation not permitted") {
+            batch.isLocked = true  // triggers auto-recovery UI
+        }
+    }
+
+    /// Apply all accumulated state changes in a single MainActor pass.
+    private func applyBatchedUpdate(_ batch: BatchedStateUpdate) {
+        // Import state
+        if isImporting {
+            if let dateStr = batch.progressDateStr {
+                calculateProgress(currentDateStr: dateStr)
+            }
+            if batch.progressBump {
+                importProgress = min(importProgress + 0.03, 0.85)
+            }
+            if let progress = batch.importProgress {
+                importProgress = progress
+            }
+            if let status = batch.importStatusMessage {
+                importStatusMessage = status
+            }
+            if batch.stopImporting {
+                isImporting = false
+                importCompleted = true
+            }
+        }
+
+        // Boot state
+        if isBooting {
+            if let status = batch.bootStatusMessage {
+                bootStatusMessage = status
+            }
+            if batch.stopBooting {
                 isBooting = false
                 bootStatusMessage = ""
             }
-            
-            if line.contains("accepted connection") || line.contains("new connection") || line.contains("WS connect") {
-                activeConnections += 1
-            } else if line.contains("connection closed") || line.contains("WS disconnect") || line.contains("disconnected") {
-                activeConnections = max(0, activeConnections - 1)
-            }
-            
-            if line.contains("Cannot acquire directory lock") || line.contains("Another process is using this Badger database") {
-                isLocked = true
-                needsLockFix = true
-            }
-            
-            if line.contains("bind: address already in use") {
-                isPortConflict = true
-            }
         }
-        
-        // Batch append logs to queue
-        self.pendingLogs.append(contentsOf: newEntries)
+
+        // Metrics
+        if batch.eventsStoredDelta != 0 {
+            eventsStored += batch.eventsStoredDelta
+        }
+        if batch.connectionsDelta != 0 {
+            activeConnections = max(0, activeConnections + batch.connectionsDelta)
+        }
+
+        // Error states
+        if batch.isLocked {
+            isLocked = true
+            needsLockFix = true
+        }
+        if batch.isPortConflict {
+            isPortConflict = true
+        }
     }
-    
+
     private func startLogThrottler() {
-        stopLogThrottler()
-        DispatchQueue.main.async {
-            self.logUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    self?.flushLogs()
-                }
-            }
-        }
+        logStore.startThrottler()
     }
-    
+
     private func stopLogThrottler() {
-        DispatchQueue.main.async {
-            self.logUpdateTimer?.invalidate()
-            self.logUpdateTimer = nil
-            self.flushLogs() // Flush remaining
-        }
-    }
-    
-    private func flushLogs() {
-        guard !pendingLogs.isEmpty else { return }
-        let batch = pendingLogs
-        pendingLogs.removeAll()
-        
-        self.logs.append(contentsOf: batch)
-        // Keep max buffer
-        if self.logs.count > 1000 {
-            self.logs.removeFirst(max(0, self.logs.count - 1000))
-        }
+        logStore.stopThrottler()
     }
 
 
@@ -1171,11 +915,18 @@ class RelayProcessManager: ObservableObject {
         let cleanNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
 
+        // TLS — only enable HTTPS on iOS (macOS uses plain HTTP; Cloudflare handles TLS)
+        #if os(iOS)
+        let enableTLS = "1"
+        #else
+        let enableTLS = "0"
+        #endif
+
         return [
             "OWNER_NPUB": cleanNpub,
             "RELAY_URL": config.relayURL,
             "RELAY_PORT": String(config.relayPort),
-            "RELAY_BIND_ADDRESS": "127.0.0.1",
+            "RELAY_BIND_ADDRESS": config.allowNetworkAccess ? "0.0.0.0" : "127.0.0.1",
             "DB_ENGINE": config.dbEngine,
             "LMDB_MAPSIZE": "0",
             "DATABASE_PATH": ConfigService.shared.relayDataDir.appendingPathComponent("data").standardized.path + "/",
@@ -1276,55 +1027,93 @@ class RelayProcessManager: ObservableObject {
             "BLASTR_RELAYS_FILE": config.blastrRelaysFile,
 
             // WoT
-            "WOT_FETCH_TIMEOUT_SECONDS": "60"
+            "WOT_FETCH_TIMEOUT_SECONDS": "60",
+
+            // TLS
+            "HAVEN_ENABLE_TLS": enableTLS,
         ]
     }
 
     // MARK: - Backup / Restore helpers
 
-    /// Runs the haven binary with `backup` subcommand to export to a local .zip file
+    /// Sets environment variables and writes config files so Go's loadConfig() works.
+    private func prepareEnvForBackup(config: HavenConfig) {
+        let relayDataDir = ConfigService.shared.relayDataDir
+
+        // Ensure all DB directories exist before Go tries to open them
+        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("db"), withIntermediateDirectories: true)
+        for dbName in ["private", "chat", "outbox", "inbox", "blossom"] {
+            try? FileManager.default.createDirectory(
+                at: relayDataDir.appendingPathComponent("db/\(dbName)"),
+                withIntermediateDirectories: true
+            )
+        }
+
+        // Write config files that Go reads from the working directory
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+
+        if let data = try? encoder.encode(config.importSeedRelays) {
+            try? data.write(to: relayDataDir.appendingPathComponent(config.importSeedRelaysFile))
+        }
+        if let data = try? encoder.encode(config.whitelistedNpubs) {
+            try? data.write(to: relayDataDir.appendingPathComponent(config.whitelistedNpubsFile))
+        }
+        if let data = try? encoder.encode(config.blacklistedNpubs) {
+            try? data.write(to: relayDataDir.appendingPathComponent(config.blacklistedNpubsFile))
+        }
+
+        let envURL = relayDataDir.appendingPathComponent(".env")
+        let envContent = generateMinimalEnv(config: config)
+        try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
+
+        let configEnv = generateEnvDictionary(config: config)
+        for (key, value) in configEnv {
+            setenv(key, value, 1)
+        }
+        setenv("RELAY_BIND_ADDRESS", config.allowNetworkAccess ? "0.0.0.0" : "127.0.0.1", 1)
+
+        FileManager.default.changeCurrentDirectoryPath(relayDataDir.path)
+        captureOutput(in: relayDataDir)
+    }
+
     func runBackupExport(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
-        // Must stop relay first to release DB locks
         let wasRunning = self.isRunning
-        
+
         let executeBackup = {
-            // Force clear locks before running backup to avoid "resource temporarily unavailable"
             self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
-            
-            self.runHavenSubcommand(config: config, arguments: ["backup", outputPath]) { exitCode in
+            self.prepareEnvForBackup(config: config)
+
+            DispatchQueue.global().async {
+                let result = BackupDatabaseC(strdup(outputPath))
                 Task { @MainActor in
-                    completion(exitCode == 0)
-                    // Restart if it was running
+                    completion(result == 0)
                     if wasRunning {
                         self.startRelay(config: config)
                     }
                 }
             }
         }
-        
+
         if wasRunning {
-            self.stopRelay {
-                executeBackup()
-            }
+            self.stopRelay { executeBackup() }
         } else {
             executeBackup()
         }
     }
 
-    /// Runs the haven binary with `restore` subcommand to import from a local .zip file
     func runBackupRestore(config: HavenConfig, inputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
-        // Must stop relay first to release DB locks
         let wasRunning = self.isRunning
-        
+
         let executeRestore = {
             self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
-            
-            self.runHavenSubcommand(config: config, arguments: ["restore", inputPath]) { exitCode in
+            self.prepareEnvForBackup(config: config)
+
+            DispatchQueue.global().async {
+                let result = RestoreDatabaseC(strdup(inputPath))
                 Task { @MainActor in
-                    completion(exitCode == 0)
-                    // Restart if it was running (and restore succeeded? maybe always restart to be safe)
+                    completion(result == 0)
                     if wasRunning {
-                        // Add a delay to ensure port release and prevent race conditions
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                             self.startRelay(config: config)
                         }
@@ -1332,152 +1121,63 @@ class RelayProcessManager: ObservableObject {
                 }
             }
         }
-        
+
         if wasRunning {
-            self.stopRelay {
-                executeRestore()
-            }
+            self.stopRelay { executeRestore() }
         } else {
             executeRestore()
         }
     }
 
-    /// Runs the haven binary with `backup --to-cloud`
     func runBackupToCloud(config: HavenConfig) {
         let wasRunning = self.isRunning
-        
+
         let executeBackup = {
             self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
-            
-            self.runHavenSubcommand(config: config, arguments: ["backup", "--to-cloud"]) { exitCode in
+            self.prepareEnvForBackup(config: config)
+
+            DispatchQueue.global().async {
+                let result = BackupToCloudC()
                 Task { @MainActor in
-                    let msg = exitCode == 0 ? "Cloud backup complete" : "Cloud backup failed (exit \(exitCode))"
-                    self.logs.append(LogEntry(timestamp: Date(), level: exitCode == 0 ? "INFO" : "ERROR", message: msg))
-                    
+                    let msg = result == 0 ? "Cloud backup complete" : "Cloud backup failed"
+                    self.logStore.append(LogEntry(timestamp: Date(), level: result == 0 ? "INFO" : "ERROR", message: msg))
                     if wasRunning {
                         self.startRelay(config: config)
                     }
                 }
             }
         }
-        
+
         if wasRunning {
-            self.stopRelay {
-                executeBackup()
-            }
+            self.stopRelay { executeBackup() }
         } else {
-            executeBackup()
+        executeBackup()
         }
     }
 
-    /// Runs the haven binary with `restore --from-cloud`
     func runRestoreFromCloud(config: HavenConfig) {
         let wasRunning = self.isRunning
-        
+
         let executeRestore = {
             self.performClearDatabaseLocks(at: ConfigService.shared.relayDataDir)
-            
-            self.runHavenSubcommand(config: config, arguments: ["restore", "--from-cloud"]) { exitCode in
+            self.prepareEnvForBackup(config: config)
+
+            DispatchQueue.global().async {
+                let result = RestoreFromCloudC()
                 Task { @MainActor in
-                    let msg = exitCode == 0 ? "Cloud restore complete" : "Cloud restore failed (exit \(exitCode))"
-                    self.logs.append(LogEntry(timestamp: Date(), level: exitCode == 0 ? "INFO" : "ERROR", message: msg))
-                    
+                    let msg = result == 0 ? "Cloud restore complete" : "Cloud restore failed"
+                    self.logStore.append(LogEntry(timestamp: Date(), level: result == 0 ? "INFO" : "ERROR", message: msg))
                     if wasRunning {
                         self.startRelay(config: config)
                     }
                 }
             }
         }
-        
+
         if wasRunning {
-            self.stopRelay {
-                executeRestore()
-            }
+            self.stopRelay { executeRestore() }
         } else {
             executeRestore()
-        }
-    }
-
-    /// Generic helper to run haven binary with given arguments in a fire-and-forget subprocess
-    private func runHavenSubcommand(config: HavenConfig, arguments: [String], completion: @escaping @Sendable (Int32) -> Void) {
-        let relayDataDir = ConfigService.shared.relayDataDir
-
-        guard let executablePath = Bundle.main.path(forResource: "haven", ofType: ""),
-              FileManager.default.fileExists(atPath: executablePath) else {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "haven binary not found for subcommand"))
-            completion(1)
-            return
-        }
-
-        // Ensure config files are up to date
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .prettyPrinted
-
-        let importRelaysURL = relayDataDir.appendingPathComponent(config.importSeedRelaysFile)
-        if let data = try? encoder.encode(config.importSeedRelays) {
-            try? data.write(to: importRelaysURL)
-        }
-
-        // Write whitelisted npubs file
-        let npubsURL = relayDataDir.appendingPathComponent(config.whitelistedNpubsFile)
-        if let data = try? encoder.encode(config.whitelistedNpubs) {
-            try? data.write(to: npubsURL)
-        }
-        
-        // Write blacklisted npubs file
-        let blacklistedURL = relayDataDir.appendingPathComponent(config.blacklistedNpubsFile)
-        if let data = try? encoder.encode(config.blacklistedNpubs) {
-            try? data.write(to: blacklistedURL)
-        }
-
-        // Write .env
-        let envURL = relayDataDir.appendingPathComponent(".env")
-        let envContent = generateMinimalEnv(config: config)
-        try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
-
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: executablePath)
-        proc.arguments = arguments
-        proc.currentDirectoryURL = relayDataDir
-
-        var env: [String: String] = [:]
-        let sysEnv = ProcessInfo.processInfo.environment
-        env["PATH"] = sysEnv["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-        env["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
-        env["TMPDIR"] = NSTemporaryDirectory()
-        env["USER"] = sysEnv["USER"] ?? "haven"
-
-        let configEnv = generateEnvDictionary(config: config)
-        for (key, value) in configEnv {
-            env[key] = value
-        }
-        env["RELAY_BIND_ADDRESS"] = "127.0.0.1"
-        proc.environment = env
-
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = pipe
-        proc.standardInput = Pipe()
-
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            if let str = String(data: data, encoding: .utf8), !str.isEmpty {
-                Task { @MainActor in
-                    self?.processOutput(str)
-                }
-            }
-        }
-
-        proc.terminationHandler = { p in
-            completion(p.terminationStatus)
-        }
-
-        do {
-            try proc.run()
-            logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Running: haven \(arguments.joined(separator: " "))"))
-        } catch {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to run haven subcommand: \(error)"))
-            completion(1)
         }
     }
     
@@ -1488,73 +1188,42 @@ class RelayProcessManager: ObservableObject {
         
         // Ensure blossom directory exists
         guard FileManager.default.fileExists(atPath: blossomDir.path) else {
-            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
             completion(false)
             return
         }
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom backup..."))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom backup..."))
         
         // Create a temporary file path
         let tempDir = FileManager.default.temporaryDirectory
         let tempZipURL = tempDir.appendingPathComponent("blossom_backup_\(UUID().uuidString).zip")
         
-        // Use /usr/bin/zip to archive to TEMP first
-        // This avoids sandbox issues where the subprocess cannot write to the user-selected URL directly
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-        
-        proc.currentDirectoryURL = blossomDir
-        // -r: recursive
-        proc.arguments = ["-r", tempZipURL.path, "."]
-        
-        // Capture output for debugging
-        let pipeOut = Pipe()
-        let pipeErr = Pipe()
-        proc.standardOutput = pipeOut
-        proc.standardError = pipeErr
-        
-        proc.terminationHandler = { [weak self] p in
-            // Read data before notification
-            _ = pipeOut.fileHandleForReading.readDataToEndOfFile()
-            let errData = pipeErr.fileHandleForReading.readDataToEndOfFile()
+        // Launch Go ZipDirectoryC on background thread
+        DispatchQueue.global().async { [weak self] in
+            let result = ZipDirectoryC(strdup(blossomDir.path), strdup(tempZipURL.path))
             
             Task { @MainActor in
-                if let errStr = String(data: errData, encoding: .utf8), !errStr.isEmpty {
-                     self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Zip Error: \(errStr)"))
-                }
-                
-                let success = p.terminationStatus == 0
-                if success {
-                    // Now move/copy the temp file to the actual destination
+                if result == 0 {
                     do {
                         let destURL = URL(fileURLWithPath: outputPath)
-                        // Remove destination if it exists (overwrite)
                         if FileManager.default.fileExists(atPath: destURL.path) {
                             try FileManager.default.removeItem(at: destURL)
                         }
                         try FileManager.default.moveItem(at: tempZipURL, to: destURL)
-                        self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom backup saved to \(outputPath)"))
+                        self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom backup saved to \(outputPath)"))
                         completion(true)
                     } catch {
-                        self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move backup to destination: \(error.localizedDescription)"))
-                        // Try to clean up temp
+                        self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move backup to destination: \(error.localizedDescription)"))
                         try? FileManager.default.removeItem(at: tempZipURL)
                         completion(false)
                     }
                 } else {
-                    self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom backup failed (exit \(p.terminationStatus))"))
+                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom backup failed in Go process"))
                     try? FileManager.default.removeItem(at: tempZipURL)
                     completion(false)
                 }
             }
-        }
-        
-        do {
-            try proc.run()
-        } catch {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to run zip command: \(error)"))
-            completion(false)
         }
     }
     
@@ -1564,7 +1233,7 @@ class RelayProcessManager: ObservableObject {
         // Ensure blossom directory exists
         try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import..."))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import..."))
         
         // Copy to temp first to avoid sandbox issues with unzip subprocess
         let tempDir = FileManager.default.temporaryDirectory
@@ -1576,54 +1245,26 @@ class RelayProcessManager: ObservableObject {
             }
             try FileManager.default.copyItem(atPath: inputPath, toPath: tempZipURL.path)
         } catch {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to copy import file to temp: \(error)"))
+            logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to copy import file to temp: \(error)"))
             completion(false)
             return
         }
         
-        // Use /usr/bin/unzip
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-        // -o: overwrite existing files without prompting
-        // -d: extract to directory
-        proc.arguments = ["-o", tempZipURL.path, "-d", blossomDir.path]
-        
-        let pipeOut = Pipe()
-        let pipeErr = Pipe()
-        proc.standardOutput = pipeOut
-        proc.standardError = pipeErr
-        
-        proc.terminationHandler = { [weak self] p in
-             _ = pipeOut.fileHandleForReading.readDataToEndOfFile()
-             let errData = pipeErr.fileHandleForReading.readDataToEndOfFile()
+        // Launch Go UnzipDirectoryC on background thread
+        DispatchQueue.global().async { [weak self] in
+            let result = UnzipDirectoryC(strdup(tempZipURL.path), strdup(blossomDir.path))
             
             Task { @MainActor in
-                if let errStr = String(data: errData, encoding: .utf8), !errStr.isEmpty {
-                     // Check if it's actually an error or just warning
-                     if errStr.contains("checkdir error") || errStr.contains("cannot create") {
-                         self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip Error: \(errStr)"))
-                     }
-                }
-                
-                // Cleanup temp
                 try? FileManager.default.removeItem(at: tempZipURL)
                 
-                let success = p.terminationStatus == 0
-                if success {
-                    self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete."))
+                if result == 0 {
+                    self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete."))
+                    completion(true)
                 } else {
-                    self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom import failed (exit \(p.terminationStatus))"))
+                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom import failed in Go process"))
+                    completion(false)
                 }
-                completion(success)
             }
-        }
-        
-        do {
-            try proc.run()
-        } catch {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to run unzip command: \(error)"))
-            try? FileManager.default.removeItem(at: tempZipURL)
-            completion(false)
         }
     }
     
@@ -1631,7 +1272,7 @@ class RelayProcessManager: ObservableObject {
     
     func runBlossomExportWithExtensions(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
         guard isRunning else {
-            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot export: relay must be running to detect file types."))
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot export: relay must be running to detect file types."))
             completion(false)
             return
         }
@@ -1639,67 +1280,57 @@ class RelayProcessManager: ObservableObject {
         let blossomDir = ConfigService.shared.relayDataDir.appendingPathComponent(config.blossomPath)
 
         guard FileManager.default.fileExists(atPath: blossomDir.path) else {
-            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
             completion(false)
             return
         }
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom export with extensions..."))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom export with extensions..."))
         
         // Create temp dir for staging files with extensions
         let tempDir = FileManager.default.temporaryDirectory
         let stagingDir = tempDir.appendingPathComponent("BlossomExport_\(UUID().uuidString)")
         let tempZipURL = tempDir.appendingPathComponent("blossom_export_temp_\(UUID().uuidString).zip")
         
-        do {
-            try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-            
-            // Iterate files in blossomDir
-            let fileURLs = try FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: nil)
-            
-            for fileURL in fileURLs {
-                // Ignore hidden files
-                if fileURL.lastPathComponent.hasPrefix(".") { continue }
-
-                let sha256 = fileURL.lastPathComponent
-                let proof = detectMimeFromBytes(for: fileURL)
-                let claim = fetchMimeFromRelay(config: config, sha256: sha256)
-                let resolvedMime = resolveMime(claim: claim, proof: proof)
-                let ext = mimeToExtension(resolvedMime)
-                logs.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "Export \(sha256.prefix(8))...: claim=\(claim ?? "nil") proof=\(proof) resolved=\(resolvedMime) ext=.\(ext)"))
-
-                let newFilename = sha256 + (ext == "bin" ? "" : ".\(ext)")
-                let destURL = stagingDir.appendingPathComponent(newFilename)
-
-                try FileManager.default.copyItem(at: fileURL, to: destURL)
-            }
-            
-            // Zip the staging directory content
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-            proc.currentDirectoryURL = stagingDir
-            // -r: recursive, -j: junk paths (flatten) - not using -j so structure is preserved if any, but flat here
-            proc.arguments = ["-r", tempZipURL.path, "."]
-            
-            let pipeOut = Pipe()
-            let pipeErr = Pipe()
-            proc.standardOutput = pipeOut
-            proc.standardError = pipeErr
-            
-            proc.terminationHandler = { [weak self] p in
-                // Cleanup staging
-                try? FileManager.default.removeItem(at: stagingDir)
+        Task.detached {
+            do {
+                try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
                 
-                 _ = pipeOut.fileHandleForReading.readDataToEndOfFile()
-                 let errData = pipeErr.fileHandleForReading.readDataToEndOfFile()
+                // Iterate files in blossomDir
+                let fileURLs = try FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: nil)
                 
-                Task { @MainActor in
-                    if let errStr = String(data: errData, encoding: .utf8), !errStr.isEmpty {
-                         self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Zip Error: \(errStr)"))
+                for fileURL in fileURLs {
+                    // Ignore hidden files
+                    if fileURL.lastPathComponent.hasPrefix(".") { continue }
+
+                    let sha256 = fileURL.lastPathComponent
+                    let proof = self.detectMimeFromBytes(for: fileURL)
+                    
+                    let claim: String?
+                    // Only perform the network check if magic bytes are inconclusive
+                    if proof == "application/octet-stream" {
+                        claim = await self.fetchMimeFromRelay(config: config, sha256: sha256)
+                    } else {
+                        claim = nil
                     }
                     
-                    let success = p.terminationStatus == 0
-                    if success {
+                    let resolvedMime = self.resolveMime(claim: claim, proof: proof)
+                    let ext = self.mimeToExtension(resolvedMime)
+
+                    let newFilename = sha256 + (ext == "bin" ? "" : ".\(ext)")
+                    let destURL = stagingDir.appendingPathComponent(newFilename)
+
+                    try FileManager.default.copyItem(at: fileURL, to: destURL)
+                }
+                
+                // Zip the staging directory content using Go ZipDirectoryC
+                let result = ZipDirectoryC(strdup(stagingDir.path), strdup(tempZipURL.path))
+                
+                await MainActor.run {
+                    // Cleanup staging
+                    try? FileManager.default.removeItem(at: stagingDir)
+                    
+                    if result == 0 {
                         // Move zip to final destination
                         do {
                             let destURL = URL(fileURLWithPath: outputPath)
@@ -1707,27 +1338,26 @@ class RelayProcessManager: ObservableObject {
                                 try FileManager.default.removeItem(at: destURL)
                             }
                             try FileManager.default.moveItem(at: tempZipURL, to: destURL)
-                            self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom export saved to \(outputPath)"))
+                            self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom export saved to \(outputPath)"))
                             completion(true)
                         } catch {
-                            self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move export to destination: \(error.localizedDescription)"))
+                            self.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move export to destination: \(error.localizedDescription)"))
                             try? FileManager.default.removeItem(at: tempZipURL)
                             completion(false)
                         }
                     } else {
-                        self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom export failed (exit \(p.terminationStatus))"))
+                        self.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom export failed in Go process"))
                         try? FileManager.default.removeItem(at: tempZipURL)
                         completion(false)
                     }
                 }
+            } catch {
+                await MainActor.run {
+                    self.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to prepare Blossom export: \(error.localizedDescription)"))
+                    try? FileManager.default.removeItem(at: stagingDir)
+                    completion(false)
+                }
             }
-            
-            try proc.run()
-            
-        } catch {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Export failed: \(error.localizedDescription)"))
-            try? FileManager.default.removeItem(at: stagingDir)
-            completion(false)
         }
     }
     
@@ -1737,7 +1367,7 @@ class RelayProcessManager: ObservableObject {
         // Ensure blossom directory exists
         try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import (stripping extensions)..."))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import (stripping extensions)..."))
         
         // 1. Copy input zip to temp
         let tempDir = FileManager.default.temporaryDirectory
@@ -1751,49 +1381,26 @@ class RelayProcessManager: ObservableObject {
             try FileManager.default.copyItem(atPath: inputPath, toPath: tempZipURL.path)
             try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
         } catch {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to setup temp dirs: \(error)"))
+            logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to setup temp dirs: \(error)"))
             completion(false)
             return
         }
         
-        // 2. Unzip to staging
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-        proc.arguments = ["-o", tempZipURL.path, "-d", stagingDir.path]
-        
-        let pipeOut = Pipe()
-        let pipeErr = Pipe()
-        proc.standardOutput = pipeOut
-        proc.standardError = pipeErr
-        
-        proc.terminationHandler = { [weak self] p in
-             // Cleanup zip copy
-             try? FileManager.default.removeItem(at: tempZipURL)
-             
-             _ = pipeOut.fileHandleForReading.readDataToEndOfFile()
-             let errData = pipeErr.fileHandleForReading.readDataToEndOfFile()
+        // 2. Unzip to staging using Go UnzipDirectoryC
+        DispatchQueue.global().async { [weak self] in
+            let result = UnzipDirectoryC(strdup(tempZipURL.path), strdup(stagingDir.path))
             
             Task { @MainActor in
-                if let errStr = String(data: errData, encoding: .utf8), !errStr.isEmpty {
-                     if errStr.contains("checkdir error") || errStr.contains("cannot create") {
-                         self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip Error: \(errStr)"))
-                     }
-                }
+                // Cleanup zip copy
+                try? FileManager.default.removeItem(at: tempZipURL)
                 
-                if p.terminationStatus == 0 {
+                if result == 0 {
                     // 3. Process files in staging
                     do {
                         let fileURLs = try FileManager.default.contentsOfDirectory(at: stagingDir, includingPropertiesForKeys: nil)
                         var count = 0
                         
                         for fileURL in fileURLs {
-                            // Recursively find files if unzip created subdirs? 
-                            // For now assume flat or verify if unzip -j was needed. 
-                            // Actually backup used -r, so structure is preserved. 
-                            // If structure is flat (current backup), we are good.
-                            // If user provides arbitrary zip, we might need deep scan.
-                            // Sticking to basic flat scan for now as per plan.
-                            
                             if fileURL.hasDirectoryPath { continue }
                             if fileURL.lastPathComponent.hasPrefix(".") { continue }
                             if fileURL.lastPathComponent == "__MACOSX" { continue }
@@ -1811,34 +1418,25 @@ class RelayProcessManager: ObservableObject {
                                 try FileManager.default.moveItem(at: fileURL, to: destURL)
                                 count += 1
                             } else {
-                                self?.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Skipping invalid blossom file: \(fileURL.lastPathComponent)"))
+                                self?.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Skipping invalid blossom file: \(fileURL.lastPathComponent)"))
                             }
                         }
                         
-                        self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete. Imported \(count) files."))
+                        self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete. Imported \(count) files."))
                         try? FileManager.default.removeItem(at: stagingDir)
                         completion(true)
                         
                     } catch {
-                         self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Error processing imported files: \(error)"))
+                         self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Error processing imported files: \(error)"))
                          try? FileManager.default.removeItem(at: stagingDir)
                          completion(false)
                     }
                 } else {
-                    self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip failed (exit \(p.terminationStatus))"))
+                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip failed in Go process"))
                     try? FileManager.default.removeItem(at: stagingDir)
                     completion(false)
                 }
             }
-        }
-        
-        do {
-            try proc.run()
-        } catch {
-             try? FileManager.default.removeItem(at: tempZipURL)
-             try? FileManager.default.removeItem(at: stagingDir)
-             logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to run unzip: \(error)"))
-             completion(false)
         }
     }
     
@@ -1931,28 +1529,25 @@ class RelayProcessManager: ObservableObject {
     }
 
     // Fetch MIME type from the running relay via HEAD request (the "claim")
-    nonisolated func fetchMimeFromRelay(config: HavenConfig, sha256: String) -> String? {
+    nonisolated func fetchMimeFromRelay(config: HavenConfig, sha256: String) async -> String? {
         guard let url = URL(string: "\(config.webURL)/\(sha256)") else { return nil }
 
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
         request.timeoutInterval = 3
 
-        let semaphore = DispatchSemaphore(value: 0)
-        var contentType: String?
-
-        let task = URLSession.shared.dataTask(with: request) { _, response, _ in
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse,
                httpResponse.statusCode == 200,
                let ct = httpResponse.value(forHTTPHeaderField: "Content-Type") {
                 // Strip parameters (e.g. "image/jpeg; charset=utf-8" → "image/jpeg")
-                contentType = ct.components(separatedBy: ";").first?.trimmingCharacters(in: .whitespaces)
+                return ct.components(separatedBy: ";").first?.trimmingCharacters(in: .whitespaces)
             }
-            semaphore.signal()
+        } catch {
+            // Silently ignore timeout/connection issues
         }
-        task.resume()
-        _ = semaphore.wait(timeout: .now() + 5)
-        return contentType
+        return nil
     }
 
     // Resolve claim (relay) vs proof (magic bytes) using trust-but-verify
@@ -1980,7 +1575,7 @@ class RelayProcessManager: ObservableObject {
     }
 
     // Fallback map for MIME types that UTType may not know on all macOS versions
-    private static let extensionFallbacks: [String: String] = [
+    private nonisolated static let extensionFallbacks: [String: String] = [
         "application/vnd.android.package-archive": "apk",
         "application/java-archive": "jar",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
@@ -1997,7 +1592,7 @@ class RelayProcessManager: ObservableObject {
     ]
 
     // Convert MIME type to file extension
-    private func mimeToExtension(_ mime: String) -> String {
+    private nonisolated func mimeToExtension(_ mime: String) -> String {
         if let utType = UTType(mimeType: mime),
            let ext = utType.preferredFilenameExtension {
             return ext

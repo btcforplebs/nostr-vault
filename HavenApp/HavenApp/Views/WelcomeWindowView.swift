@@ -35,6 +35,7 @@ struct WelcomeWindowView: View {
                 
                 // Info Card
                 VStack(alignment: .leading, spacing: 16) {
+                    #if os(macOS)
                     HStack(spacing: 12) {
                         Image(systemName: "menubar.rectangle")
                             .font(.system(size: 24))
@@ -61,6 +62,7 @@ struct WelcomeWindowView: View {
                     
                     Divider()
                         .padding(.vertical, 4)
+                    #endif
                     
                     HStack(spacing: 12) {
                         Image(systemName: "hand.tap.fill")
@@ -122,9 +124,12 @@ struct WelcomeWindowView: View {
                 .padding(.bottom, 40)
             }
         }
+        #if os(macOS)
         .frame(width: 500, height: 650)
-        .background(Color(NSColor.windowBackgroundColor))
+        #endif
+        .background(Color.platformWindowBackground)
         .onAppear {
+            #if os(macOS)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 NSApp.activate(ignoringOtherApps: true)
                 if let window = NSApplication.shared.windows.first(where: { $0.title == "Welcome to Haven" }) {
@@ -132,6 +137,7 @@ struct WelcomeWindowView: View {
                     window.center()
                 }
             }
+            #endif
         }
     }
 }

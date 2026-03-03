@@ -29,7 +29,7 @@ struct VideoPlayerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minWidth: 300, minHeight: 200) // Avoid AVPlayerView constraint warnings
-            .onChange(of: geo.size) { oldValue, newSize in
+            .onChange(of: geo.size) { _, newSize in
                 // Strict size gate: Don't load player unless we have enough width for the controls
                 if viewSize == .zero && newSize.width > 300 {
                     viewSize = newSize
@@ -134,6 +134,7 @@ struct VideoPlayerView: View {
     }
 }
 
+#if os(macOS)
 struct NativeVideoPlayer: NSViewRepresentable {
     let player: AVPlayer
     
@@ -141,7 +142,6 @@ struct NativeVideoPlayer: NSViewRepresentable {
         let view = AVPlayerView()
         view.player = player
         view.controlsStyle = .floating
-        view.allowedTouchTypes = .indirect // standard for mac
         return view
     }
     
@@ -151,3 +151,24 @@ struct NativeVideoPlayer: NSViewRepresentable {
         }
     }
 }
+#else
+struct NativeVideoPlayer: UIViewControllerRepresentable {
+    let player: AVPlayer
+    
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.showsPlaybackControls = true
+        if #available(iOS 16.0, *) {
+            controller.allowsVideoFrameAnalysis = true
+        }
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+        if uiViewController.player != player {
+            uiViewController.player = player
+        }
+    }
+}
+#endif

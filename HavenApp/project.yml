@@ -1,0 +1,155 @@
+name: HavenApp
+options:
+  xcodeVersion: "16.0"
+  deploymentTarget:
+    macOS: "14.0"
+    iOS: "17.0"
+  generateEmptyDirectories: false
+  groupSortPosition: none
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: KAD7WNBGH2
+    SWIFT_VERSION: "5.9"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER: YES
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    CLANG_ANALYZER_NONNULL: YES
+    CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION: YES_AGGRESSIVE
+    CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
+    CLANG_CXX_LIBRARY: "libc++"
+    CLANG_ENABLE_MODULES: YES
+    CLANG_ENABLE_OBJC_ARC: YES
+    CLANG_ENABLE_OBJC_WEAK: YES
+    CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING: YES
+    CLANG_WARN_DOCUMENTATION_COMMENTS: YES
+    CLANG_WARN_EMPTY_BODY: YES
+    CLANG_WARN_BOOL_CONVERSION: YES
+    CLANG_WARN_CONSTANT_CONVERSION: YES
+    GCC_C_LANGUAGE_STANDARD: "gnu11"
+    GCC_NO_COMMON_BLOCKS: YES
+    GCC_WARN_64_TO_32_BIT_CONVERSION: YES
+    GCC_WARN_ABOUT_RETURN_TYPE: YES_ERROR
+    GCC_WARN_UNDECLARED_SELECTOR: YES
+    GCC_WARN_UNINITIALIZED_AUTOS: YES_AGGRESSIVE
+    GCC_WARN_UNUSED_FUNCTION: YES
+    GCC_WARN_UNUSED_VARIABLE: YES
+    MTL_FAST_MATH: YES
+
+targets:
+
+  # ── macOS Target ──────────────────────────────────────────
+  HavenApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+
+    sources:
+      # macOS-only entry point + app delegate
+      - path: HavenApp/App/HavenApp.swift
+      - path: HavenApp/App/AppDelegate.swift
+      # Shared code
+      - path: HavenApp/Models
+      - path: HavenApp/Services
+        excludes:
+          - "haven.dylib"
+      - path: HavenApp/Views
+      - path: Resources/Assets.xcassets
+      - path: Resources/haven
+      - path: Resources/templates
+        type: folder
+      - path: HavenApp/App/PrivacyInfo.xcprivacy
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.havenapp.relay
+        PRODUCT_NAME: HAVEN Relay
+        SWIFT_OBJC_BRIDGING_HEADER: HavenApp/HavenApp-Bridging-Header.h
+        LIBRARY_SEARCH_PATHS: ["$(inherited)", "$(PROJECT_DIR)/build"]
+        INFOPLIST_FILE: HavenApp/App/Info.plist
+        GENERATE_INFOPLIST_FILE: true
+        HEADER_SEARCH_PATHS: ["$(inherited)", "$(PROJECT_DIR)/build"]
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.utilities"
+        INFOPLIST_KEY_LSUIElement: true
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        ENABLE_HARDENED_RUNTIME: true
+        CODE_SIGN_ENTITLEMENTS: HavenApp/App/HavenApp.entitlements
+        CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION: true
+        CODE_SIGN_STYLE: Automatic
+        "CODE_SIGN_IDENTITY[sdk=macosx*]": "Apple Development"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "2.4.0"
+
+    preBuildScripts:
+      - name: Build Go Library (macOS)
+        script: |
+          "${PROJECT_DIR}/HavenApp/App/build_haven.sh"
+        outputFiles:
+          - $(PROJECT_DIR)/build/libhaven.a
+
+    dependencies:
+      - sdk: build/libhaven.a
+        embed: false
+        implicit: true
+
+  # ── iOS Target ────────────────────────────────────────────
+  HavenApp-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+
+    sources:
+      # iOS-only entry point + delegates + views
+      - path: HavenApp-iOS
+        excludes:
+          - "*.h"
+          - "Info.plist"
+      # Shared code
+      - path: HavenApp/Models
+      - path: HavenApp/Services
+        excludes:
+          - "haven.dylib"
+      - path: HavenApp/Views
+      - path: Resources/Assets.xcassets
+      - path: Resources/haven
+      - path: Resources/templates
+        type: folder
+      - path: HavenApp/App/PrivacyInfo.xcprivacy
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.havenapp.relay
+        PRODUCT_NAME: "$(TARGET_NAME)"
+        SWIFT_OBJC_BRIDGING_HEADER: HavenApp-iOS/HavenApp-Bridging-Header.h
+        LIBRARY_SEARCH_PATHS: ["$(inherited)", "$(PROJECT_DIR)/build/ios"]
+        INFOPLIST_FILE: HavenApp-iOS/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+        HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/build", "$(SRCROOT)/build/ios"]
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.0"
+
+    preBuildScripts:
+      - name: Build Go Library (iOS)
+        script: |
+          "${PROJECT_DIR}/HavenApp/App/build_haven_ios.sh"
+        outputFiles:
+          - $(PROJECT_DIR)/build/ios/libhaven_ios.a
+
+    dependencies:
+      - sdk: build/ios/libhaven_ios.a
+        embed: false
+        implicit: true
+
+schemes:
+  HavenApp:
+    build:
+      targets:
+        HavenApp: all
+  HavenApp-iOS:
+    build:
+      targets:
+        HavenApp-iOS: all

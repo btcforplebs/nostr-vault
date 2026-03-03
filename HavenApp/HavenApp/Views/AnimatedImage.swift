@@ -1,11 +1,23 @@
 import SwiftUI
-import AppKit
 import ImageIO
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 struct ImageDownsampler {
     /// Downsamples image data to a specific maximum dimension using ImageIO.
     /// This avoids decoding the full image into memory.
-    static func downsample(data: Data, maxDimension: CGFloat) async -> NSImage? {
+    static func downsample(data: Data, maxDimension: CGFloat) async -> PlatformImage? {
+        // Capture scale on the main actor before entering the detached task.
+        // UIScreen.main is @MainActor in Swift 6 and cannot be accessed from a detached task.
+        #if os(macOS)
+        let scale: CGFloat = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
+        #else
+        let scale: CGFloat = await MainActor.run { UIScreen.main.scale }
+        #endif
+
         return await Task.detached(priority: .utility) {
             // Create an image source from the data
             let options = [kCGImageSourceShouldCache: false] as CFDictionary
@@ -14,19 +26,14 @@ struct ImageDownsampler {
             }
             
             // Calculate the desired pixel size
-            // We use a scale factor (e.g. 2x for Retina) to ensure it looks sharp
-            let scale = NSScreen.main?.backingScaleFactor ?? 2.0
             let maxPixelSize = Int(maxDimension * scale)
             
-            // Downsample options - Key note: ImageIO expects CFNumber/CFBoolean, not pure Swift types sometimes.
-            // We cast numeric/bool values to be safe.
             let downsampleOptions = [
                 kCGImageSourceCreateThumbnailFromImageAlways: kCFBooleanTrue,
                 kCGImageSourceCreateThumbnailWithTransform: kCFBooleanTrue, 
                 kCGImageSourceThumbnailMaxPixelSize: maxPixelSize as NSNumber
             ] as CFDictionary
             
-            // Generate the thumbnail
             if CGImageSourceGetCount(source) < 1 {
                 return nil
             }
@@ -35,12 +42,16 @@ struct ImageDownsampler {
                 return nil
             }
             
-            // Convert back to NSImage
-            return NSImage(cgImage: cgImage, size: NSZeroSize)
+            #if os(macOS)
+            return NSImage(cgImage: cgImage, size: .zero)
+            #else
+            return UIImage(cgImage: cgImage)
+            #endif
         }.value
     }
 }
 
+#if os(macOS)
 struct AnimatedImage: NSViewRepresentable {
     let url: URL
     var contentMode: ContentMode = .fit
@@ -61,9 +72,7 @@ struct AnimatedImage: NSViewRepresentable {
     }
     
     private func loadAsync(url: URL, into view: AspectFillImageView) {
-        // Use utility priority to avoid priority inversions with ImageIO on the cooperative thread pool
         Task.detached(priority: .utility) {
-            // Check cache first
             let data: Data?
             if let cached = MediaCacheService.shared.loadFromCache(url: url) {
                 data = cached
@@ -73,12 +82,15 @@ struct AnimatedImage: NSViewRepresentable {
 
             guard let data else { return }
 
-            // Decode/downsample off main thread
-            let image: NSImage?
+            let image: PlatformImage?
             if let targetSize = self.targetSize {
                 image = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height))
             } else {
+                #if os(macOS)
                 image = NSImage(data: data)
+                #else
+                image = UIImage(data: data)
+                #endif
             }
 
             guard let image else { return }
@@ -123,13 +135,10 @@ class AspectFillImageView: NSView {
     }
     
     private func setup() {
-        // Configure Container
         wantsLayer = true
         layer?.masksToBounds = true
-        
-        // Configure Inner ImageView
         imageView.animates = shouldAnimate
-        imageView.imageScaling = .scaleAxesIndependently // We manually size it, so this fills our calculated frame
+        imageView.imageScaling = .scaleAxesIndependently
         addSubview(imageView)
     }
     
@@ -148,23 +157,65 @@ class AspectFillImageView: NSView {
         
         switch contentMode {
         case .fill:
-            // Aspect Fill: Use the LARGER ratio so we fill the bounds completely
             scale = max(widthRatio, heightRatio)
         case .fit:
-            // Aspect Fit: Use the SMALLER ratio so we fit entirely within bounds
             scale = min(widthRatio, heightRatio)
         }
         
         let scaledWidth = imageSize.width * scale
         let scaledHeight = imageSize.height * scale
         
-        // Center the image
         let x = (viewSize.width - scaledWidth) / 2
         let y = (viewSize.height - scaledHeight) / 2
         
         imageView.frame = NSRect(x: x, y: y, width: scaledWidth, height: scaledHeight)
     }
 }
+#else
+struct AnimatedImage: UIViewRepresentable {
+    let url: URL
+    var contentMode: ContentMode = .fit
+    var shouldAnimate: Bool = true
+    var targetSize: CGSize? = nil
+    
+    func makeUIView(context: Context) -> UIImageView {
+        let view = UIImageView()
+        view.contentMode = contentMode == .fill ? .scaleAspectFill : .scaleAspectFit
+        view.clipsToBounds = true
+        loadAsync(url: url, into: view)
+        return view
+    }
+    
+    func updateUIView(_ uiView: UIImageView, context: Context) {
+        uiView.contentMode = contentMode == .fill ? .scaleAspectFill : .scaleAspectFit
+    }
+    
+    private func loadAsync(url: URL, into view: UIImageView) {
+        Task.detached(priority: .utility) {
+            let data: Data?
+            if let cached = MediaCacheService.shared.loadFromCache(url: url) {
+                data = cached
+            } else {
+                data = await MediaCacheService.shared.fetchData(url: url)
+            }
+
+            guard let data else { return }
+
+            let image: UIImage?
+            if let targetSize = self.targetSize {
+                image = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height))
+            } else {
+                image = UIImage(data: data)
+            }
+
+            guard let image else { return }
+            await MainActor.run {
+                view.image = image
+            }
+        }
+    }
+}
+#endif
 
 // Helper to determine if a URL represents a GIF
 extension URL {
@@ -189,8 +240,6 @@ extension URL {
     var isImage: Bool {
         let ext = self.pathExtension.lowercased()
         if ["jpg", "jpeg", "png", "gif", "webp", "heic", "tiff"].contains(ext) { return true }
-        // For extensionless URLs (like Blossom hashes), assume it's an image
-        // as they are far more common than extensionless videos.
         if ext.isEmpty {
             let last = self.lastPathComponent
             let pattern = "^[a-f0-9]{64}$"

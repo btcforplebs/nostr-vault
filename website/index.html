@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HAVEN - The Native Mac & iOS Experience</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="assets/haven_icon.png">
+</head>
+
+<body>
+
+    <nav>
+        <div class="logo">
+            <img src="assets/haven_icon.png" alt="Haven Logo">
+            <span>HAVEN</span>
+        </div>
+        <div class="actions">
+            <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn-testflight"
+                style="padding: 10px 20px; border-radius: 20px; font-weight: 600; font-size: 0.9rem; margin-right: 10px;">TestFlight</a>
+            <a href="https://github.com/btcforplebs/haven-mac" class="btn-download">GitHub</a>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <h1>The Native Experience<br>for Mac & iOS</h1>
+        <p class="fade-in-up delay-100">Powered by the original Go codebase. Fast, secure, and beautiful across all your
+            devices.</p>
+
+        <div class="hero-buttons fade-in-up delay-200">
+            <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight">Join TestFlight</a>
+            <a href="https://github.com/btcforplebs/haven-mac/releases" class="btn btn-primary">Download for Mac</a>
+        </div>
+    </header>
+
+    <div class="sticky-scroll-wrapper">
+        <div class="sticky-view">
+            <div class="hero-image-container">
+                <img src="assets/fullscreen-view-no-haven.jpeg" alt="Haven Fullscreen" class="hero-image"
+                    id="zoom-image-bg">
+                <img src="assets/dashboard.png" alt="Haven Dashboard" class="hero-image-overlay" id="zoom-image-fg">
+            </div>
+        </div>
+    </div>
+
+    <section class="features" id="features">
+        <div class="grid">
+            <div class="card fade-in-up">
+                <h3>Native SwiftUI</h3>
+                <p>Built from the ground up for macOS and iOS using Swift, delivering a seamless and responsive
+                    experience that feels right at home on every device.</p>
+            </div>
+            <div class="card fade-in-up delay-100">
+                <h3>Verified Go Core</h3>
+                <p>Runs the exact same battle-tested Go code as the CLI relay. 100% open source with a completely
+                    verifiable architecture.</p>
+            </div>
+            <div class="card fade-in-up delay-200">
+                <h3>Nostr Zaps & NWC</h3>
+                <p>Integrated Lightning wallet support via Nostr Wallet Connect (NWC). Send and receive zaps instantly
+                    with real-time balance tracking.</p>
+            </div>
+            <div class="card fade-in-up">
+                <h3>Smart Broadcasting</h3>
+                <p>Intelligence built into every post. Haven discovers your recipient's preferred relays and broadcasts
+                    directly to their inbox.</p>
+            </div>
+            <div class="card fade-in-up delay-100">
+                <h3>Mac-to-iOS Sync</h3>
+                <p>Use your Mac as your always-on home base. Haven for iOS securely syncs missed notes directly from
+                    your Mac relay.</p>
+            </div>
+            <div class="card fade-in-up delay-200">
+                <h3>Privacy First</h3>
+                <p>Secured by system-level Keychain. Encrypt your private key with NIP-49 and stay in control of your
+                    identity across Haven.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="showcase" id="showcase">
+        <h2 class="fade-in-up">Visual Excellence</h2>
+
+        <div class="gallery">
+            <div class="gallery-item large fade-in-up">
+                <img src="assets/popout-dashboard.png" alt="Popout Dashboard">
+            </div>
+            <div class="gallery-item small fade-in-up delay-100">
+                <img src="assets/popout-viewer.png" alt="Popout Viewer">
+            </div>
+            <div class="gallery-item small fade-in-up delay-200">
+                <img src="assets/menubar-viewer-media.png" alt="Menubar Media">
+            </div>
+            <div class="gallery-item small fade-in-up">
+                <img src="assets/settings.png" alt="Settings">
+            </div>
+            <div class="gallery-item small fade-in-up delay-100">
+                <img src="assets/menubar-viewer-notes.png" alt="Menubar Notes">
+            </div>
+        </div>
+    </section>
+
+    <section class="cta-section">
+        <h2 class="fade-in-up">Experience Haven Anywhere</h2>
+        <div class="fade-in-up delay-100" style="display: flex; gap: 20px; justify-content: center;">
+            <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight">Join iOS TestFlight</a>
+            <a href="https://github.com/btcforplebs/haven-mac" class="btn btn-primary">Download for Mac</a>
+        </div>
+    </section>
+
+    <footer>
+        <p>&copy; 2026 Haven. Built on top of the incredible work by <a
+                href="https://github.com/bitvora/haven">bitvora</a>.</p>
+        <p style="margin-top: 10px; font-size: 0.8rem; opacity: 0.6;">Designed with passion. | <a href="privacy.html"
+                style="color: #bb86fc; text-decoration: none;">Privacy Policy</a></p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

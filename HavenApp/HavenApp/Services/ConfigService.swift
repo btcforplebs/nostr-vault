@@ -1,6 +1,11 @@
+import SwiftUI
 import Foundation
+#if canImport(ServiceManagement)
 import ServiceManagement
+#endif
+#if canImport(AppKit)
 import AppKit
+#endif
 
 /// Manages Haven configuration persistence
 @MainActor
@@ -37,13 +42,23 @@ class ConfigService: ObservableObject {
                 #if DEBUG
                 print("ConfigService: Successfully loaded configuration from disk")
                 #endif
-                
+
                 // Ensure defaults are applied for empty arrays
                 if config.importSeedRelays.isEmpty {
                     config.importSeedRelays = HavenConfig.default.importSeedRelays
                 }
                 if config.blastrRelays.isEmpty {
                     config.blastrRelays = HavenConfig.default.blastrRelays
+                }
+                if config.blossomMirrors.isEmpty {
+                    config.blossomMirrors = HavenConfig.default.blossomMirrors
+                    #if DEBUG
+                    print("ConfigService: Applied default Blossom mirrors: \(config.blossomMirrors)")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("ConfigService: Loaded \(config.blossomMirrors.count) Blossom mirrors: \(config.blossomMirrors)")
+                    #endif
                 }
             } catch {
                 #if DEBUG
@@ -93,7 +108,7 @@ class ConfigService: ObservableObject {
                 #if DEBUG
                 print("ConfigService: Successfully reloaded configuration from disk")
                 #endif
-                
+
                 // Ensure defaults are applied for empty arrays
                 if config.importSeedRelays.isEmpty {
                     config.importSeedRelays = HavenConfig.default.importSeedRelays
@@ -101,7 +116,17 @@ class ConfigService: ObservableObject {
                 if config.blastrRelays.isEmpty {
                     config.blastrRelays = HavenConfig.default.blastrRelays
                 }
-                
+                if config.blossomMirrors.isEmpty {
+                    config.blossomMirrors = HavenConfig.default.blossomMirrors
+                    #if DEBUG
+                    print("ConfigService: Applied default Blossom mirrors on reload: \(config.blossomMirrors)")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("ConfigService: Reloaded \(config.blossomMirrors.count) Blossom mirrors: \(config.blossomMirrors)")
+                    #endif
+                }
+
                 // Reload lists
                 loadRelayLists()
 
@@ -152,11 +177,15 @@ class ConfigService: ObservableObject {
         // Ensure ownerNpub is sanitized (remove invisible junk characters like non-breaking spaces)
         config.ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
-            
+
         do {
             let data = try JSONEncoder().encode(config)
             try data.write(to: configURL)
-            
+
+            #if DEBUG
+            print("ConfigService: Saved config with \(config.blossomMirrors.count) mirrors: \(config.blossomMirrors)")
+            #endif
+
             saveRelayLists()
             
             // Update launch at login if changed
@@ -237,6 +266,7 @@ class ConfigService: ObservableObject {
     }
     
     private func updateLaunchAtLogin() {
+        #if canImport(ServiceManagement)
         if #available(macOS 13.0, *) {
             do {
                 if config.launchAtLogin {
@@ -248,6 +278,7 @@ class ConfigService: ObservableObject {
                 // Expected to fail in development without proper code signing
             }
         }
+        #endif
     }
     /// Create the required files for Haven to run (.env, relay JSON files)
     func createRequiredFiles() {
@@ -313,9 +344,15 @@ class ConfigService: ObservableObject {
     
     /// Programmatically quit the application
     static func quitApp() {
+        #if canImport(AppKit)
         DispatchQueue.main.async {
             NSApp.terminate(nil)
         }
+        #else
+        DispatchQueue.main.async {
+            exit(0)
+        }
+        #endif
     }
     
     /// Reconstructs critical configuration from the existing .env file
@@ -398,7 +435,19 @@ class ConfigService: ObservableObject {
         }
         return hexKeys
     }
-    
-    
+
+    /// Returns a Set of hex pubkeys derived from the blacklisted npubs
+    var blacklistedHexPubkeys: Set<String> {
+        var hexKeys = Set<String>()
+        for npub in config.blacklistedNpubs {
+            let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
+            if clean.isEmpty { continue }
+            if let decoded = Bech32.decode(clean) {
+                hexKeys.insert(decoded.hexString)
+            }
+        }
+        return hexKeys
+    }
 
 }
+

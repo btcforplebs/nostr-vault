@@ -6,6 +6,7 @@ struct ViewerView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
+    @StateObject private var feedService = FeedService.shared
     
     @State private var searchText = ""
     @State private var viewMode: ViewMode = .notes
@@ -20,8 +21,18 @@ struct ViewerView: View {
     // Cached display data (computed in background)
     @State private var displayNotes: [NostrEvent] = []
     @State private var displayMedia: [MediaItem] = []
+    #if os(macOS)
     @State private var keyMonitor: Any? = nil
+    #endif
     
+    @State private var showingNoteId: String?
+    @State private var showingProfilePubkey: String?
+    @State private var maxDisplayedItems: Int = 50
+
+    // Debounce mechanism for updateDisplayData
+    @State private var updateTask: Task<Void, Never>?
+    @State private var updateGeneration: Int = 0
+
     // Static regex pattern to avoid recompilation
     nonisolated private static let hexPattern = try! NSRegularExpression(pattern: "[a-f0-9]{64}", options: .caseInsensitive)
     
@@ -46,6 +57,18 @@ struct ViewerView: View {
     // MARK: - Background Processing
     
     
+    private func scheduleUpdateDisplayData() {
+        updateTask?.cancel()
+        updateGeneration += 1
+        let gen = updateGeneration
+        updateTask = Task { @MainActor in
+            // Debounce: wait 150ms so rapid-fire triggers coalesce into one update
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled, gen == updateGeneration else { return }
+            updateDisplayData()
+        }
+    }
+
     private func updateDisplayData() {
         // Capture current state strongly for the background task
         let currentFilter = contentFilter
@@ -55,16 +78,20 @@ struct ViewerView: View {
         let currentBlossom = blossomMedia
         let owner = nostrService.ownerHexPubkey
         let whitelist = configService.whitelistedHexPubkeys
+        let blacklist = configService.blacklistedHexPubkeys
         let currentMode = viewMode
         let sourceFilter = mediaSourceFilter
-        let rpm = relayManager
-        
+        let gen = updateGeneration
+
         Task.detached(priority: .userInitiated) {
             if currentMode == .notes {
-                // Compute Notes
+                // Compute Notes (Kinds: 1, 6, 30023)
                 let filtered = currentEvents.filter { event in
-                    if event.kind != 1 { return false }
-                    
+                    let validKinds = [1, 6, 30023]
+                    if !validKinds.contains(event.kind) { return false }
+
+                    if blacklist.contains(event.pubkey) { return false }
+
                     switch currentFilter {
                     case .all:
                         let isMine = event.pubkey == owner
@@ -79,15 +106,20 @@ struct ViewerView: View {
                 }
                 
                 let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
-                
+
+                // Skip UI update if a newer generation has been triggered
+                guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
+
                 await MainActor.run {
-                    self.displayNotes = result
+                    self.displayNotes = Array(result.prefix(self.maxDisplayedItems))
                 }
             } else {
                 // Compute Media
                 var latestItems: [String: MediaItem] = [:]
                 
                 let remoteItems = currentNoteMedia.filter { item in
+                    if let pk = item.pubkey, blacklist.contains(pk) { return false }
+
                     switch currentFilter {
                     case .all:
                         let isMine = item.pubkey == owner
@@ -115,8 +147,19 @@ struct ViewerView: View {
                 if sourceFilter == .all || sourceFilter == .cache {
                     for item in remoteItems {
                         let key = self.normalizedKeyStatic(for: item.url)
-                        // Only fill in remote items if blossom didn't already provide a better detection
-                        if latestItems[key] == nil {
+                        if let existing = latestItems[key] {
+                            // Blossom item exists — keep its superior mime detection
+                            // but use the nostr event's created_at as the authoritative date
+                            latestItems[key] = MediaItem(
+                                id: existing.id,
+                                url: existing.url,
+                                type: existing.type,
+                                dateAdded: item.dateAdded, // event timestamp
+                                pubkey: item.pubkey ?? existing.pubkey,
+                                tags: item.tags ?? existing.tags,
+                                mimeType: existing.mimeType ?? item.mimeType
+                            )
+                        } else {
                             latestItems[key] = item
                         }
                     }
@@ -125,19 +168,41 @@ struct ViewerView: View {
                 var result = Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
 
                 // Fix up items with missing or octet-stream mime types by sniffing remote bytes
+                // This is now synchronous and skips remote sniffing for performance
                 for i in result.indices {
                     let item = result[i]
                     let needsSniff = item.type == .unknown ||
                         (item.mimeType == nil && item.url.pathExtension.isEmpty) ||
                         item.mimeType?.lowercased() == "application/octet-stream"
-                    if needsSniff, let sniffed = NostrService.sniffRemoteMime(url: item.url, rpm: rpm) {
-                        result[i] = MediaItem(id: item.id, url: item.url, type: sniffed.type, dateAdded: item.dateAdded, pubkey: item.pubkey, tags: item.tags, mimeType: sniffed.mime)
+                    if needsSniff {
+                        let ext = item.url.pathExtension.lowercased()
+                        var sniffedType: MediaItem.MediaType = .unknown
+                        var sniffedMime: String? = nil
+                        
+                        if ["jpg", "jpeg", "png", "gif", "webp", "avif", "heic"].contains(ext) {
+                            sniffedType = .image
+                            sniffedMime = "image/\(ext == "jpg" ? "jpeg" : ext)"
+                        } else if ["mp4", "mov", "webm", "avi"].contains(ext) {
+                            sniffedType = .video
+                            sniffedMime = "video/\(ext)"
+                        } else if ["mp3", "wav", "ogg", "m4a", "flac"].contains(ext) {
+                            sniffedType = .audio
+                            sniffedMime = "audio/\(ext)"
+                        }
+                        
+                        if sniffedType != .unknown {
+                            result[i] = MediaItem(id: item.id, url: item.url, type: sniffedType, dateAdded: item.dateAdded, pubkey: item.pubkey, tags: item.tags, mimeType: sniffedMime)
+                        }
                     }
                 }
 
-                let finalMedia = result
+                let finalResult = result
+
+                // Skip UI update if a newer generation has been triggered
+                guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
+
                 await MainActor.run {
-                    self.displayMedia = finalMedia
+                    self.displayMedia = Array(finalResult.prefix(self.maxDisplayedItems))
                 }
             }
         }
@@ -167,107 +232,99 @@ struct ViewerView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // MARK: - Header
-            VStack(spacing: 12) {
-                HStack {
-                    HStack(spacing: 4) {
-                        ModeButton(title: "Notes", icon: "doc.text", isSelected: viewMode == .notes) {
-                            viewMode = .notes
+        viewContent
+    }
+    @ViewBuilder
+    private var viewContent: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                // MARK: - Header
+                VStack(spacing: 12) {
+                    let isNarrow = geometry.size.width < 500
+                    
+                    if isNarrow {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                modeView
+                                Spacer()
+                            }
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                filterView
+                            }
                         }
-                        ModeButton(title: "Media", icon: "photo.on.rectangle", isSelected: viewMode == .media) {
-                            viewMode = .media
-                            // Only load media if relay is ready
-                            if relayManager.isRunning && !relayManager.isBooting {
-                                loadLocalMedia()
+                    } else {
+                        HStack {
+                            modeView
+                            Spacer()
+                            filterView
+                        }
+                    }
+                    
+                    HStack {
+                        if viewMode == .notes {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 14, weight: .semibold))
+                            TextField("Search notes...", text: $searchText)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 14, weight: .regular))
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                sourceFilterView
                             }
                         }
                     }
-                    .padding(4)
-                    .background(Color.primary.opacity(0.05))
-                    .cornerRadius(24)
-                    
-                    Spacer()
-                    
-                    // Filter Tabs
-                    HStack(spacing: 2) {
-                        FilterButton(title: "All", color: .secondary, isSelected: contentFilter == .all) {
-                            contentFilter = .all
-                        }
-                        FilterButton(title: "My Notes", color: .havenPurple, isSelected: contentFilter == .mine) {
-                            contentFilter = .mine
-                        }
-                        FilterButton(title: "Tagged", color: .blue, isSelected: contentFilter == .tagged) {
-                            contentFilter = .tagged
-                        }
-                        FilterButton(title: "Whitelisted", color: .green, isSelected: contentFilter == .whitelist) {
-                            contentFilter = .whitelist
-                        }
-                    }
-                    .padding(4)
-                    .background(Color.primary.opacity(0.05))
+                    .padding(10)
+                    .background(Color(red: 0.12, green: 0.12, blue: 0.16))
                     .cornerRadius(8)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
                 }
-                
-                HStack {
-                    if viewMode == .notes {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.secondary)
-                        TextField("Search notes...", text: $searchText)
-                            .textFieldStyle(.plain)
-                    } else {
-                        // Media Source Filter
-                        HStack(spacing: 2) {
-                            FilterButton(title: "All Sources", color: .secondary, isSelected: mediaSourceFilter == .all) {
-                                mediaSourceFilter = .all
-                            }
-                            FilterButton(title: "Blossom", color: .pink, isSelected: mediaSourceFilter == .blossom) {
-                                mediaSourceFilter = .blossom
-                            }
-                            FilterButton(title: "Cache", color: .orange, isSelected: mediaSourceFilter == .cache) {
-                                mediaSourceFilter = .cache
-                            }
-                        }
-                        Spacer()
-                    }
-                }
-                .padding(10)
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(8)
-            }
-            .padding()
-            .background(Color(NSColor.windowBackgroundColor))
-            
-            Divider()
-            
-            // MARK: - List Content
-            ScrollView {
-                VStack(spacing: 0) {
-                    if viewMode == .notes {
-                        notesList
-                    } else {
-                        mediaGrid
-                    }
-                }
+                .frame(maxWidth: .infinity)
                 .padding()
-                
-                if !displayNotes.isEmpty || !displayMedia.isEmpty {
-                    Color.clear
-                        .frame(height: 1)
-                        .padding(.bottom, 20)
-                        .onAppear {
-                            if !nostrService.isFetching && (!displayNotes.isEmpty || !displayMedia.isEmpty) {
-                                loadMore()
-                            }
+                .background(Color.platformControlBackground)
+
+                Divider()
+
+                // MARK: - List Content
+                ScrollView {
+                    VStack(spacing: 0) {
+                        if viewMode == .notes {
+                            notesList
+                        } else {
+                            mediaGrid
                         }
-                        .id(nostrService.events.count) // Force recreate when data changes to re-trigger onAppear if still visible
+                    }
+                    .padding(.vertical, 16)
+
+                    if !displayNotes.isEmpty || !displayMedia.isEmpty {
+                        Color.clear
+                            .frame(height: 1)
+                            .padding(.bottom, 20)
+                            .onAppear {
+                                if !nostrService.isFetching && (!displayNotes.isEmpty || !displayMedia.isEmpty) {
+                                    loadMore()
+                                }
+                            }
+                            .id(nostrService.events.count) 
+                    }
                 }
+                .refreshable {
+                    #if os(iOS)
+                    MacRelaySyncService.shared.syncIfConfigured()
+                    #endif
+                    refreshAll()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.platformControlBackground)
         }
-        .background(Color(NSColor.textBackgroundColor))
         .onAppear {
             if !initialLoad && relayManager.isRunning && !relayManager.isBooting {
+                // Ensure contacts are loaded first so we have followedPubkeys
+                if feedService.followedPubkeys.isEmpty {
+                    feedService.refresh()
+                }
                 refreshAll()
                 initialLoad = true
             }
@@ -275,53 +332,207 @@ struct ViewerView: View {
         .onDisappear {
             nostrService.resetConnections()
         }
-        .onChange(of: relayManager.isBooting) { oldValue, newValue in
-            // When booting transitions from true -> false, we refresh
-            if !newValue && relayManager.isRunning {
+        .onChange(of: relayManager.isBooting) { _, isBooting in
+            if !isBooting && relayManager.isRunning && !initialLoad {
                 refreshAll()
+                initialLoad = true
             }
         }
-        // Combined trigger: refresh if we weren't running but now are (and not booting)
-        .onChange(of: relayManager.isRunning) { oldValue, newValue in
-            if newValue && !relayManager.isBooting && !initialLoad {
+        .onChange(of: relayManager.isRunning) { _, isRunning in
+            if isRunning && !relayManager.isBooting && !initialLoad {
                 refreshAll()
                 initialLoad = true
             }
         }
         .overlay(fullScreenOverlay)
-        .onChange(of: searchText) { _, _ in updateDisplayData() }
-        .onChange(of: contentFilter) { _, _ in updateDisplayData() }
-        .onChange(of: mediaSourceFilter) { _, _ in updateDisplayData() }
-        .onChange(of: viewMode) { _, _ in updateDisplayData() }
-        .onChange(of: nostrService.events.count) { _, _ in updateDisplayData() } // Rough trigger
-        .onReceive(nostrService.objectWillChange) { _ in updateDisplayData() } // Better trigger
-        .onChange(of: blossomMedia.count) { _, _ in updateDisplayData() }
+        .onChange(of: searchText) { _, _ in 
+            maxDisplayedItems = 50
+            scheduleUpdateDisplayData() 
+        }
+        .onChange(of: contentFilter) { _, _ in 
+            maxDisplayedItems = 50
+            scheduleUpdateDisplayData() 
+        }
+        .onChange(of: mediaSourceFilter) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: viewMode) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: nostrService.events.count) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: configService.config.blacklistedNpubs) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: blossomMedia.count) { _, _ in scheduleUpdateDisplayData() }
+        .onReceive(NotificationCenter.default.publisher(for: .macRelaySyncComplete)) { _ in
+            // Mac relay sync just injected new events — refresh to show them
+            refreshAll()
+        }
         .task {
-            // Initial load
             updateDisplayData()
+        }
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
+            set: { showingProfilePubkey = $0?.id }
+        )) { p in
+            ProfileView(pubkey: p.id)
+        }
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { showingNoteId.map { IdentifiableString(id: $0) } },
+            set: { showingNoteId = $0?.id }
+        )) { noteId in
+            NoteDetailViewWrapper(noteId: noteId.id)
+                .environmentObject(nostrService)
+                .environmentObject(configService)
         }
     }
     
-    private var notesList: some View {
-        Group {
-            if displayNotes.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
-                    Text("No notes found")
-                        .font(.headline)
-                    Text("Try changing your filter settings.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+    private var modeView: some View {
+        HStack(spacing: 4) {
+            ModeButton(title: "Notes", icon: "doc.text", isSelected: viewMode == .notes) {
+                viewMode = .notes
+            }
+            ModeButton(title: "Media", icon: "photo.on.rectangle", isSelected: viewMode == .media) {
+                viewMode = .media
+                // Only load media if relay is ready
+                if relayManager.isRunning && !relayManager.isBooting {
+                    loadLocalMedia()
                 }
-                .padding(.top, 100)
+            }
+        }
+        .padding(4)
+        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .cornerRadius(20)
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+    }
+    
+    private var filterView: some View {
+        HStack(spacing: 2) {
+            FilterButton(title: "All", color: .secondary, isSelected: contentFilter == .all) {
+                contentFilter = .all
+            }
+            FilterButton(title: "My Notes", color: .havenPurple, isSelected: contentFilter == .mine) {
+                contentFilter = .mine
+            }
+            FilterButton(title: "Tagged", color: Color(red: 0.2, green: 0.8, blue: 0.6), isSelected: contentFilter == .tagged) {
+                contentFilter = .tagged
+            }
+            FilterButton(title: "Whitelisted", color: Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.7), isSelected: contentFilter == .whitelist) {
+                contentFilter = .whitelist
+            }
+        }
+        .padding(4)
+        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+    }
+    
+    private var sourceFilterView: some View {
+        HStack(spacing: 2) {
+            FilterButton(title: "All Sources", color: .secondary, isSelected: mediaSourceFilter == .all) {
+                mediaSourceFilter = .all
+            }
+            FilterButton(title: "Blossom", color: .havenPurple, isSelected: mediaSourceFilter == .blossom) {
+                mediaSourceFilter = .blossom
+            }
+            FilterButton(title: "Cache", color: Color(red: 1, green: 0.6, blue: 0.1), isSelected: mediaSourceFilter == .cache) {
+                mediaSourceFilter = .cache
+            }
+        }
+        .padding(4)
+        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+    }
+    
+    private var notesList: some View {
+        let isLoading = nostrService.isFetching || relayManager.isBooting
+        return Group {
+            if displayNotes.isEmpty && isLoading {
+                VStack(spacing: 32) {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .controlSize(.large)
+                            .tint(Color.havenPurple)
+
+                        VStack(spacing: 8) {
+                            Text(relayManager.isBooting ? relayManager.bootStatusMessage.isEmpty ? "Starting relay..." : relayManager.bootStatusMessage : "Loading notes...")
+                                .font(.system(size: 18, weight: .bold, design: .default))
+                                .tracking(0.3)
+                            Text("This may take a moment")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundColor(.secondary.opacity(0.6))
+                                .tracking(0.5)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.platformControlBackground)
+            } else if displayNotes.isEmpty {
+                VStack(spacing: 24) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 48, weight: .thin))
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    VStack(spacing: 8) {
+                        Text("No notes found")
+                            .font(.system(size: 18, weight: .bold, design: .default))
+                            .tracking(0.2)
+
+                        Text("Try changing your filter settings")
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .tracking(0.3)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.platformControlBackground)
             } else {
                 LazyVStack(spacing: 12) {
                     ForEach(displayNotes) { event in
+                        #if os(iOS)
+                        NavigationLink(destination: NoteDetailView(note: FeedNote(
+                            id: event.id,
+                            pubkey: event.pubkey,
+                            content: event.content,
+                            createdAt: event.createdAtDate,
+                            tags: event.tags,
+                            kind: event.kind
+                        ))) {
+                            NoteRow(event: event)
+                                .padding(.horizontal, 16)
+                                .onAppear {
+                                    if event.id == displayNotes.last?.id {
+                                        loadMoreItems()
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        #else
                         NoteRow(event: event)
+                            .padding(.horizontal, 16)
+                            .onAppear {
+                                if event.id == displayNotes.last?.id {
+                                    loadMoreItems()
+                                }
+                            }
+                        #endif
                     }
                 }
+                .environment(\.openURL, OpenURLAction { url in
+                    if url.scheme == "nostr" {
+                        let id = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
+                        if id.hasPrefix("npub1") || id.hasPrefix("nprofile1") {
+                            self.showingProfilePubkey = id
+                            return .handled
+                        } else if id.hasPrefix("note1") || id.hasPrefix("nevent1") {
+                            self.showingNoteId = id
+                            return .handled
+                        }
+                    }
+                    return .systemAction
+                })
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -331,34 +542,70 @@ struct ViewerView: View {
         let isLoading = isRefreshingMedia || nostrService.isFetching
         return Group {
             if items.isEmpty && isLoading {
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .controlSize(.large)
-                    Text("Loading media...")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
+                VStack(spacing: 32) {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .controlSize(.large)
+                            .tint(Color.havenPurple)
+
+                        VStack(spacing: 8) {
+                            Text("Loading media...")
+                                .font(.system(size: 18, weight: .bold, design: .default))
+                                .tracking(0.3)
+                            Text("Scanning for uploads")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundColor(.secondary.opacity(0.6))
+                                .tracking(0.5)
+                        }
+                    }
                 }
-                .padding(.top, 100)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.platformControlBackground)
             } else if items.isEmpty {
-                VStack(spacing: 16) {
+                VStack(spacing: 24) {
                     Image(systemName: "photo.on.rectangle")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
-                    Text("No media found")
-                        .font(.headline)
-                    Text("Try changing your filter settings or upload media.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 48, weight: .thin))
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    VStack(spacing: 8) {
+                        Text("No media found")
+                            .font(.system(size: 18, weight: .bold, design: .default))
+                            .tracking(0.2)
+
+                        Text("Try changing your filter settings")
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .tracking(0.3)
+                    }
                 }
-                .padding(.top, 100)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.platformControlBackground)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
+                #if os(macOS)
+                let minWidth: CGFloat = 180
+                #else
+                let minWidth: CGFloat = 140
+                #endif
+                
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: minWidth), spacing: 12)], spacing: 12) {
                     ForEach(items) { item in
                         MediaGridItem(item: item) {
                             withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = item }
                         }
+                        .onAppear {
+                            if item.id == items.last?.id {
+                                loadMoreItems()
+                            }
+                        }
                     }
                 }
+                .padding(.horizontal, 16)
             }
         }
     }
@@ -375,8 +622,7 @@ struct ViewerView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Button(action: {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(item.url.absoluteString, forType: .string)
+                                PlatformClipboard.copy(item.url.absoluteString)
                             }) {
                                 Label("Copy Link", systemImage: "doc.on.doc")
                                     .padding(.horizontal, 12)
@@ -415,7 +661,7 @@ struct ViewerView: View {
                         VStack(spacing: 12) {
                             Image(systemName: "doc.fill")
                                 .font(.system(size: 64))
-                                .foregroundColor(.havenPurple.opacity(0.6))
+                                .foregroundColor(Color.havenPurple.opacity(0.6))
                             if let mime = item.mimeType {
                                 Text(mime)
                                     .font(.system(size: 14, weight: .medium, design: .monospaced))
@@ -447,8 +693,10 @@ struct ViewerView: View {
                 }
             }
             .transition(.opacity)
+            #if os(macOS)
             .onAppear { installKeyMonitor() }
             .onDisappear { removeKeyMonitor() }
+            #endif
         }
     }
 
@@ -460,6 +708,7 @@ struct ViewerView: View {
         withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = displayMedia[newIndex] }
     }
 
+    #if os(macOS)
     private func installKeyMonitor() {
         removeKeyMonitor()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -486,6 +735,7 @@ struct ViewerView: View {
             keyMonitor = nil
         }
     }
+    #endif
 
     func refreshAll() {
         // Only proceed if relay is actually ready
@@ -502,8 +752,23 @@ struct ViewerView: View {
             URL(string: configService.config.nostrURL)!,
             URL(string: configService.config.nostrURL + "/inbox")!
         ]
-        nostrService.fetchNotes(from: urls)
+        
+        var authorsSet = Set<String>()
+        if let ownerHex = Bech32.decode(configService.config.ownerNpub)?.hexString {
+            authorsSet.insert(ownerHex)
+        }
+        for pk in configService.whitelistedHexPubkeys { authorsSet.insert(pk) }
+        let authors = Array(authorsSet)
+        
+        nostrService.fetchNotes(from: urls, authors: authors)
         loadLocalMedia()
+    }
+    
+    func loadMoreItems() {
+        if maxDisplayedItems < (viewMode == .notes ? nostrService.events.count : blossomMedia.count) {
+            maxDisplayedItems += 50
+            scheduleUpdateDisplayData()
+        }
     }
     
     func loadMore() {
@@ -520,7 +785,15 @@ struct ViewerView: View {
             URL(string: configService.config.nostrURL)!,
             URL(string: configService.config.nostrURL + "/inbox")!
         ]
-        nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1)
+        
+        var authorsSet = Set<String>()
+        if let ownerHex = Bech32.decode(configService.config.ownerNpub)?.hexString {
+            authorsSet.insert(ownerHex)
+        }
+        for pk in configService.whitelistedHexPubkeys { authorsSet.insert(pk) }
+        let authors = Array(authorsSet)
+        
+        nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1, authors: authors)
     }
     
     func loadLocalMedia() {
@@ -544,7 +817,6 @@ struct ViewerView: View {
             let blossomPath = configService.config.blossomPath
             let ownerHex = nostrService.ownerHexPubkey
             let webURL = configService.config.webURL
-            let config = configService.config
             let rpm = relayManager
 
             let result = await Task.detached(priority: .background) { () -> [MediaItem] in
@@ -564,12 +836,12 @@ struct ViewerView: View {
                     guard let serveURL = URL(string: "\(webURL)/\(filename)") else { return nil }
                     
                     let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-                    let date = (attributes?[.creationDate] as? Date) ?? (attributes?[.modificationDate] as? Date) ?? Date()
+                    let date = (attributes?[.modificationDate] as? Date) ?? (attributes?[.creationDate] as? Date) ?? Date()
                     
                     // Same detection pipeline as blossom export: proof (bytes) + claim (relay) → resolve
+                    // PERFORMANCE: We skip `fetchMimeFromRelay` here because doing 9000 awaits starves the UI thread pool!
                     let proof = rpm.detectMimeFromBytes(for: fileURL)
-                    let claim = rpm.fetchMimeFromRelay(config: config, sha256: filename)
-                    let resolvedMime = rpm.resolveMime(claim: claim, proof: proof)
+                    let resolvedMime = rpm.resolveMime(claim: nil, proof: proof)
                     let mimeType = resolvedMime == "application/octet-stream" ? nil : resolvedMime
 
                     let mediaType: MediaItem.MediaType
@@ -605,18 +877,22 @@ struct FilterButton: View {
     let color: Color
     let isSelected: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11, weight: isSelected ? .bold : .regular))
+                .font(.system(size: 11, weight: isSelected ? .bold : .regular, design: .monospaced))
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .foregroundColor(isSelected ? .white : .primary)
+                .padding(.vertical, 6)
+                .foregroundColor(isSelected ? .white : .secondary)
                 .background(isSelected ? color : Color.clear)
-                .cornerRadius(4)
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(isSelected ? color.opacity(0.5) : Color.clear, lineWidth: 0.8)
+                )
                 .animation(.easeInOut(duration: 0.15), value: isSelected)
         }
         .buttonStyle(.plain)
@@ -633,16 +909,21 @@ struct ModeButton: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
                 Text(title)
+                    .font(.system(size: 13, weight: .semibold, design: .default))
                     .lineLimit(1)
             }
             .fixedSize()
-            .font(.subheadline.bold())
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .foregroundColor(isSelected ? .white : .secondary)
-            .background(isSelected ? Color.havenPurple : Color.clear)
+            .background(isSelected ? .havenPurple : Color.clear)
             .cornerRadius(20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(isSelected ? .havenPurple.opacity(0.5) : Color.clear, lineWidth: 0.8)
+            )
             .contentShape(Rectangle())
             .animation(.easeInOut(duration: 0.2), value: isSelected)
         }
@@ -655,14 +936,16 @@ struct NoteRow: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     @State private var isHovered = false
+    @State private var showingReportDialog = false
     
     var cleanContent: String {
         return event.content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     var displayName: String {
-        if let name = nostrService.profileNames[event.pubkey] {
-            return name
+        let profile = nostrService.profiles[event.pubkey]
+        if let profile = profile {
+            return profile.bestName
         }
         return event.pubkey.prefix(8) + "..." + event.pubkey.suffix(4)
     }
@@ -708,70 +991,144 @@ struct NoteRow: View {
     }
     
     var body: some View {
-        Button(action: {
-            if let url = event.njumpURL {
-                NSWorkspace.shared.open(url)
-                NSApplication.shared.hide(nil)
-            }
-        }) {
-            VStack(alignment: .leading, spacing: 12) {
-                // Header with profile and timestamp
-                HStack {
-                    if let pictureURL = nostrService.profilePictures[event.pubkey] {
-                        CachedAsyncImage(url: pictureURL) { image in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Circle().fill(noteType.color)
-                                .overlay(Image(systemName: "person.fill").font(.caption).foregroundColor(.white))
-                        }
-                        .frame(width: 32, height: 32)
-                        .clipShape(Circle())
-                    } else {
-                        Circle().fill(noteType.color).frame(width: 32, height: 32)
-                            .overlay(Image(systemName: "person.fill").font(.caption).foregroundColor(.white))
+        VStack(alignment: .leading, spacing: 10) {
+            // Header with profile and timestamp
+            HStack(alignment: .center, spacing: 12) {
+                if let profile = nostrService.profiles[event.pubkey], let pictureURL = profile.pictureURL {
+                    CachedAsyncImage(url: pictureURL) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Circle()
+                            .fill(avatarGradientForType(noteType))
+                            .overlay(Image(systemName: "person.fill").font(.system(size: 10, weight: .bold)).foregroundColor(.white))
                     }
-                    
-                    VStack(alignment: .leading, spacing: 2) {
+                    .frame(width: 40, height: 40)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
+                } else {
+                    Circle()
+                        .fill(avatarGradientForType(noteType))
+                        .frame(width: 40, height: 40)
+                        .overlay(Image(systemName: "person.fill").font(.system(size: 10, weight: .bold)).foregroundColor(.white))
+                        .overlay(Circle().stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
                         Text(displayName)
-                            .font(.subheadline.bold())
-                        Text(timeAgo(from: event.createdAtDate))
-                            .font(.caption2).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    HStack(spacing: 4) {
+                            .font(.system(size: 14, weight: .semibold, design: .default))
+                            .lineLimit(1)
+
                         Image(systemName: noteType.icon)
-                            .font(.system(size: 10))
-                        Text(noteType.label)
+                            .font(.caption2)
+                            .foregroundColor(noteType.color)
+
+                        Spacer()
+
+                        Text(timeAgo(from: event.createdAtDate))
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .tracking(0.2)
                     }
-                    .font(.caption2.bold()).padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(noteType.color.opacity(0.15))
-                    .foregroundColor(noteType.color)
-                    .cornerRadius(4)
+                }
+            }
+
+            // Text content (if any)
+            if !cleanContent.isEmpty {
+                Text(NostrContentFormatter.format(cleanContent))
+                    .font(.system(size: 15, weight: .regular, design: .default))
+                    .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                    .lineSpacing(2)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .background(Color.platformSecondaryGroupedBackground)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.platformSeparator, lineWidth: 0.8)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        #if os(iOS)
+        .hoverEffect(.lift)
+        #endif
+        .clipped()
+        .buttonStyle(.plain)
+        .contextMenu {
+            if noteType != .mine {
+                Button(action: {
+                    showingReportDialog = true
+                }) {
+                    Label("Report Post", systemImage: "flag.fill")
                 }
                 
-                // Text content (if any)
-                if !cleanContent.isEmpty {
-                    Text(cleanContent)
-                        .font(.body)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                Divider()
+                
+                Button(action: {
+                    blockUser(hexPubkey: event.pubkey)
+                }) {
+                    Label("Block User", systemImage: "hand.raised.fill")
                 }
             }
-            .padding()
-            .background(isHovered ? noteType.color.opacity(0.06) : Color(NSColor.controlBackgroundColor))
-            .cornerRadius(12)
         }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovering }
+        .sheet(isPresented: $showingReportDialog) {
+            UGCReportingDialog(eventId: event.id, pubkey: event.pubkey) {
+                // Background refresh will handle hiding it, but we can proactively trigger update
+                nostrService.objectWillChange.send()
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
         }
         .onAppear {
-            if nostrService.profileNames[event.pubkey] == nil {
+            if nostrService.profiles[event.pubkey] == nil {
                 nostrService.fetchMissingProfiles(for: [event.pubkey])
             }
         }
     }
-    
+
+    private func avatarGradientForType(_ type: NoteType) -> LinearGradient {
+        switch type {
+        case .mine:
+            return LinearGradient(
+                gradient: Gradient(colors: [
+                    .havenPurple,
+                    .havenPurpleLight
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .whitelisted:
+            return LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.2, green: 0.8, blue: 0.6),
+                    Color(red: 0.1, green: 0.7, blue: 0.5)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        case .tagged:
+            return LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.2, green: 0.5, blue: 0.8),
+                    Color(red: 0.3, green: 0.6, blue: 1.0)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+    }
+
+    private func blockUser(hexPubkey: String) {
+        guard let data = Bech32.hexToData(hexPubkey),
+              let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+        if !configService.config.blacklistedNpubs.contains(npub) {
+            configService.config.blacklistedNpubs.append(npub)
+            configService.save()
+        }
+    }
+
     func timeAgo(from date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
@@ -809,7 +1166,10 @@ struct MediaPreviewRow: View {
 struct MediaGridItem: View {
     let item: MediaItem
     let onSelect: () -> Void
+    @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var nostrService: NostrService
     @State private var isHovered = false
+    @State private var showingReportDialog = false
 
     var body: some View {
         ZStack {
@@ -864,11 +1224,37 @@ struct MediaGridItem: View {
         .onTapGesture { onSelect() }
         .contextMenu {
             Button(action: {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(item.url.absoluteString, forType: .string)
+                PlatformClipboard.copy(item.url.absoluteString)
             }) {
                 Label("Copy Link", systemImage: "doc.on.doc")
             }
+            if let pubkey = item.pubkey, pubkey != nostrService.ownerHexPubkey {
+                Button(action: {
+                    showingReportDialog = true
+                }) {
+                    Label("Report Media", systemImage: "flag.fill")
+                }
+                
+                Divider()
+                
+                Button(action: {
+                    guard let data = Bech32.hexToData(pubkey),
+                          let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+                    if !configService.config.blacklistedNpubs.contains(npub) {
+                        configService.config.blacklistedNpubs.append(npub)
+                        configService.save()
+                    }
+                }) {
+                    Label("Block User", systemImage: "hand.raised.fill")
+                }
+            }
+        }
+        .sheet(isPresented: $showingReportDialog) {
+            UGCReportingDialog(eventId: nil, pubkey: item.pubkey ?? "") {
+                nostrService.objectWillChange.send()
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
         }
     }
 }
@@ -880,14 +1266,14 @@ struct RetryableAsyncImage: View {
     var targetSize: CGSize? = nil
     @State private var id = UUID()
     @State private var retryCount = 0
-    @State private var cachedImage: NSImage? = nil
+    @State private var cachedImage: PlatformImage? = nil
     @State private var isLoading = false
     
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 if let image = cachedImage {
-                    Image(nsImage: image)
+                    Image(platformImage: image)
                         .resizable()
                         .aspectRatio(contentMode: contentMode)
                         .frame(width: geo.size.width, height: geo.size.height)
@@ -1005,20 +1391,20 @@ struct RetryableAsyncImage: View {
         }
     }
     
-    nonisolated private func decode(data: Data) async -> NSImage? {
+    nonisolated private func decode(data: Data) async -> PlatformImage? {
         if let targetSize = targetSize,
            let downsampled = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height)) {
             return downsampled
         }
         return await Task.detached(priority: .utility) {
-            NSImage(data: data)
+            PlatformImage(data: data)
         }.value
     }
 }
 
 struct VideoThumbnailView: View {
     let url: URL
-    @State private var thumbnail: NSImage? = nil
+    @State private var thumbnail: PlatformImage? = nil
     @State private var isLoading = true
     @State private var id = UUID()
     
@@ -1026,7 +1412,7 @@ struct VideoThumbnailView: View {
         GeometryReader { geo in
             ZStack {
                 if let image = thumbnail {
-                    Image(nsImage: image)
+                    Image(platformImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geo.size.width, height: geo.size.height)
@@ -1158,7 +1544,7 @@ struct SourceIndicatorView: View {
     
     private func cacheMedia() {
         isCaching = true
-        URLSession.shared.dataTask(with: url) { data, response, _ in
+        MediaSessionService.shared.session.dataTask(with: url) { data, response, _ in
             if let data = data, let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 MediaCacheService.shared.saveToCache(url: url, data: data)
                 DispatchQueue.main.async {
@@ -1174,77 +1560,3 @@ struct SourceIndicatorView: View {
     }
 }
 
-// MARK: - CachedAsyncImage
-struct CachedAsyncImage<Content: View, Placeholder: View>: View {
-    let url: URL
-    let content: (Image) -> Content
-    let placeholder: () -> Placeholder
-    
-    @State private var cachedImage: NSImage? = nil
-    @State private var isLoading = false
-    @State private var id = UUID() // Force refresh if URL changes
-    
-    init(
-        url: URL,
-        @ViewBuilder content: @escaping (Image) -> Content,
-        @ViewBuilder placeholder: @escaping () -> Placeholder
-    ) {
-        self.url = url
-        self.content = content
-        self.placeholder = placeholder
-    }
-    
-    var body: some View {
-        ZStack {
-            if let nsImage = cachedImage {
-                content(Image(nsImage: nsImage))
-            } else {
-                placeholder()
-                    .onAppear {
-                        load()
-                    }
-            }
-        }
-        .id(url) // Reset state when URL changes
-    }
-    
-    private func load() {
-        if isLoading { return }
-        
-        // 1. Check disk cache synchronously (it's fast enough for main thread usually, or we could dispatch)
-        if let data = MediaCacheService.shared.loadFromCache(url: url),
-           let image = NSImage(data: data) {
-            self.cachedImage = image
-            return
-        }
-        
-        // 2. Download if not cached
-        isLoading = true
-        
-        let operation = BlockOperation {
-            // Using a simple URLSession task
-            let task = URLSession.shared.dataTask(with: url) { data, response, error in
-                defer { 
-                    DispatchQueue.main.async { self.isLoading = false }
-                }
-                
-                guard let data = data, error == nil,
-                      let image = NSImage(data: data) else {
-                    return
-                }
-                
-                // Save to cache
-                MediaCacheService.shared.saveToCache(url: url, data: data)
-                
-                // Update UI
-                DispatchQueue.main.async {
-                    self.cachedImage = image
-                }
-            }
-            task.resume()
-        }
-        
-        // Use the shared queue to avoid thread explosions
-        MediaCacheService.shared.downloadQueue.addOperation(operation)
-    }
-}

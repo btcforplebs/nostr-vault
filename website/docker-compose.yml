@@ -1,0 +1,10 @@
+version: '3'
+
+services:
+  website:
+    image: nginx:alpine
+    ports:
+      - "4024:80"
+    volumes:
+      - .:/usr/share/nginx/html
+    restart: unless-stopped

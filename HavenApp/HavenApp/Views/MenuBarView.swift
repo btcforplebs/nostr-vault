@@ -4,8 +4,10 @@ struct MenuBarView: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject var relayManager: RelayProcessManager
     @State private var selectedTab: Tab = .dashboard
+    #if os(macOS)
     @Environment(\.openSettings) var openSettings
     @Environment(\.openWindow) var openWindow
+    #endif
     var isPoppedOut: Bool = false
     
     @State private var inactivityTask: Task<Void, Never>?
@@ -13,6 +15,7 @@ struct MenuBarView: View {
     
     enum Tab {
         case dashboard
+        case feed
         case viewer
     }
     
@@ -64,14 +67,21 @@ struct MenuBarView: View {
                         .cornerRadius(12)
                     }
                     .buttonStyle(.plain)
+                    .disabled(relayManager.isBooting)
                 }
                 .padding()
-                .background(Color(NSColor.windowBackgroundColor))
+                .background(Color.platformControlBackground)
                 
                 // MARK: - Tabs
                 HStack(spacing: 8) {
                     TabButton(icon: "gauge", title: "Dashboard", isSelected: selectedTab == .dashboard) {
                         selectedTab = .dashboard
+                    }
+                    
+                    if isPoppedOut {
+                        TabButton(icon: "list.bullet.rectangle.portrait", title: "Feed", isSelected: selectedTab == .feed) {
+                            selectedTab = .feed
+                        }
                     }
                     
                     TabButton(icon: "doc.text.image", title: "Viewer", isSelected: selectedTab == .viewer) {
@@ -80,19 +90,26 @@ struct MenuBarView: View {
                 }
                 .padding(.horizontal)
                 .padding(.bottom)
-                .background(Color(NSColor.windowBackgroundColor))
+                .background(Color.platformControlBackground)
                 
                 Divider()
                 
                 // MARK: - Content
                 ZStack {
-                    Color(NSColor.textBackgroundColor) // Darker background
+                    Color.platformControlBackground // Darker background
                         .ignoresSafeArea()
                     
                     switch selectedTab {
                     case .dashboard:
                         DashboardView()
                             .transition(.opacity)
+                    case .feed:
+                        if isPoppedOut {
+                            FeedView()
+                                .transition(.opacity)
+                        } else {
+                            DashboardView() // Fallback
+                        }
                     case .viewer:
                         ViewerView()
                             .transition(.opacity)
@@ -106,12 +123,14 @@ struct MenuBarView: View {
                 // MARK: - Footer
                 HStack(spacing: 20) {
                     Button(action: {
+                        #if os(macOS)
                         NSApp.activate(ignoringOtherApps: true)
                         if #available(macOS 14.0, *) {
                             openSettings()
                         } else {
                             NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                         }
+                        #endif
                     }) {
                         Image(systemName: "gearshape.fill")
                             .font(.system(size: 16))
@@ -122,6 +141,7 @@ struct MenuBarView: View {
                     
                     if !isPoppedOut {
                         Button(action: {
+                            #if os(macOS)
                             openWindow(id: "viewer-window")
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 NSApp.activate(ignoringOtherApps: true)
@@ -136,6 +156,7 @@ struct MenuBarView: View {
                                     }
                                 }
                             }
+                            #endif
                         }) {
                             Image(systemName: "arrow.up.forward.square")
                                 .font(.system(size: 16))
@@ -148,14 +169,16 @@ struct MenuBarView: View {
                     Spacer()
                     
                     Button("Quit Haven") {
+                        #if os(macOS)
                         NSApp.terminate(nil)
+                        #endif
                     }
                     .buttonStyle(.plain)
                     .foregroundColor(.secondary)
                     .font(.system(size: 13))
                 }
                 .padding()
-                .background(Color(NSColor.windowBackgroundColor))
+                .background(Color.platformControlBackground)
             }
             .disabled(relayManager.isImporting) // Disable interaction when importing
             
@@ -240,7 +263,7 @@ struct MenuBarView: View {
                         }
                     }
                     .padding(24)
-                    .background(Color(NSColor.windowBackgroundColor))
+                    .background(Color.platformControlBackground)
                     .cornerRadius(12)
                     .shadow(color: Color.black.opacity(0.3), radius: 20)
                 }
@@ -279,8 +302,12 @@ struct MenuBarView: View {
                             .cornerRadius(6)
 
                         Button(action: {
+                            #if os(macOS)
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString("pkill -9 haven", forType: .string)
+                            #else
+                            UIPasteboard.general.string = "pkill -9 haven"
+                            #endif
                         }) {
                             Image(systemName: "doc.on.doc")
                                 .font(.system(size: 14))
@@ -314,12 +341,17 @@ struct MenuBarView: View {
                 .zIndex(100)
             }
         }
+        #if os(macOS)
+        .onAppear {
+            FloatingArrowController.shared.dismiss()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             startInactivityTimer()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             stopInactivityTimer()
         }
+        #endif
         
 
     }

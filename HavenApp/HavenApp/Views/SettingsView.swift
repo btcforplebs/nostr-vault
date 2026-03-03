@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension NumberFormatter {
     static var noSeparator: NumberFormatter {
@@ -15,97 +16,58 @@ struct SettingsView: View {
     @State private var saveTask: Task<Void, Never>?
     @State private var isRestarting = false
     
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.3.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+        #if os(macOS)
+        return "\(version)" // macOS hasn't traditionally shown build number in this particular ui
+        #else
+        return "\(version) (\(build))"
+        #endif
+    }
+    
     var needsRestart: Bool {
         guard let lastLaunch = relayManager.lastConfig else { return false }
         return configService.config != lastLaunch
     }
     
-    enum SettingsTab: String, CaseIterable {
+    enum SettingsTab: String, CaseIterable, Identifiable {
         case identity = "Identity"
         case accessControl = "Access Control"
-        case relays = "Relays"
+        case feed = "Feed Relays"
         case importNotes = "Import"
+        case backup = "Backup"
         case blastr = "Blastr"
         case advanced = "Advanced"
-        case backup = "Backup"
+        case wallet = "Wallet"
         case logs = "Logs"
+        
+        var id: String { self.rawValue }
+        
+        var icon: String {
+            switch self {
+            case .identity: return "person.badge.key"
+            case .accessControl: return "shield.lefthalf.filled"
+            case .feed: return "newspaper"
+            case .importNotes: return "square.and.arrow.down"
+            case .backup: return "externaldrive.fill"
+            case .blastr: return "paperplane"
+            case .advanced: return "gearshape.2"
+            case .wallet: return "bitcoinsign.circle"
+            case .logs: return "list.bullet.rectangle"
+            }
+        }
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            TabView(selection: $selectedTab) {
-                IdentitySettingsView()
-                    .tabItem { Label("Identity", systemImage: "person") }
-                    .tag(SettingsTab.identity)
-
-                AccessControlSettingsView()
-                    .tabItem { Label("Access Control", systemImage: "shield.lefthalf.filled") }
-                    .tag(SettingsTab.accessControl)
-
-                RelaySettingsView()
-                    .tabItem { Label("Relays", systemImage: "server.rack") }
-                    .tag(SettingsTab.relays)
-                
-                ImportSettingsView()
-                    .tabItem { Label("Import", systemImage: "square.and.arrow.down") }
-                    .tag(SettingsTab.importNotes)
-                
-                BlastrSettingsView()
-                    .tabItem { Label("Blastr", systemImage: "paperplane") }
-                    .tag(SettingsTab.blastr)
-                
-                AdvancedSettingsView()
-                    .tabItem { Label("Advanced", systemImage: "gearshape.2") }
-                    .tag(SettingsTab.advanced)
-                
-                BackupSettingsView()
-                    .tabItem { Label("Backup", systemImage: "icloud") }
-                    .tag(SettingsTab.backup)
-                
-                LogsView()
-                    .tabItem { Label("Logs", systemImage: "list.bullet.rectangle") }
-                    .tag(SettingsTab.logs)
-            }
-            .environmentObject(configService)
-            .environmentObject(relayManager)
-            
-            Divider()
-            
-            HStack {
-                if needsRestart && relayManager.isRunning {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                    Text("Restart required to apply changes")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                if isRestarting {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(.trailing, 8)
-                } else {
-                    Button("Save & Restart Relay") {
-                        isRestarting = true
-                        configService.save() // Ensure saved before restart
-                        relayManager.stopRelay {
-                            Task { @MainActor in
-                                relayManager.startRelay(config: configService.config)
-                                isRestarting = false
-                            }
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!needsRestart || !relayManager.isRunning)
-                }
-            }
-            .padding()
-            .background(.ultraThinMaterial)
+        Group {
+            #if os(iOS)
+            iOSBody
+            #else
+            macOSBody
+            #endif
         }
-        .frame(width: 600, height: 500)
-        .onChange(of: configService.config) { oldValue, newValue in
+        .onChange(of: configService.config) { _, _ in
             saveTask?.cancel()
             saveTask = Task {
                 try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second debounce
@@ -118,27 +80,627 @@ struct SettingsView: View {
             saveTask?.cancel()
         }
     }
+
+    private var macOSBody: some View {
+        VStack(spacing: 0) {
+            TabView(selection: $selectedTab) {
+                ForEach(SettingsTab.allCases) { tab in
+                    destinationFor(tab)
+                        .tabItem { Label(tab.rawValue, systemImage: tab.icon) }
+                        .tag(tab)
+                }
+            }
+            .environmentObject(configService)
+            .environmentObject(relayManager)
+            
+            footer
+        }
+        .frame(width: 800, height: 600)
+    }
+    
+    #if os(iOS)
+    private var iOSBody: some View {
+        List {
+            Section {
+                if needsRestart && relayManager.isRunning {
+                    RestartBanner(action: restartRelay, isRestarting: isRestarting)
+                }
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+
+            Section("Profile") {
+                tabLink(.identity)
+                tabLink(.accessControl)
+            }
+            
+            Section("Relay Configuration") {
+                tabLink(.feed)
+                tabLink(.blastr)
+                tabLink(.importNotes)
+                tabLink(.backup)
+            }
+            
+            Section("System") {
+                tabLink(.wallet)
+                tabLink(.advanced)
+                tabLink(.logs)
+            }
+            
+            Section("About") {
+                VStack(spacing: 4) {
+                    Text("Haven Relay")
+                        .font(.headline)
+                    Text("Version \(appVersion)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    VStack(spacing: 8) {
+                        Text("Support & Abuse Reporting")
+                            .font(.subheadline.bold())
+                        
+                        Text("To report objectionable content or abusive users, contact the developer via Nostr")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        Text("npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx")
+                            .font(.system(size: 10, design: .monospaced))
+                            .padding(8)
+                            .background(Color.platformControlBackground)
+                            .cornerRadius(4)
+                            .onTapGesture {
+                                PlatformClipboard.copy("npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx")
+                            }
+                        
+                        Text("(Tap to copy)")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                            
+                        Divider()
+                            .padding(.vertical, 8)
+                            
+                        Link("Privacy Policy", destination: URL(string: "https://havenformac.btcforplebs.com/privacy.html")!)
+                            .font(.caption)
+                            .foregroundColor(.havenPurple)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .listRowBackground(Color.clear)
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Settings")
+    }
+    #endif
+
+    private func tabLink(_ tab: SettingsTab) -> some View {
+        NavigationLink(destination: destinationFor(tab)) {
+            Label {
+                Text(tab.rawValue)
+                    .font(.body)
+            } icon: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(iconBackgroundColor(for: tab))
+                        .frame(width: 28, height: 28)
+                    Image(systemName: tab.icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+            }
+        }
+    }
+
+    private func iconBackgroundColor(for tab: SettingsTab) -> Color {
+        switch tab {
+        case .identity: return .blue
+        case .accessControl: return .green
+        case .feed: return .pink
+        case .importNotes: return .orange
+        case .backup: return .indigo
+        case .blastr: return .cyan
+        case .advanced: return .gray
+        case .wallet: return .orange
+        case .logs: return .secondary
+        }
+    }
+
+    private func restartRelay() {
+        isRestarting = true
+        configService.save()
+        relayManager.stopRelay {
+            Task { @MainActor in
+                relayManager.startRelay(config: configService.config)
+                isRestarting = false
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func destinationFor(_ tab: SettingsTab) -> some View {
+        Group {
+            switch tab {
+            case .identity: IdentitySettingsView()
+            case .accessControl: AccessControlSettingsView()
+            case .feed: FeedSettingsView()
+            case .importNotes: ImportSettingsView()
+            case .backup: BackupSettingsView()
+            case .blastr: BlastrSettingsView()
+            case .advanced: AdvancedSettingsView()
+            case .wallet: WalletSettingsView()
+            case .logs: LogsView(logStore: relayManager.logStore)
+            }
+        }
+        .navigationTitle(tab.rawValue)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+    
+    private var footer: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 8) {
+                if isRestarting {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button(action: restartRelay) {
+                        Text("Save & Restart Relay")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.havenPurple)
+                            .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled((!needsRestart && configService.config == relayManager.lastConfig) || !relayManager.isRunning)
+                }
+            }
+            .padding()
+            #if os(macOS)
+            .background(.ultraThinMaterial)
+            #endif
+            
+            Divider()
+            
+            // About Section for macOS
+            VStack(spacing: 4) {
+                Text("Haven Relay v\(appVersion)")
+                    .font(.caption.bold())
+                Text("Abuse Reporting: npub1vxlh...g0nvx")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .onTapGesture {
+                        PlatformClipboard.copy("npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx")
+                    }
+                Link("Privacy Policy", destination: URL(string: "https://havenformac.btcforplebs.com/privacy.html")!)
+                    .font(.system(size: 10))
+                    .foregroundColor(.havenPurple)
+                    .padding(.top, 2)
+            }
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+struct RestartBanner: View {
+    var action: () -> Void
+    var isRestarting: Bool
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.clockwise.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.white)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Restart Required")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    Text("Some changes require a relay restart to take effect.")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                
+                Spacer()
+                
+                if isRestarting {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundColor(.white.opacity(0.5))
+                }
+            }
+            .padding()
+            .background(Color.havenPurple)
+            .cornerRadius(12)
+            .padding(.horizontal)
+        }
+        .buttonStyle(.plain)
+        .disabled(isRestarting)
+    }
 }
 
 struct IdentitySettingsView: View {
     @EnvironmentObject var configService: ConfigService
+    @State private var showUpdateKey = false
+    @State private var newNsec = ""
+    @State private var newPassword = ""
+    @State private var confirmPassword = ""
+    @State private var updateError: String?
+    @State private var updateSuccess = false
 
     var body: some View {
         Form {
-            Section("Owner Identity") {
-                TextField("Owner npub", text: $configService.config.ownerNpub)
-                    .help("Your Nostr public key in npub format")
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Owner npub")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    
+                    TextEditor(text: $configService.config.ownerNpub)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 100)
+                        .padding(8)
+                        .background(Color.platformControlBackground)
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                        )
+                    
+                    Text("Your Nostr public key in npub format. This key has administrative access to the relay.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Owner Identity")
             }
 
-            Section("Connection") {
-                TextField("Hostname", text: $configService.config.relayURL)
-                    .help("Public hostname for your relay (e.g., relay.example.com). Do not include the port.")
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    if !configService.config.ownerNcryptsec.isEmpty {
+                        HStack {
+                            Image(systemName: "lock.fill")
+                                .foregroundColor(.green)
+                            Text("Private Key (Encrypted)")
+                                .font(.subheadline.bold())
+                            Spacer()
+                            HStack(spacing: 8) {
+                                Button(action: { showUpdateKey = true }) {
+                                    Text("Update")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+                                Button(role: .destructive) {
+                                    configService.config.ownerNcryptsec = ""
+                                    configService.config.ownerNsec = ""
+                                    configService.save()
+                                } label: {
+                                    Text("Clear")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding(8)
+                        .background(Color.platformControlBackground)
+                        .cornerRadius(8)
 
-                TextField("Port", value: $configService.config.relayPort, formatter: NumberFormatter.noSeparator)
+                        Text("Your private key is encrypted with NIP-49. You'll be prompted for your password when signing notes.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else if !configService.config.ownerNsec.isEmpty {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("Private Key (Plaintext)")
+                                .font(.subheadline.bold())
+                            Spacer()
+                            HStack(spacing: 8) {
+                                Button(action: { showUpdateKey = true }) {
+                                    Text("Update")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+                                Button(role: .destructive) {
+                                    configService.config.ownerNsec = ""
+                                    configService.save()
+                                } label: {
+                                    Text("Clear")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding(8)
+                        .background(Color.platformControlBackground)
+                        .cornerRadius(8)
+
+                        Text("This key is stored in plaintext. For security, update it to encrypt with NIP-49.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Image(systemName: "key.slash")
+                                    .foregroundColor(.red)
+                                Text("No private key configured")
+                                    .font(.subheadline.bold())
+                            }
+
+                            Text("Import your nsec (private key) to compose and sign notes")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            Button(action: { showUpdateKey = true }) {
+                                HStack {
+                                    Image(systemName: "plus.circle.fill")
+                                    Text("Import Private Key")
+                                }
+                                .font(.subheadline.bold())
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color.havenPurple)
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(8)
+                        .background(Color.red.opacity(0.05))
+                        .cornerRadius(8)
+                        .border(Color.red.opacity(0.2), width: 1)
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Private Key")
+            }
+
+            #if os(macOS)
+            Section {
+                TextField("relay.example.com", text: $configService.config.relayURL)
+
+                HStack {
+                    Text("Port")
+                    Spacer()
+                    TextField("8080", value: $configService.config.relayPort, formatter: NumberFormatter.noSeparator)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                }
+            } header: {
+                Text("Connection")
+            } footer: {
+                Text("The hostname and port where your relay will be accessible.")
+            }
+            #endif
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .sheet(isPresented: $showUpdateKey) {
+            updateKeySheet
+        }
+    }
+
+    private var updateKeySheet: some View {
+        Group {
+            #if os(iOS)
+            NavigationView {
+                updateKeyForm
+                    .navigationTitle(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import Private Key" : "Update Private Key")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Cancel") {
+                                resetForm()
+                                showUpdateKey = false
+                            }
+                        }
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import" : "Update") {
+                                savePrivateKey()
+                            }
+                            .disabled(newNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newPassword.isEmpty)
+                        }
+                    }
+            }
+            #else
+            VStack(spacing: 0) {
+                Text(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import Private Key" : "Update Private Key")
+                    .font(.headline)
+                    .padding()
+                
+                Divider()
+                
+                updateKeyForm
+                
+                Divider()
+                
+                HStack {
+                    Spacer()
+                    Button("Cancel") {
+                        resetForm()
+                        showUpdateKey = false
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    
+                    Button(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import" : "Update") {
+                        savePrivateKey()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newPassword.isEmpty)
+                }
+                .padding()
+            }
+            .frame(width: 450, height: 500)
+            #endif
+        }
+    }
+
+    private var updateKeyForm: some View {
+        Form {
+            Section("Enter Private Key") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("nsec (Nostr Secret Key)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $newNsec)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 80)
+                            .padding(4)
+                            .background(Color.platformControlBackground)
+                            .cornerRadius(6)
+                            .autocorrectionDisabled()
+                            .disableAutocorrection(true)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.asciiCapable)
+                            #endif
+                        
+                        HStack {
+                            Spacer()
+                            VStack {
+                                Button(action: pastePrivateKey) {
+                                    Image(systemName: "doc.on.clipboard")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.secondary)
+                                        .padding(8)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(4)
+                    }
+                    
+                    Text("Long press or tap the clipboard icon to paste your private key")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Section("Set Password (NIP-49 Encryption)") {
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        SecureField("Password", text: $newPassword)
+                        SecureField("Confirm Password", text: $confirmPassword)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Password will be securely stored in your Keychain", systemImage: "lock.fill")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                        Text("Haven uses your password to automatically decrypt your key when signing notes. You won't need to enter it each time.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+
+            if let error = updateError {
+                Section {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+
+            if updateSuccess {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Private key updated successfully!")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                        HStack {
+                            Image(systemName: "lock.fill")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                            Text("Password saved to Keychain — Haven will use it automatically when signing notes")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
             }
         }
-        .formStyle(.grouped)
-        .padding()
+        .groupedFormStyleCompat()
+    }
+
+    private func savePrivateKey() {
+        let nsecTrimmed = newNsec.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !nsecTrimmed.isEmpty else {
+            updateError = "Private key cannot be empty"
+            return
+        }
+
+        guard newPassword == confirmPassword else {
+            updateError = "Passwords do not match"
+            return
+        }
+
+        guard newPassword.count >= 8 else {
+            updateError = "Password must be at least 8 characters"
+            return
+        }
+
+        do {
+            configService.config.ownerNcryptsec = try NIP49Service.encrypt(nsec: nsecTrimmed, password: newPassword)
+            configService.config.ownerNsec = ""
+            // Store password in Keychain for auto-signing
+            _ = NIP49Service.storePasswordInKeychain(newPassword)
+            configService.save()
+
+            updateSuccess = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                resetForm()
+                showUpdateKey = false
+            }
+        } catch {
+            updateError = "Failed to encrypt key: \(error.localizedDescription)"
+        }
+    }
+
+    private func resetForm() {
+        newNsec = ""
+        newPassword = ""
+        confirmPassword = ""
+        updateError = nil
+        updateSuccess = false
+    }
+    
+    private func pastePrivateKey() {
+        #if os(iOS)
+        if let pasteString = UIPasteboard.general.string {
+            newNsec = pasteString
+        }
+        #else
+        if let pasteString = NSPasteboard.general.string(forType: .string) {
+            newNsec = pasteString
+        }
+        #endif
     }
 }
 
@@ -152,6 +714,15 @@ struct AccessControlSettingsView: View {
     }
 
     var body: some View {
+        #if os(iOS)
+        iOSBody
+        #else
+        macOSBody
+        #endif
+    }
+
+    #if os(macOS)
+    private var macOSBody: some View {
         HStack(spacing: 0) {
             List(ListType.allCases, id: \.self, selection: $selectedList) { listType in
                 Label(listType.rawValue, systemImage: listType == .whitelist ? "checkmark.shield" : "xmark.shield")
@@ -161,36 +732,55 @@ struct AccessControlSettingsView: View {
 
             Divider()
 
-            VStack(alignment: .leading) {
-                switch selectedList {
-                case .whitelist:
-                    Text("Whitelisted Npubs")
-                        .font(.headline)
-                        .padding(.horizontal)
-                        .padding(.top)
-
-                    Text("Additional npubs that can write to your private relay. Your owner npub is always included.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-
-                    NpubListEditor(npubs: $configService.config.whitelistedNpubs)
-
-                case .blacklist:
-                    Text("Blacklisted Npubs")
-                        .font(.headline)
-                        .padding(.horizontal)
-                        .padding(.top)
-
-                    Text("Npubs that are explicitly blocked from your Chat and Inbox relays.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-
-                    NpubListEditor(npubs: $configService.config.blacklistedNpubs)
-                }
+            Form {
+                content(for: selectedList)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .groupedFormStyleCompat()
+            .padding()
+        }
+    }
+    #endif
+
+    #if os(iOS)
+    private var iOSBody: some View {
+        Form {
+            Section {
+                Picker("List Type", selection: $selectedList) {
+                    ForEach(ListType.allCases, id: \.self) { listType in
+                        Text(listType.rawValue).tag(listType)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+
+            content(for: selectedList)
+        }
+        .groupedFormStyleCompat()
+    }
+    #endif
+
+    @ViewBuilder
+    private func content(for type: ListType) -> some View {
+        switch type {
+        case .whitelist:
+            Section {
+                NpubListEditor(npubs: $configService.config.whitelistedNpubs)
+            } header: {
+                Text("Whitelisted Npubs")
+            } footer: {
+                Text("Additional npubs that can write to your private relay. Your owner npub is always included.")
+            }
+
+        case .blacklist:
+            Section {
+                NpubListEditor(npubs: $configService.config.blacklistedNpubs)
+            } header: {
+                Text("Blacklisted Npubs")
+            } footer: {
+                Text("Npubs that are explicitly blocked from your Chat and Inbox relays.")
+            }
         }
     }
 }
@@ -200,6 +790,52 @@ struct NpubListEditor: View {
     @State private var newNpub: String = ""
 
     var body: some View {
+        Group {
+            #if os(iOS)
+            iOSContent
+            #else
+            macOSContent
+            #endif
+        }
+    }
+
+    #if os(iOS)
+    private var iOSContent: some View {
+        Group {
+            ForEach(npubs.indices, id: \.self) { index in
+                HStack {
+                    Text(npubs[index])
+                        .font(.system(.body, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button(role: .destructive) {
+                        npubs.remove(at: index)
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+
+            HStack {
+                TextField("Add npub1...", text: $newNpub)
+                    .font(.system(.body, design: .monospaced))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+
+                Button(action: addNpub) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.havenPurple)
+                        .font(.title3)
+                }
+                .disabled(newNpub.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+    }
+    #endif
+
+    private var macOSContent: some View {
         VStack(spacing: 0) {
             HStack {
                 TextField("npub1...", text: $newNpub)
@@ -243,112 +879,33 @@ struct NpubListEditor: View {
     }
 }
 
-struct RelaySettingsView: View {
-    @EnvironmentObject var configService: ConfigService
-    @State private var selectedRelay: RelayType = .outbox
-    
-    enum RelayType: String, CaseIterable {
-        case outbox = "Outbox"
-        case inbox = "Inbox"
-        case privateRelay = "Private"
-        case chat = "Chat"
-    }
-    
-    var body: some View {
-        HStack(spacing: 0) {
-            // Sidebar
-            List(RelayType.allCases, id: \.self, selection: $selectedRelay) { relay in
-                Label(relay.rawValue, systemImage: iconFor(relay))
-            }
-            .frame(width: 120)
-            .listStyle(.sidebar)
-            
-            Divider()
-            
-            // Detail
-            Form {
-                switch selectedRelay {
-                case .outbox:
-                    RelayConfigForm(
-                        name: $configService.config.outboxRelayName,
-                        description: $configService.config.outboxRelayDescription,
-                        icon: $configService.config.outboxRelayIcon
-                    )
-                case .inbox:
-                    RelayConfigForm(
-                        name: $configService.config.inboxRelayName,
-                        description: $configService.config.inboxRelayDescription,
-                        icon: $configService.config.inboxRelayIcon
-                    )
-                case .privateRelay:
-                    RelayConfigForm(
-                        name: $configService.config.privateRelayName,
-                        description: $configService.config.privateRelayDescription,
-                        icon: $configService.config.privateRelayIcon
-                    )
-                case .chat:
-                    RelayConfigForm(
-                        name: $configService.config.chatRelayName,
-                        description: $configService.config.chatRelayDescription,
-                        icon: $configService.config.chatRelayIcon
-                    )
-                    
-                    Section("Web of Trust") {
-                        Text("Web of Trust settings have moved to the Advanced tab.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            .formStyle(.grouped)
-            .padding()
-        }
-    }
-    
-    func iconFor(_ relay: RelayType) -> String {
-        switch relay {
-        case .outbox: return "arrow.up.doc"
-        case .inbox: return "arrow.down.doc"
-        case .privateRelay: return "lock.fill"
-        case .chat: return "bubble.left.and.bubble.right"
-        }
-    }
-}
-
-struct RelayConfigForm: View {
-    @Binding var name: String
-    @Binding var description: String
-    @Binding var icon: String
-    
-    var body: some View {
-        Section("Relay Info") {
-            TextField("Name", text: $name)
-            TextField("Description", text: $description)
-            TextField("Icon URL", text: $icon)
-        }
-    }
-}
 
 struct AdvancedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var showResetConfirmation = false
+    #if os(iOS)
+    @StateObject private var macSyncService = MacRelaySyncService.shared
+    #endif
     
     var body: some View {
         Form {
-            Section("Public Relay Rate Limits") {
+            #if os(iOS)
+            macRelaySyncSection
+            #endif
+            Section {
                 Stepper("Max Events: \(configService.config.outboxMaxEventsPerMinute) / min", 
                        value: $configService.config.outboxMaxEventsPerMinute, in: 10...1000, step: 10)
                 
                 Stepper("Max Connections: \(configService.config.outboxMaxConnectionsPerMinute) / min",
                        value: $configService.config.outboxMaxConnectionsPerMinute, in: 1...100)
-                
-                Text("These limits help protect your relay from spam and abuse.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            } header: {
+                Text("Performance & Limits")
+            } footer: {
+               Text("These limits help protect your relay from spam and abuse.")
             }
             
-            Section("Database (DEBUG)") {
+            Section {
                 HStack {
                     Text("Engine")
                     Spacer()
@@ -356,12 +913,7 @@ struct AdvancedSettingsView: View {
                         .foregroundColor(.secondary)
                 }
                 
-                Text(configService.config.dbEngine == "badger" ? 
-                     "BadgerDB pre-allocates ~11GB of space. This is normal." :
-                     "LMDB uses sparse files. Reported file size may be larger than actual usage.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
+                #if os(macOS)
                 HStack {
                     Text("Blossom Path")
                     Spacer()
@@ -375,18 +927,17 @@ struct AdvancedSettingsView: View {
                         Image(systemName: "folder")
                     }
                     .buttonStyle(.plain)
-                    .help("Show in Finder")
                 }
-                
-                // Show resolved path for user confirmation
-                let resolvedPath = configService.relayDataDir.appendingPathComponent(configService.config.blossomPath).path
-                Text("Resolved absolute path: \(resolvedPath)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .textSelection(.enabled)
+                #endif
+            } header: {
+                Text("Database")
+            } footer: {
+                Text(configService.config.dbEngine == "badger" ? 
+                     "BadgerDB pre-allocates ~11GB of space. This is normal." :
+                     "LMDB uses sparse files.")
             }
             
-            Section("Media Cache") {
+            Section {
                 Toggle("Disable Media Cache", isOn: $configService.config.disableMediaCache)
                 
                 Button(role: .destructive) {
@@ -394,13 +945,13 @@ struct AdvancedSettingsView: View {
                 } label: {
                     Label("Clear Media Cache", systemImage: "trash")
                 }
-                
+            } header: {
+                Text("Media Cache")
+            } footer: {
                 Text("Clearing the cache will remove downloaded remote images but won't touch your local Blossom data.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
-            
-            Section("Global Web of Trust") {
+
+            Section {
                 Stepper("Depth: \(configService.config.chatRelayWotDepth)", 
                        value: $configService.config.chatRelayWotDepth, in: 1...5)
                 Stepper("Minimum Followers: \(configService.config.chatRelayMinFollowers)",
@@ -412,46 +963,57 @@ struct AdvancedSettingsView: View {
                     Text("24 Hours").tag("24h")
                     Text("7 Days").tag("168h")
                 }
-                
+            } header: {
+                Text("Global Web of Trust")
+            } footer: {
                 Text("WoT determines who can post to your inbox and chat relays. Lower depth is more private.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
             
-            Section("Logging") {
+            #if os(macOS)
+            Section {
+                Toggle("Allow Network Access", isOn: $configService.config.allowNetworkAccess)
+            } header: {
+                Text("Network")
+            } footer: {
+                Text("When enabled, the relay listens on all network interfaces (0.0.0.0) instead of localhost only. This makes your relay accessible over Tailscale, LAN, or other networks. Requires a relay restart to take effect.")
+            }
+            #endif
+            
+            Section("Diagnostics & Startup") {
                 Picker("Log Level", selection: $configService.config.logLevel) {
                     Text("Debug").tag("DEBUG")
                     Text("Info").tag("INFO")
                     Text("Warning").tag("WARN")
                     Text("Error").tag("ERROR")
                 }
-            }
-            
-            Section("Startup") {
+                
+                #if os(macOS)
                 Toggle("Launch at Login", isOn: $configService.config.launchAtLogin)
+                #endif
                 Toggle("Auto-start Relay", isOn: $configService.config.autoStartRelay)
             }
             
-            Section("Danger Zone") {
+            Section {
                 Button(role: .destructive) {
                     showResetConfirmation = true
                 } label: {
                     Label("Factory Reset", systemImage: "trash")
                         .foregroundColor(.red)
                 }
+            } header: {
+                Text("Danger Zone")
+            } footer: {
                 Text("This will stop the relay, delete all data (database, logs), and reset settings to default.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
         }
-        .formStyle(.grouped)
-        .padding()
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .alert("Are you sure?", isPresented: $showResetConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Reset Everything", role: .destructive) {
-                // 1. Stop relay
                 relayManager.stopRelay {
-                    // 2. Reset app data and Restart
                     Task { @MainActor in
                         configService.resetApp()
                         ConfigService.quitApp()
@@ -462,273 +1024,705 @@ struct AdvancedSettingsView: View {
             Text("This action cannot be undone. All your relay data will be lost and the app will quit.")
         }
     }
+
+    #if os(iOS)
+    private var macRelaySyncSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Mac Relay URL")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                TextField("wss://relay.example.com", text: $configService.config.macRelayURL)
+                    .font(.system(.body, design: .monospaced))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .padding(10)
+                    .background(Color.platformControlBackground)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                    )
+                
+                Text("Enter the WebSocket URL of your always-on Mac Haven relay. The iOS app will sync any notes it missed while backgrounded.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.vertical, 4)
+            
+            // Sync status & button
+            if !configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if macSyncService.isSyncing {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text(macSyncService.syncStatus)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else if !macSyncService.syncStatus.isEmpty {
+                            HStack(spacing: 6) {
+                                Image(systemName: macSyncService.notesSynced > 0 ? "checkmark.circle.fill" : "info.circle.fill")
+                                    .foregroundColor(macSyncService.notesSynced > 0 ? .green : .blue)
+                                    .font(.caption)
+                                Text(macSyncService.syncStatus)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        if let lastSync = macSyncService.lastSyncDate {
+                            Text("Last sync: \(lastSync, style: .relative) ago")
+                                .font(.caption2)
+                                .foregroundColor(.secondary.opacity(0.7))
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        macSyncService.forceSync()
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text("Sync Now")
+                        }
+                        .font(.subheadline.bold())
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.havenPurple)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(macSyncService.isSyncing)
+                }
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Image(systemName: "desktopcomputer")
+                Text("Mac Relay Sync")
+            }
+        } footer: {
+            Text("Connect to your always-on Mac Haven relay to sync notes the iOS app missed while in the background.")
+        }
+    }
+    #endif
 }
+
 
 struct ImportSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     
     var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                Section("Import Configuration") {
-                    TextField("Start Date", text: $configService.config.importStartDate)
-                        .help("Format: YYYY-MM-DD. Notes will be fetched starting from this date.")
-                    
-                    TextField("Seed Relays File", text: $configService.config.importSeedRelaysFile)
-                        .help("The JSON file containing relays to fetch notes from.")
+        Form {
+            Section {
+                TextField("Start Date", text: $configService.config.importStartDate)
+                TextField("Seed Relays File", text: $configService.config.importSeedRelaysFile)
+            } header: {
+                Text("Import Configuration")
+            } footer: {
+                Text("Format: YYYY-MM-DD. Notes will be fetched starting from this date.")
+            }
+            
+            Section {
+                RelayListEditor(relays: $configService.config.importSeedRelays)
+            } header: {
+                Text("Seed Relays")
+            } footer: {
+                Text("The import process will fetch your own notes and notes where you are tagged. Make sure you have your npub set correctly in the Identity tab.")
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+}
+
+struct BackupSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var relayManager: RelayProcessManager
+    
+    @State private var isExportingJSONL = false
+    @State private var isImportingJSONL = false
+    @State private var isExportingBlossom = false
+    @State private var isImportingBlossom = false
+    @State private var statusMessage = ""
+    @State private var showFileImporter = false
+    @State private var showBlossomImporter = false
+    
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Export Notes")
+                            .font(.body)
+                        Text("Save all notes and metadata as a JSONL backup")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: exportJSONL) {
+                        HStack(spacing: 6) {
+                            if isExportingJSONL {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.up.doc.fill")
+                            }
+                            Text("Export")
+                        }
+                    }
+                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                }
+                
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Import Notes")
+                            .font(.body)
+                        Text("Restore notes from a Haven JSONL backup (.zip)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: importJSONL) {
+                        HStack(spacing: 6) {
+                            if isImportingJSONL {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.down.doc.fill")
+                            }
+                            Text("Import")
+                        }
+                    }
+                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                }
+            } header: {
+                Text("Notes (JSONL)")
+            } footer: {
+                Text("Export creates a compressed backup of all your notes. Import restores from a previously exported backup.")
+            }
+            
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Export Media")
+                            .font(.body)
+                        Text("Save all Blossom media files as a backup")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: exportBlossom) {
+                        HStack(spacing: 6) {
+                            if isExportingBlossom {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "photo.stack")
+                            }
+                            Text("Export")
+                        }
+                    }
+                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                }
+                
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Import Media")
+                            .font(.body)
+                        Text("Restore media from a Blossom backup (.zip)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: importBlossom) {
+                        HStack(spacing: 6) {
+                            if isImportingBlossom {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "photo.badge.arrow.down")
+                            }
+                            Text("Import")
+                        }
+                    }
+                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                }
+            } header: {
+                Text("Media (Blossom)")
+            } footer: {
+                Text("Export creates a compressed backup of your images and videos. Import restores media from a previously exported backup.")
+            }
+            
+            if !statusMessage.isEmpty {
+                Section {
+                    HStack {
+                        Image(systemName: statusMessage.contains("failed") || statusMessage.contains("Error") ? "xmark.circle.fill" : "checkmark.circle.fill")
+                            .foregroundColor(statusMessage.contains("failed") || statusMessage.contains("Error") ? .red : .green)
+                        Text(statusMessage)
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            .formStyle(.grouped)
-            .frame(height: 150)
-            
-            Divider()
-            
-            VStack(alignment: .leading) {
-                Text("Seed Relays")
-                    .font(.headline)
-                    .padding(.horizontal)
-                    .padding(.top)
-                
-                RelayListEditor(relays: $configService.config.importSeedRelays)
-            }
-            
-            Text("The import process will fetch your own notes and notes where you are tagged. Make sure you have your npub set correctly in the Identity tab.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding()
         }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.zip], allowsMultipleSelection: false) { result in
+            handleJSONLImport(result)
+        }
+        .fileImporter(isPresented: $showBlossomImporter, allowedContentTypes: [.zip], allowsMultipleSelection: false) { result in
+            handleBlossomImport(result)
+        }
+        #endif
+    }
+    
+    // MARK: - JSONL Export
+    
+    private func exportJSONL() {
+        isExportingJSONL = true
+        statusMessage = "Preparing JSONL export..."
+        
+        let tempDir = NSTemporaryDirectory()
+        let tempPath = (tempDir as NSString).appendingPathComponent("haven-backup-\(Date().timeIntervalSince1970).zip")
+        
+        relayManager.runBackupExport(config: configService.config, outputPath: tempPath) { success in
+            Task { @MainActor in
+                isExportingJSONL = false
+                guard success else {
+                    statusMessage = "JSONL export failed"
+                    clearStatus()
+                    return
+                }
+                #if os(macOS)
+                presentSavePanel(title: "Save JSONL Backup", defaultName: "haven-backup.zip", tempPath: tempPath)
+                #else
+                shareFile(at: tempPath)
+                #endif
+            }
+        }
+    }
+    
+    // MARK: - JSONL Import
+    
+    private func importJSONL() {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.title = "Choose JSONL Backup"
+        panel.allowedContentTypes = [.zip]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        performJSONLRestore(from: url)
+        #else
+        showFileImporter = true
+        #endif
+    }
+    
+    #if os(iOS)
+    private func handleJSONLImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            performJSONLRestore(from: url)
+        case .failure(let error):
+            statusMessage = "Import error: \(error.localizedDescription)"
+            clearStatus()
+        }
+    }
+    #endif
+    
+    private func performJSONLRestore(from url: URL) {
+        isImportingJSONL = true
+        statusMessage = "Restoring notes..."
+        
+        // Copy to temp to avoid sandbox issues
+        let tempFile = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("restore-\(UUID().uuidString).zip")
+        
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        
+        do {
+            try FileManager.default.copyItem(at: url, to: tempFile)
+        } catch {
+            isImportingJSONL = false
+            statusMessage = "Error copying file: \(error.localizedDescription)"
+            clearStatus()
+            return
+        }
+        
+        relayManager.runBackupRestore(config: configService.config, inputPath: tempFile.path) { success in
+            Task { @MainActor in
+                isImportingJSONL = false
+                try? FileManager.default.removeItem(at: tempFile)
+                statusMessage = success ? "Notes restored successfully!" : "Note restore failed"
+                clearStatus()
+            }
+        }
+    }
+    
+    // MARK: - Blossom Export
+    
+    private func exportBlossom() {
+        isExportingBlossom = true
+        statusMessage = "Preparing Blossom export..."
+        
+        let tempDir = NSTemporaryDirectory()
+        let tempPath = (tempDir as NSString).appendingPathComponent("blossom-backup-\(Date().timeIntervalSince1970).zip")
+        
+        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: tempPath) { success in
+            Task { @MainActor in
+                isExportingBlossom = false
+                guard success else {
+                    statusMessage = "Blossom export failed"
+                    clearStatus()
+                    return
+                }
+                #if os(macOS)
+                presentSavePanel(title: "Save Blossom Backup", defaultName: "blossom-backup.zip", tempPath: tempPath)
+                #else
+                shareFile(at: tempPath)
+                #endif
+            }
+        }
+    }
+    
+    // MARK: - Blossom Import
+    
+    private func importBlossom() {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.title = "Choose Blossom Backup"
+        panel.allowedContentTypes = [.zip]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        performBlossomRestore(from: url)
+        #else
+        showBlossomImporter = true
+        #endif
+    }
+    
+    #if os(iOS)
+    private func handleBlossomImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            performBlossomRestore(from: url)
+        case .failure(let error):
+            statusMessage = "Import error: \(error.localizedDescription)"
+            clearStatus()
+        }
+    }
+    #endif
+    
+    private func performBlossomRestore(from url: URL) {
+        isImportingBlossom = true
+        statusMessage = "Restoring media..."
+        
+        let tempFile = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("blossom-restore-\(UUID().uuidString).zip")
+        
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        
+        do {
+            try FileManager.default.copyItem(at: url, to: tempFile)
+        } catch {
+            isImportingBlossom = false
+            statusMessage = "Error copying file: \(error.localizedDescription)"
+            clearStatus()
+            return
+        }
+        
+        relayManager.runBlossomImportStrippingExtensions(config: configService.config, inputPath: tempFile.path) { success in
+            Task { @MainActor in
+                isImportingBlossom = false
+                try? FileManager.default.removeItem(at: tempFile)
+                statusMessage = success ? "Media restored successfully!" : "Media restore failed"
+                clearStatus()
+            }
+        }
+    }
+    
+    // MARK: - Helpers
+    
+    #if os(macOS)
+    private func presentSavePanel(title: String, defaultName: String, tempPath: String) {
+        let panel = NSSavePanel()
+        panel.title = title
+        panel.nameFieldStringValue = defaultName
+        panel.allowedContentTypes = [.zip]
+        panel.canCreateDirectories = true
+        
+        if panel.runModal() == .OK, let destURL = panel.url {
+            let srcURL = URL(fileURLWithPath: tempPath)
+            do {
+                if FileManager.default.fileExists(atPath: destURL.path) {
+                    try FileManager.default.removeItem(at: destURL)
+                }
+                try FileManager.default.moveItem(at: srcURL, to: destURL)
+                statusMessage = "Saved to \(destURL.lastPathComponent)"
+            } catch {
+                statusMessage = "Failed to save: \(error.localizedDescription)"
+            }
+        } else {
+            statusMessage = "Export cancelled"
+            try? FileManager.default.removeItem(atPath: tempPath)
+        }
+        clearStatus()
+    }
+    #endif
+    
+    #if os(iOS)
+    private func shareFile(at path: String) {
+        let fileURL = URL(fileURLWithPath: path)
+        let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+        
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = scene.windows.first,
+           let rootVC = window.rootViewController {
+            rootVC.present(activityVC, animated: true)
+        }
+    }
+    #endif
+    
+    private func clearStatus() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            statusMessage = ""
+        }
+    }
+}
+
+struct FeedSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    
+    var body: some View {
+        Form {
+            Section {
+                RelayListEditor(relays: $configService.config.feedRelays)
+            } header: {
+                Text("Feed Relays")
+            } footer: {
+                Text("The feed reads from multiple relays to build your timeline. Connect to relays your followers are actively using.")
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 
 struct BlastrSettingsView: View {
     @EnvironmentObject var configService: ConfigService
+    @State private var newMirrorURL = ""
     
     var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                Section("Blastr Configuration") {
-                    TextField("Blastr Relays File", text: $configService.config.blastrRelaysFile)
-                        .help("The JSON file containing relays to broadcast notes to.")
-                }
+        Form {
+            Section {
+                TextField("Blastr Relays File", text: $configService.config.blastrRelaysFile)
+            } header: {
+                Text("Blastr Configuration")
+            } footer: {
+               Text("The JSON file containing relays to broadcast notes to.")
             }
-            .formStyle(.grouped)
-            .frame(height: 100)
             
-            Divider()
-            
-            VStack(alignment: .leading) {
-                Text("Broadcast Relays")
-                    .font(.headline)
-                    .padding(.horizontal)
-                    .padding(.top)
-                
+            Section {
                 RelayListEditor(relays: $configService.config.blastrRelays)
+            } header: {
+                Text("Broadcast Relays")
+            } footer: {
+                Text("Blastr automatically broadcasts your local notes to these external relays.")
             }
-            
-            Text("Blastr automatically broadcasts your local notes to these external relays.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding()
+
+            Section {
+                // Existing mirrors list
+                ForEach(configService.config.blossomMirrors.indices, id: \.self) { index in
+                    HStack {
+                        Text(configService.config.blossomMirrors[index])
+                            .lineLimit(1)
+                        Spacer()
+                        Button(role: .destructive) {
+                            configService.config.blossomMirrors.remove(at: index)
+                            configService.save()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.red.opacity(0.6))
+                        }
+                    }
+                }
+
+                // Add new mirror
+                HStack {
+                    TextField("https://example.com", text: $newMirrorURL)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        #endif
+
+                    Button(action: {
+                        let trimmed = newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            configService.config.blossomMirrors.append(trimmed)
+                            configService.save()
+                            newMirrorURL = ""
+                        }
+                    }) {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.green)
+                    }
+                    .disabled(newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            } header: {
+                Text("Blossom Mirrors")
+            } footer: {
+                Text("Media uploads are mirrored to these external Blossom servers. Remote users access your media via these mirrors instead of localhost.")
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+}
+
+private struct NewMirrorInputView: View {
+    @Binding var url: String
+    var onAdd: () -> Void
+    
+    var body: some View {
+        HStack {
+            TextField("https://example.com", text: $url)
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                #endif
+
+            Button(action: onAdd) {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundColor(.green)
+            }
+            .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 }
 
 
-struct BackupSettingsView: View {
-    @EnvironmentObject var configService: ConfigService
-    @EnvironmentObject var relayManager: RelayProcessManager
-    @State private var isExporting = false
-    @State private var isImportingBackup = false
-    @State private var isBackingUpBlossom = false
-    @State private var backupStatusMessage = ""
 
+struct WalletSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    @State private var balance: Int? = nil
+    @State private var isFetchingBalance = false
+    @State private var balanceError: String? = nil
+    
     var body: some View {
         Form {
-            Section("JSONL Export / Import") {
-                HStack {
-                    Button("Export Backup") {
-                        exportBackup()
-                    }
-                    .disabled(isExporting || isImportingBackup || isBackingUpBlossom)
-
-                    Button("Import Backup") {
-                        importBackup()
-                    }
-                    .disabled(isExporting || isImportingBackup || isBackingUpBlossom)
-
-                    if isExporting || isImportingBackup {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-
-                if !backupStatusMessage.isEmpty {
-                    Text(backupStatusMessage)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Text("Export creates a .zip file containing all relay databases in JSONL format. Import restores from a .zip or .jsonl file.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            Section {
+                TextEditor(text: $configService.config.nwcURI)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 80)
+                    .padding(4)
+                    .background(Color.platformControlBackground)
+                    .cornerRadius(6)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    #endif
+            } header: {
+                Text("Nostr Wallet Connect (NWC) URI")
+            } footer: {
+                Text("Paste your nostr+walletconnect:// URI here to enable sending Zaps directly from Haven.")
             }
             
-            Section("Media Backup") {
-                HStack {
-                    Button("Backup Blossom Data") {
-                        backupBlossom()
-                    }
-                    .disabled(isExporting || isImportingBackup || isBackingUpBlossom)
-                    
-                    if isBackingUpBlossom {
-                        ProgressView()
-                            .controlSize(.small)
-                            .padding(.leading, 8)
-                    }
-                }
-                
-                Text("Creates a .zip archive of all your local media files (images & videos).")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    
-                HStack {
-                    Button("Import Blossom Data") {
-                        importBlossom()
-                    }
-                    .disabled(isExporting || isImportingBackup || isBackingUpBlossom)
-                    
-                    if isImportingBackup && backupStatusMessage.contains("Blossom") {
-                        ProgressView()
-                            .controlSize(.small)
-                            .padding(.leading, 8)
-                    }
-                }
-                
-                Text("Restores media files from a .zip archive. Existing files with same names will be overwritten.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Section("Cloud Backup Provider") {
-                Picker("Provider", selection: $configService.config.backupProvider) {
-                    Text("None").tag("none")
-                    Text("S3 Compatible").tag("s3")
-                }
-            }
-
-            if configService.config.backupProvider == "s3" {
-                Section("Schedule") {
-                    Stepper("Backup every \(configService.config.backupIntervalHours) hours",
-                           value: $configService.config.backupIntervalHours, in: 1...168)
-                }
-
-                Section("S3 Configuration") {
-                    TextField("Access Key ID", text: $configService.config.s3AccessKeyId)
-                    SecureField("Secret Key", text: $configService.config.s3SecretKey)
-                    TextField("Endpoint", text: $configService.config.s3Endpoint)
-                    TextField("Region", text: $configService.config.s3Region)
-                    TextField("Bucket Name", text: $configService.config.s3BucketName)
-                }
-
-                Section("Cloud Actions") {
+            if !configService.config.nwcURI.isEmpty {
+                Section("Wallet Output") {
                     HStack {
-                        Button("Backup to Cloud") {
-                            relayManager.runBackupToCloud(config: configService.config)
-                        }
-                        .disabled(!relayManager.isRunning)
-
-                        Button("Restore from Cloud") {
-                            relayManager.runRestoreFromCloud(config: configService.config)
-                        }
-                        .disabled(relayManager.isRunning)
+                        Text("Default Zap Amount")
+                        Spacer()
+                        let amountSats = configService.config.defaultZapAmount / 1000
+                        TextField("Sats", value: Binding(
+                            get: { amountSats },
+                            set: { configService.config.defaultZapAmount = $0 * 1000 }
+                        ), formatter: NumberFormatter())
+                        #if os(iOS)
+                        .keyboardType(.numberPad)
+                        #endif
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                        Text("sats")
+                            .foregroundColor(.secondary)
                     }
-
-                    Text("Backup uploads a JSONL snapshot to your S3 bucket. Restore downloads and imports from the latest cloud backup.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    
+                    HStack {
+                        Text("Balance")
+                        Spacer()
+                        if isFetchingBalance {
+                            ProgressView().controlSize(.small)
+                        } else if let bal = balance {
+                            Text("\(bal / 1000) sats")
+                                .foregroundColor(.secondary)
+                        } else if let error = balanceError {
+                            Text(error)
+                                .foregroundColor(.red)
+                                .font(.caption)
+                        } else {
+                            Text("Unknown")
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Button {
+                            fetchBalance()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isFetchingBalance)
+                    }
                 }
             }
         }
-        .formStyle(.grouped)
-        .padding()
-    }
-
-    private func exportBackup() {
-        let panel = NSSavePanel()
-        panel.title = "Export Relay Backup"
-        panel.nameFieldStringValue = "haven-backup.zip"
-        panel.allowedContentTypes = [.zip]
-        panel.canCreateDirectories = true
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        isExporting = true
-        backupStatusMessage = "Exporting..."
-        relayManager.runBackupExport(config: configService.config, outputPath: url.path) { [self] success in
-            Task { @MainActor in
-                isExporting = false
-                backupStatusMessage = success ? "Export complete: \(url.lastPathComponent)" : "Export failed. Check logs."
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .onAppear {
+            if !configService.config.nwcURI.isEmpty {
+                fetchBalance()
             }
         }
-    }
-
-    private func importBackup() {
-        let panel = NSOpenPanel()
-        panel.title = "Import Relay Backup"
-        panel.allowedContentTypes = [.zip]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        isImportingBackup = true
-        backupStatusMessage = "Importing..."
-        relayManager.runBackupRestore(config: configService.config, inputPath: url.path) { [self] success in
-            Task { @MainActor in
-                isImportingBackup = false
-                backupStatusMessage = success ? "Import complete: \(url.lastPathComponent)" : "Import failed. Check logs."
-            }
+        .onChange(of: configService.config.nwcURI) { _, _ in
+            balance = nil
+            balanceError = nil
         }
     }
     
-    private func backupBlossom() {
-        let panel = NSSavePanel()
-        panel.title = "Back up Blossom Data"
-        panel.nameFieldStringValue = "blossom-backup.zip"
-        panel.allowedContentTypes = [.zip]
-        panel.canCreateDirectories = true
-        
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        
-        isBackingUpBlossom = true
-        // Clear status from other backup ops
-        backupStatusMessage = "Backing up Blossom media..."
-        
-        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: url.path) { [self] success in
-            Task { @MainActor in
-                isBackingUpBlossom = false
-                backupStatusMessage = success ? "Blossom backup complete: \(url.lastPathComponent)" : "Blossom backup failed."
-            }
-        }
-    }
-    
-    private func importBlossom() {
-        let panel = NSOpenPanel()
-        panel.title = "Import Blossom Data"
-        panel.allowedContentTypes = [.zip]
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-        
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        
-        isImportingBackup = true
-        backupStatusMessage = "Importing Blossom media..."
-        
-        relayManager.runBlossomImportStrippingExtensions(config: configService.config, inputPath: url.path) { success in
-            Task { @MainActor in
-                isImportingBackup = false
-                backupStatusMessage = success ? "Blossom import complete." : "Blossom import failed."
+    private func fetchBalance() {
+        guard !configService.config.nwcURI.isEmpty else { return }
+        isFetchingBalance = true
+        balanceError = nil
+        Task {
+            do {
+                let msat = try await NWCService.getBalance()
+                await MainActor.run {
+                    self.balance = msat
+                    self.isFetchingBalance = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.balanceError = error.localizedDescription
+                    self.isFetchingBalance = false
+                }
             }
         }
     }

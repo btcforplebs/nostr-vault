@@ -5,8 +5,13 @@ struct SetupWizardView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var currentStep = 0
     @State private var npub = ""
+    @State private var nsec = ""
+    @State private var nsecPassword = ""
     @State private var relayURL = ""
     @State private var dbEngine = "badger"
+    @State private var hasAcceptedToS = false
+    @State private var setupError: String?
+    @State private var showSetupError = false
     let onComplete: () -> Void
     
     var body: some View {
@@ -30,7 +35,9 @@ struct SetupWizardView: View {
             
             // Progress
             HStack(spacing: 4) {
-                ForEach(0..<8) { step in
+                let visibleSteps = isIOSDevice ? [0, 1, 2, 5, 6, 7, 8] : [0, 1, 2, 3, 4, 5, 6, 7, 8]
+                
+                ForEach(visibleSteps, id: \.self) { step in
                     Capsule()
                         .fill(step <= currentStep ? Color.havenPurple : Color.gray.opacity(0.3))
                         .frame(height: 4)
@@ -52,18 +59,20 @@ struct SetupWizardView: View {
                         case 0:
                             WelcomeStep()
                         case 1:
-                            IdentityStep(npub: $npub, whitelistedNpubs: $configService.config.whitelistedNpubs)
+                            TermsOfServiceStep(hasAccepted: $hasAcceptedToS)
                         case 2:
-                            RelayURLStep(relayURL: $relayURL)
+                            IdentityStep(npub: $npub, nsec: $nsec, nsecPassword: $nsecPassword, whitelistedNpubs: $configService.config.whitelistedNpubs)
                         case 3:
-                            DatabaseStep(dbEngine: $dbEngine)
+                            RelayURLStep(relayURL: $relayURL)
                         case 4:
-                            SetupImportStep(currentStep: $currentStep)
+                            DatabaseStep(dbEngine: $dbEngine)
                         case 5:
-                            SetupRestoreNotesStep(currentStep: $currentStep)
+                            SetupImportStep(currentStep: $currentStep)
                         case 6:
-                            SetupRestoreMediaStep(currentStep: $currentStep)
+                            SetupRestoreNotesStep(currentStep: $currentStep)
                         case 7:
+                            SetupRestoreMediaStep(currentStep: $currentStep)
+                        case 8:
                             SetupSuccessStep()
                         default:
                             EmptyView()
@@ -106,8 +115,10 @@ struct SetupWizardView: View {
                             .cornerRadius(6)
 
                         Button(action: {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString("pkill -9 haven", forType: .string)
+                        #if os(macOS)
+                        NSApp.activate(ignoringOtherApps: true)
+                        #endif
+                        PlatformClipboard.copy("pkill -9 haven")
                         }) {
                             Image(systemName: "doc.on.doc")
                                 .font(.system(size: 14))
@@ -147,28 +158,48 @@ struct SetupWizardView: View {
             HStack {
                 if currentStep > 0 {
                     Button("Back") {
-                        currentStep -= 1
+                        if isIOSDevice {
+                            if currentStep == 5 {
+                                currentStep -= 3
+                            } else {
+                                currentStep -= 1
+                            }
+                        } else {
+                            currentStep -= 1
+                        }
                     }
                 }
                 
                 Spacer()
                 
-                if currentStep < 7 {
+                if currentStep < 8 {
                     // Hide buttons when import is complete (we show Continue button in the content area)
-                    if !(currentStep == 4 && relayManager.importCompleted) {
+                    if !(currentStep == 5 && relayManager.importCompleted) {
                         Button(navButtonLabel) {
-                            if currentStep == 4 && relayManager.isImporting {
+                            if currentStep == 5 && relayManager.isImporting {
                                 relayManager.cancelImport()
                             } else {
-                                if currentStep == 3 {
+                                if currentStep == 4 {
                                     saveIntermediateConfig()
                                 }
-                                currentStep += 1
+                                if currentStep == 1 {
+                                    configService.config.hasAcceptedToS = true
+                                }
+                                if isIOSDevice {
+                                    if currentStep == 2 {
+                                        saveIntermediateConfig()
+                                        currentStep += 3
+                                    } else {
+                                        currentStep += 1
+                                    }
+                                } else {
+                                    currentStep += 1
+                                }
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(currentStep == 4 && relayManager.isImporting ? .red : .havenPurple)
-                        .disabled(!canContinue && !(currentStep == 4 && relayManager.isImporting))
+                        .tint(currentStep == 5 && relayManager.isImporting ? .red : .havenPurple)
+                        .disabled(!canContinue && !(currentStep == 5 && relayManager.isImporting))
                     }
                 } else {
                     Button("Launch Haven") {
@@ -181,15 +212,22 @@ struct SetupWizardView: View {
             .padding()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .alert("Setup Error", isPresented: $showSetupError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(setupError ?? "An unknown error occurred during setup")
+        }
     }
     
     @Environment(\.dismiss) var dismiss // Add dismiss environment
     
     var navButtonLabel: String {
-        if currentStep == 4 && relayManager.isImporting {
+        if currentStep == 5 && relayManager.isImporting {
             return "Cancel Import"
-        } else if currentStep == 4 || currentStep == 5 || currentStep == 6 {
+        } else if currentStep == 5 || currentStep == 6 || currentStep == 7 {
             return "Skip"
+        } else if currentStep == 1 {
+            return "I Agree"
         } else {
             return "Continue"
         }
@@ -197,7 +235,8 @@ struct SetupWizardView: View {
 
     var canContinue: Bool {
         switch currentStep {
-        case 1: return !npub.isEmpty && npub.hasPrefix("npub")
+        case 1: return hasAcceptedToS
+        case 2: return !npub.isEmpty && npub.hasPrefix("npub")
         default: return true
         }
     }
@@ -206,15 +245,43 @@ struct SetupWizardView: View {
         configService.config.ownerNpub = npub
         configService.config.relayURL = relayURL
         configService.config.dbEngine = dbEngine
+
+        // Encrypt nsec with NIP-49 if provided
+        if !nsec.isEmpty && !nsecPassword.isEmpty {
+            do {
+                configService.config.ownerNcryptsec = try NIP49Service.encrypt(nsec: nsec, password: nsecPassword)
+                configService.config.ownerNsec = "" // Clear plaintext
+                // Store password in Keychain for auto-signing
+                _ = NIP49Service.storePasswordInKeychain(nsecPassword)
+            } catch {
+                setupError = "Failed to encrypt private key: \(error.localizedDescription)"
+                showSetupError = true
+                return
+            }
+        }
         configService.save()
     }
     
     func saveAndComplete() {
-        FloatingArrowController.shared.dismiss()
 
         configService.config.ownerNpub = npub
         configService.config.relayURL = relayURL
         configService.config.dbEngine = dbEngine
+
+        // Encrypt nsec with NIP-49 if provided
+        if !nsec.isEmpty && !nsecPassword.isEmpty {
+            do {
+                configService.config.ownerNcryptsec = try NIP49Service.encrypt(nsec: nsec, password: nsecPassword)
+                configService.config.ownerNsec = "" // Clear plaintext
+                // Store password in Keychain for auto-signing
+                _ = NIP49Service.storePasswordInKeychain(nsecPassword)
+            } catch {
+                setupError = "Failed to encrypt private key: \(error.localizedDescription)"
+                showSetupError = true
+                return
+            }
+        }
+
         configService.config.hasCompletedSetup = true
         configService.save()
         onComplete()
@@ -274,8 +341,93 @@ struct WelcomeStep: View {
     }
 }
 
+struct TermsOfServiceStep: View {
+    @Binding var hasAccepted: Bool
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "doc.text.fill")
+                .font(.system(size: 48))
+                .foregroundColor(.havenPurple)
+                .scaleEffect(appeared ? 1.0 : 0.5)
+                .opacity(appeared ? 1 : 0)
+                .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.05), value: appeared)
+
+            Text("Terms of Service")
+                .font(.title2.bold())
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 12)
+                .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.1), value: appeared)
+
+            Text("Please review and accept before continuing")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 12)
+                .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.15), value: appeared)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    tosSection(
+                        title: "Strict EULA",
+                        body: "Haven displays content from the Nostr network, which is decentralized and uncensored. However, Haven has zero tolerance for objectionable content or abusive users. You are solely responsible for the content you publish, and you agree to use the built-in moderation tools to filter or block any offensive material or abusive accounts."
+                    )
+
+                    tosSection(
+                        title: "Content Moderation",
+                        body: "Haven provides tools to manage content on your relay, including the ability to block users via the blacklist. You can block any user by right-clicking their content and selecting \"Block User\". Blocked users are prevented from posting to your Chat and Inbox relays."
+                    )
+
+                    tosSection(
+                        title: "Web of Trust",
+                        body: "Haven uses a Web of Trust system to filter incoming content on your Chat and Inbox relays. Only users within your trust network can interact with these relays."
+                    )
+
+                    tosSection(
+                        title: "Your Responsibility",
+                        body: "As the relay operator, you are responsible for managing access to your relay. Haven is provided as-is, without warranty. You agree to use Haven in compliance with applicable laws."
+                    )
+                }
+                .padding()
+            }
+            .frame(maxWidth: 450, maxHeight: 200)
+            .background(Color.platformControlBackground)
+            .cornerRadius(12)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
+            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.2), value: appeared)
+
+            Toggle(isOn: $hasAccepted) {
+                Text("I have read and agree to the Terms of Service")
+                    .font(.subheadline)
+            }
+            #if os(macOS)
+            .toggleStyle(.checkbox)
+            #endif
+            .opacity(appeared ? 1 : 0)
+            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.3), value: appeared)
+        }
+        .padding()
+        .onAppear { appeared = true }
+    }
+
+    private func tosSection(title: String, body: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.bold())
+            Text(body)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 struct IdentityStep: View {
     @Binding var npub: String
+    @Binding var nsec: String
+    @Binding var nsecPassword: String
     @Binding var whitelistedNpubs: [String]
     @State private var appeared = false
 
@@ -313,6 +465,55 @@ struct IdentityStep: View {
                 Label("Must be a valid npub (starts with 'npub')", systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundColor(.orange)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Private Key (Optional)")
+                    .font(.headline)
+                Text("Enter your nsec to compose and sign notes. Your key will be encrypted with NIP-49 using a password you set below.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                SecureField("nsec1...", text: $nsec)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .frame(maxWidth: 350)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
+            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.22), value: appeared)
+
+            if !nsec.isEmpty && !nsec.hasPrefix("nsec") {
+                Label("Must be a valid nsec (starts with 'nsec')", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+
+            if !nsec.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Password (Required)")
+                            .font(.headline)
+                        Image(systemName: "lock.fill")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                    Text("Set a password to encrypt your private key using NIP-49. You'll need this password each time Haven signs a note.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    SecureField("Enter password...", text: $nsecPassword)
+                        .textFieldStyle(.roundedBorder)
+
+                    if nsecPassword.isEmpty {
+                        Label("Password is required to proceed", systemImage: "exclamationmark.circle.fill")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
+                .frame(maxWidth: 350)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 10)
+                .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.24), value: appeared)
             }
 
             Divider()
@@ -543,7 +744,7 @@ struct SetupImportStep: View {
                         }
                     }
                     .padding()
-                    .background(Color(NSColor.controlBackgroundColor))
+                    .background(Color.platformControlBackground)
                     .cornerRadius(12)
 
                 } else {
@@ -569,7 +770,7 @@ struct SetupImportStep: View {
 
                         RelayListEditor(relays: $configService.config.importSeedRelays)
                             .frame(height: 140)
-                            .background(Color(NSColor.controlBackgroundColor))
+                            .background(Color.platformControlBackground)
                             .cornerRadius(8)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
@@ -578,7 +779,7 @@ struct SetupImportStep: View {
                             .clipped()
                     }
                     .padding()
-                    .background(Color(NSColor.controlBackgroundColor))
+                    .background(Color.platformControlBackground)
                     .cornerRadius(8)
 
                     Button(action: {
@@ -614,7 +815,7 @@ struct SetupImportStep: View {
             Button("Change Port", role: .none) {
                 relayManager.isPortConflict = false
                 relayManager.cancelImport()
-                currentStep = 2
+                currentStep = 3
             }
 
             Button("Cancel", role: .cancel) {
@@ -672,7 +873,7 @@ struct SetupRestoreNotesStep: View {
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color(NSColor.controlBackgroundColor))
+                    .background(Color.platformControlBackground)
                     .cornerRadius(12)
                 } else if restoreCompleted {
                     HStack(spacing: 12) {
@@ -684,7 +885,7 @@ struct SetupRestoreNotesStep: View {
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color(NSColor.controlBackgroundColor))
+                    .background(Color.platformControlBackground)
                     .cornerRadius(12)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
@@ -705,7 +906,9 @@ struct SetupRestoreNotesStep: View {
                     .buttonStyle(.plain)
                 } else {
                     Button(action: {
+                        #if os(macOS)
                         NSApp.activate(ignoringOtherApps: true)
+                        #endif
                         showingFileImporter = true
                     }) {
                         Label("Choose Backup File", systemImage: "folder")
@@ -766,12 +969,22 @@ struct SetupRestoreNotesStep: View {
         let tempDir = FileManager.default.temporaryDirectory
         let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
 
-        do {
-            if FileManager.default.fileExists(atPath: tempFile.path) {
-                try FileManager.default.removeItem(at: tempFile)
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var copyError: Error?
+
+        coordinator.coordinate(readingItemAt: url, options: .withoutChanges, error: &coordinationError) { safeURL in
+            do {
+                if FileManager.default.fileExists(atPath: tempFile.path) {
+                    try FileManager.default.removeItem(at: tempFile)
+                }
+                try FileManager.default.copyItem(at: safeURL, to: tempFile)
+            } catch {
+                copyError = error
             }
-            try FileManager.default.copyItem(at: url, to: tempFile)
-        } catch {
+        }
+
+        if let error = coordinationError ?? copyError {
             self.restoreError = "Failed to copy backup file: \(error.localizedDescription)"
             self.showRestoreError = true
             self.isRestoring = false
@@ -842,7 +1055,7 @@ struct SetupRestoreMediaStep: View {
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color(NSColor.controlBackgroundColor))
+                    .background(Color.platformControlBackground)
                     .cornerRadius(12)
                 } else if restoreCompleted {
                     HStack(spacing: 12) {
@@ -854,7 +1067,7 @@ struct SetupRestoreMediaStep: View {
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(Color(NSColor.controlBackgroundColor))
+                    .background(Color.platformControlBackground)
                     .cornerRadius(12)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
@@ -875,7 +1088,9 @@ struct SetupRestoreMediaStep: View {
                     .buttonStyle(.plain)
                 } else {
                     Button(action: {
+                        #if os(macOS)
                         NSApp.activate(ignoringOtherApps: true)
+                        #endif
                         showingFileImporter = true
                     }) {
                         Label("Choose Media Archive", systemImage: "folder")
@@ -1020,13 +1235,12 @@ struct SetupSuccessStep: View {
         .padding()
         .onAppear {
             showContent = true
+            #if os(macOS)
             // Show the floating arrow outside the window after content settles
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 FloatingArrowController.shared.show()
             }
-        }
-        .onDisappear {
-            FloatingArrowController.shared.dismiss()
+            #endif
         }
     }
 }
@@ -1059,7 +1273,7 @@ struct FeatureRow: View {
             Spacer()
         }
         .padding()
-        .background(isHovered ? Color.havenPurplePale : Color(NSColor.controlBackgroundColor))
+        .background(isHovered ? Color.havenPurplePale : Color.platformControlBackground)
         .cornerRadius(12)
         .scaleEffect(isHovered ? 1.02 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
@@ -1107,7 +1321,7 @@ struct DatabaseOption: View {
                     .animation(.spring(response: 0.3, dampingFraction: 0.6), value: selected)
             }
             .padding()
-            .background(selected == value ? Color.havenPurplePale.opacity(0.5) : (isHovered ? Color(NSColor.controlBackgroundColor).opacity(0.8) : Color(NSColor.controlBackgroundColor)))
+            .background(selected == value ? Color.havenPurplePale.opacity(0.5) : (isHovered ? Color.platformControlBackground.opacity(0.8) : Color.platformControlBackground))
             .cornerRadius(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)

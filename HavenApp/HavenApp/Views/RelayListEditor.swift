@@ -5,6 +5,52 @@ struct RelayListEditor: View {
     @State private var newRelay = ""
     
     var body: some View {
+        Group {
+            #if os(iOS)
+            iOSContent
+            #else
+            macOSContent
+            #endif
+        }
+    }
+    
+    #if os(iOS)
+    private var iOSContent: some View {
+        Group {
+            ForEach(relays, id: \.self) { relay in
+                HStack {
+                    Text(relay)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button(role: .destructive) {
+                        relays.removeAll(where: { $0 == relay })
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+            .onDelete(perform: delete)
+            
+            HStack {
+                TextField("wss://relay.example.com", text: $newRelay)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .keyboardType(.URL)
+                
+                Button(action: addRelay) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.havenPurple)
+                        .font(.title3)
+                }
+                .disabled(newRelay.isEmpty)
+            }
+        }
+    }
+    #endif
+
+    private var macOSContent: some View {
         VStack(spacing: 0) {
             List {
                 ForEach(relays, id: \.self) { relay in
@@ -41,9 +87,9 @@ struct RelayListEditor: View {
                 .disabled(newRelay.isEmpty)
                 .padding(.trailing, 8)
             }
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(Color.platformControlBackground)
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(Color.platformControlBackground)
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)

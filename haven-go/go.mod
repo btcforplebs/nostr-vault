@@ -3,6 +3,7 @@ module github.com/bitvora/haven
 go 1.24.1
 
 require (
+	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/fiatjaf/eventstore v0.17.5
 	github.com/fiatjaf/khatru v0.19.1
 	github.com/joho/godotenv v1.5.1
@@ -30,7 +31,6 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
-	github.com/dgraph-io/badger/v4 v4.8.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fasthttp/websocket v1.5.12 // indirect

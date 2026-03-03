@@ -1,21 +1,27 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 @MainActor
-class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
-    // Shared services are accessed directly from their static shared properties
-    // We don't need to store them here as properties if we use singletons consistently
-    
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // Kill any orphaned haven process left over from a previous app session
-        RelayProcessManager.shared.killOrphanedProcess()
+class AppDelegate: NSObject, ObservableObject {
+    #if os(macOS)
+    // Keep a reference to the window prevent it from being deallocated immediately
+    private var welcomeWindow: NSWindow?
+    #endif
 
+    @MainActor
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        #if os(macOS)
         // Check if setup is complete
-        // We use the shared ConfigService which loads from disk on init
         if !ConfigService.shared.config.hasCompletedSetup {
             openWelcomeWindow()
         }
+        #endif
     }
 
+    #if os(macOS)
+    @MainActor
     func applicationWillTerminate(_ notification: Notification) {
         // Ensure child processes are killed cleanly
         #if DEBUG
@@ -26,12 +32,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         Thread.sleep(forTimeInterval: 1.0)
     }
     
-    // Keep a reference to the window prevent it from being deallocated immediately
-    private var welcomeWindow: NSWindow?
-    
     func openWelcomeWindow() {
         // Create the window
-        // Use a larger size for the SetupWizard
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
             styleMask: [.titled, .closable, .fullSizeContentView, .resizable],
@@ -71,4 +73,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         
         self.welcomeWindow = window
     }
+    #endif
 }
+
+#if os(macOS)
+extension AppDelegate: NSApplicationDelegate {}
+#endif
