@@ -32,6 +32,17 @@
 - **Web of Trust (WoT)** — Built-in WoT with configurable depth and periodic refresh mechanisms.
 - **Privacy First** — Secured by system-level Keychain. Encrypt your private key with NIP-49 (using ncryptsec).
 
+## ⚙️ Divergence from Upstream
+
+This fork introduces several architectural changes and features to support native macOS and iOS integration:
+
+- **C-Shared Library Architecture** — Go relay compiled as a static library linked directly into the Swift binary.
+- **Multi-Relay Dynamic Handler** — Handles four distinct relays (**Private, Chat, Inbox, Outbox**) within a single process.
+- **barrydeen/haven Enhancements** — Multi-pubkey whitelisting, blacklisting, JSONL backups, and persistent WoT.
+- **Mobile & Sandbox Fixes** — Specialized file loading for macOS and memory optimizations for iOS.
+
+For the full technical breakdown, see [**DIVERGENCE.md**](docs/DIVERGENCE.md).
+
 ## 📺 Video Walkthrough
 
 [Coming Soon]
