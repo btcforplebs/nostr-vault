@@ -46,11 +46,18 @@ class BlossomService {
     ///   - sha256: The SHA256 hash of the data (hex string)
     /// - Returns: External mirror URL if at least one mirror succeeds, nil if all fail
     func uploadAndMirror(data: Data, sha256: String, contentType: String = "application/octet-stream") async -> URL? {
-        // Step 1: Upload to local Blossom first (now HTTPS with self-signed cert)
-        // Use "localhost" instead of "127.0.0.1" to match the certificate subject
-        let localSuccess = await uploadToServer(data: data, url: "https://localhost:3355", sha256: sha256, contentType: contentType, useLocalhostSession: true)
+        let port = await MainActor.run { configService.config.relayPort }
+        
+        #if os(macOS)
+        let localURLStr = "http://127.0.0.1:\(port)"
+        #else
+        let localURLStr = "https://localhost:\(port)"
+        #endif
+
+        // Step 1: Upload to local Blossom first
+        let localSuccess = await uploadToServer(data: data, url: localURLStr, sha256: sha256, contentType: contentType, useLocalhostSession: true)
         guard localSuccess != nil else {
-            logger.error("Failed to upload to local Blossom at localhost:3355")
+            logger.error("Failed to upload to local Blossom at \(localURLStr)")
             return nil
         }
 
@@ -105,7 +112,14 @@ class BlossomService {
     /// Uses Blossom HTTP Auth (kind 24242, per BUD-01 spec)
     private func uploadToServer(data: Data, url: String, sha256: String, contentType: String, useLocalhostSession: Bool) async -> URL? {
         let maxRetries = 3
-        let isLocal = URL(string: url).map { isLocalhost($0) } ?? false
+        let parsedURL = URL(string: url)
+        // isOnDeviceRelay: strict localhost only — used for response parsing (skip BlobDescriptor)
+        let isOnDeviceRelay = parsedURL.map { host in
+            guard let h = host.host?.lowercased() else { return false }
+            return h == "localhost" || h == "127.0.0.1" || h == "0.0.0.0"
+        } ?? false
+        // isLocalNetwork: includes Tailscale/LAN — used for HTTPS skip (don't force https on LAN)
+        let isLocalNetwork = parsedURL.map { isLocalhost($0) } ?? false
 
         for attempt in 0..<maxRetries {
             guard var serverURL = URL(string: url) else {
@@ -113,8 +127,8 @@ class BlossomService {
                 return nil
             }
 
-            // Ensure HTTPS for remote servers
-            if serverURL.scheme == "http" && !isLocal {
+            // Ensure HTTPS for remote servers (skip for localhost and LAN/Tailscale)
+            if serverURL.scheme == "http" && !isLocalNetwork {
                 var components = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)
                 components?.scheme = "https"
                 if let secureURL = components?.url {
@@ -122,10 +136,8 @@ class BlossomService {
                 }
             }
 
-            // Local (khatru): PUT /{sha256}  |  External (BUD-02): PUT /upload
-            let uploadURL = isLocal
-                ? serverURL.appendingPathComponent(sha256)
-                : serverURL.appendingPathComponent("upload")
+            // BUD-02 standard: PUT /upload for all servers (local khatru/blossom + external)
+            let uploadURL = serverURL.appendingPathComponent("upload")
 
             // Create Blossom auth event per BUD-02 spec (kind 24242)
             // Includes: t tag (operation type), x tag (sha256 hash), expiration tag
@@ -172,13 +184,13 @@ class BlossomService {
                 let (responseData, response) = try await session.upload(for: request, from: data)
 
                 if let httpResponse = response as? HTTPURLResponse, (200...201).contains(httpResponse.statusCode) {
-                    // For external servers, parse BUD-02 Blob Descriptor for the canonical URL
-                    if !isLocal, let descriptor = try? JSONDecoder().decode(BlobDescriptor.self, from: responseData),
+                    // For external/mirror servers, parse BUD-02 Blob Descriptor for the canonical URL
+                    if !isOnDeviceRelay, let descriptor = try? JSONDecoder().decode(BlobDescriptor.self, from: responseData),
                        let downloadURL = URL(string: descriptor.url) {
                         logger.info("Successfully uploaded to \(url): \(descriptor.url)")
                         return downloadURL
                     }
-                    // Fallback (local server or unparseable response): construct URL
+                    // Fallback (local on-device relay or unparseable response): construct URL
                     let fileURL = serverURL.appendingPathComponent(sha256)
                     logger.info("Successfully uploaded to \(url): \(fileURL.absoluteString)")
                     return fileURL
@@ -219,7 +231,16 @@ class BlossomService {
 
     /// Check if a URL is localhost
     private func isLocalhost(_ url: URL) -> Bool {
-        guard let host = url.host else { return false }
-        return host == "localhost" || host == "127.0.0.1"
+        guard let host = url.host?.lowercased() else { return false }
+        if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" {
+            return true
+        }
+        
+        // Also consider local network IPs as local (e.g. Tailscale 100.x.x.x, 192.168.x.x, 10.x.x.x, .ts.net)
+        if host.hasPrefix("100.") || host.hasPrefix("192.168.") || host.hasPrefix("10.") || host.hasPrefix("172.") || host.hasSuffix(".ts.net") {
+            return true
+        }
+        
+        return false
     }
 }

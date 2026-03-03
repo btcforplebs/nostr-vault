@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0 macOS / 1.0 iOS (Build 3)] - 2026-03-03
+
+### Fixed
+- **Blossom Uploads Broken**: Removed redundant custom Blossom HTTP handlers that were intercepting requests before they reached the native `khatru/blossom` server. This was blocking standard BUD-02 `PUT /upload` requests and causing 400 errors from web clients.
+- **Blossom CORS Errors**: Added proper CORS headers (`Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`) and `OPTIONS` preflight handling to resolve `XMLHttpRequest cannot load` errors when uploading media from web-based Nostr clients.
+- **Blossom Downloads with File Extensions**: The khatru/blossom server now handles all GET requests natively, including URLs with file extensions (e.g., `/<sha256>.jpg`), fixing `Invalid SHA256 hash` errors when viewing media.
+- **macOS Local Upload Protocol Mismatch**: Fixed `BlossomService` to use `http://` instead of `https://` for local Blossom uploads on macOS, since the Mac relay runs plain HTTP (Cloudflare handles TLS externally). The hardcoded `https://localhost:3355` URL was failing silently after TLS was disabled for the macOS C-shared relay.
+- **Standardized Upload Endpoint**: Updated `BlossomService` to use the BUD-02 standard `PUT /upload` endpoint for all uploads (local and remote), replacing the non-standard `PUT /<sha256>` path.
+
+### Added
+- **Tailscale / LAN Network Support**: Expanded local network detection to recognize Tailscale IPs (`100.x.x.x`, `.ts.net`), as well as standard LAN ranges (`192.168.x`, `10.x`, `172.x`). This prevents the app from incorrectly forcing HTTPS or altering upload paths when connecting to your own relay over a local network.
+
 ## [2.4.0 macOS / 1.0 iOS (Build 2)] - 2026-03-03
 
 ### Added

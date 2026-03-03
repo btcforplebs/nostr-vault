@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/spf13/afero"
@@ -96,7 +94,7 @@ func main() {
 
 	// Try to load from cache first - instant startup
 	// Always initialize asynchronously to avoid blocking relay startup
-	wotModel.LoadFromCache()  // Load if available, otherwise starts empty
+	wotModel.LoadFromCache() // Load if available, otherwise starts empty
 	go wot.Initialize(mainCtx, wotModel)
 	if err := initRelays(mainCtx); err != nil {
 		log.Fatal("🚫 error initializing databases/relays:", err)
@@ -109,27 +107,19 @@ func main() {
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("templates/static"))))
 
-	// Blossom + relay router - check method and route accordingly
+	// All Blossom endpoints (PUT /upload, GET /<sha256>, DELETE /<sha256>, etc.)
+	// are handled by the khatru/blossom server mounted on outboxRelay in init.go.
+	// We just need to route everything through dynamicRelayHandler and add CORS headers.
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Blossom media endpoints (PUT, GET, DELETE on root paths)
-		path := r.URL.Path
-		isWebSocket := r.Header.Get("Sec-WebSocket-Key") != ""
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
 
-		if path != "" && path != "/" && !isWebSocket {
-			// Not a WebSocket request, check if it's Blossom
-			switch r.Method {
-			case "PUT":
-				handleBlossomUpload(w, r)
-				return
-			case "GET":
-				handleBlossomDownload(w, r)
-				return
-			case "DELETE":
-				handleBlossomDelete(w, r)
-				return
-			}
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
 		}
-		// Fall through to relay handler
+
 		dynamicRelayHandler(w, r)
 	})
 
@@ -156,106 +146,3 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("run 'haven [command] --help' for more information on a command.")
 }
-
-
-func handleBlossomUpload(w http.ResponseWriter, r *http.Request) {
-	// Extract SHA256 from path (e.g., /013725e4cfa79cdc4a7e108c3799b739d72b86eadf23586cf5e103b04ae3257f)
-	sha256 := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/"), "")
-	if sha256 == "" || len(sha256) != 64 {
-		http.Error(w, "Invalid SHA256 hash", http.StatusBadRequest)
-		return
-	}
-
-	// Verify NIP-98 auth header
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
-		return
-	}
-
-	// TODO: Verify NIP-98 signature
-	// For now, accept any auth (in production, validate the signature)
-
-	// Read body and store
-	defer r.Body.Close()
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Failed to read body", http.StatusBadRequest)
-		return
-	}
-
-	// Store to filesystem
-	file, err := fs.Create(config.BlossomPath + sha256)
-	if err != nil {
-		slog.Error("Failed to create blob file", "sha256", sha256, "error", err)
-		http.Error(w, "Failed to store blob", http.StatusInternalServerError)
-		return
-	}
-	if _, err := io.Copy(file, bytes.NewReader(body)); err != nil {
-		file.Close()
-		slog.Error("Failed to write blob file", "sha256", sha256, "error", err)
-		http.Error(w, "Failed to store blob", http.StatusInternalServerError)
-		return
-	}
-	file.Close()
-
-	slog.Debug("stored blob", "sha256", sha256, "size", len(body))
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	fmt.Fprintf(w, `{"status":"ok","hash":"%s","url":"https://%s/%s"}`, sha256, config.RelayURL, sha256)
-}
-
-func handleBlossomDownload(w http.ResponseWriter, r *http.Request) {
-	// Extract SHA256 from path
-	sha256 := strings.TrimPrefix(r.URL.Path, "/")
-	if sha256 == "" || len(sha256) != 64 {
-		http.Error(w, "Invalid SHA256 hash", http.StatusBadRequest)
-		return
-	}
-
-	// Load blob from filesystem
-	file, err := fs.Open(config.BlossomPath + sha256)
-	if err != nil {
-		slog.Debug("Blob not found", "sha256", sha256)
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-	defer file.Close()
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.WriteHeader(http.StatusOK)
-	io.Copy(w, file)
-}
-
-func handleBlossomDelete(w http.ResponseWriter, r *http.Request) {
-	// Extract SHA256 from path
-	sha256 := strings.TrimPrefix(r.URL.Path, "/")
-	if sha256 == "" || len(sha256) != 64 {
-		http.Error(w, "Invalid SHA256 hash", http.StatusBadRequest)
-		return
-	}
-
-	// Verify NIP-98 auth header
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
-		return
-	}
-
-	// TODO: Verify NIP-98 signature and ownership
-
-	// Delete from filesystem
-	if err := fs.Remove(config.BlossomPath + sha256); err != nil {
-		slog.Error("Failed to delete blob", "sha256", sha256, "error", err)
-		http.Error(w, "Failed to delete blob", http.StatusInternalServerError)
-		return
-	}
-
-	slog.Debug("deleted blob", "sha256", sha256)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status":"ok"}`)
-}
-
