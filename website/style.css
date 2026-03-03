@@ -150,6 +150,7 @@ nav {
     margin-bottom: 10px;
     background: linear-gradient(180deg, #fff 0%, #aaa 100%);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
@@ -193,6 +194,18 @@ nav {
 
 .btn-secondary:hover {
     background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-testflight {
+    background: linear-gradient(135deg, #007AFF 0%, #00B4FF 100%);
+    color: #ffffff;
+    border: none;
+}
+
+.btn-testflight:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px -5px rgba(0, 122, 255, 0.4);
+    opacity: 0.9;
 }
 
 /* Sticky Scroll Zoom Animation */
