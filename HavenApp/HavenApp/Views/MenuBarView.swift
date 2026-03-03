@@ -78,8 +78,10 @@ struct MenuBarView: View {
                         selectedTab = .dashboard
                     }
                     
-                    TabButton(icon: "list.bullet.rectangle.portrait", title: "Feed", isSelected: selectedTab == .feed) {
-                        selectedTab = .feed
+                    if isPoppedOut {
+                        TabButton(icon: "list.bullet.rectangle.portrait", title: "Feed", isSelected: selectedTab == .feed) {
+                            selectedTab = .feed
+                        }
                     }
                     
                     TabButton(icon: "doc.text.image", title: "Viewer", isSelected: selectedTab == .viewer) {
@@ -102,8 +104,12 @@ struct MenuBarView: View {
                         DashboardView()
                             .transition(.opacity)
                     case .feed:
-                        FeedView()
-                            .transition(.opacity)
+                        if isPoppedOut {
+                            FeedView()
+                                .transition(.opacity)
+                        } else {
+                            DashboardView() // Fallback
+                        }
                     case .viewer:
                         ViewerView()
                             .transition(.opacity)

@@ -320,6 +320,10 @@ class NostrService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let processingQueue = DispatchQueue(label: "com.haven.nostr-processing", qos: .userInitiated)
     
+    // Relay List Metadata Cache (Kind 10002)
+    @Published var relayLists: [String: [String]] = [:] // [Pubkey: [InboxRelayURLs]]
+    private var relaysInFlight = Set<String>()
+    
     // Batching updates to the UI
     private let eventUpdateSubject = PassthroughSubject<Void, Never>()
 
@@ -447,7 +451,18 @@ class NostrService: ObservableObject {
             print("NostrService: Loaded \(profiles.count) profiles from cache")
             #endif
         }
+        
+        // Load Relay Lists
+        let relayListsURL = havenDir.appendingPathComponent("relay_lists.json")
+        if let data = try? Data(contentsOf: relayListsURL),
+           let loaded = try? JSONDecoder().decode([String: [String]].self, from: data) {
+            self.relayLists = loaded
+            #if DEBUG
+            print("NostrService: Loaded \(relayLists.count) relay lists from cache")
+            #endif
+        }
     }
+
     
     // Unified cache structure
     private var lastProfileSave: Date = .distantPast
@@ -458,10 +473,25 @@ class NostrService: ObservableObject {
         if now.timeIntervalSince(lastProfileSave) > profileSaveThrottle {
             lastProfileSave = now
             saveProfiles()
+            saveRelayLists()
+        }
+    }
+    
+    private func saveRelayLists() {
+        let listsCopy = relayLists
+        DispatchQueue.global(qos: .utility).async {
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
+            let relayListsURL = havenDir.appendingPathComponent("relay_lists.json")
+            
+            if let data = try? JSONEncoder().encode(listsCopy) {
+                try? data.write(to: relayListsURL)
+            }
         }
     }
     
     private func saveProfiles() {
+
         let profilesCopy = profiles
         DispatchQueue.global(qos: .utility).async {
             let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -487,24 +517,85 @@ class NostrService: ObservableObject {
         for pubkey in missing {
             profilesInFlight.insert(pubkey)
             profileFetchQueue.insert(pubkey)
+            // Also fetch their relay list for smart broadcasting
+            fetchRelayList(for: pubkey)
         }
         
         if profileFlushCancellable == nil {
             setupMetadataFlusher()
         }
     }
+
     
     private func sendProfileRequest(to client: WebSocketClient, pubkeys: [String]) {
         let subscriptionId = "meta-\(UUID().uuidString.prefix(8))"
         let filter: [String: Any] = [
-            "kinds": [0],
+            "kinds": [0, 10002],
             "authors": pubkeys
         ]
         
         let req = ["REQ", subscriptionId, filter] as [Any]
+
         if let reqData = try? JSONSerialization.data(withJSONObject: req),
            let reqString = String(data: reqData, encoding: .utf8) {
             client.send(text: reqString)
+        }
+    }
+    
+    func fetchRelayList(for pubkey: String) {
+        guard relayLists[pubkey] == nil && !relaysInFlight.contains(pubkey) else { return }
+        relaysInFlight.insert(pubkey)
+        
+        // Use blastr relays or defaults if empty
+        var relays = ConfigService.shared.config.blastrRelays
+        if relays.isEmpty {
+            relays = ["wss://relay.damus.io", "wss://relay.primal.net", "wss://nos.lol"]
+        }
+        
+        #if DEBUG
+        print("NostrService: Fetching relay list (10002) for \(pubkey.prefix(8))...")
+        #endif
+        
+        let uniqueRelays = Array(Set(relays)).compactMap { URL(string: $0) }
+        
+        for url in uniqueRelays {
+            let client = WebSocketClient()
+            client.isTemporary = true
+            
+            let urlString = url.absoluteString
+            client.messageSubject
+                .receive(on: processingQueue)
+                .sink { [weak self] message in
+                    self?.processMessage(message, from: urlString)
+                }
+                .store(in: &cancellables)
+            
+            client.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { state in
+                    if state == .connected {
+                        let subscriptionId = "relays-\(UUID().uuidString.prefix(8))"
+                        let filter: [String: Any] = [
+                            "kinds": [10002],
+                            "authors": [pubkey],
+                            "limit": 1
+                        ]
+                        
+                        let req = ["REQ", subscriptionId, filter] as [Any]
+                        if let reqData = try? JSONSerialization.data(withJSONObject: req),
+                           let reqString = String(data: reqData, encoding: .utf8) {
+                            client.send(text: reqString)
+                        }
+                        
+                        // Disconnect after reasonable timeout
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                            client.disconnect()
+                        }
+                    }
+                }
+                .store(in: &cancellables)
+            
+            client.connect(url: url)
         }
     }
     
@@ -690,6 +781,45 @@ class NostrService: ObservableObject {
                 broadcastClient.connect(url: url)
             }
         }
+
+        // 3. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction
+        if event.kind == 1 || event.kind == 6 || event.kind == 7 {
+            // Find target author's pubkey from 'p' tags (skipping own pubkey)
+            let targetPubkey = event.tags.first { $0.count >= 2 && $0[0] == "p" && $0[1] != ownerHexPubkey }?[1]
+            
+            if let targetPubkey = targetPubkey, let targetRelays = relayLists[targetPubkey] {
+                #if DEBUG
+                print("NostrService: Smart broadcast event \(event.id.prefix(8)) to \(targetPubkey.prefix(8))'s inbox relays: \(targetRelays)")
+                #endif
+                
+                for relayURLString in targetRelays {
+                    // Skip if already sent to this relay via blastr
+                    if blastrRelays.contains(relayURLString) { continue }
+                    
+                    guard let url = URL(string: relayURLString) else { continue }
+                    let smartClient = WebSocketClient()
+                    smartClient.isTemporary = true
+                    
+                    smartClient.$connectionState
+                        .receive(on: DispatchQueue.main)
+                        .sink { state in
+                            if state == .connected {
+                                smartClient.send(text: str)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    smartClient.disconnect()
+                                }
+                            }
+                        }
+                        .store(in: &cancellables)
+                    
+                    smartClient.connect(url: url)
+                }
+            } else if let targetPubkey = targetPubkey {
+                // We don't have their relays yet, fetch for next time
+                fetchRelayList(for: targetPubkey)
+            }
+        }
+
     }
 
     /// Reports an event using Kind 1984
@@ -895,25 +1025,38 @@ class NostrService: ObservableObject {
         }
 
         var filter: [String: Any] = [
-            "limit": isHistorical ? 100 : 100,
-            "kinds": [0, 1, 6, 1063]
+            "limit": isHistorical ? 100 : 200,
+            "kinds": [0, 1, 3, 4, 6, 7, 1063, 30023, 9735]
         ]
         if let until = until {
             filter["until"] = until
         }
+        
+        // If we have followed authors, we fetch their notes
+        var filters: [[String: Any]] = [filter]
         if let authors = authors, !authors.isEmpty {
-            filter["authors"] = authors
+            filters[0]["authors"] = authors
         }
         
-        let req = ["REQ", subscriptionId, filter] as [Any]
+        // CRITICAL: Always subscribe to mentions (#p) of the owner so "tagged notes" 
+        // from people we don't follow still show up in the viewer.
+        let ownerHex = self.ownerHexPubkey
+        if !ownerHex.isEmpty {
+            var mentionsFilter = filter
+            mentionsFilter["#p"] = [ownerHex]
+            filters.append(mentionsFilter)
+        }
+        
+        let req = ["REQ", subscriptionId] + filters
         if let reqData = try? JSONSerialization.data(withJSONObject: req),
            let reqString = String(data: reqData, encoding: .utf8) {
             #if DEBUG
-            print("NostrService: Sending REQ (\(subscriptionId)) to \(url.absoluteString)")
+            print("NostrService: Sending REQ (\(subscriptionId)) with \(filters.count) filters to \(url.absoluteString)")
             #endif
             client.send(text: reqString)
         }
     }
+
     
     private func updateAggregatedStatus() {
         let states = clients.values.map { $0.connectionState }
@@ -1015,6 +1158,39 @@ class NostrService: ObservableObject {
                     }
                 }
                 return // Metadata doesn't need to be in the events list
+            }
+            
+            if event.kind == 10002 {
+                // Handling Kind 10002 (Relay List Metadata)
+                // NIP-65: ["r", relay_url, "read" | "write"]
+                var inboxRelays: [String] = []
+                for tag in event.tags {
+                    if tag.count >= 2 && tag[0] == "r" {
+                        let url = tag[1]
+                        let type = tag.count >= 3 ? tag[2] : ""
+                        
+                        // "read" means this is where the user RECEIVES notes (inbox)
+                        // If no type is specified, it's both read and write
+                        if type == "read" || type == "" {
+                            inboxRelays.append(url)
+                        }
+                    }
+                }
+                
+                if !inboxRelays.isEmpty {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        self.relayLists[event.pubkey] = inboxRelays
+                        self.relaysInFlight.remove(event.pubkey)
+                        self.saveProfilesThrottled()
+                        #if DEBUG
+                        print("NostrService: Cached \(inboxRelays.count) inbox relays for \(event.pubkey.prefix(8))")
+                        #endif
+                    }
+
+
+                }
+                return
             }
 
             if seenEventIds.contains(event.id) { return }

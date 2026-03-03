@@ -65,6 +65,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             ]
             NostrService.shared.fetchNotes(from: urls)
         }
+        
+        // Sync missed notes from Mac relay (if configured)
+        // Delay slightly longer to ensure local relay is fully ready
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            MacRelaySyncService.shared.syncIfConfigured()
+        }
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {

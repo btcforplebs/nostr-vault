@@ -27,6 +27,7 @@ struct ViewerView: View {
     
     @State private var showingNoteId: String?
     @State private var showingProfilePubkey: String?
+    @State private var maxDisplayedItems: Int = 50
 
     // Debounce mechanism for updateDisplayData
     @State private var updateTask: Task<Void, Never>?
@@ -80,14 +81,15 @@ struct ViewerView: View {
         let blacklist = configService.blacklistedHexPubkeys
         let currentMode = viewMode
         let sourceFilter = mediaSourceFilter
-        let rpm = relayManager
         let gen = updateGeneration
 
         Task.detached(priority: .userInitiated) {
             if currentMode == .notes {
-                // Compute Notes
+                // Compute Notes (Kinds: 1, 6, 30023)
                 let filtered = currentEvents.filter { event in
-                    if event.kind != 1 { return false }
+                    let validKinds = [1, 6, 30023]
+                    if !validKinds.contains(event.kind) { return false }
+
                     if blacklist.contains(event.pubkey) { return false }
 
                     switch currentFilter {
@@ -109,7 +111,7 @@ struct ViewerView: View {
                 guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
 
                 await MainActor.run {
-                    self.displayNotes = result
+                    self.displayNotes = Array(result.prefix(self.maxDisplayedItems))
                 }
             } else {
                 // Compute Media
@@ -166,13 +168,31 @@ struct ViewerView: View {
                 var result = Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
 
                 // Fix up items with missing or octet-stream mime types by sniffing remote bytes
+                // This is now synchronous and skips remote sniffing for performance
                 for i in result.indices {
                     let item = result[i]
                     let needsSniff = item.type == .unknown ||
                         (item.mimeType == nil && item.url.pathExtension.isEmpty) ||
                         item.mimeType?.lowercased() == "application/octet-stream"
-                    if needsSniff, let sniffed = NostrService.sniffRemoteMime(url: item.url, rpm: rpm) {
-                        result[i] = MediaItem(id: item.id, url: item.url, type: sniffed.type, dateAdded: item.dateAdded, pubkey: item.pubkey, tags: item.tags, mimeType: sniffed.mime)
+                    if needsSniff {
+                        let ext = item.url.pathExtension.lowercased()
+                        var sniffedType: MediaItem.MediaType = .unknown
+                        var sniffedMime: String? = nil
+                        
+                        if ["jpg", "jpeg", "png", "gif", "webp", "avif", "heic"].contains(ext) {
+                            sniffedType = .image
+                            sniffedMime = "image/\(ext == "jpg" ? "jpeg" : ext)"
+                        } else if ["mp4", "mov", "webm", "avi"].contains(ext) {
+                            sniffedType = .video
+                            sniffedMime = "video/\(ext)"
+                        } else if ["mp3", "wav", "ogg", "m4a", "flac"].contains(ext) {
+                            sniffedType = .audio
+                            sniffedMime = "audio/\(ext)"
+                        }
+                        
+                        if sniffedType != .unknown {
+                            result[i] = MediaItem(id: item.id, url: item.url, type: sniffedType, dateAdded: item.dateAdded, pubkey: item.pubkey, tags: item.tags, mimeType: sniffedMime)
+                        }
                     }
                 }
 
@@ -182,7 +202,7 @@ struct ViewerView: View {
                 guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
 
                 await MainActor.run {
-                    self.displayMedia = finalResult
+                    self.displayMedia = Array(finalResult.prefix(self.maxDisplayedItems))
                 }
             }
         }
@@ -288,7 +308,14 @@ struct ViewerView: View {
                             .id(nostrService.events.count) 
                     }
                 }
+                .refreshable {
+                    #if os(iOS)
+                    MacRelaySyncService.shared.syncIfConfigured()
+                    #endif
+                    refreshAll()
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
             }
             .background(Color.platformControlBackground)
         }
@@ -318,13 +345,23 @@ struct ViewerView: View {
             }
         }
         .overlay(fullScreenOverlay)
-        .onChange(of: searchText) { _, _ in scheduleUpdateDisplayData() }
-        .onChange(of: contentFilter) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: searchText) { _, _ in 
+            maxDisplayedItems = 50
+            scheduleUpdateDisplayData() 
+        }
+        .onChange(of: contentFilter) { _, _ in 
+            maxDisplayedItems = 50
+            scheduleUpdateDisplayData() 
+        }
         .onChange(of: mediaSourceFilter) { _, _ in scheduleUpdateDisplayData() }
         .onChange(of: viewMode) { _, _ in scheduleUpdateDisplayData() }
         .onChange(of: nostrService.events.count) { _, _ in scheduleUpdateDisplayData() }
         .onChange(of: configService.config.blacklistedNpubs) { _, _ in scheduleUpdateDisplayData() }
         .onChange(of: blossomMedia.count) { _, _ in scheduleUpdateDisplayData() }
+        .onReceive(NotificationCenter.default.publisher(for: .macRelaySyncComplete)) { _ in
+            // Mac relay sync just injected new events — refresh to show them
+            refreshAll()
+        }
         .task {
             updateDisplayData()
         }
@@ -464,11 +501,21 @@ struct ViewerView: View {
                         ))) {
                             NoteRow(event: event)
                                 .padding(.horizontal, 16)
+                                .onAppear {
+                                    if event.id == displayNotes.last?.id {
+                                        loadMoreItems()
+                                    }
+                                }
                         }
                         .buttonStyle(.plain)
                         #else
                         NoteRow(event: event)
                             .padding(.horizontal, 16)
+                            .onAppear {
+                                if event.id == displayNotes.last?.id {
+                                    loadMoreItems()
+                                }
+                            }
                         #endif
                     }
                 }
@@ -550,6 +597,11 @@ struct ViewerView: View {
                     ForEach(items) { item in
                         MediaGridItem(item: item) {
                             withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = item }
+                        }
+                        .onAppear {
+                            if item.id == items.last?.id {
+                                loadMoreItems()
+                            }
                         }
                     }
                 }
@@ -701,10 +753,22 @@ struct ViewerView: View {
             URL(string: configService.config.nostrURL + "/inbox")!
         ]
         
-        // Use followed authors from FeedService to filter the feed
-        let authors = feedService.followedPubkeys.isEmpty ? nil : feedService.followedPubkeys
+        var authorsSet = Set<String>()
+        if let ownerHex = Bech32.decode(configService.config.ownerNpub)?.hexString {
+            authorsSet.insert(ownerHex)
+        }
+        for pk in configService.whitelistedHexPubkeys { authorsSet.insert(pk) }
+        let authors = Array(authorsSet)
+        
         nostrService.fetchNotes(from: urls, authors: authors)
         loadLocalMedia()
+    }
+    
+    func loadMoreItems() {
+        if maxDisplayedItems < (viewMode == .notes ? nostrService.events.count : blossomMedia.count) {
+            maxDisplayedItems += 50
+            scheduleUpdateDisplayData()
+        }
     }
     
     func loadMore() {
@@ -722,8 +786,13 @@ struct ViewerView: View {
             URL(string: configService.config.nostrURL + "/inbox")!
         ]
         
-        // Use followed authors from FeedService to filter the feed
-        let authors = feedService.followedPubkeys.isEmpty ? nil : feedService.followedPubkeys
+        var authorsSet = Set<String>()
+        if let ownerHex = Bech32.decode(configService.config.ownerNpub)?.hexString {
+            authorsSet.insert(ownerHex)
+        }
+        for pk in configService.whitelistedHexPubkeys { authorsSet.insert(pk) }
+        let authors = Array(authorsSet)
+        
         nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1, authors: authors)
     }
     
@@ -748,7 +817,6 @@ struct ViewerView: View {
             let blossomPath = configService.config.blossomPath
             let ownerHex = nostrService.ownerHexPubkey
             let webURL = configService.config.webURL
-            let config = configService.config
             let rpm = relayManager
 
             let result = await Task.detached(priority: .background) { () -> [MediaItem] in
@@ -771,9 +839,9 @@ struct ViewerView: View {
                     let date = (attributes?[.modificationDate] as? Date) ?? (attributes?[.creationDate] as? Date) ?? Date()
                     
                     // Same detection pipeline as blossom export: proof (bytes) + claim (relay) → resolve
+                    // PERFORMANCE: We skip `fetchMimeFromRelay` here because doing 9000 awaits starves the UI thread pool!
                     let proof = rpm.detectMimeFromBytes(for: fileURL)
-                    let claim = rpm.fetchMimeFromRelay(config: config, sha256: filename)
-                    let resolvedMime = rpm.resolveMime(claim: claim, proof: proof)
+                    let resolvedMime = rpm.resolveMime(claim: nil, proof: proof)
                     let mimeType = resolvedMime == "application/octet-stream" ? nil : resolvedMime
 
                     let mediaType: MediaItem.MediaType
@@ -969,16 +1037,18 @@ struct NoteRow: View {
             if !cleanContent.isEmpty {
                 Text(NostrContentFormatter.format(cleanContent))
                     .font(.system(size: 15, weight: .regular, design: .default))
+                    .foregroundColor(Color(red: 1, green: 1, blue: 1))
                     .lineSpacing(2)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(14)
-        .background(Color(red: 0.12, green: 0.12, blue: 0.16))
+        .background(Color.platformSecondaryGroupedBackground)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8)
+                .stroke(Color.platformSeparator, lineWidth: 0.8)
         )
         .contentShape(RoundedRectangle(cornerRadius: 12))
         #if os(iOS)

@@ -61,6 +61,14 @@ struct ContentView: View {
                         relayManager.startRelay(config: configService.config)
                     }
                 }
+                .onChange(of: relayManager.state) { _, newState in
+                    // Once the relay finishes booting, sync missed notes from Mac relay
+                    if newState == .running {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            MacRelaySyncService.shared.syncIfConfigured()
+                        }
+                    }
+                }
                 .onChange(of: selectedTab) { _, tab in
                     if tab == 1 { feedService.markViewed() }
                 }

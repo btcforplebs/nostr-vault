@@ -12,7 +12,15 @@ struct FeedNote: Identifiable {
     let kind: Int
 
     var isReply: Bool {
-        tags.contains { $0.count >= 2 && $0[0] == "e" }
+        let eTags = tags.filter { $0.count >= 2 && $0[0] == "e" }
+        guard !eTags.isEmpty else { return false }
+        
+        let nonMentionETags = eTags.filter { tag in
+            guard tag.count >= 4 else { return true }
+            return tag[3] != "mention"
+        }
+        
+        return !nonMentionETags.isEmpty
     }
 
     var replyToPubkey: String? {
@@ -168,10 +176,17 @@ class FeedService: ObservableObject {
         guard !isLoadingContacts else { return }
         newNoteCount = 0
         newSinceLastView = Date()
+        
+        // On iOS, pull-to-refresh also triggers a Mac relay sync to catch any missed notes
+        #if os(iOS)
+        MacRelaySyncService.shared.syncIfConfigured()
+        #endif
+        
         loadContactList { [weak self] in
             self?.subscribeToAllRelays()
         }
     }
+
 
     func markViewed() {
         newNoteCount = 0
@@ -438,17 +453,46 @@ class FeedService: ObservableObject {
     private func sendFeedSubscription(client: WebSocketClient, label: String, until: Int64? = nil) {
         let since = Int64(Date().timeIntervalSince1970) - (30 * 24 * 3600) // last 30 days
         var filter: [String: Any] = [
-            "kinds": [1, 6, 7, 30023],
+            "kinds": [1, 6, 30023],
             "authors": followedPubkeys,
             "since": since,
-            "limit": 50
+            "limit": 500
         ]
         if let until = until { filter["until"] = until }
         let subId = "feed-\(label.suffix(8).filter { $0.isLetter || $0.isNumber })"
+        
+        // Filter 1: Notes from people we follow
         let req = ["REQ", subId, filter] as [Any]
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
+        }
+        
+        let ownerHex = NostrService.shared.ownerHexPubkey
+        if !ownerHex.isEmpty {
+            // Filter 2: Mentions (#p) of the owner (from anyone)
+            var mentionsFilter = filter
+            mentionsFilter["#p"] = [ownerHex]
+            mentionsFilter["authors"] = nil // From anyone
+            let mReq = ["REQ", "m-\(subId)", mentionsFilter] as [Any]
+            if let mData = try? JSONSerialization.data(withJSONObject: mReq),
+               let mStr = String(data: mData, encoding: .utf8) {
+                client.send(text: mStr)
+            }
+        
+            var likesFilter: [String: Any] = [
+
+                "kinds": [7],
+                "authors": [ownerHex],
+                "since": since,
+                "limit": 500
+            ]
+            if let until = until { likesFilter["until"] = until }
+            let likesReq = ["REQ", "likes-\(subId)", likesFilter] as [Any]
+            if let likesData = try? JSONSerialization.data(withJSONObject: likesReq),
+               let likesStr = String(data: likesData, encoding: .utf8) {
+                client.send(text: likesStr)
+            }
         }
     }
 

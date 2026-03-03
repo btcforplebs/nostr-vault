@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DashboardView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
@@ -8,6 +9,7 @@ struct DashboardView: View {
     
     @State private var isExporting = false
     @State private var isBackingUpBlossom = false
+    @State private var isPreparingImport = false
     @State private var exportStatusMessage = ""
     @State private var relaysExpanded = false
     
@@ -120,9 +122,14 @@ struct DashboardView: View {
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal)
 
+                            if relayManager.isImporting {
+                                importProgressSection
+                            }
+
                             let actionColumns = geometry.size.width < 450 ? [GridItem(.flexible())] : [GridItem(.flexible()), GridItem(.flexible())]
                             
                             LazyVGrid(columns: actionColumns, spacing: 10) {
+                                #if os(macOS)
                                 ActionButton(icon: "safari", title: "Open Browser") {
                                     if let url = URL(string: configService.config.webURL) {
                                         #if os(macOS)
@@ -132,11 +139,13 @@ struct DashboardView: View {
                                         #endif
                                     }
                                 }
+                                #endif
 
-                                ActionButton(icon: "arrow.down.circle", title: "Import Notes", isLoading: relayManager.isImporting) {
+                                ActionButton(icon: "arrow.down.circle", title: "Import Notes", isLoading: isPreparingImport || relayManager.isImporting) {
+                                    isPreparingImport = true
                                     relayManager.importNotes(config: configService.config)
                                 }
-                                .disabled(relayManager.isImporting)
+                                .disabled(isPreparingImport || relayManager.isImporting)
 
                                 ActionButton(icon: "arrow.up.doc.fill", title: "Export JSONL", isLoading: isExporting) {
                                     exportBackup()
@@ -149,10 +158,6 @@ struct DashboardView: View {
                                 .disabled(isExporting || isBackingUpBlossom)
                             }
                             .padding(.horizontal)
-
-                            if relayManager.isImporting {
-                                importProgressSection
-                            }
 
                             if !exportStatusMessage.isEmpty {
                                 Text(exportStatusMessage)
@@ -189,10 +194,17 @@ struct DashboardView: View {
         }
         .onChange(of: relayManager.importCompleted) { _, completed in
             if completed {
+                isPreparingImport = false
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    guard relayManager.isRunning, !relayManager.isBooting else { return }
                     statsService.refreshStats(relayURLString: urlString)
                 }
+            }
+        }
+        .onChange(of: relayManager.isImporting) { _, isImporting in
+            if isImporting {
+                isPreparingImport = false
             }
         }
     }
@@ -225,7 +237,28 @@ struct DashboardView: View {
                 }
 
                 #if os(macOS)
-                exportStatusMessage = "Export complete"
+                let panel = NSSavePanel()
+                panel.title = "Save JSONL Backup"
+                panel.nameFieldStringValue = "haven-backup.zip"
+                panel.allowedContentTypes = [.zip]
+                panel.canCreateDirectories = true
+                
+                if panel.runModal() == .OK, let destURL = panel.url {
+                    let srcURL = URL(fileURLWithPath: tempPath)
+                    do {
+                        if FileManager.default.fileExists(atPath: destURL.path) {
+                            try FileManager.default.removeItem(at: destURL)
+                        }
+                        try FileManager.default.moveItem(at: srcURL, to: destURL)
+                        exportStatusMessage = "Saved to \(destURL.lastPathComponent)"
+                    } catch {
+                        exportStatusMessage = "Failed to save: \(error.localizedDescription)"
+                    }
+                } else {
+                    // User cancelled the save panel
+                    exportStatusMessage = "Export cancelled"
+                    try? FileManager.default.removeItem(atPath: tempPath)
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     exportStatusMessage = ""
                 }
@@ -264,7 +297,27 @@ struct DashboardView: View {
                 }
 
                 #if os(macOS)
-                exportStatusMessage = "Blossom export complete"
+                let panel = NSSavePanel()
+                panel.title = "Save Blossom Backup"
+                panel.nameFieldStringValue = "blossom-backup.zip"
+                panel.allowedContentTypes = [.zip]
+                panel.canCreateDirectories = true
+                
+                if panel.runModal() == .OK, let destURL = panel.url {
+                    let srcURL = URL(fileURLWithPath: tempPath)
+                    do {
+                        if FileManager.default.fileExists(atPath: destURL.path) {
+                            try FileManager.default.removeItem(at: destURL)
+                        }
+                        try FileManager.default.moveItem(at: srcURL, to: destURL)
+                        exportStatusMessage = "Saved to \(destURL.lastPathComponent)"
+                    } catch {
+                        exportStatusMessage = "Failed to save: \(error.localizedDescription)"
+                    }
+                } else {
+                    exportStatusMessage = "Export cancelled"
+                    try? FileManager.default.removeItem(atPath: tempPath)
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     exportStatusMessage = ""
                 }

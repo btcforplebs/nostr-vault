@@ -8,8 +8,7 @@ struct QuotedNoteView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 let profile = nostrService.profiles[note.pubkey]
-                AvatarView(url: profile?.pictureURL, pubkey: note.pubkey)
-                    .frame(width: 18, height: 18)
+                AvatarView(url: profile?.pictureURL, pubkey: note.pubkey, size: 18)
                 
                 Text(profile?.bestName ?? "Someone")
                     .font(.system(size: 12, weight: .semibold))

@@ -90,8 +90,14 @@ func main() {
 		config.WotDepth,
 		config.WotMinimumFollowers,
 		config.WotFetchTimeoutSeconds,
+		config.WotCachePath,
+		config.WotCacheTTLMinutes,
 	)
-	wot.Initialize(mainCtx, wotModel)
+
+	// Try to load from cache first - instant startup
+	// Always initialize asynchronously to avoid blocking relay startup
+	wotModel.LoadFromCache()  // Load if available, otherwise starts empty
+	go wot.Initialize(mainCtx, wotModel)
 	if err := initRelays(mainCtx); err != nil {
 		log.Fatal("🚫 error initializing databases/relays:", err)
 	}

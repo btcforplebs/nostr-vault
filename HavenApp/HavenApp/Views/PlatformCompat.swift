@@ -38,7 +38,7 @@ extension PlatformImage {
 extension Color {
     static var platformControlBackground: Color {
         #if canImport(AppKit)
-        Color(NSColor.controlBackgroundColor)
+        Color(NSColor.windowBackgroundColor)
         #else
         Color(UIColor.secondarySystemGroupedBackground)
         #endif
@@ -58,6 +58,18 @@ extension Color {
         #else
         Color(UIColor.systemBackground)
         #endif
+    }
+
+    static var platformSecondaryGroupedBackground: Color {
+        Color(red: 0.12, green: 0.12, blue: 0.16)
+    }
+
+    static var platformTertiaryGroupedBackground: Color {
+        Color(red: 0.15, green: 0.15, blue: 0.2)
+    }
+
+    static var platformSeparator: Color {
+        Color(red: 0.2, green: 0.2, blue: 0.25)
     }
 }
 

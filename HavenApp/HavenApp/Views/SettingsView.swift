@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension NumberFormatter {
     static var noSeparator: NumberFormatter {
@@ -15,6 +16,16 @@ struct SettingsView: View {
     @State private var saveTask: Task<Void, Never>?
     @State private var isRestarting = false
     
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.3.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+        #if os(macOS)
+        return "\(version)" // macOS hasn't traditionally shown build number in this particular ui
+        #else
+        return "\(version) (\(build))"
+        #endif
+    }
+    
     var needsRestart: Bool {
         guard let lastLaunch = relayManager.lastConfig else { return false }
         return configService.config != lastLaunch
@@ -25,6 +36,7 @@ struct SettingsView: View {
         case accessControl = "Access Control"
         case feed = "Feed Relays"
         case importNotes = "Import"
+        case backup = "Backup"
         case blastr = "Blastr"
         case advanced = "Advanced"
         case wallet = "Wallet"
@@ -38,6 +50,7 @@ struct SettingsView: View {
             case .accessControl: return "shield.lefthalf.filled"
             case .feed: return "newspaper"
             case .importNotes: return "square.and.arrow.down"
+            case .backup: return "externaldrive.fill"
             case .blastr: return "paperplane"
             case .advanced: return "gearshape.2"
             case .wallet: return "bitcoinsign.circle"
@@ -105,6 +118,7 @@ struct SettingsView: View {
                 tabLink(.feed)
                 tabLink(.blastr)
                 tabLink(.importNotes)
+                tabLink(.backup)
             }
             
             Section("System") {
@@ -117,7 +131,7 @@ struct SettingsView: View {
                 VStack(spacing: 4) {
                     Text("Haven Relay")
                         .font(.headline)
-                    Text("Version 2.3.0")
+                    Text("Version \(appVersion)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
@@ -188,6 +202,7 @@ struct SettingsView: View {
         case .accessControl: return .green
         case .feed: return .pink
         case .importNotes: return .orange
+        case .backup: return .indigo
         case .blastr: return .cyan
         case .advanced: return .gray
         case .wallet: return .orange
@@ -214,10 +229,11 @@ struct SettingsView: View {
             case .accessControl: AccessControlSettingsView()
             case .feed: FeedSettingsView()
             case .importNotes: ImportSettingsView()
+            case .backup: BackupSettingsView()
             case .blastr: BlastrSettingsView()
             case .advanced: AdvancedSettingsView()
             case .wallet: WalletSettingsView()
-            case .logs: LogsView()
+            case .logs: LogsView(logStore: relayManager.logStore)
             }
         }
         .navigationTitle(tab.rawValue)
@@ -255,7 +271,7 @@ struct SettingsView: View {
             
             // About Section for macOS
             VStack(spacing: 4) {
-                Text("Haven Relay v2.3.0")
+                Text("Haven Relay v\(appVersion)")
                     .font(.caption.bold())
                 Text("Abuse Reporting: npub1vxlh...g0nvx")
                     .font(.system(size: 9, design: .monospaced))
@@ -482,120 +498,154 @@ struct IdentitySettingsView: View {
     }
 
     private var updateKeySheet: some View {
-        NavigationView {
-            Form {
-                Section("Enter Private Key") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("nsec (Nostr Secret Key)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        ZStack(alignment: .topLeading) {
-                            TextEditor(text: $newNsec)
-                                .font(.system(.body, design: .monospaced))
-                                .frame(minHeight: 80)
-                                .padding(4)
-                                .background(Color.platformControlBackground)
-                                .cornerRadius(6)
-                                .autocorrectionDisabled()
-                                .disableAutocorrection(true)
-                                #if os(iOS)
-                                .textInputAutocapitalization(.never)
-                                .keyboardType(.asciiCapable)
-                                #endif
-                            
-                            HStack {
-                                Spacer()
-                                VStack {
-                                    Button(action: pastePrivateKey) {
-                                        Image(systemName: "doc.on.clipboard")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.secondary)
-                                            .padding(8)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(4)
-                        }
-                        
-                        Text("Long press or tap the clipboard icon to paste your private key")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                Section("Set Password (NIP-49 Encryption)") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            SecureField("Password", text: $newPassword)
-                            SecureField("Confirm Password", text: $confirmPassword)
-                        }
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Label("Password will be securely stored in your Keychain", systemImage: "lock.fill")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                            Text("Haven uses your password to automatically decrypt your key when signing notes. You won't need to enter it each time.")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.top, 4)
-                    }
-                }
-
-                if let error = updateError {
-                    Section {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-                }
-
-                if updateSuccess {
-                    Section {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("Private key updated successfully!")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                            }
-                            HStack {
-                                Image(systemName: "lock.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.green)
-                                Text("Password saved to Keychain — Haven will use it automatically when signing notes")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
+        Group {
+            #if os(iOS)
+            NavigationView {
+                updateKeyForm
+                    .navigationTitle(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import Private Key" : "Update Private Key")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Cancel") {
+                                resetForm()
+                                showUpdateKey = false
                             }
                         }
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import" : "Update") {
+                                savePrivateKey()
+                            }
+                            .disabled(newNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newPassword.isEmpty)
+                        }
                     }
-                }
             }
-            .groupedFormStyleCompat()
-            .navigationTitle(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import Private Key" : "Update Private Key")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            #if os(iOS)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+            #else
+            VStack(spacing: 0) {
+                Text(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import Private Key" : "Update Private Key")
+                    .font(.headline)
+                    .padding()
+                
+                Divider()
+                
+                updateKeyForm
+                
+                Divider()
+                
+                HStack {
+                    Spacer()
                     Button("Cancel") {
                         resetForm()
                         showUpdateKey = false
                     }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                    .keyboardShortcut(.cancelAction)
+                    
                     Button(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import" : "Update") {
                         savePrivateKey()
                     }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(newNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newPassword.isEmpty)
                 }
+                .padding()
             }
+            .frame(width: 450, height: 500)
             #endif
         }
+    }
+
+    private var updateKeyForm: some View {
+        Form {
+            Section("Enter Private Key") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("nsec (Nostr Secret Key)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $newNsec)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 80)
+                            .padding(4)
+                            .background(Color.platformControlBackground)
+                            .cornerRadius(6)
+                            .autocorrectionDisabled()
+                            .disableAutocorrection(true)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.asciiCapable)
+                            #endif
+                        
+                        HStack {
+                            Spacer()
+                            VStack {
+                                Button(action: pastePrivateKey) {
+                                    Image(systemName: "doc.on.clipboard")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.secondary)
+                                        .padding(8)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(4)
+                    }
+                    
+                    Text("Long press or tap the clipboard icon to paste your private key")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Section("Set Password (NIP-49 Encryption)") {
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        SecureField("Password", text: $newPassword)
+                        SecureField("Confirm Password", text: $confirmPassword)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Password will be securely stored in your Keychain", systemImage: "lock.fill")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                        Text("Haven uses your password to automatically decrypt your key when signing notes. You won't need to enter it each time.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+
+            if let error = updateError {
+                Section {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+
+            if updateSuccess {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Private key updated successfully!")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                        HStack {
+                            Image(systemName: "lock.fill")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                            Text("Password saved to Keychain — Haven will use it automatically when signing notes")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .groupedFormStyleCompat()
     }
 
     private func savePrivateKey() {
@@ -835,10 +885,14 @@ struct AdvancedSettingsView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var showResetConfirmation = false
     #if os(iOS)
+    @StateObject private var macSyncService = MacRelaySyncService.shared
     #endif
     
     var body: some View {
         Form {
+            #if os(iOS)
+            macRelaySyncSection
+            #endif
             Section {
                 Stepper("Max Events: \(configService.config.outboxMaxEventsPerMinute) / min", 
                        value: $configService.config.outboxMaxEventsPerMinute, in: 10...1000, step: 10)
@@ -915,6 +969,16 @@ struct AdvancedSettingsView: View {
                 Text("WoT determines who can post to your inbox and chat relays. Lower depth is more private.")
             }
             
+            #if os(macOS)
+            Section {
+                Toggle("Allow Network Access", isOn: $configService.config.allowNetworkAccess)
+            } header: {
+                Text("Network")
+            } footer: {
+                Text("When enabled, the relay listens on all network interfaces (0.0.0.0) instead of localhost only. This makes your relay accessible over Tailscale, LAN, or other networks. Requires a relay restart to take effect.")
+            }
+            #endif
+            
             Section("Diagnostics & Startup") {
                 Picker("Log Level", selection: $configService.config.logLevel) {
                     Text("Debug").tag("DEBUG")
@@ -960,7 +1024,96 @@ struct AdvancedSettingsView: View {
             Text("This action cannot be undone. All your relay data will be lost and the app will quit.")
         }
     }
+
+    #if os(iOS)
+    private var macRelaySyncSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Mac Relay URL")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                TextField("wss://relay.example.com", text: $configService.config.macRelayURL)
+                    .font(.system(.body, design: .monospaced))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .padding(10)
+                    .background(Color.platformControlBackground)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                    )
+                
+                Text("Enter the WebSocket URL of your always-on Mac Haven relay. The iOS app will sync any notes it missed while backgrounded.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.vertical, 4)
+            
+            // Sync status & button
+            if !configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if macSyncService.isSyncing {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text(macSyncService.syncStatus)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else if !macSyncService.syncStatus.isEmpty {
+                            HStack(spacing: 6) {
+                                Image(systemName: macSyncService.notesSynced > 0 ? "checkmark.circle.fill" : "info.circle.fill")
+                                    .foregroundColor(macSyncService.notesSynced > 0 ? .green : .blue)
+                                    .font(.caption)
+                                Text(macSyncService.syncStatus)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        if let lastSync = macSyncService.lastSyncDate {
+                            Text("Last sync: \(lastSync, style: .relative) ago")
+                                .font(.caption2)
+                                .foregroundColor(.secondary.opacity(0.7))
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        macSyncService.forceSync()
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text("Sync Now")
+                        }
+                        .font(.subheadline.bold())
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.havenPurple)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(macSyncService.isSyncing)
+                }
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Image(systemName: "desktopcomputer")
+                Text("Mac Relay Sync")
+            }
+        } footer: {
+            Text("Connect to your always-on Mac Haven relay to sync notes the iOS app missed while in the background.")
+        }
+    }
+    #endif
 }
+
 
 struct ImportSettingsView: View {
     @EnvironmentObject var configService: ConfigService
@@ -988,6 +1141,366 @@ struct ImportSettingsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+    }
+}
+
+struct BackupSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var relayManager: RelayProcessManager
+    
+    @State private var isExportingJSONL = false
+    @State private var isImportingJSONL = false
+    @State private var isExportingBlossom = false
+    @State private var isImportingBlossom = false
+    @State private var statusMessage = ""
+    @State private var showFileImporter = false
+    @State private var showBlossomImporter = false
+    
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Export Notes")
+                            .font(.body)
+                        Text("Save all notes and metadata as a JSONL backup")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: exportJSONL) {
+                        HStack(spacing: 6) {
+                            if isExportingJSONL {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.up.doc.fill")
+                            }
+                            Text("Export")
+                        }
+                    }
+                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                }
+                
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Import Notes")
+                            .font(.body)
+                        Text("Restore notes from a Haven JSONL backup (.zip)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: importJSONL) {
+                        HStack(spacing: 6) {
+                            if isImportingJSONL {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.down.doc.fill")
+                            }
+                            Text("Import")
+                        }
+                    }
+                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                }
+            } header: {
+                Text("Notes (JSONL)")
+            } footer: {
+                Text("Export creates a compressed backup of all your notes. Import restores from a previously exported backup.")
+            }
+            
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Export Media")
+                            .font(.body)
+                        Text("Save all Blossom media files as a backup")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: exportBlossom) {
+                        HStack(spacing: 6) {
+                            if isExportingBlossom {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "photo.stack")
+                            }
+                            Text("Export")
+                        }
+                    }
+                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                }
+                
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Import Media")
+                            .font(.body)
+                        Text("Restore media from a Blossom backup (.zip)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: importBlossom) {
+                        HStack(spacing: 6) {
+                            if isImportingBlossom {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "photo.badge.arrow.down")
+                            }
+                            Text("Import")
+                        }
+                    }
+                    .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
+                }
+            } header: {
+                Text("Media (Blossom)")
+            } footer: {
+                Text("Export creates a compressed backup of your images and videos. Import restores media from a previously exported backup.")
+            }
+            
+            if !statusMessage.isEmpty {
+                Section {
+                    HStack {
+                        Image(systemName: statusMessage.contains("failed") || statusMessage.contains("Error") ? "xmark.circle.fill" : "checkmark.circle.fill")
+                            .foregroundColor(statusMessage.contains("failed") || statusMessage.contains("Error") ? .red : .green)
+                        Text(statusMessage)
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.zip], allowsMultipleSelection: false) { result in
+            handleJSONLImport(result)
+        }
+        .fileImporter(isPresented: $showBlossomImporter, allowedContentTypes: [.zip], allowsMultipleSelection: false) { result in
+            handleBlossomImport(result)
+        }
+        #endif
+    }
+    
+    // MARK: - JSONL Export
+    
+    private func exportJSONL() {
+        isExportingJSONL = true
+        statusMessage = "Preparing JSONL export..."
+        
+        let tempDir = NSTemporaryDirectory()
+        let tempPath = (tempDir as NSString).appendingPathComponent("haven-backup-\(Date().timeIntervalSince1970).zip")
+        
+        relayManager.runBackupExport(config: configService.config, outputPath: tempPath) { success in
+            Task { @MainActor in
+                isExportingJSONL = false
+                guard success else {
+                    statusMessage = "JSONL export failed"
+                    clearStatus()
+                    return
+                }
+                #if os(macOS)
+                presentSavePanel(title: "Save JSONL Backup", defaultName: "haven-backup.zip", tempPath: tempPath)
+                #else
+                shareFile(at: tempPath)
+                #endif
+            }
+        }
+    }
+    
+    // MARK: - JSONL Import
+    
+    private func importJSONL() {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.title = "Choose JSONL Backup"
+        panel.allowedContentTypes = [.zip]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        performJSONLRestore(from: url)
+        #else
+        showFileImporter = true
+        #endif
+    }
+    
+    #if os(iOS)
+    private func handleJSONLImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            performJSONLRestore(from: url)
+        case .failure(let error):
+            statusMessage = "Import error: \(error.localizedDescription)"
+            clearStatus()
+        }
+    }
+    #endif
+    
+    private func performJSONLRestore(from url: URL) {
+        isImportingJSONL = true
+        statusMessage = "Restoring notes..."
+        
+        // Copy to temp to avoid sandbox issues
+        let tempFile = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("restore-\(UUID().uuidString).zip")
+        
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        
+        do {
+            try FileManager.default.copyItem(at: url, to: tempFile)
+        } catch {
+            isImportingJSONL = false
+            statusMessage = "Error copying file: \(error.localizedDescription)"
+            clearStatus()
+            return
+        }
+        
+        relayManager.runBackupRestore(config: configService.config, inputPath: tempFile.path) { success in
+            Task { @MainActor in
+                isImportingJSONL = false
+                try? FileManager.default.removeItem(at: tempFile)
+                statusMessage = success ? "Notes restored successfully!" : "Note restore failed"
+                clearStatus()
+            }
+        }
+    }
+    
+    // MARK: - Blossom Export
+    
+    private func exportBlossom() {
+        isExportingBlossom = true
+        statusMessage = "Preparing Blossom export..."
+        
+        let tempDir = NSTemporaryDirectory()
+        let tempPath = (tempDir as NSString).appendingPathComponent("blossom-backup-\(Date().timeIntervalSince1970).zip")
+        
+        relayManager.runBlossomExportWithExtensions(config: configService.config, outputPath: tempPath) { success in
+            Task { @MainActor in
+                isExportingBlossom = false
+                guard success else {
+                    statusMessage = "Blossom export failed"
+                    clearStatus()
+                    return
+                }
+                #if os(macOS)
+                presentSavePanel(title: "Save Blossom Backup", defaultName: "blossom-backup.zip", tempPath: tempPath)
+                #else
+                shareFile(at: tempPath)
+                #endif
+            }
+        }
+    }
+    
+    // MARK: - Blossom Import
+    
+    private func importBlossom() {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.title = "Choose Blossom Backup"
+        panel.allowedContentTypes = [.zip]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        performBlossomRestore(from: url)
+        #else
+        showBlossomImporter = true
+        #endif
+    }
+    
+    #if os(iOS)
+    private func handleBlossomImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            performBlossomRestore(from: url)
+        case .failure(let error):
+            statusMessage = "Import error: \(error.localizedDescription)"
+            clearStatus()
+        }
+    }
+    #endif
+    
+    private func performBlossomRestore(from url: URL) {
+        isImportingBlossom = true
+        statusMessage = "Restoring media..."
+        
+        let tempFile = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("blossom-restore-\(UUID().uuidString).zip")
+        
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        
+        do {
+            try FileManager.default.copyItem(at: url, to: tempFile)
+        } catch {
+            isImportingBlossom = false
+            statusMessage = "Error copying file: \(error.localizedDescription)"
+            clearStatus()
+            return
+        }
+        
+        relayManager.runBlossomImportStrippingExtensions(config: configService.config, inputPath: tempFile.path) { success in
+            Task { @MainActor in
+                isImportingBlossom = false
+                try? FileManager.default.removeItem(at: tempFile)
+                statusMessage = success ? "Media restored successfully!" : "Media restore failed"
+                clearStatus()
+            }
+        }
+    }
+    
+    // MARK: - Helpers
+    
+    #if os(macOS)
+    private func presentSavePanel(title: String, defaultName: String, tempPath: String) {
+        let panel = NSSavePanel()
+        panel.title = title
+        panel.nameFieldStringValue = defaultName
+        panel.allowedContentTypes = [.zip]
+        panel.canCreateDirectories = true
+        
+        if panel.runModal() == .OK, let destURL = panel.url {
+            let srcURL = URL(fileURLWithPath: tempPath)
+            do {
+                if FileManager.default.fileExists(atPath: destURL.path) {
+                    try FileManager.default.removeItem(at: destURL)
+                }
+                try FileManager.default.moveItem(at: srcURL, to: destURL)
+                statusMessage = "Saved to \(destURL.lastPathComponent)"
+            } catch {
+                statusMessage = "Failed to save: \(error.localizedDescription)"
+            }
+        } else {
+            statusMessage = "Export cancelled"
+            try? FileManager.default.removeItem(atPath: tempPath)
+        }
+        clearStatus()
+    }
+    #endif
+    
+    #if os(iOS)
+    private func shareFile(at path: String) {
+        let fileURL = URL(fileURLWithPath: path)
+        let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+        
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = scene.windows.first,
+           let rootVC = window.rootViewController {
+            rootVC.present(activityVC, animated: true)
+        }
+    }
+    #endif
+    
+    private func clearStatus() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            statusMessage = ""
+        }
     }
 }
 

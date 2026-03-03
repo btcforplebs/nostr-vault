@@ -13,9 +13,13 @@ struct HavenConfig: Codable, Equatable {
     var hasSeenWelcome: Bool = false
     var hasAcceptedToS: Bool = false
     var disableMediaCache: Bool = false
+    var allowNetworkAccess: Bool = false // Bind to 0.0.0.0 instead of 127.0.0.1 (for Tailscale, etc.)
     var ownerNcryptsec: String = "" // NIP-49 encrypted private key
     var ownerNsec: String = "" // Deprecated: kept for migration purposes only
     var showReplies: Bool = true // Added to toggle visibility of replies in feed
+    
+    // Mac Relay Sync (iOS only)
+    var macRelayURL: String = "" // wss:// URL to a remote Mac Haven relay to sync missed notes
     
     // NWC (Nostr Wallet Connect)
     var nwcURI: String = ""
@@ -105,7 +109,8 @@ struct HavenConfig: Codable, Equatable {
     
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
-        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, disableMediaCache, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount
+        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, disableMediaCache, allowNetworkAccess, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount
+        case macRelayURL
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
@@ -138,10 +143,12 @@ struct HavenConfig: Codable, Equatable {
         hasSeenWelcome = try container.decodeIfPresent(Bool.self, forKey: .hasSeenWelcome) ?? defaults.hasSeenWelcome
         hasAcceptedToS = try container.decodeIfPresent(Bool.self, forKey: .hasAcceptedToS) ?? defaults.hasAcceptedToS
         disableMediaCache = try container.decodeIfPresent(Bool.self, forKey: .disableMediaCache) ?? defaults.disableMediaCache
+        allowNetworkAccess = try container.decodeIfPresent(Bool.self, forKey: .allowNetworkAccess) ?? defaults.allowNetworkAccess
         ownerNcryptsec = try container.decodeIfPresent(String.self, forKey: .ownerNcryptsec) ?? defaults.ownerNcryptsec
         ownerNsec = try container.decodeIfPresent(String.self, forKey: .ownerNsec) ?? defaults.ownerNsec
         showReplies = try container.decodeIfPresent(Bool.self, forKey: .showReplies) ?? defaults.showReplies
         nwcURI = try container.decodeIfPresent(String.self, forKey: .nwcURI) ?? defaults.nwcURI
+        macRelayURL = try container.decodeIfPresent(String.self, forKey: .macRelayURL) ?? defaults.macRelayURL
         defaultZapAmount = try container.decodeIfPresent(Int.self, forKey: .defaultZapAmount) ?? defaults.defaultZapAmount
         
         privateRelayName = try container.decodeIfPresent(String.self, forKey: .privateRelayName) ?? defaults.privateRelayName
@@ -226,8 +233,12 @@ struct HavenConfig: Codable, Equatable {
     /// Returns the appropriate WebSocket URL (ws:// for local, wss:// for remote)
     var nostrURL: String {
         if isLocal {
-            // Use wss:// (secure WebSocket) for local HTTPS relay server
+            #if os(macOS)
+            return "ws://127.0.0.1:\(relayPort)"
+            #else
+            // Use wss:// (secure WebSocket) for local HTTPS relay server on iOS
             return "wss://127.0.0.1:\(relayPort)"
+            #endif
         } else {
             return "wss://\(sanitizedRelayURL)"
         }
@@ -236,8 +247,12 @@ struct HavenConfig: Codable, Equatable {
     /// Returns the appropriate Web/Blossom URL (https:// for both local and remote)
     var webURL: String {
         if isLocal {
+            #if os(macOS)
+            return "http://127.0.0.1:\(relayPort)"
+            #else
             // Use https:// for local relay server (self-signed cert)
             return "https://127.0.0.1:\(relayPort)"
+            #endif
         } else {
             return "https://\(sanitizedRelayURL)"
         }

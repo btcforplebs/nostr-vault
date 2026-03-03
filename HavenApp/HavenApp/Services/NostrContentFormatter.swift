@@ -34,7 +34,16 @@ public struct NostrContentFormatter {
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         
         do {
-            let attrString = try AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+            var attrString = try AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+            
+            // Clear any embedded foreground colors so SwiftUI's .foregroundColor() takes effect
+            for run in attrString.runs {
+                if run.foregroundColor != nil {
+                    let range = run.range
+                    attrString[range].foregroundColor = nil
+                }
+            }
+            
             return attrString
         } catch {
             return AttributedString(text)

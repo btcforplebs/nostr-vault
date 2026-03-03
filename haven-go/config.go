@@ -62,6 +62,8 @@ type Config struct {
 	WotMinimumFollowers                  int                 `json:"wot_minimum_followers"`
 	WotFetchTimeoutSeconds               int                 `json:"wot_fetch_timeout_seconds"`
 	WotRefreshInterval                   time.Duration       `json:"wot_refresh_interval"`
+	WotCachePath                         string              `json:"wot_cache_path"`
+	WotCacheTTLMinutes                   int                 `json:"wot_cache_ttl_minutes"`
 	WhitelistedPubKeys                   map[string]struct{} `json:"whitelisted_pubkeys"`
 	BlacklistedPubKeys                   map[string]struct{} `json:"blacklisted_pubkeys"`
 	LogLevel                             string              `json:"log_level"`
@@ -119,6 +121,8 @@ func loadConfig() Config {
 		WotMinimumFollowers:                  getEnvInt("WOT_MINIMUM_FOLLOWERS", 0),
 		WotFetchTimeoutSeconds:               getEnvInt("WOT_FETCH_TIMEOUT_SECONDS", 30),
 		WotRefreshInterval:                   getEnvDuration("WOT_REFRESH_INTERVAL", 24*time.Hour),
+		WotCachePath:                         getEnvString("WOT_CACHE_PATH", "wot_cache.json"),
+		WotCacheTTLMinutes:                   getEnvInt("WOT_CACHE_TTL_MINUTES", 1440),
 		WhitelistedPubKeys:                   getNpubsFromFile(getEnvString("WHITELISTED_NPUBS_FILE", "")),
 		BlacklistedPubKeys:                   getNpubsFromFile(getEnvString("BLACKLISTED_NPUBS_FILE", "")),
 		LogLevel:                             getEnvString("HAVEN_LOG_LEVEL", "INFO"),

@@ -61,8 +61,15 @@ func runImport(ctx context.Context) {
 		config.WotDepth,
 		config.WotMinimumFollowers,
 		config.WotFetchTimeoutSeconds,
+		config.WotCachePath,
+		config.WotCacheTTLMinutes,
 	)
-	wot.Initialize(ctx, wotModel)
+
+	// Try to load from cache first
+	if !wotModel.LoadFromCache() {
+		// Cache miss or invalid, initialize from network
+		wot.Initialize(ctx, wotModel)
+	}
 
 	log.Println("📦 importing notes")
 	importOwnerNotes(ctx)

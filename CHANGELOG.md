@@ -5,22 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
- ## [2.3.0-tf1] - 2026-02-21 (Pre-release)
-
-### Changed
-- **C-Shared Library Architecture**: Embedded the Go relay as a C-archive (`libhaven.a`) linked directly into the Swift app, replacing the separate helper process. This eliminates the need for `Process()` spawning, PID file management, and orphan process cleanup.
-- **Universal Binary Build**: `build_haven.sh` now builds with `-buildmode=c-archive` and uses `lipo` to produce a universal (arm64 + x86_64) static library.
-- **Entitlements Tightened**: Removed `allow-jit`, `allow-unsigned-executable-memory`, and `disable-library-validation` entitlements required for App Store compliance.
-- **App Transport Security**: Replaced blanket `NSAllowsArbitraryLoads` with `NSAllowsLocalNetworking` and added a `NSLocalNetworkUsageDescription` string.
+## [2.4.0 macOS / 1.0 iOS (Build 2)] - 2026-03-03
 
 ### Added
-- **Privacy Manifest**: Added `PrivacyInfo.xcprivacy` declaring accessed API types (FileTimestamp, UserDefaults) as required by Apple.
-- **Export Compliance**: Added `ITSAppUsesNonExemptEncryption = false` to Info.plist.
-- **Bridging Header**: Added `HavenApp-Bridging-Header.h` for Swift-to-C interop with the Go library.
-- **Go C-Shared Entry Points**: New `cshared.go` exposing relay lifecycle functions (`StartRelay`, `StopRelay`, etc.) via cgo exports.
+- **iOS Support (1.0)**: Initial launch of the Haven iOS app with a unified codebase. Features include cross-platform support with shared services, views, and Go library builds.
+- **C-Shared Library Architecture**: Embedded the Go relay as a static library (`libhaven.a`) directly linked into the Swift app. This improves reliability, simplifies process management (no more helper process), and enables universal (arm64 + x86_64) binary builds.
+- **NIP-49 Private Key Encryption**: Added support for encrypting the Nostr private key (nsec) using a password (ncryptsec), with secure password storage in the system Keychain for automatic signing.
+- **Nostr Zaps & NWC**: Full implementation of Nostr Zaps and Nostr Wallet Connect (NWC). Users can now send and receive lightning tips directly within the app, with real-time balance tracking.
+- **Smart Inbox Broadcasting**: When replying or reacting to a note, Haven now automatically fetches the author's preferred relay configuration (Kind 10002) and broadcasts your response to their specific inbox relays, ensuring better delivery in a fragmented Nostr relay landscape.
+- **Mac Relay Sync (iOS)**: A new background sync feature for iOS that allows the app to fetch missed notes from an always-on Mac Haven relay.
+    - Added **Pull-to-Refresh** to the Feed, Viewer, and Note Detail views to manually trigger a Mac relay sync and catch missed notes.
+    - Improved sync filter logic to include Kind 7 (Reactions), Kind 3 (Contacts), and direct mentions from strangers to ensure a complete timeline.
 
-### Removed
-- **Helper Process**: Removed `HavenHelper.entitlements` and `sign_haven.sh` — no longer needed without a separate binary.
+
+- **Direct Messaging (NIP-04)**: Initial support for NIP-04 private messaging and notifications.
+- **UGC Reporting & Blocking**: Added user-generated content (UGC) reporting and blocking functionality to comply with App Store safety standards.
+- **Web of Trust persistence**: WoT results are now cached locally, significantly speeding up relay startup by avoiding a full re-fetch of the Nostr network on every boot.
+- **MIME Detection Pipeline**: Implemented a comprehensive MIME type detection system for the media viewer, improving support for extensionless Blossom items and note media.
+- **Settings & Advanced Configuration**: 
+    - Introduced dedicated tabs for **Access Control** (Whitelist/Blacklist), **Wallet** (Zaps), and **Logs**.
+    - Added a **Factory Reset** option to clear all data and reset configurations.
+    - Improved relay boot logs on the Dashboard for better transparency during startup (e.g., "Analyzing network connections"), and filtered out raw internal metadata like `total_keys=` to keep logs clean.
+- **Privacy & Compliance**: Added a comprehensive Privacy Manifest (`PrivacyInfo.xcprivacy`) and export compliance declarations required for App Store distribution.
+
+
+### Changed
+- **Feed UI/UX Overhaul**:
+    - Added **Pull-to-refresh** support for the timeline.
+    - Added a floating **New Posts** indicator to jump to the top of the feed.
+    - Improved threading UI with clear visual indicators for replies and parent notes.
+    - Enhanced the Feed and Note details UI with **native grouped background colors**, replacing washed-out backgrounds and improving text contrast.
+    - Increased feed limit to 500 events and optimized loading performance.
+    - Unified media viewer with a source filter (Blossom vs. Cache).
+
+- **Relay Process Management**: Replaced `os.Exit` with graceful connection handling during the import flow to prevent app crashes.
+- **Bundle ID**: Updated macOS and iOS App Store bundle identifier to align with cross-platform identity (`com.havenapp.relay`).
+- **Entitlements Tightened**: Hardened runtime and removed JIT and unsigned memory requirements for better security and App Store compliance.
+
+### Fixed
+- **App Transport Security**: Fixed HTTP media playback issues on macOS and iOS by properly configuring `NSAllowsLocalNetworking` and `NSLocalNetworkUsageDescription`.
+- **Feed Rendering**: Resolved issues with thread deduplication, pull-to-refresh animation logic, and missing non-owner posts.
+- **Compose View Layout**: Fixed layout and styling of the Reply sheet on macOS to prevent content cropping.
+- **Backup Verification**: Added checksum and integrity checks for `.zip` and `.jsonl` backups before restoration.
+- **Sandbox Permissions**: Resolved "Operation not permitted" errors during database and media imports by using temporary directory staging.
+
 
 ## [2.3.0] - 2026-02-20
 

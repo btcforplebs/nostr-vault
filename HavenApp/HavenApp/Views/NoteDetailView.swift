@@ -38,7 +38,15 @@ struct NoteDetailView: View {
             }
             .padding()
         }
+        .refreshable {
+            #if os(iOS)
+            MacRelaySyncService.shared.syncIfConfigured()
+            #endif
+            fetchParents()
+            fetchReplies()
+        }
         .navigationTitle("Note")
+
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -253,6 +261,7 @@ struct NoteDetailView: View {
             .font(.subheadline)
             .foregroundColor(.secondary)
         }
+        .buttonStyle(.plain)
     }
     
     private func fetchReplies() {

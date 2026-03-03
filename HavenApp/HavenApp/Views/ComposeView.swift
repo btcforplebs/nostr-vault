@@ -31,8 +31,20 @@ struct ComposeView: View {
     }
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
+        Group {
+            #if os(macOS)
+            composeContent
+                .frame(minWidth: 500, idealWidth: 500, minHeight: 400, idealHeight: 450)
+            #else
+            NavigationView {
+                composeContent
+            }
+            #endif
+        }
+    }
+
+    private var composeContent: some View {
+        VStack(spacing: 0) {
                 #if os(macOS)
                 header
                 #endif
@@ -68,7 +80,7 @@ struct ComposeView: View {
                 
                 footer
             }
-            .background(Color(red: 0.12, green: 0.12, blue: 0.16))
+            .background(Color.platformSecondaryGroupedBackground)
             .navigationTitle(replyTo == nil ? "New Note" : "Reply")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -95,11 +107,7 @@ struct ComposeView: View {
                     Text(error)
                 }
             }
-        }
-        #if os(macOS)
-        .frame(minWidth: 500, maxWidth: 600)
-        .frame(minHeight: 450)
-        #endif
+
     }
 
     #if os(macOS)

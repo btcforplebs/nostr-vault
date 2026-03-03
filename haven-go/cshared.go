@@ -93,8 +93,14 @@ func StartRelayC(importMode bool) {
 			config.WotDepth,
 			config.WotMinimumFollowers,
 			config.WotFetchTimeoutSeconds,
+			config.WotCachePath,
+			config.WotCacheTTLMinutes,
 		)
-		wot.Initialize(csharedCtx, wotModel)
+
+		// Try to load from cache first - instant startup
+		// Always initialize asynchronously to avoid blocking relay startup
+		wotModel.LoadFromCache()  // Load if available, otherwise starts empty
+		go wot.Initialize(csharedCtx, wotModel)
 		log.Println("  ✓ Web of Trust ready")
 
 		go subscribeInboxAndChat(csharedCtx)
@@ -134,23 +140,26 @@ func StartRelayC(importMode bool) {
 	addr := fmt.Sprintf("%s:%d", config.RelayBindAddress, config.RelayPort)
 	globalServer = &http.Server{Addr: addr, Handler: mux}
 
-	// Get or create self-signed certificate for HTTPS
-	// Use current directory for cert storage (iOS: app's Documents directory)
-	certPath, keyPath, err := getOrCreateSelfSignedCert(".")
-	if err != nil {
-		log.Printf("⚠️  Failed to setup HTTPS certificate: %v, falling back to HTTP", err)
-	} else {
-		log.Printf("🔐 HTTPS enabled with self-signed certificate")
+	// Only enable HTTPS when HAVEN_ENABLE_TLS=1 (iOS needs it for App Transport Security;
+	// macOS uses plain HTTP since Cloudflare handles TLS termination)
+	var certPath, keyPath string
+	if os.Getenv("HAVEN_ENABLE_TLS") == "1" {
+		var err error
+		certPath, keyPath, err = getOrCreateSelfSignedCert(".")
+		if err != nil {
+			log.Printf("⚠️  Failed to setup HTTPS certificate: %v, falling back to HTTP", err)
+			certPath, keyPath = "", ""
+		} else {
+			log.Printf("🔐 HTTPS enabled with self-signed certificate")
+		}
 	}
 
 	// Start server in background and give it a moment to bind before continuing
 	serverReady := make(chan error, 1)
 	go func() {
 		if certPath != "" && keyPath != "" {
-			// Use HTTPS
 			serverReady <- globalServer.ListenAndServeTLS(certPath, keyPath)
 		} else {
-			// Fallback to HTTP if cert setup failed
 			serverReady <- globalServer.ListenAndServe()
 		}
 	}()
@@ -158,9 +167,9 @@ func StartRelayC(importMode bool) {
 	// Brief delay to ensure server binds to port before returning
 	time.Sleep(100 * time.Millisecond)
 
-	protocol := "https"
-	if certPath == "" {
-		protocol = "http"
+	protocol := "http"
+	if certPath != "" {
+		protocol = "https"
 	}
 	log.Printf("🔗 listening at %s://%s", protocol, addr)
 }

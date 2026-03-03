@@ -18,13 +18,24 @@ class StatsService: ObservableObject {
     // Tracking for real-time updates
     private var baseDbCount: Int = 0
     private var baseRelayNotesStored: Int = 0
+    /// Prevents the observer from overwriting the UserDefaults-loaded count
+    /// before `refreshStats` has fetched the real DB count at least once.
+    private var hasEstablishedBaseline: Bool = false
     
     init() {
         // Observe RelayProcessManager for new incoming notes (real-time updates)
         relayManager.$eventsStored
             .receive(on: DispatchQueue.main)
             .sink { [weak self] (newNoteCount: Int) in
-                guard let self = self else { return }
+                guard let self = self, self.hasEstablishedBaseline else { return }
+                
+                // If eventsStored was reset (e.g. after import),
+                // realign the baselines so the diff tracking starts fresh.
+                if newNoteCount < self.baseRelayNotesStored {
+                    self.baseRelayNotesStored = 0
+                    self.baseDbCount = self.loadedNotesCount
+                }
+                
                 // diff is how many new notes came in since we last fetched the DB count
                 let diff = newNoteCount - self.baseRelayNotesStored
                 if diff >= 0 {
@@ -66,8 +77,12 @@ class StatsService: ObservableObject {
                 // Construct internal URLs for Outbox (root) and Inbox (tagged notes)
                 // We ALWAYS use 127.0.0.1 for the internal stats fetch to bypass loopback/domain issues
                 // even if config.nostrURL is set to a public domain.
-                // Use wss:// (secure WebSocket) since the relay server is HTTPS
+                // macOS relay runs plain HTTP/WS; iOS relay runs HTTPS/WSS (self-signed cert)
+                #if os(macOS)
+                let baseURLString = "ws://127.0.0.1:\(config.relayPort)"
+                #else
                 let baseURLString = "wss://127.0.0.1:\(config.relayPort)"
+                #endif
                 guard let baseURL = URL(string: baseURLString) else {
                     #if DEBUG
                     print("StatsService: ❌ Invalid baseURL for stats: \(baseURLString)")
@@ -112,6 +127,7 @@ class StatsService: ObservableObject {
                         #endif
                         self.baseDbCount = confirmedCount
                         self.baseRelayNotesStored = RelayProcessManager.shared.eventsStored
+                        self.hasEstablishedBaseline = true
                         
                         self.loadedNotesCount = confirmedCount
                         UserDefaults.standard.set(confirmedCount, forKey: "haven.stats.noteCount")

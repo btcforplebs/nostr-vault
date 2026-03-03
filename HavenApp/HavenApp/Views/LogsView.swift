@@ -2,8 +2,10 @@ import SwiftUI
 
 struct LogsView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
+    /// Observe the separate LogStore so only this view redraws on log changes.
+    @ObservedObject var logStore: LogStore
     @State private var showCopiedScrub = false
-    
+
     var body: some View {
         #if os(iOS)
         iOSBody
@@ -11,11 +13,11 @@ struct LogsView: View {
         macOSBody
         #endif
     }
-    
+
     #if os(iOS)
     private var iOSBody: some View {
         ScrollViewReader { proxy in
-            List(relayManager.logs) { log in
+            List(logStore.logs) { log in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(log.level)
@@ -25,14 +27,14 @@ struct LogsView: View {
                             .background(colorFor(level: log.level).opacity(0.2))
                             .foregroundColor(colorFor(level: log.level))
                             .cornerRadius(4)
-                        
+
                         Text(log.timestamp, style: .time)
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.secondary)
-                        
+
                         Spacer()
                     }
-                    
+
                     Text(log.message)
                         .font(.system(size: 13, design: .monospaced))
                         .textSelection(.enabled)
@@ -54,15 +56,15 @@ struct LogsView: View {
                     }
                 }
             }
-            .onChange(of: relayManager.logs.count) { _, _ in
-                if let lastId = relayManager.logs.last?.id {
+            .onChange(of: logStore.logs.count) { _, _ in
+                if let lastId = logStore.logs.last?.id {
                     withAnimation {
                         proxy.scrollTo(lastId, anchor: .bottom)
                     }
                 }
             }
             .onAppear {
-                if let lastId = relayManager.logs.last?.id {
+                if let lastId = logStore.logs.last?.id {
                     proxy.scrollTo(lastId, anchor: .bottom)
                 }
             }
@@ -77,9 +79,9 @@ struct LogsView: View {
                 Text("System Logs")
                     .font(.headline)
                     .foregroundColor(.secondary)
-                
+
                 Spacer()
-                
+
                 Button(action: copyLogs) {
                     if showCopiedScrub {
                         Label("Copied!", systemImage: "checkmark")
@@ -87,53 +89,53 @@ struct LogsView: View {
                         Label("Copy Logs", systemImage: "doc.on.doc")
                     }
                 }
-                .disabled(relayManager.logs.isEmpty)
+                .disabled(logStore.logs.isEmpty)
                 .help("Copy logs to clipboard")
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
             .background(.ultraThinMaterial)
-            
+
             Divider()
-            
+
             ScrollViewReader { proxy in
-                List(relayManager.logs) { log in
+                List(logStore.logs) { log in
                     HStack(alignment: .top) {
                         Text(log.timestamp, style: .time)
                             .font(.caption2)
                             .foregroundColor(.secondary)
                             .frame(width: 60, alignment: .leading)
-                        
+
                         Text(log.level)
                             .font(.caption2)
                             .fontWeight(.bold)
                             .foregroundColor(colorFor(level: log.level))
                             .frame(width: 50, alignment: .leading)
-                        
+
                         Text(log.message)
                             .font(.callout.monospaced())
                     }
                     .id(log.id)
                 }
                 .listStyle(.plain)
-                .onChange(of: relayManager.logs.count) { _, _ in
-                    if let lastId = relayManager.logs.last?.id {
+                .onChange(of: logStore.logs.count) { _, _ in
+                    if let lastId = logStore.logs.last?.id {
                         proxy.scrollTo(lastId, anchor: .bottom)
                     }
                 }
             }
         }
     }
-    
+
     // Copy all logs functionality for debugging
     func copyLogs() {
-        let logsSnapshot = relayManager.logs
+        let logsSnapshot = logStore.logs
         DispatchQueue.global(qos: .userInitiated).async {
             let logString = logsSnapshot.map { log in
                 let dateStr = log.timestamp.formatted(.dateTime.hour().minute().second())
                 return "[\(dateStr)] [\(log.level)] \(log.message)"
             }.joined(separator: "\n")
-            
+
             DispatchQueue.main.async {
                 PlatformClipboard.copy(logString)
                 showCopiedScrub = true
@@ -143,7 +145,7 @@ struct LogsView: View {
             }
         }
     }
-    
+
     func colorFor(level: String) -> Color {
         switch level {
         case "ERROR": return .red

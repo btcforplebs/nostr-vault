@@ -46,6 +46,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         Task { @MainActor in
             let countBefore = FeedService.shared.notes.count
             FeedService.shared.refresh()
+            
+            // Also sync from Mac relay if configured
+            MacRelaySyncService.shared.syncIfConfigured()
+            
             // Give it up to 25s to connect to relays and receive events
             try? await Task.sleep(nanoseconds: 25_000_000_000)
             let newCount = FeedService.shared.notes.count - countBefore

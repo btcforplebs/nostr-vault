@@ -38,7 +38,7 @@ struct FeedView: View {
     private var rootContent: some View {
         ZStack {
             // Match the platform theme background
-            Color.platformControlBackground.ignoresSafeArea()
+            Color(red: 0.08, green: 0.08, blue: 0.1).ignoresSafeArea()
 
             Group {
                 if feedService.isLoadingContacts {
@@ -180,6 +180,7 @@ struct FeedView: View {
                 )
                 .cornerRadius(10)
             }
+            .buttonStyle(.plain)
         }
         .padding(max(16, min(48, 24))) // Adaptive padding
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -212,27 +213,27 @@ struct FeedView: View {
                         }
 
                         ForEach(Array(filteredNotes.enumerated()), id: \.element.id) { index, note in
-                            NavigationLink(destination: NoteDetailView(note: note)) {
-                                let profile = nostrService.profiles[note.pubkey]
-                                
-                                // Optimization: If the parent is the very next note in the feed,
-                                // don't show the redundant parent header.
-                                let parentIsNext = index + 1 < filteredNotes.count && 
-                                                 filteredNotes[index+1].id == note.parentEventId
-                                
-                                FeedNoteRow(
-                                    note: note, 
-                                    profile: profile, 
-                                    onReply: {
-                                        replyToNote = note
-                                        showingCompose = true
-                                    },
-                                    showParent: !parentIsNext,
-                                    isReplyToNext: parentIsNext
-                                )
-                                .padding(.horizontal, 16)
+                            let profile = nostrService.profiles[note.pubkey]
+
+                            // Optimization: If the parent is the very next note in the feed,
+                            // don't show the redundant parent header.
+                            let parentIsNext = index + 1 < filteredNotes.count &&
+                                             filteredNotes[index+1].id == note.parentEventId
+
+                            FeedNoteRow(
+                                note: note,
+                                profile: profile,
+                                onReply: {
+                                    replyToNote = note
+                                    showingCompose = true
+                                },
+                                showParent: !parentIsNext,
+                                isReplyToNext: parentIsNext
+                            )
+                            .padding(.horizontal, 16)
+                            .onTapGesture {
+                                showingNoteId = note.id
                             }
-                            .buttonStyle(.plain)
                         }
 
                         // Load more
@@ -253,11 +254,12 @@ struct FeedView: View {
                                 .foregroundColor(.secondary)
                                 .padding(.vertical, 12)
                                 .frame(maxWidth: .infinity)
-                                .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+                                .background(Color.platformTertiaryGroupedBackground)
                                 .cornerRadius(10)
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 1))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.platformSeparator, lineWidth: 1))
                                 .padding(.horizontal, 16)
                             }
+                            .buttonStyle(.plain)
                             .disabled(feedService.isLoadingFeed)
                         }
 
@@ -265,6 +267,9 @@ struct FeedView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
+                }
+                .refreshable {
+                    feedService.refresh()
                 }
 
                 // Floating "New Posts" indicator
@@ -290,6 +295,7 @@ struct FeedView: View {
                         )
                         .foregroundColor(.white)
                     }
+                    .buttonStyle(.plain)
                     .padding(.top, 12)
                     .transition(.asymmetric(
                         insertion: .move(edge: .top).combined(with: .opacity),
@@ -365,7 +371,7 @@ struct FeedNoteRow: View {
                                     let parentProfile = nostrService.profiles[parent.pubkey]
                                     AvatarView(url: parentProfile?.pictureURL, pubkey: parent.pubkey)
                                         .frame(width: 28, height: 28)
-                                        .opacity(0.8)
+                                        .opacity(1.0)
                                     
                                     Rectangle()
                                         .fill(Color.havenPurple.opacity(0.3))
@@ -378,11 +384,11 @@ struct FeedNoteRow: View {
                                     let parentProfile = nostrService.profiles[parent.pubkey]
                                     Text(parentProfile?.bestName ?? "Someone")
                                         .font(.system(size: 13, weight: .semibold))
-                                        .foregroundColor(.secondary)
-                                    
+                                        .foregroundColor(Color(red: 0.8, green: 0.8, blue: 0.8))
+
                                     Text(NostrContentFormatter.format(parent.content, mediaURLs: parent.mediaURLs))
                                         .font(.system(size: 13, weight: .regular))
-                                        .foregroundColor(.secondary.opacity(0.8))
+                                        .foregroundColor(Color(red: 0.7, green: 0.7, blue: 0.7))
                                         .lineLimit(2)
                                 }
                                 .padding(.top, 2)
@@ -425,6 +431,7 @@ struct FeedNoteRow: View {
                     HStack(spacing: 6) {
                         Text(nostrService.profiles[note.pubkey]?.bestName ?? shortKey(note.pubkey))
                             .font(.system(size: 14, weight: .semibold, design: .default))
+                            .foregroundColor(Color(red: 1, green: 1, blue: 1))
                             .lineLimit(1)
                         
                         if let profile = nostrService.profiles[note.pubkey], let nip05 = profile.nip05, !nip05.isEmpty {
@@ -457,121 +464,123 @@ struct FeedNoteRow: View {
                             }
                         }
                     }
-                }
-            }
 
-            // Content Body
-            VStack(alignment: .leading, spacing: 8) {
-                Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
-                    .font(.system(size: 15, weight: .regular, design: .default))
-                    .lineSpacing(2)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            // Media previews
-            if !note.mediaURLs.isEmpty {
-                let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: min(note.mediaURLs.count, 3))
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                    ForEach(note.mediaURLs.prefix(3), id: \.absoluteString) { url in
-                        Button(action: {
-                            showingMediaUrl = IdentifiableURL(url: url)
-                        }) {
-                            FeedMediaThumbnail(url: url)
-                                .aspectRatio(1, contentMode: .fill)
-                                .frame(maxWidth: .infinity)
-                                .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
+                    // Content Body
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
+                            .font(.system(size: 15, weight: .regular, design: .default))
+                            .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                            .lineSpacing(2)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                }
-                .padding(.top, 4)
-            }
+                    .padding(.top, 4)
 
-            // Quoted Notes
-            if !note.quotedEventIds.isEmpty {
-                VStack(spacing: 8) {
-                    ForEach(note.quotedEventIds, id: \.self) { quoteId in
-                        if let quotedNote = feedService.notes.first(where: { $0.id == quoteId }) {
-                            NavigationLink(destination: NoteDetailView(note: quotedNote)) {
-                                QuotedNoteView(note: quotedNote)
+                    // Media previews
+                    if !note.mediaURLs.isEmpty {
+                        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: min(note.mediaURLs.count, 3))
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                            ForEach(note.mediaURLs.prefix(3), id: \.absoluteString) { url in
+                                Button(action: {
+                                    showingMediaUrl = IdentifiableURL(url: url)
+                                }) {
+                                    FeedMediaThumbnail(url: url)
+                                        .aspectRatio(1, contentMode: .fill)
+                                        .frame(maxWidth: .infinity)
+                                        .cornerRadius(8)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+
+                    // Quoted Notes
+                    if !note.quotedEventIds.isEmpty {
+                        VStack(spacing: 8) {
+                            ForEach(note.quotedEventIds, id: \.self) { quoteId in
+                                if let quotedNote = feedService.notes.first(where: { $0.id == quoteId }) {
+                                    NavigationLink(destination: NoteDetailView(note: quotedNote)) {
+                                        QuotedNoteView(note: quotedNote)
+                                    }
+                                    .buttonStyle(.plain)
+                                } else {
+                                    Color.clear
+                                        .frame(height: 0)
+                                        .onAppear {
+                                            feedService.fetchMissingNote(id: quoteId)
+                                        }
+                                }
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+
+                    // Actions row - minimal and clean
+                    HStack(spacing: 12) {
+                        actionButton(icon: "message", action: { onReply?() })
+                        actionButton(icon: "arrow.2.squarepath", action: { repostNote() })
+                        actionButton(icon: "quote.closing", action: { quoteNote() })
+                        
+                        let isLiked = feedService.likedEventIds.contains(note.id)
+                        actionButton(
+                            icon: isLiked ? "heart.fill" : "heart",
+                            color: isLiked ? .red : .secondary,
+                            action: { likeNote() }
+                        )
+                        .scaleEffect(isLiked ? 1.2 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isLiked)
+                        
+                        if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
+                            let isZapped = feedService.zappedEventIds.contains(note.id)
+                            Button(action: {
+                                Task { await zapNote(lud16: lud16) }
+                            }) {
+                                ZStack {
+                                    Image(systemName: isZapped ? "bolt.fill" : "bolt")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(isZapped ? .orange : .secondary)
+                                        .frame(width: 32, height: 32)
+                                        .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
+                                        .clipShape(Circle())
+                                }
+                                .scaleEffect(isZapped ? 1.2 : 1.0)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isZapped)
                             }
                             .buttonStyle(.plain)
-                        } else {
-                            // Request missing quote
-                            Color.clear
-                                .frame(height: 0)
-                                .onAppear {
-                                    feedService.fetchMissingNote(id: quoteId)
-                                }
+                            .onLongPressGesture {
+                                zapAmountSats = String(ConfigService.shared.config.defaultZapAmount / 1000)
+                                showAmountPicker = true
+                            }
                         }
-                    }
-                }
-                .padding(.top, 4)
-            }
-
-            // Actions row - minimal and clean
-            HStack(spacing: 12) {
-                actionButton(icon: "message", action: { onReply?() })
-                actionButton(icon: "arrow.2.squarepath", action: { repostNote() })
-                actionButton(icon: "quote.closing", action: { quoteNote() })
-                
-                let isLiked = feedService.likedEventIds.contains(note.id)
-                actionButton(
-                    icon: isLiked ? "heart.fill" : "heart",
-                    color: isLiked ? .red : .secondary,
-                    action: { likeNote() }
-                )
-                .scaleEffect(isLiked ? 1.2 : 1.0)
-                .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isLiked)
-                
-                if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
-                    let isZapped = feedService.zappedEventIds.contains(note.id)
-                    // Custom Zap Button to handle both tap and long-press
-                    Button(action: {
-                        Task { await zapNote(lud16: lud16) }
-                    }) {
-                        ZStack {
-                            Image(systemName: isZapped ? "bolt.fill" : "bolt")
+                        
+                        ShareLink(
+                            item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
+                            subject: Text("Nostr Note"),
+                            message: Text("Check out this note on Nostr")
+                        ) {
+                            Image(systemName: "square.and.arrow.up")
                                 .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(isZapped ? .orange : .secondary)
+                                .foregroundColor(.secondary)
                                 .frame(width: 32, height: 32)
-                                .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
+                                .background(Color.secondary.opacity(0.1))
                                 .clipShape(Circle())
                         }
-                        .scaleEffect(isZapped ? 1.2 : 1.0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isZapped)
+                        .buttonStyle(.plain)
+                        
+                        Spacer()
                     }
-                    .buttonStyle(.plain)
-                    .onLongPressGesture {
-                        zapAmountSats = String(ConfigService.shared.config.defaultZapAmount / 1000)
-                        showAmountPicker = true
-                    }
-                }
-                
-                ShareLink(
-                    item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
-                    subject: Text("Nostr Note"),
-                    message: Text("Check out this note on Nostr")
-                ) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .frame(width: 32, height: 32)
-                        .background(Color.secondary.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                
-                Spacer()
-            }
-            .padding(.top, 4)
-        }
+                    .padding(.top, 4)
+                } // End of RHS VStack (name, time, content, actions)
+            } // End of Main Note Content HStack
+        } // End of Outer VStack (root row)
+        .foregroundColor(Color(red: 1, green: 1, blue: 1))
         .padding(14)
-        .background(Color(red: 0.12, green: 0.12, blue: 0.16))
+        .background(Color.platformSecondaryGroupedBackground)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: note.isReply ? 1.2 : 0.8)
+                .stroke(Color.platformSeparator, lineWidth: note.isReply ? 1.2 : 0.8)
         )
         .contentShape(RoundedRectangle(cornerRadius: 12))
         #if os(iOS)
@@ -781,8 +790,8 @@ struct FeedMediaThumbnail: View {
         GeometryReader { geo in
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(red: 0.15, green: 0.15, blue: 0.2))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
+                    .fill(Color.platformTertiaryGroupedBackground)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.5))
 
                 if let image = image {
                     Image(platformImage: image)
@@ -828,30 +837,32 @@ struct FeedMediaThumbnail: View {
 struct AvatarView: View {
     let url: URL?
     let pubkey: String
+    var size: CGFloat = 40
     @State private var image: PlatformImage?
 
     var body: some View {
         ZStack {
             Circle()
                 .fill(avatarGradient)
-                .frame(width: 40, height: 40)
+                .frame(width: size, height: size)
 
             if let image = image {
                 Image(platformImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 40, height: 40)
+                    .frame(width: size, height: size)
                     .clipShape(Circle())
             } else {
                 Text(String(pubkey.prefix(1)).uppercased())
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .font(.system(size: max(8, size * 0.325), weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
             }
 
             Circle()
-                .stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5)
-                .frame(width: 40, height: 40)
+                .stroke(Color.platformSeparator, lineWidth: 0.5)
+                .frame(width: size, height: size)
         }
+        .frame(width: size, height: size)
         .onAppear { loadImage() }
         .onChange(of: url) { _, _ in loadImage() }
     }
@@ -890,16 +901,16 @@ struct FeedNoteSkeletonRow: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
                 Circle()
-                    .fill(Color(red: 0.15, green: 0.15, blue: 0.2))
+                    .fill(Color.platformTertiaryGroupedBackground)
                     .frame(width: 40, height: 40)
 
                 VStack(alignment: .leading, spacing: 4) {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(red: 0.15, green: 0.15, blue: 0.2))
+                        .fill(Color.platformTertiaryGroupedBackground)
                         .frame(width: 100, height: 12)
 
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(red: 0.15, green: 0.15, blue: 0.2))
+                        .fill(Color.platformTertiaryGroupedBackground)
                         .frame(width: 60, height: 10)
                 }
 
@@ -908,33 +919,33 @@ struct FeedNoteSkeletonRow: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color(red: 0.15, green: 0.15, blue: 0.2))
+                    .fill(Color.platformTertiaryGroupedBackground)
                     .frame(maxWidth: .infinity)
                     .frame(height: 12)
 
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color(red: 0.15, green: 0.15, blue: 0.2))
+                    .fill(Color.platformTertiaryGroupedBackground)
                     .frame(maxWidth: .infinity)
                     .frame(height: 12)
 
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color(red: 0.15, green: 0.15, blue: 0.2))
+                    .fill(Color.platformTertiaryGroupedBackground)
                     .frame(width: 180, height: 12)
             }
 
             HStack(spacing: 12) {
                 ForEach(0..<3, id: \.self) { _ in
                     Circle()
-                        .fill(Color(red: 0.15, green: 0.15, blue: 0.2))
+                        .fill(Color.platformTertiaryGroupedBackground)
                         .frame(width: 28, height: 28)
                 }
                 Spacer()
             }
         }
         .padding(14)
-        .background(Color(red: 0.12, green: 0.12, blue: 0.16))
+        .background(Color.platformSecondaryGroupedBackground)
         .cornerRadius(12)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.platformSeparator, lineWidth: 0.8))
         .opacity(shimmer ? 0.5 : 1.0)
         .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: shimmer)
         .onAppear { shimmer = true }
@@ -989,11 +1000,87 @@ struct RelayStatusSheet: View {
                                     .foregroundColor(.secondary)
                             }
                             .padding(12)
-                            .background(Color(red: 0.12, green: 0.12, blue: 0.16))
+                            .background(Color.platformTertiaryGroupedBackground)
                             .cornerRadius(10)
                         }
                     } header: {
                         Text("Write Relay")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .tracking(0.5)
+                    }
+                    .padding(.horizontal)
+
+                    Divider()
+                        .padding(.vertical, 8)
+
+                    // Mac Relay Sync
+                    Section {
+                        VStack(alignment: .leading, spacing: 12) {
+                            let macURL = configService.config.macRelayURL
+                            if macURL.isEmpty {
+                                Text("No Mac relay configured in settings")
+                                    .font(.system(size: 13, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            } else {
+                                HStack(spacing: 8) {
+                                    Circle()
+                                        .fill(MacRelaySyncService.shared.isSyncing ? Color.havenPurple : (MacRelaySyncService.shared.lastSyncDate != nil ? Color.green : Color.secondary))
+                                        .frame(width: 8, height: 8)
+                                    Text(MacRelaySyncService.shared.isSyncing ? "Syncing..." : (MacRelaySyncService.shared.syncStatus.isEmpty ? "Idle" : MacRelaySyncService.shared.syncStatus))
+                                        .font(.system(size: 13, design: .monospaced))
+                                        .foregroundColor(MacRelaySyncService.shared.isSyncing ? .havenPurple : .secondary)
+                                }
+                                
+                                if let lastSync = MacRelaySyncService.shared.lastSyncDate {
+                                    Text("Last successful sync: \(lastSync.formatted())")
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(.secondary.opacity(0.7))
+                                }
+                                
+                                HStack(spacing: 12) {
+                                    Button {
+                                        MacRelaySyncService.shared.forceSync()
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            if MacRelaySyncService.shared.isSyncing {
+                                                ProgressView().controlSize(.small).tint(.black)
+                                            } else {
+                                                Image(systemName: "arrow.clockwise")
+                                            }
+                                            Text("Sync Now")
+                                        }
+                                        .font(.system(size: 12, weight: .bold))
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 16)
+                                        .background(Color.havenPurple)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(8)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(MacRelaySyncService.shared.isSyncing)
+                                    
+                                    Button {
+                                        MacRelaySyncService.shared.resetSync()
+                                    } label: {
+                                        Text("Reset Progress")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .padding(.vertical, 8)
+                                            .padding(.horizontal, 16)
+                                            .background(Color.secondary.opacity(0.1))
+                                            .foregroundColor(.secondary)
+                                            .cornerRadius(8)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.top, 4)
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.platformTertiaryGroupedBackground)
+                        .cornerRadius(10)
+                    } header: {
+                        Text("Mac Relay Sync")
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundColor(.secondary.opacity(0.7))
                             .tracking(0.5)
@@ -1042,6 +1129,7 @@ struct RelayStatusSheet: View {
                             .tracking(0.5)
                     }
                     .padding(.horizontal)
+
                 }
                 .padding(.vertical)
             }

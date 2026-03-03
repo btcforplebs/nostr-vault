@@ -42,8 +42,9 @@ class RelayProcessManager: ObservableObject {
     // Critical recovery alert
     @Published var showProcessKillAlert = false
     
-    @Published var logs: [LogEntry] = []
-    
+    /// Logs are in a separate observable so only LogsView redraws on log changes.
+    let logStore = LogStore()
+
     // Metrics
     @Published var memoryUsage: Double = 0
     @Published var cpuUsage: Double = 0
@@ -67,10 +68,7 @@ class RelayProcessManager: ObservableObject {
     private var retryAttempted = false
     private var needsLockFix = false
 
-    // Log throttling
-    private var pendingLogs: [LogEntry] = []
-    private var logUpdateTimer: Timer?
-    // private let logQueue = DispatchQueue(label: "com.haven.logs") // Removed: unnecessary for MainActor
+    // (Log throttling moved to LogStore)
     
     private var metricsTimer: Timer?
     
@@ -119,7 +117,7 @@ class RelayProcessManager: ObservableObject {
     func startRelay(config: HavenConfig, isRetry: Bool = false) {
         // Strict guard: Must be idle and NO process should be running
         guard state == .idle && !isRunning else {
-            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start relay: current state is \(state) (running: \(isRunning))"))
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start relay: current state is \(state) (running: \(isRunning))"))
             return
         }
 
@@ -148,6 +146,14 @@ class RelayProcessManager: ObservableObject {
             try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("blossom"), withIntermediateDirectories: true)
             try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("cache"), withIntermediateDirectories: true)
             try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("db"), withIntermediateDirectories: true)
+            // Pre-create individual DB subdirectories so LMDB/Badger can mmap them
+            // (Go's MkdirAll may fail silently under macOS App Sandbox)
+            for dbName in ["private", "chat", "outbox", "inbox", "blossom"] {
+                try? FileManager.default.createDirectory(
+                    at: relayDataDir.appendingPathComponent("db/\(dbName)"),
+                    withIntermediateDirectories: true
+                )
+            }
 
             // 2. Clear Database Locks (Crucial - must happen before start)
             self.performClearDatabaseLocks(at: relayDataDir)
@@ -170,12 +176,12 @@ class RelayProcessManager: ObservableObject {
                     }
                     try? FileManager.default.copyItem(at: URL(fileURLWithPath: templatesPath), to: destURL)
                     await MainActor.run {
-                        self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Copied templates to \(destURL.path)"))
+                        self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Copied templates to \(destURL.path)"))
                     }
                 }
             } else {
                 await MainActor.run {
-                    self.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Templates folder not found in Bundle"))
+                    self.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Templates folder not found in Bundle"))
                 }
             }
 
@@ -189,13 +195,8 @@ class RelayProcessManager: ObservableObject {
     /// Public method to add logs from other services
     nonisolated func addLog(_ message: String, level: String = "INFO") {
         let entry = LogEntry(timestamp: Date(), level: level, message: message)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.logs.append(entry)
-            // Keep log size manageable
-            if self.logs.count > 1000 {
-                self.logs.removeFirst(200)
-            }
+        Task { @MainActor in
+            self.logStore.append(entry)
         }
     }
 
@@ -227,7 +228,7 @@ class RelayProcessManager: ObservableObject {
             try? data.write(to: blacklistURL)
         }
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Config: \(config.importSeedRelays.count) import relays, \(config.blastrRelays.count) blastr relays, \(config.whitelistedNpubs.count) whitelisted npubs"))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Config: \(config.importSeedRelays.count) import relays, \(config.blastrRelays.count) blastr relays, \(config.whitelistedNpubs.count) whitelisted npubs"))
 
         // Reset conflict state
         self.isPortConflict = false
@@ -236,8 +237,8 @@ class RelayProcessManager: ObservableObject {
         let envContent = generateMinimalEnv(config: config)
         try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Wrote .env to \(envURL.path)"))
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Working Directory: \(relayDataDir.path)"))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Wrote .env to \(envURL.path)"))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Working Directory: \(relayDataDir.path)"))
         
         // Prepare environment for C-Shared lib execution
         let configEnv = generateEnvDictionary(config: config)
@@ -249,8 +250,9 @@ class RelayProcessManager: ObservableObject {
                 free(cValue)
             }
         }
-        setenv("RELAY_BIND_ADDRESS", "127.0.0.1", 1)
-        if let cKey = strdup("RELAY_BIND_ADDRESS"), let cValue = strdup("127.0.0.1") {
+        let bindAddress = config.allowNetworkAccess ? "0.0.0.0" : "127.0.0.1"
+        setenv("RELAY_BIND_ADDRESS", bindAddress, 1)
+        if let cKey = strdup("RELAY_BIND_ADDRESS"), let cValue = strdup(bindAddress) {
             SetHavenEnvC(cKey, cValue)
             free(cKey)
             free(cValue)
@@ -262,7 +264,7 @@ class RelayProcessManager: ObservableObject {
         // Redirect stdout/stderr to capture Go logs
         captureOutput(in: relayDataDir)
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Captured output natively"))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Captured output natively"))
 
         self.state = .booting
         isRunning = true
@@ -276,7 +278,7 @@ class RelayProcessManager: ObservableObject {
             
             // StartRelayC returns instantly because http.ListenAndServe runs in a goroutine
             DispatchQueue.main.async {
-                self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay C-Shared process started"))
+                self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay C-Shared process started"))
             }
         }
         
@@ -293,7 +295,7 @@ class RelayProcessManager: ObservableObject {
             self.performClearDatabaseLocks(at: relayDataDir)
             await MainActor.run {
                 self.isLocked = false
-                self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared."))
+                self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Database locks cleared."))
                 completion?()
             }
         }
@@ -342,7 +344,7 @@ class RelayProcessManager: ObservableObject {
         stopLogThrottler()
         isBooting = false
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping C-Shared relay natively..."))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping C-Shared relay natively..."))
         
         DispatchQueue.global().async { [weak self] in
             // Tell the Go side to shut down the server and cancel the context
@@ -352,7 +354,7 @@ class RelayProcessManager: ObservableObject {
             Thread.sleep(forTimeInterval: 1.0)
 
             DispatchQueue.main.async {
-                self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "C-Shared relay natively stopped."))
+                self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "C-Shared relay natively stopped."))
                 self?.state = .idle
                 self?.isRunning = false
                 self?.isShuttingDown = false
@@ -372,7 +374,7 @@ class RelayProcessManager: ObservableObject {
     /// This replaces the old "pkill -9 haven" manual step.
     func forceCleanAndRestart() {
         self.state = .stopping
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Force clean & restart initiated..."))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Force clean & restart initiated..."))
         
         let relayDataDir = ConfigService.shared.relayDataDir
         
@@ -393,7 +395,7 @@ class RelayProcessManager: ObservableObject {
                 self?.showProcessKillAlert = false
                 self?.isShuttingDown = false
                 
-                self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Cleanup complete. Restarting relay..."))
+                self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Cleanup complete. Restarting relay..."))
                 
                 if let config = self?.lastConfig {
                     self?.startRelay(config: config, isRetry: true)
@@ -472,16 +474,16 @@ class RelayProcessManager: ObservableObject {
     // The usages below will be updated.
     
     func importNotes(config: HavenConfig) {
-        logs.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "importNotes called. Current State: \(state), isRunning: \(isRunning)"))
+        logStore.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "importNotes called. Current State: \(state), isRunning: \(isRunning)"))
         
         // Strict guard: Must be idle and NOT running
         guard state == .idle && !isRunning else {
             if (state == .running || state == .booting) && isRunning {
-                logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping running relay to start import..."))
+                logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping running relay to start import..."))
                 self.pendingImportConfig = config
                 stopRelay()
             } else {
-                logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start import: current state is \(state) (running: \(isRunning))"))
+                logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot start import: current state is \(state) (running: \(isRunning))"))
             }
             return
         }
@@ -491,6 +493,9 @@ class RelayProcessManager: ObservableObject {
         isRunning = false
         isBooting = false
         isImporting = true
+        // Reset the log-based event counter so import counts don't
+        // carry over and corrupt the post-import stats refresh.
+        eventsStored = 0
         
         clearDatabaseLocks()
         
@@ -499,6 +504,13 @@ class RelayProcessManager: ObservableObject {
         try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("data"), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("blossom"), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("cache"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("db"), withIntermediateDirectories: true)
+        for dbName in ["private", "chat", "outbox", "inbox", "blossom"] {
+            try? FileManager.default.createDirectory(
+                at: relayDataDir.appendingPathComponent("db/\(dbName)"),
+                withIntermediateDirectories: true
+            )
+        }
         
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
@@ -516,7 +528,7 @@ class RelayProcessManager: ObservableObject {
         for (key, value) in configEnv {
             setenv(key, value, 1)
         }
-        setenv("RELAY_BIND_ADDRESS", "127.0.0.1", 1)
+        setenv("RELAY_BIND_ADDRESS", config.allowNetworkAccess ? "0.0.0.0" : "127.0.0.1", 1)
         
         FileManager.default.changeCurrentDirectoryPath(relayDataDir.path)
         captureOutput(in: relayDataDir)
@@ -531,7 +543,7 @@ class RelayProcessManager: ObservableObject {
                  guard let self = self else { return }
                  if self.state != .importing { return }
                  
-                 self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "C-Shared Import sequence started"))
+                 self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "C-Shared Import sequence started"))
                  
                  DispatchQueue.global().async {
                      // 1 = true (importing mode)
@@ -553,11 +565,11 @@ class RelayProcessManager: ObservableObject {
         self.importCompleted = true
         self.state = .idle
         
-        self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import process terminated successfully."))
+        self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import process terminated successfully."))
         
         if let restartConfig = self.pendingImportConfig {
             self.pendingImportConfig = nil
-            self.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import successful, restarting relay..."))
+            self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Import successful, restarting relay..."))
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 self.startRelay(config: restartConfig)
             }
@@ -634,21 +646,37 @@ class RelayProcessManager: ObservableObject {
         return content
     }
     
+    /// Accumulated state changes from background log parsing — applied in a single MainActor dispatch.
+    private nonisolated struct BatchedStateUpdate {
+        var importProgress: Double?
+        var importStatusMessage: String?
+        var importCompleted: Bool = false
+        var stopImporting: Bool = false
+        var bootStatusMessage: String?
+        var stopBooting: Bool = false
+        var eventsStoredDelta: Int = 0
+        var connectionsDelta: Int = 0
+        var isLocked: Bool = false
+        var isPortConflict: Bool = false
+        var progressDateStr: String?   // for calculateProgress
+        var progressBump: Bool = false  // for "+0.03" bump when no date
+    }
+
     private nonisolated func processOutputInBackground(_ output: String) {
         let lines = output.components(separatedBy: .newlines).filter { !$0.isEmpty }
         guard !lines.isEmpty else { return }
-        
+
         var newEntries: [LogEntry] = []
+        var batch = BatchedStateUpdate()
+
         for line in lines {
             newEntries.append(LogEntry.parse(line))
-            
-            // Extract state changes on the background thread
-            updateUIStateFromLogInBackground(line)
+            collectStateChanges(from: line, into: &batch)
         }
-        
+
         Task { @MainActor in
-            // Push logs to the throttled buffer
-            self.pendingLogs.append(contentsOf: newEntries)
+            self.logStore.enqueue(newEntries)
+            self.applyBatchedUpdate(batch)
         }
     }
 
@@ -657,270 +685,211 @@ class RelayProcessManager: ObservableObject {
     private nonisolated static let trustGraphPattern = try? NSRegularExpression(pattern: "(?:kept=|followers: )(\\d+)", options: .caseInsensitive)
     private nonisolated static let pubkeysPattern = try? NSRegularExpression(pattern: "pubkeys=(\\d+)", options: .caseInsensitive)
 
-    private nonisolated func updateUIStateFromLogInBackground(_ line: String) {
-        // Handle all logic on the background thread, only jumping to MainActor for specific property changes
+    /// Collect state changes on the background thread without touching MainActor.
+    private nonisolated func collectStateChanges(from line: String, into batch: inout BatchedStateUpdate) {
+        // Import state
         if line.contains("connected successfully") {
-            Task { @MainActor in
-                if self.isImporting {
-                    self.importProgress = 0.1
-                    self.importStatusMessage = "Connected to relays..."
-                }
-            }
+            batch.importProgress = 0.1
+            batch.importStatusMessage = "Connected to relays..."
         } else if line.contains("Imported") && line.contains("notes") {
             if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
-                let dateString = String(dateStr)
-                Task { @MainActor in 
-                    if self.isImporting {
-                        self.calculateProgress(currentDateStr: dateString) 
-                    }
-                }
+                batch.progressDateStr = String(dateStr)
             }
             if let rangeStart = line.range(of: "from ")?.upperBound,
                let rangeEnd = line.range(of: " to")?.lowerBound {
-                let status = "Found notes from \(line[rangeStart..<rangeEnd])..."
-                Task { @MainActor in 
-                    if self.isImporting {
-                        self.importStatusMessage = status 
-                    }
-                }
+                batch.importStatusMessage = "Found notes from \(line[rangeStart..<rangeEnd])..."
             } else {
-                Task { @MainActor in 
-                    if self.isImporting {
-                        self.importStatusMessage = "Found notes..." 
-                    }
-                }
+                batch.importStatusMessage = "Found notes..."
             }
         } else if line.contains("Initializing WoT") || line.contains("building WoT") || line.contains("fetching Nostr events") {
-            Task { @MainActor in
-                if self.isImporting {
-                    self.importStatusMessage = "Building Web of Trust..."
-                    self.importProgress = 0.2
-                }
-            }
+            batch.importStatusMessage = "Building Web of Trust..."
+            batch.importProgress = 0.2
         } else if line.contains("analysing Nostr events") {
-            Task { @MainActor in
-                if self.isImporting {
-                    self.importStatusMessage = "Analysing Web of Trust..."
-                    self.importProgress = 0.3
-                }
-            }
+            batch.importStatusMessage = "Analysing Web of Trust..."
+            batch.importProgress = 0.3
         } else if line.contains("importing inbox notes") || line.contains("Importing inbox notes") {
-            Task { @MainActor in
-                if self.isImporting {
-                    self.importStatusMessage = "Importing tagged notes..."
-                    self.importProgress = 0.85 
-                }
-            }
+            batch.importStatusMessage = "Importing tagged notes..."
+            batch.importProgress = 0.85
         } else if line.contains("subscribing to inbox") || line.contains("tagged import complete") {
-            Task { @MainActor in
-                if self.isImporting {
-                    self.isImporting = false
-                    self.importCompleted = true
-                    self.importProgress = 1.0
-                    self.importStatusMessage = "Import Complete!"
-                }
-            }
+            batch.stopImporting = true
+            batch.importCompleted = true
+            batch.importProgress = 1.0
+            batch.importStatusMessage = "Import Complete!"
         } else if line.contains("imported") && line.contains("tagged notes") {
             if let countMatch = line.components(separatedBy: " ").first(where: { Int($0) != nil }) {
-                let status = "Imported \(countMatch) tagged notes"
-                Task { @MainActor in
-                    if self.isImporting {
-                        self.importProgress = 0.95
-                        self.importStatusMessage = status
-                    }
-                }
+                batch.importProgress = 0.95
+                batch.importStatusMessage = "Imported \(countMatch) tagged notes"
             } else {
-                Task { @MainActor in
-                    if self.isImporting {
-                        self.importProgress = 0.95
-                        self.importStatusMessage = "Tagged notes imported"
-                    }
-                }
+                batch.importProgress = 0.95
+                batch.importStatusMessage = "Tagged notes imported"
             }
         } else if line.contains("Import complete") || line.contains("import complete") {
-            Task { @MainActor in
-                if self.isImporting {
-                    self.importProgress = 1.0
-                    self.importStatusMessage = "Import Complete!"
-                }
-            }
+            batch.importProgress = 1.0
+            batch.importStatusMessage = "Import Complete!"
             if line.contains("tagged import complete") {
-                Task { @MainActor in
-                     if self.isImporting {
-                         self.isImporting = false
-                         self.importCompleted = true
-                     }
-                }
+                batch.stopImporting = true
+                batch.importCompleted = true
             }
         } else if line.contains("No notes found") {
             if let dateStr = line.components(separatedBy: "to ").last?.prefix(10) {
-                let dateString = String(dateStr)
-                var status: String?
+                batch.progressDateStr = String(dateStr)
                 if let fromIndex = line.components(separatedBy: "for ").last?.prefix(10) {
-                     status = "Checking \(fromIndex)... (No notes found)"
-                }
-                Task { @MainActor in
-                    if self.isImporting {
-                        self.calculateProgress(currentDateStr: dateString)
-                        if let status = status { self.importStatusMessage = status }
-                    }
+                    batch.importStatusMessage = "Checking \(fromIndex)... (No notes found)"
                 }
             } else {
-                Task { @MainActor in
-                    if self.isImporting {
-                        self.importProgress = min(self.importProgress + 0.03, 0.85)
-                    }
-                }
+                batch.progressBump = true
             }
         }
-        
-        // Parse event counts
+
+        // Event counts
         if line.contains("Imported") && line.contains("notes") {
             let components = line.components(separatedBy: " ")
             if let importedIndex = components.firstIndex(of: "Imported"),
                importedIndex + 1 < components.count,
                let count = Int(components[importedIndex + 1]) {
-                Task { @MainActor in self.eventsStored += count }
+                batch.eventsStoredDelta += count
             }
         } else if line.contains("imported") && line.contains("tagged notes") {
             let components = line.components(separatedBy: " ")
             if let importedIndex = components.firstIndex(of: "imported"),
                importedIndex + 1 < components.count,
                let count = Int(components[importedIndex + 1]) {
-                Task { @MainActor in self.eventsStored += count }
+                batch.eventsStoredDelta += count
             }
-        } else if line.contains("new note") || line.contains("new reaction") || 
+        } else if line.contains("new note") || line.contains("new reaction") ||
                   line.contains("new zap") || line.contains("new encrypted message") ||
                   line.contains("new gift-wrapped") || line.contains("new repost") {
-            Task { @MainActor in self.eventsStored += 1 }
+            batch.eventsStoredDelta += 1
         }
-        
-        // Booting status
+
+        // Booting status — last match wins for the batch
         let lowerLine = line.lowercased()
         if lowerLine.contains("subscribing to") {
             if let topic = line.components(separatedBy: "to ").last {
-                let status = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
-                Task { @MainActor in 
-                    if self.isBooting { self.bootStatusMessage = status }
-                }
+                batch.bootStatusMessage = "Subscribing to \(topic.trimmingCharacters(in: .punctuationCharacters))..."
             }
         } else if lowerLine.contains("is booting up") {
-             Task { @MainActor in 
-                if self.isBooting { self.bootStatusMessage = "Booting Haven..." }
-             }
+            batch.bootStatusMessage = "Booting Haven..."
+        } else if lowerLine.contains("starting deeper web of trust") {
+            batch.bootStatusMessage = "Analyzing trust graph..."
         } else if lowerLine.contains("starting") {
             if let service = line.components(separatedBy: "starting ").last ?? line.components(separatedBy: "Starting ").last {
-                 let status = "Starting \(service.trimmingCharacters(in: .punctuationCharacters))..."
-                 Task { @MainActor in 
-                    if self.isBooting { self.bootStatusMessage = status }
-                 }
+                let cleanService = service.components(separatedBy: "\"").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? service
+                batch.bootStatusMessage = "Starting \(cleanService.trimmingCharacters(in: .punctuationCharacters))..."
             }
         } else if lowerLine.contains("listening at") || lowerLine.contains("listening on") {
-             Task { @MainActor in 
-                if self.isBooting { self.bootStatusMessage = " initializing" }
-             }
+            batch.bootStatusMessage = "Initializing network listeners..."
         } else if lowerLine.contains("building web of trust graph") || lowerLine.contains("initializing wot") {
-             Task { @MainActor in 
-                if self.isBooting { self.bootStatusMessage = "Building Web of Trust..." }
-             }
+            batch.bootStatusMessage = "Building trust network..."
         } else if lowerLine.contains("analysed") || lowerLine.contains("analysing nostr events") {
             if let regex = Self.analysedPattern,
                let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
                let range = Range(match.range(at: 1), in: line) {
-                let count = String(line[range])
-                Task { @MainActor in 
-                    if self.isBooting { self.bootStatusMessage = "Analysed \(count) keys..." }
-                }
+                batch.bootStatusMessage = "Analyzing network connections (\(String(line[range])) profiles)..."
             }
         } else if lowerLine.contains("network size") {
-             if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
-                 Task { @MainActor in 
-                    if self.isBooting { self.bootStatusMessage = "Network Size: \(count)" }
-                 }
-             }
+            if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
+                batch.bootStatusMessage = "Discovered \(count) network peers"
+            }
         } else if lowerLine.contains("totals") && lowerLine.contains("pubkeys") {
             if let regex = Self.pubkeysPattern,
                let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
                let range = Range(match.range(at: 1), in: line) {
-                let count = String(line[range])
-                Task { @MainActor in 
-                    if self.isBooting { self.bootStatusMessage = "Network Size: \(count)" }
-                }
+                batch.bootStatusMessage = "Discovered \(String(line[range])) network peers"
             }
         } else if lowerLine.contains("relays discovered") {
-             if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
-                 let status = "Discovered \(count) relays..."
-                 Task { @MainActor in 
-                    if self.isBooting { self.bootStatusMessage = status }
-                 }
-             }
+            if let count = line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) {
+                batch.bootStatusMessage = "Connecting to \(count) remote relays..."
+            }
         } else if lowerLine.contains("pubkeys with minimum followers") || lowerLine.contains("eliminating pubkeys") {
-             if let regex = Self.trustGraphPattern,
-                let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
-                let range = Range(match.range(at: 1), in: line) {
-                let count = String(line[range])
-                Task { @MainActor in 
-                    if self.isBooting { self.bootStatusMessage = "Trust Graph: \(count) users" }
-                }
-             }
+            if let regex = Self.trustGraphPattern,
+               let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)),
+               let range = Range(match.range(at: 1), in: line) {
+                batch.bootStatusMessage = "Securing feed for \(String(line[range])) trusted users"
+            }
         }
-        
+
         if line.contains("subscribing to inbox") || line.contains("Subscribing to inbox") {
-            Task { @MainActor in
-                if self.isBooting {
-                    self.isBooting = false
-                    self.bootStatusMessage = ""
-                }
-            }
+            batch.stopBooting = true
         }
-        
+
+        // Connection tracking
         if line.contains("accepted connection") || line.contains("new connection") || line.contains("WS connect") {
-            Task { @MainActor in self.activeConnections += 1 }
+            batch.connectionsDelta += 1
         } else if line.contains("connection closed") || line.contains("WS disconnect") || line.contains("disconnected") {
-            Task { @MainActor in self.activeConnections = max(0, self.activeConnections - 1) }
+            batch.connectionsDelta -= 1
         }
-        
+
+        // Error states
         if line.contains("Cannot acquire directory lock") || line.contains("Another process is using this Badger database") {
-            Task { @MainActor in
-                self.isLocked = true
-                self.needsLockFix = true
+            batch.isLocked = true
+        }
+        if line.contains("bind: address already in use") {
+            batch.isPortConflict = true
+        }
+        // LMDB permission error — sandbox or filesystem prevents mmap
+        if line.contains("mdb_env_open") && line.contains("operation not permitted") {
+            batch.isLocked = true  // triggers auto-recovery UI
+        }
+    }
+
+    /// Apply all accumulated state changes in a single MainActor pass.
+    private func applyBatchedUpdate(_ batch: BatchedStateUpdate) {
+        // Import state
+        if isImporting {
+            if let dateStr = batch.progressDateStr {
+                calculateProgress(currentDateStr: dateStr)
+            }
+            if batch.progressBump {
+                importProgress = min(importProgress + 0.03, 0.85)
+            }
+            if let progress = batch.importProgress {
+                importProgress = progress
+            }
+            if let status = batch.importStatusMessage {
+                importStatusMessage = status
+            }
+            if batch.stopImporting {
+                isImporting = false
+                importCompleted = true
             }
         }
-        
-        if line.contains("bind: address already in use") {
-            Task { @MainActor in self.isPortConflict = true }
+
+        // Boot state
+        if isBooting {
+            if let status = batch.bootStatusMessage {
+                bootStatusMessage = status
+            }
+            if batch.stopBooting {
+                isBooting = false
+                bootStatusMessage = ""
+            }
+        }
+
+        // Metrics
+        if batch.eventsStoredDelta != 0 {
+            eventsStored += batch.eventsStoredDelta
+        }
+        if batch.connectionsDelta != 0 {
+            activeConnections = max(0, activeConnections + batch.connectionsDelta)
+        }
+
+        // Error states
+        if batch.isLocked {
+            isLocked = true
+            needsLockFix = true
+        }
+        if batch.isPortConflict {
+            isPortConflict = true
         }
     }
 
     private func startLogThrottler() {
-        stopLogThrottler()
-        DispatchQueue.main.async {
-            self.logUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    self?.flushLogs()
-                }
-            }
-        }
+        logStore.startThrottler()
     }
-    
+
     private func stopLogThrottler() {
-        DispatchQueue.main.async {
-            self.logUpdateTimer?.invalidate()
-            self.logUpdateTimer = nil
-            self.flushLogs() // Flush remaining
-        }
-    }
-    
-    private func flushLogs() {
-        guard !pendingLogs.isEmpty else { return }
-        let batch = pendingLogs
-        pendingLogs.removeAll()
-        
-        self.logs.append(contentsOf: batch)
-        // Keep max buffer
-        if self.logs.count > 1000 {
-            self.logs.removeFirst(max(0, self.logs.count - 1000))
-        }
+        logStore.stopThrottler()
     }
 
 
@@ -946,11 +915,18 @@ class RelayProcessManager: ObservableObject {
         let cleanNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { "abcdefghijklmnopqrstuvwxyz0123456789".contains($0.lowercased()) }
 
+        // TLS — only enable HTTPS on iOS (macOS uses plain HTTP; Cloudflare handles TLS)
+        #if os(iOS)
+        let enableTLS = "1"
+        #else
+        let enableTLS = "0"
+        #endif
+
         return [
             "OWNER_NPUB": cleanNpub,
             "RELAY_URL": config.relayURL,
             "RELAY_PORT": String(config.relayPort),
-            "RELAY_BIND_ADDRESS": "127.0.0.1",
+            "RELAY_BIND_ADDRESS": config.allowNetworkAccess ? "0.0.0.0" : "127.0.0.1",
             "DB_ENGINE": config.dbEngine,
             "LMDB_MAPSIZE": "0",
             "DATABASE_PATH": ConfigService.shared.relayDataDir.appendingPathComponent("data").standardized.path + "/",
@@ -1051,7 +1027,10 @@ class RelayProcessManager: ObservableObject {
             "BLASTR_RELAYS_FILE": config.blastrRelaysFile,
 
             // WoT
-            "WOT_FETCH_TIMEOUT_SECONDS": "60"
+            "WOT_FETCH_TIMEOUT_SECONDS": "60",
+
+            // TLS
+            "HAVEN_ENABLE_TLS": enableTLS,
         ]
     }
 
@@ -1060,6 +1039,15 @@ class RelayProcessManager: ObservableObject {
     /// Sets environment variables and writes config files so Go's loadConfig() works.
     private func prepareEnvForBackup(config: HavenConfig) {
         let relayDataDir = ConfigService.shared.relayDataDir
+
+        // Ensure all DB directories exist before Go tries to open them
+        try? FileManager.default.createDirectory(at: relayDataDir.appendingPathComponent("db"), withIntermediateDirectories: true)
+        for dbName in ["private", "chat", "outbox", "inbox", "blossom"] {
+            try? FileManager.default.createDirectory(
+                at: relayDataDir.appendingPathComponent("db/\(dbName)"),
+                withIntermediateDirectories: true
+            )
+        }
 
         // Write config files that Go reads from the working directory
         let encoder = JSONEncoder()
@@ -1083,7 +1071,7 @@ class RelayProcessManager: ObservableObject {
         for (key, value) in configEnv {
             setenv(key, value, 1)
         }
-        setenv("RELAY_BIND_ADDRESS", "127.0.0.1", 1)
+        setenv("RELAY_BIND_ADDRESS", config.allowNetworkAccess ? "0.0.0.0" : "127.0.0.1", 1)
 
         FileManager.default.changeCurrentDirectoryPath(relayDataDir.path)
         captureOutput(in: relayDataDir)
@@ -1152,7 +1140,7 @@ class RelayProcessManager: ObservableObject {
                 let result = BackupToCloudC()
                 Task { @MainActor in
                     let msg = result == 0 ? "Cloud backup complete" : "Cloud backup failed"
-                    self.logs.append(LogEntry(timestamp: Date(), level: result == 0 ? "INFO" : "ERROR", message: msg))
+                    self.logStore.append(LogEntry(timestamp: Date(), level: result == 0 ? "INFO" : "ERROR", message: msg))
                     if wasRunning {
                         self.startRelay(config: config)
                     }
@@ -1178,7 +1166,7 @@ class RelayProcessManager: ObservableObject {
                 let result = RestoreFromCloudC()
                 Task { @MainActor in
                     let msg = result == 0 ? "Cloud restore complete" : "Cloud restore failed"
-                    self.logs.append(LogEntry(timestamp: Date(), level: result == 0 ? "INFO" : "ERROR", message: msg))
+                    self.logStore.append(LogEntry(timestamp: Date(), level: result == 0 ? "INFO" : "ERROR", message: msg))
                     if wasRunning {
                         self.startRelay(config: config)
                     }
@@ -1200,12 +1188,12 @@ class RelayProcessManager: ObservableObject {
         
         // Ensure blossom directory exists
         guard FileManager.default.fileExists(atPath: blossomDir.path) else {
-            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
             completion(false)
             return
         }
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom backup..."))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom backup..."))
         
         // Create a temporary file path
         let tempDir = FileManager.default.temporaryDirectory
@@ -1223,15 +1211,15 @@ class RelayProcessManager: ObservableObject {
                             try FileManager.default.removeItem(at: destURL)
                         }
                         try FileManager.default.moveItem(at: tempZipURL, to: destURL)
-                        self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom backup saved to \(outputPath)"))
+                        self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom backup saved to \(outputPath)"))
                         completion(true)
                     } catch {
-                        self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move backup to destination: \(error.localizedDescription)"))
+                        self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move backup to destination: \(error.localizedDescription)"))
                         try? FileManager.default.removeItem(at: tempZipURL)
                         completion(false)
                     }
                 } else {
-                    self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom backup failed in Go process"))
+                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom backup failed in Go process"))
                     try? FileManager.default.removeItem(at: tempZipURL)
                     completion(false)
                 }
@@ -1245,7 +1233,7 @@ class RelayProcessManager: ObservableObject {
         // Ensure blossom directory exists
         try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import..."))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import..."))
         
         // Copy to temp first to avoid sandbox issues with unzip subprocess
         let tempDir = FileManager.default.temporaryDirectory
@@ -1257,7 +1245,7 @@ class RelayProcessManager: ObservableObject {
             }
             try FileManager.default.copyItem(atPath: inputPath, toPath: tempZipURL.path)
         } catch {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to copy import file to temp: \(error)"))
+            logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to copy import file to temp: \(error)"))
             completion(false)
             return
         }
@@ -1270,10 +1258,10 @@ class RelayProcessManager: ObservableObject {
                 try? FileManager.default.removeItem(at: tempZipURL)
                 
                 if result == 0 {
-                    self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete."))
+                    self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete."))
                     completion(true)
                 } else {
-                    self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom import failed in Go process"))
+                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom import failed in Go process"))
                     completion(false)
                 }
             }
@@ -1284,7 +1272,7 @@ class RelayProcessManager: ObservableObject {
     
     func runBlossomExportWithExtensions(config: HavenConfig, outputPath: String, completion: @escaping @Sendable (Bool) -> Void) {
         guard isRunning else {
-            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot export: relay must be running to detect file types."))
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Cannot export: relay must be running to detect file types."))
             completion(false)
             return
         }
@@ -1292,46 +1280,53 @@ class RelayProcessManager: ObservableObject {
         let blossomDir = ConfigService.shared.relayDataDir.appendingPathComponent(config.blossomPath)
 
         guard FileManager.default.fileExists(atPath: blossomDir.path) else {
-            logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
+            logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Blossom directory not found: \(blossomDir.path)"))
             completion(false)
             return
         }
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom export with extensions..."))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom export with extensions..."))
         
         // Create temp dir for staging files with extensions
         let tempDir = FileManager.default.temporaryDirectory
         let stagingDir = tempDir.appendingPathComponent("BlossomExport_\(UUID().uuidString)")
         let tempZipURL = tempDir.appendingPathComponent("blossom_export_temp_\(UUID().uuidString).zip")
         
-        do {
-            try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-            
-            // Iterate files in blossomDir
-            let fileURLs = try FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: nil)
-            
-            for fileURL in fileURLs {
-                // Ignore hidden files
-                if fileURL.lastPathComponent.hasPrefix(".") { continue }
+        Task.detached {
+            do {
+                try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+                
+                // Iterate files in blossomDir
+                let fileURLs = try FileManager.default.contentsOfDirectory(at: blossomDir, includingPropertiesForKeys: nil)
+                
+                for fileURL in fileURLs {
+                    // Ignore hidden files
+                    if fileURL.lastPathComponent.hasPrefix(".") { continue }
 
-                let sha256 = fileURL.lastPathComponent
-                let proof = detectMimeFromBytes(for: fileURL)
-                let claim = fetchMimeFromRelay(config: config, sha256: sha256)
-                let resolvedMime = resolveMime(claim: claim, proof: proof)
-                let ext = mimeToExtension(resolvedMime)
-                logs.append(LogEntry(timestamp: Date(), level: "DEBUG", message: "Export \(sha256.prefix(8))...: claim=\(claim ?? "nil") proof=\(proof) resolved=\(resolvedMime) ext=.\(ext)"))
+                    let sha256 = fileURL.lastPathComponent
+                    let proof = self.detectMimeFromBytes(for: fileURL)
+                    
+                    let claim: String?
+                    // Only perform the network check if magic bytes are inconclusive
+                    if proof == "application/octet-stream" {
+                        claim = await self.fetchMimeFromRelay(config: config, sha256: sha256)
+                    } else {
+                        claim = nil
+                    }
+                    
+                    let resolvedMime = self.resolveMime(claim: claim, proof: proof)
+                    let ext = self.mimeToExtension(resolvedMime)
 
-                let newFilename = sha256 + (ext == "bin" ? "" : ".\(ext)")
-                let destURL = stagingDir.appendingPathComponent(newFilename)
+                    let newFilename = sha256 + (ext == "bin" ? "" : ".\(ext)")
+                    let destURL = stagingDir.appendingPathComponent(newFilename)
 
-                try FileManager.default.copyItem(at: fileURL, to: destURL)
-            }
-            
-            // Zip the staging directory content using Go ZipDirectoryC
-            DispatchQueue.global().async { [weak self] in
+                    try FileManager.default.copyItem(at: fileURL, to: destURL)
+                }
+                
+                // Zip the staging directory content using Go ZipDirectoryC
                 let result = ZipDirectoryC(strdup(stagingDir.path), strdup(tempZipURL.path))
                 
-                Task { @MainActor in
+                await MainActor.run {
                     // Cleanup staging
                     try? FileManager.default.removeItem(at: stagingDir)
                     
@@ -1343,25 +1338,26 @@ class RelayProcessManager: ObservableObject {
                                 try FileManager.default.removeItem(at: destURL)
                             }
                             try FileManager.default.moveItem(at: tempZipURL, to: destURL)
-                            self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom export saved to \(outputPath)"))
+                            self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom export saved to \(outputPath)"))
                             completion(true)
                         } catch {
-                            self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move export to destination: \(error.localizedDescription)"))
+                            self.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to move export to destination: \(error.localizedDescription)"))
                             try? FileManager.default.removeItem(at: tempZipURL)
                             completion(false)
                         }
                     } else {
-                        self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom export failed in Go process"))
+                        self.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Blossom export failed in Go process"))
                         try? FileManager.default.removeItem(at: tempZipURL)
                         completion(false)
                     }
                 }
+            } catch {
+                await MainActor.run {
+                    self.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to prepare Blossom export: \(error.localizedDescription)"))
+                    try? FileManager.default.removeItem(at: stagingDir)
+                    completion(false)
+                }
             }
-            
-        } catch {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Export failed: \(error.localizedDescription)"))
-            try? FileManager.default.removeItem(at: stagingDir)
-            completion(false)
         }
     }
     
@@ -1371,7 +1367,7 @@ class RelayProcessManager: ObservableObject {
         // Ensure blossom directory exists
         try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
         
-        logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import (stripping extensions)..."))
+        logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Starting Blossom import (stripping extensions)..."))
         
         // 1. Copy input zip to temp
         let tempDir = FileManager.default.temporaryDirectory
@@ -1385,7 +1381,7 @@ class RelayProcessManager: ObservableObject {
             try FileManager.default.copyItem(atPath: inputPath, toPath: tempZipURL.path)
             try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
         } catch {
-            logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to setup temp dirs: \(error)"))
+            logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Failed to setup temp dirs: \(error)"))
             completion(false)
             return
         }
@@ -1422,21 +1418,21 @@ class RelayProcessManager: ObservableObject {
                                 try FileManager.default.moveItem(at: fileURL, to: destURL)
                                 count += 1
                             } else {
-                                self?.logs.append(LogEntry(timestamp: Date(), level: "WARN", message: "Skipping invalid blossom file: \(fileURL.lastPathComponent)"))
+                                self?.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Skipping invalid blossom file: \(fileURL.lastPathComponent)"))
                             }
                         }
                         
-                        self?.logs.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete. Imported \(count) files."))
+                        self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Blossom import complete. Imported \(count) files."))
                         try? FileManager.default.removeItem(at: stagingDir)
                         completion(true)
                         
                     } catch {
-                         self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Error processing imported files: \(error)"))
+                         self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Error processing imported files: \(error)"))
                          try? FileManager.default.removeItem(at: stagingDir)
                          completion(false)
                     }
                 } else {
-                    self?.logs.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip failed in Go process"))
+                    self?.logStore.append(LogEntry(timestamp: Date(), level: "ERROR", message: "Unzip failed in Go process"))
                     try? FileManager.default.removeItem(at: stagingDir)
                     completion(false)
                 }
@@ -1533,28 +1529,25 @@ class RelayProcessManager: ObservableObject {
     }
 
     // Fetch MIME type from the running relay via HEAD request (the "claim")
-    nonisolated func fetchMimeFromRelay(config: HavenConfig, sha256: String) -> String? {
+    nonisolated func fetchMimeFromRelay(config: HavenConfig, sha256: String) async -> String? {
         guard let url = URL(string: "\(config.webURL)/\(sha256)") else { return nil }
 
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
         request.timeoutInterval = 3
 
-        let semaphore = DispatchSemaphore(value: 0)
-        var contentType: String?
-
-        let task = URLSession.shared.dataTask(with: request) { _, response, _ in
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse,
                httpResponse.statusCode == 200,
                let ct = httpResponse.value(forHTTPHeaderField: "Content-Type") {
                 // Strip parameters (e.g. "image/jpeg; charset=utf-8" → "image/jpeg")
-                contentType = ct.components(separatedBy: ";").first?.trimmingCharacters(in: .whitespaces)
+                return ct.components(separatedBy: ";").first?.trimmingCharacters(in: .whitespaces)
             }
-            semaphore.signal()
+        } catch {
+            // Silently ignore timeout/connection issues
         }
-        task.resume()
-        _ = semaphore.wait(timeout: .now() + 5)
-        return contentType
+        return nil
     }
 
     // Resolve claim (relay) vs proof (magic bytes) using trust-but-verify

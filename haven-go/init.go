@@ -87,9 +87,16 @@ func newDBBackend(path string) DBBackend {
 
 func newLMDBBackend(path string) *lmdb.LMDBBackend {
 	mapSize := config.LmdbMapSize
-	if mapSize == 0 && runtime.GOOS == "ios" {
-		// iOS has strict memory mapping limits per process
-		mapSize = 256 << 20 // 256 MB
+	if mapSize == 0 {
+		switch runtime.GOOS {
+		case "ios":
+			// iOS has strict memory mapping limits per process
+			mapSize = 256 << 20 // 256 MB
+		case "darwin":
+			// macOS App Sandbox can reject very large mmap regions;
+			// default to 1 GB which is safe and sufficient for most relays.
+			mapSize = 1 << 30 // 1 GB
+		}
 	}
 	return &lmdb.LMDBBackend{
 		Path:    path,
