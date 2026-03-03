@@ -1,37 +1,36 @@
-# HAVEN for Mac
+# HAVEN - Native Mac & iOS
 
 <p align="center">
   <img src="docs/media/screenshots/haven_icon.png" width="200" alt="HAVEN Logo" />
 </p>
 
 <p align="center">
-  <b>Your Personal Nostr Relay — Native on Mac</b><br>
-  <i>Powered by the original Go codebase from <a href="https://github.com/bitvora/haven">bitvora/haven</a>.</i>
+  <b>Your Personal Nostr Relay — Native on Mac & iOS</b><br>
+  <i>Powered by the original Go codebase from <a href="https://github.com/bitvora/haven">bitvora/haven</a> and forked enhancements from <a href="https://github.com/barrydeen/haven">barrydeen/haven</a>.</i>
 </p>
 
 ---
 
-> [!IMPORTANT]
-> **Installation Note**: Haven is currently unsigned code. macOS will likely block the application from opening by default. To bypass this, open **Settings → Privacy & Security**, scroll down to **Security**, and click **Open Anyway**.
+> [!TIP]
+> **Join the Beta**: Haven for iOS is now available on **TestFlight**! [**Click here to join the beta**](https://testflight.apple.com/join/kN3zE1H1).
 
-> [!NOTE]
-> **Coming Soon**: We are actively working toward **App Store & TestFlight distribution** using a new [C-shared relay architecture](docs/C_SHARED_RELAY.md) that compiles the Go backend directly into the Swift app as a single process.
+> [!IMPORTANT]
+> **macOS Installation Note**: Haven is currently unsigned code. macOS will likely block the application from opening by default. To bypass this, open **Settings → Privacy & Security**, scroll down to **Security**, and click **Open Anyway**.
 
 ## ✨ Features
 
-- **Native Swift UI** — Fast, responsive, and designed for macOS. Lives in your menu bar.
-- **Trusted Core** — Runs the exact same Go code as the CLI version, ensuring compatibility and security.
-- **Easy Setup** — Drag-and-drop installation with a guided setup wizard. No command line required.
-- **Private Relay** — Run your own Nostr relay effortlessly.
-- **Notes Viewer** — View notes from your relay filtered by "My Notes", "Tagged", and "Whitelisted" contacts.
-- **Media Viewer** — Browse images, videos, GIFs, and audio files with a full-screen viewer, keyboard navigation, and source filtering (Blossom vs Cache).
-- **Audio Playback** — Play `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, and `.ogg` files with a built-in player.
-- **Blossom Media Server** — Integrated media hosting with smart MIME detection using magic bytes + relay metadata.
-- **Access Control** — Manage whitelist and blacklist pubkeys from a dedicated settings tab.
-- **JSONL Export/Import** — Back up and restore your notes locally via native save/open panels.
-- **Dashboard Quick Actions** — Export JSONL, export Blossom media, and import notes directly from the dashboard.
-- **Automatic Lock Recovery** — Detects database locks and recovers automatically.
-- **Upstream Sync** — Stays in sync with the upstream [bitvora/haven](https://github.com/bitvora/haven) Go codebase via git subtree.
+- **Native SwiftUI** — Fast, responsive, and designed for macOS and iOS.
+- **Trusted Core** — Runs the exact same battle-tested Go code as the CLI relay, ensuring 100% compatibility.
+- **Mac-to-iOS Sync** — Use your Mac as your always-on home base. Haven for iOS securely syncs missed notes directly from your Mac relay.
+- **Nostr Zaps & NWC** — Integrated Lightning wallet support via Nostr Wallet Connect (NWC). Send and receive zaps instantly with real-time balance tracking.
+- **Private Relay** — Run your own private Nostr relay effortlessly from your desktop or phone.
+- **Smart Broadcasting** — Haven automatically discovers your recipient's preferred relays and broadcasts directly to their inbox.
+- **Advanced Access Control** — Multi-pubkey whitelisting and blacklisting support for refined relay privacy.
+- **Media Viewer** — Browse images, videos, GIFs, and audio files with source filtering (Blossom vs Cache).
+- **Blossom Media Server** — Integrated BUD-02 media hosting with automatic mirroring and smart MIME detection.
+- **JSONL Backup/Restore** — Comprehensive backup system using a portable JSONL format with cloud backup support.
+- **Web of Trust (WoT)** — Built-in WoT with configurable depth and periodic refresh mechanisms.
+- **Privacy First** — Secured by system-level Keychain. Encrypt your private key with NIP-49 (using ncryptsec).
 
 ## 📺 Video Walkthrough
 
@@ -39,19 +38,15 @@
 
 ## 📸 Screenshots
 
-| Dashboard | Notes Viewer |
-|:---:|:---:|
-| ![Dashboard](docs/media/screenshots/popout-dashboard.png) | ![Notes](docs/media/screenshots/menubar-viewer-notes.png) |
-
-| Media Viewer | Full-Screen View |
-|:---:|:---:|
-| ![Media](docs/media/screenshots/menubar-viewer-media.png) | ![Full-Screen](docs/media/screenshots/fullscreen-view.jpeg) |
+| Mac Dashboard | Notes Viewer | iOS Dashboard |
+|:---:|:---:|:---:|
+| ![Dashboard](docs/media/screenshots/popout-dashboard.png) | ![Notes](docs/media/screenshots/menubar-viewer-notes.png) | ![iOS TestFlight](https://testflight.apple.com/join/kN3zE1H1) |
 
 ## 🛠️ Building from Source
 
-Don't trust, verify. You can build HAVEN for Mac entirely from source.
+Don't trust, verify. You can build HAVEN entirely from source.
 
-### Quick Start
+### Quick Start (macOS)
 
 1.  **Clone the repo:**
     ```bash
@@ -68,27 +63,26 @@ Don't trust, verify. You can build HAVEN for Mac entirely from source.
     ```bash
     open HavenApp/HavenApp.xcodeproj
     ```
-    Press `Cmd + R` to build and run. Xcode automatically compiles the Go binary via `build_haven.sh` and bundles it into the app.
+    Press `Cmd + R` to build and run. Xcode automatically compiles the Go static library via `build_haven.sh`.
 
-For detailed instructions, see [BUILD_MAC.md](docs/BUILD_MAC.md) and [VERIFY_BUILD.md](docs/VERIFY_BUILD.md).
+For detailed instructions, see [BUILD_MAC.md](docs/BUILD_MAC.md), [BUILD_IOS.md](docs/BUILD_IOS.md), and [VERIFY_BUILD.md](docs/VERIFY_BUILD.md).
 
 ## 📂 Project Structure
 
 | Directory | Description |
 |-----------|-------------|
-| `haven-go/` | The upstream Go relay source (managed via git subtree) |
-| `HavenApp/` | The native Swift macOS application |
+| `haven-go/` | The upstream Go relay source (forked from barrydeen/haven) |
+| `HavenApp/` | The native Swift macOS and iOS application |
 | `docs/` | Documentation and guides |
+| `website/` | Sources for the [havennostr.com](https://havennostr.com) landing page |
 
 ## 📖 Documentation
 
 - [**CHANGELOG**](CHANGELOG.md) — Full version history
-- [**Release Process**](docs/RELEASE_PROCESS.md) — How to cut a new release
-- [**Upstream Sync**](docs/upstream-sync.md) — How to pull upstream Go changes
-- [**C-Shared Relay Architecture**](docs/C_SHARED_RELAY.md) — The upcoming single-process architecture for App Store distribution
+- [**C-Shared Relay Architecture**](docs/C_SHARED_RELAY.md) — How we bundle Go into Swift
 - [**Build & Verify**](docs/BUILD_MAC.md) — Building from source and verifying binaries
-- [**Access Control**](docs/access-control.md) — Configuring whitelist and blacklist
+- [**Sync Guide**](docs/upstream-sync.md) — Staying in sync with upstream changes
 
 ## Credit
 
-Built on top of the incredible work by [bitvora](https://github.com/bitvora/haven).
+Built on top of the incredible work by [bitvora](https://github.com/bitvora/haven) and [barrydeen](https://github.com/barrydeen/haven).
