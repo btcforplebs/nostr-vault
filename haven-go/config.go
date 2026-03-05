@@ -132,7 +132,9 @@ func loadConfig() Config {
 	}
 
 	// Relay owner is always whitelisted
-	cfg.WhitelistedPubKeys[cfg.OwnerPubKey] = struct{}{}
+	if cfg.OwnerPubKey != "" {
+		cfg.WhitelistedPubKeys[cfg.OwnerPubKey] = struct{}{}
+	}
 
 	return cfg
 
@@ -163,14 +165,19 @@ func getS3Config() *S3Config {
 }
 
 func getRelayListFromFile(filePath string) []string {
+	if filePath == "" {
+		return []string{}
+	}
 	file, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Fatalf("Failed to read file: %s", err)
+		log.Printf("⚠️ Failed to read relay list file %s: %s", filePath, err)
+		return []string{}
 	}
 
 	var relayList []string
 	if err := json.Unmarshal(file, &relayList); err != nil {
-		log.Fatalf("Failed to parse JSON: %s", err)
+		log.Printf("⚠️ Failed to parse relay list JSON from %s: %s", filePath, err)
+		return []string{}
 	}
 
 	for i, relay := range relayList {
@@ -186,22 +193,27 @@ func getRelayListFromFile(filePath string) []string {
 func getNpubsFromFile(filePath string) map[string]struct{} {
 	pubKeys := map[string]struct{}{}
 	if filePath == "" {
-		// No pubKeys file, only owner will be whitelisted"
+		// No pubKeys file, only owner will be whitelisted
 		return pubKeys
 	}
 	file, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Fatalf("Failed to read file: %s", err)
+		log.Printf("⚠️ Failed to read npubs file %s: %s", filePath, err)
+		return pubKeys
 	}
 
 	var npubs []string
 	if err := json.Unmarshal(file, &npubs); err != nil {
-		log.Fatalf("Failed to parse JSON: %s", err)
+		log.Printf("⚠️ Failed to parse npubs JSON from %s: %s", filePath, err)
+		return pubKeys
 	}
 
 	for _, npub := range npubs {
 		npub = strings.TrimSpace(npub)
-		pubKeys[nPubToPubkey(npub)] = struct{}{}
+		pk := nPubToPubkey(npub)
+		if pk != "" {
+			pubKeys[pk] = struct{}{}
+		}
 	}
 	return pubKeys
 }
@@ -209,7 +221,8 @@ func getNpubsFromFile(filePath string) map[string]struct{} {
 func getEnv(key string) string {
 	value, exists := os.LookupEnv(key)
 	if !exists {
-		log.Fatalf("Environment variable %s not set", key)
+		log.Printf("⚠️ Environment variable %s not set", key)
+		return ""
 	}
 	return value
 }
@@ -266,11 +279,20 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 }
 
 func nPubToPubkey(nPub string) string {
+	if nPub == "" {
+		return ""
+	}
 	_, v, err := nip19.Decode(nPub)
 	if err != nil {
-		panic(err)
+		log.Printf("⚠️ invalid npub %q: %v", nPub, err)
+		return ""
 	}
-	return v.(string)
+	s, ok := v.(string)
+	if !ok {
+		log.Printf("⚠️ npub decoded to non-string type: %T", v)
+		return ""
+	}
+	return s
 }
 
 var art = `

@@ -39,6 +39,13 @@ func SetHavenEnvC(key *C.char, value *C.char) {
 
 //export StartRelayC
 func StartRelayC(importMode bool) {
+	// Recover from any panic so we don't crash the host app
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚫 HAVEN recovered from panic: %v", r)
+		}
+	}()
+
 	config = loadConfig() // reload config dynamically
 
 	nostr.InfoLogger = log.New(io.Discard, "", 0)
@@ -96,10 +103,11 @@ func StartRelayC(importMode bool) {
 		)
 
 		// Try to load from cache first - instant startup
-		// Always initialize asynchronously to avoid blocking relay startup
-		wotModel.LoadFromCache() // Load if available, otherwise starts empty
+		// Initialize asynchronously to avoid blocking relay startup
+		wotModel.LoadFromCache()
+		wot.ResetReady()
 		go wot.Initialize(csharedCtx, wotModel)
-		log.Println("  ✓ Web of Trust ready")
+		log.Println("  ✓ Web of Trust initializing")
 
 		go subscribeInboxAndChat(csharedCtx)
 		go startPeriodicCloudBackups(csharedCtx)
@@ -178,7 +186,13 @@ func StopRelayC() {
 }
 
 //export BackupDatabaseC
-func BackupDatabaseC(outputPath *C.char) C.int {
+func BackupDatabaseC(outputPath *C.char) (ret C.int) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚫 backup recovered from panic: %v", r)
+			ret = 1
+		}
+	}()
 	goPath := C.GoString(outputPath)
 	log.Printf("📦 Starting database backup to %s", goPath)
 
@@ -200,7 +214,13 @@ func BackupDatabaseC(outputPath *C.char) C.int {
 }
 
 //export RestoreDatabaseC
-func RestoreDatabaseC(inputPath *C.char) C.int {
+func RestoreDatabaseC(inputPath *C.char) (ret C.int) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚫 restore recovered from panic: %v", r)
+			ret = 1
+		}
+	}()
 	goPath := C.GoString(inputPath)
 	log.Printf("📦 Starting database restore from %s", goPath)
 
@@ -222,7 +242,13 @@ func RestoreDatabaseC(inputPath *C.char) C.int {
 }
 
 //export BackupToCloudC
-func BackupToCloudC() C.int {
+func BackupToCloudC() (ret C.int) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚫 cloud backup recovered from panic: %v", r)
+			ret = 1
+		}
+	}()
 	log.Println("☁️ Starting cloud backup")
 
 	config = loadConfig()
@@ -257,7 +283,13 @@ func BackupToCloudC() C.int {
 }
 
 //export RestoreFromCloudC
-func RestoreFromCloudC() C.int {
+func RestoreFromCloudC() (ret C.int) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚫 cloud restore recovered from panic: %v", r)
+			ret = 1
+		}
+	}()
 	log.Println("☁️ Starting cloud restore")
 
 	config = loadConfig()

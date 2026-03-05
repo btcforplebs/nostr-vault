@@ -59,10 +59,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             guard RelayProcessManager.shared.isRunning else { return }
             NostrService.shared.resetConnections()
             let config = ConfigService.shared.config
-            let urls = [
+            var urls = [
                 URL(string: config.nostrURL)!,
                 URL(string: config.nostrURL + "/inbox")!
             ]
+            let macURL = config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !macURL.isEmpty, let macInbox = URL(string: macURL + "/inbox") {
+                urls.append(macInbox)
+            }
             NostrService.shared.fetchNotes(from: urls)
         }
         

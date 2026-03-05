@@ -216,6 +216,14 @@ func importTaggedNotes(ctx context.Context) {
 }
 
 func subscribeInboxAndChat(ctx context.Context) {
+	// Wait for WoT to finish initializing before subscribing.
+	// Without this, wot.Has() rejects all tagged notes as "not in WoT".
+	log.Println("📢 waiting for Web of Trust before subscribing to inbox")
+	wot.WaitReady(ctx)
+	if ctx.Err() != nil {
+		return
+	}
+
 	wdbInbox := eventstore.RelayWrapper{Store: inboxDB}
 	wdbChat := eventstore.RelayWrapper{Store: chatDB}
 	startTime := nostr.Timestamp(time.Now().Add(-time.Minute * 5).Unix())

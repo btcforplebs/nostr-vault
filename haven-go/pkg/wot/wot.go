@@ -22,12 +22,31 @@ type Initializer interface {
 
 var wotInstance atomic.Value
 
+// readyCh is closed once Initialize() finishes, signalling that the WoT
+// graph is fully populated and Has() calls are reliable.
+// Reset via ResetReady() before each Initialize() cycle (e.g. iOS relay restart).
+var readyCh = make(chan struct{})
+
 func GetInstance() Model {
 	val := wotInstance.Load()
 	if val == nil {
 		return nil
 	}
 	return val.(Model)
+}
+
+// ResetReady creates a fresh ready channel. Call before Initialize()
+// when the relay is restarted (e.g. iOS stop/start cycle).
+func ResetReady() {
+	readyCh = make(chan struct{})
+}
+
+// WaitReady blocks until Initialize() has completed.
+func WaitReady(ctx context.Context) {
+	select {
+	case <-readyCh:
+	case <-ctx.Done():
+	}
 }
 
 func Initialize(ctx context.Context, model Model) {
@@ -37,6 +56,7 @@ func Initialize(ctx context.Context, model Model) {
 		initializer.Init(ctx)
 		slog.Info("✅ WoT initialized")
 	}
+	close(readyCh)
 }
 
 func PeriodicRefresh(ctx context.Context, interval time.Duration) {

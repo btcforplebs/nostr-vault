@@ -92,14 +92,16 @@ func main() {
 		config.WotCacheTTLMinutes,
 	)
 
-	// Try to load from cache first - instant startup
-	// Always initialize asynchronously to avoid blocking relay startup
-	wotModel.LoadFromCache() // Load if available, otherwise starts empty
-	go wot.Initialize(mainCtx, wotModel)
 	if err := initRelays(mainCtx); err != nil {
 		log.Fatal("🚫 error initializing databases/relays:", err)
 	}
 	go func() {
+		// Try to load from cache first - instant startup
+		// Initialize asynchronously to avoid blocking relay startup
+		wotModel.LoadFromCache()
+		wot.ResetReady()
+		go wot.Initialize(mainCtx, wotModel)
+
 		go subscribeInboxAndChat(mainCtx)
 		go startPeriodicCloudBackups(mainCtx)
 		go wot.PeriodicRefresh(mainCtx, config.WotRefreshInterval)

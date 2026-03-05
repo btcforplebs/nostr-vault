@@ -236,7 +236,13 @@ struct SetupWizardView: View {
     var canContinue: Bool {
         switch currentStep {
         case 1: return hasAcceptedToS
-        case 2: return !npub.isEmpty && npub.hasPrefix("npub")
+        case 2:
+            // Validate npub is a valid bech32-encoded public key
+            guard !npub.isEmpty, npub.hasPrefix("npub") else { return false }
+            guard let decoded = Bech32.decode(npub), decoded.hrp == "npub" else { return false }
+            // If nsec is provided, password is required
+            if !nsec.isEmpty && nsecPassword.isEmpty { return false }
+            return true
         default: return true
         }
     }
@@ -430,6 +436,14 @@ struct IdentityStep: View {
     @Binding var nsecPassword: String
     @Binding var whitelistedNpubs: [String]
     @State private var appeared = false
+    @State private var generatedKeys = false
+
+    /// Whether the current npub text is a valid bech32-encoded npub
+    private var isNpubValid: Bool {
+        guard !npub.isEmpty, npub.hasPrefix("npub") else { return false }
+        guard let decoded = Bech32.decode(npub), decoded.hrp == "npub" else { return false }
+        return true
+    }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -461,10 +475,33 @@ struct IdentityStep: View {
                 .offset(y: appeared ? 0 : 10)
                 .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.2), value: appeared)
 
-            if !npub.isEmpty && !npub.hasPrefix("npub") {
-                Label("Must be a valid npub (starts with 'npub')", systemImage: "exclamationmark.triangle")
+            if !npub.isEmpty && !isNpubValid {
+                Label("Enter a valid npub (bech32-encoded public key)", systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundColor(.orange)
+            }
+
+            Button(action: generateNewIdentity) {
+                Label("New to Nostr? Generate Keys", systemImage: "key.fill")
+                    .font(.subheadline)
+            }
+            .buttonStyle(.borderless)
+            .foregroundColor(.havenPurple)
+            .opacity(appeared ? 1 : 0)
+            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.22), value: appeared)
+
+            if generatedKeys {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.shield.fill")
+                        .foregroundColor(.orange)
+                    Text("Save your nsec (private key) somewhere safe! You will need it to log in on other Nostr clients. It cannot be recovered.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                .padding(8)
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(8)
+                .frame(maxWidth: 350)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -541,6 +578,30 @@ struct IdentityStep: View {
         }
         .padding()
         .onAppear { appeared = true }
+    }
+
+    private func generateNewIdentity() {
+        guard let resultCStr = GenerateKeyPairC() else { return }
+        let result = String(cString: resultCStr)
+        // GenerateKeyPairC returns "sk:pk" (hex secret key : hex public key)
+        let parts = result.split(separator: ":")
+        guard parts.count == 2 else { return }
+        let sk = String(parts[0])
+        let pk = String(parts[1])
+
+        // Convert hex pubkey to npub
+        if let pubData = Bech32.hexToData(pk),
+           let generatedNpub = Bech32.encode(hrp: "npub", data: pubData) {
+            npub = generatedNpub
+        }
+
+        // Convert hex secret key to nsec
+        if let secData = Bech32.hexToData(sk),
+           let generatedNsec = Bech32.encode(hrp: "nsec", data: secData) {
+            nsec = generatedNsec
+        }
+
+        generatedKeys = true
     }
 }
 

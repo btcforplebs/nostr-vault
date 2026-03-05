@@ -320,7 +320,7 @@ struct ViewerView: View {
             .background(Color.platformControlBackground)
         }
         .onAppear {
-            if !initialLoad && relayManager.isRunning && !relayManager.isBooting {
+            if relayManager.isRunning && !relayManager.isBooting {
                 // Ensure contacts are loaded first so we have followedPubkeys
                 if feedService.followedPubkeys.isEmpty {
                     feedService.refresh()
@@ -333,13 +333,13 @@ struct ViewerView: View {
             nostrService.resetConnections()
         }
         .onChange(of: relayManager.isBooting) { _, isBooting in
-            if !isBooting && relayManager.isRunning && !initialLoad {
+            if !isBooting && relayManager.isRunning {
                 refreshAll()
                 initialLoad = true
             }
         }
         .onChange(of: relayManager.isRunning) { _, isRunning in
-            if isRunning && !relayManager.isBooting && !initialLoad {
+            if isRunning && !relayManager.isBooting {
                 refreshAll()
                 initialLoad = true
             }
@@ -745,13 +745,20 @@ struct ViewerView: View {
             #endif
             return
         }
-        
+
         nostrService.resetConnections()
         // Use the centralized nostrURL which handles local vs remote correctly
-        let urls = [
+        var urls = [
             URL(string: configService.config.nostrURL)!,
             URL(string: configService.config.nostrURL + "/inbox")!
         ]
+
+        // Also query the Mac relay's inbox for tagged notes the local relay may
+        // not have (e.g. due to shorter WoT depth or notes missed while suspended).
+        let macURL = configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !macURL.isEmpty, let macInbox = URL(string: macURL + "/inbox") {
+            urls.append(macInbox)
+        }
         
         var authorsSet = Set<String>()
         if let ownerHex = Bech32.decode(configService.config.ownerNpub)?.hexString {
@@ -781,10 +788,14 @@ struct ViewerView: View {
         #if DEBUG
         print("ViewerView: Requesting older events until: \(oldestTimestamp - 1)")
         #endif
-        let urls = [
+        var urls = [
             URL(string: configService.config.nostrURL)!,
             URL(string: configService.config.nostrURL + "/inbox")!
         ]
+        let macURL = configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !macURL.isEmpty, let macInbox = URL(string: macURL + "/inbox") {
+            urls.append(macInbox)
+        }
         
         var authorsSet = Set<String>()
         if let ownerHex = Bech32.decode(configService.config.ownerNpub)?.hexString {

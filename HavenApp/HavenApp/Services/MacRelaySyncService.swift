@@ -293,106 +293,120 @@ class MacRelaySyncService: ObservableObject {
             isSyncing = false
             syncStatus = "Already up to date"
             lastSyncDate = Date()
-            // We do NOT update the lastSyncTimestamp here if zero notes found.
-            // This prevents "jumping" over missed data if the relay/connection 
-            // had a transient issue or filter mismatch.
             #if DEBUG
             print("MacRelaySyncService: No new events found on Mac relay.")
             #endif
             return
         }
 
-        
         syncStatus = "Saving \(pendingEvents.count) events to local relay..."
-        
+
         #if DEBUG
         print("MacRelaySyncService: Injecting \(pendingEvents.count) events into local relay")
         #endif
-        
-        // Send events to the local relay
+
         let localURLStr = ConfigService.shared.config.nostrURL
-        guard let localURL = URL(string: localURLStr) else {
+        guard let outboxURL = URL(string: localURLStr),
+              let inboxURL = URL(string: localURLStr + "/inbox") else {
             syncStatus = "Error: Invalid local relay URL"
             isSyncing = false
             return
         }
-        
-        let localClient = WebSocketClient()
-        localClient.isTemporary = true
-        
-        let events = pendingEvents
-        
-        localClient.$connectionState
-            .receive(on: processingQueue)
-            .sink { [weak self] state in
-                guard let self = self else { return }
-                if state == .connected {
-                    // Update UI status on main thread
-                    DispatchQueue.main.async {
-                        self.syncStatus = "Injecting \(events.count) events..."
-                    }
 
-                    // Send all events in batches to avoid overwhelming the WebSocket task pipeline
-                    let batchSize = 100
-                    var maxTimestamp: Int64 = self.lastSyncTimestamp
-                    
-                    for i in stride(from: 0, to: events.count, by: batchSize) {
-                        let end = min(i + batchSize, events.count)
-                        let batch = events[i..<end]
-                        
-                        for eventDict in batch {
-                            let msg: [Any] = ["EVENT", eventDict]
-                            if let data = try? JSONSerialization.data(withJSONObject: msg),
-                               let str = String(data: data, encoding: .utf8) {
-                                localClient.send(text: str)
+        // Partition events: owner/whitelisted go to outbox, tagged notes go to inbox
+        let whitelisted = ConfigService.shared.whitelistedHexPubkeys
+        var outboxEvents: [[String: Any]] = []
+        var inboxEvents: [[String: Any]] = []
+
+        for eventDict in pendingEvents {
+            if let pubkey = eventDict["pubkey"] as? String, whitelisted.contains(pubkey) {
+                outboxEvents.append(eventDict)
+            } else {
+                inboxEvents.append(eventDict)
+            }
+        }
+
+        #if DEBUG
+        print("MacRelaySyncService: Routing \(outboxEvents.count) to outbox, \(inboxEvents.count) to inbox")
+        #endif
+
+        let allEvents = pendingEvents
+        let group = DispatchGroup()
+        var maxTimestamp: Int64 = self.lastSyncTimestamp
+
+        // Helper: send a batch of events to a specific relay endpoint
+        func injectEvents(_ events: [[String: Any]], to url: URL, label: String) {
+            guard !events.isEmpty else { return }
+            group.enter()
+
+            let client = WebSocketClient()
+            client.isTemporary = true
+
+            client.$connectionState
+                .receive(on: processingQueue)
+                .sink { state in
+                    if state == .connected {
+                        let batchSize = 100
+                        for i in stride(from: 0, to: events.count, by: batchSize) {
+                            let end = min(i + batchSize, events.count)
+                            for eventDict in events[i..<end] {
+                                let msg: [Any] = ["EVENT", eventDict]
+                                if let data = try? JSONSerialization.data(withJSONObject: msg),
+                                   let str = String(data: data, encoding: .utf8) {
+                                    client.send(text: str)
+                                }
                             }
-                            
-                            // Update tracking timestamp
-                            if let ts = eventDict["created_at"] as? Int64 {
-                                maxTimestamp = max(maxTimestamp, ts)
-                            } else if let ts = eventDict["created_at"] as? Int {
-                                maxTimestamp = max(maxTimestamp, Int64(ts))
+                            if i + batchSize < events.count {
+                                Thread.sleep(forTimeInterval: 0.1)
                             }
                         }
-                        
-                        // Small pause between batches if there are many events
-                        if i + batchSize < events.count {
-                            // Using a small delay to allow the network/buffer to clear
-                            Thread.sleep(forTimeInterval: 0.1)
-                        }
-                    }
-                    
-                    // Update the sync timestamp, but cap it at current time 
-                    let nowTimestamp = Int64(Date().timeIntervalSince1970)
-                    let finalTimestamp = min(maxTimestamp, nowTimestamp)
-                    
-                    // Give the local relay extra time to process a potentially large batch
-                    let delay = max(2.5, Double(events.count) / 500.0)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                        self.lastSyncTimestamp = finalTimestamp
 
-                        localClient.disconnect()
-                        self.isSyncing = false
-                        self.lastSyncDate = Date()
-                        self.syncStatus = "Synced \(events.count) notes"
-                        
+                        let delay = max(2.0, Double(events.count) / 500.0)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            client.disconnect()
+                            #if DEBUG
+                            print("MacRelaySyncService: \(label) injection done (\(events.count) events)")
+                            #endif
+                            group.leave()
+                        }
+                    } else if state == .error {
                         #if DEBUG
-                        print("MacRelaySyncService: Sync complete — \(events.count) events injected, maxTimestamp=\(maxTimestamp), delay=\(delay)")
+                        print("MacRelaySyncService: \(label) connection error")
                         #endif
-                        
-                        NotificationCenter.default.post(name: .macRelaySyncComplete, object: nil)
-                    }
-                } else if state == .error {
-                    DispatchQueue.main.async {
-                        self.syncStatus = "Error saving to local relay"
-                        self.isSyncing = false
+                        group.leave()
                     }
                 }
+                .store(in: &self.cancellables)
 
+            client.connect(url: url)
+        }
+
+        // Track max timestamp across all events
+        for eventDict in allEvents {
+            if let ts = eventDict["created_at"] as? Int64 {
+                maxTimestamp = max(maxTimestamp, ts)
+            } else if let ts = eventDict["created_at"] as? Int {
+                maxTimestamp = max(maxTimestamp, Int64(ts))
             }
-            .store(in: &cancellables)
-        
-        localClient.connect(url: localURL)
+        }
+
+        injectEvents(outboxEvents, to: outboxURL, label: "outbox")
+        injectEvents(inboxEvents, to: inboxURL, label: "inbox")
+
+        group.notify(queue: .main) { [weak self] in
+            guard let self = self else { return }
+            let nowTimestamp = Int64(Date().timeIntervalSince1970)
+            self.lastSyncTimestamp = min(maxTimestamp, nowTimestamp)
+            self.isSyncing = false
+            self.lastSyncDate = Date()
+            self.syncStatus = "Synced \(allEvents.count) notes"
+
+            #if DEBUG
+            print("MacRelaySyncService: Sync complete — \(allEvents.count) events injected, maxTimestamp=\(maxTimestamp)")
+            #endif
+
+            NotificationCenter.default.post(name: .macRelaySyncComplete, object: nil)
+        }
     }
 }
 
