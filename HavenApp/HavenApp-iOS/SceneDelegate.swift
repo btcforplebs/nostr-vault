@@ -30,6 +30,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             .environmentObject(statsService)
             .environmentObject(AppState.shared)
         
+        window.overrideUserInterfaceStyle = .dark
         window.rootViewController = UIHostingController(rootView: contentView)
         self.window = window
         window.makeKeyAndVisible()

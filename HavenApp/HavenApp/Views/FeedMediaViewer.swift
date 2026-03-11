@@ -122,6 +122,5 @@ struct FeedMediaViewer: View {
                 Spacer()
             }
         }
-        .preferredColorScheme(.dark)
     }
 }

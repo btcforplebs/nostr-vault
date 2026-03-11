@@ -71,7 +71,6 @@ struct FeedView: View {
             }
         }
         #endif
-        .preferredColorScheme(.dark)
         .onAppear {
             feedService.markViewed()
             if feedService.notes.isEmpty && !feedService.isLoadingContacts {

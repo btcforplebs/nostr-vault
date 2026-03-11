@@ -75,9 +75,6 @@ public struct UGCReportingDialog: View {
         }
         .frame(minWidth: 400, maxWidth: 500, minHeight: 500, maxHeight: 650)
         .background(Color.platformControlBackground)
-        #if os(macOS)
-        .preferredColorScheme(.dark)
-        #endif
     }
     
     private var header: some View {

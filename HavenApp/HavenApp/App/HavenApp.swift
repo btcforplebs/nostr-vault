@@ -21,6 +21,7 @@ struct HavenApp: App {
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
+                .preferredColorScheme(.dark)
         }
         .menuBarExtraStyle(.window)
 
@@ -40,6 +41,7 @@ struct HavenApp: App {
             .environmentObject(relayManager)
             .environmentObject(nostrService)
             .environmentObject(statsService)
+            .preferredColorScheme(.dark)
             .frame(minWidth: 500, minHeight: 650)
         }
         .windowStyle(.hiddenTitleBar)
@@ -53,6 +55,7 @@ struct HavenApp: App {
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
+                .preferredColorScheme(.dark)
         }
 
         Window("Haven", id: "viewer-window") {
@@ -61,6 +64,7 @@ struct HavenApp: App {
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
+                .preferredColorScheme(.dark)
                 .frame(minWidth: 600, minHeight: 500)
         }
         .defaultSize(width: 900, height: 700)
@@ -71,6 +75,7 @@ struct HavenApp: App {
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
+                .preferredColorScheme(.dark)
         }
         #endif
     }
