@@ -38,6 +38,7 @@ struct ViewerView: View {
     // Debounce mechanism for updateDisplayData
     @State private var updateTask: Task<Void, Never>?
     @State private var updateGeneration: Int = 0
+    @State private var dragOffset: CGSize = .zero
 
     // Static regex pattern to avoid recompilation
     nonisolated private static let hexPattern = try! NSRegularExpression(pattern: "[a-f0-9]{64}", options: .caseInsensitive)
@@ -687,9 +688,14 @@ struct ViewerView: View {
     private var fullScreenOverlay: some View {
         if let item = selectedMedia {
             ZStack {
-                Color.black.opacity(0.9)
+                Color.black.opacity(0.9 * max(0, 1.0 - (abs(dragOffset.height) / 300.0)))
                     .edgesIgnoringSafeArea(.all)
-                    .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = nil } }
+                    .onTapGesture { 
+                        withAnimation(.easeInOut(duration: 0.2)) { 
+                            selectedMedia = nil 
+                            dragOffset = .zero
+                        } 
+                    }
                 
                 VStack {
                     VStack(alignment: .leading, spacing: 12) {
@@ -724,7 +730,12 @@ struct ViewerView: View {
 
                             Spacer()
 
-                            Button(action: { withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = nil } }) {
+                            Button(action: { 
+                                withAnimation(.easeInOut(duration: 0.2)) { 
+                                    selectedMedia = nil 
+                                    dragOffset = .zero
+                                } 
+                            }) {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.title)
                                     .foregroundColor(.white.opacity(0.6))
@@ -741,44 +752,62 @@ struct ViewerView: View {
                         #endif
                     }
                     .padding()
+                    .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
                     
                     Spacer()
                     
-                    if item.type == .video {
-                        VideoPlayerView(url: item.url)
-                            .frame(minWidth: 480, minHeight: 320)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .id(item.url)
-                    } else if item.type == .audio {
-                        AudioPlayerView(url: item.url)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .id(item.url)
-                    } else if item.type == .unknown {
-                        VStack(spacing: 12) {
-                            Image(systemName: "doc.fill")
-                                .font(.system(size: 64))
-                                .foregroundColor(Color.havenPurple.opacity(0.6))
-                            if let mime = item.mimeType {
-                                Text(mime)
-                                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            } else {
-                                Text("Unknown Format")
-                                    .font(.headline)
-                                    .foregroundColor(.secondary)
+                    Group {
+                        if item.type == .video {
+                            VideoPlayerView(url: item.url)
+                                .id(item.url)
+                        } else if item.type == .audio {
+                            AudioPlayerView(url: item.url)
+                                .id(item.url)
+                        } else if item.type == .unknown {
+                            VStack(spacing: 12) {
+                                Image(systemName: "doc.fill")
+                                    .font(.system(size: 64))
+                                    .foregroundColor(Color.havenPurple.opacity(0.6))
+                                if let mime = item.mimeType {
+                                    Text(mime)
+                                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text("Unknown Format")
+                                        .font(.headline)
+                                        .foregroundColor(.secondary)
+                                }
                             }
+                        } else if item.url.isGIF {
+                            AnimatedImage(url: item.url, contentMode: .fit, shouldAnimate: true)
+                                .id(item.url)
+                        } else {
+                            // Default to image for non-video/audio items
+                            RetryableAsyncImage(url: item.url, contentMode: .fit)
+                                .id(item.url)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if item.url.isGIF {
-                        AnimatedImage(url: item.url, contentMode: .fit, shouldAnimate: true)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .id(item.url)
-                    } else {
-                        // Default to image for non-video/audio items
-                        RetryableAsyncImage(url: item.url, contentMode: .fit)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .id(item.url)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .offset(y: dragOffset.height)
+                    .scaleEffect(max(0.8, 1.0 - (abs(dragOffset.height) / 1000.0)))
+                    .gesture(
+                        DragGesture()
+                            .onChanged { gesture in
+                                dragOffset = gesture.translation
+                            }
+                            .onEnded { gesture in
+                                if abs(gesture.translation.height) > 120 {
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        selectedMedia = nil
+                                        dragOffset = .zero
+                                    }
+                                } else {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                        dragOffset = .zero
+                                    }
+                                }
+                            }
+                    )
 
                     Spacer()
 
@@ -786,6 +815,7 @@ struct ViewerView: View {
                         .font(.caption.monospaced())
                         .foregroundColor(.secondary)
                         .padding(.bottom)
+                        .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
                 }
             }
             .transition(.opacity)

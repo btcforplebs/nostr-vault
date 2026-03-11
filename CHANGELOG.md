@@ -5,12 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.4.1 macOS / 1.1 iOS (Build 4)] - 2026-03-11
+## [2.4.0 macOS / 1.0 iOS (Build 5)] - 2026-03-11
 
 ### Added
 - **Blossom Mirroring (macOS)**: Enabled the Blossom media mirroring service on macOS, allowing users to download their remote media to the local relay for offline access and faster loading.
 - **Interactive Liked/Zapped States**: The Note Detail view now features persistent visual indicators for likes (red heart) and zaps (orange bolt) with spring animations when triggered.
 - **Auto-Mirroring on Startup**: Introduced a setting to automatically mirror your own media from external servers whenever the relay starts, ensuring your local library is always in sync.
+- **Media Swipe Gestures**: Implemented intuitive vertical swipe-to-dismiss gestures for full-screen media in both the Blossom media viewer and the note attachment viewer.
+- **Gesture-Based Dimming**: Added interactive background opacity and media scaling that reacts to drag progress, providing visual depth and feedback during dismissal.
+- **Unified Media Interaction**: Refactored viewer components to support consistent swiping and scaling for both image and video content.
 
 ### Changed
 - **Real-time Replies**: The reply section in the Note Detail view now updates in real-time as new events arrive, providing a more dynamic and responsive threading experience.
