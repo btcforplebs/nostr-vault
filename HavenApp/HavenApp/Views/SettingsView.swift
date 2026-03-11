@@ -1147,7 +1147,8 @@ struct ImportSettingsView: View {
 struct BackupSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
-    
+    @EnvironmentObject var nostrService: NostrService
+
     @State private var isExportingJSONL = false
     @State private var isImportingJSONL = false
     @State private var isExportingBlossom = false
@@ -1155,6 +1156,7 @@ struct BackupSettingsView: View {
     @State private var statusMessage = ""
     @State private var showFileImporter = false
     @State private var showBlossomImporter = false
+    @ObservedObject private var mirrorService = MirrorService.shared
     
     var body: some View {
         Form {
@@ -1261,7 +1263,58 @@ struct BackupSettingsView: View {
             } footer: {
                 Text("Export creates a compressed backup of your images and videos. Import restores media from a previously exported backup.")
             }
-            
+
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Mirror from Servers")
+                            .font(.body)
+                        Text("Download your media from external Blossom mirrors to local storage")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: {
+                        mirrorService.runMirror(configService: configService, nostrService: nostrService)
+                    }) {
+                        HStack(spacing: 6) {
+                            if mirrorService.state == .mirroring {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.down.circle")
+                            }
+                            if let progress = mirrorService.progress, mirrorService.state == .mirroring {
+                                Text("\(progress.completed)/\(progress.total)")
+                            } else {
+                                Text("Mirror")
+                            }
+                        }
+                    }
+                    .disabled(mirrorService.state == .mirroring || configService.config.blossomMirrors.isEmpty)
+                }
+
+                Toggle(isOn: Binding(
+                    get: { configService.config.autoMirrorMedia },
+                    set: { newValue in
+                        configService.config.autoMirrorMedia = newValue
+                        configService.save()
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Auto-Mirror Media")
+                            .font(.body)
+                        Text("Automatically download your media from mirrors when the relay starts")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } header: {
+                Text("Media Mirroring")
+            } footer: {
+                Text("Downloads your own Blossom media from configured mirror servers to your local relay for offline access.")
+            }
+
             if !statusMessage.isEmpty {
                 Section {
                     HStack {
@@ -1502,6 +1555,7 @@ struct BackupSettingsView: View {
             statusMessage = ""
         }
     }
+
 }
 
 struct FeedSettingsView: View {

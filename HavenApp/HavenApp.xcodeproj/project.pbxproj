@@ -74,6 +74,8 @@
 		8C6C5418A73D68D54599A473 /* MediaTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D08ABA7CDBFD26CF0423E33 /* MediaTypeDetector.swift */; };
 		8D4040B52F55BAC700DC9088 /* MacRelaySyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4040B42F55BAC700DC9088 /* MacRelaySyncService.swift */; };
 		8D4040B62F55BAC700DC9088 /* MacRelaySyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4040B42F55BAC700DC9088 /* MacRelaySyncService.swift */; };
+		8D4040C12F55BAD100DC9088 /* MirrorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4040C02F55BAD100DC9088 /* MirrorService.swift */; };
+		8D4040C22F55BAD100DC9088 /* MirrorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4040C02F55BAD100DC9088 /* MirrorService.swift */; };
 		9A29693B7623772411B51DE7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A271B5E3364858651DC05603 /* SettingsView.swift */; };
 		A9175BE3300E9CE097E14F26 /* BlossomService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803F7E83A0267F02449FA666 /* BlossomService.swift */; };
 		AAABCCC974BE94C9B2626D3B /* RelayProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22D8D67DB985CB4EA94E4FAF /* RelayProcessManager.swift */; };
@@ -147,6 +149,7 @@
 		848045286D78E78658D43BE3 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		89B8E92EE192A7FDE8094D4D /* SetupWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizardView.swift; sourceTree = "<group>"; };
 		8D4040B42F55BAC700DC9088 /* MacRelaySyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelaySyncService.swift; sourceTree = "<group>"; };
+		8D4040C02F55BAD100DC9088 /* MirrorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorService.swift; sourceTree = "<group>"; };
 		8EDBCA3BC62E9A4C8AA9E128 /* FeedMediaViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaViewer.swift; sourceTree = "<group>"; };
 		915DF9A0796218139DE0703E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		917FF6B76ACEFA8BD210FC37 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -324,6 +327,7 @@
 				05E22622B26A3F1A5C9D0A2A /* StatsService.swift */,
 				93ED6BB091A4EBC9250A7858 /* Theming.swift */,
 				8D4040B42F55BAC700DC9088 /* MacRelaySyncService.swift */,
+				8D4040C02F55BAD100DC9088 /* MirrorService.swift */,
 				3CB15AE080BDC0999543399A /* WebSocketClient.swift */,
 				A6DAA5E7383F9175577A61C7 /* ZapService.swift */,
 			);
@@ -381,7 +385,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1600;
+				LastUpgradeCheck = 1700;
 				TargetAttributes = {
 					B5AB61DDA63A32DCC304AE17 = {
 						ProvisioningStyle = Automatic;
@@ -480,6 +484,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8D4040B52F55BAC700DC9088 /* MacRelaySyncService.swift in Sources */,
+				8D4040C12F55BAD100DC9088 /* MirrorService.swift in Sources */,
 				390E2CFB9580D897263B22D6 /* AnimatedImage.swift in Sources */,
 				2F2E46994E838BCF6F8FCA7B /* AppDelegate.swift in Sources */,
 				D04D39305F6A1088ECFBE1AE /* AudioPlayerView.swift in Sources */,
@@ -544,6 +549,7 @@
 				00818490B64E8F12D093EDBD /* DashboardView.swift in Sources */,
 				D922EED792F2E8C7811F3696 /* FeedMediaViewer.swift in Sources */,
 				8D4040B62F55BAC700DC9088 /* MacRelaySyncService.swift in Sources */,
+				8D4040C22F55BAD100DC9088 /* MirrorService.swift in Sources */,
 				66FB9EEC08A2208BCEAC19AD /* FeedProfile.swift in Sources */,
 				B3A065D965688DBC83174179 /* FeedService.swift in Sources */,
 				1944C38B0920934C57D8F4E3 /* FeedView.swift in Sources */,

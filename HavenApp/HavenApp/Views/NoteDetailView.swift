@@ -9,7 +9,6 @@ struct NoteDetailView: View {
     @Environment(\.presentationMode) var presentationMode
     
     @State private var showingReplyCompose = false
-    @State private var replies: [FeedNote] = []
     @State private var isLoadingReplies = false
     @State private var parentNotes: [FeedNote] = []
     @State private var isLoadingParents = false
@@ -176,15 +175,29 @@ struct NoteDetailView: View {
                 actionButton(icon: "arrow.2.squarepath", count: nil) {
                     repostNote()
                 }
-                actionButton(icon: "heart", count: nil) {
+                
+                let isLiked = feedService.likedEventIds.contains(note.id)
+                actionButton(
+                    icon: isLiked ? "heart.fill" : "heart",
+                    color: isLiked ? .red : .secondary,
+                    count: nil
+                ) {
                     likeNote()
                 }
+                .scaleEffect(isLiked ? 1.2 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isLiked)
                 
                 if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
-                    actionButton(icon: "bolt.fill", count: nil) {
+                    let isZapped = feedService.zappedEventIds.contains(note.id)
+                    actionButton(
+                        icon: isZapped ? "bolt.fill" : "bolt",
+                        color: isZapped ? .orange : .secondary,
+                        count: nil
+                    ) {
                         Task { await zapNote(lud16: lud16) }
                     }
-                    .foregroundColor(.orange)
+                    .scaleEffect(isZapped ? 1.2 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isZapped)
                 }
                 
                  ShareLink(
@@ -223,23 +236,26 @@ struct NoteDetailView: View {
     }
 
     private var repliesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let currentReplies = feedService.notes.filter { $0.parentEventId == note.id }
+            .sorted(by: { $0.createdAt < $1.createdAt })
+            
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Replies")
                 .font(.headline)
                 .padding(.bottom, 4)
 
-            if isLoadingReplies && replies.isEmpty {
+            if isLoadingReplies && currentReplies.isEmpty {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
-            } else if replies.isEmpty {
+            } else if currentReplies.isEmpty {
                 Text("No replies yet")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
             } else {
-                ForEach(replies) { reply in
+                ForEach(currentReplies) { reply in
                     NavigationLink(destination: NoteDetailView(note: reply)) {
                         let replyProfile = nostrService.profiles[reply.pubkey]
                         FeedNoteRow(note: reply, profile: replyProfile, showParent: false)
@@ -250,7 +266,7 @@ struct NoteDetailView: View {
         }
     }
     
-    private func actionButton(icon: String, count: Int?, action: @escaping () -> Void) -> some View {
+    private func actionButton(icon: String, color: Color = .secondary, count: Int?, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
@@ -259,7 +275,7 @@ struct NoteDetailView: View {
                 }
             }
             .font(.subheadline)
-            .foregroundColor(.secondary)
+            .foregroundColor(color)
         }
         .buttonStyle(.plain)
     }
@@ -268,12 +284,14 @@ struct NoteDetailView: View {
         isLoadingReplies = true
         // In a real app, we'd query relays for e-tags pointing to this note id
         // For now, we'll check what we already have in FeedService and maybe a simple relay query
-        self.replies = feedService.notes.filter { $0.parentEventId == note.id }
-            .sorted(by: { $0.createdAt < $1.createdAt })
+        // The UI automatically observes feedService.notes for replies.
         isLoadingReplies = false
     }
     
     private func likeNote() {
+        if !feedService.likedEventIds.contains(note.id) {
+            feedService.likedEventIds.insert(note.id)
+        }
         guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", note.id], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
     }
@@ -312,6 +330,9 @@ struct NoteDetailView: View {
             let invoice = try await LNURLService.fetchInvoice(callback: lnurlResponse.callback, amountMsat: amountMsat, zapRequest: signedZapReq)
             let preimage = try await NWCService.payInvoice(bolt11: invoice)
             print("Successfully zapped! Preimage: \(preimage)")
+            _ = await MainActor.run {
+                feedService.zappedEventIds.insert(note.id)
+            }
         } catch {
             print("Zap failed: \(error.localizedDescription)")
         }

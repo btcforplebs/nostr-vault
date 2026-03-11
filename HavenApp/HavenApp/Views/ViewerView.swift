@@ -1,6 +1,9 @@
 import SwiftUI
 import AVFoundation
 import Combine
+#if os(iOS)
+import Photos
+#endif
 
 struct ViewerView: View {
     @EnvironmentObject var configService: ConfigService
@@ -28,6 +31,9 @@ struct ViewerView: View {
     @State private var showingNoteId: String?
     @State private var showingProfilePubkey: String?
     @State private var maxDisplayedItems: Int = 50
+    #if os(iOS)
+    @State private var saveToPhotosMessage: String?
+    #endif
 
     // Debounce mechanism for updateDisplayData
     @State private var updateTask: Task<Void, Never>?
@@ -79,6 +85,10 @@ struct ViewerView: View {
         let owner = nostrService.ownerHexPubkey
         let whitelist = configService.whitelistedHexPubkeys
         let blacklist = configService.blacklistedHexPubkeys
+
+        #if DEBUG
+        print("updateDisplayData: blossom=\(currentBlossom.count) noteMedia=\(currentNoteMedia.count) events=\(currentEvents.count) filter=\(currentFilter) source=\(mediaSourceFilter)")
+        #endif
         let currentMode = viewMode
         let sourceFilter = mediaSourceFilter
         let gen = updateGeneration
@@ -136,11 +146,36 @@ struct ViewerView: View {
                     }
                 }
                 
+                // Build hash → event timestamp lookup from ALL noteMedia (unfiltered)
+                // so blossom items get correct dates even when no noteMedia match survives filtering
+                var eventTimestamps: [String: Date] = [:]
+                for item in currentNoteMedia {
+                    let key = self.normalizedKeyStatic(for: item.url)
+                    if let existing = eventTimestamps[key] {
+                        if item.dateAdded > existing { eventTimestamps[key] = item.dateAdded }
+                    } else {
+                        eventTimestamps[key] = item.dateAdded
+                    }
+                }
+
                 // Add blossom items first — they have accurate mime detection from local bytes + relay
+                // Apply event timestamps where available instead of file modification dates
                 if (currentFilter == .all || currentFilter == .mine) && (sourceFilter == .all || sourceFilter == .blossom) {
                     for item in currentBlossom {
                         let key = self.normalizedKeyStatic(for: item.url)
-                        latestItems[key] = item
+                        if let eventDate = eventTimestamps[key] {
+                            latestItems[key] = MediaItem(
+                                id: item.id,
+                                url: item.url,
+                                type: item.type,
+                                dateAdded: eventDate,
+                                pubkey: item.pubkey,
+                                tags: item.tags,
+                                mimeType: item.mimeType
+                            )
+                        } else {
+                            latestItems[key] = item
+                        }
                     }
                 }
 
@@ -165,7 +200,33 @@ struct ViewerView: View {
                     }
                 }
                 
-                var result = Array(latestItems.values).sorted(by: { $0.dateAdded > $1.dateAdded })
+                // Partition: items with verified event timestamps first, unmatched blossom items after
+                let allItems = Array(latestItems.values)
+                let hasEventTimestamp = Set(eventTimestamps.keys)
+                var timestamped: [MediaItem] = []
+                var unmatched: [MediaItem] = []
+                for item in allItems {
+                    let key = self.normalizedKeyStatic(for: item.url)
+                    if hasEventTimestamp.contains(key) || !self.isLocalBlossomURL(item.url) {
+                        timestamped.append(item)
+                    } else {
+                        unmatched.append(item)
+                    }
+                }
+                timestamped.sort(by: { $0.dateAdded > $1.dateAdded })
+                unmatched.sort(by: { $0.dateAdded > $1.dateAdded })
+                var result = timestamped + unmatched
+
+                #if DEBUG
+                let timestampCount = eventTimestamps.count
+                let blossomWithTimestamp = currentBlossom.filter { hasEventTimestamp.contains(self.normalizedKeyStatic(for: $0.url)) }.count
+                print("updateDisplayData: eventTimestamps=\(timestampCount) blossomMatched=\(blossomWithTimestamp)/\(currentBlossom.count) timestamped=\(timestamped.count) unmatched=\(unmatched.count)")
+                if let first = result.first {
+                    let df = DateFormatter()
+                    df.dateFormat = "MM/dd HH:mm"
+                    print("  first: \(df.string(from: first.dateAdded)) url=\(first.url.lastPathComponent.prefix(12))")
+                }
+                #endif
 
                 // Fix up items with missing or octet-stream mime types by sniffing remote bytes
                 // This is now synchronous and skips remote sniffing for performance
@@ -208,6 +269,12 @@ struct ViewerView: View {
         }
     }
     
+    // Check if URL points to the local blossom server (127.0.0.1 or localhost)
+    private nonisolated func isLocalBlossomURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "127.0.0.1" || host == "localhost" || host == "0.0.0.0"
+    }
+
     // Helper for detached task
     private nonisolated func normalizedKeyStatic(for url: URL) -> String {
         let urlString = url.absoluteString
@@ -336,6 +403,7 @@ struct ViewerView: View {
             if !isBooting && relayManager.isRunning {
                 refreshAll()
                 initialLoad = true
+                triggerAutoMirrorIfEnabled()
             }
         }
         .onChange(of: relayManager.isRunning) { _, isRunning in
@@ -356,14 +424,19 @@ struct ViewerView: View {
         .onChange(of: mediaSourceFilter) { _, _ in scheduleUpdateDisplayData() }
         .onChange(of: viewMode) { _, _ in scheduleUpdateDisplayData() }
         .onChange(of: nostrService.events.count) { _, _ in scheduleUpdateDisplayData() }
+        .onChange(of: nostrService.noteMedia.count) { _, _ in scheduleUpdateDisplayData() }
         .onChange(of: configService.config.blacklistedNpubs) { _, _ in scheduleUpdateDisplayData() }
         .onChange(of: blossomMedia.count) { _, _ in scheduleUpdateDisplayData() }
+        #if os(iOS)
+        .onReceive(MirrorService.shared.$state) { newState in
+            if newState == .complete {
+                loadLocalMedia()
+            }
+        }
+        #endif
         .onReceive(NotificationCenter.default.publisher(for: .macRelaySyncComplete)) { _ in
             // Mac relay sync just injected new events — refresh to show them
             refreshAll()
-        }
-        .task {
-            updateDisplayData()
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
@@ -631,11 +704,26 @@ struct ViewerView: View {
                                     .cornerRadius(8)
                             }
                             .buttonStyle(.plain)
-                            
+
+                            #if os(iOS)
+                            if item.type == .image || item.type == .video {
+                                Button(action: {
+                                    saveMediaToPhotos(item: item)
+                                }) {
+                                    Label("Save to Photos", systemImage: "square.and.arrow.down")
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Color.white.opacity(0.1))
+                                        .cornerRadius(8)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            #endif
+
                             SourceIndicatorView(url: item.url)
-                            
+
                             Spacer()
-                            
+
                             Button(action: { withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = nil } }) {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.title)
@@ -643,6 +731,14 @@ struct ViewerView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        #if os(iOS)
+                        if let message = saveToPhotosMessage {
+                            Text(message)
+                                .font(.caption)
+                                .foregroundColor(message.contains("Saved") ? .green : .red)
+                                .transition(.opacity)
+                        }
+                        #endif
                     }
                     .padding()
                     
@@ -807,6 +903,63 @@ struct ViewerView: View {
         nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1, authors: authors)
     }
     
+    private func triggerAutoMirrorIfEnabled() {
+        guard configService.config.autoMirrorMedia else { return }
+        MirrorService.shared.runMirror(configService: configService, nostrService: nostrService)
+    }
+
+    #if os(iOS)
+    private func saveMediaToPhotos(item: MediaItem) {
+        saveToPhotosMessage = nil
+
+        Task {
+            // Request photo library permission
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else {
+                await MainActor.run {
+                    saveToPhotosMessage = "Photo library access denied"
+                }
+                return
+            }
+
+            // Download media data
+            let session = URLSession(configuration: .default, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
+            do {
+                let (data, _) = try await session.data(from: item.url)
+
+                if item.type == .video {
+                    // Videos need a temp file
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+                    try data.write(to: tempURL)
+                    try await PHPhotoLibrary.shared().performChanges {
+                        PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: tempURL, options: nil)
+                    }
+                    try? FileManager.default.removeItem(at: tempURL)
+                } else {
+                    try await PHPhotoLibrary.shared().performChanges {
+                        let request = PHAssetCreationRequest.forAsset()
+                        let options = PHAssetResourceCreationOptions()
+                        request.addResource(with: .photo, data: data, options: options)
+                    }
+                }
+
+                await MainActor.run {
+                    withAnimation { saveToPhotosMessage = "Saved to Photos" }
+                    Task {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        await MainActor.run { withAnimation { saveToPhotosMessage = nil } }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    saveToPhotosMessage = "Failed to save"
+                }
+                print("Save to Photos error: \(error.localizedDescription)")
+            }
+        }
+    }
+    #endif
+
     func loadLocalMedia() {
         // Concurrency guard
         if isRefreshingMedia { return }
@@ -952,6 +1105,16 @@ struct NoteRow: View {
     var cleanContent: String {
         return event.content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// For kind 6 reposts, parse the embedded JSON to extract the original note
+    var repostedEvent: NostrEvent? {
+        guard event.kind == 6,
+              let data = event.content.data(using: .utf8),
+              let inner = try? JSONDecoder().decode(NostrEvent.self, from: data) else {
+            return nil
+        }
+        return inner
+    }
     
     var displayName: String {
         let profile = nostrService.profiles[event.pubkey]
@@ -1030,6 +1193,16 @@ struct NoteRow: View {
                             .font(.system(size: 14, weight: .semibold, design: .default))
                             .lineLimit(1)
 
+                        if event.kind == 6 {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.2.squarepath")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text("Reposted")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundColor(.green)
+                        }
+
                         Image(systemName: noteType.icon)
                             .font(.caption2)
                             .foregroundColor(noteType.color)
@@ -1044,8 +1217,12 @@ struct NoteRow: View {
                 }
             }
 
-            // Text content (if any)
-            if !cleanContent.isEmpty {
+            // Repost: show the inner note's content
+            if let inner = repostedEvent {
+                RepostedNoteView(inner: inner)
+                    .environmentObject(nostrService)
+            } else if !cleanContent.isEmpty {
+                // Regular note content
                 Text(NostrContentFormatter.format(cleanContent))
                     .font(.system(size: 15, weight: .regular, design: .default))
                     .foregroundColor(Color(red: 1, green: 1, blue: 1))
@@ -1147,6 +1324,100 @@ struct NoteRow: View {
     }
 }
 
+struct RepostedNoteView: View {
+    let inner: NostrEvent
+    @EnvironmentObject var nostrService: NostrService
+
+    private static let mediaPattern = try! NSRegularExpression(
+        pattern: #"https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic)(?:\?\S+)?"#,
+        options: .caseInsensitive
+    )
+
+    private var innerDisplayName: String {
+        if let profile = nostrService.profiles[inner.pubkey] {
+            return profile.bestName
+        }
+        return inner.pubkey.prefix(8) + "..." + inner.pubkey.suffix(4)
+    }
+
+    private var mediaURLs: [URL] {
+        let ns = inner.content as NSString
+        return Self.mediaPattern.matches(in: inner.content, range: NSRange(location: 0, length: ns.length))
+            .compactMap { URL(string: ns.substring(with: $0.range)) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Inner note author header
+            HStack(spacing: 8) {
+                if let profile = nostrService.profiles[inner.pubkey], let pictureURL = profile.pictureURL {
+                    CachedAsyncImage(url: pictureURL) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Circle()
+                            .fill(Color.gray.opacity(0.3))
+                            .overlay(Image(systemName: "person.fill").font(.system(size: 8, weight: .bold)).foregroundColor(.white))
+                    }
+                    .frame(width: 28, height: 28)
+                    .clipShape(Circle())
+                } else {
+                    Circle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 28, height: 28)
+                        .overlay(Image(systemName: "person.fill").font(.system(size: 8, weight: .bold)).foregroundColor(.white))
+                }
+
+                Text(innerDisplayName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+
+                Spacer()
+
+                Text(timeAgo(from: inner.createdAtDate))
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+
+            // Inner note content
+            let urls = mediaURLs
+            let content = inner.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !content.isEmpty {
+                Text(NostrContentFormatter.format(content, mediaURLs: urls))
+                    .font(.system(size: 14, weight: .regular, design: .default))
+                    .foregroundColor(Color(red: 0.9, green: 0.9, blue: 0.9))
+                    .lineSpacing(2)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Image/video previews
+            if !urls.isEmpty {
+                ForEach(urls.prefix(3), id: \.absoluteString) { url in
+                    MediaPreviewRow(url: url)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color(red: 0.1, green: 0.1, blue: 0.14))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5)
+        )
+        .onAppear {
+            if nostrService.profiles[inner.pubkey] == nil {
+                nostrService.fetchMissingProfiles(for: [inner.pubkey])
+            }
+        }
+    }
+
+    func timeAgo(from date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
 struct MediaPreviewRow: View {
     let url: URL
     
@@ -1181,6 +1452,10 @@ struct MediaGridItem: View {
     @EnvironmentObject var nostrService: NostrService
     @State private var isHovered = false
     @State private var showingReportDialog = false
+    #if os(iOS)
+    @State private var isMirroringToLocal = false
+    @State private var mirrorStatusMessage: String?
+    #endif
 
     var body: some View {
         ZStack {
@@ -1239,15 +1514,32 @@ struct MediaGridItem: View {
             }) {
                 Label("Copy Link", systemImage: "doc.on.doc")
             }
+            #if os(iOS)
+            if item.type == .image || item.type == .video {
+                Button(action: {
+                    saveMediaToPhotos()
+                }) {
+                    Label("Save to Photos", systemImage: "square.and.arrow.down")
+                }
+            }
+            if isRemoteMedia {
+                Button(action: {
+                    mirrorToLocalRelay()
+                }) {
+                    Label(isMirroringToLocal ? "Mirroring..." : "Save to Local Relay", systemImage: "arrow.down.circle")
+                }
+                .disabled(isMirroringToLocal)
+            }
+            #endif
             if let pubkey = item.pubkey, pubkey != nostrService.ownerHexPubkey {
                 Button(action: {
                     showingReportDialog = true
                 }) {
                     Label("Report Media", systemImage: "flag.fill")
                 }
-                
+
                 Divider()
-                
+
                 Button(action: {
                     guard let data = Bech32.hexToData(pubkey),
                           let npub = Bech32.encode(hrp: "npub", data: data) else { return }
@@ -1268,6 +1560,53 @@ struct MediaGridItem: View {
             .environmentObject(configService)
         }
     }
+
+    #if os(iOS)
+    private var isRemoteMedia: Bool {
+        let host = item.url.host?.lowercased() ?? ""
+        return host != "localhost" && host != "127.0.0.1" && host != "0.0.0.0"
+    }
+
+    private func saveMediaToPhotos() {
+        Task {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else { return }
+
+            let session = URLSession(configuration: .default, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
+            do {
+                let (data, _) = try await session.data(from: item.url)
+
+                if item.type == .video {
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+                    try data.write(to: tempURL)
+                    try await PHPhotoLibrary.shared().performChanges {
+                        PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: tempURL, options: nil)
+                    }
+                    try? FileManager.default.removeItem(at: tempURL)
+                } else {
+                    try await PHPhotoLibrary.shared().performChanges {
+                        let request = PHAssetCreationRequest.forAsset()
+                        request.addResource(with: .photo, data: data, options: PHAssetResourceCreationOptions())
+                    }
+                }
+            } catch {
+                print("Save to Photos error: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func mirrorToLocalRelay() {
+        isMirroringToLocal = true
+        Task {
+            let service = BlossomService(configService: configService, nostrService: nostrService)
+            let success = await service.downloadFromURL(url: item.url)
+            await MainActor.run {
+                isMirroringToLocal = false
+                mirrorStatusMessage = success ? "Saved to local relay" : "Mirror failed"
+            }
+        }
+    }
+    #endif
 }
 
 struct RetryableAsyncImage: View {

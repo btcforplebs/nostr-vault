@@ -35,6 +35,8 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Haven connects to a local Nostr relay running on your device to store and serve your notes and media.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Haven needs access to save media from your relay to your photo library.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

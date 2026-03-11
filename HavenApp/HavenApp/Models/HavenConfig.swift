@@ -66,6 +66,7 @@ struct HavenConfig: Codable, Equatable {
 
     // Blossom Mirrors
     var blossomMirrors: [String] = []
+    var autoMirrorMedia: Bool = false
 
     // Blastr
     var blastrRelaysFile: String = "relays_blastr.json"
@@ -116,7 +117,7 @@ struct HavenConfig: Codable, Equatable {
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
         case inboxRelayName, inboxRelayDescription, inboxRelayIcon, inboxPullIntervalSeconds
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
-        case blossomMirrors
+        case blossomMirrors, autoMirrorMedia
         case blastrRelaysFile, blastrRelays
         case feedRelays
         case whitelistedNpubs, whitelistedNpubsFile
@@ -181,6 +182,7 @@ struct HavenConfig: Codable, Equatable {
         importTaggedNotesFetchTimeoutSeconds = try container.decodeIfPresent(Int.self, forKey: .importTaggedNotesFetchTimeoutSeconds) ?? defaults.importTaggedNotesFetchTimeoutSeconds
 
         blossomMirrors = try container.decodeIfPresent([String].self, forKey: .blossomMirrors) ?? defaults.blossomMirrors
+        autoMirrorMedia = try container.decodeIfPresent(Bool.self, forKey: .autoMirrorMedia) ?? defaults.autoMirrorMedia
 
         blastrRelaysFile = try container.decodeIfPresent(String.self, forKey: .blastrRelaysFile) ?? defaults.blastrRelaysFile
         blastrRelays = try container.decodeIfPresent([String].self, forKey: .blastrRelays) ?? defaults.blastrRelays
