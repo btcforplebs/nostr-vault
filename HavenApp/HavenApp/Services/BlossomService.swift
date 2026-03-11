@@ -251,24 +251,17 @@ class BlossomService {
             let hash = SHA256.hash(data: data)
             let sha256 = hash.compactMap { String(format: "%02x", $0) }.joined()
 
-            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
-
-            // Upload to local Blossom
-            let localResult = await uploadToServer(
-                data: data,
-                url: await localBlossomURL(),
-                sha256: sha256,
-                contentType: contentType,
-                useLocalhostSession: true
-            )
-
-            if localResult != nil {
-                logger.info("Successfully downloaded \(sha256.prefix(8)) from \(url.host ?? "remote") to local Blossom")
-                return true
-            } else {
-                logger.error("Downloaded from \(url.absoluteString) but failed to store locally")
-                return false
-            }
+            // Save directly to the local file system (no HTTP upload needed!)
+            let relayDataDir = await MainActor.run { configService.relayDataDir }
+            let blossomDir = relayDataDir.appendingPathComponent(await MainActor.run { configService.config.blossomPath })
+            
+            try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
+            
+            let fileURL = blossomDir.appendingPathComponent(sha256)
+            try data.write(to: fileURL)
+            
+            logger.info("Successfully downloaded \(sha256.prefix(8)) from \(url.host ?? "remote") directly to local file system")
+            return true
         } catch {
             logger.warning("Download from \(url.absoluteString) error: \(error.localizedDescription)")
             return false
@@ -318,25 +311,17 @@ class BlossomService {
                     continue
                 }
 
-                // Detect content type from response
-                let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
+                // Save directly to the local file system (no HTTP upload needed!)
+                let relayDataDir = await MainActor.run { configService.relayDataDir }
+                let blossomDir = relayDataDir.appendingPathComponent(await MainActor.run { configService.config.blossomPath })
+                
+                try? FileManager.default.createDirectory(at: blossomDir, withIntermediateDirectories: true)
+                
+                let fileURL = blossomDir.appendingPathComponent(sha256)
+                try data.write(to: fileURL)
 
-                // Upload to local Blossom
-                let localResult = await uploadToServer(
-                    data: data,
-                    url: await localBlossomURL(),
-                    sha256: sha256,
-                    contentType: contentType,
-                    useLocalhostSession: true
-                )
-
-                if localResult != nil {
-                    logger.info("Successfully mirrored \(sha256.prefix(8)) from \(mirror) to local Blossom")
-                    return true
-                } else {
-                    logger.error("Downloaded \(sha256.prefix(8)) from \(mirror) but failed to store locally")
-                    return false
-                }
+                logger.info("Successfully mirrored \(sha256.prefix(8)) from \(mirror) directly to local file system")
+                return true
             } catch {
                 logger.warning("Download from \(mirror)/\(sha256.prefix(8)) error: \(error.localizedDescription)")
                 continue

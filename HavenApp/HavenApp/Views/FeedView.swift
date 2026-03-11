@@ -195,11 +195,13 @@ struct FeedView: View {
         ScrollViewReader { proxy in
             ZStack(alignment: .top) {
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    VStack(spacing: 0) {
                         // Anchor for scroll-to-top
                         Color.clear
-                            .frame(height: 0)
+                            .frame(height: 1)
                             .id("top")
+                            
+                        LazyVStack(spacing: 12) {
 
                         // Loading header
                         if feedService.isLoadingFeed && feedService.notes.isEmpty {
@@ -222,6 +224,22 @@ struct FeedView: View {
                             let parentIsNext = index + 1 < filteredNotes.count &&
                                              filteredNotes[index+1].id == note.parentEventId
 
+                            #if os(iOS)
+                            NavigationLink(destination: NoteDetailView(note: note)) {
+                                FeedNoteRow(
+                                    note: note,
+                                    profile: profile,
+                                    onReply: {
+                                        replyToNote = note
+                                        showingCompose = true
+                                    },
+                                    showParent: !parentIsNext,
+                                    isReplyToNext: parentIsNext
+                                )
+                                .padding(.horizontal, 16)
+                            }
+                            .buttonStyle(.plain)
+                            #else
                             FeedNoteRow(
                                 note: note,
                                 profile: profile,
@@ -236,6 +254,7 @@ struct FeedView: View {
                             .onTapGesture {
                                 showingNoteId = note.id
                             }
+                            #endif
                         }
 
                         // Load more
@@ -269,6 +288,7 @@ struct FeedView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
+                    }
                 }
                 .refreshable {
                     feedService.refresh()
@@ -277,9 +297,11 @@ struct FeedView: View {
                 // Floating "New Posts" indicator
                 if !feedService.pendingNotes.isEmpty {
                     Button(action: {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            feedService.applyPendingNotes()
-                            proxy.scrollTo("top", anchor: .top)
+                        feedService.applyPendingNotes()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                proxy.scrollTo("top", anchor: .top)
+                            }
                         }
                     }) {
                         HStack(spacing: 8) {
@@ -307,8 +329,10 @@ struct FeedView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ScrollToTop"))) { _ in
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                    proxy.scrollTo("top", anchor: .top)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                        proxy.scrollTo("top", anchor: .top)
+                    }
                 }
             }
         }

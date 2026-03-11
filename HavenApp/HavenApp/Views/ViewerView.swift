@@ -403,9 +403,7 @@ struct ViewerView: View {
             if !isBooting && relayManager.isRunning {
                 refreshAll()
                 initialLoad = true
-                #if os(iOS)
                 triggerAutoMirrorIfEnabled()
-                #endif
             }
         }
         .onChange(of: relayManager.isRunning) { _, isRunning in
@@ -905,12 +903,12 @@ struct ViewerView: View {
         nostrService.fetchNotes(from: urls, until: oldestTimestamp - 1, authors: authors)
     }
     
-    #if os(iOS)
     private func triggerAutoMirrorIfEnabled() {
         guard configService.config.autoMirrorMedia else { return }
         MirrorService.shared.runMirror(configService: configService, nostrService: nostrService)
     }
 
+    #if os(iOS)
     private func saveMediaToPhotos(item: MediaItem) {
         saveToPhotosMessage = nil
 

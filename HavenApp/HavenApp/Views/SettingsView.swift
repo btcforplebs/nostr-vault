@@ -1156,9 +1156,7 @@ struct BackupSettingsView: View {
     @State private var statusMessage = ""
     @State private var showFileImporter = false
     @State private var showBlossomImporter = false
-    #if os(iOS)
     @ObservedObject private var mirrorService = MirrorService.shared
-    #endif
     
     var body: some View {
         Form {
@@ -1266,7 +1264,6 @@ struct BackupSettingsView: View {
                 Text("Export creates a compressed backup of your images and videos. Import restores media from a previously exported backup.")
             }
 
-            #if os(iOS)
             Section {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -1317,7 +1314,6 @@ struct BackupSettingsView: View {
             } footer: {
                 Text("Downloads your own Blossom media from configured mirror servers to your local relay for offline access.")
             }
-            #endif
 
             if !statusMessage.isEmpty {
                 Section {
