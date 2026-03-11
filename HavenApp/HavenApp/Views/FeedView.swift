@@ -56,10 +56,11 @@ struct FeedView: View {
                 Button(action: { showingRelayStatus = true }) {
                     Circle()
                         .fill(feedService.connectionStatus == "Live" ? Color(red: 0.2, green: 0.8, blue: 0.6) : Color(red: 1, green: 0.6, blue: 0.1))
-                        .frame(width: 8, height: 8)
+                        .frame(width: 10, height: 10)
                         .shadow(color: feedService.connectionStatus == "Live" ? Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.6) : Color(red: 1, green: 0.6, blue: 0.1).opacity(0.4), radius: 3)
+                        .padding(8)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -94,6 +95,7 @@ struct FeedView: View {
             RelayStatusSheet()
                 .environmentObject(relayManager)
                 .environmentObject(configService)
+                .environmentObject(nostrService)
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingNoteId.map { IdentifiableString(id: $0) } },
@@ -958,6 +960,8 @@ struct RelayStatusSheet: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var nostrService: NostrService
+    @ObservedObject private var mirrorService = MirrorService.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1086,6 +1090,79 @@ struct RelayStatusSheet: View {
                             .tracking(0.5)
                     }
                     .padding(.horizontal)
+
+                    #if os(iOS)
+                    Divider()
+                        .padding(.vertical, 8)
+
+                    // Media Mirroring
+                    Section {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(mirrorService.state == .mirroring ? Color.havenPurple :
+                                          (mirrorService.state == .complete ? Color.green : Color.secondary))
+                                    .frame(width: 8, height: 8)
+                                Text(mirrorService.state == .mirroring ? "Mirroring..." :
+                                     (mirrorService.state == .complete ? "Complete" : "Idle"))
+                                    .font(.system(size: 13, design: .monospaced))
+                                    .foregroundColor(mirrorService.state == .mirroring ? .havenPurple : .secondary)
+                            }
+
+                            if let progress = mirrorService.progress {
+                                Text("\(progress.completed)/\(progress.total) files")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary.opacity(0.7))
+                            }
+
+                            if !mirrorService.lastResult.isEmpty {
+                                Text(mirrorService.lastResult)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary.opacity(0.7))
+                            }
+
+                            if let lastMirror = mirrorService.lastMirrorDate {
+                                Text("Last mirror: \(lastMirror.formatted())")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary.opacity(0.7))
+                            }
+
+                            Button {
+                                mirrorService.runMirror(
+                                    configService: configService,
+                                    nostrService: nostrService
+                                )
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if mirrorService.state == .mirroring {
+                                        ProgressView().controlSize(.small).tint(.black)
+                                    } else {
+                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                    }
+                                    Text("Mirror Now")
+                                }
+                                .font(.system(size: 12, weight: .bold))
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(Color.havenPurple)
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(mirrorService.state == .mirroring || configService.config.blossomMirrors.isEmpty)
+                            .padding(.top, 4)
+                        }
+                        .padding(12)
+                        .background(Color.platformTertiaryGroupedBackground)
+                        .cornerRadius(10)
+                    } header: {
+                        Text("Media Mirroring")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .tracking(0.5)
+                    }
+                    .padding(.horizontal)
+                    #endif
 
                     Divider()
                         .padding(.vertical, 8)
