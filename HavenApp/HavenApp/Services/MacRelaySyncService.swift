@@ -341,10 +341,13 @@ class MacRelaySyncService: ObservableObject {
 
             let client = WebSocketClient()
             client.isTemporary = true
+            // Guard against multiple group.leave() calls from repeated state emissions
+            var didLeave = false
 
             client.$connectionState
                 .receive(on: processingQueue)
                 .sink { state in
+                    guard !didLeave else { return }
                     if state == .connected {
                         let batchSize = 100
                         for i in stride(from: 0, to: events.count, by: batchSize) {
@@ -363,6 +366,8 @@ class MacRelaySyncService: ObservableObject {
 
                         let delay = max(2.0, Double(events.count) / 500.0)
                         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            guard !didLeave else { return }
+                            didLeave = true
                             client.disconnect()
                             #if DEBUG
                             print("MacRelaySyncService: \(label) injection done (\(events.count) events)")
@@ -370,6 +375,7 @@ class MacRelaySyncService: ObservableObject {
                             group.leave()
                         }
                     } else if state == .error {
+                        didLeave = true
                         #if DEBUG
                         print("MacRelaySyncService: \(label) connection error")
                         #endif

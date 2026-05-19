@@ -1,4 +1,5 @@
 import Foundation
+@preconcurrency import Dispatch
 import Combine
 import UniformTypeIdentifiers
 
@@ -67,6 +68,10 @@ class RelayProcessManager: ObservableObject {
     @Published var lastConfig: HavenConfig?
     private var retryAttempted = false
     private var needsLockFix = false
+
+    // Boot watchdog: triggers force restart offer if boot takes too long
+    private var bootWatchdogTimer: DispatchSourceTimer?
+    private static let bootWatchdogTimeout: TimeInterval = 90
 
     // (Log throttling moved to LogStore)
     
@@ -270,7 +275,8 @@ class RelayProcessManager: ObservableObject {
         isRunning = true
         isBooting = true
         bootStatusMessage = "Starting system..."
-        
+        startBootWatchdog()
+
         // Launch the C-Shared relay on a background thread
         DispatchQueue.global().async { [weak self] in
             // 0 = false (not in import mode)
@@ -337,15 +343,27 @@ class RelayProcessManager: ObservableObject {
             completion?()
             return
         }
-        
+
         self.state = .stopping
         self.isShuttingDown = true
         stopMetricsTimer()
         stopLogThrottler()
+        cancelBootWatchdog()
         isBooting = false
-        
+
         logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping C-Shared relay natively..."))
-        
+
+        // Safety timeout: if StopRelayC hangs, force-reset state after 5 seconds
+        let stopTimeoutItem = DispatchWorkItem { [weak self] in
+            guard let self = self, self.state == .stopping else { return }
+            self.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Stop timed out after 5s — force-resetting state"))
+            self.state = .idle
+            self.isRunning = false
+            self.isShuttingDown = false
+            completion?()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: stopTimeoutItem)
+
         DispatchQueue.global().async { [weak self] in
             // Tell the Go side to shut down the server and cancel the context
             StopRelayC()
@@ -354,17 +372,20 @@ class RelayProcessManager: ObservableObject {
             Thread.sleep(forTimeInterval: 1.0)
 
             DispatchQueue.main.async {
+                stopTimeoutItem.cancel() // Normal shutdown completed, cancel the timeout
+                guard self?.state == .stopping else { return } // Timeout already fired
+
                 self?.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "C-Shared relay natively stopped."))
                 self?.state = .idle
                 self?.isRunning = false
                 self?.isShuttingDown = false
-                
+
                 // If we were stopping to start an import, trigger it now
                 if let importConfig = self?.pendingImportConfig {
                     self?.pendingImportConfig = nil
                     self?.importNotes(config: importConfig)
                 }
-                
+
                 completion?()
             }
         }
@@ -449,6 +470,26 @@ class RelayProcessManager: ObservableObject {
     private func stopMetricsTimer() {
         metricsTimer?.invalidate()
         metricsTimer = nil
+    }
+
+    // MARK: - Boot Watchdog
+
+    private func startBootWatchdog() {
+        cancelBootWatchdog()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + Self.bootWatchdogTimeout)
+        timer.setEventHandler { [weak self] in
+            guard let self = self, self.isBooting else { return }
+            self.logStore.append(LogEntry(timestamp: Date(), level: "WARN", message: "Boot watchdog triggered after \(Int(Self.bootWatchdogTimeout))s — offering force restart"))
+            self.showProcessKillAlert = true
+        }
+        timer.resume()
+        bootWatchdogTimer = timer
+    }
+
+    private func cancelBootWatchdog() {
+        bootWatchdogTimer?.cancel()
+        bootWatchdogTimer = nil
     }
     
     private func updateMetrics() {
@@ -863,6 +904,7 @@ class RelayProcessManager: ObservableObject {
             if batch.stopBooting {
                 isBooting = false
                 bootStatusMessage = ""
+                cancelBootWatchdog()
             }
         }
 

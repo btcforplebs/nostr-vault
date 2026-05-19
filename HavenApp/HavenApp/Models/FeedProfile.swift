@@ -7,6 +7,7 @@ struct FeedProfile: Codable, Identifiable {
     var pictureURL: URL?
     var nip05: String?
     var lud16: String?
+    var about: String?
 
     var id: String { pubkey }
 

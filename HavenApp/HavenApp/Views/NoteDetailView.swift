@@ -99,7 +99,8 @@ struct NoteDetailView: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 AvatarView(url: profile?.pictureURL, pubkey: note.pubkey)
-                
+                    .onTapGesture { showingProfilePubkey = note.pubkey }
+
                 VStack(alignment: .leading, spacing: 2) {
                     let profileName = profile?.bestName ?? "npub…" + String(note.pubkey.suffix(6))
                     Text(profileName)
@@ -228,9 +229,7 @@ struct NoteDetailView: View {
             }
 
             if isLoadingParents {
-                ProgressView()
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding()
+                FeedNoteSkeletonRow()
             }
         }
     }
@@ -245,9 +244,9 @@ struct NoteDetailView: View {
                 .padding(.bottom, 4)
 
             if isLoadingReplies && currentReplies.isEmpty {
-                ProgressView()
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding()
+                ForEach(0..<3, id: \.self) { _ in
+                    FeedNoteSkeletonRow()
+                }
             } else if currentReplies.isEmpty {
                 Text("No replies yet")
                     .font(.subheadline)
@@ -291,6 +290,7 @@ struct NoteDetailView: View {
     private func likeNote() {
         if !feedService.likedEventIds.contains(note.id) {
             feedService.likedEventIds.insert(note.id)
+            feedService.saveInteractionState()
         }
         guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", note.id], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
@@ -332,6 +332,7 @@ struct NoteDetailView: View {
             print("Successfully zapped! Preimage: \(preimage)")
             _ = await MainActor.run {
                 feedService.zappedEventIds.insert(note.id)
+                feedService.saveInteractionState()
             }
         } catch {
             print("Zap failed: \(error.localizedDescription)")
@@ -507,7 +508,7 @@ struct NoteDetailViewWrapper: View {
     @State private var cancellables = Set<AnyCancellable>()
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
                 if let note = resolvedNote {
                     NoteDetailView(note: note)

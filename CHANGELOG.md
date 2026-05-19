@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0 macOS / 1.0 iOS (Build 6)] - 2026-05-19
+
+### Stability
+- **Relay lifecycle hardening**: Added 90-second watchdog timer for boot failures with auto-offer of "Force Restart". Added 5-second forced timeout to `stopRelay()` with state reset to idle.
+- **Persist interaction state**: `likedEventIds` and `zappedEventIds` now persist to disk with throttled writes, surviving cold launches.
+- **Error recovery UX**: Replaced status-message-only boot failures with actionable error sheets (Retry / Force Restart / Clear Locks) with clear explanations for port conflicts and database lock issues.
+
+### UI/UX Polish
+- **Empty state improvements**: Feed now distinguishes "Relay Starting..." from "No Following Feed" with contextual status messages and a Refresh Feed action.
+- **Connection status refinement**: Expanded feed status dot to three states: green (live), orange (reconnecting), red (disconnected). Status dot is tappable to view relay details.
+- **Navigation consistency**: Unified navigation with NavigationStack approach and gesture-based swipe-to-dismiss from ProfileView with drag threshold feedback.
+
+### Code Quality
+- **Split WebSocketClient.swift**: Extracted `NostrService.swift` (~1,250 lines) and `MediaCacheService.swift` (~530 lines) from the monolithic WebSocketClient, reducing it to ~460 lines.
+
 ## [2.4.0 macOS / 1.0 iOS (Build 5)] - 2026-03-11
 
 ### Added

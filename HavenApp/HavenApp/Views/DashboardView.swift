@@ -451,6 +451,64 @@ struct DashboardView: View {
                      .lineLimit(1)
                      .truncationMode(.middle)
             }
+
+            // Error recovery banner
+            if relayManager.isLocked || relayManager.isPortConflict {
+                VStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(relayManager.isPortConflict ? "Port 3355 is already in use" : "Database lock detected")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+
+                    Text(relayManager.isPortConflict
+                        ? "Another process is using the relay port. Close other Haven instances or restart your computer."
+                        : "A previous session did not shut down cleanly. Clear locks to restart the relay.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HStack(spacing: 12) {
+                        Button {
+                            relayManager.forceCleanAndRestart()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Force Restart")
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.havenPurple)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+
+                        if relayManager.isLocked {
+                            Button {
+                                relayManager.clearDatabaseLocks { [relayManager, configService] in
+                                    Task { @MainActor in
+                                        relayManager.startRelay(config: configService.config, isRetry: true)
+                                    }
+                                }
+                            } label: {
+                                Text("Clear Locks Only")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color.orange.opacity(0.08))
+                .cornerRadius(10)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.3), lineWidth: 1))
+            }
         }
         .padding(.horizontal)
     }

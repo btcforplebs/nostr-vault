@@ -55,9 +55,9 @@ struct FeedView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { showingRelayStatus = true }) {
                     Circle()
-                        .fill(feedService.connectionStatus == "Live" ? Color(red: 0.2, green: 0.8, blue: 0.6) : Color(red: 1, green: 0.6, blue: 0.1))
+                        .fill(feedService.connectionDotColor)
                         .frame(width: 10, height: 10)
-                        .shadow(color: feedService.connectionStatus == "Live" ? Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.6) : Color(red: 1, green: 0.6, blue: 0.1).opacity(0.4), radius: 3)
+                        .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 3)
                         .padding(8)
                         .contentShape(Rectangle())
                 }
@@ -82,6 +82,11 @@ struct FeedView: View {
         }
         .onChange(of: relayManager.isRunning) { _, running in
             if running && !relayManager.isBooting && feedService.notes.isEmpty && !feedService.isLoadingContacts {
+                feedService.refresh()
+            }
+        }
+        .onChange(of: relayManager.isBooting) { _, booting in
+            if !booting && relayManager.isRunning && feedService.notes.isEmpty && !feedService.isLoadingContacts && !feedService.isLoadingFeed {
                 feedService.refresh()
             }
         }
@@ -138,50 +143,72 @@ struct FeedView: View {
 
     private var emptyStateView: some View {
         VStack(spacing: 40) {
-            VStack(spacing: 16) {
-                Image(systemName: "person.crop.circle.badge.plus")
-                    .font(.system(size: 56, weight: .thin))
-                    .foregroundStyle(
+            if relayManager.isBooting {
+                // Relay is still starting up
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(Color.havenPurple)
+
+                    VStack(spacing: 12) {
+                        Text("Relay Starting...")
+                            .font(.system(size: 22, weight: .bold, design: .default))
+                            .tracking(0.2)
+
+                        Text(relayManager.bootStatusMessage.isEmpty ? "Initializing relay" : relayManager.bootStatusMessage)
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .tracking(0.3)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+            } else {
+                // Relay is running but no follows
+                VStack(spacing: 16) {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 56, weight: .thin))
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    VStack(spacing: 12) {
+                        Text("No Following Feed")
+                            .font(.system(size: 22, weight: .bold, design: .default))
+                            .tracking(0.2)
+
+                        Text("Follow npubs on Nostr to see their posts here")
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .tracking(0.3)
+                    }
+                }
+
+                Button {
+                    feedService.refresh()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Refresh Feed")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
                         LinearGradient(
                             gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-
-                VStack(spacing: 12) {
-                    Text("No Following Feed")
-                        .font(.system(size: 22, weight: .bold, design: .default))
-                        .tracking(0.2)
-
-                    Text("Start by following npubs on Nostr")
-                        .font(.system(size: 13, weight: .regular, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .tracking(0.3)
+                    .cornerRadius(10)
                 }
+                .buttonStyle(.plain)
             }
-
-            Button {
-                feedService.refresh()
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.clockwise")
-                    Text("Refresh Feed")
-                }
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    LinearGradient(
-                        gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .cornerRadius(10)
-            }
-            .buttonStyle(.plain)
         }
         .padding(max(16, min(48, 24))) // Adaptive padding
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -397,7 +424,10 @@ struct FeedNoteRow: View {
                                     AvatarView(url: parentProfile?.pictureURL, pubkey: parent.pubkey)
                                         .frame(width: 28, height: 28)
                                         .opacity(1.0)
-                                    
+                                        .onTapGesture {
+                                            showingProfileKey = IdentifiableString(id: parent.pubkey)
+                                        }
+
                                     Rectangle()
                                         .fill(Color.havenPurple.opacity(0.3))
                                         .frame(width: 2)
@@ -443,7 +473,8 @@ struct FeedNoteRow: View {
 
                     AvatarView(url: nostrService.profiles[note.pubkey]?.pictureURL, pubkey: note.pubkey)
                         .frame(width: 40, height: 40)
-                    
+                        .onTapGesture { showingProfileKey = IdentifiableString(id: note.pubkey) }
+
                     if isReplyToNext {
                         Rectangle()
                             .fill(Color.havenPurple.opacity(0.3))
@@ -709,6 +740,7 @@ struct FeedNoteRow: View {
     private func likeNote() {
         if !feedService.likedEventIds.contains(note.id) {
             feedService.likedEventIds.insert(note.id)
+            feedService.saveInteractionState()
         }
         guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", note.id, "", "root"], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
@@ -743,6 +775,7 @@ struct FeedNoteRow: View {
             // Trigger animation and update state on success
             await MainActor.run {
                 feedService.zappedEventIds.insert(note.id)
+                feedService.saveInteractionState()
                 showLightning = true
             }
             #if os(iOS)

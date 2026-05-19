@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 // MARK: - Models
 
@@ -11,24 +12,34 @@ struct FeedNote: Identifiable {
     let tags: [[String]]
     let kind: Int
 
-    var isReply: Bool {
+    // Cached at init to avoid recomputing on every SwiftUI render
+    let isReply: Bool
+    let replyToPubkey: String?
+    let parentEventId: String?
+    let mediaURLs: [URL]
+    let quotedEventIds: [String]
+
+    init(id: String, pubkey: String, content: String, createdAt: Date, tags: [[String]], kind: Int) {
+        self.id = id
+        self.pubkey = pubkey
+        self.content = content
+        self.createdAt = createdAt
+        self.tags = tags
+        self.kind = kind
+
+        // Cache tag-derived properties
         let eTags = tags.filter { $0.count >= 2 && $0[0] == "e" }
-        guard !eTags.isEmpty else { return false }
-        
         let nonMentionETags = eTags.filter { tag in
             guard tag.count >= 4 else { return true }
             return tag[3] != "mention"
         }
-        
-        return !nonMentionETags.isEmpty
-    }
+        self.isReply = !nonMentionETags.isEmpty
+        self.replyToPubkey = tags.first { $0.count >= 2 && $0[0] == "p" }?[1]
+        self.parentEventId = tags.last { $0.count >= 2 && $0[0] == "e" }?[1]
 
-    var replyToPubkey: String? {
-        tags.first { $0.count >= 2 && $0[0] == "p" }?[1]
-    }
-
-    var parentEventId: String? {
-        tags.last { $0.count >= 2 && $0[0] == "e" }?[1]
+        // Cache regex-derived properties (expensive — only compute once)
+        self.mediaURLs = Self.parseMediaURLs(from: content)
+        self.quotedEventIds = Self.parseQuotedEventIds(from: content)
     }
 
     var replyCount: Int {
@@ -43,30 +54,35 @@ struct FeedNote: Identifiable {
     var nevent: String {
         guard let idData = Bech32.hexToData(id),
               let pubData = Bech32.hexToData(pubkey) else { return note1 }
-        
+
         var tlv = Data()
-        // Type 0: Event ID
         tlv.append(Bech32.encodeTLV(type: 0, data: idData))
-        // Type 2: Author Pubkey
         tlv.append(Bech32.encodeTLV(type: 2, data: pubData))
-        // Type 3: Kind
         let kindBytes = withUnsafeBytes(of: UInt32(kind).bigEndian) { Data($0) }
         tlv.append(Bech32.encodeTLV(type: 3, data: kindBytes))
-        
+
         return Bech32.encode(hrp: "nevent", data: tlv) ?? note1
     }
 
-    var mediaURLs: [URL] {
-        let pattern = #"https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic)(?:\?\S+)?"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
+    // MARK: - Static parsers (called once at init)
+
+    private static let mediaRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic)(?:\?\S+)?"#, options: .caseInsensitive)
+    }()
+
+    private static let quoteRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"nostr:(note1[a-z0-9]+|nevent1[a-z0-9]+)"#, options: .caseInsensitive)
+    }()
+
+    private static func parseMediaURLs(from content: String) -> [URL] {
+        guard let regex = mediaRegex else { return [] }
         let ns = content as NSString
         return regex.matches(in: content, range: NSRange(location: 0, length: ns.length))
             .compactMap { URL(string: ns.substring(with: $0.range)) }
     }
 
-    var quotedEventIds: [String] {
-        let pattern = #"nostr:(note1[a-z0-9]+|nevent1[a-z0-9]+)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
+    private static func parseQuotedEventIds(from content: String) -> [String] {
+        guard let regex = quoteRegex else { return [] }
         let ns = content as NSString
         return regex.matches(in: content, range: NSRange(location: 0, length: ns.length))
             .compactMap { match -> String? in
@@ -74,7 +90,6 @@ struct FeedNote: Identifiable {
                 if identifier.hasPrefix("note1") {
                     return Bech32.decode(identifier)?.hexString
                 } else if identifier.hasPrefix("nevent1") {
-                    // Extract ID from nevent TLV: Type 0 is the event ID (32 bytes)
                     guard let decoded = Bech32.decode(identifier) else { return nil }
                     var data = decoded.data
                     while data.count >= 2 {
@@ -96,7 +111,33 @@ struct FeedNote: Identifiable {
     }
 }
 
-// MARK: - FeedService
+// MARK: - BackgroundAccumulator
+
+/// Thread-safe buffer for events parsed off the main thread.
+/// All methods must be called on the FeedService processingQueue.
+final class BackgroundAccumulator: @unchecked Sendable {
+    var notes: [FeedNote] = []
+    var profiles: [String] = []
+    var likes: [String] = []
+    var flushScheduled = false
+
+    static let flushInterval: TimeInterval = 0.5
+
+    struct Snapshot {
+        let notes: [FeedNote]
+        let profiles: [String]
+        let likes: [String]
+    }
+
+    func drain() -> Snapshot {
+        let snap = Snapshot(notes: notes, profiles: profiles, likes: likes)
+        notes.removeAll(keepingCapacity: true)
+        profiles.removeAll(keepingCapacity: true)
+        likes.removeAll(keepingCapacity: true)
+        flushScheduled = false
+        return snap
+    }
+}
 
 // MARK: - FeedService
 
@@ -114,10 +155,25 @@ class FeedService: ObservableObject {
     @Published var isLoadingContacts = false
     @Published var isLoadingFeed    = false
     @Published var connectionStatus = "Disconnected"
+
+    /// Three-state connection indicator color
+    var connectionDotColor: Color {
+        switch connectionStatus {
+        case "Live":
+            return Color(red: 0.2, green: 0.8, blue: 0.6) // Green
+        case "Disconnected", "No contacts found":
+            return Color.red.opacity(0.8) // Red
+        default:
+            return Color(red: 1, green: 0.6, blue: 0.1) // Orange (loading/connecting)
+        }
+    }
     @Published var newNoteCount: Int = 0
     @Published var pendingNotes: [FeedNote] = []
     @Published var likedEventIds: Set<String> = []
     @Published var zappedEventIds: Set<String> = []
+
+    // Preserve the original kind 3 content (relay hints) to avoid wiping it on follow/unfollow
+    private var contactListContent: String = ""
 
     // One client per relay URL
     private var feedClients: [String: WebSocketClient] = [:]
@@ -128,6 +184,10 @@ class FeedService: ObservableObject {
 
     // Background queue for JSON parsing — keeps the main thread free for UI
     private let processingQueue = DispatchQueue(label: "com.haven.feed-processing", qos: .userInitiated)
+
+    // Thread-safe accumulator for background event parsing → main thread delivery.
+    // All access is serialized on processingQueue.
+    private let bgAccumulator = BackgroundAccumulator()
 
     private var localRelayURL: URL? {
         // Only include the local relay when it is confirmed running.
@@ -168,6 +228,51 @@ class FeedService: ObservableObject {
 
     private init() {
         // FeedService no longer manages profiles; NostrService does.
+        loadInteractionState()
+    }
+
+    // MARK: - Interaction State Persistence
+
+    private static let interactionStateFile = "interaction_state.json"
+
+    private var interactionSaveThrottle: Date = .distantPast
+
+    private func loadInteractionState() {
+        let url = Self.interactionStateURL()
+        guard let data = try? Data(contentsOf: url),
+              let state = try? JSONDecoder().decode(InteractionState.self, from: data) else { return }
+        self.likedEventIds = state.likedEventIds
+        self.zappedEventIds = state.zappedEventIds
+        #if DEBUG
+        print("FeedService: Loaded \(state.likedEventIds.count) likes, \(state.zappedEventIds.count) zaps from disk")
+        #endif
+    }
+
+    func saveInteractionState() {
+        // Throttle saves to at most once per 2 seconds
+        let now = Date()
+        guard now.timeIntervalSince(interactionSaveThrottle) > 2.0 else { return }
+        interactionSaveThrottle = now
+
+        let state = InteractionState(likedEventIds: likedEventIds, zappedEventIds: zappedEventIds)
+        let url = Self.interactionStateURL()
+        DispatchQueue.global(qos: .utility).async {
+            if let data = try? JSONEncoder().encode(state) {
+                try? data.write(to: url)
+            }
+        }
+    }
+
+    private static func interactionStateURL() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
+        try? FileManager.default.createDirectory(at: havenDir, withIntermediateDirectories: true)
+        return havenDir.appendingPathComponent(interactionStateFile)
+    }
+
+    private struct InteractionState: Codable {
+        let likedEventIds: Set<String>
+        let zappedEventIds: Set<String>
     }
 
     // MARK: - Public API
@@ -244,6 +349,8 @@ class FeedService: ObservableObject {
     }
 
     func disconnect() {
+        feedLoadingTimeout?.invalidate()
+        contactLoadingTimeout?.invalidate()
         feedClients.values.forEach { $0.disconnect() }
         feedClients.removeAll()
         cancellables.removeAll()
@@ -253,6 +360,8 @@ class FeedService: ObservableObject {
     // MARK: - Contact List (Kind 3)
     // Fetch the owner's follows from the local relay.
     // Falls back to a well-known public relay if not found locally.
+
+    private var contactLoadingTimeout: Timer?
 
     private func loadContactList(completion: @escaping () -> Void) {
         let ownerNpub = ConfigService.shared.config.ownerNpub
@@ -264,6 +373,20 @@ class FeedService: ObservableObject {
         isLoadingContacts = true
         connectionStatus = "Fetching contact list…"
 
+        // Safety timeout: if contact loading hasn't finished in 30 seconds, force completion
+        contactLoadingTimeout?.invalidate()
+        contactLoadingTimeout = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isLoadingContacts else { return }
+                #if DEBUG
+                print("FeedService: Contact loading timed out after 30s — forcing completion")
+                #endif
+                self.isLoadingContacts = false
+                self.connectionStatus = self.followedPubkeys.isEmpty ? "Contact fetch timed out" : "Loaded \(self.followedPubkeys.count) contacts"
+                completion()
+            }
+        }
+
         // Try local relay first; if it returns empty, fall back to an external relay.
         let candidates: [URL] = ([localRelayURL] + externalRelayURLs).compactMap { $0 }
         tryFetchContactList(from: candidates, ownerHex: ownerHex, completion: completion)
@@ -271,6 +394,7 @@ class FeedService: ObservableObject {
 
     private func tryFetchContactList(from relays: [URL], ownerHex: String, completion: @escaping () -> Void) {
         guard let url = relays.first else {
+            contactLoadingTimeout?.invalidate()
             isLoadingContacts = false; completion(); return
         }
         let remaining = Array(relays.dropFirst())
@@ -343,12 +467,16 @@ class FeedService: ObservableObject {
                 return
             }
 
+            let originalContent = eventDict["content"] as? String ?? ""
+
             DispatchQueue.main.async { [weak self] in
                 var finalPubkeys = pubkeys
                 if !finalPubkeys.contains(ownerHex) {
                     finalPubkeys.append(ownerHex)
                 }
                 self?.followedPubkeys = finalPubkeys
+                self?.contactListContent = originalContent
+                self?.contactLoadingTimeout?.invalidate()
                 self?.isLoadingContacts = false
                 client.disconnect()
                 self?.connectionStatus = pubkeys.isEmpty ? "No contacts found" : "Loaded \(pubkeys.count) contacts"
@@ -356,6 +484,7 @@ class FeedService: ObservableObject {
             }
         } else if type == "EOSE" {
             DispatchQueue.main.async { [weak self] in
+                self?.contactLoadingTimeout?.invalidate()
                 self?.isLoadingContacts = false
                 client.disconnect()
                 // If still no pubkeys and have fallbacks, try them
@@ -368,7 +497,34 @@ class FeedService: ObservableObject {
         }
     }
 
+    // MARK: - Follow / Unfollow
+
+    func followUser(_ pubkey: String) {
+        // Don't publish if contacts haven't loaded yet — would wipe the list
+        guard !isLoadingContacts, followedPubkeys.count > 1 else { return }
+        guard !followedPubkeys.contains(pubkey) else { return }
+        followedPubkeys.append(pubkey)
+        publishContactList()
+    }
+
+    func unfollowUser(_ pubkey: String) {
+        // Don't publish if contacts haven't loaded yet — would wipe the list
+        guard !isLoadingContacts, followedPubkeys.count > 1 else { return }
+        guard let ownerHex = Bech32.decode(ConfigService.shared.config.ownerNpub)?.hexString else { return }
+        guard pubkey != ownerHex else { return }
+        followedPubkeys.removeAll { $0 == pubkey }
+        publishContactList()
+    }
+
+    private func publishContactList() {
+        let tags = followedPubkeys.map { ["p", $0] }
+        guard let event = NostrService.shared.signEvent(kind: 3, content: contactListContent, tags: tags) else { return }
+        NostrService.shared.postEvent(event)
+    }
+
     // MARK: - Feed Subscription (local + external in parallel)
+
+    private var feedLoadingTimeout: Timer?
 
     private func subscribeToAllRelays() {
         guard !followedPubkeys.isEmpty else {
@@ -378,6 +534,7 @@ class FeedService: ObservableObject {
 
         isLoadingFeed = true
         eoseCount = 0
+        relayErrorCounts.removeAll()
         connectionStatus = "Loading feed…"
 
         // Disconnect existing feed clients
@@ -390,10 +547,28 @@ class FeedService: ObservableObject {
         allURLs.append(contentsOf: externalRelayURLs)
 
         let totalRelays = allURLs.count
+
+        // Safety timeout: if feed loading hasn't finished in 20 seconds, flush what we have
+        feedLoadingTimeout?.invalidate()
+        feedLoadingTimeout = Timer.scheduledTimer(withTimeInterval: 20.0, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isLoadingFeed else { return }
+                #if DEBUG
+                print("FeedService: Feed loading timed out after 20s — flushing \(self.noteBuffer.count) buffered notes (eoseCount=\(self.eoseCount)/\(totalRelays))")
+                #endif
+                self.flushNoteBuffer()
+                self.isLoadingFeed = false
+                self.connectionStatus = self.notes.isEmpty ? "No notes found" : "Live"
+            }
+        }
+
         for url in allURLs {
             connectFeedRelay(url: url, totalRelays: totalRelays)
         }
     }
+
+    /// Track per-relay connection failure counts for back-off
+    private var relayErrorCounts: [String: Int] = [:]
 
     private func connectFeedRelay(url: URL, totalRelays: Int) {
         let key = url.absoluteString
@@ -411,12 +586,30 @@ class FeedService: ObservableObject {
                 guard let self = self else { return }
                 switch state {
                 case .connected:
+                    self.relayErrorCounts[key] = 0
                     self.sendFeedSubscription(client: c, label: key)
                 case .error:
-                    // Reconnect after delay
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
-                        guard self?.feedClients[key] === c else { return }
-                        self?.connectFeedRelay(url: url, totalRelays: totalRelays)
+                    let errorCount = (self.relayErrorCounts[key] ?? 0) + 1
+                    self.relayErrorCounts[key] = errorCount
+
+                    if errorCount >= 3 {
+                        // After 3 failures, count this relay as done so loading can finish
+                        #if DEBUG
+                        print("FeedService: Relay \(key) failed \(errorCount) times — counting as EOSE")
+                        #endif
+                        self.eoseCount += 1
+                        if self.eoseCount >= totalRelays {
+                            self.feedLoadingTimeout?.invalidate()
+                            self.flushNoteBuffer()
+                            self.isLoadingFeed = false
+                            self.connectionStatus = self.notes.isEmpty ? "No notes found" : "Live"
+                        }
+                    } else {
+                        // Retry after delay
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+                            guard self?.feedClients[key] === c else { return }
+                            self?.connectFeedRelay(url: url, totalRelays: totalRelays)
+                        }
                     }
                 default: break
                 }
@@ -496,7 +689,8 @@ class FeedService: ObservableObject {
         }
     }
 
-    /// Called on processingQueue — parses JSON off the main thread, then dispatches results
+    /// Called on processingQueue — parses JSON off the main thread, accumulates in background buffers.
+    /// A periodic flush delivers batched results to the main thread.
     private nonisolated func handleFeedMsgBackground(_ msg: String, totalRelays: Int) {
         guard let data = msg.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
@@ -507,6 +701,8 @@ class FeedService: ObservableObject {
                 guard let self = self else { return }
                 self.eoseCount += 1
                 if self.eoseCount >= totalRelays {
+                    self.feedLoadingTimeout?.invalidate()
+                    self.drainBackgroundBuffers()
                     self.flushNoteBuffer()
                     self.isLoadingFeed = false
                     self.connectionStatus = "Live"
@@ -525,14 +721,13 @@ class FeedService: ObservableObject {
               let tags      = ev["tags"]        as? [[String]]
         else { return }
 
-        // Handle Reactions (Kind 7)
+        // Handle Reactions (Kind 7) — just accumulate the target ID
         if kind == 7 {
             if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
-                DispatchQueue.main.async { [weak self] in
-                    let ownerHex = NostrService.shared.ownerHexPubkey
-                    if pubkey == ownerHex {
-                        self?.likedEventIds.insert(targetId)
-                    }
+                let acc = self.bgAccumulator
+                processingQueue.async { [weak self] in
+                    acc.likes.append(targetId)
+                    self?.scheduleBackgroundFlush()
                 }
             }
             return
@@ -540,7 +735,7 @@ class FeedService: ObservableObject {
 
         var parsedContent = content
         var originalPubkey: String? = nil
-        
+
         if kind == 6 {
             if let data = content.data(using: .utf8),
                let inner = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -552,6 +747,7 @@ class FeedService: ObservableObject {
             }
         }
 
+        // Build FeedNote on background thread (including regex caching in init)
         let note = FeedNote(
             id: id,
             pubkey: originalPubkey ?? pubkey,
@@ -561,28 +757,90 @@ class FeedService: ObservableObject {
             kind: kind
         )
 
+        // Accumulate on processing queue — NO per-event main thread dispatch
+        let acc = self.bgAccumulator
+        processingQueue.async { [weak self] in
+            acc.notes.append(note)
+            acc.profiles.append(pubkey)
+            if let op = originalPubkey { acc.profiles.append(op) }
+            self?.scheduleBackgroundFlush()
+        }
+    }
+
+    /// Schedule a single coalesced flush of the background buffers → main thread.
+    /// Must be called on processingQueue.
+    private nonisolated func scheduleBackgroundFlush() {
+        dispatchPrecondition(condition: .onQueue(processingQueue))
+        let acc = bgAccumulator
+        guard !acc.flushScheduled else { return }
+        acc.flushScheduled = true
+        processingQueue.asyncAfter(deadline: .now() + BackgroundAccumulator.flushInterval) { [weak self] in
+            self?.deliverBackgroundBatch()
+        }
+    }
+
+    /// Take everything accumulated on the processing queue and deliver it to main in one dispatch.
+    private nonisolated func deliverBackgroundBatch() {
+        dispatchPrecondition(condition: .onQueue(processingQueue))
+        let snap = bgAccumulator.drain()
+
+        guard !snap.notes.isEmpty || !snap.likes.isEmpty else { return }
+
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            guard !self.seenIds.contains(id) else { return }
-            self.seenIds.insert(id)
+            self.applySnapshot(snap)
+        }
+    }
 
-            self.noteBuffer.append(note)
-            self.scheduleNoteFlush()
+    /// Force-drain background buffers synchronously (called on main before EOSE flush).
+    private func drainBackgroundBuffers() {
+        let acc = bgAccumulator
+        var snap: BackgroundAccumulator.Snapshot!
+        processingQueue.sync {
+            snap = acc.drain()
+        }
+        applySnapshot(snap)
+    }
 
-            if NostrService.shared.profiles[pubkey] == nil {
-                NostrService.shared.fetchMissingProfiles(for: [pubkey])
+    /// Apply a drained snapshot to main-actor state.
+    private func applySnapshot(_ snap: BackgroundAccumulator.Snapshot) {
+        var added = false
+        for note in snap.notes {
+            guard !seenIds.contains(note.id) else { continue }
+            seenIds.insert(note.id)
+            noteBuffer.append(note)
+            added = true
+        }
+
+        let uniquePubkeys = Set(snap.profiles).subtracting(Set(NostrService.shared.profiles.keys))
+        if !uniquePubkeys.isEmpty {
+            NostrService.shared.fetchMissingProfiles(for: Array(uniquePubkeys))
+        }
+
+        if !snap.likes.isEmpty {
+            let ownerHex = NostrService.shared.ownerHexPubkey
+            if !ownerHex.isEmpty {
+                let before = likedEventIds.count
+                likedEventIds.formUnion(snap.likes)
+                if likedEventIds.count > before {
+                    saveInteractionState()
+                }
             }
-            if let op = originalPubkey, NostrService.shared.profiles[op] == nil {
-                NostrService.shared.fetchMissingProfiles(for: [op])
-            }
+        }
+
+        if added {
+            scheduleNoteFlush()
         }
     }
 
     // MARK: - Batched Note Flushing
 
+    /// Maximum notes kept in memory. Older notes are dropped on flush.
+    private static let maxNotes = 800
+
     private func scheduleNoteFlush() {
         guard noteFlushTimer == nil else { return }
-        noteFlushTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+        noteFlushTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.flushNoteBuffer()
             }
@@ -595,25 +853,26 @@ class FeedService: ObservableObject {
         guard !noteBuffer.isEmpty else { return }
 
         let batch = noteBuffer
-        noteBuffer.removeAll()
+        noteBuffer.removeAll(keepingCapacity: true)
 
-        // If we have no notes yet, or if we're in the middle of a load/refresh (EOSE not reached),
-        // we allow all notes to be added immediately.
+        // During initial load, add everything at once then sort once
         if notes.isEmpty || isLoadingFeed {
             notes.append(contentsOf: batch)
             notes.sort { $0.createdAt > $1.createdAt }
+            // Cap to prevent memory bloat
+            if notes.count > Self.maxNotes {
+                notes.removeLast(notes.count - Self.maxNotes)
+            }
             return
         }
 
-        // UX: prevent "jumping" feed by buffering live updates that appear above the fold.
-        // We buffer any Kind 1/6/30023 that is newer than our current top note and not a reply.
+        // Live updates: buffer new top-level notes to prevent feed jumping
         let newestDate = notes.first?.createdAt ?? Date.distantPast
-        
+
         var toAdd: [FeedNote] = []
         var toPending: [FeedNote] = []
-        
+
         for note in batch {
-            // Only buffer top-level notes that would appear at the very top
             if note.createdAt > newestDate && !note.isReply {
                 toPending.append(note)
             } else {
@@ -624,10 +883,12 @@ class FeedService: ObservableObject {
         if !toAdd.isEmpty {
             notes.append(contentsOf: toAdd)
             notes.sort { $0.createdAt > $1.createdAt }
+            if notes.count > Self.maxNotes {
+                notes.removeLast(notes.count - Self.maxNotes)
+            }
         }
-        
+
         if !toPending.isEmpty {
-            // Merge into pending and deduplicate/sort
             let updatedPending = pendingNotes + toPending
             let uniqueMap = Dictionary(updatedPending.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             pendingNotes = uniqueMap.values.sorted { $0.createdAt > $1.createdAt }
