@@ -21,18 +21,18 @@ struct QuotedNoteView: View {
                     .foregroundColor(.secondary.opacity(0.7))
             }
             
-            Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs))
+            Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
                 .font(.system(size: 13, weight: .regular))
                 .foregroundColor(.secondary)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
         }
         .padding(10)
-        .background(Color.white.opacity(0.03))
+        .background(Color.platformTertiaryGroupedBackground)
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.havenPurple.opacity(0.2), lineWidth: 1)
+                .stroke(Color.havenPurple.opacity(0.15), lineWidth: 1)
         )
     }
     

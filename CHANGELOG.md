@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0 macOS / 1.0 iOS (Build 7)] - 2026-05-19
+
+### Added
+- **Accent Theme Customization**: Introduced `AppTheme` enum with 6 preset accent colors (Haven Purple, Ocean Blue, Emerald Green, Sunset Orange, Rose Pink, Monochrome Slate) and added a dedicated "Appearance" Settings Tab supporting full dynamic theme-switching across iOS and macOS.
+- **Universal iOS & iPad Layouts**: Integrated size-class checking (`@Environment(\.horizontalSizeClass)`) in the iOS ContentView to offer a professional sidebar-driven `iPadSidebarView` using `NavigationSplitView` alongside the standard tab-based layout for iPhone.
+- **Engagement Feed Stats**: Enhanced `FeedService` to track, parse, and aggregate real-time engagement statistics (likes, replies, reposts) in background flushes, updating notes efficiently with real-time feedback.
+- **Community Interaction Tabs (Likes & Zaps)**: Overhauled `ViewerView` with dedicated sub-tabs for "Likes" and "Zaps", enabling users to browse notes they liked/zapped, or see which of their own notes were zapped/liked, with beautiful stacked overlapping zapper/reactor avatars and satoshi totals.
+- **Interactive Zap Notifications**: Built a floating `ZapNotificationBanner` overlay featuring animated, state-aware status pills (`ZapPill`) showing real-time feedback (Zapping..., Zapped!, Zap failed) with a pulsing lightning bolt.
+- **Network Media Sync & Progress**: Enhanced the "Restore Media" wizard step to support segmented selection of either network sync from a remote Blossom server or local ZIP import, including a progress bar indicator during external Blossom media mirroring.
+
+### Changed
+- **Unified Feed Navigation**: Promoted the "Feed" view to the primary tab/view in both the Menu Bar and the iOS/iPad app, replacing the technical "Dashboard" tab as the central user workspace.
+- **On-the-Fly Feed Controls**: Added interactive dropdown selectors to switch FeedModes (e.g. Following vs Global) directly from the iOS Navigation Bar and the macOS Menu Bar.
+- **Smart Repost Fetching**: Added support for fetching parent/original note contents automatically for empty-content reposts.
+
 ## [2.4.0 macOS / 1.0 iOS (Build 6)] - 2026-05-19
 
 ### Stability

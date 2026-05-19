@@ -3,7 +3,8 @@ import SwiftUI
 struct MenuBarView: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject var relayManager: RelayProcessManager
-    @State private var selectedTab: Tab = .dashboard
+    @ObservedObject private var feedService = FeedService.shared
+    @State private var selectedTab: Tab = .feed
     #if os(macOS)
     @Environment(\.openSettings) var openSettings
     @Environment(\.openWindow) var openWindow
@@ -14,9 +15,8 @@ struct MenuBarView: View {
     @State private var statusPulse = false
     
     enum Tab {
-        case dashboard
         case feed
-        case viewer
+        case relay
     }
     
     var body: some View {
@@ -74,18 +74,35 @@ struct MenuBarView: View {
                 
                 // MARK: - Tabs
                 HStack(spacing: 8) {
-                    TabButton(icon: "gauge", title: "Dashboard", isSelected: selectedTab == .dashboard) {
-                        selectedTab = .dashboard
-                    }
-                    
-                    if isPoppedOut {
-                        TabButton(icon: "list.bullet.rectangle.portrait", title: "Feed", isSelected: selectedTab == .feed) {
-                            selectedTab = .feed
+                    Menu {
+                        ForEach(FeedMode.allCases, id: \.self) { mode in
+                            Button(action: {
+                                selectedTab = .feed
+                                feedService.switchMode(mode)
+                            }) {
+                                Label(mode.rawValue, systemImage: feedService.feedMode == mode ? "checkmark" : "")
+                            }
                         }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: feedService.feedMode == .global ? "globe" : "list.bullet.rectangle.portrait")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(feedService.feedMode.rawValue)
+                                .font(.system(size: 13, weight: .semibold))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(selectedTab == .feed ? Color.havenPurple.opacity(0.2) : Color.clear)
+                        .foregroundColor(selectedTab == .feed ? Color.havenPurple : .secondary)
+                        .cornerRadius(8)
                     }
-                    
-                    TabButton(icon: "doc.text.image", title: "Viewer", isSelected: selectedTab == .viewer) {
-                        selectedTab = .viewer
+                    .buttonStyle(.plain)
+
+                    TabButton(icon: "doc.text.image", title: "Relay", isSelected: selectedTab == .relay) {
+                        selectedTab = .relay
                     }
                 }
                 .padding(.horizontal)
@@ -100,17 +117,10 @@ struct MenuBarView: View {
                         .ignoresSafeArea()
                     
                     switch selectedTab {
-                    case .dashboard:
-                        DashboardView()
-                            .transition(.opacity)
                     case .feed:
-                        if isPoppedOut {
-                            FeedView()
-                                .transition(.opacity)
-                        } else {
-                            DashboardView() // Fallback
-                        }
-                    case .viewer:
+                        FeedView()
+                            .transition(.opacity)
+                    case .relay:
                         ViewerView()
                             .transition(.opacity)
                     }
@@ -361,7 +371,7 @@ struct MenuBarView: View {
         inactivityTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 60_000_000_000)
             if !Task.isCancelled {
-                selectedTab = .dashboard
+                selectedTab = .feed
             }
         }
     }

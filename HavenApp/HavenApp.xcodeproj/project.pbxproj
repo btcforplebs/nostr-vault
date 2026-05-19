@@ -114,6 +114,8 @@
 		AA0000000000000000000002 /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000003 /* NostrService.swift */; };
 		BB0000000000000000000001 /* MediaCacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000003 /* MediaCacheService.swift */; };
 		BB0000000000000000000002 /* MediaCacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000003 /* MediaCacheService.swift */; };
+		CC0000000000000000000001 /* ZapNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000003 /* ZapNotificationBanner.swift */; };
+		CC0000000000000000000002 /* ZapNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000003 /* ZapNotificationBanner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -142,6 +144,7 @@
 		6A0000000000000000000003 /* LogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStore.swift; sourceTree = "<group>"; };
 		AA0000000000000000000003 /* NostrService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrService.swift; sourceTree = "<group>"; };
 		BB0000000000000000000003 /* MediaCacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCacheService.swift; sourceTree = "<group>"; };
+		CC0000000000000000000003 /* ZapNotificationBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapNotificationBanner.swift; sourceTree = "<group>"; };
 		6C4DB7AE9CD6CD117019324D /* LightningAnimationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightningAnimationView.swift; sourceTree = "<group>"; };
 		70CE0E2EC47B06E218FF6548 /* LogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogsView.swift; sourceTree = "<group>"; };
 		7167339BB13F4557E0E0BB77 /* NIP04Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP04Service.swift; sourceTree = "<group>"; };
@@ -312,6 +315,7 @@
 			children = (
 				6C4DB7AE9CD6CD117019324D /* LightningAnimationView.swift */,
 				A0470608431CE649B6E55F7D /* QuotedNoteView.swift */,
+				CC0000000000000000000003 /* ZapNotificationBanner.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -542,6 +546,7 @@
 				BB0000000000000000000001 /* MediaCacheService.swift in Sources */,
 				F909E9664DAB54DA38575736 /* WelcomeWindowView.swift in Sources */,
 				30D8A68AB9D5370D2047AD1D /* ZapService.swift in Sources */,
+				CC0000000000000000000001 /* ZapNotificationBanner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -597,6 +602,7 @@
 				BB0000000000000000000002 /* MediaCacheService.swift in Sources */,
 				2A158B439B79BA956648F917 /* WelcomeWindowView.swift in Sources */,
 				4E9D41F92A23243785F106A0 /* ZapService.swift in Sources */,
+				CC0000000000000000000002 /* ZapNotificationBanner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -612,7 +618,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 525WQ48Y72;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -652,7 +658,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 525WQ48Y72;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -688,7 +694,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 525WQ48Y72;
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
@@ -720,7 +726,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 525WQ48Y72;
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (

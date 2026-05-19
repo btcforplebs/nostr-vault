@@ -171,7 +171,7 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         // Bypass cache for local relay Blossom URLs to avoid redundant storage and preserve MIME handling
         if isLocalURL(url) {
             do {
-                let (data, response) = try await URLSession.shared.data(from: url)
+                let (data, response) = try await TLSSkipSession.shared.data(from: url)
                 if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                     return data
                 }

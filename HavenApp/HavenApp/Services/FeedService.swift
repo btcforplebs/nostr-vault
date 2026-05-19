@@ -4,6 +4,13 @@ import SwiftUI
 
 // MARK: - Models
 
+/// Lightweight engagement counts per note, populated from relay data.
+struct NoteStats {
+    var replies: Int = 0
+    var reactions: Int = 0
+    var reposts: Int = 0
+}
+
 struct FeedNote: Identifiable {
     let id: String
     let pubkey: String
@@ -11,6 +18,7 @@ struct FeedNote: Identifiable {
     let createdAt: Date
     let tags: [[String]]
     let kind: Int
+    let repostedBy: String?
 
     // Cached at init to avoid recomputing on every SwiftUI render
     let isReply: Bool
@@ -19,13 +27,17 @@ struct FeedNote: Identifiable {
     let mediaURLs: [URL]
     let quotedEventIds: [String]
 
-    init(id: String, pubkey: String, content: String, createdAt: Date, tags: [[String]], kind: Int) {
+    /// The event ID of the original note referenced by a kind 6 repost (from e-tags).
+    let repostedEventId: String?
+
+    init(id: String, pubkey: String, content: String, createdAt: Date, tags: [[String]], kind: Int, repostedBy: String? = nil) {
         self.id = id
         self.pubkey = pubkey
         self.content = content
         self.createdAt = createdAt
         self.tags = tags
         self.kind = kind
+        self.repostedBy = repostedBy
 
         // Cache tag-derived properties
         let eTags = tags.filter { $0.count >= 2 && $0[0] == "e" }
@@ -33,9 +45,13 @@ struct FeedNote: Identifiable {
             guard tag.count >= 4 else { return true }
             return tag[3] != "mention"
         }
-        self.isReply = !nonMentionETags.isEmpty
-        self.replyToPubkey = tags.first { $0.count >= 2 && $0[0] == "p" }?[1]
-        self.parentEventId = tags.last { $0.count >= 2 && $0[0] == "e" }?[1]
+        // Kind 6 reposts have e-tags but are not replies
+        self.isReply = kind != 6 && !nonMentionETags.isEmpty
+        self.replyToPubkey = kind != 6 ? tags.first { $0.count >= 2 && $0[0] == "p" }?[1] : nil
+        self.parentEventId = kind != 6 ? tags.last { $0.count >= 2 && $0[0] == "e" }?[1] : nil
+
+        // For kind 6 reposts, capture the referenced event ID
+        self.repostedEventId = kind == 6 ? eTags.first?[1] : nil
 
         // Cache regex-derived properties (expensive — only compute once)
         self.mediaURLs = Self.parseMediaURLs(from: content)
@@ -118,28 +134,60 @@ struct FeedNote: Identifiable {
 final class BackgroundAccumulator: @unchecked Sendable {
     var notes: [FeedNote] = []
     var profiles: [String] = []
-    var likes: [String] = []
+    /// Reaction events: (target note ID, reactor pubkey). Used for both self-like
+    /// detection and per-note reaction counting.
+    var reactionEvents: [(targetId: String, pubkey: String)] = []
+    /// Parent note IDs that received a reply (from kind 1 events with e-tags).
+    var replyTargets: [String] = []
+    /// Note IDs that were reposted (from kind 6 events).
+    var repostTargets: [String] = []
     var flushScheduled = false
+
+    /// Dedup set for engagement events (reactions, etc.) to avoid double-counting
+    /// from multiple relays. NOT drained — persists across flushes.
+    var seenEngagementIds = Set<String>()
+    private static let maxEngagementIds = 20_000
 
     static let flushInterval: TimeInterval = 0.5
 
     struct Snapshot {
         let notes: [FeedNote]
         let profiles: [String]
-        let likes: [String]
+        let reactionEvents: [(targetId: String, pubkey: String)]
+        let replyTargets: [String]
+        let repostTargets: [String]
     }
 
     func drain() -> Snapshot {
-        let snap = Snapshot(notes: notes, profiles: profiles, likes: likes)
+        let snap = Snapshot(
+            notes: notes,
+            profiles: profiles,
+            reactionEvents: reactionEvents,
+            replyTargets: replyTargets,
+            repostTargets: repostTargets
+        )
         notes.removeAll(keepingCapacity: true)
         profiles.removeAll(keepingCapacity: true)
-        likes.removeAll(keepingCapacity: true)
+        reactionEvents.removeAll(keepingCapacity: true)
+        replyTargets.removeAll(keepingCapacity: true)
+        repostTargets.removeAll(keepingCapacity: true)
         flushScheduled = false
+
+        // Cap dedup set to prevent unbounded growth
+        if seenEngagementIds.count > Self.maxEngagementIds {
+            seenEngagementIds.removeAll(keepingCapacity: true)
+        }
         return snap
     }
 }
 
 // MARK: - FeedService
+
+/// Feed mode: following (contacts only) or global (all notes from relays).
+enum FeedMode: String, CaseIterable {
+    case following = "Following"
+    case global = "Global"
+}
 
 /// Builds a following feed by querying BOTH the local Haven relay and
 /// well-known public Nostr relays in parallel.
@@ -150,6 +198,7 @@ final class BackgroundAccumulator: @unchecked Sendable {
 class FeedService: ObservableObject {
     static let shared = FeedService()
 
+    @Published var feedMode: FeedMode = .following
     @Published var notes: [FeedNote] = []
     @Published var followedPubkeys: [String] = []
     @Published var isLoadingContacts = false
@@ -170,7 +219,9 @@ class FeedService: ObservableObject {
     @Published var newNoteCount: Int = 0
     @Published var pendingNotes: [FeedNote] = []
     @Published var likedEventIds: Set<String> = []
-    @Published var zappedEventIds: Set<String> = []
+    @Published var zappedEventIds: [String: Int] = [:]
+    /// Per-note engagement counts (replies, reactions, reposts) from relay data.
+    @Published var noteStats: [String: NoteStats] = [:]
 
     // Preserve the original kind 3 content (relay hints) to avoid wiping it on follow/unfollow
     private var contactListContent: String = ""
@@ -272,7 +323,25 @@ class FeedService: ObservableObject {
 
     private struct InteractionState: Codable {
         let likedEventIds: Set<String>
-        let zappedEventIds: Set<String>
+        let zappedEventIds: [String: Int]
+
+        init(likedEventIds: Set<String>, zappedEventIds: [String: Int]) {
+            self.likedEventIds = likedEventIds
+            self.zappedEventIds = zappedEventIds
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            likedEventIds = try container.decode(Set<String>.self, forKey: .likedEventIds)
+            // Migrate from old Set<String> format if needed
+            if let dict = try? container.decode([String: Int].self, forKey: .zappedEventIds) {
+                zappedEventIds = dict
+            } else if let set = try? container.decode(Set<String>.self, forKey: .zappedEventIds) {
+                zappedEventIds = Dictionary(uniqueKeysWithValues: set.map { ($0, 0) })
+            } else {
+                zappedEventIds = [:]
+            }
+        }
     }
 
     // MARK: - Public API
@@ -292,6 +361,29 @@ class FeedService: ObservableObject {
         }
     }
 
+
+    func switchMode(_ mode: FeedMode) {
+        guard mode != feedMode else { return }
+        feedMode = mode
+        notes.removeAll()
+        pendingNotes.removeAll()
+        noteBuffer.removeAll()
+        seenIds.removeAll()
+        noteStats.removeAll()
+        newNoteCount = 0
+        newSinceLastView = Date()
+        // Disconnect existing clients before re-subscribing
+        feedClients.values.forEach { $0.disconnect() }
+        feedClients.removeAll()
+        cancellables.removeAll()
+
+        if mode == .global {
+            // Global mode doesn't need contacts — subscribe directly
+            subscribeToAllRelays()
+        } else {
+            refresh()
+        }
+    }
 
     func markViewed() {
         newNoteCount = 0
@@ -333,7 +425,7 @@ class FeedService: ObservableObject {
     func loadMore() {
         guard !isLoadingFeed, let oldest = notes.last?.createdAt else { return }
         let until = Int64(oldest.timeIntervalSince1970) - 1
-        guard !followedPubkeys.isEmpty else { return }
+        guard feedMode == .global || !followedPubkeys.isEmpty else { return }
 
         isLoadingFeed = true
         eoseCount = 0
@@ -527,7 +619,7 @@ class FeedService: ObservableObject {
     private var feedLoadingTimeout: Timer?
 
     private func subscribeToAllRelays() {
-        guard !followedPubkeys.isEmpty else {
+        guard feedMode == .global || !followedPubkeys.isEmpty else {
             connectionStatus = "Follow someone on Nostr to see their posts here"
             return
         }
@@ -645,22 +737,28 @@ class FeedService: ObservableObject {
 
     private func sendFeedSubscription(client: WebSocketClient, label: String, until: Int64? = nil) {
         let since = Int64(Date().timeIntervalSince1970) - (30 * 24 * 3600) // last 30 days
+        let isGlobal = feedMode == .global
         var filter: [String: Any] = [
             "kinds": [1, 6, 30023],
-            "authors": followedPubkeys,
             "since": since,
-            "limit": 500
+            "limit": isGlobal ? 200 : 500
         ]
+        if !isGlobal {
+            filter["authors"] = followedPubkeys
+        }
         if let until = until { filter["until"] = until }
         let subId = "feed-\(label.suffix(8).filter { $0.isLetter || $0.isNumber })"
-        
-        // Filter 1: Notes from people we follow
+
+        // Filter 1: Notes (from followed authors in following mode, or anyone in global mode)
         let req = ["REQ", subId, filter] as [Any]
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             client.send(text: str)
         }
-        
+
+        // User-specific filters only apply in following mode
+        guard !isGlobal else { return }
+
         let ownerHex = NostrService.shared.ownerHexPubkey
         if !ownerHex.isEmpty {
             // Filter 2: Mentions (#p) of the owner (from anyone)
@@ -672,19 +770,48 @@ class FeedService: ObservableObject {
                let mStr = String(data: mData, encoding: .utf8) {
                 client.send(text: mStr)
             }
-        
-            var likesFilter: [String: Any] = [
 
+            // Reactions from followed users (includes self) — used for both
+            // self-like detection and per-note reaction counts.
+            var reactionsFilter: [String: Any] = [
                 "kinds": [7],
+                "authors": followedPubkeys,
+                "since": since,
+                "limit": 2000
+            ]
+            if let until = until { reactionsFilter["until"] = until }
+            let rxReq = ["REQ", "rx-\(subId)", reactionsFilter] as [Any]
+            if let rxData = try? JSONSerialization.data(withJSONObject: rxReq),
+               let rxStr = String(data: rxData, encoding: .utf8) {
+                client.send(text: rxStr)
+            }
+
+            // Incoming zap receipts: Kind 9735 where #p = owner (zaps received on my notes)
+            var incomingZapsFilter: [String: Any] = [
+                "kinds": [9735],
+                "#p": [ownerHex],
+                "since": since,
+                "limit": 500
+            ]
+            if let until = until { incomingZapsFilter["until"] = until }
+            let inZapsReq = ["REQ", "zaps-in-\(subId)", incomingZapsFilter] as [Any]
+            if let data = try? JSONSerialization.data(withJSONObject: inZapsReq),
+               let str = String(data: data, encoding: .utf8) {
+                client.send(text: str)
+            }
+
+            // Outgoing zap requests: Kind 9734 authored by owner (zaps I sent)
+            var outgoingZapsFilter: [String: Any] = [
+                "kinds": [9734],
                 "authors": [ownerHex],
                 "since": since,
                 "limit": 500
             ]
-            if let until = until { likesFilter["until"] = until }
-            let likesReq = ["REQ", "likes-\(subId)", likesFilter] as [Any]
-            if let likesData = try? JSONSerialization.data(withJSONObject: likesReq),
-               let likesStr = String(data: likesData, encoding: .utf8) {
-                client.send(text: likesStr)
+            if let until = until { outgoingZapsFilter["until"] = until }
+            let outZapsReq = ["REQ", "zaps-out-\(subId)", outgoingZapsFilter] as [Any]
+            if let data = try? JSONSerialization.data(withJSONObject: outZapsReq),
+               let str = String(data: data, encoding: .utf8) {
+                client.send(text: str)
             }
         }
     }
@@ -721,13 +848,30 @@ class FeedService: ObservableObject {
               let tags      = ev["tags"]        as? [[String]]
         else { return }
 
-        // Handle Reactions (Kind 7) — just accumulate the target ID
+        // Handle Reactions (Kind 7) — track for self-like detection + per-note counting
         if kind == 7 {
             if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
                 let acc = self.bgAccumulator
+                let reactorPubkey = pubkey
+                let eventId = id
                 processingQueue.async { [weak self] in
-                    acc.likes.append(targetId)
+                    // Deduplicate reactions from multiple relays
+                    guard !acc.seenEngagementIds.contains(eventId) else { return }
+                    acc.seenEngagementIds.insert(eventId)
+                    acc.reactionEvents.append((targetId: targetId, pubkey: reactorPubkey))
                     self?.scheduleBackgroundFlush()
+                }
+            }
+            return
+        }
+
+        // Handle Zap Receipts (Kind 9735) and Zap Requests (Kind 9734)
+        // Forward to NostrService so ViewerView can access them via nostrService.events
+        if kind == 9735 || kind == 9734 {
+            if let evData = try? JSONSerialization.data(withJSONObject: ev),
+               let event = try? JSONDecoder().decode(NostrEvent.self, from: evData) {
+                DispatchQueue.main.async {
+                    NostrService.shared.injectEvent(event)
                 }
             }
             return
@@ -735,6 +879,7 @@ class FeedService: ObservableObject {
 
         var parsedContent = content
         var originalPubkey: String? = nil
+        var repostNeedsFetch: String? = nil
 
         if kind == 6 {
             if let data = content.data(using: .utf8),
@@ -743,7 +888,11 @@ class FeedService: ObservableObject {
                 parsedContent = innerContent
                 originalPubkey = inner["pubkey"] as? String
             } else {
+                // Empty-content repost — extract the referenced event ID from e-tags
                 parsedContent = ""
+                if let refId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
+                    repostNeedsFetch = refId
+                }
             }
         }
 
@@ -754,15 +903,40 @@ class FeedService: ObservableObject {
             content: parsedContent,
             createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
             tags: tags,
-            kind: kind
+            kind: kind,
+            repostedBy: kind == 6 ? pubkey : nil
         )
 
         // Accumulate on processing queue — NO per-event main thread dispatch
         let acc = self.bgAccumulator
+        let fetchId = repostNeedsFetch
         processingQueue.async { [weak self] in
             acc.notes.append(note)
             acc.profiles.append(pubkey)
             if let op = originalPubkey { acc.profiles.append(op) }
+
+            // Track engagement: replies (kind 1 with parent) and reposts (kind 6)
+            if kind == 1 {
+                let eTags = tags.filter { $0.count >= 2 && $0[0] == "e" }
+                let nonMentionETags = eTags.filter { tag in
+                    guard tag.count >= 4 else { return true }
+                    return tag[3] != "mention"
+                }
+                if let parentId = nonMentionETags.last?[1] {
+                    acc.replyTargets.append(parentId)
+                }
+            } else if kind == 6 {
+                if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
+                    acc.repostTargets.append(targetId)
+                }
+            }
+
+            // Trigger fetch of the original note for empty-content reposts
+            if let refId = fetchId {
+                DispatchQueue.main.async {
+                    self?.fetchMissingNote(id: refId)
+                }
+            }
             self?.scheduleBackgroundFlush()
         }
     }
@@ -784,7 +958,7 @@ class FeedService: ObservableObject {
         dispatchPrecondition(condition: .onQueue(processingQueue))
         let snap = bgAccumulator.drain()
 
-        guard !snap.notes.isEmpty || !snap.likes.isEmpty else { return }
+        guard !snap.notes.isEmpty || !snap.reactionEvents.isEmpty || !snap.replyTargets.isEmpty || !snap.repostTargets.isEmpty else { return }
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -817,15 +991,41 @@ class FeedService: ObservableObject {
             NostrService.shared.fetchMissingProfiles(for: Array(uniquePubkeys))
         }
 
-        if !snap.likes.isEmpty {
+        // Process reaction events: self-like detection + per-note counting
+        let hasEngagement = !snap.reactionEvents.isEmpty || !snap.replyTargets.isEmpty || !snap.repostTargets.isEmpty
+        if hasEngagement {
             let ownerHex = NostrService.shared.ownerHexPubkey
-            if !ownerHex.isEmpty {
-                let before = likedEventIds.count
-                likedEventIds.formUnion(snap.likes)
-                if likedEventIds.count > before {
-                    saveInteractionState()
+
+            // Self-likes: reactions authored by the owner
+            if !ownerHex.isEmpty && !snap.reactionEvents.isEmpty {
+                let selfLikes = snap.reactionEvents.compactMap { $0.pubkey == ownerHex ? $0.targetId : nil }
+                if !selfLikes.isEmpty {
+                    let before = likedEventIds.count
+                    likedEventIds.formUnion(selfLikes)
+                    if likedEventIds.count > before {
+                        saveInteractionState()
+                    }
                 }
             }
+
+            // Merge engagement counts (single dictionary assignment for one @Published update)
+            var updated = noteStats
+            for (targetId, _) in snap.reactionEvents {
+                var s = updated[targetId] ?? NoteStats()
+                s.reactions += 1
+                updated[targetId] = s
+            }
+            for parentId in snap.replyTargets {
+                var s = updated[parentId] ?? NoteStats()
+                s.replies += 1
+                updated[parentId] = s
+            }
+            for targetId in snap.repostTargets {
+                var s = updated[targetId] ?? NoteStats()
+                s.reposts += 1
+                updated[targetId] = s
+            }
+            noteStats = updated
         }
 
         if added {

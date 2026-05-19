@@ -1579,7 +1579,7 @@ class RelayProcessManager: ObservableObject {
         request.timeoutInterval = 3
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await TLSSkipSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse,
                httpResponse.statusCode == 200,
                let ct = httpResponse.value(forHTTPHeaderField: "Content-Type") {

@@ -18,6 +18,7 @@ class MirrorService: ObservableObject {
 
     @Published var state: MirrorState = .idle
     @Published var progress: (completed: Int, total: Int)?
+    @Published var statusText: String = ""
     @Published var lastResult: String = ""
     @Published var lastMirrorDate: Date?
 
@@ -29,6 +30,7 @@ class MirrorService: ObservableObject {
 
         state = .mirroring
         progress = nil
+        statusText = "Starting..."
 
         Task {
             let service = BlossomService(configService: configService, nostrService: nostrService)
@@ -36,19 +38,24 @@ class MirrorService: ObservableObject {
 
             // 1. Mirror from configured Blossom mirrors (BUD-04 /list endpoint)
             if !configService.config.blossomMirrors.isEmpty {
+                statusText = "Fetching blob list from mirrors..."
                 let count = await service.mirrorAllFromExternal { completed, total in
                     Task { @MainActor in
                         self.progress = (completed, total)
+                        self.statusText = "Mirroring from servers: \(completed)/\(total)"
                     }
                 }
                 totalCount += count
             }
 
             // 2. Mirror from note media URLs (handles any server) - includes all historical notes from local relay
+            statusText = "Scanning notes for media..."
             let noteMedia = await self.fetchAllOwnerMedia(configService: configService, nostrService: nostrService)
+            statusText = "Mirroring media from notes (\(noteMedia.count) found)..."
             let noteCount = await service.mirrorFromNoteMedia(noteMedia) { completed, total in
                 Task { @MainActor in
                     self.progress = (completed, total)
+                    self.statusText = "Mirroring from notes: \(completed)/\(total)"
                 }
             }
             totalCount += noteCount
@@ -56,6 +63,7 @@ class MirrorService: ObservableObject {
             // Update final state
             state = .complete
             progress = nil
+            statusText = ""
             lastMirrorDate = Date()
             lastResult = totalCount > 0 ? "Mirrored \(totalCount) files" : "All media already mirrored"
 

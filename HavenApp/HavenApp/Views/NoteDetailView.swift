@@ -19,24 +19,30 @@ struct NoteDetailView: View {
     @State private var showingMediaUrl: IdentifiableURL?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Thread History (Parents)
-                if !parentNotes.isEmpty {
-                    threadSection
+        ZStack(alignment: .top) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Thread History (Parents)
+                    if !parentNotes.isEmpty {
+                        threadSection
+                        Divider()
+                    }
+
+                    // Main Note
+                    mainNoteSection
+
                     Divider()
+
+                    // Replies Section
+                    repliesSection
                 }
-
-                // Main Note
-                mainNoteSection
-
-                Divider()
-
-                // Replies Section
-                repliesSection
+                .padding()
             }
-            .padding()
+
+            ZapNotificationBanner()
+                .zIndex(1)
         }
+        .background(Color.platformSecondaryGroupedBackground)
         .refreshable {
             #if os(iOS)
             MacRelaySyncService.shared.syncIfConfigured()
@@ -97,6 +103,17 @@ struct NoteDetailView: View {
     private var mainNoteSection: some View {
         let profile = nostrService.profiles[note.pubkey]
         return VStack(alignment: .leading, spacing: 12) {
+            // Repost indicator
+            if let reposter = note.repostedBy {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.2.squarepath")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("\(nostrService.profiles[reposter]?.bestName ?? String(reposter.prefix(8))) reposted")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .foregroundColor(.green.opacity(0.7))
+            }
+
             HStack(spacing: 12) {
                 AvatarView(url: profile?.pictureURL, pubkey: note.pubkey)
                     .onTapGesture { showingProfilePubkey = note.pubkey }
@@ -111,37 +128,62 @@ struct NoteDetailView: View {
                 }
                 Spacer()
             }
-            
-            Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
-                .font(.body)
-                .textSelection(.enabled)
-                .environment(\.openURL, OpenURLAction { url in
-                    if url.scheme == "nostr" {
-                        let identifier = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
-                        if identifier.hasPrefix("npub1") || identifier.hasPrefix("nprofile1") {
-                            self.showingProfilePubkey = identifier
-                            return .handled
-                        } else if identifier.hasPrefix("note1") || identifier.hasPrefix("nevent1") {
-                            self.showingNoteId = identifier
-                            return .handled
+
+            // Content — for empty-content reposts, show the referenced note
+            if note.kind == 6 && note.content.isEmpty, let refId = note.repostedEventId,
+               let original = feedService.notes.first(where: { $0.id == refId }) {
+                Text(NostrContentFormatter.format(original.content, mediaURLs: original.mediaURLs, hideQuotes: true))
+                    .font(.body)
+                    .textSelection(.enabled)
+
+                if !original.mediaURLs.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(original.mediaURLs, id: \.absoluteString) { url in
+                            Button(action: {
+                                showingMediaUrl = IdentifiableURL(url: url)
+                            }) {
+                                FeedMediaThumbnail(url: url)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 300)
+                                    .clipped()
+                                    .cornerRadius(12)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    return .systemAction
-                })
-            
-            if !note.mediaURLs.isEmpty {
-                VStack(spacing: 8) {
-                    ForEach(note.mediaURLs, id: \.absoluteString) { url in
-                        Button(action: {
-                            showingMediaUrl = IdentifiableURL(url: url)
-                        }) {
-                            FeedMediaThumbnail(url: url)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 300)
-                                .clipped()
-                                .cornerRadius(12)
+                }
+            } else {
+                Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
+                    .font(.body)
+                    .textSelection(.enabled)
+                    .environment(\.openURL, OpenURLAction { url in
+                        if url.scheme == "nostr" {
+                            let identifier = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
+                            if identifier.hasPrefix("npub1") || identifier.hasPrefix("nprofile1") {
+                                self.showingProfilePubkey = identifier
+                                return .handled
+                            } else if identifier.hasPrefix("note1") || identifier.hasPrefix("nevent1") {
+                                self.showingNoteId = identifier
+                                return .handled
+                            }
                         }
-                        .buttonStyle(.plain)
+                        return .systemAction
+                    })
+
+                if !note.mediaURLs.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(note.mediaURLs, id: \.absoluteString) { url in
+                            Button(action: {
+                                showingMediaUrl = IdentifiableURL(url: url)
+                            }) {
+                                FeedMediaThumbnail(url: url)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 300)
+                                    .clipped()
+                                    .cornerRadius(12)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
@@ -170,26 +212,27 @@ struct NoteDetailView: View {
             }
             
             HStack(spacing: 24) {
-                actionButton(icon: "message", count: nil) {
+                let stats = feedService.noteStats[note.id]
+                actionButton(icon: "message", count: stats?.replies) {
                     showingReplyCompose = true
                 }
-                actionButton(icon: "arrow.2.squarepath", count: nil) {
+                actionButton(icon: "arrow.2.squarepath", count: stats?.reposts) {
                     repostNote()
                 }
-                
+
                 let isLiked = feedService.likedEventIds.contains(note.id)
                 actionButton(
                     icon: isLiked ? "heart.fill" : "heart",
                     color: isLiked ? .red : .secondary,
-                    count: nil
+                    count: stats?.reactions
                 ) {
                     likeNote()
                 }
                 .scaleEffect(isLiked ? 1.2 : 1.0)
                 .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isLiked)
-                
+
                 if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
-                    let isZapped = feedService.zappedEventIds.contains(note.id)
+                    let isZapped = feedService.zappedEventIds[note.id] != nil
                     actionButton(
                         icon: isZapped ? "bolt.fill" : "bolt",
                         color: isZapped ? .orange : .secondary,
@@ -269,8 +312,9 @@ struct NoteDetailView: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                if let count = count {
+                if let count = count, count > 0 {
                     Text("\(count)")
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 }
             }
             .font(.subheadline)
@@ -331,7 +375,7 @@ struct NoteDetailView: View {
             let preimage = try await NWCService.payInvoice(bolt11: invoice)
             print("Successfully zapped! Preimage: \(preimage)")
             _ = await MainActor.run {
-                feedService.zappedEventIds.insert(note.id)
+                feedService.zappedEventIds[note.id] = zapAmountSats
                 feedService.saveInteractionState()
             }
         } catch {

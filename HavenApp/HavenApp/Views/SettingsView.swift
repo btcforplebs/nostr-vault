@@ -34,6 +34,7 @@ struct SettingsView: View {
     enum SettingsTab: String, CaseIterable, Identifiable {
         case identity = "Identity"
         case accessControl = "Access Control"
+        case appearance = "Appearance"
         case feed = "Feed Relays"
         case importNotes = "Import"
         case backup = "Backup"
@@ -48,6 +49,7 @@ struct SettingsView: View {
             switch self {
             case .identity: return "person.badge.key"
             case .accessControl: return "shield.lefthalf.filled"
+            case .appearance: return "paintpalette"
             case .feed: return "newspaper"
             case .importNotes: return "square.and.arrow.down"
             case .backup: return "externaldrive.fill"
@@ -112,6 +114,10 @@ struct SettingsView: View {
             Section("Profile") {
                 tabLink(.identity)
                 tabLink(.accessControl)
+            }
+            
+            Section("Appearance") {
+                tabLink(.appearance)
             }
             
             Section("Relay Configuration") {
@@ -200,6 +206,7 @@ struct SettingsView: View {
         switch tab {
         case .identity: return .blue
         case .accessControl: return .green
+        case .appearance: return .purple
         case .feed: return .pink
         case .importNotes: return .orange
         case .backup: return .indigo
@@ -227,6 +234,7 @@ struct SettingsView: View {
             switch tab {
             case .identity: IdentitySettingsView()
             case .accessControl: AccessControlSettingsView()
+            case .appearance: AppearanceSettingsView()
             case .feed: FeedSettingsView()
             case .importNotes: ImportSettingsView()
             case .backup: BackupSettingsView()
@@ -1781,6 +1789,129 @@ struct WalletSettingsView: View {
         }
     }
 }
+
+struct AppearanceSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    
+    var body: some View {
+        Form {
+            Section {
+                #if os(macOS)
+                macOSGrid
+                #else
+                iOSList
+                #endif
+            } header: {
+                Text("Accent Theme")
+            } footer: {
+                Text("Choose an accent color for the Haven interface. This will change the primary color and gradients across the application.")
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+    
+    #if os(macOS)
+    private var macOSGrid: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 16)], spacing: 16) {
+            ForEach(AppTheme.allCases) { theme in
+                ThemeCard(theme: theme, isSelected: configService.config.themeColor == theme.rawValue) {
+                    configService.config.themeColor = theme.rawValue
+                    configService.save()
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+    #endif
+    
+    private var iOSList: some View {
+        ForEach(AppTheme.allCases) { theme in
+            Button(action: {
+                configService.config.themeColor = theme.rawValue
+                configService.save()
+            }) {
+                HStack {
+                    Circle()
+                        .fill(LinearGradient(
+                            colors: [theme.primaryColor, theme.lightColor],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 24, height: 24)
+                        .overlay(Circle().stroke(Color.primary.opacity(0.1), lineWidth: 1))
+                    
+                    Text(theme.displayName)
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    if configService.config.themeColor == theme.rawValue {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(theme.primaryColor)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+#if os(macOS)
+struct ThemeCard: View {
+    let theme: AppTheme
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(
+                            colors: [theme.primaryColor, theme.lightColor],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 48, height: 48)
+                        .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                        .shadow(color: theme.primaryColor.opacity(isSelected ? 0.4 : 0.1), radius: 6, x: 0, y: 3)
+                    
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                }
+                
+                Text(theme.displayName)
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .bold : .regular)
+                    .foregroundColor(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? Color.primary.opacity(0.05) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? theme.primaryColor : Color.gray.opacity(0.2), lineWidth: isSelected ? 2 : 1)
+            )
+            .scaleEffect(isHovered ? 1.02 : 1.0)
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+#endif
 
 // RelayListEditor and LogsView moved to separate files
 

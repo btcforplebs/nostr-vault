@@ -809,7 +809,7 @@ struct SetupImportStep: View {
                     .cornerRadius(12)
 
                 } else {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
                         DatePicker("Start Date", selection: Binding(
                             get: {
                                 let formatter = DateFormatter()
@@ -822,15 +822,15 @@ struct SetupImportStep: View {
                                 configService.config.importStartDate = formatter.string(from: $0)
                             }
                         ), displayedComponents: .date)
-                        .font(.body)
+                        .font(.subheadline)
 
                         Divider()
 
                         Text("Seed Relays")
-                            .font(.headline)
+                            .font(.subheadline.bold())
 
                         RelayListEditor(relays: $configService.config.importSeedRelays)
-                            .frame(height: 140)
+                            .frame(minHeight: 100, maxHeight: 140)
                             .background(Color.platformControlBackground)
                             .cornerRadius(8)
                             .overlay(
@@ -839,7 +839,7 @@ struct SetupImportStep: View {
                             )
                             .clipped()
                     }
-                    .padding()
+                    .padding(14)
                     .background(Color.platformControlBackground)
                     .cornerRadius(8)
 
@@ -850,7 +850,7 @@ struct SetupImportStep: View {
                     }) {
                         Label("Start Import", systemImage: "arrow.down.circle.fill")
                             .font(.headline)
-                            .padding()
+                            .padding(.vertical, 12)
                             .frame(maxWidth: .infinity)
                             .background(Color.havenPurple)
                             .foregroundColor(.white)
@@ -859,7 +859,7 @@ struct SetupImportStep: View {
                     .buttonStyle(.plain)
                 }
             }
-            .frame(maxWidth: 350)
+            .frame(maxWidth: 450)
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 10)
             .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.2), value: appeared)
@@ -1074,13 +1074,20 @@ struct SetupRestoreNotesStep: View {
 struct SetupRestoreMediaStep: View {
     @Binding var currentStep: Int
     @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var nostrService: NostrService
 
     @State private var appeared = false
+    @State private var importMethod = 0 // 0 = Network Sync, 1 = Local Import
+    @State private var blossomURL = "https://blossom.primal.net"
     @State private var showingFileImporter = false
     @State private var isRestoring = false
     @State private var restoreCompleted = false
     @State private var restoreError: String?
     @State private var showRestoreError = false
+
+    // Network sync progress state
+    @State private var progressMessage = ""
+    @State private var progressPercentage: Double = 0.0
 
     var body: some View {
         VStack(spacing: 20) {
@@ -1097,7 +1104,7 @@ struct SetupRestoreMediaStep: View {
                 .offset(y: appeared ? 0 : 12)
                 .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.1), value: appeared)
 
-            Text("Restore your images and videos from a Blossom backup")
+            Text("Bring your existing images and videos into your Haven relay")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -1105,14 +1112,22 @@ struct SetupRestoreMediaStep: View {
                 .offset(y: appeared ? 0 : 12)
                 .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.15), value: appeared)
 
-            VStack(spacing: 12) {
+            VStack(spacing: 16) {
                 if isRestoring {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Importing media...")
+                    VStack(spacing: 12) {
+                        if progressPercentage > 0.0 {
+                            ProgressView(value: progressPercentage)
+                                .progressViewStyle(.linear)
+                                .tint(.havenPurple)
+                        } else {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+
+                        Text(progressMessage.isEmpty ? "Importing media..." : progressMessage)
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
@@ -1123,7 +1138,7 @@ struct SetupRestoreMediaStep: View {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
                             .font(.title2)
-                        Text("Media restored successfully!")
+                        Text(progressMessage.isEmpty ? "Media restored successfully!" : progressMessage)
                             .font(.subheadline.weight(.medium))
                     }
                     .padding()
@@ -1148,28 +1163,74 @@ struct SetupRestoreMediaStep: View {
                     }
                     .buttonStyle(.plain)
                 } else {
+                    Picker("Import Method", selection: $importMethod) {
+                        Text("Network Sync").tag(0)
+                        Text("Local Import").tag(1)
+                    }
+                    .pickerStyle(.segmented)
+
+                    if importMethod == 0 {
+                        // Network Sync
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Blossom Server URL")
+                                .font(.headline)
+                            Text("Enter your current Blossom server to fetch and mirror your media files.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            TextField("https://...", text: $blossomURL)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        Button(action: {
+                            startNetworkSync()
+                        }) {
+                            Label("Start Network Sync", systemImage: "arrow.triangle.2.circlepath")
+                                .font(.headline)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(Color.havenPurple)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        // Local Import
+                        Button(action: {
+                            #if os(macOS)
+                            NSApp.activate(ignoringOtherApps: true)
+                            #endif
+                            showingFileImporter = true
+                        }) {
+                            Label("Choose Media Archive", systemImage: "folder")
+                                .font(.headline)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(Color.havenPurple)
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
+
+                        Text("Select a Blossom backup (.zip) to restore your media files")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    // Allow skipping media restore entirely
                     Button(action: {
-                        #if os(macOS)
-                        NSApp.activate(ignoringOtherApps: true)
-                        #endif
-                        showingFileImporter = true
+                        currentStep += 1
                     }) {
-                        Label("Choose Media Archive", systemImage: "folder")
-                            .font(.headline)
-                            .padding()
-                            .frame(maxWidth: .infinity)
-                            .background(Color.havenPurple)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
+                        Text("Skip Media Restore")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
-
-                    Text("Select a Blossom backup (.zip) to restore your media files")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    .padding(.top, 8)
                 }
             }
-            .frame(maxWidth: 350)
+            .frame(maxWidth: 450)
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 10)
             .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.2), value: appeared)
@@ -1195,6 +1256,40 @@ struct SetupRestoreMediaStep: View {
         }, message: {
             Text(restoreError ?? "Unknown error")
         })
+    }
+
+    private func startNetworkSync() {
+        isRestoring = true
+        progressMessage = "Initializing connection..."
+        progressPercentage = 0.0
+
+        let trimmedURL = blossomURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURL.isEmpty, let _ = URL(string: trimmedURL) else {
+            self.restoreError = "Invalid Blossom server URL."
+            self.showRestoreError = true
+            self.isRestoring = false
+            return
+        }
+
+        // Save the blossom mirror in config so BlossomService can read it
+        if !configService.config.blossomMirrors.contains(trimmedURL) {
+            configService.config.blossomMirrors.append(trimmedURL)
+            configService.save()
+        }
+
+        Task {
+            let blossomService = BlossomService(configService: configService, nostrService: nostrService)
+
+            // Trigger sync
+            let mirroredCount = await blossomService.mirrorAllFromExternal { completed, total in
+                self.progressPercentage = total > 0 ? Double(completed) / Double(total) : 0.0
+                self.progressMessage = "Mirrored \(completed) of \(total) files..."
+            }
+
+            self.isRestoring = false
+            self.restoreCompleted = true
+            self.progressMessage = "Sync completed! Mirrored \(mirroredCount) files."
+        }
     }
 
     private func restoreMedia(from url: URL) {

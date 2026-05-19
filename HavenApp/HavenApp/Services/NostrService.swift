@@ -994,6 +994,70 @@ class NostrService: ObservableObject {
         eventUpdateSubject.send()
     }
 
+    /// Inject an externally-received event into the shared events array.
+    /// Used by FeedService to forward zap receipts (Kind 9735) so the Viewer can display them.
+    func injectEvent(_ event: NostrEvent) {
+        guard !seenEventIds.contains(event.id) else { return }
+        seenEventIds.insert(event.id)
+        bufferLock.lock()
+        eventBuffer.append((event, []))
+        bufferLock.unlock()
+        scheduleBufferFlush()
+    }
+
+    /// Fetch specific events by their IDs from the given relays.
+    /// Results are merged into the shared `events` array via the normal processing pipeline.
+    func fetchNotesByIds(_ ids: [String], from relayURLs: [URL]) {
+        guard !ids.isEmpty else { return }
+
+        let filter: [String: Any] = ["ids": ids]
+
+        for url in relayURLs {
+            let urlString = url.absoluteString
+            if isLocalRelay(url) && !isLocalRelayReady { continue }
+
+            // Reuse existing connected client if available
+            if let existing = clients[urlString], existing.connectionState == .connected {
+                let subId = "byid-\(UUID().uuidString.prefix(6))"
+                let req = ["REQ", subId, filter] as [Any]
+                if let data = try? JSONSerialization.data(withJSONObject: req),
+                   let str = String(data: data, encoding: .utf8) {
+                    existing.send(text: str)
+                }
+                continue
+            }
+
+            let client = WebSocketClient()
+            client.isTemporary = true
+            client.messageSubject
+                .receive(on: processingQueue)
+                .sink { [weak self] message in
+                    self?.processMessage(message, from: urlString)
+                }
+                .store(in: &cancellables)
+
+            let safeFilter = UncheckedSendable(value: filter)
+            client.$connectionState
+                .first(where: { $0 == .connected })
+                .receive(on: DispatchQueue.main)
+                .sink { [weak client] _ in
+                    guard let client = client else { return }
+                    let subId = "byid-\(UUID().uuidString.prefix(6))"
+                    let req = ["REQ", subId, safeFilter.value] as [Any]
+                    if let data = try? JSONSerialization.data(withJSONObject: req),
+                       let str = String(data: data, encoding: .utf8) {
+                        client.send(text: str)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+                        client.disconnect()
+                    }
+                }
+                .store(in: &cancellables)
+
+            client.connect(url: url)
+        }
+    }
+
     func fetchCount(from relayURLs: [URL], filter: [String: Any] = [:]) async -> Int? {
         #if DEBUG
         print("NostrService: Starting aggregate fetchCount for \(relayURLs.count) relays")

@@ -20,10 +20,18 @@ struct ViewerView: View {
     @State private var isRefreshingMedia = false
     @State private var contentFilter: ContentFilter = .all
     @State private var mediaSourceFilter: MediaSourceFilter = .all
-    
+    @State private var likesFilter: LikesFilter = .likedByOthers
+    @State private var zapsFilter: ZapsFilter = .zappedByOthers
+
     // Cached display data (computed in background)
     @State private var displayNotes: [NostrEvent] = []
     @State private var displayMedia: [MediaItem] = []
+    @State private var displayLikedNotes: [NostrEvent] = []
+    /// Maps note ID -> list of pubkeys who reacted to it
+    @State private var reactionMap: [String: [String]] = [:]
+    @State private var displayZappedNotes: [NostrEvent] = []
+    /// Maps note ID -> list of (zapper pubkey, amount in sats)
+    @State private var zapMap: [String: [(pubkey: String, amount: Int64)]] = [:]
     #if os(macOS)
     @State private var keyMonitor: Any? = nil
     #endif
@@ -39,6 +47,7 @@ struct ViewerView: View {
     @State private var updateTask: Task<Void, Never>?
     @State private var updateGeneration: Int = 0
     @State private var dragOffset: CGSize = .zero
+    @State private var showingRelayDashboard = false
 
     // Static regex pattern to avoid recompilation
     nonisolated private static let hexPattern = try! NSRegularExpression(pattern: "[a-f0-9]{64}", options: .caseInsensitive)
@@ -49,10 +58,22 @@ struct ViewerView: View {
         case tagged
         case whitelist
     }
-    
+
     enum ViewMode {
         case notes
         case media
+        case likes
+        case zaps
+    }
+
+    enum LikesFilter {
+        case myLikes
+        case likedByOthers
+    }
+
+    enum ZapsFilter {
+        case zappedByOthers
+        case myZaps
     }
     
     enum MediaSourceFilter {
@@ -92,11 +113,121 @@ struct ViewerView: View {
         #endif
         let currentMode = viewMode
         let sourceFilter = mediaSourceFilter
+        let currentLikesFilter = likesFilter
+        let currentZapsFilter = zapsFilter
         let gen = updateGeneration
 
         Task.detached(priority: .userInitiated) {
-            if currentMode == .notes {
-                // Compute Notes (Kinds: 1, 6, 30023)
+            if currentMode == .likes {
+                // MARK: - Likes Mode
+                let noteKinds = [1, 6, 30023]
+
+                if currentLikesFilter == .likedByOthers {
+                    // My notes that received reactions from others
+                    let myNoteIds = Set(currentEvents.filter { $0.pubkey == owner && noteKinds.contains($0.kind) }.map { $0.id })
+
+                    // Build reaction map: noteId -> [reactor pubkeys]
+                    var rxMap: [String: [String]] = [:]
+                    for event in currentEvents where event.kind == 7 && event.pubkey != owner {
+                        if let targetId = event.tags.first(where: { $0.count >= 2 && $0[0] == "e" && myNoteIds.contains($0[1]) })?[1] {
+                            rxMap[targetId, default: []].append(event.pubkey)
+                        }
+                    }
+
+                    let likedNoteIds = Set(rxMap.keys)
+                    var filtered = currentEvents.filter { noteKinds.contains($0.kind) && likedNoteIds.contains($0.id) }
+                    // Sort by number of reactions (most liked first)
+                    filtered.sort { (rxMap[$0.id]?.count ?? 0) > (rxMap[$1.id]?.count ?? 0) }
+
+                    let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
+
+                    guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
+                    await MainActor.run {
+                        self.reactionMap = rxMap
+                        self.displayLikedNotes = Array(result.prefix(self.maxDisplayedItems))
+                    }
+                } else {
+                    // My Likes: notes I reacted to (kind 7 from me)
+                    let myLikedNoteIds = Set(currentEvents.filter { $0.kind == 7 && $0.pubkey == owner }.compactMap { event in
+                        event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
+                    })
+                    let filtered = currentEvents.filter { noteKinds.contains($0.kind) && myLikedNoteIds.contains($0.id) }
+
+                    let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
+
+                    guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
+                    await MainActor.run {
+                        self.reactionMap = [:]
+                        self.displayLikedNotes = Array(result.prefix(self.maxDisplayedItems))
+                    }
+                }
+            } else if currentMode == .zaps {
+                // MARK: - Zaps Mode
+                let noteKinds = [1, 6, 30023]
+                let zapReceipts = currentEvents.filter { $0.kind == 9735 }
+
+                if currentZapsFilter == .zappedByOthers {
+                    // My notes that received zaps from others
+                    let myNoteIds = Set(currentEvents.filter { $0.pubkey == owner && noteKinds.contains($0.kind) }.map { $0.id })
+
+                    var zMap: [String: [(pubkey: String, amount: Int64)]] = [:]
+                    for receipt in zapReceipts {
+                        // Extract target note ID from e-tag
+                        guard let targetId = receipt.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1],
+                              myNoteIds.contains(targetId) else { continue }
+                        // Parse the embedded zap request from "description" tag
+                        guard let descJson = receipt.tags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
+                              let descData = descJson.data(using: .utf8),
+                              let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
+                              let senderPubkey = zapReq["pubkey"] as? String,
+                              senderPubkey != owner else { continue }
+                        // Extract amount from zap request tags
+                        var amountSats: Int64 = 0
+                        if let reqTags = zapReq["tags"] as? [[String]],
+                           let amountTag = reqTags.first(where: { $0.count >= 2 && $0[0] == "amount" }),
+                           let msats = Int64(amountTag[1]) {
+                            amountSats = msats / 1000
+                        }
+                        zMap[targetId, default: []].append((pubkey: senderPubkey, amount: amountSats))
+                    }
+
+                    let zappedNoteIds = Set(zMap.keys)
+                    var filtered = currentEvents.filter { noteKinds.contains($0.kind) && zappedNoteIds.contains($0.id) }
+                    // Sort by total sats received (most zapped first)
+                    filtered.sort { (zMap[$0.id]?.reduce(0) { $0 + $1.amount } ?? 0) > (zMap[$1.id]?.reduce(0) { $0 + $1.amount } ?? 0) }
+
+                    let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
+
+                    guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
+                    await MainActor.run {
+                        self.zapMap = zMap
+                        self.displayZappedNotes = Array(result.prefix(self.maxDisplayedItems))
+                    }
+                } else {
+                    // My Zaps: notes I zapped
+                    var myZappedNoteIds = Set<String>()
+                    for receipt in zapReceipts {
+                        guard let descJson = receipt.tags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
+                              let descData = descJson.data(using: .utf8),
+                              let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
+                              let senderPubkey = zapReq["pubkey"] as? String,
+                              senderPubkey == owner else { continue }
+                        if let targetId = receipt.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
+                            myZappedNoteIds.insert(targetId)
+                        }
+                    }
+                    let filtered = currentEvents.filter { noteKinds.contains($0.kind) && myZappedNoteIds.contains($0.id) }
+
+                    let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
+
+                    guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
+                    await MainActor.run {
+                        self.zapMap = [:]
+                        self.displayZappedNotes = Array(result.prefix(self.maxDisplayedItems))
+                    }
+                }
+            } else if currentMode == .notes {
+                // MARK: - Notes Mode (Kinds: 1, 6, 30023)
                 let filtered = currentEvents.filter { event in
                     let validKinds = [1, 6, 30023]
                     if !validKinds.contains(event.kind) { return false }
@@ -115,7 +246,7 @@ struct ViewerView: View {
                         return whitelist.contains(event.pubkey) && event.pubkey != owner
                     }
                 }
-                
+
                 let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
 
                 // Skip UI update if a newer generation has been triggered
@@ -303,68 +434,124 @@ struct ViewerView: View {
         viewContent
     }
     @ViewBuilder
+    private func headerView(isNarrow: Bool) -> some View {
+        VStack(spacing: 12) {
+            HStack {
+                relayDashboardButton
+                Spacer()
+            }
+
+            if isNarrow {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        modeView
+                        Spacer()
+                    }
+                    if viewMode == .notes {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            filterView
+                        }
+                    } else if viewMode == .likes {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            likesFilterView
+                        }
+                    } else if viewMode == .zaps {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            zapsFilterView
+                        }
+                    }
+                }
+            } else {
+                HStack {
+                    modeView
+                    Spacer()
+                    if viewMode == .notes {
+                        filterView
+                    } else if viewMode == .likes {
+                        likesFilterView
+                    } else if viewMode == .zaps {
+                        zapsFilterView
+                    }
+                }
+            }
+
+            searchOrSourceBar
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color.platformControlBackground)
+    }
+
+    @ViewBuilder
+    private var relayDashboardButton: some View {
+        Button(action: { showingRelayDashboard = true }) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 8, height: 8)
+                    .shadow(color: statusColor.opacity(0.6), radius: 3)
+                Text("Relay Dashboard")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(statusColor.opacity(0.15))
+            .foregroundColor(.primary)
+            .cornerRadius(12)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var searchOrSourceBar: some View {
+        HStack {
+            if viewMode == .notes || viewMode == .likes || viewMode == .zaps {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 14, weight: .semibold))
+                TextField(viewMode == .zaps ? "Search zapped notes..." : viewMode == .likes ? "Search liked notes..." : "Search notes...", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .regular))
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    sourceFilterView
+                }
+            }
+        }
+        .padding(10)
+        .background(Color(red: 0.12, green: 0.12, blue: 0.16))
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
+    }
+
+    @ViewBuilder
+    private var listContent: some View {
+        VStack(spacing: 0) {
+            if viewMode == .notes {
+                notesList
+            } else if viewMode == .likes {
+                likesList
+            } else if viewMode == .zaps {
+                zapsList
+            } else {
+                mediaGrid
+            }
+        }
+        .padding(.vertical, 16)
+    }
+
+    @ViewBuilder
     private var viewContent: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                // MARK: - Header
-                VStack(spacing: 12) {
-                    let isNarrow = geometry.size.width < 500
-                    
-                    if isNarrow {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                modeView
-                                Spacer()
-                            }
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                filterView
-                            }
-                        }
-                    } else {
-                        HStack {
-                            modeView
-                            Spacer()
-                            filterView
-                        }
-                    }
-                    
-                    HStack {
-                        if viewMode == .notes {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundColor(.secondary)
-                                .font(.system(size: 14, weight: .semibold))
-                            TextField("Search notes...", text: $searchText)
-                                .textFieldStyle(.plain)
-                                .font(.system(size: 14, weight: .regular))
-                        } else {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                sourceFilterView
-                            }
-                        }
-                    }
-                    .padding(10)
-                    .background(Color(red: 0.12, green: 0.12, blue: 0.16))
-                    .cornerRadius(8)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.platformControlBackground)
+                headerView(isNarrow: geometry.size.width < 500)
 
                 Divider()
 
-                // MARK: - List Content
                 ScrollView {
-                    VStack(spacing: 0) {
-                        if viewMode == .notes {
-                            notesList
-                        } else {
-                            mediaGrid
-                        }
-                    }
-                    .padding(.vertical, 16)
+                    listContent
 
-                    if !displayNotes.isEmpty || !displayMedia.isEmpty {
+                    if !displayNotes.isEmpty || !displayMedia.isEmpty || !displayLikedNotes.isEmpty {
                         Color.clear
                             .frame(height: 1)
                             .padding(.bottom, 20)
@@ -373,7 +560,7 @@ struct ViewerView: View {
                                     loadMore()
                                 }
                             }
-                            .id(nostrService.events.count) 
+                            .id(nostrService.events.count)
                     }
                 }
                 .refreshable {
@@ -389,7 +576,6 @@ struct ViewerView: View {
         }
         .onAppear {
             if relayManager.isRunning && !relayManager.isBooting {
-                // Ensure contacts are loaded first so we have followedPubkeys
                 if feedService.followedPubkeys.isEmpty {
                     feedService.refresh()
                 }
@@ -414,20 +600,35 @@ struct ViewerView: View {
             }
         }
         .overlay(fullScreenOverlay)
-        .onChange(of: searchText) { _, _ in 
-            maxDisplayedItems = 50
-            scheduleUpdateDisplayData() 
-        }
-        .onChange(of: contentFilter) { _, _ in 
-            maxDisplayedItems = 50
-            scheduleUpdateDisplayData() 
-        }
-        .onChange(of: mediaSourceFilter) { _, _ in scheduleUpdateDisplayData() }
-        .onChange(of: viewMode) { _, _ in scheduleUpdateDisplayData() }
-        .onChange(of: nostrService.events.count) { _, _ in scheduleUpdateDisplayData() }
-        .onChange(of: nostrService.noteMedia.count) { _, _ in scheduleUpdateDisplayData() }
-        .onChange(of: configService.config.blacklistedNpubs) { _, _ in scheduleUpdateDisplayData() }
-        .onChange(of: blossomMedia.count) { _, _ in scheduleUpdateDisplayData() }
+        .modifier(ViewerChangeHandlers(
+            viewMode: viewMode,
+            likesFilter: likesFilter,
+            zapsFilter: zapsFilter,
+            searchText: searchText,
+            contentFilter: contentFilter,
+            mediaSourceFilter: mediaSourceFilter,
+            eventsCount: nostrService.events.count,
+            noteMediaCount: nostrService.noteMedia.count,
+            blacklistedNpubs: configService.config.blacklistedNpubs,
+            blossomCount: blossomMedia.count,
+            onResetAndUpdate: {
+                maxDisplayedItems = 50
+                scheduleUpdateDisplayData()
+            },
+            onUpdate: { scheduleUpdateDisplayData() },
+            onViewModeChange: { newMode in
+                scheduleUpdateDisplayData()
+                if newMode == .likes {
+                    fetchMissingLikedNotes()
+                }
+            },
+            onEventsChange: {
+                scheduleUpdateDisplayData()
+                if viewMode == .likes && likesFilter == .myLikes {
+                    fetchMissingLikedNotes()
+                }
+            }
+        ))
         #if os(iOS)
         .onReceive(MirrorService.shared.$state) { newState in
             if newState == .complete {
@@ -436,7 +637,6 @@ struct ViewerView: View {
         }
         #endif
         .onReceive(NotificationCenter.default.publisher(for: .macRelaySyncComplete)) { _ in
-            // Mac relay sync just injected new events — refresh to show them
             refreshAll()
         }
         .sheet(item: Binding<IdentifiableString?>(
@@ -453,20 +653,63 @@ struct ViewerView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        .sheet(isPresented: $showingRelayDashboard) {
+            NavigationView {
+                DashboardView()
+                    .environmentObject(relayManager)
+                    .environmentObject(configService)
+                    .environmentObject(nostrService)
+                    .environmentObject(StatsService.shared)
+                    .navigationTitle("Relay Dashboard")
+                    #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") { showingRelayDashboard = false }
+                        }
+                    }
+                    #endif
+            }
+            #if os(macOS)
+            .frame(minWidth: 400, minHeight: 400)
+            #endif
+        }
     }
     
+    private var notesButton: some View {
+        ModeButton(title: "Notes", icon: "doc.text", isSelected: viewMode == .notes) {
+            viewMode = .notes
+        }
+    }
+
+    private var mediaButton: some View {
+        ModeButton(title: "Media", icon: "photo.on.rectangle", isSelected: viewMode == .media) {
+            viewMode = .media
+            if relayManager.isRunning && !relayManager.isBooting {
+                loadLocalMedia()
+            }
+        }
+    }
+
+    private var likesButton: some View {
+        ModeButton(title: "Likes", icon: "heart.fill", isSelected: viewMode == .likes) {
+            viewMode = .likes
+            fetchMissingLikedNotes()
+        }
+    }
+
+    private var zapsButton: some View {
+        ModeButton(title: "Zaps", icon: "bolt.fill", isSelected: viewMode == .zaps) {
+            viewMode = .zaps
+        }
+    }
+
     private var modeView: some View {
         HStack(spacing: 4) {
-            ModeButton(title: "Notes", icon: "doc.text", isSelected: viewMode == .notes) {
-                viewMode = .notes
-            }
-            ModeButton(title: "Media", icon: "photo.on.rectangle", isSelected: viewMode == .media) {
-                viewMode = .media
-                // Only load media if relay is ready
-                if relayManager.isRunning && !relayManager.isBooting {
-                    loadLocalMedia()
-                }
-            }
+            notesButton
+            mediaButton
+            likesButton
+            zapsButton
         }
         .padding(4)
         .background(Color(red: 0.15, green: 0.15, blue: 0.2))
@@ -513,6 +756,243 @@ struct ViewerView: View {
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
     }
     
+    private var likesFilterView: some View {
+        HStack(spacing: 2) {
+            FilterButton(title: "Liked", icon: "heart.fill", color: .red, isSelected: likesFilter == .likedByOthers) {
+                likesFilter = .likedByOthers
+            }
+            FilterButton(title: "My Likes", icon: "heart", color: .pink, isSelected: likesFilter == .myLikes) {
+                likesFilter = .myLikes
+            }
+        }
+        .padding(4)
+        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+    }
+
+    private var zapsFilterView: some View {
+        HStack(spacing: 2) {
+            FilterButton(title: "Zapped", icon: "bolt.fill", color: .orange, isSelected: zapsFilter == .zappedByOthers) {
+                zapsFilter = .zappedByOthers
+            }
+            FilterButton(title: "My Zaps", icon: "bolt", color: .yellow, isSelected: zapsFilter == .myZaps) {
+                zapsFilter = .myZaps
+            }
+        }
+        .padding(4)
+        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+    }
+
+    private var likesList: some View {
+        let isLoading = nostrService.isFetching || relayManager.isBooting
+        return Group {
+            if displayLikedNotes.isEmpty && isLoading {
+                VStack(spacing: 32) {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .controlSize(.large)
+                            .tint(Color.havenPurple)
+                        VStack(spacing: 8) {
+                            Text("Loading likes...")
+                                .font(.system(size: 18, weight: .bold, design: .default))
+                                .tracking(0.3)
+                            Text("This may take a moment")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundColor(.secondary.opacity(0.6))
+                                .tracking(0.5)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.platformControlBackground)
+            } else if displayLikedNotes.isEmpty {
+                VStack(spacing: 24) {
+                    Image(systemName: likesFilter == .likedByOthers ? "heart.slash" : "heart")
+                        .font(.system(size: 48, weight: .thin))
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [.red, .pink]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    VStack(spacing: 8) {
+                        Text(likesFilter == .likedByOthers ? "No reactions yet" : "No liked posts")
+                            .font(.system(size: 18, weight: .bold, design: .default))
+                            .tracking(0.2)
+                        Text(likesFilter == .likedByOthers ? "Reactions on your notes will appear here" : "Posts you've liked will appear here")
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .tracking(0.3)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.platformControlBackground)
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(displayLikedNotes) { event in
+                        VStack(alignment: .leading, spacing: 0) {
+                            // Show who liked this post (only in "Liked by Others" mode)
+                            if likesFilter == .likedByOthers, let reactors = reactionMap[event.id], !reactors.isEmpty {
+                                LikedByRow(reactorPubkeys: reactors)
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 6)
+                            }
+
+                            #if os(iOS)
+                            NavigationLink(destination: NoteDetailView(note: FeedNote(
+                                id: event.id,
+                                pubkey: event.pubkey,
+                                content: event.content,
+                                createdAt: event.createdAtDate,
+                                tags: event.tags,
+                                kind: event.kind
+                            ))) {
+                                NoteRow(event: event)
+                                    .padding(.horizontal, 16)
+                                    .onAppear {
+                                        if event.id == displayLikedNotes.last?.id {
+                                            loadMoreItems()
+                                        }
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                            #else
+                            NoteRow(event: event)
+                                .padding(.horizontal, 16)
+                                .onAppear {
+                                    if event.id == displayLikedNotes.last?.id {
+                                        loadMoreItems()
+                                    }
+                                }
+                            #endif
+                        }
+                    }
+                }
+                .environment(\.openURL, OpenURLAction { url in
+                    if url.scheme == "nostr" {
+                        let id = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
+                        if id.hasPrefix("npub1") || id.hasPrefix("nprofile1") {
+                            self.showingProfilePubkey = id
+                            return .handled
+                        } else if id.hasPrefix("note1") || id.hasPrefix("nevent1") {
+                            self.showingNoteId = id
+                            return .handled
+                        }
+                    }
+                    return .systemAction
+                })
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var zapsList: some View {
+        let isLoading = nostrService.isFetching || relayManager.isBooting
+        return Group {
+            if displayZappedNotes.isEmpty && isLoading {
+                VStack(spacing: 32) {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .controlSize(.large)
+                            .tint(Color.havenPurple)
+                        VStack(spacing: 8) {
+                            Text("Loading zaps...")
+                                .font(.system(size: 18, weight: .bold, design: .default))
+                                .tracking(0.3)
+                            Text("This may take a moment")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundColor(.secondary.opacity(0.6))
+                                .tracking(0.5)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.platformControlBackground)
+            } else if displayZappedNotes.isEmpty {
+                VStack(spacing: 24) {
+                    Image(systemName: zapsFilter == .zappedByOthers ? "bolt.slash" : "bolt")
+                        .font(.system(size: 48, weight: .thin))
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [.orange, .yellow]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    VStack(spacing: 8) {
+                        Text(zapsFilter == .zappedByOthers ? "No zaps yet" : "No zapped posts")
+                            .font(.system(size: 18, weight: .bold, design: .default))
+                            .tracking(0.2)
+                        Text(zapsFilter == .zappedByOthers ? "Zaps on your notes will appear here" : "Posts you've zapped will appear here")
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .tracking(0.3)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.platformControlBackground)
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(displayZappedNotes) { event in
+                        VStack(alignment: .leading, spacing: 0) {
+                            if zapsFilter == .zappedByOthers, let zappers = zapMap[event.id], !zappers.isEmpty {
+                                ZappedByRow(zappers: zappers)
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 6)
+                            }
+
+                            #if os(iOS)
+                            NavigationLink(destination: NoteDetailView(note: FeedNote(
+                                id: event.id,
+                                pubkey: event.pubkey,
+                                content: event.content,
+                                createdAt: event.createdAtDate,
+                                tags: event.tags,
+                                kind: event.kind
+                            ))) {
+                                NoteRow(event: event)
+                                    .padding(.horizontal, 16)
+                                    .onAppear {
+                                        if event.id == displayZappedNotes.last?.id {
+                                            loadMoreItems()
+                                        }
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                            #else
+                            NoteRow(event: event)
+                                .padding(.horizontal, 16)
+                                .onAppear {
+                                    if event.id == displayZappedNotes.last?.id {
+                                        loadMoreItems()
+                                    }
+                                }
+                            #endif
+                        }
+                    }
+                }
+                .environment(\.openURL, OpenURLAction { url in
+                    if url.scheme == "nostr" {
+                        let id = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
+                        if id.hasPrefix("npub1") || id.hasPrefix("nprofile1") {
+                            self.showingProfilePubkey = id
+                            return .handled
+                        } else if id.hasPrefix("note1") || id.hasPrefix("nevent1") {
+                            self.showingNoteId = id
+                            return .handled
+                        }
+                    }
+                    return .systemAction
+                })
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
     private var notesList: some View {
         let isLoading = nostrService.isFetching || relayManager.isBooting
         return Group {
@@ -662,12 +1142,12 @@ struct ViewerView: View {
                 .background(Color.platformControlBackground)
             } else {
                 #if os(macOS)
-                let minWidth: CGFloat = 180
+                let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
                 #else
-                let minWidth: CGFloat = 140
+                let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
                 #endif
-                
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: minWidth), spacing: 12)], spacing: 12) {
+
+                LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(items) { item in
                         MediaGridItem(item: item) {
                             withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = item }
@@ -679,7 +1159,7 @@ struct ViewerView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 8)
             }
         }
     }
@@ -897,8 +1377,48 @@ struct ViewerView: View {
         loadLocalMedia()
     }
     
+    /// Fetch notes referenced by the owner's likes that aren't already in the events array.
+    private func fetchMissingLikedNotes() {
+        let owner = nostrService.ownerHexPubkey
+        guard !owner.isEmpty else { return }
+
+        let likedNoteIds = Set(nostrService.events.filter { $0.kind == 7 && $0.pubkey == owner }.compactMap { event in
+            event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
+        })
+        let existingIds = Set(nostrService.events.map { $0.id })
+        let missingIds = Array(likedNoteIds.subtracting(existingIds))
+
+        guard !missingIds.isEmpty else { return }
+
+        #if DEBUG
+        print("ViewerView: Fetching \(missingIds.count) missing liked notes")
+        #endif
+
+        var urls = [URL(string: configService.config.nostrURL)!]
+        let macURL = configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !macURL.isEmpty, let macRelay = URL(string: macURL) {
+            urls.append(macRelay)
+        }
+        // Also try external relays for notes not on the local relay
+        let externalStrs = configService.config.feedRelays.isEmpty ? [
+            "wss://relay.damus.io",
+            "wss://relay.primal.net",
+            "wss://nos.lol",
+        ] : configService.config.feedRelays
+        urls.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
+
+        nostrService.fetchNotesByIds(missingIds, from: urls)
+    }
+
     func loadMoreItems() {
-        if maxDisplayedItems < (viewMode == .notes ? nostrService.events.count : blossomMedia.count) {
+        let totalCount: Int
+        switch viewMode {
+        case .notes: totalCount = nostrService.events.count
+        case .media: totalCount = blossomMedia.count
+        case .likes: totalCount = nostrService.events.count
+        case .zaps: totalCount = nostrService.events.count
+        }
+        if maxDisplayedItems < totalCount {
             maxDisplayedItems += 50
             scheduleUpdateDisplayData()
         }
@@ -1066,28 +1586,162 @@ struct ViewerView: View {
 
 }
 
+// MARK: - LikedByRow
+
+struct LikedByRow: View {
+    let reactorPubkeys: [String]
+    @EnvironmentObject var nostrService: NostrService
+
+    private var uniqueReactors: [String] {
+        Array(Set(reactorPubkeys))
+    }
+
+    var body: some View {
+        let unique = uniqueReactors
+        HStack(spacing: 6) {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.red)
+
+            HStack(spacing: -6) {
+                ForEach(unique.prefix(5), id: \.self) { pubkey in
+                    let profile = nostrService.profiles[pubkey]
+                    AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 20)
+                        .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 1.5))
+                }
+            }
+
+            let names = unique.prefix(3).map { pk -> String in
+                nostrService.profiles[pk]?.bestName ?? "npub…" + String(pk.suffix(4))
+            }
+            let remaining = unique.count - names.count
+
+            Text(likedByText(names: names, remaining: remaining))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+
+            Spacer()
+        }
+        .onAppear {
+            let missing = unique.filter { nostrService.profiles[$0] == nil }
+            if !missing.isEmpty {
+                nostrService.fetchMissingProfiles(for: missing)
+            }
+        }
+    }
+
+    private func likedByText(names: [String], remaining: Int) -> String {
+        if names.isEmpty { return "" }
+        var text = names.joined(separator: ", ")
+        if remaining > 0 {
+            text += " +\(remaining) more"
+        }
+        text += " liked"
+        return text
+    }
+}
+
+// MARK: - ZappedByRow
+
+struct ZappedByRow: View {
+    let zappers: [(pubkey: String, amount: Int64)]
+    @EnvironmentObject var nostrService: NostrService
+
+    private var uniqueZappers: [String] {
+        var seen = Set<String>()
+        return zappers.compactMap { z in
+            if seen.contains(z.pubkey) { return nil }
+            seen.insert(z.pubkey)
+            return z.pubkey
+        }
+    }
+
+    private var totalSats: Int64 {
+        zappers.reduce(0) { $0 + $1.amount }
+    }
+
+    var body: some View {
+        let unique = uniqueZappers
+        HStack(spacing: 6) {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.orange)
+
+            HStack(spacing: -6) {
+                ForEach(unique.prefix(5), id: \.self) { pubkey in
+                    let profile = nostrService.profiles[pubkey]
+                    AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 20)
+                        .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 1.5))
+                }
+            }
+
+            let names = unique.prefix(3).map { pk -> String in
+                nostrService.profiles[pk]?.bestName ?? "npub…" + String(pk.suffix(4))
+            }
+            let remaining = unique.count - names.count
+
+            Text(zappedByText(names: names, remaining: remaining))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+
+            Spacer()
+        }
+        .onAppear {
+            let missing = unique.filter { nostrService.profiles[$0] == nil }
+            if !missing.isEmpty {
+                nostrService.fetchMissingProfiles(for: missing)
+            }
+        }
+    }
+
+    private func zappedByText(names: [String], remaining: Int) -> String {
+        if names.isEmpty { return "" }
+        var text = names.joined(separator: ", ")
+        if remaining > 0 {
+            text += " +\(remaining) more"
+        }
+        text += " zapped"
+        if totalSats > 0 {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            let formatted = formatter.string(from: NSNumber(value: totalSats)) ?? "\(totalSats)"
+            text += " · \(formatted) sats"
+        }
+        return text
+    }
+}
+
 struct FilterButton: View {
     let title: String
+    var icon: String? = nil
     let color: Color
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(.system(size: 11, weight: isSelected ? .bold : .regular, design: .monospaced))
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .foregroundColor(isSelected ? .white : .secondary)
-                .background(isSelected ? color : Color.clear)
-                .cornerRadius(6)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(isSelected ? color.opacity(0.5) : Color.clear, lineWidth: 0.8)
-                )
-                .animation(.easeInOut(duration: 0.15), value: isSelected)
+            HStack(spacing: 4) {
+                if let icon = icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                Text(title)
+                    .font(.system(size: 11, weight: isSelected ? .bold : .regular, design: .monospaced))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .foregroundColor(isSelected ? .white : .secondary)
+            .background(isSelected ? color : Color.clear)
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isSelected ? color.opacity(0.5) : Color.clear, lineWidth: 0.8)
+            )
+            .animation(.easeInOut(duration: 0.15), value: isSelected)
         }
         .buttonStyle(.plain)
     }
@@ -1175,7 +1829,7 @@ struct NoteRow: View {
             }
         }
         
-        var color: Color {
+        @MainActor var color: Color {
             switch self {
             case .mine: return .havenPurple
             case .whitelisted: return .green
@@ -1262,11 +1916,16 @@ struct NoteRow: View {
             }
         }
         .padding(14)
-        .background(Color.platformSecondaryGroupedBackground)
+        .background(
+            ZStack {
+                Color.platformSecondaryGroupedBackground
+                Color.havenPurple.opacity(0.015)
+            }
+        )
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.platformSeparator, lineWidth: 0.8)
+                .stroke(Color.havenPurple.opacity(0.12), lineWidth: 0.8)
         )
         .contentShape(RoundedRectangle(cornerRadius: 12))
         #if os(iOS)
@@ -1488,56 +2147,52 @@ struct MediaGridItem: View {
     #endif
 
     var body: some View {
-        ZStack {
-            Group {
-                // Use item.type instead of url extension checks for Blossom compatibility
-                if item.type == .video {
-                    VideoThumbnailView(url: item.url)
-                        // VideoThumbnailView internally uses .fill and resizable
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if item.type == .audio {
-                    ZStack {
-                        Rectangle().fill(Color.gray.opacity(0.1))
-                        Image(systemName: "waveform")
-                            .font(.system(size: 40))
-                            .foregroundColor(.havenPurple)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if item.type == .unknown {
-                    ZStack {
-                        Rectangle().fill(Color.gray.opacity(0.1))
-                        VStack(spacing: 4) {
-                            Image(systemName: "doc.fill")
-                                .font(.system(size: 32))
-                                .foregroundColor(.havenPurple.opacity(0.6))
-                            if let mime = item.mimeType {
-                                Text(mime)
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            }
+        Color.clear
+            .aspectRatio(1.0, contentMode: .fit)
+            .overlay(
+                Group {
+                    // Use item.type instead of url extension checks for Blossom compatibility
+                    if item.type == .video {
+                        VideoThumbnailView(url: item.url)
+                    } else if item.type == .audio {
+                        ZStack {
+                            Color(red: 0.1, green: 0.1, blue: 0.14)
+                            Image(systemName: "waveform")
+                                .font(.system(size: 36))
+                                .foregroundColor(.havenPurple)
                         }
+                    } else if item.type == .unknown {
+                        ZStack {
+                            Color(red: 0.1, green: 0.1, blue: 0.14)
+                            VStack(spacing: 4) {
+                                Image(systemName: "doc.fill")
+                                    .font(.system(size: 28))
+                                    .foregroundColor(.havenPurple.opacity(0.6))
+                                if let mime = item.mimeType {
+                                    Text(mime)
+                                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(4)
+                        }
+                    } else if item.url.isGIF {
+                        AnimatedImage(url: item.url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 250, height: 250))
+                    } else {
+                        // Default to image for non-video/audio items
+                        RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 250, height: 250))
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if item.url.isGIF {
-                    AnimatedImage(url: item.url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 200, height: 200))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    // Default to image for non-video/audio items
-                    RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 200, height: 200))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            }
-        }
-        .frame(height: 140) // Fixed height for grid rows
-        .frame(maxWidth: .infinity) // Fill column width
-        .background(Color.black.opacity(0.1)) // Placeholder bg
-        .clipped() // STRICT CLIPPING IS KEY
-        .cornerRadius(8)
-        .scaleEffect(isHovered ? 1.03 : 1.0)
-        .animation(.easeInOut(duration: 0.15), value: isHovered)
-        .onHover { hovering in isHovered = hovering }
-        .contentShape(Rectangle())
-        .onTapGesture { onSelect() }
+            )
+            .background(Color.black.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+            .scaleEffect(isHovered ? 1.04 : 1.0)
+            .zIndex(isHovered ? 1.0 : 0.0)
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
+            .onHover { hovering in isHovered = hovering }
+            .onTapGesture { onSelect() }
         .contextMenu {
             Button(action: {
                 PlatformClipboard.copy(item.url.absoluteString)
@@ -1657,6 +2312,7 @@ struct RetryableAsyncImage: View {
                         .resizable()
                         .aspectRatio(contentMode: contentMode)
                         .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
                 } else if isLoading {
                     ZStack {
                         Rectangle().fill(Color.gray.opacity(0.1))
@@ -1675,6 +2331,7 @@ struct RetryableAsyncImage: View {
                             image.resizable()
                                 .aspectRatio(contentMode: contentMode)
                                 .frame(width: geo.size.width, height: geo.size.height)
+                                .clipped()
                                 .onAppear {
                                     // checkCache() will handle caching logic
                                 }
@@ -1796,6 +2453,7 @@ struct VideoThumbnailView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
                     
                     Image(systemName: "play.circle.fill")
                         .font(.system(size: 40))
@@ -1937,6 +2595,40 @@ struct SourceIndicatorView: View {
                 }
             }
         }.resume()
+    }
+}
+
+// MARK: - ViewerChangeHandlers
+
+/// Extracted onChange modifiers to reduce type-checker complexity in ViewerView.
+struct ViewerChangeHandlers: ViewModifier {
+    let viewMode: ViewerView.ViewMode
+    let likesFilter: ViewerView.LikesFilter
+    let zapsFilter: ViewerView.ZapsFilter
+    let searchText: String
+    let contentFilter: ViewerView.ContentFilter
+    let mediaSourceFilter: ViewerView.MediaSourceFilter
+    let eventsCount: Int
+    let noteMediaCount: Int
+    let blacklistedNpubs: [String]
+    let blossomCount: Int
+    let onResetAndUpdate: () -> Void
+    let onUpdate: () -> Void
+    let onViewModeChange: (ViewerView.ViewMode) -> Void
+    let onEventsChange: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: searchText) { _, _ in onResetAndUpdate() }
+            .onChange(of: contentFilter) { _, _ in onResetAndUpdate() }
+            .onChange(of: mediaSourceFilter) { _, _ in onUpdate() }
+            .onChange(of: likesFilter) { _, _ in onResetAndUpdate() }
+            .onChange(of: zapsFilter) { _, _ in onResetAndUpdate() }
+            .onChange(of: viewMode) { _, newMode in onViewModeChange(newMode) }
+            .onChange(of: eventsCount) { _, _ in onEventsChange() }
+            .onChange(of: noteMediaCount) { _, _ in onUpdate() }
+            .onChange(of: blacklistedNpubs) { _, _ in onUpdate() }
+            .onChange(of: blossomCount) { _, _ in onUpdate() }
     }
 }
 

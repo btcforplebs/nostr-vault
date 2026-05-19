@@ -14,6 +14,7 @@ struct ComposeView: View {
     @State private var isUploading = false
     @State private var isPosting = false
     @State private var error: String?
+    @FocusState private var isTextEditorFocused: Bool
 
     private var blossomService: BlossomService {
         BlossomService(configService: configService, nostrService: nostrService)
@@ -21,6 +22,8 @@ struct ComposeView: View {
 
     // Optional: for replies
     var replyTo: FeedNote?
+    // Optional: for quote posts
+    var quoteTo: FeedNote?
     
     struct Attachment: Identifiable {
         let id = UUID()
@@ -54,7 +57,7 @@ struct ComposeView: View {
                         if let parent = replyTo {
                             replyHeader(parent: parent)
                         }
-                        
+
                         ZStack(alignment: .topLeading) {
                             if content.isEmpty {
                                 Text("What's happening?")
@@ -64,6 +67,7 @@ struct ComposeView: View {
                             }
                             
                             TextEditor(text: $content)
+                                .focused($isTextEditorFocused)
                                 .font(.system(size: 16))
                                 .frame(minHeight: 200)
                                 .scrollContentBackground(.hidden)
@@ -71,6 +75,11 @@ struct ComposeView: View {
                         
                         if !attachments.isEmpty {
                             attachmentGrid
+                        }
+
+                        if let quoted = quoteTo {
+                            QuotedNoteView(note: quoted)
+                                .environmentObject(nostrService)
                         }
                     }
                     .padding(20)
@@ -81,7 +90,7 @@ struct ComposeView: View {
                 footer
             }
             .background(Color.platformSecondaryGroupedBackground)
-            .navigationTitle(replyTo == nil ? "New Note" : "Reply")
+            .navigationTitle(replyTo != nil ? "Reply" : quoteTo != nil ? "Quote" : "New Note")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -107,6 +116,11 @@ struct ComposeView: View {
                     Text(error)
                 }
             }
+            .onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    isTextEditorFocused = true
+                }
+            }
 
     }
 
@@ -119,7 +133,7 @@ struct ComposeView: View {
             
             Spacer()
             
-            Text(replyTo == nil ? "New Note" : "Reply")
+            Text(replyTo != nil ? "Reply" : quoteTo != nil ? "Quote" : "New Note")
                 .font(.headline)
             
             Spacer()
@@ -300,6 +314,13 @@ struct ComposeView: View {
                 // NIP-10 tags
                 tags.append(["e", parent.id, "", "reply"])
                 tags.append(["p", parent.pubkey])
+            }
+
+            // Quote post: append nevent reference and q tag
+            if let quoted = quoteTo {
+                finalContent += "\nnostr:\(quoted.nevent)"
+                tags.append(["q", quoted.id])
+                tags.append(["p", quoted.pubkey])
             }
 
             // 3. Sign

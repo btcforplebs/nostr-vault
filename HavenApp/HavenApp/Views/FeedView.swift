@@ -16,6 +16,7 @@ struct FeedView: View {
     @EnvironmentObject var nostrService: NostrService
     @State private var showingCompose = false
     @State private var replyToNote: FeedNote?
+    @State private var quoteToNote: FeedNote?
     @State private var showingRelayStatus = false
     @State private var showingNoteId: String?
 
@@ -41,9 +42,9 @@ struct FeedView: View {
             Color(red: 0.08, green: 0.08, blue: 0.1).ignoresSafeArea()
 
             Group {
-                if feedService.isLoadingContacts {
+                if feedService.feedMode == .following && feedService.isLoadingContacts {
                     loadingContactsView
-                } else if feedService.followedPubkeys.isEmpty && !feedService.isLoadingFeed {
+                } else if feedService.feedMode == .following && feedService.followedPubkeys.isEmpty && !feedService.isLoadingFeed {
                     emptyStateView
                 } else {
                     feedList
@@ -53,13 +54,31 @@ struct FeedView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { showingRelayStatus = true }) {
-                    Circle()
-                        .fill(feedService.connectionDotColor)
-                        .frame(width: 10, height: 10)
-                        .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 3)
-                        .padding(8)
-                        .contentShape(Rectangle())
+                HStack(spacing: 8) {
+                    Button(action: { showingRelayStatus = true }) {
+                        Circle()
+                            .fill(feedService.connectionDotColor)
+                            .frame(width: 10, height: 10)
+                            .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 3)
+                            .padding(8)
+                            .contentShape(Rectangle())
+                    }
+
+                    Menu {
+                        ForEach(FeedMode.allCases, id: \.self) { mode in
+                            Button(action: { feedService.switchMode(mode) }) {
+                                Label(mode.rawValue, systemImage: feedService.feedMode == mode ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(feedService.feedMode.rawValue)
+                                .font(.system(size: 15, weight: .semibold))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundColor(Color.havenPurple)
+                    }
                 }
             }
 
@@ -91,9 +110,13 @@ struct FeedView: View {
             }
         }
         .sheet(isPresented: $showingCompose) {
-            ComposeView(replyTo: replyToNote)
+            ComposeView(replyTo: replyToNote, quoteTo: quoteToNote)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
+                .onDisappear {
+                    replyToNote = nil
+                    quoteToNote = nil
+                }
         }
         .sheet(isPresented: $showingRelayStatus) {
             RelayStatusSheet()
@@ -226,7 +249,7 @@ struct FeedView: View {
                         Color.clear
                             .frame(height: 1)
                             .id("top")
-                            
+
                         LazyVStack(spacing: 12) {
 
                         // Loading header
@@ -259,6 +282,10 @@ struct FeedView: View {
                                         replyToNote = note
                                         showingCompose = true
                                     },
+                                    onQuote: {
+                                        quoteToNote = note
+                                        showingCompose = true
+                                    },
                                     showParent: !parentIsNext,
                                     isReplyToNext: parentIsNext
                                 )
@@ -271,6 +298,10 @@ struct FeedView: View {
                                 profile: profile,
                                 onReply: {
                                     replyToNote = note
+                                    showingCompose = true
+                                },
+                                onQuote: {
+                                    quoteToNote = note
                                     showingCompose = true
                                 },
                                 showParent: !parentIsNext,
@@ -353,6 +384,10 @@ struct FeedView: View {
                     ))
                     .zIndex(1)
                 }
+
+                // Floating zap status pill
+                ZapNotificationBanner()
+                    .zIndex(2)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ScrollToTop"))) { _ in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -397,6 +432,7 @@ struct FeedNoteRow: View {
     let note: FeedNote
     let profile: FeedProfile?
     var onReply: (() -> Void)? = nil
+    var onQuote: (() -> Void)? = nil
     var showParent: Bool = true
     var isReplyToNext: Bool = false
 
@@ -462,7 +498,28 @@ struct FeedNoteRow: View {
                 }
             }
 
+            // Repost indicator
+            if let reposter = note.repostedBy {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.2.squarepath")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("\(nostrService.profiles[reposter]?.bestName ?? shortKey(reposter)) reposted")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .foregroundColor(.green.opacity(0.7))
+                .padding(.leading, 52)
+            }
+
             // Main Note Content
+            // For empty-content reposts, resolve the original author from the fetched note
+            let displayPubkey: String = {
+                if note.kind == 6 && note.content.isEmpty, let refId = note.repostedEventId,
+                   let original = feedService.notes.first(where: { $0.id == refId }) {
+                    return original.pubkey
+                }
+                return note.pubkey
+            }()
+
             HStack(alignment: .top, spacing: 12) {
                 VStack(spacing: 0) {
                     if let pId = note.parentEventId, feedService.notes.contains(where: { $0.id == pId }) {
@@ -471,9 +528,9 @@ struct FeedNoteRow: View {
                             .frame(width: 2, height: 10)
                     }
 
-                    AvatarView(url: nostrService.profiles[note.pubkey]?.pictureURL, pubkey: note.pubkey)
+                    AvatarView(url: nostrService.profiles[displayPubkey]?.pictureURL, pubkey: displayPubkey)
                         .frame(width: 40, height: 40)
-                        .onTapGesture { showingProfileKey = IdentifiableString(id: note.pubkey) }
+                        .onTapGesture { showingProfileKey = IdentifiableString(id: displayPubkey) }
 
                     if isReplyToNext {
                         Rectangle()
@@ -485,12 +542,12 @@ struct FeedNoteRow: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(nostrService.profiles[note.pubkey]?.bestName ?? shortKey(note.pubkey))
+                        Text(nostrService.profiles[displayPubkey]?.bestName ?? shortKey(displayPubkey))
                             .font(.system(size: 14, weight: .semibold, design: .default))
                             .foregroundColor(Color(red: 1, green: 1, blue: 1))
                             .lineLimit(1)
-                        
-                        if let profile = nostrService.profiles[note.pubkey], let nip05 = profile.nip05, !nip05.isEmpty {
+
+                        if let profile = nostrService.profiles[displayPubkey], let nip05 = profile.nip05, !nip05.isEmpty {
                             Image(systemName: "checkmark.seal.fill")
                                 .font(.caption2)
                                 .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
@@ -521,34 +578,76 @@ struct FeedNoteRow: View {
                         }
                     }
 
-                    // Content Body
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
-                            .font(.system(size: 15, weight: .regular, design: .default))
-                            .foregroundColor(Color(red: 1, green: 1, blue: 1))
-                            .lineSpacing(2)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.top, 4)
-
-                    // Media previews
-                    if !note.mediaURLs.isEmpty {
-                        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: min(note.mediaURLs.count, 3))
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                            ForEach(note.mediaURLs.prefix(3), id: \.absoluteString) { url in
-                                Button(action: {
-                                    showingMediaUrl = IdentifiableURL(url: url)
-                                }) {
-                                    FeedMediaThumbnail(url: url)
-                                        .aspectRatio(1, contentMode: .fill)
-                                        .frame(maxWidth: .infinity)
-                                        .cornerRadius(8)
-                                }
-                                .buttonStyle(.plain)
+                    // Content Body — for empty-content reposts, show the referenced note
+                    if note.kind == 6 && note.content.isEmpty, let refId = note.repostedEventId {
+                        if let original = feedService.notes.first(where: { $0.id == refId }) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(NostrContentFormatter.format(original.content, mediaURLs: original.mediaURLs, hideQuotes: true))
+                                    .font(.system(size: 15, weight: .regular, design: .default))
+                                    .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                                    .lineSpacing(2)
+                                    .lineLimit(nil)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
+                            .padding(.top, 4)
+
+                            if !original.mediaURLs.isEmpty {
+                                let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: min(original.mediaURLs.count, 3))
+                                LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                                    ForEach(original.mediaURLs.prefix(3), id: \.absoluteString) { url in
+                                        Button(action: {
+                                            showingMediaUrl = IdentifiableURL(url: url)
+                                        }) {
+                                            FeedMediaThumbnail(url: url)
+                                                .aspectRatio(1, contentMode: .fill)
+                                                .frame(maxWidth: .infinity)
+                                                .cornerRadius(8)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.top, 4)
+                            }
+                        } else {
+                            // Still loading the referenced note
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Loading reposted note...")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.top, 4)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
+                                .font(.system(size: 15, weight: .regular, design: .default))
+                                .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                                .lineSpacing(2)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.top, 4)
+
+                        // Media previews
+                        if !note.mediaURLs.isEmpty {
+                            let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: min(note.mediaURLs.count, 3))
+                            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                                ForEach(note.mediaURLs.prefix(3), id: \.absoluteString) { url in
+                                    Button(action: {
+                                        showingMediaUrl = IdentifiableURL(url: url)
+                                    }) {
+                                        FeedMediaThumbnail(url: url)
+                                            .aspectRatio(1, contentMode: .fill)
+                                            .frame(maxWidth: .infinity)
+                                            .cornerRadius(8)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.top, 4)
+                        }
                     }
 
                     // Quoted Notes
@@ -574,32 +673,42 @@ struct FeedNoteRow: View {
 
                     // Actions row - minimal and clean
                     HStack(spacing: 12) {
-                        actionButton(icon: "message", action: { onReply?() })
-                        actionButton(icon: "arrow.2.squarepath", action: { repostNote() })
+                        let stats = feedService.noteStats[note.id]
+                        actionButton(icon: "message", count: stats?.replies ?? 0, action: { onReply?() })
+                        actionButton(icon: "arrow.2.squarepath", count: stats?.reposts ?? 0, action: { repostNote() })
                         actionButton(icon: "quote.closing", action: { quoteNote() })
-                        
+
                         let isLiked = feedService.likedEventIds.contains(note.id)
                         actionButton(
                             icon: isLiked ? "heart.fill" : "heart",
                             color: isLiked ? .red : .secondary,
+                            count: stats?.reactions ?? 0,
                             action: { likeNote() }
                         )
                         .scaleEffect(isLiked ? 1.2 : 1.0)
                         .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isLiked)
                         
                         if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
-                            let isZapped = feedService.zappedEventIds.contains(note.id)
+                            let zapAmount = feedService.zappedEventIds[note.id]
+                            let isZapped = zapAmount != nil
                             Button(action: {
                                 Task { await zapNote(lud16: lud16) }
                             }) {
-                                ZStack {
+                                HStack(spacing: 4) {
                                     Image(systemName: isZapped ? "bolt.fill" : "bolt")
                                         .font(.system(size: 14, weight: .medium))
                                         .foregroundColor(isZapped ? .orange : .secondary)
-                                        .frame(width: 32, height: 32)
-                                        .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
-                                        .clipShape(Circle())
+                                    if let amount = zapAmount, amount > 0 {
+                                        Text("\(amount)")
+                                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                            .foregroundColor(.orange)
+                                    }
                                 }
+                                .frame(height: 32)
+                                .padding(.horizontal, isZapped && zapAmount != nil && zapAmount! > 0 ? 10 : 0)
+                                .frame(minWidth: 32)
+                                .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
+                                .clipShape(Capsule())
                                 .scaleEffect(isZapped ? 1.2 : 1.0)
                                 .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isZapped)
                             }
@@ -610,20 +719,6 @@ struct FeedNoteRow: View {
                             }
                         }
                         
-                        ShareLink(
-                            item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
-                            subject: Text("Nostr Note"),
-                            message: Text("Check out this note on Nostr")
-                        ) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .frame(width: 32, height: 32)
-                                .background(Color.secondary.opacity(0.1))
-                                .clipShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        
                         Spacer()
                     }
                     .padding(.top, 4)
@@ -632,11 +727,16 @@ struct FeedNoteRow: View {
         } // End of Outer VStack (root row)
         .foregroundColor(Color(red: 1, green: 1, blue: 1))
         .padding(14)
-        .background(Color.platformSecondaryGroupedBackground)
+        .background(
+            ZStack {
+                Color.platformSecondaryGroupedBackground
+                Color.havenPurple.opacity(0.015)
+            }
+        )
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.platformSeparator, lineWidth: note.isReply ? 1.2 : 0.8)
+                .stroke(Color.havenPurple.opacity(note.isReply ? 0.25 : 0.12), lineWidth: note.isReply ? 1.2 : 0.8)
         )
         .contentShape(RoundedRectangle(cornerRadius: 12))
         #if os(iOS)
@@ -719,17 +819,26 @@ struct FeedNoteRow: View {
         }
     }
 
-    private func actionButton(icon: String, color: Color = .secondary, action: @escaping () -> Void) -> some View {
+    private func actionButton(icon: String, color: Color = .secondary, count: Int = 0, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(color)
-                .frame(width: 32, height: 32)
-                .background(color.opacity(color == .secondary ? 0.1 : 0.15))
-                .clipShape(Circle())
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(color)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(color)
+                }
+            }
+            .frame(height: 32)
+            .padding(.horizontal, count > 0 ? 10 : 0)
+            .frame(minWidth: 32)
+            .background(color.opacity(color == .secondary ? 0.1 : 0.15))
+            .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-        .contentShape(Circle())
+        .contentShape(Capsule())
         #if os(macOS)
         .onHover { inside in
             // Handle hover state if needed, though .hoverEffect handles it on iOS
@@ -752,8 +861,7 @@ struct FeedNoteRow: View {
     }
 
     private func quoteNote() {
-        // Future: implement quote content properly in ComposeView
-        onReply?()
+        onQuote?()
     }
     
     private func getLightingAddress(for pubkey: String) -> String? {
@@ -765,6 +873,13 @@ struct FeedNoteRow: View {
     }
     
     private func zapNote(lud16: String, amount: Int? = nil) async {
+        let amountSats = amount ?? (ConfigService.shared.config.defaultZapAmount / 1000)
+        let recipientName = nostrService.profiles[note.pubkey]?.bestName ?? shortKey(note.pubkey)
+
+        // Immediately show zap pill at top of feed
+        let zapManager = ZapNotificationManager.shared
+        let notifId = await zapManager.addZap(recipientName: recipientName, amountSats: amountSats)
+
         do {
             try await ZapService.shared.zapNote(
                 noteId: note.id,
@@ -772,17 +887,20 @@ struct FeedNoteRow: View {
                 lud16: lud16,
                 amountSats: amount
             )
-            // Trigger animation and update state on success
             await MainActor.run {
-                feedService.zappedEventIds.insert(note.id)
+                feedService.zappedEventIds[note.id] = amountSats
                 feedService.saveInteractionState()
                 showLightning = true
+                zapManager.markSuccess(id: notifId)
             }
             #if os(iOS)
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
             #endif
         } catch {
+            await MainActor.run {
+                zapManager.markFailed(id: notifId, message: error.localizedDescription)
+            }
             RelayProcessManager.shared.addLog("Zap: Failed to zap note: \(error.localizedDescription)", level: "ERROR")
         }
     }
@@ -892,6 +1010,23 @@ struct FeedMediaThumbnail: View {
 
 // MARK: - AvatarView
 
+private final class AvatarImageCache {
+    static let shared = AvatarImageCache()
+    private var cache = NSCache<NSURL, PlatformImage>()
+
+    init() {
+        cache.countLimit = 200
+    }
+
+    func image(for url: URL) -> PlatformImage? {
+        cache.object(forKey: url as NSURL)
+    }
+
+    func store(_ image: PlatformImage, for url: URL) {
+        cache.setObject(image, forKey: url as NSURL)
+    }
+}
+
 struct AvatarView: View {
     let url: URL?
     let pubkey: String
@@ -941,9 +1076,18 @@ struct AvatarView: View {
     }
 
     private func loadImage() {
-        guard let url = url, image == nil else { return }
+        guard let url = url else { return }
+
+        // Check in-memory cache first
+        if let cached = AvatarImageCache.shared.image(for: url) {
+            if image == nil { image = cached }
+            return
+        }
+
+        guard image == nil else { return }
         URLSession.shared.dataTask(with: url) { data, _, _ in
             if let data = data, let img = PlatformImage(data: data) {
+                AvatarImageCache.shared.store(img, for: url)
                 DispatchQueue.main.async { image = img }
             }
         }.resume()
@@ -1055,7 +1199,7 @@ struct RelayStatusSheet: View {
 
                                 Spacer()
 
-                                Text("127.0.0.1:\(configService.config.relayPort)")
+                                Text(verbatim: "127.0.0.1:\(configService.config.relayPort)")
                                     .font(.system(size: 12, design: .monospaced))
                                     .foregroundColor(.secondary)
                             }
@@ -1165,10 +1309,15 @@ struct RelayStatusSheet: View {
                                     .foregroundColor(mirrorService.state == .mirroring ? .havenPurple : .secondary)
                             }
 
-                            if let progress = mirrorService.progress {
-                                Text("\(progress.completed)/\(progress.total) files")
+                            if !mirrorService.statusText.isEmpty {
+                                Text(mirrorService.statusText)
                                     .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.secondary.opacity(0.7))
+                                    .foregroundColor(.havenPurple.opacity(0.8))
+                            }
+
+                            if let progress = mirrorService.progress {
+                                ProgressView(value: Double(progress.completed), total: Double(max(progress.total, 1)))
+                                    .tint(.havenPurple)
                             }
 
                             if !mirrorService.lastResult.isEmpty {
