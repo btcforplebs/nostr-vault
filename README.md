@@ -1,7 +1,8 @@
+
 # HAVEN - Native Mac & iOS
 
 <p align="center">
-  <img src="docs/media/screenshots/haven_icon.png" width="200" alt="HAVEN Logo" />
+  <img width="1008" height="1051" src="https://github.com/user-attachments/assets/3b6e4326-125c-44c7-bfec-8330bb08a703" />
 </p>
 
 <p align="center">
