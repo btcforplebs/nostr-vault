@@ -69,25 +69,25 @@ extension Color {
     @MainActor
     static var havenPurple: Color {
         let themeName = ConfigService.shared.config.themeColor
-        return AppTheme(rawValue: themeName)?.primaryColor ?? AppTheme.purple.primaryColor
+        return AppTheme(rawValue: themeName)?.primaryColor ?? AppTheme.orange.primaryColor
     }
-    
+
     @MainActor
     static var havenPurpleLight: Color {
         let themeName = ConfigService.shared.config.themeColor
-        return AppTheme(rawValue: themeName)?.lightColor ?? AppTheme.purple.lightColor
+        return AppTheme(rawValue: themeName)?.lightColor ?? AppTheme.orange.lightColor
     }
-    
+
     @MainActor
     static var havenPurpleDark: Color {
         let themeName = ConfigService.shared.config.themeColor
-        return AppTheme(rawValue: themeName)?.darkColor ?? AppTheme.purple.darkColor
+        return AppTheme(rawValue: themeName)?.darkColor ?? AppTheme.orange.darkColor
     }
-    
+
     @MainActor
     static var havenPurplePale: Color {
         let themeName = ConfigService.shared.config.themeColor
-        return AppTheme(rawValue: themeName)?.paleColor ?? AppTheme.purple.paleColor
+        return AppTheme(rawValue: themeName)?.paleColor ?? AppTheme.orange.paleColor
     }
     
     // Colors are now primarily defined here to ensure project-wide availability

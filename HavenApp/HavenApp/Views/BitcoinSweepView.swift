@@ -262,7 +262,7 @@ struct BitcoinSweepView: View {
                 if let rate = rate {
                     Text("\(rate) sat/vB")
                         .font(.system(size: 10))
-                        .foregroundColor(isSelected ? .orange.opacity(0.9) : .secondary)
+                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
                 } else {
                     Text("–")
                         .font(.system(size: 10))

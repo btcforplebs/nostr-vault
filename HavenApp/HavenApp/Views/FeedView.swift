@@ -398,10 +398,15 @@ struct FeedView: View {
                 .refreshable {
                     isRefreshing = true
                     feedService.refresh()
+                    // Hold the indicator until loading finishes
+                    while feedService.isLoadingFeed {
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                    }
+                    isRefreshing = false
                 }
+                .tint(Color.secondary.opacity(0.6))
                 .onChange(of: feedService.isLoadingFeed) { _, isLoading in
-                    if !isLoading && isRefreshing {
-                        isRefreshing = false
+                    if !isLoading {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                             withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                                 proxy.scrollTo("top", anchor: .top)

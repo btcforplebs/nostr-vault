@@ -22,23 +22,35 @@ struct NoteDetailView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Thread History (Parents)
-                    if !parentNotes.isEmpty {
-                        threadSection
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Thread History (Parents)
+                        if !parentNotes.isEmpty {
+                            threadSection
+                            Divider()
+                        }
+
+                        // Main Note
+                        mainNoteSection
+                            .id("mainNote")
+
                         Divider()
+
+                        // Replies Section
+                        repliesSection
                     }
-
-                    // Main Note
-                    mainNoteSection
-
-                    Divider()
-
-                    // Replies Section
-                    repliesSection
+                    .padding()
                 }
-                .padding()
+                .onChange(of: isLoadingParents) { _, loading in
+                    if !loading && !parentNotes.isEmpty {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                proxy.scrollTo("mainNote", anchor: .top)
+                            }
+                        }
+                    }
+                }
             }
 
             ZapNotificationBanner()
@@ -596,10 +608,11 @@ struct NoteDetailView: View {
                 .store(in: &cancellables)
 
             client.connect(url: url)
-            
-            // Auto-disconnect if nothing found after some time
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+
+            // Generous timeout so deep chains have time to resolve
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
                 client.disconnect()
+                self.isLoadingParents = false
             }
         }
     }
@@ -636,6 +649,7 @@ struct NoteDetailView: View {
                 if let grandparentId = parent.parentEventId {
                     fetchParentNote(id: grandparentId, client: client)
                 } else {
+                    // Reached root of thread
                     isLoadingParents = false
                     client.disconnect()
                 }
@@ -647,8 +661,12 @@ struct NoteDetailView: View {
                 nostrService.fetchMissingProfiles(for: [pubkey])
             }
         } else if type == "EOSE" {
-            isLoadingParents = false
-            client.disconnect()
+            // Do NOT disconnect here — we may have already sent another REQ on this
+            // client to chase the grandparent. The timeout handles final cleanup.
+            // Only mark loading done if we never received any EVENT (no parent found).
+            if parentNotes.isEmpty {
+                isLoadingParents = false
+            }
         }
     }
 

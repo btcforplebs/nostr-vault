@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0 macOS / 1.1 iOS (Build 1)] - 2026-05-20
+
+### Added
+- **Bitcoin Taproot Address Derivation**: Implemented native BIP-341 key-path-only Taproot (P2TR) address derivation from the user's Nostr secp256k1 public key in `haven-go/bitcoin.go`. Uses `btcsuite/btcd` for all cryptographic operations — no external process required.
+- **Bitcoin Sweep with On-chain PSBT**: Full Bitcoin sweep flow backed by the Go relay: fetches UTXOs from a self-hosted Mempool instance, constructs and signs a raw Taproot transaction via Schnorr signatures, and broadcasts it over the relay's HTTP bridge. The sweep uses key-path spending (BIP-341 `tapTweakHash`) for minimal transaction weight.
+- **Bitcoin Sweep Disclaimer View**: Added `BitcoinSweepDisclaimerView` — a pre-sweep confirmation sheet that loads the wallet's spendable balance live from the Mempool API before the user can proceed, with a loading indicator and error state for failed fetches.
+- **Bitcoin Price Service**: New `PriceService.swift` singleton that fetches the live BTC/USD spot price from the Mempool API and exposes it app-wide, used to display fiat-equivalent values in the sweep flow and elsewhere.
+- **On-chain Zap Display**: Added `OnchainZapDisplay.swift` — a dedicated component for rendering on-chain (Taproot) zap receipts in the note detail and profile views, alongside existing Lightning zap display.
+- **Search Tab (macOS)**: Added a full **Search** tab to the macOS Menu Bar sidebar, backed by `SearchView` — a multi-source search UI supporting users, notes, links, and hashtags, with a segmented source filter (`All / Haven Relay / Network`).
+- **My Profile Quick-Access (macOS)**: The macOS sidebar footer now renders the owner's avatar using `AvatarView`, tapping it opens `ProfileView` in a sheet without navigating away from the current tab.
+- **Emoji Picker Component**: Extracted a reusable `EmojiPickerView` component (available in both `Views/` and `Views/Components/`) for use in `ComposeView` and replies, with category tabs and search.
+- **Feed Media View Component**: Extracted `FeedMediaView` into a standalone component under `Views/Components/` for better code reuse across the feed and note detail.
+- **Autoload New Posts Toggle**: Added a `bolt.circle` / `bolt.circle.fill` toolbar button in the iOS Feed toolbar to toggle `autoLoadNewPosts` on/off without entering Settings.
+- **Repost Toggle**: Added a dedicated `arrow.2.squarepath` toolbar button in the iOS Feed toolbar to quickly show/hide reposts inline.
+- **Go Module: Bitcoin Dependencies**: Added `btcsuite/btcd`, `btcsuite/btcutil`, and `decred/dcrd/dcrec/secp256k1` to `haven-go/go.mod` / `go.sum` for the on-chain transaction layer.
+- **C-Shared Bridge Export**: Exported the Bitcoin sweep and address derivation functions via `haven-go/cshared.go` so they are callable from Swift through the embedded `libhaven.a` bridge.
+
+### Changed
+- **Bitcoin Sweep Refactored into Disclaimer+Action Pattern**: Replaced the old `BitcoinSweepView` with a two-step flow — `BitcoinSweepDisclaimerView` (balance confirmation) leading to the sweep action — triggered as a sheet from `SettingsView`. Removed all deprecated `BitcoinSweepView.swift` duplicates (`Views/`, `Views/Components/`, `HavenApp/` root).
+- **Feed Toolbar Reorganized (iOS)**: The leading toolbar area now shows only the connection-status dot (enlarged to 12 pt, backed by a subtle circular background). The feed mode selector (`FeedMode` menu) was promoted to the `principal` (center) position for better visual hierarchy. The trailing area now hosts the autoload and repost toggles.
+- **Connection Status Dot Elevated**: Connection dot now renders at 12 × 12 pt with an 80 % opacity shadow and a `Color.primary.opacity(0.08)` circular background, making it more legible on all backgrounds.
+- **Consistent Dark Theme Colors**: Background colors across FeedView, MenuBarView, ProfileView, and relay status pages are now unified to `Color(red: 0.08, green: 0.08, blue: 0.1)` — eliminating visual inconsistency between sections.
+- **ZapService Refactored**: Streamlined `ZapService.swift` (~100-line reduction), consolidating redundant payment-path branches and improving error propagation to the `ZapNotificationBanner`.
+- **FeedService Major Overhaul**: Significant rewrite of `FeedService.swift` (308-line net change) improving subscription lifecycle management, deduplication, and engagement-stat flushing performance.
+- **BlossomService Cleanup**: Tightened upload/download path resolution and improved local vs. remote URL detection in `BlossomService.swift`.
+- **AnimatedImage Refactored**: Updated `AnimatedImage.swift` to use the new `FeedMediaView` component and improved GIF frame-timing logic to fix extra spacing that appeared above GIF content.
+- **ComposeView Enriched**: `ComposeView.swift` gained emoji-picker integration, improved attachment preview layout, and reply context display.
+- **NoteDetailView Improvements**: Enriched reply threading, added on-chain zap display, and improved real-time reply subscription handling.
+- **ProfileView Overhaul**: Major refactor (~768 → full rewrite) with improved tab structure, zap/like history sections, and consistent dark background.
+- **VideoPlayerView Enhanced**: Improved seek-bar behavior, playback state management, and extensionless file handling in `VideoPlayerView.swift`.
+- **FeedMediaViewer Enhancements**: Improved swipe-to-dismiss gesture sensitivity and background dimming ramp in `FeedMediaViewer.swift`.
+- **ViewerView Polished**: Cleaned up filter/tab transitions and improved Likes/Zaps sub-tab scroll behavior.
+- **iOS ContentView (iPad)**: Minor layout fixes in `HavenApp-iOS/ContentView.swift` for sidebar state propagation.
+- **HavenConfig Model Extended**: Added `autoLoadNewPosts` and `showReposts` boolean fields to `HavenConfig.swift` for the new toolbar toggles.
+- **MediaItem Model**: Minor additions to `MediaItem.swift` for improved MIME / source tagging.
+- **FeedProfile Model**: Small additions to `FeedProfile.swift` for search result rendering.
+
+### Fixed
+- **GIF Spacing Bug**: Resolved unintended top padding above GIF content in `FeedNoteRow` / `feedMediaCarousel` by correcting the `AnimatedImage` frame modifier chain.
+- **Bitcoin Sweep Balance Showing Zero**: Fixed `BitcoinSweepDisclaimerView` to correctly await the async Mempool balance fetch before rendering, so the displayed `balanceSats` is never stale.
+- **Search Bar Keyboard Dismissal**: Added `@FocusState` management to the viewer/search inputs so tapping the list or the ✕ clear button properly dismisses the keyboard.
+- **ZapNotifier Relay Integration**: Fixed `ZapNotificationBanner` to properly subscribe to the Haven relay's WebSocket for incoming zap receipts and update pill state (`Zapping… → Zapped! / Zap failed`) in real-time.
+- **Carousel Image Swiping**: Fixed swipe gesture recognizer conflict in `FeedMediaView` carousels so horizontal swipes page between images without accidentally triggering vertical scroll.
+
 ## [2.4.0 macOS / 1.0 iOS (Build 7)] - 2026-05-19
 
 ### Added

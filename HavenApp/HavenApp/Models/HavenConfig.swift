@@ -17,7 +17,7 @@ struct HavenConfig: Codable, Equatable {
     var ownerNcryptsec: String = "" // NIP-49 encrypted private key
     var ownerNsec: String = "" // Deprecated: kept for migration purposes only
     var showReplies: Bool = true // Added to toggle visibility of replies in feed
-    var themeColor: String = "purple"
+    var themeColor: String = "orange"
     var autoLoadNewPosts: Bool = false
     var showReposts: Bool = true
     

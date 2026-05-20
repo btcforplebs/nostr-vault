@@ -452,6 +452,9 @@ struct SearchView: View {
     @State private var isSearching = false
     @State private var showingNoteDetail: FeedNote?
     @State private var showingProfile: String?
+    #if os(iOS)
+    @FocusState private var searchFieldFocused: Bool
+    #endif
 
     enum SearchSource {
         case all
@@ -488,7 +491,7 @@ struct SearchView: View {
 
     var body: some View {
         ZStack {
-            Color.platformControlBackground.ignoresSafeArea()
+            Color(red: 0.08, green: 0.08, blue: 0.1).ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Search header
@@ -501,12 +504,22 @@ struct SearchView: View {
                         TextField("Search users, notes, hashtags...", text: $searchQuery)
                             .textFieldStyle(.plain)
                             .font(.system(size: 14))
+                            #if os(iOS)
+                            .focused($searchFieldFocused)
+                            .submitLabel(.search)
+                            .onSubmit { searchFieldFocused = false }
+                            #endif
                             .onChange(of: searchQuery) { _, query in
                                 performSearch(query: query)
                             }
 
                         if !searchQuery.isEmpty {
-                            Button(action: { searchQuery = "" }) {
+                            Button(action: {
+                                searchQuery = ""
+                                #if os(iOS)
+                                searchFieldFocused = false
+                                #endif
+                            }) {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.system(size: 14))
                                     .foregroundColor(.secondary)
@@ -538,7 +551,7 @@ struct SearchView: View {
                     .padding(.horizontal, 4)
                 }
                 .padding()
-                .background(Color.platformWindowBackground)
+                .background(Color(red: 0.08, green: 0.08, blue: 0.1))
 
                 Divider()
 
@@ -554,6 +567,20 @@ struct SearchView: View {
                 }
             }
         }
+        #if os(iOS)
+        .onTapGesture {
+            searchFieldFocused = false
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    searchFieldFocused = false
+                }
+                .foregroundColor(Color.havenPurple)
+            }
+        }
+        #endif
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfile.map { IdentifiableString(id: $0) } },
             set: { showingProfile = $0?.id }

@@ -80,12 +80,14 @@
 		8D4040C22F55BAD100DC9088 /* MirrorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4040C02F55BAD100DC9088 /* MirrorService.swift */; };
 		8D4EFA332FBE41C300CF0704 /* OnchainZapDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4EFA322FBE41C300CF0704 /* OnchainZapDisplay.swift */; };
 		8D4EFA342FBE41C300CF0704 /* OnchainZapDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4EFA322FBE41C300CF0704 /* OnchainZapDisplay.swift */; };
+		8D4EFA372FBE48B300CF0704 /* BitcoinSweepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4EFA362FBE48B300CF0704 /* BitcoinSweepView.swift */; };
+		8D4EFA382FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4EFA352FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift */; };
+		8D4EFA392FBE48B300CF0704 /* BitcoinSweepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4EFA362FBE48B300CF0704 /* BitcoinSweepView.swift */; };
+		8D4EFA3A2FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4EFA352FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift */; };
 		8D50F9232FBE3B1400755BE8 /* FeedMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D50F9202FBE3B1400755BE8 /* FeedMediaView.swift */; };
 		8D50F9242FBE3B1400755BE8 /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D50F91F2FBE3B1400755BE8 /* EmojiPickerView.swift */; };
 		8D50F9272FBE3B1400755BE8 /* FeedMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D50F9202FBE3B1400755BE8 /* FeedMediaView.swift */; };
 		8D50F9282FBE3B1400755BE8 /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D50F91F2FBE3B1400755BE8 /* EmojiPickerView.swift */; };
-		8D50F92A2FBE3B9E00755BE8 /* BitcoinSweepView 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D50F9292FBE3B9E00755BE8 /* BitcoinSweepView 2.swift */; };
-		8D50F92B2FBE3B9E00755BE8 /* BitcoinSweepView 2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D50F9292FBE3B9E00755BE8 /* BitcoinSweepView 2.swift */; };
 		9A29693B7623772411B51DE7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A271B5E3364858651DC05603 /* SettingsView.swift */; };
 		A9175BE3300E9CE097E14F26 /* BlossomService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803F7E83A0267F02449FA666 /* BlossomService.swift */; };
 		AA0000000000000000000001 /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000003 /* NostrService.swift */; };
@@ -167,9 +169,10 @@
 		8D4040B42F55BAC700DC9088 /* MacRelaySyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelaySyncService.swift; sourceTree = "<group>"; };
 		8D4040C02F55BAD100DC9088 /* MirrorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorService.swift; sourceTree = "<group>"; };
 		8D4EFA322FBE41C300CF0704 /* OnchainZapDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnchainZapDisplay.swift; sourceTree = "<group>"; };
+		8D4EFA352FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepDisclaimerView.swift; sourceTree = "<group>"; };
+		8D4EFA362FBE48B300CF0704 /* BitcoinSweepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepView.swift; sourceTree = "<group>"; };
 		8D50F91F2FBE3B1400755BE8 /* EmojiPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerView.swift; sourceTree = "<group>"; };
 		8D50F9202FBE3B1400755BE8 /* FeedMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaView.swift; sourceTree = "<group>"; };
-		8D50F9292FBE3B9E00755BE8 /* BitcoinSweepView 2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BitcoinSweepView 2.swift"; sourceTree = "<group>"; };
 		8EDBCA3BC62E9A4C8AA9E128 /* FeedMediaViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaViewer.swift; sourceTree = "<group>"; };
 		915DF9A0796218139DE0703E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		917FF6B76ACEFA8BD210FC37 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -223,6 +226,8 @@
 			children = (
 				0FBC15E9329FDE2D78ED1BD1 /* AnimatedImage.swift */,
 				7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */,
+				8D4EFA352FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift */,
+				8D4EFA362FBE48B300CF0704 /* BitcoinSweepView.swift */,
 				0E04A276931F29CD944A3474 /* CachedAsyncImage.swift */,
 				D3CA6E7B0A2665BC086A47C3 /* Components */,
 				1F4167692AA94E7EC99B29BD /* ComposeView.swift */,
@@ -239,7 +244,6 @@
 				8D4EFA322FBE41C300CF0704 /* OnchainZapDisplay.swift */,
 				7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */,
 				917FF6B76ACEFA8BD210FC37 /* ProfileView.swift */,
-				8D50F9292FBE3B9E00755BE8 /* BitcoinSweepView 2.swift */,
 				4AB6A6872532B023E705FC6C /* RelayListEditor.swift */,
 				A271B5E3364858651DC05603 /* SettingsView.swift */,
 				89B8E92EE192A7FDE8094D4D /* SetupWizardView.swift */,
@@ -577,7 +581,6 @@
 				D95FE9EAEC6CDCF53AC7E1E5 /* RelayListEditor.swift in Sources */,
 				6A0000000000000000000001 /* LogStore.swift in Sources */,
 				68FF85AB0479AECDE076D18D /* RelayProcessManager.swift in Sources */,
-				8D50F92A2FBE3B9E00755BE8 /* BitcoinSweepView 2.swift in Sources */,
 				0BDACF2A52FF38A77AFC41F0 /* SceneDelegate.swift in Sources */,
 				9A29693B7623772411B51DE7 /* SettingsView.swift in Sources */,
 				5E92A621990EB60F7D3CEA01 /* SetupWizardView.swift in Sources */,
@@ -590,6 +593,8 @@
 				AA0000000000000000000001 /* NostrService.swift in Sources */,
 				BB0000000000000000000001 /* MediaCacheService.swift in Sources */,
 				F909E9664DAB54DA38575736 /* WelcomeWindowView.swift in Sources */,
+				8D4EFA372FBE48B300CF0704 /* BitcoinSweepView.swift in Sources */,
+				8D4EFA382FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift in Sources */,
 				30D8A68AB9D5370D2047AD1D /* ZapService.swift in Sources */,
 				30D8A68AB9D5370D2047AD1E /* PriceService.swift in Sources */,
 				CC0000000000000000000001 /* ZapNotificationBanner.swift in Sources */,
@@ -637,7 +642,6 @@
 				6A0000000000000000000002 /* LogStore.swift in Sources */,
 				8D4EFA342FBE41C300CF0704 /* OnchainZapDisplay.swift in Sources */,
 				8D50F9232FBE3B1400755BE8 /* FeedMediaView.swift in Sources */,
-				8D50F92B2FBE3B9E00755BE8 /* BitcoinSweepView 2.swift in Sources */,
 				8D50F9242FBE3B1400755BE8 /* EmojiPickerView.swift in Sources */,
 				AAABCCC974BE94C9B2626D3B /* RelayProcessManager.swift in Sources */,
 				D55C2F09C6C9E056CAFEC4C1 /* SettingsView.swift in Sources */,
@@ -645,6 +649,8 @@
 				F869E49FB6A5FA8DDFC1A20C /* StatsService.swift in Sources */,
 				00119641B62DB2BBCEB963B0 /* Theming.swift in Sources */,
 				D1FD56BEC02FCA184FCAECAA /* UGCReportingDialog.swift in Sources */,
+				8D4EFA392FBE48B300CF0704 /* BitcoinSweepView.swift in Sources */,
+				8D4EFA3A2FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift in Sources */,
 				D6CE5283E2A14894824E1C44 /* VideoPlayerView.swift in Sources */,
 				EB4512C28AE4AC919EA3D2E0 /* ViewerView.swift in Sources */,
 				8ADB489FAB643EBB11BB577E /* WebSocketClient.swift in Sources */,
@@ -669,7 +675,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 525WQ48Y72;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -692,7 +698,7 @@
 					"$(PROJECT_DIR)/build",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.4.0;
+				MARKETING_VERSION = 2.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = HAVEN;
 				SDKROOT = macosx;
@@ -709,7 +715,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 525WQ48Y72;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -732,7 +738,7 @@
 					"$(PROJECT_DIR)/build",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.4.0;
+				MARKETING_VERSION = 2.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = HAVEN;
 				SDKROOT = macosx;
@@ -745,7 +751,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 525WQ48Y72;
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
@@ -763,7 +769,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/build/ios",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -777,7 +783,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 525WQ48Y72;
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
@@ -795,7 +801,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/build/ios",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;

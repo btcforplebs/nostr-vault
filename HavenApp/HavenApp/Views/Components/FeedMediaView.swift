@@ -92,15 +92,21 @@ struct FeedMediaView: View {
                               targetSize: CGSize(width: 300, height: 300))
                     .frame(maxWidth: .infinity)
                     .frame(maxHeight: .infinity)
+            } else if let ratio = gifAspectRatio {
+                // Real dimensions are known — use the true aspect ratio
+                AnimatedImage(url: url, contentMode: .fill, shouldAnimate: true)
+                    .aspectRatio(ratio, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .frame(maxHeight: maxHeight)
             } else {
+                // Still loading — show a fixed-height placeholder while the GIF resolves its size
                 AnimatedImage(url: url, contentMode: .fill, shouldAnimate: true,
                               onLoad: { size in
                                   guard size.width > 0, size.height > 0 else { return }
                                   gifAspectRatio = size.width / size.height
                               })
-                    .aspectRatio(gifAspectRatio ?? 16.0 / 9.0, contentMode: .fit)
                     .frame(maxWidth: .infinity)
-                    .frame(maxHeight: maxHeight)
+                    .frame(height: 200)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))

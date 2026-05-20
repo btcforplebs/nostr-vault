@@ -24,6 +24,13 @@ struct ProfileView: View {
     @State private var bitcoinBalance: Int? = nil
     @State private var bitcoinAddress: String? = nil
 
+    // Lightning (NWC) balance — own profile only
+    @State private var lightningBalanceSats: Int? = nil
+    @State private var isLoadingLightningBalance = false
+
+    // Edit profile
+    @State private var showingEditProfile = false
+
     // Note streaming
     @State private var profileNotes: [FeedNote] = []
     @State private var isLoadingNotes = false
@@ -92,10 +99,8 @@ struct ProfileView: View {
                         dismissHeader
                     }
                     headerBlock
-                    if !isOwnProfile {
-                        actionRow
-                            .padding(.top, 4)
-                    }
+                    actionRow
+                        .padding(.top, 4)
                     if let about = profile?.about, !about.isEmpty {
                         bioBlock(about)
                     }
@@ -112,6 +117,9 @@ struct ProfileView: View {
                 .frame(maxWidth: 720)
                 .frame(maxWidth: .infinity)
             }
+            .refreshable {
+                await refreshProfile()
+            }
 
             ZapNotificationBanner()
                 .zIndex(2)
@@ -124,6 +132,7 @@ struct ProfileView: View {
             }
             fetchAuthorNotes()
             deriveBitcoinAddress()
+            fetchLightningBalance()
         }
         .onDisappear {
             disconnectClients()
@@ -134,7 +143,14 @@ struct ProfileView: View {
             }
         }
         .sheet(isPresented: $showSweep) {
-            BitcoinSweepView(balanceSats: bitcoinBalance ?? 0)
+            BitcoinSweepDisclaimerView()
+                .environmentObject(ConfigService.shared)
+        }
+        .sheet(isPresented: $showingEditProfile) {
+            ProfileEditView(existing: profile ?? FeedProfile(pubkey: pubkey)) { updated in
+                applyProfileUpdate(updated)
+            }
+            .environmentObject(nostrService)
         }
         .overlay {
             LightningAnimationView(isAnimating: $showLightning)
@@ -273,45 +289,63 @@ struct ProfileView: View {
 
     // MARK: - Action row
 
+    @ViewBuilder
     private var actionRow: some View {
         HStack(spacing: 8) {
-            Button(action: toggleFollow) {
-                HStack(spacing: 6) {
-                    Image(systemName: isFollowing ? "person.badge.minus" : "person.badge.plus")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(isFollowing ? "Unfollow" : "Follow")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                .foregroundColor(isFollowing ? .white : .havenPurple)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(isFollowing ? Color.havenPurple : Color.havenPurple.opacity(0.12))
-                .cornerRadius(6)
-            }
-            .buttonStyle(.plain)
-
-            if !ConfigService.shared.config.nwcURI.isEmpty, lightningAddress != nil {
-                Button(action: {
-                    if let lud16 = lightningAddress {
-                        Task { await zapProfile(lud16: lud16) }
-                    }
-                }) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "bolt.fill")
+            if isOwnProfile {
+                Button(action: { showingEditProfile = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "pencil")
                             .font(.system(size: 12, weight: .semibold))
-                        Text("Zap \(defaultZapSats)")
+                        Text("Edit Profile")
                             .font(.system(size: 13, weight: .semibold))
                     }
-                    .foregroundColor(.orange)
+                    .foregroundColor(.havenPurple)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
-                    .background(Color.orange.opacity(0.15))
+                    .background(Color.havenPurple.opacity(0.12))
                     .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
-                .onLongPressGesture {
-                    zapAmountSats = String(defaultZapSats)
-                    showAmountPicker = true
+            } else {
+                Button(action: toggleFollow) {
+                    HStack(spacing: 6) {
+                        Image(systemName: isFollowing ? "person.badge.minus" : "person.badge.plus")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(isFollowing ? "Unfollow" : "Follow")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(isFollowing ? .white : .havenPurple)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(isFollowing ? Color.havenPurple : Color.havenPurple.opacity(0.12))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+
+                if !ConfigService.shared.config.nwcURI.isEmpty, lightningAddress != nil {
+                    Button(action: {
+                        if let lud16 = lightningAddress {
+                            Task { await zapProfile(lud16: lud16) }
+                        }
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Zap \(defaultZapSats)")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(Color.orange.opacity(0.15))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .onLongPressGesture {
+                        zapAmountSats = String(defaultZapSats)
+                        showAmountPicker = true
+                    }
                 }
             }
 
@@ -328,14 +362,26 @@ struct ProfileView: View {
             statDivider
             statCell(value: shortInt(sectionCount.media), label: "MEDIA")
             statDivider
-            statCell(value: shortInt(sectionCount.replies), label: "REPLIES")
-            statDivider
-            if let bal = bitcoinBalance, bal > 0 {
-                statCell(value: shortSats(bal), label: "SATS", tint: .orange)
-            } else if isOwnProfile {
-                statCell(value: "\(feedService.followedPubkeys.count)", label: "FOLLOWS")
+            if isOwnProfile {
+                statCell(
+                    value: lightningBalanceSats.map(shortSats) ?? (isLoadingLightningBalance ? "…" : "—"),
+                    label: "⚡ LIGHTNING",
+                    tint: lightningBalanceSats != nil ? .orange : .secondary
+                )
+                statDivider
+                statCell(
+                    value: bitcoinBalance.map(shortSats) ?? "—",
+                    label: "\u{20BF} ON-CHAIN",
+                    tint: (bitcoinBalance ?? 0) > 0 ? .orange : .secondary
+                )
             } else {
-                statCell(value: "—", label: "SATS")
+                statCell(value: shortInt(sectionCount.replies), label: "REPLIES")
+                statDivider
+                if let bal = bitcoinBalance, bal > 0 {
+                    statCell(value: shortSats(bal), label: "\u{20BF} ON-CHAIN", tint: .orange)
+                } else {
+                    statCell(value: "—", label: "\u{20BF} ON-CHAIN")
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -494,6 +540,16 @@ struct ProfileView: View {
     }
 
     private func zapInlineButton(lud16: String) -> AnyView {
+        if isOwnProfile {
+            if let bal = lightningBalanceSats {
+                return AnyView(
+                    Text("\(shortSats(bal)) sats")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.orange)
+                )
+            }
+            return AnyView(EmptyView())
+        }
         guard !ConfigService.shared.config.nwcURI.isEmpty else { return AnyView(EmptyView()) }
         return AnyView(
             Button(action: {
@@ -573,7 +629,7 @@ struct ProfileView: View {
                             Text(section.rawValue.uppercased())
                                 .font(.system(size: 11, weight: .heavy))
                                 .tracking(0.6)
-                            Text("\(count(for: section))")
+                            Text(countLabel(for: section))
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
@@ -599,6 +655,11 @@ struct ProfileView: View {
         case .media: return sectionCount.media
         case .replies: return sectionCount.replies
         }
+    }
+
+    private func countLabel(for section: ProfileSection) -> String {
+        let n = count(for: section)
+        return n > 0 ? shortInt(n) : ""
     }
 
     // MARK: - Section content
@@ -648,6 +709,54 @@ struct ProfileView: View {
         case .media: return "photo"
         case .replies: return "arrowshape.turn.up.left"
         }
+    }
+
+    // MARK: - Refresh
+
+    private func refreshProfile() async {
+        nostrService.fetchMissingProfiles(for: [pubkey])
+
+        disconnectClients()
+        profileNotes.removeAll()
+        seenNoteIds.removeAll()
+        isLoadingNotes = false
+
+        fetchAuthorNotes()
+        deriveBitcoinAddress()
+        fetchLightningBalance()
+
+        try? await Task.sleep(nanoseconds: 500_000_000)
+    }
+
+    // MARK: - Lightning balance (own profile)
+
+    private func fetchLightningBalance() {
+        guard isOwnProfile, !ConfigService.shared.config.nwcURI.isEmpty else { return }
+        guard !isLoadingLightningBalance else { return }
+        isLoadingLightningBalance = true
+        Task {
+            do {
+                let msats = try await NWCService.getBalance()
+                let sats = msats / 1000
+                await MainActor.run {
+                    lightningBalanceSats = sats
+                    isLoadingLightningBalance = false
+                }
+            } catch {
+                await MainActor.run {
+                    isLoadingLightningBalance = false
+                }
+                #if DEBUG
+                print("ProfileView: lightning balance fetch failed: \(error)")
+                #endif
+            }
+        }
+    }
+
+    // MARK: - Profile editing
+
+    private func applyProfileUpdate(_ updated: FeedProfile) {
+        nostrService.profiles[pubkey] = updated
     }
 
     // MARK: - Note streaming
@@ -895,5 +1004,318 @@ struct ProfileView: View {
             print("ProfileView: Zap failed: \(error)")
             #endif
         }
+    }
+}
+
+// MARK: - ProfileEditView
+
+struct ProfileEditView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var nostrService: NostrService
+
+    let existing: FeedProfile
+    let onSave: (FeedProfile) -> Void
+
+    @State private var displayName: String = ""
+    @State private var name: String = ""
+    @State private var about: String = ""
+    @State private var pictureURL: String = ""
+    @State private var nip05: String = ""
+    @State private var lud16: String = ""
+    @State private var website: String = ""
+
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        platformContainer {
+            VStack(spacing: 0) {
+                editHeader
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        previewBlock
+
+                        divider
+
+                        fieldGroup(title: "IDENTITY") {
+                            field(label: "Display Name", text: $displayName, placeholder: "Satoshi Nakamoto")
+                            fieldDivider
+                            field(label: "Username", text: $name, placeholder: "satoshi")
+                            fieldDivider
+                            field(label: "NIP-05", text: $nip05, placeholder: "you@domain.com", keyboardKind: .emailLike)
+                        }
+
+                        divider
+
+                        fieldGroup(title: "BIO") {
+                            multilineField(label: "About", text: $about, placeholder: "Tell people about yourself…")
+                        }
+
+                        divider
+
+                        fieldGroup(title: "MEDIA") {
+                            field(label: "Picture URL", text: $pictureURL, placeholder: "https://…", keyboardKind: .urlLike)
+                            fieldDivider
+                            field(label: "Website", text: $website, placeholder: "yourdomain.com", keyboardKind: .urlLike)
+                        }
+
+                        divider
+
+                        fieldGroup(title: "LIGHTNING") {
+                            field(label: "Address (lud16)", text: $lud16, placeholder: "you@walletofsatoshi.com", keyboardKind: .emailLike)
+                        }
+
+                        if let err = errorMessage {
+                            Text(err)
+                                .font(.system(size: 12))
+                                .foregroundColor(.red)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        Spacer(minLength: 32)
+                    }
+                }
+            }
+        }
+        .onAppear { loadFromExisting() }
+    }
+
+    @ViewBuilder
+    private func platformContainer<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        #if os(macOS)
+        content()
+            .frame(minWidth: 480, minHeight: 600)
+            .background(Color.platformWindowBackground)
+        #else
+        content()
+            .background(Color.platformWindowBackground.ignoresSafeArea())
+        #endif
+    }
+
+    private var editHeader: some View {
+        HStack {
+            Button("Cancel") { dismiss() }
+                .foregroundColor(.secondary)
+
+            Spacer()
+
+            Text("Edit Profile")
+                .font(.system(size: 15, weight: .semibold))
+
+            Spacer()
+
+            Button(action: save) {
+                if isSaving {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .tint(Color.havenPurple)
+                } else {
+                    Text("Save")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.havenPurple)
+                }
+            }
+            .disabled(isSaving)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.platformControlBackground)
+        .overlay(
+            Rectangle()
+                .fill(Color.platformSeparator.opacity(0.5))
+                .frame(height: 0.5),
+            alignment: .bottom
+        )
+    }
+
+    private var previewBlock: some View {
+        HStack(spacing: 14) {
+            AvatarView(url: URL(string: pictureURL), pubkey: existing.pubkey)
+                .frame(width: 56, height: 56)
+                .overlay(Circle().stroke(Color.havenPurple.opacity(0.35), lineWidth: 1.5))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(displayName.isEmpty ? (name.isEmpty ? "Unnamed" : name) : displayName)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                if !nip05.isEmpty {
+                    Text(nip05)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                if !about.isEmpty {
+                    Text(about)
+                        .font(.system(size: 12))
+                        .foregroundColor(.primary.opacity(0.75))
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.platformSeparator.opacity(0.5))
+            .frame(height: 0.5)
+            .padding(.vertical, 8)
+    }
+
+    private var fieldDivider: some View {
+        Rectangle()
+            .fill(Color.platformSeparator.opacity(0.4))
+            .frame(height: 0.5)
+            .padding(.leading, 16)
+    }
+
+    private func fieldGroup<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(0.7)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+            content()
+        }
+    }
+
+    enum KeyboardKind { case `default`, urlLike, emailLike }
+
+    @ViewBuilder
+    private func field(label: String, text: Binding<String>, placeholder: String, keyboardKind: KeyboardKind = .default) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 100, alignment: .leading)
+
+            TextField(placeholder, text: text)
+                .font(.system(size: 13))
+                .textFieldStyle(.plain)
+                .modifier(KeyboardModifier(kind: keyboardKind))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private func multilineField(label: String, text: Binding<String>, placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            ZStack(alignment: .topLeading) {
+                if text.wrappedValue.isEmpty {
+                    Text(placeholder)
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary.opacity(0.6))
+                        .padding(.top, 8)
+                        .padding(.leading, 6)
+                }
+                #if os(iOS)
+                TextEditor(text: text)
+                    .font(.system(size: 13))
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 90)
+                #else
+                TextEditor(text: text)
+                    .font(.system(size: 13))
+                    .frame(minHeight: 90)
+                #endif
+            }
+            .padding(6)
+            .background(Color.secondary.opacity(0.08))
+            .cornerRadius(6)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func loadFromExisting() {
+        displayName = existing.displayName ?? ""
+        name = existing.name ?? ""
+        about = existing.about ?? ""
+        pictureURL = existing.pictureURL?.absoluteString ?? ""
+        nip05 = existing.nip05 ?? ""
+        lud16 = existing.lud16 ?? ""
+        website = existing.website ?? ""
+    }
+
+    private func save() {
+        errorMessage = nil
+        isSaving = true
+
+        var content: [String: String] = [:]
+        if !name.trimmingCharacters(in: .whitespaces).isEmpty { content["name"] = name.trimmingCharacters(in: .whitespaces) }
+        if !displayName.trimmingCharacters(in: .whitespaces).isEmpty { content["display_name"] = displayName.trimmingCharacters(in: .whitespaces) }
+        if !about.trimmingCharacters(in: .whitespaces).isEmpty { content["about"] = about.trimmingCharacters(in: .whitespaces) }
+        if !pictureURL.trimmingCharacters(in: .whitespaces).isEmpty { content["picture"] = pictureURL.trimmingCharacters(in: .whitespaces) }
+        if !nip05.trimmingCharacters(in: .whitespaces).isEmpty { content["nip05"] = nip05.trimmingCharacters(in: .whitespaces) }
+        if !lud16.trimmingCharacters(in: .whitespaces).isEmpty { content["lud16"] = lud16.trimmingCharacters(in: .whitespaces) }
+        if !website.trimmingCharacters(in: .whitespaces).isEmpty { content["website"] = website.trimmingCharacters(in: .whitespaces) }
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: content, options: [.sortedKeys]),
+              let jsonStr = String(data: jsonData, encoding: .utf8) else {
+            errorMessage = "Could not encode profile."
+            isSaving = false
+            return
+        }
+
+        guard let signed = nostrService.signEvent(kind: 0, content: jsonStr, tags: []) else {
+            errorMessage = "Could not sign event. Check that your key is available."
+            isSaving = false
+            return
+        }
+
+        nostrService.postEvent(signed)
+
+        var updated = existing
+        updated.name = content["name"]
+        updated.displayName = content["display_name"]
+        updated.about = content["about"]
+        updated.pictureURL = (content["picture"]).flatMap { URL(string: $0) }
+        updated.nip05 = content["nip05"]
+        updated.lud16 = content["lud16"]
+        updated.website = content["website"]
+
+        onSave(updated)
+
+        isSaving = false
+        dismiss()
+    }
+}
+
+private struct KeyboardModifier: ViewModifier {
+    let kind: ProfileEditView.KeyboardKind
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        switch kind {
+        case .urlLike:
+            content
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .autocorrectionDisabled(true)
+        case .emailLike:
+            content
+                .textInputAutocapitalization(.never)
+                .keyboardType(.emailAddress)
+                .autocorrectionDisabled(true)
+        case .default:
+            content
+        }
+        #else
+        content
+        #endif
     }
 }

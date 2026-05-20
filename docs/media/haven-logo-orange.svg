@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#180D01"/>
+      <stop offset="100%" stop-color="#080400"/>
+    </linearGradient>
+    <linearGradient id="glassGrad" x1="0" y1="72" x2="0" y2="952" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FA9447" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#E67326" stop-opacity="0.03"/>
+    </linearGradient>
+    <linearGradient id="glassHighlight" x1="0" y1="72" x2="0" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="white" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="boltGrad" x1="0" y1="440" x2="0" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFD4A0"/>
+      <stop offset="40%" stop-color="#FA9447"/>
+      <stop offset="100%" stop-color="#C05810"/>
+    </linearGradient>
+    <radialGradient id="amb" cx="512" cy="500" r="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E67326" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#E67326" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="neon" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="boltGlow" x="-50%" y="-15%" width="200%" height="130%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="220" fill="url(#bgGrad)"/>
+  <rect width="1024" height="1024" rx="220" fill="url(#amb)"/>
+
+  <!-- Glass card -->
+  <rect x="72" y="72" width="880" height="880" rx="172"
+        fill="url(#glassGrad)" stroke="#FA9447" stroke-width="1.5" stroke-opacity="0.22"/>
+  <rect x="72" y="72" width="880" height="440" rx="172" fill="url(#glassHighlight)"/>
+
+  <!-- Chimney -->
+  <rect x="592" y="220" width="58" height="96" rx="5"
+        fill="#FA9447" fill-opacity="0.08"
+        stroke="#FA9447" stroke-width="14" filter="url(#neon)"/>
+
+  <!-- Roof -->
+  <polyline points="230,432 512,190 794,432"
+            fill="none" stroke="#FA9447" stroke-width="14" stroke-linejoin="round"
+            filter="url(#neon)"/>
+
+  <!-- House walls -->
+  <path d="M 230,432 L 230,812 L 794,812 L 794,432"
+        fill="none" stroke="#FA9447" stroke-width="14"
+        filter="url(#neon)"/>
+
+  <!-- Server rack 1 -->
+  <rect x="252" y="452" width="520" height="72" rx="6"
+        fill="#FA9447" fill-opacity="0.06"
+        stroke="#FA9447" stroke-width="5" stroke-opacity="0.60"/>
+  <line x1="272" y1="473" x2="646" y2="473" stroke="#FA9447" stroke-width="5" stroke-opacity="0.40"/>
+  <line x1="272" y1="487" x2="600" y2="487" stroke="#FA9447" stroke-width="3" stroke-opacity="0.28"/>
+  <line x1="272" y1="500" x2="622" y2="500" stroke="#FA9447" stroke-width="3" stroke-opacity="0.28"/>
+  <circle cx="676" cy="471" r="9" fill="#FA9447" fill-opacity="0.82"/>
+  <circle cx="700" cy="471" r="9" fill="#FA9447" fill-opacity="0.60"/>
+  <circle cx="724" cy="480" r="6" fill="#FA9447" fill-opacity="0.42"/>
+
+  <!-- Server rack 2 -->
+  <rect x="252" y="536" width="520" height="72" rx="6"
+        fill="#FA9447" fill-opacity="0.06"
+        stroke="#FA9447" stroke-width="5" stroke-opacity="0.60"/>
+  <line x1="272" y1="557" x2="636" y2="557" stroke="#FA9447" stroke-width="5" stroke-opacity="0.40"/>
+  <line x1="272" y1="571" x2="590" y2="571" stroke="#FA9447" stroke-width="3" stroke-opacity="0.28"/>
+  <line x1="272" y1="584" x2="614" y2="584" stroke="#FA9447" stroke-width="3" stroke-opacity="0.28"/>
+  <circle cx="676" cy="555" r="9" fill="#FA9447" fill-opacity="0.82"/>
+  <circle cx="700" cy="555" r="9" fill="#FA9447" fill-opacity="0.60"/>
+  <circle cx="724" cy="564" r="6" fill="#FA9447" fill-opacity="0.42"/>
+
+  <!-- Server rack 3 -->
+  <rect x="252" y="620" width="520" height="72" rx="6"
+        fill="#FA9447" fill-opacity="0.06"
+        stroke="#FA9447" stroke-width="5" stroke-opacity="0.60"/>
+  <line x1="272" y1="641" x2="640" y2="641" stroke="#FA9447" stroke-width="5" stroke-opacity="0.40"/>
+  <line x1="272" y1="655" x2="596" y2="655" stroke="#FA9447" stroke-width="3" stroke-opacity="0.28"/>
+  <line x1="272" y1="668" x2="618" y2="668" stroke="#FA9447" stroke-width="3" stroke-opacity="0.28"/>
+  <circle cx="676" cy="639" r="9" fill="#FA9447" fill-opacity="0.82"/>
+  <circle cx="700" cy="639" r="9" fill="#FA9447" fill-opacity="0.60"/>
+  <circle cx="724" cy="648" r="6" fill="#FA9447" fill-opacity="0.42"/>
+
+  <!-- Lightning bolt — glow pass -->
+  <polygon points="560,440 438,592 514,592 458,762 592,558 516,558"
+           fill="#FA9447" fill-opacity="0.18" filter="url(#boltGlow)"/>
+  <!-- Lightning bolt — main fill -->
+  <polygon points="560,440 438,592 514,592 458,762 592,558 516,558"
+           fill="url(#boltGrad)" fill-opacity="0.92" filter="url(#boltGlow)"/>
+</svg>

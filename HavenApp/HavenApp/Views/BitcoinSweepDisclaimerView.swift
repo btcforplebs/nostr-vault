@@ -215,15 +215,19 @@ struct BitcoinSweepDisclaimerView: View {
                 return
             }
 
+            struct TxoStats: Decodable {
+                let funded_txo_sum: Int
+                let spent_txo_sum: Int
+            }
             struct AddressStats: Decodable {
-                let funded_txo_sum: Int?
-                let spent_txo_sum: Int?
+                let chain_stats: TxoStats
+                let mempool_stats: TxoStats
             }
 
             do {
                 let stats = try JSONDecoder().decode(AddressStats.self, from: data)
-                let funded = stats.funded_txo_sum ?? 0
-                let spent = stats.spent_txo_sum ?? 0
+                let funded = stats.chain_stats.funded_txo_sum + stats.mempool_stats.funded_txo_sum
+                let spent = stats.chain_stats.spent_txo_sum + stats.mempool_stats.spent_txo_sum
                 let total = funded - spent
 
                 await MainActor.run {

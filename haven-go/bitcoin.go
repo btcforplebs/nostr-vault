@@ -21,6 +21,7 @@ import (
 )
 
 const mempoolBase = "https://mempool.btcforplebs.com"
+const mempoolFallback = "https://mempool.space"
 
 // deriveP2TRAddress derives a Bitcoin Taproot (P2TR) address from a 32-byte
 // hex-encoded x-only public key using BIP-341 key-path-only spending.
@@ -124,11 +125,24 @@ type utxo struct {
 }
 
 func fetchUTXOs(address string) ([]utxo, error) {
-	resp, err := http.Get(mempoolBase + "/api/address/" + address + "/utxo")
+	utxos, err := fetchUTXOsFrom(mempoolBase, address)
+	if err != nil {
+		// Primary server may not support this endpoint; fall back to mempool.space.
+		return fetchUTXOsFrom(mempoolFallback, address)
+	}
+	return utxos, nil
+}
+
+func fetchUTXOsFrom(base, address string) ([]utxo, error) {
+	resp, err := http.Get(base + "/api/address/" + address + "/utxo")
 	if err != nil {
 		return nil, fmt.Errorf("fetch UTXOs: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return nil, fmt.Errorf("fetch UTXOs: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 	var utxos []utxo
 	if err := json.NewDecoder(resp.Body).Decode(&utxos); err != nil {
 		return nil, fmt.Errorf("decode UTXOs: %w", err)
@@ -150,6 +164,10 @@ func fetchFeeEstimates() (FeeEstimates, error) {
 		return FeeEstimates{}, fmt.Errorf("fetch fees: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return FeeEstimates{}, fmt.Errorf("fetch fees: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 	var fees FeeEstimates
 	if err := json.NewDecoder(resp.Body).Decode(&fees); err != nil {
 		return FeeEstimates{}, fmt.Errorf("decode fees: %w", err)
@@ -309,7 +327,16 @@ func buildAndBroadcastSweep(nsecHex, destAddr string, feeRateSatsPerVB int64) (*
 }
 
 func broadcastTx(rawHex string) (string, error) {
-	resp, err := http.Post(mempoolBase+"/api/tx", "text/plain", strings.NewReader(rawHex))
+	txid, err := broadcastTxTo(mempoolBase+"/api/tx/push", rawHex)
+	if err != nil {
+		// Fall back to mempool.space if the primary rejects.
+		return broadcastTxTo(mempoolFallback+"/api/tx", rawHex)
+	}
+	return txid, nil
+}
+
+func broadcastTxTo(url, rawHex string) (string, error) {
+	resp, err := http.Post(url, "text/plain", strings.NewReader(rawHex))
 	if err != nil {
 		return "", fmt.Errorf("broadcast: %w", err)
 	}
