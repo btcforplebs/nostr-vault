@@ -28,7 +28,7 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenViewer)) { _ in
-            selectedTab = 1 // Relay tab
+            selectedTab = 3 // Relay tab
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeed)) { _ in
             selectedTab = 0 // Feed tab
@@ -42,6 +42,7 @@ struct iPadSidebarView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
+    @StateObject private var nostrService = NostrService.shared
     @StateObject private var feedService = FeedService.shared
 
     var body: some View {
@@ -54,9 +55,15 @@ struct iPadSidebarView: View {
                     Label("Feed", systemImage: "person.2.wave.2")
                 }
                 NavigationLink(value: 1) {
-                    Label("Relay", systemImage: "doc.text.image")
+                    Label("Search", systemImage: "magnifyingglass")
                 }
                 NavigationLink(value: 2) {
+                    Label("Profile", systemImage: "person.crop.circle")
+                }
+                NavigationLink(value: 3) {
+                    Label("Relay", systemImage: "doc.text.image")
+                }
+                NavigationLink(value: 4) {
                     Label("Settings", systemImage: "gearshape")
                 }
             }
@@ -67,12 +74,26 @@ struct iPadSidebarView: View {
                 FeedView()
             case 1:
                 NavigationView {
+                    SearchView()
+                        .navigationTitle("Search")
+                        .navigationBarTitleDisplayMode(.inline)
+                }
+                .navigationViewStyle(.stack)
+            case 2:
+                NavigationView {
+                    ProfileView(pubkey: nostrService.ownerHexPubkey, embeddedInNavigation: true)
+                        .navigationTitle("Profile")
+                        .navigationBarTitleDisplayMode(.inline)
+                }
+                .navigationViewStyle(.stack)
+            case 3:
+                NavigationView {
                     ViewerView()
                         .navigationTitle("Relay")
                         .navigationBarTitleDisplayMode(.inline)
                 }
                 .navigationViewStyle(.stack)
-            case 2:
+            case 4:
                 NavigationView {
                     SettingsView()
                         .navigationTitle("Settings")
@@ -107,6 +128,7 @@ struct iPhoneTabView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
+    @StateObject private var nostrService = NostrService.shared
     @StateObject private var feedService = FeedService.shared
 
     var body: some View {
@@ -118,6 +140,26 @@ struct iPhoneTabView: View {
                 }
                 .tag(0)
 
+            // Search Tab
+            NavigationView {
+                SearchView()
+                    .navigationTitle("Search")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .navigationViewStyle(.stack)
+            .tabItem { Label("Search", systemImage: "magnifyingglass") }
+            .tag(1)
+
+            // Profile Tab (own profile)
+            NavigationView {
+                ProfileView(pubkey: nostrService.ownerHexPubkey, embeddedInNavigation: true)
+                    .navigationTitle("Profile")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .navigationViewStyle(.stack)
+            .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+            .tag(2)
+
             // Relay Tab (Notes & Media stored in local relay)
             NavigationView {
                 ViewerView()
@@ -126,7 +168,7 @@ struct iPhoneTabView: View {
             }
             .navigationViewStyle(.stack)
             .tabItem { Label("Relay", systemImage: "doc.text.image") }
-            .tag(1)
+            .tag(3)
 
             // Settings Tab
             NavigationView {
@@ -136,7 +178,7 @@ struct iPhoneTabView: View {
             }
             .navigationViewStyle(.stack)
             .tabItem { Label("Settings", systemImage: "gearshape") }
-            .tag(2)
+            .tag(4)
         }
         .tint(.havenPurple)
         .onAppear {

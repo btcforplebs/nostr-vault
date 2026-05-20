@@ -1,6 +1,6 @@
 import Foundation
 
-struct MediaItem: Identifiable, Codable {
+struct MediaItem: Identifiable, Codable, Hashable, Equatable {
     let id: UUID
     let url: URL
     let type: MediaType
@@ -9,10 +9,11 @@ struct MediaItem: Identifiable, Codable {
     let tags: [[String]]? // Tags of the event containing this media
     let mimeType: String?
 
-    enum MediaType: String, Codable {
+    enum MediaType: String, Codable, Hashable, Equatable {
         case image
         case video
         case audio
         case unknown
     }
 }
+

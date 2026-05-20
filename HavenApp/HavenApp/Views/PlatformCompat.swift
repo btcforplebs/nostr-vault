@@ -122,4 +122,14 @@ extension View {
             self
         }
     }
+
+    @ViewBuilder
+    func mediaTabViewStyleCompat() -> some View {
+        #if os(iOS)
+        self.tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+        #else
+        self
+        #endif
+    }
 }
+

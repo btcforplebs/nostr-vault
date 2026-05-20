@@ -125,6 +125,63 @@ struct FeedNote: Identifiable {
                 return nil
             }
     }
+
+    /// Technical heuristic to filter out spam, bots, empty, duplicate, or telemetry noise.
+    static func isNoiseOrSpam(content: String, tags: [[String]]) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        
+        // 1. JSON / technical payloads (common in spam/telemetry)
+        if trimmed.hasPrefix("{") && trimmed.hasSuffix("}") {
+            return true
+        }
+        
+        let lower = trimmed.lowercased()
+        if lower.contains("nostr-wallet-connect") ||
+           lower.contains("\"method\":") ||
+           lower.contains("\"result\":") ||
+           lower.contains("nip47") {
+            return true
+        }
+        
+        // 2. Excessive consecutive repeated characters (e.g. spam lines or emoji flood)
+        var consecutiveCount = 1
+        var lastChar: Character? = nil
+        for char in trimmed {
+            if let last = lastChar, last == char {
+                consecutiveCount += 1
+                if consecutiveCount >= 20 {
+                    return true
+                }
+            } else {
+                consecutiveCount = 1
+            }
+            lastChar = char
+        }
+        
+        // 3. Hashtag or Mention stuffing (in very short content)
+        let hashtags = tags.filter { $0.count >= 2 && $0[0] == "t" }
+        let mentions = tags.filter { $0.count >= 2 && $0[0] == "p" }
+        if trimmed.count < 100 {
+            if hashtags.count > 6 || mentions.count > 6 {
+                return true
+            }
+        }
+        
+        // 4. Common bot status updates, advertising, or phishing
+        let spamKeywords = [
+            "relay status:", "relay uptime:", "ping time:", "block height:",
+            "free bitcoin", "earn double bitcoin", "telegram channel for free",
+            "pump telegram", "whatsapp group", "click here to claim"
+        ]
+        for keyword in spamKeywords {
+            if lower.contains(keyword) {
+                return true
+            }
+        }
+        
+        return false
+    }
 }
 
 // MARK: - BackgroundAccumulator
@@ -220,6 +277,7 @@ class FeedService: ObservableObject {
     @Published var pendingNotes: [FeedNote] = []
     @Published var likedEventIds: Set<String> = []
     @Published var zappedEventIds: [String: Int] = [:]
+    @Published var onchainZapEventIds: [String: Int] = [:]
     /// Per-note engagement counts (replies, reactions, reposts) from relay data.
     @Published var noteStats: [String: NoteStats] = [:]
 
@@ -294,8 +352,9 @@ class FeedService: ObservableObject {
               let state = try? JSONDecoder().decode(InteractionState.self, from: data) else { return }
         self.likedEventIds = state.likedEventIds
         self.zappedEventIds = state.zappedEventIds
+        self.onchainZapEventIds = state.onchainZapEventIds
         #if DEBUG
-        print("FeedService: Loaded \(state.likedEventIds.count) likes, \(state.zappedEventIds.count) zaps from disk")
+        print("FeedService: Loaded \(state.likedEventIds.count) likes, \(state.zappedEventIds.count) zaps, \(state.onchainZapEventIds.count) onchain zaps from disk")
         #endif
     }
 
@@ -305,7 +364,7 @@ class FeedService: ObservableObject {
         guard now.timeIntervalSince(interactionSaveThrottle) > 2.0 else { return }
         interactionSaveThrottle = now
 
-        let state = InteractionState(likedEventIds: likedEventIds, zappedEventIds: zappedEventIds)
+        let state = InteractionState(likedEventIds: likedEventIds, zappedEventIds: zappedEventIds, onchainZapEventIds: onchainZapEventIds)
         let url = Self.interactionStateURL()
         DispatchQueue.global(qos: .utility).async {
             if let data = try? JSONEncoder().encode(state) {
@@ -324,10 +383,12 @@ class FeedService: ObservableObject {
     private struct InteractionState: Codable {
         let likedEventIds: Set<String>
         let zappedEventIds: [String: Int]
+        let onchainZapEventIds: [String: Int]
 
-        init(likedEventIds: Set<String>, zappedEventIds: [String: Int]) {
+        init(likedEventIds: Set<String>, zappedEventIds: [String: Int], onchainZapEventIds: [String: Int] = [:]) {
             self.likedEventIds = likedEventIds
             self.zappedEventIds = zappedEventIds
+            self.onchainZapEventIds = onchainZapEventIds
         }
 
         init(from decoder: Decoder) throws {
@@ -341,6 +402,7 @@ class FeedService: ObservableObject {
             } else {
                 zappedEventIds = [:]
             }
+            onchainZapEventIds = try container.decodeIfPresent([String: Int].self, forKey: .onchainZapEventIds) ?? [:]
         }
     }
 
@@ -465,13 +527,13 @@ class FeedService: ObservableObject {
         isLoadingContacts = true
         connectionStatus = "Fetching contact list…"
 
-        // Safety timeout: if contact loading hasn't finished in 30 seconds, force completion
+        // Safety timeout: if contact loading hasn't finished in 15 seconds, force completion
         contactLoadingTimeout?.invalidate()
-        contactLoadingTimeout = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { [weak self] _ in
+        contactLoadingTimeout = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self, self.isLoadingContacts else { return }
                 #if DEBUG
-                print("FeedService: Contact loading timed out after 30s — forcing completion")
+                print("FeedService: Contact loading timed out after 15s — forcing completion")
                 #endif
                 self.isLoadingContacts = false
                 self.connectionStatus = self.followedPubkeys.isEmpty ? "Contact fetch timed out" : "Loaded \(self.followedPubkeys.count) contacts"
@@ -479,113 +541,93 @@ class FeedService: ObservableObject {
             }
         }
 
-        // Try local relay first; if it returns empty, fall back to an external relay.
+        // Connect to all relays in parallel — use the first one that returns a non-empty contact list.
         let candidates: [URL] = ([localRelayURL] + externalRelayURLs).compactMap { $0 }
-        tryFetchContactList(from: candidates, ownerHex: ownerHex, completion: completion)
+        fetchContactListInParallel(from: candidates, ownerHex: ownerHex, completion: completion)
     }
 
-    private func tryFetchContactList(from relays: [URL], ownerHex: String, completion: @escaping () -> Void) {
-        guard let url = relays.first else {
+    /// Opens a connection to every candidate relay simultaneously and fires `completion`
+    /// as soon as any relay returns a kind-3 event with at least one follow.
+    private func fetchContactListInParallel(from relays: [URL], ownerHex: String, completion: @escaping () -> Void) {
+        guard !relays.isEmpty else {
             contactLoadingTimeout?.invalidate()
             isLoadingContacts = false; completion(); return
         }
-        let remaining = Array(relays.dropFirst())
 
-        let c = WebSocketClient()
-        c.isTemporary = true
+        // Shared mutable state protected by main-thread dispatch.
+        var completed = false
+        var eoseCount = 0
+        var clients: [WebSocketClient] = []
 
-        c.messageSubject
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] msg in
-                self?.handleContactListMsg(
-                    msg, ownerHex: ownerHex, client: c,
-                    fallbackRelays: remaining, completion: completion
-                )
-            }
-            .store(in: &cancellables)
+        let finish: ([String], String, WebSocketClient) -> Void = { [weak self] pubkeys, content, winner in
+            guard let self = self, !completed else { return }
+            completed = true
+            self.contactLoadingTimeout?.invalidate()
+            // Disconnect all clients including the winner
+            clients.forEach { $0.disconnect() }
 
-        c.$connectionState
-            .receive(on: DispatchQueue.main)
-            .sink { state in
-                if state == .connected {
+            var finalPubkeys = pubkeys
+            if !finalPubkeys.contains(ownerHex) { finalPubkeys.append(ownerHex) }
+            self.followedPubkeys = finalPubkeys
+            self.contactListContent = content
+            self.isLoadingContacts = false
+            self.connectionStatus = pubkeys.isEmpty ? "No contacts found" : "Loaded \(pubkeys.count) contacts"
+            completion()
+        }
+
+        for url in relays {
+            let c = WebSocketClient()
+            c.isTemporary = true
+            clients.append(c)
+
+            c.messageSubject
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] msg in
+                    guard !completed, let self = self else { return }
+                    guard let data = msg.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                          let type = json[0] as? String else { return }
+
+                    if type == "EVENT", json.count >= 3,
+                       let eventDict = json[2] as? [String: Any],
+                       let kind = eventDict["kind"] as? Int, kind == 3,
+                       let tags = eventDict["tags"] as? [[String]] {
+                        let pubkeys = tags.compactMap { t -> String? in
+                            guard t.count >= 2, t[0] == "p" else { return nil }
+                            return t[1]
+                        }
+                        guard !pubkeys.isEmpty else { return }
+                        let content = eventDict["content"] as? String ?? ""
+                        finish(pubkeys, content, c)
+                    } else if type == "EOSE" {
+                        eoseCount += 1
+                        // All relays returned EOSE with no usable contact list
+                        if eoseCount >= relays.count && !completed {
+                            completed = true
+                            self.contactLoadingTimeout?.invalidate()
+                            clients.forEach { $0.disconnect() }
+                            self.isLoadingContacts = false
+                            self.connectionStatus = self.followedPubkeys.isEmpty ? "No contacts found" : "Loaded \(self.followedPubkeys.count) contacts"
+                            completion()
+                        }
+                    }
+                }
+                .store(in: &cancellables)
+
+            c.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { state in
+                    guard !completed, state == .connected else { return }
                     let filter: [String: Any] = ["kinds": [3], "authors": [ownerHex], "limit": 1]
                     let req = ["REQ", "cl-\(UUID().uuidString.prefix(4))", filter] as [Any]
                     if let data = try? JSONSerialization.data(withJSONObject: req),
                        let str = String(data: data, encoding: .utf8) {
                         c.send(text: str)
                     }
-                } else if state == .error {
-                    // Try next relay
-                    DispatchQueue.main.async { [weak self] in
-                        self?.tryFetchContactList(from: remaining, ownerHex: ownerHex, completion: completion)
-                    }
                 }
-            }
-            .store(in: &cancellables)
+                .store(in: &cancellables)
 
-        c.connect(url: url)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
-            guard self?.isLoadingContacts == true else { return }
-            c.disconnect()
-            self?.tryFetchContactList(from: remaining, ownerHex: ownerHex, completion: completion)
-        }
-    }
-
-    private func handleContactListMsg(
-        _ msg: String, ownerHex: String, client: WebSocketClient,
-        fallbackRelays: [URL] = [], completion: @escaping () -> Void
-    ) {
-        guard let data = msg.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json[0] as? String else { return }
-
-        if type == "EVENT", json.count >= 3,
-           let eventDict = json[2] as? [String: Any],
-           let kind = eventDict["kind"] as? Int, kind == 3,
-           let tags = eventDict["tags"] as? [[String]] {
-
-            let pubkeys = tags.compactMap { t -> String? in
-                guard t.count >= 2, t[0] == "p" else { return nil }
-                return t[1]
-            }
-
-            if pubkeys.isEmpty && !fallbackRelays.isEmpty {
-                // No follows found on this relay — try next
-                client.disconnect()
-                DispatchQueue.main.async { [weak self] in
-                    self?.tryFetchContactList(from: fallbackRelays, ownerHex: ownerHex, completion: completion)
-                }
-                return
-            }
-
-            let originalContent = eventDict["content"] as? String ?? ""
-
-            DispatchQueue.main.async { [weak self] in
-                var finalPubkeys = pubkeys
-                if !finalPubkeys.contains(ownerHex) {
-                    finalPubkeys.append(ownerHex)
-                }
-                self?.followedPubkeys = finalPubkeys
-                self?.contactListContent = originalContent
-                self?.contactLoadingTimeout?.invalidate()
-                self?.isLoadingContacts = false
-                client.disconnect()
-                self?.connectionStatus = pubkeys.isEmpty ? "No contacts found" : "Loaded \(pubkeys.count) contacts"
-                completion()
-            }
-        } else if type == "EOSE" {
-            DispatchQueue.main.async { [weak self] in
-                self?.contactLoadingTimeout?.invalidate()
-                self?.isLoadingContacts = false
-                client.disconnect()
-                // If still no pubkeys and have fallbacks, try them
-                if self?.followedPubkeys.isEmpty == true && !fallbackRelays.isEmpty {
-                    self?.tryFetchContactList(from: fallbackRelays, ownerHex: ownerHex, completion: completion)
-                } else {
-                    completion()
-                }
-            }
+            c.connect(url: url)
         }
     }
 
@@ -741,7 +783,7 @@ class FeedService: ObservableObject {
         var filter: [String: Any] = [
             "kinds": [1, 6, 30023],
             "since": since,
-            "limit": isGlobal ? 200 : 500
+            "limit": isGlobal ? 1000 : 500
         ]
         if !isGlobal {
             filter["authors"] = followedPubkeys
@@ -848,6 +890,11 @@ class FeedService: ObservableObject {
               let tags      = ev["tags"]        as? [[String]]
         else { return }
 
+        // Ignore events with future timestamps (> 60 seconds in the future) to prevent feed corruption
+        if Double(createdAt) > Date().timeIntervalSince1970 + 60 {
+            return
+        }
+
         // Handle Reactions (Kind 7) — track for self-like detection + per-note counting
         if kind == 7 {
             if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
@@ -906,6 +953,11 @@ class FeedService: ObservableObject {
             kind: kind,
             repostedBy: kind == 6 ? pubkey : nil
         )
+
+        // Filter out obvious spam/noise from being processed
+        if FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) {
+            return
+        }
 
         // Accumulate on processing queue — NO per-event main thread dispatch
         let acc = self.bgAccumulator
@@ -1055,6 +1107,13 @@ class FeedService: ObservableObject {
         let batch = noteBuffer
         noteBuffer.removeAll(keepingCapacity: true)
 
+        // Prefetch media content types for the batch — moves HTTP HEAD detection
+        // out of the rendering path so FeedMediaView has cached types when it renders
+        let allMediaURLs = batch.flatMap { $0.mediaURLs }
+        if !allMediaURLs.isEmpty {
+            MediaTypeDetector.shared.prefetchContentTypes(for: allMediaURLs)
+        }
+
         // During initial load, add everything at once then sort once
         if notes.isEmpty || isLoadingFeed {
             notes.append(contentsOf: batch)
@@ -1068,12 +1127,14 @@ class FeedService: ObservableObject {
 
         // Live updates: buffer new top-level notes to prevent feed jumping
         let newestDate = notes.first?.createdAt ?? Date.distantPast
+        let autoLoad = ConfigService.shared.config.autoLoadNewPosts
+        let driftThreshold = newestDate.addingTimeInterval(-60) // 60 seconds grace period for relay clock drift
 
         var toAdd: [FeedNote] = []
         var toPending: [FeedNote] = []
 
         for note in batch {
-            if note.createdAt > newestDate && !note.isReply {
+            if note.createdAt > driftThreshold && !note.isReply && !autoLoad {
                 toPending.append(note)
             } else {
                 toAdd.append(note)
@@ -1099,7 +1160,7 @@ class FeedService: ObservableObject {
 
     private func scheduleNoteFetchFlush() {
         guard noteFetchTimer == nil else { return }
-        noteFetchTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
+        noteFetchTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.flushNoteFetchRequests()
             }
@@ -1115,7 +1176,7 @@ class FeedService: ObservableObject {
         noteFetchQueue.removeAll()
 
         let candidates: [URL] = ([localRelayURL] + externalRelayURLs).compactMap { $0 }
-        
+
         #if DEBUG
         print("FeedService: Fetching \(ids.count) missing notes for threading")
         #endif
@@ -1123,13 +1184,12 @@ class FeedService: ObservableObject {
         for url in candidates {
             let c = WebSocketClient()
             c.isTemporary = true
-            
+
+            // Use a fast-path handler that bypasses the batch pipeline so parent
+            // notes appear in the thread preview as soon as the relay responds.
             c.messageSubject
-                .receive(on: processingQueue)
-                .sink { [weak self] msg in
-                    // Re-use background handler; totalRelays 1 is safe for temporary fetching
-                    self?.handleFeedMsgBackground(msg, totalRelays: 1)
-                }
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] msg in self?.handleParentNoteFetch(msg) }
                 .store(in: &cancellables)
 
             c.$connectionState
@@ -1142,8 +1202,6 @@ class FeedService: ObservableObject {
                            let str = String(data: data, encoding: .utf8) {
                             c.send(text: str)
                         }
-                        
-                        // Self-destruct after delay
                         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                             c.disconnect()
                         }
@@ -1153,5 +1211,39 @@ class FeedService: ObservableObject {
 
             c.connect(url: url)
         }
+    }
+
+    /// Fast-path handler for parent note fetches — inserts directly into notes on the main
+    /// thread without going through the batch accumulator or flush timers.
+    private func handleParentNoteFetch(_ msg: String) {
+        guard let data = msg.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              let type = json[0] as? String,
+              type == "EVENT", json.count >= 3,
+              let ev = json[2] as? [String: Any],
+              let id        = ev["id"]        as? String,
+              let pubkey    = ev["pubkey"]     as? String,
+              let content   = ev["content"]    as? String,
+              let createdAt = ev["created_at"] as? Int64,
+              let kind      = ev["kind"]       as? Int,
+              let tags      = ev["tags"]       as? [[String]]
+        else { return }
+
+        guard !seenIds.contains(id) else { return }
+
+        let note = FeedNote(
+            id: id,
+            pubkey: pubkey,
+            content: content,
+            createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
+            tags: tags,
+            kind: kind
+        )
+
+        guard !FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) else { return }
+
+        seenIds.insert(id)
+        notes.append(note)
+        NostrService.shared.fetchMissingProfiles(for: [pubkey])
     }
 }

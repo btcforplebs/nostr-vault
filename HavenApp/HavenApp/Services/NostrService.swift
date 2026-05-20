@@ -840,6 +840,7 @@ class NostrService: ObservableObject {
                     let nip05 = metadata["nip05"] as? String
                     let about = metadata["about"] as? String
                     let lud16 = metadata["lud16"] as? String
+                    let website = metadata["website"] as? String
 
                     DispatchQueue.main.async { [weak self] in
                         guard let self = self else { return }
@@ -868,6 +869,10 @@ class NostrService: ObservableObject {
                         }
                         if profile.lud16 != lud16 {
                             profile.lud16 = lud16
+                            changed = true
+                        }
+                        if profile.website != website {
+                            profile.website = website
                             changed = true
                         }
 

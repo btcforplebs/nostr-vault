@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 import CryptoKit
+import AVFoundation
 
 struct ComposeView: View {
     @Environment(\.dismiss) var dismiss
@@ -15,6 +16,8 @@ struct ComposeView: View {
     @State private var isPosting = false
     @State private var error: String?
     @FocusState private var isTextEditorFocused: Bool
+    
+    @StateObject private var uploadInfoProvider = MediaUploadsIndicatorInfoProvider()
 
     private var blossomService: BlossomService {
         BlossomService(configService: configService, nostrService: nostrService)
@@ -31,6 +34,7 @@ struct ComposeView: View {
         var type: UTType
         var url: URL?
         var isUploaded: Bool = false
+        var thumbnail: PlatformImage?
     }
     
     var body: some View {
@@ -149,8 +153,8 @@ struct ComposeView: View {
     #endif
 
     private var footer: some View {
-        HStack {
-            PhotosPicker(selection: $selectedItems, maxSelectionCount: 4, matching: .images) {
+        HStack(spacing: 12) {
+            PhotosPicker(selection: $selectedItems, maxSelectionCount: max(1, 4 - attachments.count), matching: .images) {
                 Image(systemName: "photo.on.rectangle.angled")
                     .font(.title3)
                     .foregroundColor(Color.havenPurple)
@@ -159,11 +163,30 @@ struct ComposeView: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .onChange(of: selectedItems) { _, _ in loadSelectedItems() }
+            
+            PhotosPicker(selection: $selectedItems, maxSelectionCount: max(1, 4 - attachments.count), matching: .videos) {
+                Image(systemName: "video.fill")
+                    .font(.title3)
+                    .foregroundColor(Color.havenPurple)
+                    .padding(10)
+                    .background(Color.havenPurple.opacity(0.1))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
             
             Spacer()
             
-            if isUploading || isPosting {
+            if isUploading, let msg = uploadInfoProvider.uploadMessage {
+                Text(msg)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(.trailing, 8)
+                ProgressView().controlSize(.small).padding(.trailing, 8)
+            } else if isPosting {
+                Text("Posting note...")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(.trailing, 8)
                 ProgressView().controlSize(.small).padding(.trailing, 8)
             }
             
@@ -174,6 +197,7 @@ struct ComposeView: View {
         }
         .padding()
         .background(Color.platformControlBackground)
+        .onChange(of: selectedItems) { _, _ in loadSelectedItems() }
     }
     
     private func replyHeader(parent: FeedNote) -> some View {
@@ -215,12 +239,47 @@ struct ComposeView: View {
             HStack(spacing: 8) {
                 ForEach(attachments) { attachment in
                     ZStack(alignment: .topTrailing) {
-                        if let img = PlatformImage(data: attachment.data) {
-                            Image(platformImage: img)
-                                .resizable()
-                                .scaledToFill()
+                        Group {
+                            if let thumbnail = attachment.thumbnail {
+                                Image(platformImage: thumbnail)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 100, height: 100)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } else if let img = PlatformImage(data: attachment.data) {
+                                Image(platformImage: img)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 100, height: 100)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } else {
+                                ZStack {
+                                    Color.platformSecondaryGroupedBackground
+                                    Image(systemName: attachment.type.conforms(to: .movie) || attachment.type.conforms(to: .video) ? "video.fill" : "doc.fill")
+                                        .font(.title)
+                                        .foregroundColor(Color.havenPurple.opacity(0.8))
+                                }
                                 .frame(width: 100, height: 100)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.havenPurple.opacity(0.3), lineWidth: 1)
+                                )
+                            }
+                        }
+                        
+                        if attachment.type.conforms(to: .movie) || attachment.type.conforms(to: .video) {
+                            ZStack {
+                                Circle()
+                                    .fill(.black.opacity(0.4))
+                                    .frame(width: 32, height: 32)
+                                
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .offset(x: 1)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                         
                         Button {
@@ -248,12 +307,18 @@ struct ComposeView: View {
                 switch result {
                 case .success(let data):
                     if let data = data {
+                        let isVideo = contentType.conforms(to: .movie) || contentType.conforms(to: .video)
+                        var thumbnail: PlatformImage? = nil
+                        if isVideo {
+                            thumbnail = self.generateVideoThumbnail(from: data)
+                        }
+                        
                         DispatchQueue.main.async {
                             var finalData = data
                             var finalType = contentType
                             
                             // Convert HEIC/HEIF to JPEG
-                            if contentType.conforms(to: .heic) || contentType.conforms(to: .heif) {
+                            if !isVideo && (contentType.conforms(to: .heic) || contentType.conforms(to: .heif)) {
                                 #if os(iOS)
                                 if let image = UIImage(data: data),
                                    let jpegData = image.jpegData(compressionQuality: 0.8) {
@@ -271,19 +336,49 @@ struct ComposeView: View {
                                 #endif
                             }
                             
-                            self.attachments.append(Attachment(data: finalData, type: finalType))
+                            self.attachments.append(Attachment(data: finalData, type: finalType, thumbnail: thumbnail))
                         }
                     }
                 case .failure(let error):
-                    print("Failed to load photo: \(error)")
+                    print("Failed to load media: \(error)")
                 }
             }
         }
         selectedItems = []
     }
     
+    private func generateVideoThumbnail(from data: Data) -> PlatformImage? {
+        let tempDirectory = FileManager.default.temporaryDirectory
+        let tempFileURL = tempDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+        
+        do {
+            try data.write(to: tempFileURL)
+            let asset = AVAsset(url: tempFileURL)
+            let imageGenerator = AVAssetImageGenerator(asset: asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            
+            let time = CMTime(seconds: 0.0, preferredTimescale: 600)
+            let cgImage = try imageGenerator.copyCGImage(at: time, actualTime: nil)
+            
+            #if os(macOS)
+            let size = NSSize(width: cgImage.width, height: cgImage.height)
+            let thumbnail = NSImage(cgImage: cgImage, size: size)
+            #else
+            let thumbnail = UIImage(cgImage: cgImage)
+            #endif
+            
+            try? FileManager.default.removeItem(at: tempFileURL)
+            return thumbnail
+        } catch {
+            print("Error generating video thumbnail: \(error)")
+            try? FileManager.default.removeItem(at: tempFileURL)
+            return nil
+        }
+    }
+    
     private func postNote() {
         isPosting = true
+        uploadInfoProvider.startUpload(totalCount: attachments.count)
 
         Task {
             // 1. Upload media to Blossom mirrors
@@ -292,13 +387,22 @@ struct ComposeView: View {
 
             // Upload all attachments and fail if any fail
             for i in attachments.indices {
+                uploadInfoProvider.setCurrentIndex(i + 1, type: attachments[i].type)
                 let sha256 = SHA256.hash(data: attachments[i].data).map { String(format: "%02x", $0) }.joined()
                 let mimeType = attachments[i].type.preferredMIMEType ?? "application/octet-stream"
-                guard let url = await blossomService.uploadAndMirror(data: attachments[i].data, sha256: sha256, contentType: mimeType) else {
+                guard let url = await blossomService.uploadAndMirror(
+                    data: attachments[i].data,
+                    sha256: sha256,
+                    contentType: mimeType,
+                    progress: { progressFraction in
+                        self.uploadInfoProvider.updateProgress(progressFraction)
+                    }
+                ) else {
                     DispatchQueue.main.async {
-                        error = "Failed to upload image to Blossom mirrors. Check your connection and try again."
+                        error = "Failed to upload media to Blossom mirrors. Check your connection and try again."
                         isPosting = false
                         isUploading = false
+                        uploadInfoProvider.reset()
                     }
                     return
                 }
@@ -307,13 +411,24 @@ struct ComposeView: View {
                 finalContent += "\n\(url.absoluteString)"
             }
             isUploading = false
+            uploadInfoProvider.reset()
 
             // 2. Build Event
             var tags: [[String]] = []
             if let parent = replyTo {
-                // NIP-10 tags
-                tags.append(["e", parent.id, "", "reply"])
-                tags.append(["p", parent.pubkey])
+                // NIP-10 tags — for reposts (kind 6), reply to the original note, not the repost
+                if parent.kind == 6, let originalId = parent.repostedEventId {
+                    tags.append(["e", originalId, "", "reply"])
+                    // Resolve the original note's author; fall back to the parent's pubkey
+                    if let original = FeedService.shared.notes.first(where: { $0.id == originalId }) {
+                        tags.append(["p", original.pubkey])
+                    } else {
+                        tags.append(["p", parent.pubkey])
+                    }
+                } else {
+                    tags.append(["e", parent.id, "", "reply"])
+                    tags.append(["p", parent.pubkey])
+                }
             }
 
             // Quote post: append nevent reference and q tag
@@ -350,6 +465,62 @@ struct ComposeView: View {
                 isPosting = false
                 dismiss()
             }
+        }
+    }
+}
+
+class MediaUploadsIndicatorInfoProvider: ObservableObject {
+    @Published var isUploading: Bool = false
+    @Published var totalCount: Int = 0
+    @Published var currentIndex: Int = 0
+    @Published var uploadMessage: String? = nil
+    @Published var currentProgress: Double = 0.0
+    private var currentType: UTType = .image
+    
+    func startUpload(totalCount: Int) {
+        DispatchQueue.main.async {
+            self.isUploading = true
+            self.totalCount = totalCount
+            self.currentIndex = 0
+            self.currentProgress = 0.0
+            self.uploadMessage = totalCount > 0 ? "Preparing uploads..." : nil
+        }
+    }
+    
+    func setCurrentIndex(_ index: Int, type: UTType) {
+        DispatchQueue.main.async {
+            self.currentIndex = index
+            self.currentType = type
+            self.currentProgress = 0.0
+            self.updateMessage()
+        }
+    }
+    
+    func updateProgress(_ progress: Double) {
+        DispatchQueue.main.async {
+            self.currentProgress = progress
+            self.updateMessage()
+        }
+    }
+    
+    private func updateMessage() {
+        let isVideo = self.currentType.conforms(to: .movie) || self.currentType.conforms(to: .video)
+        let mediaType = isVideo ? "video" : "image"
+        let pct = Int(self.currentProgress * 100)
+        if self.totalCount > 1 {
+            self.uploadMessage = "Uploading \(mediaType) (\(self.currentIndex) of \(self.totalCount)) - \(pct)%..."
+        } else {
+            self.uploadMessage = "Uploading \(mediaType) - \(pct)%..."
+        }
+    }
+    
+    func reset() {
+        DispatchQueue.main.async {
+            self.isUploading = false
+            self.totalCount = 0
+            self.currentIndex = 0
+            self.currentProgress = 0.0
+            self.uploadMessage = nil
         }
     }
 }

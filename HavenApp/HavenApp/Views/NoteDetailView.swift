@@ -17,6 +17,8 @@ struct NoteDetailView: View {
     @State private var showingProfilePubkey: String?
     @State private var showingNoteId: String?
     @State private var showingMediaUrl: IdentifiableURL?
+    @State private var showingReportDialog = false
+    @State private var showingEmojiPicker = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -57,17 +59,51 @@ struct NoteDetailView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                Button {
-                    showingReplyCompose = true
-                } label: {
-                    Image(systemName: "arrowshape.turn.up.left.fill")
+                HStack(spacing: 8) {
+                    Button {
+                        showingReplyCompose = true
+                    } label: {
+                        Image(systemName: "arrowshape.turn.up.left.fill")
+                    }
+                    
+                    Menu {
+                        Button(action: {
+                            showingReportDialog = true
+                        }) {
+                            Label("Report Post", systemImage: "flag.fill")
+                        }
+                        
+                        Button(action: {
+                            blockUser(hexPubkey: note.pubkey)
+                        }) {
+                            Label("Block User", systemImage: "hand.raised.fill")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
                 }
             }
         }
         .sheet(isPresented: $showingReplyCompose) {
-            ComposeView(replyTo: note)
+            // For reposts (kind 6), reply to the original note, not the repost wrapper
+            let replyTarget: FeedNote = {
+                if note.kind == 6, let refId = note.repostedEventId,
+                   let original = feedService.notes.first(where: { $0.id == refId }) {
+                    return original
+                }
+                return note
+            }()
+            ComposeView(replyTo: replyTarget)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
+        }
+        .sheet(isPresented: $showingReportDialog) {
+            UGCReportingDialog(eventId: note.id, pubkey: note.pubkey) {
+                nostrService.objectWillChange.send()
+                presentationMode.wrappedValue.dismiss()
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
         }
         .onAppear {
             fetchParents()
@@ -137,20 +173,7 @@ struct NoteDetailView: View {
                     .textSelection(.enabled)
 
                 if !original.mediaURLs.isEmpty {
-                    VStack(spacing: 8) {
-                        ForEach(original.mediaURLs, id: \.absoluteString) { url in
-                            Button(action: {
-                                showingMediaUrl = IdentifiableURL(url: url)
-                            }) {
-                                FeedMediaThumbnail(url: url)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 300)
-                                    .clipped()
-                                    .cornerRadius(12)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    mediaCarousel(urls: original.mediaURLs)
                 }
             } else {
                 Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
@@ -171,20 +194,7 @@ struct NoteDetailView: View {
                     })
 
                 if !note.mediaURLs.isEmpty {
-                    VStack(spacing: 8) {
-                        ForEach(note.mediaURLs, id: \.absoluteString) { url in
-                            Button(action: {
-                                showingMediaUrl = IdentifiableURL(url: url)
-                            }) {
-                                FeedMediaThumbnail(url: url)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 300)
-                                    .clipped()
-                                    .cornerRadius(12)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    mediaCarousel(urls: note.mediaURLs)
                 }
             }
 
@@ -230,6 +240,24 @@ struct NoteDetailView: View {
                 }
                 .scaleEffect(isLiked ? 1.2 : 1.0)
                 .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isLiked)
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.5)
+                        .onEnded { _ in
+                            #if os(iOS)
+                            let generator = UIImpactFeedbackGenerator(style: .medium)
+                            generator.impactOccurred()
+                            #endif
+                            showingEmojiPicker = true
+                        }
+                )
+                .popover(isPresented: $showingEmojiPicker) {
+                    EmojiPickerView { emoji in
+                        reactToNote(with: emoji)
+                    }
+                    #if os(iOS)
+                    .presentationDetents([.height(520)])
+                    #endif
+                }
 
                 if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
                     let isZapped = feedService.zappedEventIds[note.id] != nil
@@ -242,6 +270,12 @@ struct NoteDetailView: View {
                     }
                     .scaleEffect(isZapped ? 1.2 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isZapped)
+                }
+
+                let onchainZapAmount = feedService.onchainZapEventIds[note.id]
+                if onchainZapAmount != nil {
+                    OnchainZapDisplay(amountSats: onchainZapAmount)
+                        .scaleEffect(1.0)
                 }
                 
                  ShareLink(
@@ -298,16 +332,48 @@ struct NoteDetailView: View {
                     .padding()
             } else {
                 ForEach(currentReplies) { reply in
-                    NavigationLink(destination: NoteDetailView(note: reply)) {
-                        let replyProfile = nostrService.profiles[reply.pubkey]
-                        FeedNoteRow(note: reply, profile: replyProfile, showParent: false)
-                    }
-                    .buttonStyle(.plain)
+                    ThreadedReplyNode(
+                        reply: reply,
+                        allNotes: feedService.notes,
+                        depth: 1
+                    )
                 }
             }
         }
     }
     
+    @ViewBuilder
+    private func mediaCarousel(urls: [URL]) -> some View {
+        if urls.isEmpty {
+            EmptyView()
+        } else if urls.count == 1 {
+            FeedMediaView(
+                url: urls[0],
+                onTap: { showingMediaUrl = IdentifiableURL(url: urls[0]) },
+                maxHeight: 400,
+                isThumbnail: false
+            )
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+        } else {
+            TabView {
+                ForEach(urls, id: \.absoluteString) { url in
+                    FeedMediaView(
+                        url: url,
+                        onTap: { showingMediaUrl = IdentifiableURL(url: url) },
+                        maxHeight: 400,
+                        isThumbnail: false
+                    )
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .automatic))
+            .frame(height: 400)
+            .padding(.top, 4)
+        }
+    }
+
     private func actionButton(icon: String, color: Color = .secondary, count: Int?, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
@@ -324,20 +390,137 @@ struct NoteDetailView: View {
     }
     
     private func fetchReplies() {
+        guard !isLoadingReplies else { return }
         isLoadingReplies = true
-        // In a real app, we'd query relays for e-tags pointing to this note id
-        // For now, we'll check what we already have in FeedService and maybe a simple relay query
-        // The UI automatically observes feedService.notes for replies.
-        isLoadingReplies = false
+
+        // Try local relay AND external relays to find replies
+        var relayURLs: [URL] = [URL(string: configService.config.nostrURL)!]
+        let externalStrs = configService.config.feedRelays.isEmpty ? [
+            "wss://relay.damus.io",
+            "wss://relay.primal.net",
+            "wss://nos.lol",
+        ] : configService.config.feedRelays
+        relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
+
+        let subId = "replies-\(UUID().uuidString.prefix(8))"
+        var activeClients: [WebSocketClient] = []
+
+        for url in relayURLs {
+            let client = WebSocketClient()
+            client.isTemporary = true // Clean up when done
+            activeClients.append(client)
+
+            client.messageSubject
+                .receive(on: DispatchQueue.main)
+                .sink { msg in
+                    self.handleReplyMessage(msg, client: client)
+                }
+                .store(in: &cancellables)
+
+            client.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { state in
+                    if state == .connected {
+                        let filter: [String: Any] = ["kinds": [1], "#e": [self.note.id], "limit": 100]
+                        let req = ["REQ", subId, filter] as [Any]
+                        if let data = try? JSONSerialization.data(withJSONObject: req),
+                           let str = String(data: data, encoding: .utf8) {
+                            client.send(text: str)
+                        }
+                    }
+                }
+                .store(in: &cancellables)
+
+            client.connect(url: url)
+        }
+        
+        // Auto-disconnect and stop loading spinner after 6 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+            for client in activeClients {
+                client.disconnect()
+            }
+            self.isLoadingReplies = false
+        }
+    }
+
+    private func handleReplyMessage(_ msg: String, client: WebSocketClient) {
+        guard let data = msg.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              let type = json[0] as? String else { return }
+
+        if type == "EVENT", json.count >= 3,
+           let ev = json[2] as? [String: Any],
+           let id = ev["id"] as? String,
+           let pubkey = ev["pubkey"] as? String,
+           let content = ev["content"] as? String,
+           let createdAt = ev["created_at"] as? Int64,
+           let kind = ev["kind"] as? Int,
+           let tags = ev["tags"] as? [[String]] {
+
+            let reply = FeedNote(
+                id: id,
+                pubkey: pubkey,
+                content: content,
+                createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
+                tags: tags,
+                kind: kind
+            )
+
+            if !FeedNote.isNoiseOrSpam(content: content, tags: tags) {
+                if !feedService.notes.contains(where: { $0.id == id }) {
+                    feedService.addNote(reply)
+                }
+                
+                // Fetch profile for the reply author if missing
+                let replyProfile = nostrService.profiles[pubkey]
+                if replyProfile == nil {
+                    nostrService.fetchMissingProfiles(for: [pubkey])
+                }
+            }
+        } else if type == "EOSE" {
+            client.disconnect()
+        }
     }
     
     private func likeNote() {
         if !feedService.likedEventIds.contains(note.id) {
             feedService.likedEventIds.insert(note.id)
+            
+            // Proactively update stats locally
+            var currentStats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+            currentStats.reactions += 1
+            feedService.noteStats[note.id] = currentStats
+            
             feedService.saveInteractionState()
         }
         guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", note.id], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
+    }
+    
+    private func reactToNote(with emoji: String) {
+        if !feedService.likedEventIds.contains(note.id) {
+            feedService.likedEventIds.insert(note.id)
+            
+            // Proactively update stats locally
+            var currentStats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+            currentStats.reactions += 1
+            feedService.noteStats[note.id] = currentStats
+            
+            feedService.saveInteractionState()
+        }
+        guard let signed = nostrService.signEvent(kind: 7, content: emoji, tags: [["e", note.id], ["p", note.pubkey]]) else { return }
+        nostrService.postEvent(signed)
+    }
+    
+    private func blockUser(hexPubkey: String) {
+        guard let data = Bech32.hexToData(hexPubkey),
+              let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+        if !configService.config.blacklistedNpubs.contains(npub) {
+            configService.config.blacklistedNpubs.append(npub)
+            configService.save()
+        }
+        nostrService.objectWillChange.send()
+        presentationMode.wrappedValue.dismiss()
     }
     
     private func repostNote() {
@@ -354,28 +537,17 @@ struct NoteDetailView: View {
     }
     
     private func zapNote(lud16: String) async {
-        let zapAmountSats = 21 // Default zap amount
-        let amountMsat = zapAmountSats * 1000
+        let amountSats = ConfigService.shared.config.defaultZapAmount / 1000
         
         do {
-            let lnurlResponse = try await LNURLService.resolveAddress(lud16)
-            
-            var tags: [[String]] = [
-                ["relays", ConfigService.shared.config.relayURL],
-                ["amount", String(amountMsat)],
-                ["lnurl", ""]
-            ]
-            
-            if !note.id.isEmpty { tags.append(["e", note.id]) }
-            tags.append(["p", note.pubkey])
-            
-            let signedZapReq: NostrEvent? = nostrService.signEvent(kind: 9734, content: "Zap from Haven", tags: tags)
-            
-            let invoice = try await LNURLService.fetchInvoice(callback: lnurlResponse.callback, amountMsat: amountMsat, zapRequest: signedZapReq)
-            let preimage = try await NWCService.payInvoice(bolt11: invoice)
-            print("Successfully zapped! Preimage: \(preimage)")
-            _ = await MainActor.run {
-                feedService.zappedEventIds[note.id] = zapAmountSats
+            try await ZapService.shared.zapNote(
+                noteId: note.id,
+                notePubkey: note.pubkey,
+                lud16: lud16,
+                amountSats: amountSats
+            )
+            await MainActor.run {
+                feedService.zappedEventIds[note.id] = amountSats
                 feedService.saveInteractionState()
             }
         } catch {
@@ -495,6 +667,71 @@ struct NoteDetailView: View {
         fmt.dateStyle = .medium
         fmt.timeStyle = .short
         return fmt.string(from: date)
+    }
+}
+
+// MARK: - ThreadedReplyNode
+
+struct ThreadedReplyNode: View {
+    let reply: FeedNote
+    let allNotes: [FeedNote]
+    let depth: Int
+    
+    @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var configService: ConfigService
+    
+    var body: some View {
+        let childReplies = allNotes.filter { $0.parentEventId == reply.id }
+            .sorted(by: { $0.createdAt < $1.createdAt })
+        
+        VStack(alignment: .leading, spacing: 8) {
+            NavigationLink(destination: NoteDetailView(note: reply)) {
+                let replyProfile = nostrService.profiles[reply.pubkey]
+                FeedNoteRow(note: reply, profile: replyProfile, showParent: false)
+            }
+            .buttonStyle(.plain)
+            
+            if !childReplies.isEmpty {
+                if depth >= 5 {
+                    // Prevent excessive indentation squishing on narrow mobile screens
+                    NavigationLink(destination: NoteDetailView(note: reply)) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.turn.down.right")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("Show \(childReplies.count) more replies")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(Color.havenPurple)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .background(Color.havenPurple.opacity(0.1))
+                        .cornerRadius(8)
+                        .padding(.leading, depth < 3 ? 16 : 8)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    HStack(alignment: .top, spacing: 0) {
+                        // Thread vertical connecting line
+                        Rectangle()
+                            .fill(Color.havenPurple.opacity(0.25))
+                            .frame(width: 1.5)
+                            .padding(.leading, depth < 3 ? 16 : 8)
+                            .padding(.trailing, depth < 3 ? 12 : 6)
+                            .padding(.vertical, 2)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(childReplies) { child in
+                                ThreadedReplyNode(
+                                    reply: child,
+                                    allNotes: allNotes,
+                                    depth: depth + 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -13,9 +13,11 @@ struct MenuBarView: View {
     
     @State private var inactivityTask: Task<Void, Never>?
     @State private var statusPulse = false
+    @State private var showingOwnProfile = false
     
     enum Tab {
         case feed
+        case search
         case relay
     }
     
@@ -101,6 +103,10 @@ struct MenuBarView: View {
                     }
                     .buttonStyle(.plain)
 
+                    TabButton(icon: "magnifyingglass", title: "Search", isSelected: selectedTab == .search) {
+                        selectedTab = .search
+                    }
+
                     TabButton(icon: "doc.text.image", title: "Relay", isSelected: selectedTab == .relay) {
                         selectedTab = .relay
                     }
@@ -120,6 +126,9 @@ struct MenuBarView: View {
                     case .feed:
                         FeedView()
                             .transition(.opacity)
+                    case .search:
+                        SearchView()
+                            .transition(.opacity)
                     case .relay:
                         ViewerView()
                             .transition(.opacity)
@@ -132,6 +141,28 @@ struct MenuBarView: View {
                 
                 // MARK: - Footer
                 HStack(spacing: 20) {
+                    // Profile button
+                    let ownerPubkey = NostrService.shared.ownerHexPubkey
+                    Button(action: { showingOwnProfile = true }) {
+                        AvatarView(
+                            url: NostrService.shared.profiles[ownerPubkey]?.pictureURL,
+                            pubkey: ownerPubkey
+                        )
+                        .frame(width: 24, height: 24)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.havenPurple.opacity(0.4), lineWidth: 1.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help("My Profile")
+                    .sheet(isPresented: $showingOwnProfile) {
+                        ProfileView(pubkey: ownerPubkey)
+                            .environmentObject(NostrService.shared)
+                            .environmentObject(ConfigService.shared)
+                            .frame(minWidth: 400, minHeight: 500)
+                    }
+
                     Button(action: {
                         #if os(macOS)
                         NSApp.activate(ignoringOtherApps: true)
@@ -387,7 +418,7 @@ struct TabButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
@@ -404,5 +435,413 @@ struct TabButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - SearchView
+
+struct SearchView: View {
+    @StateObject private var feedService = FeedService.shared
+    @EnvironmentObject var relayManager: RelayProcessManager
+    @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var nostrService: NostrService
+
+    @State private var searchQuery: String = ""
+    @State private var searchSource: SearchSource = .all
+    @State private var searchResults: SearchResults = .empty
+    @State private var isSearching = false
+    @State private var showingNoteDetail: FeedNote?
+    @State private var showingProfile: String?
+
+    enum SearchSource {
+        case all
+        case havenRelay
+        case network
+
+        var label: String {
+            switch self {
+            case .all: return "All"
+            case .havenRelay: return "Haven Relay"
+            case .network: return "Network"
+            }
+        }
+    }
+
+    struct SearchResults {
+        var users: [String: FeedProfile] = [:]
+        var notes: [FeedNote] = []
+        var links: [SearchLink] = []
+        var hashtags: [String] = []
+
+        static let empty = SearchResults()
+
+        var isEmpty: Bool {
+            users.isEmpty && notes.isEmpty && links.isEmpty && hashtags.isEmpty
+        }
+    }
+
+    struct SearchLink {
+        let url: String
+        let title: String
+        let noteId: String
+    }
+
+    var body: some View {
+        ZStack {
+            Color.platformControlBackground.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Search header
+                VStack(spacing: 12) {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        TextField("Search users, notes, hashtags...", text: $searchQuery)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .onChange(of: searchQuery) { _, query in
+                                performSearch(query: query)
+                            }
+
+                        if !searchQuery.isEmpty {
+                            Button(action: { searchQuery = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(10)
+
+                    // Source filter
+                    HStack(spacing: 8) {
+                        ForEach([SearchSource.all, .havenRelay, .network], id: \.self) { source in
+                            Button(action: { searchSource = source }) {
+                                Text(source.label)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(searchSource == source ? .white : .secondary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(searchSource == source ? Color.havenPurple : Color.clear)
+                                    .cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .padding()
+                .background(Color.platformWindowBackground)
+
+                Divider()
+
+                // Results
+                if searchQuery.isEmpty {
+                    emptyState
+                } else if isSearching {
+                    loadingState
+                } else if searchResults.isEmpty {
+                    noResultsState
+                } else {
+                    resultsContent
+                }
+            }
+        }
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { showingProfile.map { IdentifiableString(id: $0) } },
+            set: { showingProfile = $0?.id }
+        )) { profile in
+            ProfileView(pubkey: profile.id)
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
+        .sheet(item: $showingNoteDetail) { note in
+            NavigationStack {
+                NoteDetailView(note: note)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 16) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 48, weight: .thin))
+                    .foregroundColor(.secondary.opacity(0.5))
+
+                VStack(spacing: 8) {
+                    Text("Start Searching")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.primary)
+                    Text("Search for users, notes, hashtags and links")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    @ViewBuilder
+    private var loadingState: some View {
+        VStack {
+            ProgressView()
+                .controlSize(.large)
+                .tint(Color.havenPurple)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var noResultsState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 32, weight: .thin))
+                .foregroundColor(.secondary.opacity(0.5))
+
+            Text("No results found")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    @ViewBuilder
+    private var resultsContent: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                // Users section
+                if !searchResults.users.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Users")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 16)
+
+                        VStack(spacing: 8) {
+                            ForEach(searchResults.users.sorted(by: { $0.key < $1.key }), id: \.key) { pubkey, profile in
+                                userRow(pubkey: pubkey, profile: profile)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+                }
+
+                // Notes section
+                if !searchResults.notes.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Notes")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 16)
+
+                        VStack(spacing: 8) {
+                            ForEach(searchResults.notes) { note in
+                                FeedNoteRow(note: note, profile: nostrService.profiles[note.pubkey], showParent: false)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        showingNoteDetail = note
+                                    }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+                }
+
+                // Hashtags section
+                if !searchResults.hashtags.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Hashtags")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 16)
+
+                        VStack(spacing: 8) {
+                            ForEach(searchResults.hashtags, id: \.self) { hashtag in
+                                hashtagRow(hashtag: hashtag)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+                }
+
+                // Links section
+                if !searchResults.links.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Links")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 16)
+
+                        VStack(spacing: 8) {
+                            ForEach(searchResults.links, id: \.url) { link in
+                                linkRow(link: link)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+                }
+            }
+            .padding(.vertical, 16)
+        }
+    }
+
+    @ViewBuilder
+    private func userRow(pubkey: String, profile: FeedProfile) -> some View {
+        Button(action: { showingProfile = pubkey }) {
+            HStack(spacing: 12) {
+                AvatarView(url: profile.pictureURL, pubkey: pubkey)
+                    .frame(width: 40, height: 40)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(profile.bestName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+
+                    Text(pubkey.prefix(16) + "...")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.secondary.opacity(0.05))
+            .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func hashtagRow(hashtag: String) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("#\(hashtag)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.secondary.opacity(0.5))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.05))
+        .cornerRadius(8)
+    }
+
+    @ViewBuilder
+    private func linkRow(link: SearchLink) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(link.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.havenPurple)
+                .lineLimit(1)
+
+            Text(link.url)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.05))
+        .cornerRadius(8)
+    }
+
+    private func performSearch(query: String) {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            searchResults = .empty
+            return
+        }
+
+        isSearching = true
+        let trimmedQuery = query.lowercased().trimmingCharacters(in: .whitespaces)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            var results = SearchResults()
+
+            for (pubkey, profile) in nostrService.profiles {
+                if profile.bestName.lowercased().contains(trimmedQuery) ||
+                   pubkey.lowercased().contains(trimmedQuery) ||
+                   (profile.about?.lowercased().contains(trimmedQuery) ?? false) {
+                    results.users[pubkey] = profile
+                }
+            }
+
+            let relevantNotes = feedService.notes.filter { note in
+                note.content.lowercased().contains(trimmedQuery)
+            }
+            results.notes = relevantNotes.prefix(20).map { $0 }
+
+            var foundHashtags = Set<String>()
+            for note in relevantNotes {
+                let hashtags = extractHashtags(from: note.content)
+                for tag in hashtags {
+                    if tag.lowercased().contains(trimmedQuery) {
+                        foundHashtags.insert(tag)
+                    }
+                }
+            }
+            results.hashtags = Array(foundHashtags).sorted()
+
+            let urls = extractURLs(from: relevantNotes)
+            results.links = urls.filter { $0.url.lowercased().contains(trimmedQuery) ||
+                                          $0.title.lowercased().contains(trimmedQuery) }
+
+            DispatchQueue.main.async {
+                self.searchResults = results
+                self.isSearching = false
+            }
+        }
+    }
+
+    private func extractHashtags(from text: String) -> [String] {
+        let pattern = "#\\w+"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+        return matches.compactMap {
+            guard let range = Range($0.range, in: text) else { return nil }
+            return String(text[range]).dropFirst().lowercased()
+        }
+    }
+
+    private func extractURLs(from notes: [FeedNote]) -> [SearchLink] {
+        var links: [SearchLink] = []
+        let urlPattern = "https?://[^\\s]+"
+
+        guard let regex = try? NSRegularExpression(pattern: urlPattern) else { return [] }
+
+        for note in notes {
+            let matches = regex.matches(in: note.content, range: NSRange(note.content.startIndex..., in: note.content))
+            for match in matches {
+                guard let range = Range(match.range, in: note.content) else { continue }
+                let url = String(note.content[range])
+                links.append(SearchLink(url: url, title: url.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: ""), noteId: note.id))
+            }
+        }
+
+        return links
     }
 }

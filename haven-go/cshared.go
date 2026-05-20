@@ -7,6 +7,7 @@ import "C"
 import (
 	"C"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -393,6 +394,16 @@ func EncryptNIP04C(plaintext *C.char, pubkey *C.char, privkey *C.char) *C.char {
 	return C.CString(encrypted)
 }
 
+//export DeriveTaprootAddressC
+func DeriveTaprootAddressC(hexPubKey *C.char) *C.char {
+	addr, err := deriveP2TRAddress(C.GoString(hexPubKey))
+	if err != nil {
+		slog.Error("DeriveTaprootAddressC: failed", "error", err)
+		return nil
+	}
+	return C.CString(addr)
+}
+
 //export DecryptNIP04C
 func DecryptNIP04C(ciphertext *C.char, pubkey *C.char, privkey *C.char) *C.char {
 	sharedSecret, err := nip04.ComputeSharedSecret(C.GoString(pubkey), C.GoString(privkey))
@@ -407,6 +418,35 @@ func DecryptNIP04C(ciphertext *C.char, pubkey *C.char, privkey *C.char) *C.char 
 		return nil
 	}
 	return C.CString(decrypted)
+}
+
+//export FetchFeeEstimatesC
+func FetchFeeEstimatesC() *C.char {
+	fees, err := fetchFeeEstimates()
+	if err != nil {
+		result, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(result))
+	}
+	result, _ := json.Marshal(fees)
+	return C.CString(string(result))
+}
+
+//export SweepToAddressC
+// SweepToAddressC sweeps all UTXOs from the Nostr-derived taproot address to
+// destAddr. feeRateSatsPerVB is the desired fee rate (sat/vB).
+// Returns JSON: {"txid":"…","amount":…,"fee":…} or {"error":"…"}.
+func SweepToAddressC(nsecHex *C.char, destAddr *C.char, feeRateSatsPerVB C.int) *C.char {
+	result, err := buildAndBroadcastSweep(
+		C.GoString(nsecHex),
+		C.GoString(destAddr),
+		int64(feeRateSatsPerVB),
+	)
+	if err != nil {
+		out, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(out))
+	}
+	out, _ := json.Marshal(result)
+	return C.CString(string(out))
 }
 
 // Dummy main() function required for buildmode=c-archive

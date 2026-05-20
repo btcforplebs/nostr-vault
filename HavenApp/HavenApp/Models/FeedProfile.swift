@@ -8,6 +8,7 @@ struct FeedProfile: Codable, Identifiable {
     var nip05: String?
     var lud16: String?
     var about: String?
+    var website: String?
 
     var id: String { pubkey }
 

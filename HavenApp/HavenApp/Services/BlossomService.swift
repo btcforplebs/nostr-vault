@@ -45,7 +45,7 @@ class BlossomService {
     ///   - data: The media file data
     ///   - sha256: The SHA256 hash of the data (hex string)
     /// - Returns: External mirror URL if at least one mirror succeeds, nil if all fail
-    func uploadAndMirror(data: Data, sha256: String, contentType: String = "application/octet-stream") async -> URL? {
+    func uploadAndMirror(data: Data, sha256: String, contentType: String = "application/octet-stream", progress: ((Double) -> Void)? = nil) async -> URL? {
         let port = await MainActor.run { configService.config.relayPort }
         
         #if os(macOS)
@@ -54,7 +54,7 @@ class BlossomService {
         let localURLStr = "https://localhost:\(port)"
         #endif
 
-        // Step 1: Upload to local Blossom first
+        // Step 1: Upload to local Blossom first (skip detailed progress since it is local and instant)
         let localSuccess = await uploadToServer(data: data, url: localURLStr, sha256: sha256, contentType: contentType, useLocalhostSession: true)
         guard localSuccess != nil else {
             logger.error("Failed to upload to local Blossom at \(localURLStr)")
@@ -74,10 +74,12 @@ class BlossomService {
         if !mirrors.isEmpty {
             logger.debug("Attempting to mirror to: \(mirrors.description)")
             let results = await withTaskGroup(of: (String, URL?).self) { group in
-                for mirrorURL in mirrors {
+                for (index, mirrorURL) in mirrors.enumerated() {
                     logger.debug("Processing mirror: '\(mirrorURL)' (length: \(mirrorURL.count))")
                     group.addTask {
-                        let result = await self.uploadToServer(data: data, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: false)
+                        // Only report progress for the first remote mirror to avoid progress jitter
+                        let progressHandler = (index == 0) ? progress : nil
+                        let result = await self.uploadToServer(data: data, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: false, progress: progressHandler)
                         return (mirrorURL, result)
                     }
                 }
@@ -110,7 +112,7 @@ class BlossomService {
 
     /// Upload media to a specific Blossom server with retry logic
     /// Uses Blossom HTTP Auth (kind 24242, per BUD-01 spec)
-    private func uploadToServer(data: Data, url: String, sha256: String, contentType: String, useLocalhostSession: Bool) async -> URL? {
+    private func uploadToServer(data: Data, url: String, sha256: String, contentType: String, useLocalhostSession: Bool, progress: ((Double) -> Void)? = nil) async -> URL? {
         let maxRetries = 3
         let parsedURL = URL(string: url)
         // isOnDeviceRelay: strict localhost only — used for response parsing (skip BlobDescriptor)
@@ -181,7 +183,8 @@ class BlossomService {
             do {
                 // Use the appropriate URLSession
                 let session = useLocalhostSession ? localhostSession : remoteSession
-                let (responseData, response) = try await session.upload(for: request, from: data)
+                let delegate = progress.map { UploadProgressDelegate(progressHandler: $0) }
+                let (responseData, response) = try await session.upload(for: request, from: data, delegate: delegate)
 
                 if let httpResponse = response as? HTTPURLResponse, (200...201).contains(httpResponse.statusCode) {
                     // For external/mirror servers, parse BUD-02 Blob Descriptor for the canonical URL
@@ -558,3 +561,19 @@ class BlossomService {
         return false
     }
 }
+
+/// Helper class conforming to NSObject and URLSessionTaskDelegate to report body upload progress.
+class UploadProgressDelegate: NSObject, URLSessionTaskDelegate {
+    let progressHandler: (Double) -> Void
+    
+    init(progressHandler: @escaping (Double) -> Void) {
+        self.progressHandler = progressHandler
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        let progress = Double(totalBytesSent) / Double(totalBytesExpectedToSend)
+        progressHandler(progress)
+    }
+}
+

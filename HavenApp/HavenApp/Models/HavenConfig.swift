@@ -18,6 +18,8 @@ struct HavenConfig: Codable, Equatable {
     var ownerNsec: String = "" // Deprecated: kept for migration purposes only
     var showReplies: Bool = true // Added to toggle visibility of replies in feed
     var themeColor: String = "purple"
+    var autoLoadNewPosts: Bool = false
+    var showReposts: Bool = true
     
     // Mac Relay Sync (iOS only)
     var macRelayURL: String = "" // wss:// URL to a remote Mac Haven relay to sync missed notes
@@ -25,6 +27,9 @@ struct HavenConfig: Codable, Equatable {
     // NWC (Nostr Wallet Connect)
     var nwcURI: String = ""
     var defaultZapAmount: Int = 1000 // In millisats (default 1 sat)
+
+    // Bitcoin Taproot wallet (derived from Nostr keypair via BIP-341)
+    var showBitcoinWallet: Bool = false
     
     // Private Relay
     var privateRelayName: String = "Haven Private"
@@ -111,7 +116,7 @@ struct HavenConfig: Codable, Equatable {
     
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
-        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, disableMediaCache, allowNetworkAccess, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor
+        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, disableMediaCache, allowNetworkAccess, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
         case macRelayURL
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
@@ -153,6 +158,9 @@ struct HavenConfig: Codable, Equatable {
         macRelayURL = try container.decodeIfPresent(String.self, forKey: .macRelayURL) ?? defaults.macRelayURL
         defaultZapAmount = try container.decodeIfPresent(Int.self, forKey: .defaultZapAmount) ?? defaults.defaultZapAmount
         themeColor = try container.decodeIfPresent(String.self, forKey: .themeColor) ?? defaults.themeColor
+        autoLoadNewPosts = try container.decodeIfPresent(Bool.self, forKey: .autoLoadNewPosts) ?? defaults.autoLoadNewPosts
+        showReposts = try container.decodeIfPresent(Bool.self, forKey: .showReposts) ?? defaults.showReposts
+        showBitcoinWallet = try container.decodeIfPresent(Bool.self, forKey: .showBitcoinWallet) ?? defaults.showBitcoinWallet
         
         privateRelayName = try container.decodeIfPresent(String.self, forKey: .privateRelayName) ?? defaults.privateRelayName
         privateRelayDescription = try container.decodeIfPresent(String.self, forKey: .privateRelayDescription) ?? defaults.privateRelayDescription

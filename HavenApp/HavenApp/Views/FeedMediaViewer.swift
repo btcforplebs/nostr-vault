@@ -15,33 +15,25 @@ struct FeedMediaViewer: View {
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     
+    @State private var isVideo: Bool = false
+    @State private var isGIF: Bool = false
+    @State private var isLoadingType: Bool = true
+    
     var body: some View {
         ZStack {
             Color.black
                 .opacity(max(0.1, 1.0 - (abs(offset.height) / 500.0)))
                 .ignoresSafeArea()
             
-            let ext = url.pathExtension.lowercased()
-            let isVideo = ["mp4", "mov", "webm", "m4v"].contains(ext)
-            
             Group {
-                if isVideo {
+                if isLoadingType {
+                    ProgressView().tint(.white)
+                } else if isVideo {
                     VideoPlayerView(url: url)
+                } else if isGIF {
+                    AnimatedImage(url: url, contentMode: .fit, shouldAnimate: true)
                 } else {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .empty:
-                            ProgressView().tint(.white)
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFit()
-                        case .failure:
-                            failureView
-                        @unknown default:
-                            EmptyView()
-                        }
-                    }
+                    MediaViewerPhoto(url: url)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -104,6 +96,9 @@ struct FeedMediaViewer: View {
                     }
                 }
             }
+            .onAppear {
+                detectType()
+            }
             
             VStack {
                 HStack {
@@ -124,6 +119,37 @@ struct FeedMediaViewer: View {
         }
     }
     
+    private func detectType() {
+        let ext = url.pathExtension.lowercased()
+        if ["mp4", "mov", "webm", "m4v"].contains(ext) {
+            isVideo = true
+            isLoadingType = false
+        } else if ext == "gif" {
+            isGIF = true
+            isLoadingType = false
+        } else if ["jpg", "jpeg", "png", "webp", "avif", "heic"].contains(ext) {
+            isVideo = false
+            isGIF = false
+            isLoadingType = false
+        } else if let cached = MediaTypeDetector.shared.getCachedContentType(for: url) {
+            isVideo = MediaTypeDetector.shared.isVideoContentType(cached)
+            isGIF = MediaTypeDetector.shared.isGIFContentType(cached)
+            isLoadingType = false
+        } else {
+            isLoadingType = true
+            MediaTypeDetector.shared.detectContentType(for: url) { detectedType in
+                if let detectedType = detectedType {
+                    self.isVideo = MediaTypeDetector.shared.isVideoContentType(detectedType)
+                    self.isGIF = MediaTypeDetector.shared.isGIFContentType(detectedType)
+                } else {
+                    self.isVideo = false
+                    self.isGIF = false
+                }
+                self.isLoadingType = false
+            }
+        }
+    }
+    
     private var failureView: some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -137,6 +163,55 @@ struct FeedMediaViewer: View {
                 .font(.caption)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
+        }
+    }
+}
+
+// MARK: - MediaViewerPhoto
+
+/// Cached photo view for the full-screen media viewer.
+/// Uses MediaCacheService instead of AsyncImage to avoid re-downloads.
+struct MediaViewerPhoto: View {
+    let url: URL
+    @State private var image: PlatformImage?
+    @State private var loadFailed = false
+
+    var body: some View {
+        ZStack {
+            if let image = image {
+                Image(platformImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else if loadFailed {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(.orange)
+                    Text("Failed to load image")
+                        .foregroundColor(.white)
+                        .font(.headline)
+                    Text(url.absoluteString)
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
+            } else {
+                ProgressView().tint(.white)
+            }
+        }
+        .onAppear { loadImage() }
+    }
+
+    private func loadImage() {
+        guard image == nil, !loadFailed else { return }
+        Task {
+            if let data = await MediaCacheService.shared.fetchData(url: url),
+               let img = PlatformImage(data: data) {
+                await MainActor.run { self.image = img }
+            } else {
+                await MainActor.run { self.loadFailed = true }
+            }
         }
     }
 }

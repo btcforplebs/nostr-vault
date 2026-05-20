@@ -19,6 +19,7 @@ struct FeedView: View {
     @State private var quoteToNote: FeedNote?
     @State private var showingRelayStatus = false
     @State private var showingNoteId: String?
+    @State private var isRefreshing = false
 
     var body: some View {
         #if os(iOS)
@@ -54,58 +55,79 @@ struct FeedView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                HStack(spacing: 8) {
-                    Button(action: { showingRelayStatus = true }) {
-                        Circle()
-                            .fill(feedService.connectionDotColor)
-                            .frame(width: 10, height: 10)
-                            .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 3)
-                            .padding(8)
-                            .contentShape(Rectangle())
-                    }
+                Button(action: { showingRelayStatus = true }) {
+                    Circle()
+                        .fill(feedService.connectionDotColor)
+                        .frame(width: 12, height: 12)
+                        .shadow(color: feedService.connectionDotColor.opacity(0.8), radius: 4)
+                        .padding(8)
+                        .background(Color.primary.opacity(0.08))
+                        .clipShape(Circle())
+                }
+            }
 
-                    Menu {
-                        ForEach(FeedMode.allCases, id: \.self) { mode in
-                            Button(action: { feedService.switchMode(mode) }) {
-                                Label(mode.rawValue, systemImage: feedService.feedMode == mode ? "checkmark" : "")
-                            }
+            ToolbarItem(placement: .principal) {
+                Menu {
+                    ForEach(FeedMode.allCases, id: \.self) { mode in
+                        Button(action: { feedService.switchMode(mode) }) {
+                            Label(mode.rawValue, systemImage: feedService.feedMode == mode ? "checkmark" : "")
                         }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(feedService.feedMode.rawValue)
-                                .font(.system(size: 15, weight: .semibold))
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 10, weight: .bold))
-                        }
-                        .foregroundColor(Color.havenPurple)
                     }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(feedService.feedMode.rawValue)
+                            .font(.system(size: 16, weight: .semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundColor(Color.havenPurple)
                 }
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
-                    Image(systemName: configService.config.showReplies ? "message.fill" : "message")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                HStack(spacing: 16) {
+                    // Autoload new posts button
+                    Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
+                        Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(configService.config.autoLoadNewPosts ? Color.havenPurple : .secondary)
+                    }
+                    
+                    // Reposts toggle button
+                    Button(action: { configService.config.showReposts.toggle(); configService.save() }) {
+                        Image(systemName: "arrow.2.squarepath")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(configService.config.showReposts ? Color.havenPurple : .secondary)
+                    }
+                    
+                    // Replies toggle button
+                    Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
+                        Image(systemName: configService.config.showReplies ? "message.fill" : "message")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                    }
                 }
             }
         }
         #endif
         .onAppear {
             feedService.markViewed()
-            if feedService.notes.isEmpty && !feedService.isLoadingContacts {
-                if relayManager.isRunning && !relayManager.isBooting {
-                    feedService.refresh()
-                }
+            // Start feed immediately when running, even if still booting.
+            // localRelayURL returns nil during boot so no WebSocket errors occur;
+            // external relays are contacted right away instead of waiting ~3 minutes.
+            if feedService.notes.isEmpty && !feedService.isLoadingContacts && relayManager.isRunning {
+                feedService.refresh()
             }
         }
         .onChange(of: relayManager.isRunning) { _, running in
-            if running && !relayManager.isBooting && feedService.notes.isEmpty && !feedService.isLoadingContacts {
+            if running && feedService.notes.isEmpty && !feedService.isLoadingContacts {
                 feedService.refresh()
             }
         }
         .onChange(of: relayManager.isBooting) { _, booting in
-            if !booting && relayManager.isRunning && feedService.notes.isEmpty && !feedService.isLoadingContacts && !feedService.isLoadingFeed {
+            // Once booting finishes the local relay becomes available — re-subscribe
+            // so the feed can pull from it too (unless the feed already populated).
+            if !booting && relayManager.isRunning && !feedService.isLoadingFeed {
                 feedService.refresh()
             }
         }
@@ -262,7 +284,21 @@ struct FeedView: View {
 
                         let filteredNotes = feedService.notes.filter { note in
                             let isBlacklisted = configService.blacklistedHexPubkeys.contains(note.pubkey)
-                            return !isBlacklisted && (configService.config.showReplies || !note.isReply)
+                            if isBlacklisted { return false }
+                            
+                            // Check reposts toggle preference
+                            let isRepost = note.kind == 6
+                            if isRepost && !configService.config.showReposts {
+                                return false
+                            }
+                            
+                            // In Global feed mode, we always filter out replies because they lack context and are extremely noisy.
+                            if feedService.feedMode == .global {
+                                return !note.isReply
+                            }
+                            
+                            // In Following feed mode, respect the user's preference
+                            return configService.config.showReplies || !note.isReply
                         }
 
                         ForEach(Array(filteredNotes.enumerated()), id: \.element.id) { index, note in
@@ -279,7 +315,13 @@ struct FeedView: View {
                                     note: note,
                                     profile: profile,
                                     onReply: {
-                                        replyToNote = note
+                                        // For reposts, reply to the original note
+                                        if note.kind == 6, let refId = note.repostedEventId,
+                                           let original = feedService.notes.first(where: { $0.id == refId }) {
+                                            replyToNote = original
+                                        } else {
+                                            replyToNote = note
+                                        }
                                         showingCompose = true
                                     },
                                     onQuote: {
@@ -297,7 +339,13 @@ struct FeedView: View {
                                 note: note,
                                 profile: profile,
                                 onReply: {
-                                    replyToNote = note
+                                    // For reposts, reply to the original note
+                                    if note.kind == 6, let refId = note.repostedEventId,
+                                       let original = feedService.notes.first(where: { $0.id == refId }) {
+                                        replyToNote = original
+                                    } else {
+                                        replyToNote = note
+                                    }
                                     showingCompose = true
                                 },
                                 onQuote: {
@@ -348,7 +396,18 @@ struct FeedView: View {
                     }
                 }
                 .refreshable {
+                    isRefreshing = true
                     feedService.refresh()
+                }
+                .onChange(of: feedService.isLoadingFeed) { _, isLoading in
+                    if !isLoading && isRefreshing {
+                        isRefreshing = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                                proxy.scrollTo("top", anchor: .top)
+                            }
+                        }
+                    }
                 }
 
                 // Floating "New Posts" indicator
@@ -403,24 +462,30 @@ struct FeedView: View {
                 replyToNote = nil
                 showingCompose = true
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(.black)
-                    .frame(width: 56, height: 56)
-                    .background(
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 15, weight: .bold))
+                    Text("Post")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                }
+                .foregroundColor(.white)
+                .frame(height: 48)
+                .padding(.horizontal, 16)
+                .background(
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
                             )
-                            .shadow(color: Color.havenPurple.opacity(0.4), radius: 8, x: 0, y: 4)
-                    )
+                        )
+                        .shadow(color: Color.havenPurple.opacity(0.35), radius: 10, x: 0, y: 5)
+                )
             }
-            .padding(24)
-            .padding(.bottom, 8) // Adjust for tab bar if present
+            .padding(.trailing, 20)
+            .padding(.bottom, 24)
+            .hoverEffect(.lift)
             #endif
         }
     }
@@ -442,7 +507,7 @@ struct FeedNoteRow: View {
 
     @State private var showingProfileKey: IdentifiableString?
     @State private var showingMediaUrl: IdentifiableURL?
-    @State private var showingReportDialog = false
+    @State private var showingEmojiPicker = false
     @State private var showLightning = false
     @State private var showAmountPicker = false
     @State private var zapAmountSats: String = ""
@@ -489,12 +554,32 @@ struct FeedNoteRow: View {
                     }
                     .buttonStyle(.plain)
                 } else {
-                    // Request parent if missing
-                    Color.clear
-                        .frame(height: 0)
-                        .onAppear {
-                            feedService.fetchMissingNote(id: pId)
+                    // Skeleton while parent is being fetched
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(spacing: 0) {
+                            Circle()
+                                .fill(Color.platformTertiaryGroupedBackground)
+                                .frame(width: 28, height: 28)
+                            Rectangle()
+                                .fill(Color.havenPurple.opacity(0.3))
+                                .frame(width: 2)
+                                .frame(minHeight: 12)
                         }
+                        .frame(width: 40)
+                        VStack(alignment: .leading, spacing: 5) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.platformTertiaryGroupedBackground)
+                                .frame(width: 80, height: 10)
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.platformTertiaryGroupedBackground)
+                                .frame(width: 140, height: 10)
+                        }
+                        .padding(.top, 2)
+                        .padding(.bottom, 8)
+                    }
+                    .onAppear {
+                        feedService.fetchMissingNote(id: pId)
+                    }
                 }
             }
 
@@ -570,10 +655,16 @@ struct FeedNoteRow: View {
                                 .foregroundColor(Color.havenPurple.opacity(0.6))
 
                             if let rPubkey = note.replyToPubkey {
-                                Text("reply to \(shortKey(rPubkey))")
+                                let name = nostrService.profiles[rPubkey]?.bestName ?? shortKey(rPubkey)
+                                Text("reply to \(name)")
                                     .font(.system(size: 10, weight: .regular, design: .monospaced))
                                     .foregroundColor(.secondary.opacity(0.7))
                                     .tracking(0.1)
+                                    .onAppear {
+                                        if nostrService.profiles[rPubkey] == nil {
+                                            nostrService.fetchMissingProfiles(for: [rPubkey])
+                                        }
+                                    }
                             }
                         }
                     }
@@ -581,8 +672,9 @@ struct FeedNoteRow: View {
                     // Content Body — for empty-content reposts, show the referenced note
                     if note.kind == 6 && note.content.isEmpty, let refId = note.repostedEventId {
                         if let original = feedService.notes.first(where: { $0.id == refId }) {
+                            let formattedOriginal = NostrContentFormatter.format(original.content, mediaURLs: original.mediaURLs, hideQuotes: true)
                             VStack(alignment: .leading, spacing: 8) {
-                                Text(NostrContentFormatter.format(original.content, mediaURLs: original.mediaURLs, hideQuotes: true))
+                                Text(formattedOriginal)
                                     .font(.system(size: 15, weight: .regular, design: .default))
                                     .foregroundColor(Color(red: 1, green: 1, blue: 1))
                                     .lineSpacing(2)
@@ -592,21 +684,8 @@ struct FeedNoteRow: View {
                             .padding(.top, 4)
 
                             if !original.mediaURLs.isEmpty {
-                                let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: min(original.mediaURLs.count, 3))
-                                LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                                    ForEach(original.mediaURLs.prefix(3), id: \.absoluteString) { url in
-                                        Button(action: {
-                                            showingMediaUrl = IdentifiableURL(url: url)
-                                        }) {
-                                            FeedMediaThumbnail(url: url)
-                                                .aspectRatio(1, contentMode: .fill)
-                                                .frame(maxWidth: .infinity)
-                                                .cornerRadius(8)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .padding(.top, 4)
+                                feedMediaCarousel(urls: original.mediaURLs)
+                                    .padding(.top, 4)
                             }
                         } else {
                             // Still loading the referenced note
@@ -620,8 +699,9 @@ struct FeedNoteRow: View {
                             .padding(.top, 4)
                         }
                     } else {
+                        let formattedContent = NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true)
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
+                            Text(formattedContent)
                                 .font(.system(size: 15, weight: .regular, design: .default))
                                 .foregroundColor(Color(red: 1, green: 1, blue: 1))
                                 .lineSpacing(2)
@@ -632,21 +712,8 @@ struct FeedNoteRow: View {
 
                         // Media previews
                         if !note.mediaURLs.isEmpty {
-                            let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: min(note.mediaURLs.count, 3))
-                            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                                ForEach(note.mediaURLs.prefix(3), id: \.absoluteString) { url in
-                                    Button(action: {
-                                        showingMediaUrl = IdentifiableURL(url: url)
-                                    }) {
-                                        FeedMediaThumbnail(url: url)
-                                            .aspectRatio(1, contentMode: .fill)
-                                            .frame(maxWidth: .infinity)
-                                            .cornerRadius(8)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.top, 4)
+                            feedMediaCarousel(urls: note.mediaURLs)
+                                .padding(.top, 4)
                         }
                     }
 
@@ -687,6 +754,24 @@ struct FeedNoteRow: View {
                         )
                         .scaleEffect(isLiked ? 1.2 : 1.0)
                         .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isLiked)
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: 0.5)
+                                .onEnded { _ in
+                                    #if os(iOS)
+                                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                                    generator.impactOccurred()
+                                    #endif
+                                    showingEmojiPicker = true
+                                }
+                        )
+                        .popover(isPresented: $showingEmojiPicker) {
+                            EmojiPickerView { emoji in
+                                reactToNote(with: emoji)
+                            }
+                            #if os(iOS)
+                            .presentationDetents([.height(520)])
+                            #endif
+                        }
                         
                         if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
                             let zapAmount = feedService.zappedEventIds[note.id]
@@ -705,7 +790,7 @@ struct FeedNoteRow: View {
                                     }
                                 }
                                 .frame(height: 32)
-                                .padding(.horizontal, isZapped && zapAmount != nil && zapAmount! > 0 ? 10 : 0)
+                                .padding(.horizontal, (zapAmount ?? 0) > 0 ? 10 : 0)
                                 .frame(minWidth: 32)
                                 .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
                                 .clipShape(Capsule())
@@ -718,7 +803,12 @@ struct FeedNoteRow: View {
                                 showAmountPicker = true
                             }
                         }
-                        
+
+                        let onchainZapAmount = feedService.onchainZapEventIds[note.id]
+                        if onchainZapAmount != nil {
+                            OnchainZapDisplay(amountSats: onchainZapAmount)
+                        }
+
                         Spacer()
                     }
                     .padding(.top, 4)
@@ -785,38 +875,6 @@ struct FeedNoteRow: View {
         .sheet(item: $showingMediaUrl) { media in
             FeedMediaViewer(url: media.url)
         }
-        .contextMenu {
-            Button(action: {
-                showingReportDialog = true
-            }) {
-                Label("Report Post", systemImage: "flag.fill")
-            }
-            
-            Divider()
-            
-            Button(action: {
-                blockUser(hexPubkey: note.pubkey)
-            }) {
-                Label("Block User", systemImage: "hand.raised.fill")
-            }
-        }
-        .sheet(isPresented: $showingReportDialog) {
-            UGCReportingDialog(eventId: note.id, pubkey: note.pubkey) {
-                // Background refresh/filtering will handle hiding it
-                nostrService.objectWillChange.send()
-            }
-            .environmentObject(nostrService)
-            .environmentObject(configService)
-        }
-    }
-
-    private func blockUser(hexPubkey: String) {
-        guard let data = Bech32.hexToData(hexPubkey),
-              let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-        if !configService.config.blacklistedNpubs.contains(npub) {
-            configService.config.blacklistedNpubs.append(npub)
-            configService.save()
-        }
     }
 
     private func actionButton(icon: String, color: Color = .secondary, count: Int = 0, action: @escaping () -> Void) -> some View {
@@ -846,12 +904,70 @@ struct FeedNoteRow: View {
         #endif
     }
 
+    // MARK: - Media Grid Helper
+
+    /// Renders media URLs using FeedMediaView in a swipeable carousel.
+    @ViewBuilder
+    private func feedMediaCarousel(urls: [URL]) -> some View {
+        if urls.isEmpty {
+            EmptyView()
+        } else if urls.count == 1 {
+            // Single media — full width, proper aspect ratio
+            FeedMediaView(
+                url: urls[0],
+                onTap: { showingMediaUrl = IdentifiableURL(url: urls[0]) },
+                maxHeight: 400,
+                isThumbnail: false
+            )
+            .frame(maxWidth: .infinity)
+        } else {
+            // Multiple media — swipeable carousel
+            TabView {
+                ForEach(urls, id: \.absoluteString) { url in
+                    FeedMediaView(
+                        url: url,
+                        onTap: { showingMediaUrl = IdentifiableURL(url: url) },
+                        maxHeight: 400,
+                        isThumbnail: false
+                    )
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .automatic))
+            .frame(height: 400)
+            // Add a subtle border or background if desired to distinguish bounds
+            // But FeedMediaView already has clipShape and overlay
+        }
+    }
+
     private func likeNote() {
         if !feedService.likedEventIds.contains(note.id) {
             feedService.likedEventIds.insert(note.id)
+            
+            // Proactively update stats locally
+            var currentStats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+            currentStats.reactions += 1
+            feedService.noteStats[note.id] = currentStats
+            
             feedService.saveInteractionState()
         }
         guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", note.id, "", "root"], ["p", note.pubkey]]) else { return }
+        nostrService.postEvent(signed)
+    }
+    
+    private func reactToNote(with emoji: String) {
+        if !feedService.likedEventIds.contains(note.id) {
+            feedService.likedEventIds.insert(note.id)
+            
+            // Proactively update stats locally
+            var currentStats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+            currentStats.reactions += 1
+            feedService.noteStats[note.id] = currentStats
+            
+            feedService.saveInteractionState()
+        }
+        guard let signed = nostrService.signEvent(kind: 7, content: emoji, tags: [["e", note.id, "", "root"], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
     }
 
@@ -874,11 +990,6 @@ struct FeedNoteRow: View {
     
     private func zapNote(lud16: String, amount: Int? = nil) async {
         let amountSats = amount ?? (ConfigService.shared.config.defaultZapAmount / 1000)
-        let recipientName = nostrService.profiles[note.pubkey]?.bestName ?? shortKey(note.pubkey)
-
-        // Immediately show zap pill at top of feed
-        let zapManager = ZapNotificationManager.shared
-        let notifId = await zapManager.addZap(recipientName: recipientName, amountSats: amountSats)
 
         do {
             try await ZapService.shared.zapNote(
@@ -891,17 +1002,11 @@ struct FeedNoteRow: View {
                 feedService.zappedEventIds[note.id] = amountSats
                 feedService.saveInteractionState()
                 showLightning = true
-                zapManager.markSuccess(id: notifId)
             }
-            #if os(iOS)
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
-            #endif
         } catch {
-            await MainActor.run {
-                zapManager.markFailed(id: notifId, message: error.localizedDescription)
-            }
-            RelayProcessManager.shared.addLog("Zap: Failed to zap note: \(error.localizedDescription)", level: "ERROR")
+            #if DEBUG
+            print("FeedView: Zap failed: \(error)")
+            #endif
         }
     }
 
@@ -955,58 +1060,7 @@ struct FeedNoteRow: View {
     }
 }
 
-// MARK: - FeedMediaThumbnail
-
-struct FeedMediaThumbnail: View {
-    let url: URL
-    @State private var image: PlatformImage?
-    @State private var isVideo = false
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.platformTertiaryGroupedBackground)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.5))
-
-                if let image = image {
-                    Image(platformImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-
-                if isVideo {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(.white.opacity(0.95))
-                        .shadow(color: .black.opacity(0.5), radius: 4)
-                }
-            }
-        }
-        .onAppear { loadThumbnail() }
-    }
-
-    private func loadThumbnail() {
-        let ext = url.pathExtension.lowercased()
-        isVideo = ["mp4", "mov", "webm", "m4v"].contains(ext)
-        guard image == nil else { return }
-
-        Task {
-            if isVideo {
-                if let thumb = await MediaCacheService.shared.generateThumbnail(for: url) {
-                    await MainActor.run { self.image = thumb }
-                }
-            } else {
-                if let data = await MediaCacheService.shared.fetchData(url: url),
-                   let img = PlatformImage(data: data) {
-                    await MainActor.run { self.image = img }
-                }
-            }
-        }
-    }
-}
+// FeedMediaThumbnail has been replaced by FeedMediaView (see Components/FeedMediaView.swift)
 
 // MARK: - AvatarView
 

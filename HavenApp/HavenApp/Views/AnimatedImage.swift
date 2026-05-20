@@ -57,20 +57,25 @@ struct AnimatedImage: NSViewRepresentable {
     var contentMode: ContentMode = .fit
     var shouldAnimate: Bool = true
     var targetSize: CGSize? = nil
-    
+    var onLoad: ((CGSize) -> Void)? = nil
+
     func makeNSView(context: Context) -> AspectFillImageView {
         let view = AspectFillImageView()
         view.contentMode = contentMode
         view.shouldAnimate = shouldAnimate
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.setContentHuggingPriority(.defaultLow, for: .vertical)
         loadAsync(url: url, into: view)
         return view
     }
-    
+
     func updateNSView(_ nsView: AspectFillImageView, context: Context) {
         nsView.contentMode = contentMode
         nsView.shouldAnimate = shouldAnimate
     }
-    
+
     private func loadAsync(url: URL, into view: AspectFillImageView) {
         Task.detached(priority: .utility) {
             let data: Data?
@@ -86,16 +91,13 @@ struct AnimatedImage: NSViewRepresentable {
             if let targetSize = self.targetSize {
                 image = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height))
             } else {
-                #if os(macOS)
                 image = NSImage(data: data)
-                #else
-                image = UIImage(data: data)
-                #endif
             }
 
             guard let image else { return }
             await MainActor.run {
                 view.image = image
+                self.onLoad?(image.size)
             }
         }
     }
@@ -177,19 +179,24 @@ struct AnimatedImage: UIViewRepresentable {
     var contentMode: ContentMode = .fit
     var shouldAnimate: Bool = true
     var targetSize: CGSize? = nil
-    
+    var onLoad: ((CGSize) -> Void)? = nil
+
     func makeUIView(context: Context) -> UIImageView {
         let view = UIImageView()
         view.contentMode = contentMode == .fill ? .scaleAspectFill : .scaleAspectFit
         view.clipsToBounds = true
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.setContentHuggingPriority(.defaultLow, for: .vertical)
         loadAsync(url: url, into: view)
         return view
     }
-    
+
     func updateUIView(_ uiView: UIImageView, context: Context) {
         uiView.contentMode = contentMode == .fill ? .scaleAspectFill : .scaleAspectFit
     }
-    
+
     private func loadAsync(url: URL, into view: UIImageView) {
         Task.detached(priority: .utility) {
             let data: Data?
@@ -204,6 +211,8 @@ struct AnimatedImage: UIViewRepresentable {
             let image: UIImage?
             if let targetSize = self.targetSize {
                 image = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height))
+            } else if url.isGIF {
+                image = Self.makeAnimatedGIF(data: data)
             } else {
                 image = UIImage(data: data)
             }
@@ -211,8 +220,33 @@ struct AnimatedImage: UIViewRepresentable {
             guard let image else { return }
             await MainActor.run {
                 view.image = image
+                self.onLoad?(image.size)
             }
         }
+    }
+
+    /// Decodes all GIF frames via CGImageSource and returns an animating UIImage.
+    /// UIImage(data:) only decodes the first frame, so looping requires this.
+    private static func makeAnimatedGIF(data: Data) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let count = CGImageSourceGetCount(source)
+        guard count > 1 else { return UIImage(data: data) }
+
+        var frames: [UIImage] = []
+        var totalDuration: Double = 0
+
+        for i in 0..<count {
+            guard let cgImage = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            frames.append(UIImage(cgImage: cgImage))
+            let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
+            let gifDict = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
+            let delay = gifDict?[kCGImagePropertyGIFUnclampedDelayTime as String] as? Double
+                     ?? gifDict?[kCGImagePropertyGIFDelayTime as String] as? Double
+                     ?? 0.1
+            totalDuration += max(delay, 0.011)
+        }
+
+        return UIImage.animatedImage(with: frames, duration: totalDuration)
     }
 }
 #endif

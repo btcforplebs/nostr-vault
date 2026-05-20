@@ -12,6 +12,7 @@ struct ViewerView: View {
     @StateObject private var feedService = FeedService.shared
     
     @State private var searchText = ""
+    @FocusState private var isSearchFocused: Bool
     @State private var viewMode: ViewMode = .notes
     @State private var blossomMedia: [MediaItem] = []
     @State private var selectedMedia: MediaItem? = nil
@@ -430,23 +431,36 @@ struct ViewerView: View {
         }
     }
     
+    private var viewModeTitle: String {
+        switch viewMode {
+        case .notes: return "Notes"
+        case .media: return "Media"
+        case .likes: return "Likes"
+        case .zaps: return "Zaps"
+        }
+    }
+    
     var body: some View {
         viewContent
     }
     @ViewBuilder
     private func headerView(isNarrow: Bool) -> some View {
         VStack(spacing: 12) {
+            #if os(macOS)
             HStack {
                 relayDashboardButton
                 Spacer()
             }
+            #endif
 
             if isNarrow {
                 VStack(alignment: .leading, spacing: 10) {
+                    #if os(macOS)
                     HStack {
                         modeView
                         Spacer()
                     }
+                    #endif
                     if viewMode == .notes {
                         ScrollView(.horizontal, showsIndicators: false) {
                             filterView
@@ -463,8 +477,10 @@ struct ViewerView: View {
                 }
             } else {
                 HStack {
+                    #if os(macOS)
                     modeView
                     Spacer()
+                    #endif
                     if viewMode == .notes {
                         filterView
                     } else if viewMode == .likes {
@@ -478,8 +494,9 @@ struct ViewerView: View {
             searchOrSourceBar
         }
         .frame(maxWidth: .infinity)
-        .padding()
-        .background(Color.platformControlBackground)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(Color(red: 0.12, green: 0.12, blue: 0.16))
     }
 
     @ViewBuilder
@@ -512,6 +529,20 @@ struct ViewerView: View {
                 TextField(viewMode == .zaps ? "Search zapped notes..." : viewMode == .likes ? "Search liked notes..." : "Search notes...", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14, weight: .regular))
+                    .focused($isSearchFocused)
+                    .submitLabel(.search)
+
+                if !searchText.isEmpty {
+                    Button(action: {
+                        searchText = ""
+                        isSearchFocused = false
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                }
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     sourceFilterView
@@ -522,6 +553,11 @@ struct ViewerView: View {
         .background(Color(red: 0.12, green: 0.12, blue: 0.16))
         .cornerRadius(8)
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
+        .onTapGesture {
+            if !isSearchFocused && viewMode != .media {
+                isSearchFocused = true
+            }
+        }
     }
 
     @ViewBuilder
@@ -538,41 +574,48 @@ struct ViewerView: View {
             }
         }
         .padding(.vertical, 16)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isSearchFocused = false
+        }
     }
 
     @ViewBuilder
     private var viewContent: some View {
         GeometryReader { geometry in
-            VStack(spacing: 0) {
-                headerView(isNarrow: geometry.size.width < 500)
+            ZStack {
+                Color(red: 0.08, green: 0.08, blue: 0.1).ignoresSafeArea()
 
-                Divider()
+                VStack(spacing: 0) {
+                    headerView(isNarrow: geometry.size.width < 500)
 
-                ScrollView {
-                    listContent
+                    Divider()
 
-                    if !displayNotes.isEmpty || !displayMedia.isEmpty || !displayLikedNotes.isEmpty {
-                        Color.clear
-                            .frame(height: 1)
-                            .padding(.bottom, 20)
-                            .onAppear {
-                                if !nostrService.isFetching && (!displayNotes.isEmpty || !displayMedia.isEmpty) {
-                                    loadMore()
+                    ScrollView {
+                        listContent
+
+                        if !displayNotes.isEmpty || !displayMedia.isEmpty || !displayLikedNotes.isEmpty {
+                            Color.clear
+                                .frame(height: 1)
+                                .padding(.bottom, 20)
+                                .onAppear {
+                                    if !nostrService.isFetching && (!displayNotes.isEmpty || !displayMedia.isEmpty) {
+                                        loadMore()
+                                    }
                                 }
-                            }
-                            .id(nostrService.events.count)
+                                .id(nostrService.events.count)
+                        }
                     }
-                }
-                .refreshable {
-                    #if os(iOS)
-                    MacRelaySyncService.shared.syncIfConfigured()
-                    #endif
-                    refreshAll()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .refreshable {
+                        #if os(iOS)
+                        MacRelaySyncService.shared.syncIfConfigured()
+                        #endif
+                        refreshAll()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+                }
             }
-            .background(Color.platformControlBackground)
         }
         .onAppear {
             if relayManager.isRunning && !relayManager.isBooting {
@@ -674,6 +717,54 @@ struct ViewerView: View {
             .frame(minWidth: 400, minHeight: 400)
             #endif
         }
+        #if os(iOS)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { showingRelayDashboard = true }) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 12, height: 12)
+                        .shadow(color: statusColor.opacity(0.8), radius: 4)
+                        .padding(8)
+                        .background(Color.primary.opacity(0.08))
+                        .clipShape(Circle())
+                }
+            }
+            
+            ToolbarItem(placement: .principal) {
+                Menu {
+                    Button(action: { viewMode = .notes }) {
+                        Label("Notes", systemImage: viewMode == .notes ? "checkmark" : "")
+                    }
+                    Button(action: {
+                        viewMode = .media
+                        if relayManager.isRunning && !relayManager.isBooting {
+                            loadLocalMedia()
+                        }
+                    }) {
+                        Label("Media", systemImage: viewMode == .media ? "checkmark" : "")
+                    }
+                    Button(action: {
+                        viewMode = .likes
+                        fetchMissingLikedNotes()
+                    }) {
+                        Label("Likes", systemImage: viewMode == .likes ? "checkmark" : "")
+                    }
+                    Button(action: { viewMode = .zaps }) {
+                        Label("Zaps", systemImage: viewMode == .zaps ? "checkmark" : "")
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(viewModeTitle)
+                            .font(.system(size: 16, weight: .semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundColor(Color.havenPurple)
+                }
+            }
+        }
+        #endif
     }
     
     private var notesButton: some View {
@@ -807,7 +898,7 @@ struct ViewerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.platformControlBackground)
+                .background(Color(red: 0.08, green: 0.08, blue: 0.1))
             } else if displayLikedNotes.isEmpty {
                 VStack(spacing: 24) {
                     Image(systemName: likesFilter == .likedByOthers ? "heart.slash" : "heart")
@@ -830,7 +921,7 @@ struct ViewerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.platformControlBackground)
+                .background(Color(red: 0.08, green: 0.08, blue: 0.1))
             } else {
                 LazyVStack(spacing: 12) {
                     ForEach(displayLikedNotes) { event in
@@ -911,7 +1002,7 @@ struct ViewerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.platformControlBackground)
+                .background(Color(red: 0.08, green: 0.08, blue: 0.1))
             } else if displayZappedNotes.isEmpty {
                 VStack(spacing: 24) {
                     Image(systemName: zapsFilter == .zappedByOthers ? "bolt.slash" : "bolt")
@@ -934,7 +1025,7 @@ struct ViewerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.platformControlBackground)
+                .background(Color(red: 0.08, green: 0.08, blue: 0.1))
             } else {
                 LazyVStack(spacing: 12) {
                     ForEach(displayZappedNotes) { event in
@@ -1015,7 +1106,7 @@ struct ViewerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.platformControlBackground)
+                .background(Color(red: 0.08, green: 0.08, blue: 0.1))
             } else if displayNotes.isEmpty {
                 VStack(spacing: 24) {
                     Image(systemName: "doc.text.magnifyingglass")
@@ -1040,7 +1131,7 @@ struct ViewerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.platformControlBackground)
+                .background(Color(red: 0.08, green: 0.08, blue: 0.1))
             } else {
                 LazyVStack(spacing: 12) {
                     ForEach(displayNotes) { event in
@@ -1114,7 +1205,7 @@ struct ViewerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.platformControlBackground)
+                .background(Color(red: 0.08, green: 0.08, blue: 0.1))
             } else if items.isEmpty {
                 VStack(spacing: 24) {
                     Image(systemName: "photo.on.rectangle")
@@ -1139,7 +1230,7 @@ struct ViewerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.platformControlBackground)
+                .background(Color(red: 0.08, green: 0.08, blue: 0.1))
             } else {
                 #if os(macOS)
                 let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
@@ -1236,47 +1327,26 @@ struct ViewerView: View {
                     
                     Spacer()
                     
-                    Group {
-                        if item.type == .video {
-                            VideoPlayerView(url: item.url)
-                                .id(item.url)
-                        } else if item.type == .audio {
-                            AudioPlayerView(url: item.url)
-                                .id(item.url)
-                        } else if item.type == .unknown {
-                            VStack(spacing: 12) {
-                                Image(systemName: "doc.fill")
-                                    .font(.system(size: 64))
-                                    .foregroundColor(Color.havenPurple.opacity(0.6))
-                                if let mime = item.mimeType {
-                                    Text(mime)
-                                        .font(.system(size: 14, weight: .medium, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("Unknown Format")
-                                        .font(.headline)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        } else if item.url.isGIF {
-                            AnimatedImage(url: item.url, contentMode: .fit, shouldAnimate: true)
-                                .id(item.url)
-                        } else {
-                            // Default to image for non-video/audio items
-                            RetryableAsyncImage(url: item.url, contentMode: .fit)
-                                .id(item.url)
+                    TabView(selection: $selectedMedia) {
+                        ForEach(displayMedia) { mediaItem in
+                            ViewerViewMediaItem(mediaItem: mediaItem)
+                                .tag(mediaItem as MediaItem?)
                         }
                     }
+                    .mediaTabViewStyleCompat()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .offset(y: dragOffset.height)
                     .scaleEffect(max(0.8, 1.0 - (abs(dragOffset.height) / 1000.0)))
                     .gesture(
                         DragGesture()
                             .onChanged { gesture in
-                                dragOffset = gesture.translation
+                                // Only capture vertical drags to not conflict with horizontal swiping
+                                if abs(gesture.translation.height) > abs(gesture.translation.width) || dragOffset.height != 0 {
+                                    dragOffset = CGSize(width: 0, height: gesture.translation.height)
+                                }
                             }
                             .onEnded { gesture in
-                                if abs(gesture.translation.height) > 120 {
+                                if abs(dragOffset.height) > 120 {
                                     withAnimation(.easeOut(duration: 0.2)) {
                                         selectedMedia = nil
                                         dragOffset = .zero
@@ -2629,6 +2699,92 @@ struct ViewerChangeHandlers: ViewModifier {
             .onChange(of: noteMediaCount) { _, _ in onUpdate() }
             .onChange(of: blacklistedNpubs) { _, _ in onUpdate() }
             .onChange(of: blossomCount) { _, _ in onUpdate() }
+    }
+}
+
+struct ViewerViewMediaItem: View {
+    let mediaItem: MediaItem
+    @State private var resolvedType: MediaItem.MediaType
+    @State private var isLoadingType = false
+    
+    init(mediaItem: MediaItem) {
+        self.mediaItem = mediaItem
+        self._resolvedType = State(initialValue: mediaItem.type)
+    }
+    
+    var body: some View {
+        Group {
+            if isLoadingType {
+                ProgressView()
+                    .tint(.white)
+            } else if resolvedType == .video {
+                VideoPlayerView(url: mediaItem.url)
+            } else if resolvedType == .audio {
+                AudioPlayerView(url: mediaItem.url)
+            } else if resolvedType == .unknown {
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.fill")
+                        .font(.system(size: 64))
+                        .foregroundColor(Color.havenPurple.opacity(0.6))
+                    if let mime = mediaItem.mimeType {
+                        Text(mime)
+                            .font(.system(size: 14, weight: .medium, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Unknown Format")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } else if mediaItem.url.isGIF {
+                AnimatedImage(url: mediaItem.url, contentMode: .fit, shouldAnimate: true)
+            } else {
+                RetryableAsyncImage(url: mediaItem.url, contentMode: .fit)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            detectType()
+        }
+    }
+    
+    private func detectType() {
+        if resolvedType != .unknown {
+            return
+        }
+        
+        let ext = mediaItem.url.pathExtension.lowercased()
+        if ["mp4", "mov", "webm", "avi"].contains(ext) {
+            resolvedType = .video
+        } else if ["jpg", "jpeg", "png", "gif", "webp", "avif", "heic"].contains(ext) {
+            resolvedType = .image
+        } else if ["mp3", "wav", "ogg", "m4a", "flac"].contains(ext) {
+            resolvedType = .audio
+        } else if let cached = MediaTypeDetector.shared.getCachedContentType(for: mediaItem.url) {
+            if MediaTypeDetector.shared.isVideoContentType(cached) {
+                resolvedType = .video
+            } else if MediaTypeDetector.shared.isImageContentType(cached) {
+                resolvedType = .image
+            } else {
+                resolvedType = .unknown
+            }
+        } else {
+            isLoadingType = true
+            MediaTypeDetector.shared.detectContentType(for: mediaItem.url) { detectedType in
+                isLoadingType = false
+                if let detectedType = detectedType {
+                    if MediaTypeDetector.shared.isVideoContentType(detectedType) {
+                        resolvedType = .video
+                    } else if MediaTypeDetector.shared.isImageContentType(detectedType) {
+                        resolvedType = .image
+                    } else {
+                        resolvedType = .unknown
+                    }
+                } else {
+                    resolvedType = .unknown
+                }
+            }
+        }
     }
 }
 
