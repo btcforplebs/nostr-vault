@@ -2,8 +2,10 @@ import SwiftUI
 
 struct BitcoinSweepDisclaimerView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var configService: ConfigService
     @State private var showSweepFlow = false
     @State private var balance: Int = 0
+    @State private var isLoadingBalance = true
 
     var body: some View {
         ZStack {
@@ -126,16 +128,17 @@ struct BitcoinSweepDisclaimerView: View {
                     Button(action: { showSweepFlow = true }) {
                         HStack(spacing: 8) {
                             Image(systemName: "bitcoinsign.circle.fill")
-                            Text("I Understand - Proceed to Sweep")
+                            Text(isLoadingBalance ? "Loading Balance..." : "I Understand - Proceed to Sweep")
                                 .font(.system(size: 16, weight: .semibold))
                         }
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.orange)
+                        .background(isLoadingBalance ? Color.gray : Color.orange)
                         .cornerRadius(12)
                     }
                     .buttonStyle(.plain)
+                    .disabled(isLoadingBalance)
                 }
                 .padding(20)
             }
@@ -159,7 +162,7 @@ struct BitcoinSweepDisclaimerView: View {
             Text(description)
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
-                .lineHeight(1.4)
+                .lineSpacing(2)
 
             if !highlights.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -172,7 +175,7 @@ struct BitcoinSweepDisclaimerView: View {
                             Text(highlight)
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
-                                .lineHeight(1.3)
+                                .lineSpacing(1.5)
                         }
                     }
                 }
@@ -187,21 +190,54 @@ struct BitcoinSweepDisclaimerView: View {
 
     private func loadBalance() {
         Task {
-            guard let cStr = GetOnchainBalanceC() else { return }
-            let json = String(cString: cStr)
-            guard let data = json.data(using: .utf8),
-                  let response = try? JSONDecoder().decode(BalanceResponse.self, from: data) else { return }
-            await MainActor.run {
-                self.balance = response.balance
+            let npub = configService.config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !npub.isEmpty,
+                  let decoded = Bech32.decode(npub),
+                  decoded.hrp == "npub" else { return }
+
+            let hexPubKey = decoded.hexString
+            guard let cAddr = hexPubKey.withCString({ DeriveTaprootAddressC(UnsafeMutablePointer(mutating: $0)) }) else { return }
+            let address = String(cString: cAddr)
+
+            fetchBitcoinBalance(address: address)
+        }
+    }
+
+    private func fetchBitcoinBalance(address: String) {
+        Task {
+            guard let url = URL(string: "https://mempool.btcforplebs.com/api/address/\(address)") else {
+                await MainActor.run { isLoadingBalance = false }
+                return
+            }
+
+            guard let (data, _) = try? await URLSession.shared.data(from: url) else {
+                await MainActor.run { isLoadingBalance = false }
+                return
+            }
+
+            struct AddressStats: Decodable {
+                let funded_txo_sum: Int?
+                let spent_txo_sum: Int?
+            }
+
+            do {
+                let stats = try JSONDecoder().decode(AddressStats.self, from: data)
+                let funded = stats.funded_txo_sum ?? 0
+                let spent = stats.spent_txo_sum ?? 0
+                let total = funded - spent
+
+                await MainActor.run {
+                    self.balance = max(0, total)
+                    self.isLoadingBalance = false
+                }
+            } catch {
+                await MainActor.run { isLoadingBalance = false }
             }
         }
     }
 }
 
-private struct BalanceResponse: Decodable {
-    let balance: Int
-}
-
 #Preview {
     BitcoinSweepDisclaimerView()
+        .environmentObject(ConfigService.shared)
 }

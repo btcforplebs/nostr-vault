@@ -1839,6 +1839,10 @@ struct WalletSettingsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .sheet(isPresented: $showSweepDisclaimer) {
+            BitcoinSweepDisclaimerView()
+                .environmentObject(configService)
+        }
         .onAppear {
             if !configService.config.nwcURI.isEmpty {
                 fetchBalance()
