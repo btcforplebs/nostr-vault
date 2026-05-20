@@ -1,5 +1,5 @@
 
-# HAVEN - Native Mac & iOS
+# Nostr Vault - Native Mac & iOS
 
 <p align="center">
   <img width="1008" height="1051" src="https://github.com/user-attachments/assets/3b6e4326-125c-44c7-bfec-8330bb08a703" />
@@ -7,25 +7,25 @@
 
 <p align="center">
   <b>Your Personal Nostr Relay — Native on Mac & iOS</b><br>
-  <i>Powered by the original Go codebase from <a href="https://github.com/bitvora/haven">bitvora/haven</a> and forked enhancements from <a href="https://github.com/barrydeen/haven">barrydeen/haven</a>.</i>
+  <i>Powered by the original Go codebase from <a href="https://github.com/bitvora/Nostr Vault">bitvora/Nostr Vault</a> and forked enhancements from <a href="https://github.com/barrydeen/haven">barrydeen/haven</a>.</i>
 </p>
 
 ---
 
 > [!TIP]
-> **Join the Beta**: Haven for iOS is now available on **TestFlight**! [**Click here to join the beta**](https://testflight.apple.com/join/kN3zE1H1).
+> **Join the Beta**: Nostr Vault for iOS is now available on **TestFlight**! [**Click here to join the beta**](https://testflight.apple.com/join/kN3zE1H1).
 
 > [!IMPORTANT]
-> **macOS Installation Note**: Haven is currently unsigned code. macOS will likely block the application from opening by default. To bypass this, open **Settings → Privacy & Security**, scroll down to **Security**, and click **Open Anyway**.
+> **macOS Installation Note**: Nostr Vault is currently unsigned code. macOS will likely block the application from opening by default. To bypass this, open **Settings → Privacy & Security**, scroll down to **Security**, and click **Open Anyway**.
 
 ## ✨ Features
 
 - **Native SwiftUI** — Fast, responsive, and designed for macOS and iOS.
 - **Trusted Core** — Runs the exact same battle-tested Go code as the CLI relay, ensuring 100% compatibility.
-- **Mac-to-iOS Sync** — Use your Mac as your always-on home base. Haven for iOS securely syncs missed notes directly from your Mac relay.
+- **Mac-to-iOS Sync** — Use your Mac as your always-on home base. Nostr Vault for iOS securely syncs missed notes directly from your Mac relay.
 - **Nostr Zaps & NWC** — Integrated Lightning wallet support via Nostr Wallet Connect (NWC). Send and receive zaps instantly with real-time balance tracking.
 - **Private Relay** — Run your own private Nostr relay effortlessly from your desktop or phone.
-- **Smart Broadcasting** — Haven automatically discovers your recipient's preferred relays and broadcasts directly to their inbox.
+- **Smart Broadcasting** — Nostr Vault automatically discovers your recipient's preferred relays and broadcasts directly to their inbox.
 - **Advanced Access Control** — Multi-pubkey whitelisting and blacklisting support for refined relay privacy.
 - **Media Viewer** — Browse images, videos, GIFs, and audio files with source filtering (Blossom vs Cache).
 - **Blossom Media Server** — Integrated BUD-02 media hosting with automatic mirroring and smart MIME detection.
