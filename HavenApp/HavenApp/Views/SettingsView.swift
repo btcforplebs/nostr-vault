@@ -45,6 +45,7 @@ struct SettingsView: View {
         case importNotes = "Import"
         case backup = "Backup"
         case blastr = "Blastr"
+        case blossom = "Blossom"
         case macRelay = "Mac Relay"
         case advanced = "Advanced"
         case wallet = "Wallet"
@@ -61,6 +62,7 @@ struct SettingsView: View {
             case .importNotes: return "square.and.arrow.down"
             case .backup: return "externaldrive.fill"
             case .blastr: return "paperplane"
+            case .blossom: return "server.rack"
             case .macRelay: return "desktopcomputer"
             case .advanced: return "gearshape.2"
             case .wallet: return "bitcoinsign.circle"
@@ -153,7 +155,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     settingsSidebarSection("Profile", items: [.accounts, .blocked])
                     settingsSidebarSection("Appearance", items: [.appearance])
-                    settingsSidebarSection("Relay Configuration", items: [.feed, .blastr, .importNotes, .backup])
+                    settingsSidebarSection("Relay Configuration", items: [.feed, .blastr, .blossom, .importNotes, .backup])
                     settingsSidebarSection("System", items: [.wallet, .advanced, .logs])
                 }
                 .padding(.horizontal, 8)
@@ -274,6 +276,7 @@ struct SettingsView: View {
             Section("Relay Configuration") {
                 tabLink(.feed)
                 tabLink(.blastr)
+                tabLink(.blossom)
                 tabLink(.importNotes)
                 tabLink(.backup)
                 tabLink(.macRelay)
@@ -363,6 +366,7 @@ struct SettingsView: View {
         case .importNotes: return .orange
         case .backup: return .indigo
         case .blastr: return .cyan
+        case .blossom: return .green
         case .macRelay: return .teal
         case .advanced: return .gray
         case .wallet: return .orange
@@ -392,6 +396,7 @@ struct SettingsView: View {
             case .importNotes: ImportSettingsView()
             case .backup: BackupSettingsView()
             case .blastr: BlastrSettingsView()
+            case .blossom: BlossomSettingsView()
             case .macRelay:
                 #if os(iOS)
                 MacRelaySettingsView()
@@ -1096,7 +1101,6 @@ struct ImportSettingsView: View {
 struct BackupSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
-    @EnvironmentObject var nostrService: NostrService
 
     @State private var isExportingJSONL = false
     @State private var isImportingJSONL = false
@@ -1105,7 +1109,6 @@ struct BackupSettingsView: View {
     @State private var statusMessage = ""
     @State private var showFileImporter = false
     @State private var showBlossomImporter = false
-    @ObservedObject private var mirrorService = MirrorService.shared
     
     var body: some View {
         Form {
@@ -1211,57 +1214,6 @@ struct BackupSettingsView: View {
                 Text("Media (Blossom)")
             } footer: {
                 Text("Export creates a compressed backup of your images and videos. Import restores media from a previously exported backup.")
-            }
-
-            Section {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Mirror from Servers")
-                            .font(.body)
-                        Text("Download your media from external Blossom mirrors to local storage")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Button(action: {
-                        mirrorService.runMirror(configService: configService, nostrService: nostrService)
-                    }) {
-                        HStack(spacing: 6) {
-                            if mirrorService.state == .mirroring {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "arrow.down.circle")
-                            }
-                            if let progress = mirrorService.progress, mirrorService.state == .mirroring {
-                                Text("\(progress.completed)/\(progress.total)")
-                            } else {
-                                Text("Mirror")
-                            }
-                        }
-                    }
-                    .disabled(mirrorService.state == .mirroring || configService.config.blossomMirrors.isEmpty)
-                }
-
-                Toggle(isOn: Binding(
-                    get: { configService.config.autoMirrorMedia },
-                    set: { newValue in
-                        configService.config.autoMirrorMedia = newValue
-                        configService.save()
-                    }
-                )) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Auto-Mirror Media")
-                            .font(.body)
-                        Text("Automatically download your media from mirrors when the relay starts")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            } header: {
-                Text("Media Mirroring")
-            } footer: {
-                Text("Downloads your own Blossom media from configured mirror servers to your local relay for offline access.")
             }
 
             if !statusMessage.isEmpty {
@@ -1529,7 +1481,6 @@ struct FeedSettingsView: View {
 
 struct BlastrSettingsView: View {
     @EnvironmentObject var configService: ConfigService
-    @State private var newMirrorURL = ""
     
     var body: some View {
         Form {
@@ -1547,50 +1498,6 @@ struct BlastrSettingsView: View {
                 Text("Broadcast Relays")
             } footer: {
                 Text("Blastr automatically broadcasts your local notes to these external relays.")
-            }
-
-            Section {
-                // Existing mirrors list
-                ForEach(configService.config.blossomMirrors.indices, id: \.self) { index in
-                    HStack {
-                        Text(configService.config.blossomMirrors[index])
-                            .lineLimit(1)
-                        Spacer()
-                        Button(role: .destructive) {
-                            configService.config.blossomMirrors.remove(at: index)
-                            configService.save()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.red.opacity(0.6))
-                        }
-                    }
-                }
-
-                // Add new mirror
-                HStack {
-                    TextField("https://example.com", text: $newMirrorURL)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        #endif
-
-                    Button(action: {
-                        let trimmed = newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty {
-                            configService.config.blossomMirrors.append(trimmed)
-                            configService.save()
-                            newMirrorURL = ""
-                        }
-                    }) {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.green)
-                    }
-                    .disabled(newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            } header: {
-                Text("Blossom Mirrors")
-            } footer: {
-                Text("Media uploads are mirrored to these external Blossom servers. Remote users access your media via these mirrors instead of localhost.")
             }
         }
         .groupedFormStyleCompat()
@@ -2233,6 +2140,219 @@ struct MacRelaySettingsView: View {
     }
 }
 #endif
+
+struct BlossomSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var relayManager: RelayProcessManager
+    @ObservedObject private var mirrorService = MirrorService.shared
+    
+    @State private var newMirrorURL = ""
+    
+    var body: some View {
+        Form {
+            // Section 1: Auto-Applied Blossom Server
+            Section {
+                let macHttps = configService.config.macRelayHttpsURL
+                if !macHttps.isEmpty {
+                    HStack(spacing: 12) {
+                        Image(systemName: "desktopcomputer")
+                            .font(.system(size: 18))
+                            .foregroundColor(.green)
+                            .frame(width: 24, height: 24)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 8) {
+                                Text("Mac Relay Sync Server")
+                                    .font(.subheadline.bold())
+                                    .foregroundColor(.white)
+                                
+                                Text("Active")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.green.opacity(0.15))
+                                    .foregroundColor(.green)
+                                    .cornerRadius(4)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                                    )
+                            }
+                            Text(macHttps)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                } else {
+                    HStack(spacing: 12) {
+                        Image(systemName: "desktopcomputer.badge.warning")
+                            .font(.system(size: 18))
+                            .foregroundColor(.secondary)
+                            .frame(width: 24, height: 24)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("No Mac Sync Relay Configured")
+                                .font(.subheadline.bold())
+                                .foregroundColor(.secondary)
+                            Text("Configure your Mac relay in the 'Mac Relay' tab to automatically apply it here.")
+                                .font(.caption)
+                                .foregroundColor(.secondary.opacity(0.7))
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+            } header: {
+                Text("Auto-Applied Blossom Servers")
+            } footer: {
+                Text("Your personal Mac Sync Relay is automatically applied as a Blossom mirror. No manual setup required.")
+            }
+            
+            // Section 2: Additional Blossom Servers (Mirrors)
+            Section {
+                let mirrors = configService.config.blossomMirrors
+                if mirrors.isEmpty {
+                    Text("No additional Blossom servers configured.")
+                        .foregroundColor(.secondary)
+                        .font(.subheadline)
+                        .padding(.vertical, 4)
+                } else {
+                    ForEach(mirrors, id: \.self) { url in
+                        HStack {
+                            Image(systemName: "server.rack")
+                                .font(.system(size: 14))
+                                .foregroundColor(.havenPurple)
+                            Text(url)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.white)
+                            Spacer()
+                            Button(action: {
+                                configService.config.blossomMirrors.removeAll(where: { $0 == url })
+                                configService.save()
+                            }) {
+                                Image(systemName: "minus.circle")
+                                    .foregroundColor(.red)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+                
+                // Add mirror input
+                HStack(spacing: 8) {
+                    TextField("https://blossom.example.com", text: $newMirrorURL)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        #endif
+                        .onSubmit {
+                            addMirror()
+                        }
+                    
+                    Button(action: addMirror) {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.title3)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(.top, 4)
+            } header: {
+                Text("Additional Blossom Servers")
+            } footer: {
+                Text("Add external Blossom servers. The relay will fetch from and mirror your media to these servers.")
+            }
+            
+            // Section 3: Media Sync & Mirroring
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Mirror from Servers")
+                            .font(.body)
+                            .foregroundColor(.white)
+                        Text("Download your media from external Blossom mirrors to local storage")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: {
+                        mirrorService.runMirror(configService: configService, nostrService: NostrService.shared)
+                    }) {
+                        HStack(spacing: 6) {
+                            if mirrorService.state == .mirroring {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.down.circle")
+                            }
+                            if let progress = mirrorService.progress, mirrorService.state == .mirroring {
+                                Text("\(progress.completed)/\(progress.total)")
+                            } else {
+                                Text("Mirror Now")
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.havenPurple.opacity(mirrorService.state == .mirroring ? 0.3 : 1.0))
+                        .foregroundColor(.white)
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(mirrorService.state == .mirroring || configService.config.activeBlossomMirrors.isEmpty)
+                }
+                
+                Toggle(isOn: Binding(
+                    get: { configService.config.autoMirrorMedia },
+                    set: { newValue in
+                        configService.config.autoMirrorMedia = newValue
+                        configService.save()
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Auto-Mirror Media")
+                            .font(.body)
+                            .foregroundColor(.white)
+                        Text("Automatically download your media from mirrors when the relay starts")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } header: {
+                Text("Media Mirroring")
+            } footer: {
+                Text("Downloads your own Blossom media from active servers to your local relay for offline access.")
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+    
+    private func addMirror() {
+        var trimmed = newMirrorURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            if !trimmed.lowercased().hasPrefix("https://") && !trimmed.lowercased().hasPrefix("http://") {
+                trimmed = "https://" + trimmed
+            }
+            while trimmed.hasSuffix("/") {
+                trimmed = String(trimmed.dropLast())
+            }
+            if !configService.config.blossomMirrors.contains(trimmed) {
+                configService.config.blossomMirrors.append(trimmed)
+                configService.save()
+                newMirrorURL = ""
+            }
+        }
+    }
+}
 
 // RelayListEditor and LogsView moved to separate files
 

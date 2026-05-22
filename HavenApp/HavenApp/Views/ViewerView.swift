@@ -1,6 +1,9 @@
 import SwiftUI
 import AVFoundation
 import Combine
+import PhotosUI
+import UniformTypeIdentifiers
+import CryptoKit
 #if os(iOS)
 import Photos
 #endif
@@ -45,7 +48,18 @@ struct ViewerView: View {
     #if os(iOS)
     @State private var saveToPhotosMessage: String?
     #endif
+    @State private var deleteStatusMessage: String?
+    @State private var isCopied = false
     @State private var requestedMissingIds = Set<String>()
+    
+    // Media Uploads
+    @State private var selectedUploadItems: [PhotosPickerItem] = []
+    @State private var showingFileImporter = false
+    
+    private var blossomService: BlossomService {
+        BlossomService(configService: configService, nostrService: nostrService)
+    }
+
 
     // Debounce mechanism for updateDisplayData
     @State private var updateTask: Task<Void, Never>?
@@ -135,10 +149,11 @@ struct ViewerView: View {
         let currentLikesFilter = likesFilter
         let currentZapsFilter = zapsFilter
         let currentMirrorHosts: Set<String> = Set(
-            configService.config.blossomMirrors.compactMap {
+            configService.config.activeBlossomMirrors.compactMap {
                 URL(string: $0)?.host?.lowercased()
             }
         )
+        let macRelayHttps = configService.config.macRelayHttpsURL
         let currentNotFound = MediaCacheService.shared.known404Set()
         let gen = updateGeneration
 
@@ -390,9 +405,13 @@ struct ViewerView: View {
                 // This makes the Blossom filter pick up locally-stored items whose canonical
                 // URL is on a configured mirror.
                 let mirrorHostsCapture = currentMirrorHosts
+                let macHostCapture = URL(string: macRelayHttps)?.host?.lowercased()
                 let isOnMirror: (URL) -> Bool = { url in
                     guard let host = url.host?.lowercased() else { return false }
-                    return mirrorHostsCapture.contains(host)
+                    if mirrorHostsCapture.contains(host) { return true }
+                    if host == "127.0.0.1" || host == "localhost" || host == "0.0.0.0" { return true }
+                    if let macHost = macHostCapture, host == macHost { return true }
+                    return false
                 }
                 for (key, item) in latestItems {
                     let candidates = urlsByKey[key] ?? [item.url]
@@ -409,19 +428,9 @@ struct ViewerView: View {
                     }
                 }
                 
-                // Partition: items with verified event timestamps first, unmatched blossom items after
+                // Merge and filter all items directly
                 let allItems = Array(latestItems.values)
                 let hasEventTimestamp = Set(eventTimestamps.keys)
-                var timestamped: [MediaItem] = []
-                var unmatched: [MediaItem] = []
-                for item in allItems {
-                    let key = self.normalizedKeyStatic(for: item.url)
-                    if hasEventTimestamp.contains(key) || !self.isLocalBlossomURL(item.url) {
-                        timestamped.append(item)
-                    } else {
-                        unmatched.append(item)
-                    }
-                }
 
                 // Filter by media type
                 let typeFilterSet = currentTypeFilter
@@ -430,16 +439,7 @@ struct ViewerView: View {
                     return ext == "gif" || item.mimeType?.lowercased().contains("gif") == true
                 }
 
-                var filtered = timestamped.filter { item in
-                    if isGif(item) { return typeFilterSet.contains(.gif) }
-                    switch item.type {
-                    case .image: return typeFilterSet.contains(.photo)
-                    case .video: return typeFilterSet.contains(.video)
-                    case .audio: return typeFilterSet.contains(.other)
-                    case .unknown: return typeFilterSet.contains(.other)
-                    }
-                }
-                var unfilteredUnmatched = unmatched.filter { item in
+                var filtered = allItems.filter { item in
                     if isGif(item) { return typeFilterSet.contains(.gif) }
                     switch item.type {
                     case .image: return typeFilterSet.contains(.photo)
@@ -464,17 +464,17 @@ struct ViewerView: View {
                     }
                 }
                 filtered = filtered.filter(passesLocation)
-                unfilteredUnmatched = unfilteredUnmatched.filter(passesLocation)
 
                 // Sort by date added, newest first
                 filtered.sort(by: { $0.dateAdded > $1.dateAdded })
-                unfilteredUnmatched.sort(by: { $0.dateAdded > $1.dateAdded })
-                var result = filtered + unfilteredUnmatched
+                var result = filtered
 
                 #if DEBUG
                 let timestampCount = eventTimestamps.count
                 let blossomWithTimestamp = currentBlossom.filter { hasEventTimestamp.contains(self.normalizedKeyStatic(for: $0.url)) }.count
-                print("updateDisplayData: eventTimestamps=\(timestampCount) blossomMatched=\(blossomWithTimestamp)/\(currentBlossom.count) timestamped=\(timestamped.count) unmatched=\(unmatched.count)")
+                let timestampedCount = allItems.filter { hasEventTimestamp.contains(self.normalizedKeyStatic(for: $0.url)) || !self.isLocalBlossomURL($0.url) }.count
+                let unmatchedCount = allItems.count - timestampedCount
+                print("updateDisplayData: eventTimestamps=\(timestampCount) blossomMatched=\(blossomWithTimestamp)/\(currentBlossom.count) timestamped=\(timestampedCount) unmatched=\(unmatchedCount)")
                 if let first = result.first {
                     let df = DateFormatter()
                     df.dateFormat = "MM/dd HH:mm"
@@ -763,6 +763,14 @@ struct ViewerView: View {
                 #else
                 compactViewContent(isNarrow: geometry.size.width < 500)
                 #endif
+                
+                VStack {
+                    MediaUploadNotificationBanner()
+                    Spacer()
+                }
+                .padding(.top, 12)
+                .allowsHitTesting(false)
+                .zIndex(10)
             }
         }
         .onAppear {
@@ -789,6 +797,9 @@ struct ViewerView: View {
                 refreshAll()
                 initialLoad = true
             }
+        }
+        .onChange(of: selectedMedia) { _, _ in
+            isCopied = false
         }
         #if os(iOS)
         // Present over the entire window (including the custom tab bar) on iOS.
@@ -832,13 +843,11 @@ struct ViewerView: View {
                 }
             }
         ))
-        #if os(iOS)
         .onReceive(MirrorService.shared.$state) { newState in
             if newState == .complete {
                 loadLocalMedia()
             }
         }
-        #endif
         .onReceive(NotificationCenter.default.publisher(for: .macRelaySyncComplete)) { _ in
             refreshAll()
         }
@@ -880,6 +889,24 @@ struct ViewerView: View {
             }
         }
         #endif
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: [.image, .movie],
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls):
+                handleUploadFileURLs(urls)
+            case .failure(let error):
+                print("Failed to select files: \(error)")
+            }
+        }
+        .onChange(of: selectedUploadItems) { _, items in
+            if !items.isEmpty {
+                handleUploadSelectedItems(items)
+            }
+        }
+
         #if os(iOS)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -924,7 +951,19 @@ struct ViewerView: View {
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 10, weight: .bold))
                         }
-                        .foregroundColor(.white)
+                    }
+                }
+            }
+            if viewMode == .media {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    PhotosPicker(selection: $selectedUploadItems, matching: .any(of: [.images, .videos])) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(8)
+                            .background(Color.havenPurple.opacity(0.85))
+                            .clipShape(Circle())
+                            .shadow(color: Color.havenPurple.opacity(0.4), radius: 4, x: 0, y: 2)
                     }
                 }
             }
@@ -983,6 +1022,8 @@ struct ViewerView: View {
                     likesFilterView
                 } else if viewMode == .zaps {
                     zapsFilterView
+                } else if viewMode == .media {
+                    uploadButton
                 }
             }
             
@@ -992,6 +1033,30 @@ struct ViewerView: View {
         .padding(.horizontal)
         .padding(.vertical, 12)
         .background(Color(red: 0.12, green: 0.12, blue: 0.16))
+    }
+
+    private var uploadButton: some View {
+        Button(action: { showingFileImporter = true }) {
+            HStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .bold))
+                Text("Upload")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                LinearGradient(
+                    colors: [Color.havenPurple, Color.havenPurpleLight],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .cornerRadius(12)
+            .shadow(color: Color.havenPurple.opacity(0.3), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
     }
     
     private var notesButton: some View {
@@ -1498,7 +1563,12 @@ struct ViewerView: View {
 
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(items) { item in
-                        MediaGridItem(item: item) {
+                        MediaGridItem(
+                            item: item,
+                            onDeleteFromMirrors: { deleteMediaFromMirrors(item: $0) },
+                            onDeleteEverywhere: { deleteMediaEverywhere(item: $0) },
+                            onMirrorComplete: { loadLocalMedia() }
+                        ) {
                             withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = item }
                         }
                         .onAppear {
@@ -1530,12 +1600,22 @@ struct ViewerView: View {
                     HStack {
                         Button(action: {
                             PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                isCopied = true
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    isCopied = false
+                                }
+                            }
                         }) {
-                            Image(systemName: "doc.on.doc")
+                            Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
                                 .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(isCopied ? .green : .white)
                                 .padding(10)
                                 .background(Color.white.opacity(0.1))
                                 .cornerRadius(8)
+                                .scaleEffect(isCopied ? 1.15 : 1.0)
                         }
                         .buttonStyle(.plain)
 
@@ -1554,7 +1634,32 @@ struct ViewerView: View {
                         }
                         #endif
 
-                        SourceIndicatorView(url: item.url)
+                        Menu {
+                            Button(role: .destructive, action: {
+                                deleteMediaFromMirrors(item: item)
+                            }) {
+                                Label("Delete from mirrors", systemImage: "trash")
+                            }
+                            Button(role: .destructive, action: {
+                                deleteMediaEverywhere(item: item)
+                            }) {
+                                Label("Delete everywhere", systemImage: "trash.fill")
+                            }
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 16, weight: .semibold))
+                                .padding(10)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+
+                        SourceIndicatorView(
+                            url: item.url,
+                            onMirrorComplete: {
+                                loadLocalMedia()
+                            }
+                        )
 
                         Spacer()
 
@@ -1578,6 +1683,18 @@ struct ViewerView: View {
                             .transition(.opacity)
                     }
                     #endif
+                    if let deleteMessage = deleteStatusMessage {
+                        Text(deleteMessage)
+                            .font(.caption)
+                            .foregroundColor(deleteMessage.contains("Failed") ? .red : .green)
+                            .transition(.opacity)
+                    }
+                    if isCopied {
+                        Text("Link copied to clipboard")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                            .transition(.opacity)
+                    }
                 }
                 .padding()
                 .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
@@ -1935,6 +2052,267 @@ struct ViewerView: View {
                 self.isRefreshingMedia = false
             }
         }
+    }
+
+    private func handleUploadSelectedItems(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        
+        let blossom = blossomService
+        
+        for item in items {
+            let contentType = item.supportedContentTypes.first ?? .image
+            let isVideo = contentType.conforms(to: .movie) || contentType.conforms(to: .video)
+            
+            let filename = "media-\(UUID().uuidString.prefix(8))"
+            
+            Task { @MainActor in
+                let notificationId = MediaUploadNotificationManager.shared.add(filename: filename)
+                
+                if isVideo {
+                    item.loadTransferable(type: ImportedVideoFile.self) { result in
+                        switch result {
+                        case .success(let video):
+                            guard let video = video else {
+                                Task { @MainActor in
+                                    MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Failed to read video file.")
+                                }
+                                return
+                            }
+                            
+                            let derivedType = UTType(filenameExtension: video.url.pathExtension) ?? contentType
+                            let mimeType = derivedType.preferredMIMEType ?? "video/mp4"
+                            
+                            Task {
+                                guard let sha256 = ComposeView.streamingSHA256(of: video.url) else {
+                                    await MainActor.run {
+                                        MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Failed to compute SHA256.")
+                                    }
+                                    try? FileManager.default.removeItem(at: video.url)
+                                    return
+                                }
+                                
+                                let uploadedURL = await blossom.uploadAndMirror(
+                                    fileURL: video.url,
+                                    sha256: sha256,
+                                    contentType: mimeType
+                                ) { progress in
+                                    Task { @MainActor in
+                                        MediaUploadNotificationManager.shared.updateProgress(id: notificationId, progress: progress)
+                                    }
+                                }
+                                
+                                try? FileManager.default.removeItem(at: video.url)
+                                
+                                await MainActor.run {
+                                    if uploadedURL != nil {
+                                        MediaUploadNotificationManager.shared.markSuccess(id: notificationId)
+                                        loadLocalMedia()
+                                    } else {
+                                        MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Upload failed.")
+                                    }
+                                }
+                            }
+                        case .failure(let error):
+                            Task { @MainActor in
+                                MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: error.localizedDescription)
+                            }
+                        }
+                    }
+                } else {
+                    item.loadTransferable(type: Data.self) { result in
+                        switch result {
+                        case .success(let data):
+                            guard let data = data else {
+                                Task { @MainActor in
+                                    MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Failed to read image data.")
+                                }
+                                return
+                            }
+                            
+                            Task {
+                                var finalData = data
+                                var finalType = contentType
+                                
+                                // Convert HEIC/HEIF to JPEG
+                                if contentType.conforms(to: .heic) || contentType.conforms(to: .heif) {
+                                    #if os(iOS)
+                                    if let image = UIImage(data: data),
+                                       let jpegData = image.jpegData(compressionQuality: 0.8) {
+                                        finalData = jpegData
+                                        finalType = .jpeg
+                                    }
+                                    #elseif os(macOS)
+                                    if let image = NSImage(data: data),
+                                       let tiffData = image.tiffRepresentation,
+                                       let bitmapRep = NSBitmapImageRep(data: tiffData),
+                                       let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
+                                        finalData = jpegData
+                                        finalType = .jpeg
+                                    }
+                                    #endif
+                                }
+                                
+                                let mimeType = finalType.preferredMIMEType ?? "image/jpeg"
+                                let sha256 = SHA256.hash(data: finalData).map { String(format: "%02x", $0) }.joined()
+                                
+                                let uploadedURL = await blossom.uploadAndMirror(
+                                    data: finalData,
+                                    sha256: sha256,
+                                    contentType: mimeType
+                                ) { progress in
+                                    Task { @MainActor in
+                                        MediaUploadNotificationManager.shared.updateProgress(id: notificationId, progress: progress)
+                                    }
+                                }
+                                
+                                await MainActor.run {
+                                    if uploadedURL != nil {
+                                        MediaUploadNotificationManager.shared.markSuccess(id: notificationId)
+                                        loadLocalMedia()
+                                    } else {
+                                        MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Upload failed.")
+                                    }
+                                }
+                            }
+                        case .failure(let error):
+                            Task { @MainActor in
+                                MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: error.localizedDescription)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        self.selectedUploadItems = []
+    }
+
+    private func handleUploadFileURLs(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        
+        let blossom = blossomService
+        
+        for url in urls {
+            // Start accessing security scoped resource if required
+            guard url.startAccessingSecurityScopedResource() else {
+                continue
+            }
+            
+            let filename = url.lastPathComponent
+            
+            Task { @MainActor in
+                let notificationId = MediaUploadNotificationManager.shared.add(filename: filename)
+                
+                let derivedType = UTType(filenameExtension: url.pathExtension) ?? .item
+                let mimeType = derivedType.preferredMIMEType ?? "application/octet-stream"
+                
+                Task {
+                    defer {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                    
+                    // Copy the file to a temp location so we can read it safely without sandbox errors during async operation
+                    let tempDest = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("haven-upload-\(UUID().uuidString)")
+                        .appendingPathExtension(url.pathExtension)
+                    
+                    do {
+                        try? FileManager.default.removeItem(at: tempDest)
+                        try FileManager.default.copyItem(at: url, to: tempDest)
+                    } catch {
+                        await MainActor.run {
+                            MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Failed to read file.")
+                        }
+                        return
+                    }
+                    
+                    guard let sha256 = ComposeView.streamingSHA256(of: tempDest) else {
+                        try? FileManager.default.removeItem(at: tempDest)
+                        await MainActor.run {
+                            MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Failed to compute SHA256.")
+                        }
+                        return
+                    }
+                    
+                    let uploadedURL = await blossom.uploadAndMirror(
+                        fileURL: tempDest,
+                        sha256: sha256,
+                        contentType: mimeType
+                    ) { progress in
+                        Task { @MainActor in
+                            MediaUploadNotificationManager.shared.updateProgress(id: notificationId, progress: progress)
+                        }
+                    }
+                    
+                    try? FileManager.default.removeItem(at: tempDest)
+                    
+                    await MainActor.run {
+                        if uploadedURL != nil {
+                            MediaUploadNotificationManager.shared.markSuccess(id: notificationId)
+                            loadLocalMedia()
+                        } else {
+                            MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Upload failed.")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func deleteMediaFromMirrors(item: MediaItem) {
+        let sha256 = extractViewerSHA256(from: item.url)
+        guard !sha256.isEmpty else { return }
+        Task {
+            let service = BlossomService(configService: configService, nostrService: nostrService)
+            let success = await service.deleteFromMirrors(sha256: sha256)
+            await MainActor.run {
+                deleteStatusMessage = success ? "Deleted from mirrors" : "Failed to delete from mirrors"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { deleteStatusMessage = nil }
+            }
+        }
+    }
+
+    private func deleteMediaEverywhere(item: MediaItem) {
+        let sha256 = extractViewerSHA256(from: item.url)
+        guard !sha256.isEmpty else { return }
+        Task {
+            let service = BlossomService(configService: configService, nostrService: nostrService)
+            async let local = service.deleteFromLocal(sha256: sha256)
+            async let mirrors = service.deleteFromMirrors(sha256: sha256)
+            let (localOk, mirrorsOk) = await (local, mirrors)
+            await MainActor.run {
+                let succeeded = localOk || mirrorsOk
+                if succeeded {
+                    // Instantly clean up local state
+                    self.blossomMedia.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
+                    self.displayMedia.removeAll(where: { normalizedKeyStatic(for: $0.url) == sha256 })
+                    
+                    if selectedMedia?.url == item.url {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedMedia = nil
+                            dragOffset = .zero
+                        }
+                    }
+                    
+                    scheduleUpdateDisplayData()
+                }
+                
+                if localOk && mirrorsOk {
+                    deleteStatusMessage = "Deleted"
+                } else if localOk {
+                    deleteStatusMessage = "Deleted locally (Mirrors failed)"
+                } else if mirrorsOk {
+                    deleteStatusMessage = "Deleted from mirrors, local failed"
+                } else {
+                    deleteStatusMessage = "Failed to delete"
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { deleteStatusMessage = nil }
+            }
+        }
+    }
+
+    private func extractViewerSHA256(from url: URL) -> String {
+        return normalizedKeyStatic(for: url)
     }
 
 }
@@ -2546,15 +2924,16 @@ struct MediaPreviewRow: View {
 
 struct MediaGridItem: View {
     let item: MediaItem
+    var onDeleteFromMirrors: ((MediaItem) -> Void)? = nil
+    var onDeleteEverywhere: ((MediaItem) -> Void)? = nil
+    var onMirrorComplete: (() -> Void)? = nil
     let onSelect: () -> Void
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
     @State private var isHovered = false
     @State private var showingReportDialog = false
-    #if os(iOS)
     @State private var isMirroringToLocal = false
     @State private var mirrorStatusMessage: String?
-    #endif
 
     var body: some View {
         Color.clear
@@ -2617,15 +2996,37 @@ struct MediaGridItem: View {
                     Label("Save to Photos", systemImage: "square.and.arrow.down")
                 }
             }
-            if isRemoteMedia {
+            #endif
+
+            if !isOnMirror {
                 Button(action: {
                     mirrorToLocalRelay()
                 }) {
-                    Label(isMirroringToLocal ? "Mirroring..." : "Save to Local Relay", systemImage: "arrow.down.circle")
+                    Label(isMirroringToLocal ? "Mirroring..." : "Mirror to Blossom", systemImage: "arrow.down.circle")
                 }
                 .disabled(isMirroringToLocal)
             }
-            #endif
+
+            if onDeleteFromMirrors != nil || onDeleteEverywhere != nil {
+                Menu {
+                    if let onDeleteFromMirrors = onDeleteFromMirrors {
+                        Button(role: .destructive, action: {
+                            onDeleteFromMirrors(item)
+                        }) {
+                            Label("Delete from mirrors", systemImage: "trash")
+                        }
+                    }
+                    if let onDeleteEverywhere = onDeleteEverywhere {
+                        Button(role: .destructive, action: {
+                            onDeleteEverywhere(item)
+                        }) {
+                            Label("Delete everywhere", systemImage: "trash.fill")
+                        }
+                    }
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
 
             Divider()
 
@@ -2669,13 +3070,38 @@ struct MediaGridItem: View {
         }
     }
 
-    #if os(iOS)
     private var isRemoteMedia: Bool {
         let host = item.url.host?.lowercased() ?? ""
         return host != "localhost" && host != "127.0.0.1" && host != "0.0.0.0"
     }
 
-    private func saveMediaToPhotos() {
+    private var isOnMirror: Bool {
+        let currentMirrorHosts: Set<String> = Set(
+            configService.config.activeBlossomMirrors.compactMap {
+                URL(string: $0)?.host?.lowercased()
+            }
+        )
+        guard let host = item.url.host?.lowercased() else { return false }
+        return currentMirrorHosts.contains(host) || host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0"
+    }
+
+    private func mirrorToLocalRelay() {
+        isMirroringToLocal = true
+        Task {
+            let service = BlossomService(configService: configService, nostrService: nostrService)
+            let success = await service.downloadFromURL(url: item.url)
+            await MainActor.run {
+                isMirroringToLocal = false
+                mirrorStatusMessage = success ? "Saved to local relay" : "Mirror failed"
+                if success {
+                    onMirrorComplete?()
+                }
+            }
+        }
+    }
+
+    #if os(iOS)
+    private func saveMediaToPhotos(item: MediaItem) {
         Task {
             let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
             guard status == .authorized || status == .limited else { return }
@@ -2703,16 +3129,8 @@ struct MediaGridItem: View {
         }
     }
 
-    private func mirrorToLocalRelay() {
-        isMirroringToLocal = true
-        Task {
-            let service = BlossomService(configService: configService, nostrService: nostrService)
-            let success = await service.downloadFromURL(url: item.url)
-            await MainActor.run {
-                isMirroringToLocal = false
-                mirrorStatusMessage = success ? "Saved to local relay" : "Mirror failed"
-            }
-        }
+    private func saveMediaToPhotos() {
+        saveMediaToPhotos(item: item)
     }
     #endif
 }
@@ -2960,11 +3378,15 @@ struct VideoThumbnailView: View {
 
 struct SourceIndicatorView: View {
     let url: URL
+    var onMirrorComplete: (() -> Void)? = nil
+    @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var nostrService: NostrService
     @State private var source: MediaCacheService.MediaSource = .remote
     @State private var isCaching = false
+    @State private var isMirroring = false
     
     var body: some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
                 Image(systemName: source.icon)
                 Text(source.rawValue)
@@ -2994,6 +3416,21 @@ struct SourceIndicatorView: View {
                 .controlSize(.small)
                 .disabled(isCaching)
             }
+            
+            if source == .cached {
+                Button(action: mirrorToBlossom) {
+                    if isMirroring {
+                        ProgressView().controlSize(.small)
+                            .frame(width: 16, height: 16)
+                    } else {
+                        Label("Mirror to Blossom", systemImage: "arrow.down.circle")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isMirroring)
+            }
         }
         .onAppear {
             updateSource()
@@ -3019,6 +3456,21 @@ struct SourceIndicatorView: View {
                 }
             }
         }.resume()
+    }
+    
+    private func mirrorToBlossom() {
+        isMirroring = true
+        Task {
+            let service = BlossomService(configService: configService, nostrService: nostrService)
+            let success = await service.downloadFromURL(url: url)
+            await MainActor.run {
+                isMirroring = false
+                if success {
+                    source = .blossom
+                    onMirrorComplete?()
+                }
+            }
+        }
     }
 }
 

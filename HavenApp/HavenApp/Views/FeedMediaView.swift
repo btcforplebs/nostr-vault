@@ -108,7 +108,7 @@ struct FeedMediaView: View {
     }
 
     private var videoView: some View {
-        InlineFeedVideoPlayer(url: url)
+        InlineFeedVideoPlayer(url: url, onTap: onTap)
             .aspectRatio(1, contentMode: .fill)
             .frame(maxWidth: .infinity)
             .frame(maxHeight: isThumbnail ? .infinity : maxHeight)
@@ -117,8 +117,6 @@ struct FeedMediaView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color.platformSeparator, lineWidth: 0.5)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-            .onTapGesture { onTap?() }
     }
 
     private var photoView: some View {

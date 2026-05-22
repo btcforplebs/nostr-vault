@@ -34,13 +34,13 @@ struct VideoPlayerView: View {
             .frame(minWidth: 300, minHeight: 200) // Avoid AVPlayerView constraint warnings
             .onChange(of: geo.size) { _, newSize in
                 // Strict size gate: Don't load player unless we have enough width for the controls
-                if viewSize == .zero && newSize.width > 300 {
+                if viewSize == .zero && newSize.width > 100 && newSize.height > 100 {
                     viewSize = newSize
                     setupPlayer()
                 }
             }
             .onAppear {
-                if geo.size.width > 300 {
+                if geo.size.width > 100 && geo.size.height > 100 {
                     viewSize = geo.size
                     setupPlayer()
                 }
@@ -162,14 +162,14 @@ struct VideoPlayerView: View {
 /// - Pauses when scrolled off-screen
 struct InlineFeedVideoPlayer: View {
     let url: URL
+    /// Called when the user taps the video body (excluding the mute button).
+    var onTap: (() -> Void)? = nil
     @State private var player: AVPlayer?
     @State private var isMuted: Bool = true
-    @State private var showMuteIcon: Bool = false
     @State private var isPlaying: Bool = false
     @State private var loadError: String? = nil
     @State private var thumbnail: PlatformImage? = nil
     @State private var loopObserver: NSObjectProtocol? = nil
-    @State private var hasSetup = false
 
     var body: some View {
         GeometryReader { geo in
@@ -191,6 +191,7 @@ struct InlineFeedVideoPlayer: View {
                 } else if let player = player {
                     InlinePlayerLayer(player: player)
                         .frame(width: geo.size.width, height: geo.size.height)
+                        .onTapGesture { onTap?() }
                 } else {
                     // Loading — show thumbnail or progress
                     if let thumb = thumbnail {
@@ -222,20 +223,20 @@ struct InlineFeedVideoPlayer: View {
             }
             .clipped()
             .onAppear {
-                if geo.size.width > 50 && !hasSetup {
-                    hasSetup = true
-                    loadThumbnail()
-                    setupPlayer()
+                if geo.size.width > 50 {
+                    if player == nil {
+                        loadThumbnail()
+                        setupPlayer()
+                    } else {
+                        player?.play()
+                        isPlaying = true
+                    }
                 }
             }
-        }
-        .onAppear {
-            player?.play()
-            isPlaying = true
-        }
-        .onDisappear {
-            player?.pause()
-            isPlaying = false
+            .onDisappear {
+                player?.pause()
+                isPlaying = false
+            }
         }
     }
 
@@ -358,19 +359,19 @@ struct InlinePlayerLayer: UIViewRepresentable {
 }
 #endif
 
-// MARK: - Full VideoPlayerView
+// MARK: - Full VideoPlayerView (native controls, used for standalone playback)
 
 #if os(macOS)
 struct NativeVideoPlayer: NSViewRepresentable {
     let player: AVPlayer
-    
+
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
         view.player = player
         view.controlsStyle = .floating
         return view
     }
-    
+
     func updateNSView(_ nsView: AVPlayerView, context: Context) {
         if nsView.player != player {
             nsView.player = player
@@ -380,7 +381,7 @@ struct NativeVideoPlayer: NSViewRepresentable {
 #else
 struct NativeVideoPlayer: UIViewControllerRepresentable {
     let player: AVPlayer
-    
+
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
@@ -390,7 +391,7 @@ struct NativeVideoPlayer: UIViewControllerRepresentable {
         }
         return controller
     }
-    
+
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         if uiViewController.player != player {
             uiViewController.player = player
@@ -398,3 +399,133 @@ struct NativeVideoPlayer: UIViewControllerRepresentable {
     }
 }
 #endif
+
+// MARK: - FullScreenVideoPlayer
+
+/// Chromeless full-screen video player for use in FeedMediaViewer.
+/// Matches the visual language of InlineFeedVideoPlayer but unmuted, with tap-to-pause.
+struct FullScreenVideoPlayer: View {
+    let url: URL
+    var mimeType: String? = nil
+
+    @State private var player: AVPlayer?
+    @State private var isMuted: Bool = false
+    @State private var isPlaying: Bool = true
+    @State private var showPlayIcon: Bool = false
+    @State private var loadError: String? = nil
+    @State private var loopObserver: NSObjectProtocol? = nil
+
+    var body: some View {
+        ZStack {
+            Color.black
+
+            if let _ = loadError {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(.orange)
+                    Text("Failed to load video")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+            } else if let player = player {
+                InlinePlayerLayer(player: player)
+                    .onTapGesture { togglePlayPause() }
+
+                // Momentary play/pause feedback icon
+                if showPlayIcon {
+                    Image(systemName: isPlaying ? "play.fill" : "pause.fill")
+                        .font(.system(size: 44, weight: .bold))
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(20)
+                        .background(Circle().fill(Color.black.opacity(0.5)))
+                        .transition(.opacity)
+                }
+            } else {
+                ProgressView().tint(.white)
+            }
+
+            // Mute button — bottom right, same style as inline player
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button(action: toggleMute) {
+                        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(10)
+                            .background(Circle().fill(Color.black.opacity(0.6)))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(16)
+                }
+            }
+        }
+        .onAppear { setupPlayer() }
+        .onDisappear {
+            player?.pause()
+            if let obs = loopObserver {
+                NotificationCenter.default.removeObserver(obs)
+            }
+            player = nil
+        }
+    }
+
+    private func togglePlayPause() {
+        if isPlaying {
+            player?.pause()
+        } else {
+            player?.play()
+        }
+        isPlaying.toggle()
+        withAnimation(.easeIn(duration: 0.1)) { showPlayIcon = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            withAnimation(.easeOut(duration: 0.3)) { showPlayIcon = false }
+        }
+    }
+
+    private func toggleMute() {
+        isMuted.toggle()
+        player?.isMuted = isMuted
+    }
+
+    private func setupPlayer() {
+        let finalURL = MediaCacheService.shared.preparePlayableURL(for: url) ?? url
+
+        if finalURL.isFileURL {
+            let actualPath = finalURL.resolvingSymlinksInPath().path
+            guard FileManager.default.fileExists(atPath: actualPath) else {
+                loadError = "File not found"
+                return
+            }
+        }
+
+        var assetOptions: [String: Any] = [:]
+        if !finalURL.isFileURL && finalURL.pathExtension.isEmpty {
+            let resolved = mimeType
+                ?? MediaTypeDetector.shared.getCachedContentType(for: url)
+                ?? "video/mp4"
+            assetOptions[AVURLAssetOverrideMIMETypeKey] = resolved
+        }
+
+        let asset = AVURLAsset(url: finalURL, options: assetOptions)
+        let playerItem = AVPlayerItem(asset: asset)
+        let newPlayer = AVPlayer(playerItem: playerItem)
+        newPlayer.isMuted = false
+
+        let observer = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { _ in
+            newPlayer.seek(to: .zero)
+            newPlayer.play()
+        }
+        loopObserver = observer
+
+        self.player = newPlayer
+        newPlayer.play()
+        isPlaying = true
+    }
+}

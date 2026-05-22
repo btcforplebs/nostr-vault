@@ -1442,7 +1442,7 @@ class NostrService: ObservableObject {
         return totalCount
     }
 
-    private static func mimeFromExtension(_ url: URL) -> String? {
+    static func mimeFromExtension(_ url: URL) -> String? {
         let ext = url.pathExtension.lowercased()
         switch ext {
         case "jpg", "jpeg": return "image/jpeg"
@@ -1465,7 +1465,7 @@ class NostrService: ObservableObject {
         }
     }
 
-    private nonisolated static func mediaTypeFromMime(_ mime: String?, url: URL) -> MediaItem.MediaType {
+    nonisolated static func mediaTypeFromMime(_ mime: String?, url: URL) -> MediaItem.MediaType {
         if let mime = mime?.lowercased() {
             if mime.hasPrefix("video/") { return .video }
             if mime.hasPrefix("audio/") { return .audio }

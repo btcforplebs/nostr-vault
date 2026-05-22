@@ -41,7 +41,14 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         return queue
     }()
 
-    private let blossomDirectory: URL
+    private var _blossomDirectory: URL
+    private let blossomLock = NSLock()
+
+    private var blossomDirectory: URL {
+        blossomLock.lock()
+        defer { blossomLock.unlock() }
+        return _blossomDirectory
+    }
 
     // Thread-safe copy of local host for non-isolated access
     private var localHost: String = ""
@@ -60,7 +67,7 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         let dbDir = havenAppSupport.appendingPathComponent("haven_database", isDirectory: true)
         self.cacheDirectory = dbDir.appendingPathComponent("cache")
         self.thumbnailDirectory = dbDir.appendingPathComponent("thumbnails")
-        self.blossomDirectory = dbDir.appendingPathComponent("blossom")
+        self._blossomDirectory = dbDir.appendingPathComponent("blossom")
 
         createCacheDirectory()
 
@@ -408,24 +415,27 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         // 2. Run AVAssetImageGenerator on the throttled queue.
         let image: PlatformImage? = await withCheckedContinuation { (inner: CheckedContinuation<PlatformImage?, Never>) in
             let op = BlockOperation { [weak self] in
-                let result = self?.renderThumbnail(url: url, mimeType: mimeType)
-                inner.resume(returning: result)
+                Task {
+                    let result = await self?.renderThumbnail(url: url, mimeType: mimeType)
+                    inner.resume(returning: result)
+                }
             }
             self.thumbnailQueue.addOperation(op)
         }
 
         // 3. Persist + broadcast
         if let image = image {
-            thumbnailCacheLock.lock()
-            thumbnailMemoryCache[key] = image
-            thumbnailCacheLock.unlock()
+            thumbnailCacheLock.withLock {
+                thumbnailMemoryCache[key] = image
+            }
             saveThumbnailToDisk(image, key: key)
         }
 
-        downloadLock.lock()
-        let waiters = inFlightThumbnails[key] ?? []
-        inFlightThumbnails.removeValue(forKey: key)
-        downloadLock.unlock()
+        let waiters = downloadLock.withLock {
+            let w = inFlightThumbnails[key] ?? []
+            inFlightThumbnails.removeValue(forKey: key)
+            return w
+        }
 
         leader.resume(returning: image)
         for waiter in waiters {
@@ -434,7 +444,7 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     }
 
     /// Performs the actual AVFoundation work. Runs on the throttled thumbnail queue.
-    private func renderThumbnail(url: URL, mimeType: String?) -> PlatformImage? {
+    private func renderThumbnail(url: URL, mimeType: String?) async -> PlatformImage? {
         // Prefer a local file (Blossom or cache) over hitting HTTPS. AVAssetImageGenerator
         // is far more reliable on a real file than on a remote URL — especially with self-signed certs.
         let playableURL: URL = {
@@ -461,9 +471,11 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
             CMTime(seconds: 3.0, preferredTimescale: 600),
         ]
         // Add a duration-relative target as a last resort (in case the head is unreadable).
-        let duration = asset.duration
-        if duration.isValid && !duration.isIndefinite && duration.seconds > 5 {
-            times.append(CMTime(seconds: min(duration.seconds * 0.1, 10), preferredTimescale: 600))
+        let duration = try? await asset.load(.duration)
+        if let duration = duration, duration.isValid && !duration.isIndefinite && duration.value > 0, let seconds = Double(duration.seconds) as Double? {
+            if seconds > 5 {
+                times.append(CMTime(seconds: min(seconds * 0.1, 10), preferredTimescale: 600))
+            }
         }
 
         let generator = AVAssetImageGenerator(asset: asset)
@@ -554,6 +566,15 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         self.localHost = host.lowercased()
         #if DEBUG
         print("MediaCacheService: Updated local host to \(self.localHost)")
+        #endif
+    }
+
+    func updateBlossomDirectory(_ directory: URL) {
+        blossomLock.lock()
+        defer { blossomLock.unlock() }
+        self._blossomDirectory = directory
+        #if DEBUG
+        print("MediaCacheService: Updated blossom directory to \(directory.path)")
         #endif
     }
 

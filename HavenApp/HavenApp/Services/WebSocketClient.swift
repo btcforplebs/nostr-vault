@@ -444,7 +444,7 @@ class TLSSkipSession: NSObject, URLSessionDelegate {
     nonisolated func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         // If the host is local, we allow the self-signed certificate
         if let host = challenge.protectionSpace.host.lowercased() as String?,
-           host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" {
+           host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" || host == "::1" || host == "[::1]" {
             if let serverTrust = challenge.protectionSpace.serverTrust {
                 completionHandler(.useCredential, URLCredential(trust: serverTrust))
                 return

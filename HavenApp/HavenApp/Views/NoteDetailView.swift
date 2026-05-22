@@ -448,6 +448,12 @@ struct NoteDetailView: View {
                         },
                         onQuote: { target in
                             composeContext = ComposeContext(replyTo: nil, quoteTo: target)
+                        },
+                        onProfile: { pubkey in
+                            showingProfilePubkey = pubkey
+                        },
+                        onMedia: { url in
+                            showingMediaUrl = IdentifiableURL(url: url)
                         }
                     )
                 }
@@ -802,6 +808,8 @@ struct ThreadedReplyNode: View {
     let depth: Int
     var onReply: ((FeedNote) -> Void)? = nil
     var onQuote: ((FeedNote) -> Void)? = nil
+    var onProfile: ((String) -> Void)? = nil
+    var onMedia: ((URL) -> Void)? = nil
 
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
@@ -818,6 +826,8 @@ struct ThreadedReplyNode: View {
                     profile: replyProfile,
                     onReply: { onReply?(reply) },
                     onQuote: { onQuote?(reply) },
+                    onProfile: onProfile,
+                    onMedia: onMedia,
                     showParent: false
                 )
             }
@@ -858,7 +868,9 @@ struct ThreadedReplyNode: View {
                                     allNotes: allNotes,
                                     depth: depth + 1,
                                     onReply: onReply,
-                                    onQuote: onQuote
+                                    onQuote: onQuote,
+                                    onProfile: onProfile,
+                                    onMedia: onMedia
                                 )
                             }
                         }

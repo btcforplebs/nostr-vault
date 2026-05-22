@@ -29,7 +29,7 @@ enum UploadSource {
 }
 
 /// Handles uploading media to local and external Blossom servers
-class BlossomService {
+class BlossomService: @unchecked Sendable {
     let configService: ConfigService
     let nostrService: NostrService
     private let logger = Logger(subsystem: "com.bitvora.haven", category: "blossom")
@@ -72,6 +72,51 @@ class BlossomService {
         return await uploadAndMirror(source: .file(fileURL), sha256: sha256, contentType: contentType, progress: progress)
     }
 
+    /// Save media to the local relay and attempt to push to configured external mirrors.
+    /// Unlike uploadAndMirror, success is determined by the LOCAL relay upload only —
+    /// external mirrors are attempted as a best-effort side effect but do not affect the result.
+    /// Use this for "save to my relay" actions (viewer mirror button) rather than compose uploads
+    /// where you need an accessible external URL to embed in a note.
+    /// - Returns: true if the local relay accepted the upload, false otherwise.
+    func saveToLocalRelay(data: Data, sha256: String, contentType: String = "application/octet-stream") async -> Bool {
+        let port = await MainActor.run { configService.config.relayPort }
+        #if os(macOS)
+        let localURLStr = "http://127.0.0.1:\(port)"
+        #else
+        let localURLStr = "https://localhost:\(port)"
+        #endif
+
+        let localResult = await uploadToServer(source: .data(data), url: localURLStr, sha256: sha256, contentType: contentType, useLocalhostSession: true)
+        guard localResult != nil else {
+            logger.error("saveToLocalRelay: local upload failed at \(localURLStr)")
+            return false
+        }
+        logger.info("saveToLocalRelay: local upload succeeded (\(data.count) bytes)")
+
+        // Fire-and-forget: push to external mirrors without blocking the result.
+        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
+        if !mirrors.isEmpty {
+            Task {
+                await withTaskGroup(of: Void.self) { group in
+                    for mirror in mirrors {
+                        group.addTask {
+                            let parsed = URL(string: mirror)
+                            let useLocal = parsed.map { self.isLocalhost($0) } ?? false
+                            let result = await self.uploadToServer(source: .data(data), url: mirror, sha256: sha256, contentType: contentType, useLocalhostSession: useLocal)
+                            if result != nil {
+                                self.logger.info("saveToLocalRelay: also mirrored to \(mirror)")
+                            } else {
+                                self.logger.warning("saveToLocalRelay: mirror to \(mirror) failed (non-blocking)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return true
+    }
+
     private func uploadAndMirror(source: UploadSource, sha256: String, contentType: String, progress: ((Double) -> Void)?) async -> URL? {
         let port = await MainActor.run { configService.config.relayPort }
 
@@ -90,7 +135,7 @@ class BlossomService {
 
         // Step 2: Get mirrors on main actor
         let mirrors = await MainActor.run {
-            configService.config.blossomMirrors
+            configService.config.activeBlossomMirrors
         }
 
         logger.info("Found \(mirrors.count) configured Blossom mirrors: \(mirrors)")
@@ -106,7 +151,9 @@ class BlossomService {
                     group.addTask {
                         // Only report progress for the first remote mirror to avoid progress jitter
                         let progressHandler = (index == 0) ? progress : nil
-                        let result = await self.uploadToServer(source: source, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: false, progress: progressHandler)
+                        let parsed = URL(string: mirrorURL)
+                        let useLocalSession = parsed.map { self.isLocalhost($0) } ?? false
+                        let result = await self.uploadToServer(source: source, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: useLocalSession, progress: progressHandler)
                         return (mirrorURL, result)
                     }
                 }
@@ -297,6 +344,22 @@ class BlossomService {
             try data.write(to: fileURL)
             
             logger.info("Successfully downloaded \(sha256.prefix(8)) from \(url.host ?? "remote") directly to local file system")
+            
+            // Mirror to external servers concurrently
+            let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
+            if !mirrors.isEmpty {
+                logger.info("Mirroring downloaded blob \(sha256.prefix(8)) to \(mirrors.count) external mirrors")
+                await withTaskGroup(of: Void.self) { group in
+                    for mirrorURL in mirrors {
+                        group.addTask {
+                            let parsed = URL(string: mirrorURL)
+                            let useLocalSession = parsed.map { self.isLocalhost($0) } ?? false
+                            _ = await self.uploadToServer(source: .data(data), url: mirrorURL, sha256: sha256, contentType: httpResponse.mimeType ?? "application/octet-stream", useLocalhostSession: useLocalSession)
+                        }
+                    }
+                }
+            }
+            
             return true
         } catch {
             logger.warning("Download from \(url.absoluteString) error: \(error.localizedDescription)")
@@ -308,7 +371,7 @@ class BlossomService {
     /// - Parameter sha256: The SHA256 hash of the blob to download
     /// - Returns: true if the blob was successfully downloaded and stored locally
     func downloadFromMirrors(sha256: String) async -> Bool {
-        let mirrors = await MainActor.run { configService.config.blossomMirrors }
+        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
         guard !mirrors.isEmpty else {
             logger.warning("No Blossom mirrors configured for download")
             return false
@@ -332,7 +395,8 @@ class BlossomService {
             request.timeoutInterval = 30
 
             do {
-                let (data, response) = try await remoteSession.data(for: request)
+                let session = isLocalhost(mirrorURL) ? localhostSession : remoteSession
+                let (data, response) = try await session.data(for: request)
                 guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
                     let status = (response as? HTTPURLResponse)?.statusCode ?? -1
                     logger.warning("Download from \(mirror)/\(sha256.prefix(8)) failed with status \(status)")
@@ -372,7 +436,7 @@ class BlossomService {
     /// - Parameter progress: Callback with (completed, total) counts
     /// - Returns: Number of newly mirrored blobs
     func mirrorAllFromExternal(progress: ((Int, Int) -> Void)? = nil) async -> Int {
-        let mirrors = await MainActor.run { configService.config.blossomMirrors }
+        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
         let relayDataDir = await MainActor.run { configService.relayDataDir }
         let blossomPath = await MainActor.run { configService.config.blossomPath }
         let ownerPubkey = await MainActor.run { nostrService.ownerHexPubkey }
@@ -426,7 +490,8 @@ class BlossomService {
                     request.timeoutInterval = 30
 
                     do {
-                        let (data, response) = try await remoteSession.data(for: request)
+                        let session = isLocalhost(mirrorURL) ? localhostSession : remoteSession
+                        let (data, response) = try await session.data(for: request)
                         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else { break }
 
                         guard let descriptors = try? JSONDecoder().decode([BlobDescriptor].self, from: data),
@@ -510,6 +575,7 @@ class BlossomService {
         let blossomPath = await MainActor.run { configService.config.blossomPath }
         let ownerPubkey = await MainActor.run { nostrService.ownerHexPubkey }
         let whitelistedPubkeys = await MainActor.run { configService.whitelistedHexPubkeys }
+        let followedPubkeys = await MainActor.run { FeedService.shared.followedPubkeys }
 
         // Get local blob hashes
         let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
@@ -520,10 +586,13 @@ class BlossomService {
             localHashes = []
         }
 
-        // Find remote media URLs from owner + whitelisted accounts that aren't stored locally
+        // Find remote media URLs from owner, whitelisted, or followed accounts that aren't stored locally
         var urlsToMirror: [URL] = []
         for item in noteMedia {
-            guard let pubkey = item.pubkey, pubkey == ownerPubkey || whitelistedPubkeys.contains(pubkey) else { continue }
+            guard let pubkey = item.pubkey,
+                  pubkey == ownerPubkey ||
+                  whitelistedPubkeys.contains(pubkey) ||
+                  followedPubkeys.contains(pubkey) else { continue }
             // Skip local URLs
             let host = item.url.host?.lowercased() ?? ""
             if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" { continue }
@@ -589,7 +658,7 @@ class BlossomService {
     /// - Parameter sha256: The SHA256 hash of the media to delete
     /// - Returns: true if deletion succeeded on at least one mirror, false if all failed
     func deleteFromMirrors(sha256: String) async -> Bool {
-        let mirrors = await MainActor.run { configService.config.blossomMirrors }
+        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
         guard !mirrors.isEmpty else {
             logger.warning("No Blossom mirrors configured for deletion")
             return false
@@ -618,6 +687,7 @@ class BlossomService {
             let authTags = [
                 ["t", "delete"],
                 ["x", sha256],
+                ["u", deleteURL.absoluteString],
                 ["expiration", String(expirationTimestamp)]
             ]
 
@@ -641,13 +711,19 @@ class BlossomService {
             request.setValue("Nostr \(authBase64)", forHTTPHeaderField: "Authorization")
 
             do {
-                let (_, response) = try await remoteSession.data(for: request)
-                if let httpResponse = response as? HTTPURLResponse, (200...204).contains(httpResponse.statusCode) {
-                    logger.info("Successfully deleted \(sha256.prefix(8)) from mirror \(mirror)")
-                    successCount += 1
-                } else {
-                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-                    logger.warning("Failed to delete from \(mirror) with status \(statusCode)")
+                let session = isLocalhost(mirrorURL) ? localhostSession : remoteSession
+                let (data, response) = try await session.data(for: request)
+                if let httpResponse = response as? HTTPURLResponse {
+                    if (200...204).contains(httpResponse.statusCode) {
+                        logger.info("Successfully deleted \(sha256.prefix(8)) from mirror \(mirror)")
+                        successCount += 1
+                    } else if httpResponse.statusCode == 404 {
+                        logger.info("Confirmed \(sha256.prefix(8)) is already absent from mirror \(mirror)")
+                        successCount += 1
+                    } else {
+                        let bodyString = String(data: data, encoding: .utf8) ?? "(binary/empty)"
+                        logger.warning("Failed to delete from \(mirror) with status \(httpResponse.statusCode), response: \(bodyString)")
+                    }
                 }
             } catch {
                 logger.error("Error deleting from \(mirror): \(error.localizedDescription)")

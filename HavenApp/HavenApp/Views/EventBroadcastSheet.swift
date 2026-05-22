@@ -68,6 +68,7 @@ struct EventBroadcastSheet: View {
             CopyableRow(label: "hex", value: note.id)
             CopyableRow(label: "note1", value: note.note1)
             CopyableRow(label: "nevent", value: note.nevent)
+            CopyableRow(label: "share link", value: "https://mynostrspace.com/thread/\(note.nevent)")
         }
     }
 

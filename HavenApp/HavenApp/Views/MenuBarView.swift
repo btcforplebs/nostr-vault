@@ -273,27 +273,8 @@ struct MenuBarView: View {
                                     .transition(.opacity)
                             }
                             
-                            HStack(spacing: 8) {
-                                Button(action: {
-                                    selectedTab = .relay
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                        NotificationCenter.default.post(name: NSNotification.Name("OpenRelayDashboard"), object: nil)
-                                    }
-                                }) {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "gauge")
-                                            .font(.system(size: 12))
-                                        Text("Dashboard")
-                                            .font(.system(size: 12, weight: .semibold))
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.white.opacity(0.08))
-                                    .foregroundColor(.primary)
-                                    .cornerRadius(12)
-                                }
-                                .buttonStyle(.plain)
-
+                            HStack(spacing: 6) {
+                                // Power toggle icon button
                                 Button(action: {
                                     if relayManager.isRunning {
                                         relayManager.stopRelay()
@@ -301,26 +282,46 @@ struct MenuBarView: View {
                                         relayManager.startRelay(config: configService.config)
                                     }
                                 }) {
-                                    HStack(spacing: 6) {
-                                        Circle()
-                                            .fill(relayManager.isBooting ? Color.yellow : (relayManager.isRunning ? Color.green : Color.red))
-                                            .frame(width: 8, height: 8)
-                                            .scaleEffect(relayManager.isRunning && !relayManager.isBooting && statusPulse ? 1.4 : 1.0)
-                                            .opacity(relayManager.isRunning && !relayManager.isBooting && statusPulse ? 0.5 : 1.0)
-                                            .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: statusPulse)
-                                            .onAppear { statusPulse = true }
-                                            .onChange(of: relayManager.isRunning) { _, running in statusPulse = running }
-                                        Text(relayManager.isBooting ? "Booting Relay" : (relayManager.isRunning ? "Stop Relay" : "Start Relay"))
-                                            .font(.system(size: 12, weight: .semibold))
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(relayManager.isBooting ? Color.yellow.opacity(0.2) : Color.havenPurplePale)
-                                    .foregroundColor(relayManager.isBooting ? Color.orange : Color.primary)
-                                    .cornerRadius(12)
+                                    Image(systemName: relayManager.isRunning ? "stop.circle" : "play.circle")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(relayManager.isBooting ? .orange : (relayManager.isRunning ? .red.opacity(0.8) : .secondary))
+                                        .frame(width: 28, height: 28)
+                                        .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(relayManager.isBooting)
+                                .help(relayManager.isBooting ? "Booting..." : (relayManager.isRunning ? "Stop Relay" : "Start Relay"))
+
+                                // Signal icon → relay dashboard
+                                Button(action: {
+                                    selectedTab = .relay
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                        NotificationCenter.default.post(name: NSNotification.Name("OpenRelayDashboard"), object: nil)
+                                    }
+                                }) {
+                                    ZStack(alignment: .topTrailing) {
+                                        Image(systemName: "antenna.radiowaves.left.and.right")
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundColor(
+                                                relayManager.isBooting ? .orange :
+                                                (relayManager.isRunning ? Color(red: 0.2, green: 0.85, blue: 0.5) : .secondary)
+                                            )
+                                            .scaleEffect(relayManager.isRunning && !relayManager.isBooting && statusPulse ? 1.08 : 1.0)
+                                            .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: statusPulse)
+                                            .onAppear { statusPulse = true }
+                                            .onChange(of: relayManager.isRunning) { _, running in statusPulse = running }
+
+                                        // Tiny status dot overlay
+                                        Circle()
+                                            .fill(relayManager.isBooting ? Color.orange : (relayManager.isRunning ? Color(red: 0.2, green: 0.85, blue: 0.5) : Color.red))
+                                            .frame(width: 5, height: 5)
+                                            .offset(x: 2, y: -1)
+                                    }
+                                    .frame(width: 28, height: 28)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .help("Relay Dashboard")
                             }
                         }
                         .padding()
@@ -1061,6 +1062,8 @@ struct SearchView: View {
     @State private var isSearching = false
     @State private var showingNoteDetail: FeedNote?
     @State private var showingProfile: String?
+    @State private var showingMediaUrl: IdentifiableURL?
+    @State private var pendingDirectNoteId: String?
     #if os(iOS)
     @FocusState private var searchFieldFocused: Bool
     #endif
@@ -1197,6 +1200,25 @@ struct SearchView: View {
                     }
             }
         }
+        .sheet(item: $showingMediaUrl) { media in
+            FeedMediaViewer(url: media.url, onDismiss: { showingMediaUrl = nil })
+        }
+        .onReceive(feedService.$notes) { notes in
+            guard let noteId = pendingDirectNoteId else { return }
+            if let note = notes.first(where: { $0.id == noteId }) {
+                pendingDirectNoteId = nil
+                isSearching = false
+                showingNoteDetail = note
+            }
+        }
+        .onReceive(feedService.$parentNotesCache) { cache in
+            guard let noteId = pendingDirectNoteId else { return }
+            if let note = cache[noteId] {
+                pendingDirectNoteId = nil
+                isSearching = false
+                showingNoteDetail = note
+            }
+        }
     }
 
     @ViewBuilder
@@ -1211,7 +1233,7 @@ struct SearchView: View {
                     Text("Start Searching")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(.primary)
-                    Text("Search for users, notes, hashtags and links")
+                    Text("Search for users, notes, hashtags and links\nOr paste a note1 or nevent1 to jump directly to a note")
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -1224,10 +1246,15 @@ struct SearchView: View {
 
     @ViewBuilder
     private var loadingState: some View {
-        VStack {
+        VStack(spacing: 12) {
             ProgressView()
                 .controlSize(.large)
                 .tint(Color.havenPurple)
+            if pendingDirectNoteId != nil {
+                Text("Looking up note...")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1278,7 +1305,17 @@ struct SearchView: View {
 
                         VStack(spacing: 8) {
                             ForEach(searchResults.notes) { note in
-                                FeedNoteRow(note: note, profile: nostrService.profiles[note.pubkey], showParent: false)
+                                FeedNoteRow(
+                                   note: note,
+                                   profile: nostrService.profiles[note.pubkey],
+                                   onProfile: { pubkey in
+                                       showingProfile = pubkey
+                                   },
+                                   onMedia: { url in
+                                       showingMediaUrl = IdentifiableURL(url: url)
+                                   },
+                                   showParent: false
+                               )
                                     .contentShape(Rectangle())
                                     .onTapGesture {
                                         showingNoteDetail = note
@@ -1403,12 +1440,52 @@ struct SearchView: View {
         .cornerRadius(8)
     }
 
+    private func decodeNostrNoteId(_ query: String) -> String? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let result = Bech32.decode(trimmed) else { return nil }
+        if result.hrp == "note" {
+            return result.data.count == 32 ? result.hexString : nil
+        } else if result.hrp == "nevent" {
+            var offset = 0
+            let data = result.data
+            while offset + 1 < data.count {
+                let type = data[offset]
+                let length = Int(data[offset + 1])
+                offset += 2
+                guard offset + length <= data.count else { break }
+                if type == 0 && length == 32 {
+                    return data[offset..<(offset + length)].map { String(format: "%02x", $0) }.joined()
+                }
+                offset += length
+            }
+        }
+        return nil
+    }
+
     private func performSearch(query: String) {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
             searchResults = .empty
+            pendingDirectNoteId = nil
             return
         }
 
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("note1") || lower.hasPrefix("nevent1") {
+            if let eventId = decodeNostrNoteId(trimmed) {
+                if let note = feedService.findNote(id: eventId) {
+                    showingNoteDetail = note
+                } else {
+                    pendingDirectNoteId = eventId
+                    isSearching = true
+                    searchResults = .empty
+                    feedService.fetchMissingNote(id: eventId)
+                }
+            }
+            return
+        }
+
+        pendingDirectNoteId = nil
         isSearching = true
         let trimmedQuery = query.lowercased().trimmingCharacters(in: .whitespaces)
 

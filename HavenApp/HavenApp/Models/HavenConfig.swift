@@ -264,6 +264,20 @@ struct HavenConfig: Codable, Equatable {
         return base.isEmpty ? "" : "https://\(base)"
     }
 
+    // MARK: - Blossom Mirrors Configuration
+
+    /// Active Blossom mirrors, including the automatically applied Mac relay Blossom server if configured.
+    var activeBlossomMirrors: [String] {
+        var mirrors = blossomMirrors
+        let macHttps = macRelayHttpsURL
+        if !macHttps.isEmpty {
+            if !mirrors.contains(macHttps) {
+                mirrors.insert(macHttps, at: 0)
+            }
+        }
+        return mirrors
+    }
+
     // MARK: - Protocol Selection Logic
 
     /// Returns the relay URL without any protocol schemes or trailing slashes

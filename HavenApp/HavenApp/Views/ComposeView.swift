@@ -54,6 +54,8 @@ struct ComposeView: View {
     var replyTo: FeedNote?
     // Optional: for quote posts
     var quoteTo: FeedNote?
+    // Optional: pre-filled content (used when editing a pending post)
+    var initialContent: String = ""
     
     struct Attachment: Identifiable {
         let id = UUID()
@@ -177,7 +179,7 @@ struct ComposeView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Post") { postNote() }
-                        .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
+                        .disabled((content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || isPosting)
                         .fontWeight(.bold)
                 }
                 #endif
@@ -193,6 +195,7 @@ struct ComposeView: View {
                 }
             }
             .onAppear {
+                if !initialContent.isEmpty { content = initialContent }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     isTextEditorFocused = true
                 }
@@ -331,7 +334,7 @@ struct ComposeView: View {
             Button("Post") { postNote() }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.havenPurple)
-                .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
+                .disabled((content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || isPosting)
         }
         .padding()
         .background(Color.platformControlBackground.opacity(0.5))
@@ -569,7 +572,7 @@ struct ComposeView: View {
     
     /// Computes the SHA256 of a file by streaming it in 1 MB chunks so large
     /// videos don't sit fully in memory.
-    static func streamingSHA256(of url: URL) -> String? {
+    nonisolated static func streamingSHA256(of url: URL) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         var hasher = SHA256()
@@ -720,11 +723,8 @@ struct ComposeView: View {
                 return
             }
 
-            // 4. Post
-            nostrService.postEvent(event)
-
             DispatchQueue.main.async {
-                // Immediate feedback in feed
+                // Add to local feed immediately for preview
                 let feedNote = FeedNote(
                     id: event.id,
                     pubkey: event.pubkey,
@@ -734,6 +734,15 @@ struct ComposeView: View {
                     kind: event.kind
                 )
                 FeedService.shared.addNote(feedNote)
+
+                // Hand to PendingPostManager — it will broadcast after countdown
+                PendingPostManager.shared.startPost(
+                    event: event,
+                    content: finalContent,
+                    replyTo: self.replyTo,
+                    quoteTo: self.quoteTo,
+                    nostrService: self.nostrService
+                )
 
                 isPosting = false
                 performDismiss()

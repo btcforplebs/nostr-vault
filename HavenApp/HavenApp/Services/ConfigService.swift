@@ -98,6 +98,7 @@ class ConfigService: ObservableObject {
 
         // Sync relay info to MediaCacheService for thread-safe access
         MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
+        MediaCacheService.shared.updateBlossomDirectory(relayDataDir.appendingPathComponent(config.blossomPath))
     }
     
     func reload() {
@@ -132,6 +133,7 @@ class ConfigService: ObservableObject {
 
                 // Sync relay info
                 MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
+                MediaCacheService.shared.updateBlossomDirectory(self.relayDataDir.appendingPathComponent(loaded.blossomPath))
             } catch {
                 #if DEBUG
                 print("ConfigService: Error reloading configuration: \(error)")
@@ -213,6 +215,7 @@ class ConfigService: ObservableObject {
 
         // Sync relay info to MediaCacheService
         MediaCacheService.shared.updateLocalHost(config.sanitizedRelayURL)
+        MediaCacheService.shared.updateBlossomDirectory(relayDataDir.appendingPathComponent(config.blossomPath))
 
         // Ensure data dir exists
         try? FileManager.default.createDirectory(at: relayDataDir, withIntermediateDirectories: true)

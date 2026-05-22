@@ -11,6 +11,7 @@ private struct ComposeContext: Identifiable {
     let id = UUID()
     let replyTo: FeedNote?
     let quoteTo: FeedNote?
+    var initialContent: String = ""
 }
 
 // MARK: - FeedView
@@ -20,6 +21,7 @@ struct FeedView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
+    @ObservedObject private var pendingManager = PendingPostManager.shared
     @State private var composeContext: ComposeContext?
     @State private var showingRelayStatus = false
     @State private var showingNoteId: String?
@@ -221,9 +223,14 @@ struct FeedView: View {
             }
         }
         .sheet(item: $composeContext) { ctx in
-            ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo)
+            ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo, initialContent: ctx.initialContent)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
+        }
+        .onChange(of: pendingManager.editRequest?.id) { _, _ in
+            guard let req = pendingManager.editRequest else { return }
+            composeContext = ComposeContext(replyTo: req.replyTo, quoteTo: req.quoteTo, initialContent: req.content)
+            pendingManager.editRequest = nil
         }
         .sheet(isPresented: $showingRelayStatus) {
             RelayStatusSheet(onDismiss: { showingRelayStatus = false })
@@ -740,12 +747,7 @@ struct FeedNoteRow: View {
     @State private var showAmountPicker = false
     @State private var zapAmountSats: String = ""
     
-    @State private var repostTask: Task<Void, Never>?
-    @State private var showingRepostUndo = false
-    @State private var timeRemaining = 5.0
-    @State private var postCreationCountdownTask: Task<Void, Never>?
-    @State private var showingPostCreatedCountdown = false
-    @State private var postCreationTimeRemaining = 10.0
+    @ObservedObject private var pendingManager = PendingPostManager.shared
     @State private var showingDeleteConfirm = false
     @State private var showingBroadcastSheet = false
     @State private var noLightningAddressAlert = false
@@ -1076,10 +1078,6 @@ struct FeedNoteRow: View {
                     }
                     .padding(.top, 4)
 
-                    if showingPostCreatedCountdown {
-                        PostCreatedCountdownBanner(timeRemaining: postCreationTimeRemaining)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
                 } // End of RHS VStack (name, time, content, actions)
             } // End of Main Note Content HStack
         } // End of Outer VStack (root row)
@@ -1137,11 +1135,16 @@ struct FeedNoteRow: View {
             return .systemAction
         })
         .overlay(alignment: .bottom) {
-            if showingRepostUndo {
-                RepostUndoBanner(timeRemaining: timeRemaining, onUndo: undoRepost)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .padding(.bottom, 8)
-                    .padding(.horizontal, 12)
+            if pendingManager.bannerNoteId == note.id, let actionType = pendingManager.actionType {
+                PostActionBanner(
+                    actionType: actionType,
+                    timeRemaining: pendingManager.timeRemaining,
+                    onUndo: { PendingPostManager.shared.cancel() },
+                    onEdit: actionType.canEdit ? { PendingPostManager.shared.requestEdit() } : nil
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.bottom, 8)
+                .padding(.horizontal, 12)
             }
         }
         .sheet(isPresented: $showingBroadcastSheet) {
@@ -1171,35 +1174,6 @@ struct FeedNoteRow: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Request deletion of this post? Not all relays honor NIP-09 deletion requests.")
-        }
-        .onAppear {
-            let ageInSeconds = Date().timeIntervalSince(note.createdAt)
-            if ageInSeconds < 0.5 && note.pubkey == nostrService.activeHexPubkey {
-                showingPostCreatedCountdown = true
-                postCreationTimeRemaining = 10.0
-                postCreationCountdownTask?.cancel()
-
-                postCreationCountdownTask = Task {
-                    for _ in 0..<100 {
-                        try? await Task.sleep(nanoseconds: 100_000_000)
-                        if Task.isCancelled { return }
-                        await MainActor.run {
-                            postCreationTimeRemaining -= 0.1
-                        }
-                    }
-
-                    if !Task.isCancelled {
-                        await MainActor.run {
-                            withAnimation {
-                                showingPostCreatedCountdown = false
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .onDisappear {
-            postCreationCountdownTask?.cancel()
         }
     }
 
@@ -1295,39 +1269,7 @@ struct FeedNoteRow: View {
     }
 
     private func repostNote() {
-        showingRepostUndo = true
-        timeRemaining = 5.0
-        repostTask?.cancel()
-
-        repostTask = Task {
-            for _ in 0..<50 {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    timeRemaining -= 0.1
-                }
-            }
-
-            if Task.isCancelled { return }
-
-            guard let signed = nostrService.signEvent(kind: 6, content: "", tags: [["e", note.id, "", "root"], ["p", note.pubkey]]) else { return }
-            nostrService.postEvent(signed)
-            feedService.repostedEventIds.insert(note.id)
-
-            await MainActor.run {
-                withAnimation {
-                    showingRepostUndo = false
-                }
-            }
-        }
-    }
-    
-    private func undoRepost() {
-        repostTask?.cancel()
-        repostTask = nil
-        withAnimation {
-            showingRepostUndo = false
-        }
+        PendingPostManager.shared.startRepost(sourceNote: note, nostrService: nostrService)
     }
 
     private func quoteNote() {
@@ -1709,7 +1651,6 @@ struct RelayStatusSheet: View {
                     }
                     .padding(.horizontal)
 
-                    #if os(iOS)
                     Divider()
                         .padding(.vertical, 8)
 
@@ -1772,7 +1713,7 @@ struct RelayStatusSheet: View {
                                 .cornerRadius(8)
                             }
                             .buttonStyle(.plain)
-                            .disabled(mirrorService.state == .mirroring || configService.config.blossomMirrors.isEmpty)
+                            .disabled(mirrorService.state == .mirroring || configService.config.activeBlossomMirrors.isEmpty)
                             .padding(.top, 4)
                         }
                         .padding(12)
@@ -1785,7 +1726,6 @@ struct RelayStatusSheet: View {
                             .tracking(0.5)
                     }
                     .padding(.horizontal)
-                    #endif
 
                     Divider()
                         .padding(.vertical, 8)
@@ -1867,64 +1807,22 @@ struct RelayStatusSheet: View {
     }
 }
 
-// MARK: - RepostUndoBanner
+// MARK: - PostActionBanner
 
-struct RepostUndoBanner: View {
+struct PostActionBanner: View {
+    let actionType: PendingPostManager.ActionType
     var timeRemaining: Double
-    var totalTime: Double = 10.0
     var onUndo: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "arrow.2.squarepath")
-                .foregroundColor(.white)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Reposting in \(Int(ceil(timeRemaining)))s")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.3))
-                        Capsule()
-                            .fill(Color.white)
-                            .frame(width: max(0, geo.size.width * (timeRemaining / totalTime)))
-                    }
-                }
-                .frame(height: 4)
-            }
-            
-            Spacer()
-            
-            Button("Undo") {
-                onUndo()
-            }
-            .font(.system(size: 13, weight: .bold))
-            .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.2))
-            .cornerRadius(6)
-        }
-        .padding(12)
-        .background(Color.havenPurple)
-        .cornerRadius(8)
-        .shadow(color: .black.opacity(0.2), radius: 5, y: 3)
-    }
-}
-
-struct PostCreatedCountdownBanner: View {
-    var timeRemaining: Double
-    var totalTime: Double = 10.0
+    var onEdit: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: actionType.icon)
                 .foregroundColor(.white)
+                .font(.system(size: 14, weight: .semibold))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Post created - editing in \(Int(ceil(timeRemaining)))s")
+                Text("\(actionType.label) in \(max(1, Int(ceil(timeRemaining))))s")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
 
@@ -1933,17 +1831,36 @@ struct PostCreatedCountdownBanner: View {
                         Capsule().fill(Color.white.opacity(0.3))
                         Capsule()
                             .fill(Color.white)
-                            .frame(width: max(0, geo.size.width * (timeRemaining / totalTime)))
+                            .frame(width: max(0, geo.size.width * (timeRemaining / actionType.totalTime)))
+                            .animation(.linear(duration: 0.1), value: timeRemaining)
                     }
                 }
                 .frame(height: 4)
             }
 
             Spacer()
+
+            if let onEdit, actionType.canEdit {
+                Button("Edit") { onEdit() }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.18))
+                    .cornerRadius(6)
+            }
+
+            Button("Undo") { onUndo() }
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.28))
+                .cornerRadius(6)
         }
         .padding(12)
-        .background(Color.green.opacity(0.85))
+        .background(actionType.themedColor)
         .cornerRadius(8)
-        .shadow(color: .black.opacity(0.2), radius: 5, y: 3)
+        .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
     }
 }

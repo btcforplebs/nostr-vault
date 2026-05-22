@@ -37,7 +37,7 @@ class MirrorService: ObservableObject {
             var totalCount = 0
 
             // 1. Mirror from configured Blossom mirrors (BUD-04 /list endpoint)
-            if !configService.config.blossomMirrors.isEmpty {
+            if !configService.config.activeBlossomMirrors.isEmpty {
                 statusText = "Fetching blob list from mirrors..."
                 let count = await service.mirrorAllFromExternal { completed, total in
                     Task { @MainActor in
@@ -48,9 +48,20 @@ class MirrorService: ObservableObject {
                 totalCount += count
             }
 
-            // 2. Mirror from note media URLs (handles any server) - includes all historical notes from local relay
+            // 2. Mirror from note media URLs (handles any server) - includes all historical notes from local relay and feed notes
             statusText = "Scanning notes for media..."
-            let noteMedia = await self.fetchAllOwnerMedia(configService: configService, nostrService: nostrService)
+            let ownerMedia = await self.fetchAllOwnerMedia(configService: configService, nostrService: nostrService)
+            let feedMedia = self.fetchFeedMedia(nostrService: nostrService)
+            
+            // Deduplicate combined media by URL
+            var seenURLs = Set<URL>()
+            var noteMedia: [MediaItem] = []
+            for item in (ownerMedia + feedMedia) {
+                if seenURLs.insert(item.url).inserted {
+                    noteMedia.append(item)
+                }
+            }
+            
             statusText = "Mirroring media from notes (\(noteMedia.count) found)..."
             let noteCount = await service.mirrorFromNoteMedia(noteMedia) { completed, total in
                 Task { @MainActor in
@@ -73,6 +84,30 @@ class MirrorService: ObservableObject {
                 state = .idle
             }
         }
+    }
+
+    /// Extracts media items from active feed notes in FeedService.shared.notes
+    @MainActor
+    private func fetchFeedMedia(nostrService: NostrService) -> [MediaItem] {
+        let notes = FeedService.shared.notes
+        var items: [MediaItem] = []
+        for note in notes {
+            for url in note.mediaURLs {
+                let mime = NostrService.mimeFromExtension(url)
+                let mediaType = NostrService.mediaTypeFromMime(mime, url: url)
+                let item = MediaItem(
+                    id: UUID(),
+                    url: url,
+                    type: mediaType,
+                    dateAdded: note.createdAt,
+                    pubkey: note.pubkey,
+                    tags: note.tags,
+                    mimeType: mime
+                )
+                items.append(item)
+            }
+        }
+        return items
     }
 
     /// Fetches all historical notes for the owner from the local relay, extracting associated media URLs.

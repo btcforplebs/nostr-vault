@@ -16,6 +16,8 @@ struct ProfileView: View {
     @Environment(\.openURL) private var openURL
 
     @State private var showingNoteDetail: FeedNote?
+    @State private var showingProfileKey: IdentifiableString?
+    @State private var showingMediaUrl: IdentifiableURL?
     @State private var selectedMedia: MediaItem? = nil
     @State private var dragOffset: CGSize = .zero
     #if os(iOS)
@@ -225,6 +227,14 @@ struct ProfileView: View {
                         NoteDetailView(note: detailNote)
                     }
             }
+        }
+        .sheet(item: $showingProfileKey) { p in
+            ProfileView(pubkey: p.id, onDismiss: { showingProfileKey = nil })
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
+        .sheet(item: $showingMediaUrl) { media in
+            FeedMediaViewer(url: media.url, onDismiss: { showingMediaUrl = nil })
         }
         .sheet(isPresented: $showSweep) {
             BitcoinSweepDisclaimerView(onDismiss: { showSweep = false })
@@ -854,7 +864,17 @@ struct ProfileView: View {
                             .frame(height: 0.5)
                             .padding(.leading, 16)
                     }
-                    FeedNoteRow(note: note, profile: profile, showParent: false)
+                    FeedNoteRow(
+                        note: note,
+                        profile: profile,
+                        onProfile: { pubkey in
+                            showingProfileKey = IdentifiableString(id: pubkey)
+                        },
+                        onMedia: { url in
+                            showingMediaUrl = IdentifiableURL(url: url)
+                        },
+                        showParent: false
+                    )
                         .contentShape(Rectangle())
                         .onTapGesture {
                             showingNoteDetail = note

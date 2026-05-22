@@ -26,6 +26,7 @@ struct FeedMediaViewer: View {
 
     @State private var isMirroring: Bool = false
     @State private var mirrorStatus: MirrorStatus? = nil
+    @State private var hasJustMirrored: Bool = false
     @State private var isDeleting: Bool = false
     @State private var deleteStatus: DeleteStatus? = nil
 
@@ -57,7 +58,7 @@ struct FeedMediaViewer: View {
                 if isLoadingType {
                     ProgressView().tint(.white)
                 } else if isVideo {
-                    VideoPlayerView(url: url)
+                    FullScreenVideoPlayer(url: url)
                 } else if isGIF {
                     AnimatedImage(url: url, contentMode: .fit, shouldAnimate: true)
                 } else {
@@ -131,16 +132,52 @@ struct FeedMediaViewer: View {
             VStack {
                 HStack {
                     if !isLoadingType && !isMirroring {
-                        Button {
-                            mirrorToBlossomTapped()
-                        } label: {
-                            Image(systemName: "square.and.arrow.up.circle.fill")
-                                .font(.system(size: 32))
-                                .foregroundColor(.white.opacity(0.9))
+                        if isOnMirror {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("Mirrored to Blossom")
+                                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                            }
+                            .foregroundColor(.white.opacity(0.95))
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 14)
+                            .background(
+                                Capsule()
+                                    .fill(Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8))
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                                    )
+                            )
+                            .shadow(color: Color.black.opacity(0.3), radius: 4)
+                            .padding(20)
+                        } else {
+                            Button {
+                                mirrorToBlossomTapped()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.system(size: 16, weight: .semibold))
+                                    Text("Mirror to Blossom")
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                }
+                                .foregroundColor(.white.opacity(0.95))
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 14)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.black.opacity(0.6))
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                                        )
+                                )
+                                .shadow(color: Color.black.opacity(0.3), radius: 4)
                                 .padding(20)
-                                .shadow(radius: 4)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                     Spacer()
                     Button {
@@ -276,20 +313,18 @@ struct FeedMediaViewer: View {
                 let sha256String = sha256.compactMap { String(format: "%02x", $0) }.joined()
                 let contentType = determineContentType()
 
-                if let _ = await self.blossomService.uploadAndMirror(
+                let saved = await self.blossomService.saveToLocalRelay(
                     data: data,
                     sha256: sha256String,
                     contentType: contentType
-                ) {
-                    await MainActor.run {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                )
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        if saved {
                             mirrorStatus = .success
-                        }
-                    }
-                } else {
-                    await MainActor.run {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                            mirrorStatus = .failed("Failed to mirror to Blossom")
+                            hasJustMirrored = true
+                        } else {
+                            mirrorStatus = .failed("Failed to save to local relay")
                         }
                     }
                 }
@@ -323,6 +358,9 @@ struct FeedMediaViewer: View {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                     deleteStatus = success ? .success : .failed("Failed to delete from mirrors")
                     isDeleting = false
+                    if success {
+                        hasJustMirrored = false
+                    }
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     withAnimation(.easeOut(duration: 0.4)) {
@@ -353,10 +391,16 @@ struct FeedMediaViewer: View {
 
             await MainActor.run {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                    if localSuccess || mirrorsSuccess {
+                    if localSuccess && mirrorsSuccess {
                         deleteStatus = .success
+                        hasJustMirrored = false
+                    } else if localSuccess {
+                        deleteStatus = .failed("Deleted locally, mirror deletion failed")
+                        hasJustMirrored = false
+                    } else if mirrorsSuccess {
+                        deleteStatus = .failed("Deleted from mirrors, local failed")
                     } else {
-                        deleteStatus = .failed("Failed to delete media")
+                        deleteStatus = .failed("Failed to delete")
                     }
                     isDeleting = false
                 }
@@ -371,25 +415,71 @@ struct FeedMediaViewer: View {
     }
 
     private func extractSHA256FromURL() -> String {
-        // Try to extract the 64-char hash from the URL path
-        let lastComponent = url.deletingPathExtension().lastPathComponent
+        let urlString = url.absoluteString
+        let lastComponent = url.lastPathComponent
         if lastComponent.count == 64 && lastComponent.allSatisfy({ $0.isHexDigit }) {
             return lastComponent
         }
-        return ""
+        let pattern = "[a-f0-9]{64}"
+        if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+           let match = regex.firstMatch(in: urlString, options: [], range: NSRange(urlString.startIndex..., in: urlString)),
+           let range = Range(match.range, in: urlString) {
+            return String(urlString[range]).lowercased()
+        }
+        return url.deletingPathExtension().lastPathComponent
+    }
+
+    private var isOnMirror: Bool {
+        if hasJustMirrored { return true }
+
+        let currentMirrorHosts: Set<String> = Set(
+            configService.config.activeBlossomMirrors.compactMap {
+                URL(string: $0)?.host?.lowercased()
+            }
+        )
+        guard let host = url.host?.lowercased() else { return false }
+
+        // Also check if the blob exists in the local Blossom directory
+        let hash = extractSHA256FromURL()
+        if !hash.isEmpty {
+            let relayDataDir = configService.relayDataDir
+            let blossomPath = configService.config.blossomPath
+            let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
+            let fileURL = blossomDir.appendingPathComponent(hash)
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                return true
+            }
+        }
+
+        return currentMirrorHosts.contains(host) || host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0"
     }
 
     private func downloadMedia() async throws -> Data {
+        // 1. If it's already a local file URL, load it directly
+        if url.isFileURL {
+            return try Data(contentsOf: url)
+        }
+
+        // 2. Try fetching via MediaCacheService which handles caching & localhost self-signed SSL/TLS issues
+        if let cachedData = await MediaCacheService.shared.fetchData(url: url) {
+            return cachedData
+        }
+
+        // 3. Fallback to standard network request if cache fetch returns nil (e.g. uncached remote resource)
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let mediaType = isVideo ? "video" : isGIF ? "GIF" : "image"
-            throw NSError(domain: "DownloadError", code: status, userInfo: [NSLocalizedDescriptionKey: "Failed to download \(mediaType): HTTP \(status)"])
+        
+        // If it's a file URL (e.g. resolved asynchronously later), it won't have an HTTPURLResponse
+        if let httpResponse = response as? HTTPURLResponse {
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let status = httpResponse.statusCode
+                let mediaType = isVideo ? "video" : isGIF ? "GIF" : "image"
+                throw NSError(domain: "DownloadError", code: status, userInfo: [NSLocalizedDescriptionKey: "Failed to download \(mediaType): HTTP \(status)"])
+            }
         }
-
+        
         return data
     }
 
