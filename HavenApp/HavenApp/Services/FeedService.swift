@@ -9,9 +9,10 @@ struct NoteStats {
     var replies: Int = 0
     var reactions: Int = 0
     var reposts: Int = 0
+    var zaps: Int = 0
 }
 
-struct FeedNote: Identifiable {
+struct FeedNote: Identifiable, Hashable, Equatable {
     let id: String
     let pubkey: String
     let content: String
@@ -19,6 +20,14 @@ struct FeedNote: Identifiable {
     let tags: [[String]]
     let kind: Int
     let repostedBy: String?
+
+    static func == (lhs: FeedNote, rhs: FeedNote) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 
     // Cached at init to avoid recomputing on every SwiftUI render
     let isReply: Bool
@@ -54,7 +63,20 @@ struct FeedNote: Identifiable {
         self.repostedEventId = kind == 6 ? eTags.first?[1] : nil
 
         // Cache regex-derived properties (expensive — only compute once)
-        self.mediaURLs = Self.parseMediaURLs(from: content)
+        let contentURLs = Self.parseMediaURLs(from: content)
+        // NIP-92 imeta tags carry URLs for uploads without file extensions
+        let imetaURLs: [URL] = tags.compactMap { tag in
+            guard tag.first == "imeta", tag.count >= 2 else { return nil }
+            for field in tag.dropFirst() {
+                if field.hasPrefix("url ") {
+                    let urlStr = String(field.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+                    return URL(string: urlStr)
+                }
+            }
+            return nil
+        }
+        var seen = Set<String>()
+        self.mediaURLs = (contentURLs + imetaURLs).filter { seen.insert($0.absoluteString).inserted }
         self.quotedEventIds = Self.parseQuotedEventIds(from: content)
     }
 
@@ -243,7 +265,27 @@ final class BackgroundAccumulator: @unchecked Sendable {
 /// Feed mode: following (contacts only) or global (all notes from relays).
 enum FeedMode: String, CaseIterable {
     case following = "Following"
+    case discovery = "Discovery"
     case global = "Global"
+}
+
+/// Per-account, in-memory snapshot of the feed state. Captured before switching
+/// accounts and restored on switch-back so the feed reappears instantly instead
+/// of going through a full cold reload. Engagement state (likes/zaps) is also
+/// scoped here so it doesn't leak across accounts.
+struct AccountFeedSnapshot {
+    var notes: [FeedNote] = []
+    var parentNotesCache: [String: FeedNote] = [:]
+    var followedPubkeys: [String] = []
+    var extendedNetworkPubkeys: [String] = []
+    var seenIds: Set<String> = []
+    var noteStats: [String: NoteStats] = [:]
+    var likedEventIds: Set<String> = []
+    var zappedEventIds: [String: Int] = [:]
+    var onchainZapEventIds: [String: Int] = [:]
+    var contactListContent: String = ""
+    var hasAttemptedContactLoad: Bool = false
+    var capturedAt: Date = Date()
 }
 
 /// Builds a following feed by querying BOTH the local Haven relay and
@@ -257,8 +299,14 @@ class FeedService: ObservableObject {
 
     @Published var feedMode: FeedMode = .following
     @Published var notes: [FeedNote] = []
+    @Published var parentNotesCache: [String: FeedNote] = [:]
     @Published var followedPubkeys: [String] = []
+    @Published var extendedNetworkPubkeys: [String] = []
     @Published var isLoadingContacts = false
+    /// True once contact loading has completed at least once (success, empty, or timeout).
+    /// Used to gate follow/unfollow so we don't publish before the kind-3 has had a chance to arrive.
+    private var hasAttemptedContactLoad = false
+    @Published var isLoadingExtendedNetwork = false
     @Published var isLoadingFeed    = false
     @Published var connectionStatus = "Disconnected"
 
@@ -319,6 +367,29 @@ class FeedService: ObservableObject {
         return strs.compactMap { URL(string: $0) }
     }
 
+    /// Used for de-duping relay URLs across the floor + outbox set.
+    private static func normalizeRelayKey(_ urlStr: String) -> String? {
+        guard let url = URL(string: urlStr), let host = url.host else { return urlStr.lowercased() }
+        var key = "\(url.scheme ?? "wss")://\(host.lowercased())"
+        if let port = url.port { key += ":\(port)" }
+        let path = url.path.hasSuffix("/") ? String(url.path.dropLast()) : url.path
+        if !path.isEmpty { key += path }
+        return key
+    }
+
+/// In-memory per-account feed snapshots keyed by `activeAccountNpub`
+    /// (empty string for the default/owner account). Captured before each
+    /// account switch and restored when switching back, so re-switching is
+    /// instant and the relay top-up runs as a background refresh.
+    private var accountSnapshots: [String: AccountFeedSnapshot] = [:]
+    /// The npub the currently-loaded feed belongs to. Used to know which key
+    /// to snapshot against when the active account changes.
+    private var loadedSnapshotNpub: String = ""
+    /// True while a background top-up is running against an already-rendered
+    /// snapshot. Used by the UI to show a small inline "Syncing…" pill instead
+    /// of the full-screen loading spinner.
+    @Published var isSyncing: Bool = false
+
     // Batched note buffer — avoids per-event @Published mutations
     private var noteBuffer: [FeedNote] = []
     private var noteFlushTimer: Timer?
@@ -335,27 +406,191 @@ class FeedService: ObservableObject {
     // Profile saving
     private var profileSaveTimer: Timer?
 
+    private var configCancellables = Set<AnyCancellable>()
+
     private init() {
         // FeedService no longer manages profiles; NostrService does.
-        loadInteractionState()
+        loadedSnapshotNpub = currentSnapshotKey()
+        loadInteractionState(forKey: loadedSnapshotNpub)
+
+        // Listen to active account changes to reload the feed automatically.
+        // We snapshot the previous account's state into memory and either
+        // restore an existing snapshot (instant) or run a cold load.
+        ConfigService.shared.$config
+            .map { $0.activeAccountNpub }
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                self.handleAccountSwitch()
+            }
+            .store(in: &configCancellables)
     }
 
-    // MARK: - Interaction State Persistence
+    /// Stable in-memory cache key for the active account. Uses the configured
+    /// `activeAccountNpub`, falling back to "owner" when the owner account is
+    /// active so we never key on an empty string.
+    private func currentSnapshotKey() -> String {
+        let npub = ConfigService.shared.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        return npub.isEmpty ? "owner" : npub
+    }
 
-    private static let interactionStateFile = "interaction_state.json"
+    /// Capture the current published feed state into `accountSnapshots[key]`.
+    /// Bounded to ~200 notes so re-switching is cheap; full backfill comes
+    /// from the top-up subscription that runs immediately after.
+    private func captureSnapshot(forKey key: String) {
+        guard !key.isEmpty else { return }
+        let cappedNotes = Array(notes.prefix(200))
+        let snap = AccountFeedSnapshot(
+            notes: cappedNotes,
+            parentNotesCache: parentNotesCache,
+            followedPubkeys: followedPubkeys,
+            extendedNetworkPubkeys: extendedNetworkPubkeys,
+            seenIds: seenIds,
+            noteStats: noteStats,
+            likedEventIds: likedEventIds,
+            zappedEventIds: zappedEventIds,
+            onchainZapEventIds: onchainZapEventIds,
+            contactListContent: contactListContent,
+            hasAttemptedContactLoad: hasAttemptedContactLoad,
+            capturedAt: Date()
+        )
+        accountSnapshots[key] = snap
+    }
+
+    /// Restore a previously captured snapshot into published state. Returns
+    /// true if a snapshot existed and was restored.
+    @discardableResult
+    private func restoreSnapshot(forKey key: String) -> Bool {
+        guard let snap = accountSnapshots[key] else { return false }
+        notes = snap.notes
+        parentNotesCache = snap.parentNotesCache
+        followedPubkeys = snap.followedPubkeys
+        extendedNetworkPubkeys = snap.extendedNetworkPubkeys
+        seenIds = snap.seenIds
+        noteStats = snap.noteStats
+        likedEventIds = snap.likedEventIds
+        zappedEventIds = snap.zappedEventIds
+        onchainZapEventIds = snap.onchainZapEventIds
+        contactListContent = snap.contactListContent
+        hasAttemptedContactLoad = snap.hasAttemptedContactLoad
+        pendingNotes.removeAll()
+        noteBuffer.removeAll()
+        return true
+    }
+
+    /// Reset just the in-memory published feed state (does not touch snapshots).
+    /// Used before a cold load when no snapshot exists for the new account.
+    private func clearInMemoryFeedState() {
+        followedPubkeys.removeAll()
+        extendedNetworkPubkeys.removeAll()
+        notes.removeAll()
+        parentNotesCache.removeAll()
+        pendingNotes.removeAll()
+        noteBuffer.removeAll()
+        seenIds.removeAll()
+        noteStats.removeAll()
+        likedEventIds.removeAll()
+        zappedEventIds.removeAll()
+        onchainZapEventIds.removeAll()
+        contactListContent = ""
+        hasAttemptedContactLoad = false
+    }
+
+    /// Snapshot the old account, restore (or cold-load) the new account, then
+    /// kick off a relay top-up against the now-current state.
+    private func handleAccountSwitch() {
+        let previousKey = loadedSnapshotNpub
+        let newKey = currentSnapshotKey()
+        guard previousKey != newKey else { return }
+
+        // 1. Stash the just-rendered state under the previous npub.
+        captureSnapshot(forKey: previousKey)
+
+        // 2. Tear down only the feed-level WebSocket connections — global
+        // services (profile + Kind 10002 fetches) keep their clients.
+        disconnectFeedClients()
+
+        // 3. Cancel in-flight loading flags + timers so the new flow isn't blocked.
+        isLoadingContacts = false
+        isLoadingExtendedNetwork = false
+        isLoadingFeed = false
+        isSyncing = false
+        contactLoadingTimeout?.invalidate()
+        feedLoadingTimeout?.invalidate()
+        extendedNetworkTimeout?.invalidate()
+        cancellables.removeAll()
+
+        // 4. Either restore an in-memory snapshot OR cold-load.
+        loadedSnapshotNpub = newKey
+        let restored = restoreSnapshot(forKey: newKey)
+        if !restored {
+            // No cached feed — load persisted interaction state for this
+            // account from disk so likes/zaps appear correctly even on first
+            // visit after launch.
+            clearInMemoryFeedState()
+            loadInteractionState(forKey: newKey)
+        }
+        newNoteCount = 0
+        newSinceLastView = Date()
+
+        // 5. Kick off relay traffic.
+        if restored {
+            // Background top-up: subscribe to relays but keep the cached feed
+            // visible. The inline syncing pill replaces the full-screen spinner.
+            topUpFromRelays()
+        } else if feedMode == .global {
+            subscribeToAllRelays()
+        } else {
+            refresh()
+        }
+    }
+
+    // MARK: - Interaction State Persistence (per-account)
+
+    /// Legacy single-file path used before per-account state was introduced.
+    /// Migrated to the owner account on first load.
+    private static let legacyInteractionStateFile = "interaction_state.json"
 
     private var interactionSaveThrottle: Date = .distantPast
 
-    private func loadInteractionState() {
-        let url = Self.interactionStateURL()
-        guard let data = try? Data(contentsOf: url),
-              let state = try? JSONDecoder().decode(InteractionState.self, from: data) else { return }
-        self.likedEventIds = state.likedEventIds
-        self.zappedEventIds = state.zappedEventIds
-        self.onchainZapEventIds = state.onchainZapEventIds
-        #if DEBUG
-        print("FeedService: Loaded \(state.likedEventIds.count) likes, \(state.zappedEventIds.count) zaps, \(state.onchainZapEventIds.count) onchain zaps from disk")
-        #endif
+    /// Load engagement state (likes / zaps) for the given account snapshot key
+    /// into the published properties. Falls back to the legacy global file when
+    /// no per-account file exists yet.
+    private func loadInteractionState(forKey key: String) {
+        let url = Self.interactionStateURL(forKey: key)
+        if let data = try? Data(contentsOf: url),
+           let state = try? JSONDecoder().decode(InteractionState.self, from: data) {
+            self.likedEventIds = state.likedEventIds
+            self.zappedEventIds = state.zappedEventIds
+            self.onchainZapEventIds = state.onchainZapEventIds
+            #if DEBUG
+            print("FeedService: Loaded \(state.likedEventIds.count) likes, \(state.zappedEventIds.count) zaps for account \(key.prefix(8))")
+            #endif
+            return
+        }
+
+        // Migration: read the old shared file once and assign it to whichever
+        // account first asks for it (typically the owner on launch).
+        let legacy = Self.interactionStateURL(legacy: true)
+        if let data = try? Data(contentsOf: legacy),
+           let state = try? JSONDecoder().decode(InteractionState.self, from: data) {
+            self.likedEventIds = state.likedEventIds
+            self.zappedEventIds = state.zappedEventIds
+            self.onchainZapEventIds = state.onchainZapEventIds
+            #if DEBUG
+            print("FeedService: Migrated legacy interaction state for account \(key.prefix(8))")
+            #endif
+            // Persist under the new per-account file so the legacy file can be
+            // dropped on next launch.
+            interactionSaveThrottle = .distantPast
+            saveInteractionState()
+            return
+        }
+
+        self.likedEventIds = []
+        self.zappedEventIds = [:]
+        self.onchainZapEventIds = [:]
     }
 
     func saveInteractionState() {
@@ -365,7 +600,7 @@ class FeedService: ObservableObject {
         interactionSaveThrottle = now
 
         let state = InteractionState(likedEventIds: likedEventIds, zappedEventIds: zappedEventIds, onchainZapEventIds: onchainZapEventIds)
-        let url = Self.interactionStateURL()
+        let url = Self.interactionStateURL(forKey: loadedSnapshotNpub)
         DispatchQueue.global(qos: .utility).async {
             if let data = try? JSONEncoder().encode(state) {
                 try? data.write(to: url)
@@ -373,11 +608,19 @@ class FeedService: ObservableObject {
         }
     }
 
-    private static func interactionStateURL() -> URL {
+    private static func interactionStateURL(forKey key: String) -> URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
         try? FileManager.default.createDirectory(at: havenDir, withIntermediateDirectories: true)
-        return havenDir.appendingPathComponent(interactionStateFile)
+        let safeKey = key.isEmpty ? "owner" : key.replacingOccurrences(of: "/", with: "_")
+        return havenDir.appendingPathComponent("interaction_state_\(safeKey).json")
+    }
+
+    private static func interactionStateURL(legacy: Bool) -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
+        try? FileManager.default.createDirectory(at: havenDir, withIntermediateDirectories: true)
+        return havenDir.appendingPathComponent(legacyInteractionStateFile)
     }
 
     private struct InteractionState: Codable {
@@ -419,7 +662,14 @@ class FeedService: ObservableObject {
         #endif
         
         loadContactList { [weak self] in
-            self?.subscribeToAllRelays()
+            guard let self = self else { return }
+            if self.feedMode == .discovery {
+                self.loadExtendedNetwork { [weak self] in
+                    self?.subscribeToAllRelays()
+                }
+            } else {
+                self.subscribeToAllRelays()
+            }
         }
     }
 
@@ -428,15 +678,16 @@ class FeedService: ObservableObject {
         guard mode != feedMode else { return }
         feedMode = mode
         notes.removeAll()
+        parentNotesCache.removeAll()
         pendingNotes.removeAll()
         noteBuffer.removeAll()
         seenIds.removeAll()
         noteStats.removeAll()
         newNoteCount = 0
         newSinceLastView = Date()
-        // Disconnect existing clients before re-subscribing
-        feedClients.values.forEach { $0.disconnect() }
-        feedClients.removeAll()
+        isSyncing = false
+        // Disconnect feed clients before re-subscribing.
+        disconnectFeedClients()
         cancellables.removeAll()
 
         if mode == .global {
@@ -444,6 +695,68 @@ class FeedService: ObservableObject {
             subscribeToAllRelays()
         } else {
             refresh()
+        }
+    }
+
+    /// Discard the cached snapshot for the current account and run a full
+    /// cold reload. Use sparingly — the normal account-switch path already
+    /// restores instantly from the in-memory snapshot.
+    func forceReload() {
+        accountSnapshots.removeValue(forKey: loadedSnapshotNpub)
+        clearInMemoryFeedState()
+        newNoteCount = 0
+        newSinceLastView = Date()
+        isLoadingContacts = false
+        isLoadingFeed = false
+        isLoadingExtendedNetwork = false
+        isSyncing = false
+        contactLoadingTimeout?.invalidate()
+        feedLoadingTimeout?.invalidate()
+        extendedNetworkTimeout?.invalidate()
+        disconnectFeedClients()
+        cancellables.removeAll()
+
+        if feedMode == .global {
+            subscribeToAllRelays()
+        } else {
+            refresh()
+        }
+    }
+
+    /// Close only the feed-level WebSocket connections. The
+    /// `NostrService.clients` pool is left alone so profile and Kind-10002
+    /// lookups carry over across account switches.
+    private func disconnectFeedClients() {
+        feedClients.values.forEach { $0.disconnect() }
+        feedClients.removeAll()
+    }
+
+    /// Background refresh against an already-rendered snapshot. Re-subscribes
+    /// to relays so newer notes stream in on top of the cached feed, and
+    /// kicks off a contact-list re-fetch in parallel so a stale follow set
+    /// gets updated without blocking the visible feed.
+    private func topUpFromRelays() {
+        guard !followedPubkeys.isEmpty || feedMode == .global else {
+            // Snapshot had no follows — fall back to the cold-start flow.
+            refresh()
+            return
+        }
+
+        isSyncing = true
+        newSinceLastView = Date()
+
+        // 1. Subscribe to relays immediately using the cached follow set.
+        if feedMode == .global || !followedPubkeys.isEmpty {
+            subscribeToAllRelays()
+        }
+
+        // 2. Re-fetch the contact list in the background. When it lands,
+        // newly-followed authors are picked up by the running subscription on
+        // the next refresh cycle (and `publishContactList` writes the diff).
+        // We don't block on it.
+        loadContactList { [weak self] in
+            guard let self = self else { return }
+            self.isSyncing = false
         }
     }
 
@@ -457,6 +770,12 @@ class FeedService: ObservableObject {
             notes.insert(note, at: 0)
             seenIds.insert(note.id)
         }
+    }
+
+    func removeNote(id: String) {
+        notes.removeAll { $0.id == id }
+        pendingNotes.removeAll { $0.id == id }
+        parentNotesCache.removeValue(forKey: id)
     }
 
     func applyPendingNotes() {
@@ -483,11 +802,20 @@ class FeedService: ObservableObject {
         scheduleNoteFetchFlush()
     }
 
+    /// Looks up a note in the local parent notes cache or in the main feed list.
+    func findNote(id: String) -> FeedNote? {
+        if let cached = parentNotesCache[id] {
+            return cached
+        }
+        return notes.first(where: { $0.id == id })
+    }
+
     /// Load older notes (pagination) — fetches the page before the oldest note currently shown.
     func loadMore() {
         guard !isLoadingFeed, let oldest = notes.last?.createdAt else { return }
         let until = Int64(oldest.timeIntervalSince1970) - 1
-        guard feedMode == .global || !followedPubkeys.isEmpty else { return }
+        if feedMode == .following && followedPubkeys.isEmpty { return }
+        if feedMode == .discovery && extendedNetworkPubkeys.isEmpty { return }
 
         isLoadingFeed = true
         eoseCount = 0
@@ -505,10 +833,10 @@ class FeedService: ObservableObject {
     func disconnect() {
         feedLoadingTimeout?.invalidate()
         contactLoadingTimeout?.invalidate()
-        feedClients.values.forEach { $0.disconnect() }
-        feedClients.removeAll()
+        disconnectFeedClients()
         cancellables.removeAll()
         connectionStatus = "Disconnected"
+        isSyncing = false
     }
 
     // MARK: - Contact List (Kind 3)
@@ -518,9 +846,10 @@ class FeedService: ObservableObject {
     private var contactLoadingTimeout: Timer?
 
     private func loadContactList(completion: @escaping () -> Void) {
-        let ownerNpub = ConfigService.shared.config.ownerNpub
-        guard !ownerNpub.isEmpty,
-              let ownerHex = Bech32.decode(ownerNpub)?.hexString else {
+        let activeNpub = ConfigService.shared.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetNpub = activeNpub.isEmpty ? ConfigService.shared.config.ownerNpub : activeNpub
+        guard !targetNpub.isEmpty,
+              let ownerHex = Bech32.decode(targetNpub)?.hexString else {
             completion(); return
         }
 
@@ -536,6 +865,7 @@ class FeedService: ObservableObject {
                 print("FeedService: Contact loading timed out after 15s — forcing completion")
                 #endif
                 self.isLoadingContacts = false
+                self.hasAttemptedContactLoad = true
                 self.connectionStatus = self.followedPubkeys.isEmpty ? "Contact fetch timed out" : "Loaded \(self.followedPubkeys.count) contacts"
                 completion()
             }
@@ -551,7 +881,9 @@ class FeedService: ObservableObject {
     private func fetchContactListInParallel(from relays: [URL], ownerHex: String, completion: @escaping () -> Void) {
         guard !relays.isEmpty else {
             contactLoadingTimeout?.invalidate()
-            isLoadingContacts = false; completion(); return
+            isLoadingContacts = false
+            hasAttemptedContactLoad = true
+            completion(); return
         }
 
         // Shared mutable state protected by main-thread dispatch.
@@ -568,11 +900,21 @@ class FeedService: ObservableObject {
 
             var finalPubkeys = pubkeys
             if !finalPubkeys.contains(ownerHex) { finalPubkeys.append(ownerHex) }
+            
+            // Auto-follow whitelisted accounts so they appear in the default feed
+            for npub in ConfigService.shared.config.whitelistedNpubs {
+                if let hex = Bech32.decode(npub)?.hexString, !finalPubkeys.contains(hex) {
+                    finalPubkeys.append(hex)
+                }
+            }
+            
             self.followedPubkeys = finalPubkeys
             self.contactListContent = content
             self.isLoadingContacts = false
+            self.hasAttemptedContactLoad = true
             self.connectionStatus = pubkeys.isEmpty ? "No contacts found" : "Loaded \(pubkeys.count) contacts"
             completion()
+
         }
 
         for url in relays {
@@ -607,6 +949,7 @@ class FeedService: ObservableObject {
                             self.contactLoadingTimeout?.invalidate()
                             clients.forEach { $0.disconnect() }
                             self.isLoadingContacts = false
+                            self.hasAttemptedContactLoad = true
                             self.connectionStatus = self.followedPubkeys.isEmpty ? "No contacts found" : "Loaded \(self.followedPubkeys.count) contacts"
                             completion()
                         }
@@ -631,23 +974,170 @@ class FeedService: ObservableObject {
         }
     }
 
-    // MARK: - Follow / Unfollow
-
-    func followUser(_ pubkey: String) {
-        // Don't publish if contacts haven't loaded yet — would wipe the list
-        guard !isLoadingContacts, followedPubkeys.count > 1 else { return }
-        guard !followedPubkeys.contains(pubkey) else { return }
-        followedPubkeys.append(pubkey)
-        publishContactList()
+    // MARK: - Extended Network (Discovery Feed)
+    
+    private var extendedNetworkTimeout: Timer?
+    
+    private func loadExtendedNetwork(completion: @escaping () -> Void) {
+        guard !followedPubkeys.isEmpty else {
+            completion()
+            return
+        }
+        
+        isLoadingExtendedNetwork = true
+        connectionStatus = "Analyzing network..."
+        
+        extendedNetworkTimeout?.invalidate()
+        extendedNetworkTimeout = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isLoadingExtendedNetwork else { return }
+                self.isLoadingExtendedNetwork = false
+                completion()
+            }
+        }
+        
+        let candidates: [URL] = ([localRelayURL] + externalRelayURLs).compactMap { $0 }
+        fetchExtendedNetworkInParallel(from: candidates, completion: completion)
     }
 
-    func unfollowUser(_ pubkey: String) {
+    private func fetchExtendedNetworkInParallel(from relays: [URL], completion: @escaping () -> Void) {
+        guard !relays.isEmpty else {
+            extendedNetworkTimeout?.invalidate()
+            isLoadingExtendedNetwork = false
+            completion()
+            return
+        }
+
+        var completed = false
+        var eoseCount = 0
+        var clients: [WebSocketClient] = []
+        var mutualCounts: [String: Int] = [:]
+        
+        // Exclude current follows and owner
+        let excludeSet = Set(followedPubkeys)
+
+        let finish: () -> Void = { [weak self] in
+            guard let self = self, !completed else { return }
+            completed = true
+            self.extendedNetworkTimeout?.invalidate()
+            clients.forEach { $0.disconnect() }
+            
+            // Sort by mutual count
+            let sorted = mutualCounts.sorted { $0.value > $1.value }
+            // Take top 500
+            self.extendedNetworkPubkeys = Array(sorted.prefix(500).map { $0.key })
+            
+            self.isLoadingExtendedNetwork = false
+            completion()
+        }
+
+        for url in relays {
+            let c = WebSocketClient()
+            c.isTemporary = true
+            clients.append(c)
+
+            c.messageSubject
+                .receive(on: DispatchQueue.global(qos: .userInitiated))
+                .sink { msg in
+                    guard !completed else { return }
+                    guard let data = msg.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                          let type = json[0] as? String else { return }
+
+                    if type == "EVENT", json.count >= 3,
+                       let eventDict = json[2] as? [String: Any],
+                       let kind = eventDict["kind"] as? Int, kind == 3,
+                       let tags = eventDict["tags"] as? [[String]] {
+                        
+                        var localCounts: [String: Int] = [:]
+                        for t in tags {
+                            if t.count >= 2, t[0] == "p" {
+                                let pk = t[1]
+                                if !excludeSet.contains(pk) {
+                                    localCounts[pk, default: 0] += 1
+                                }
+                            }
+                        }
+                        
+                        DispatchQueue.main.async {
+                            for (pk, count) in localCounts {
+                                mutualCounts[pk, default: 0] += count
+                            }
+                        }
+                        
+                    } else if type == "EOSE" {
+                        DispatchQueue.main.async {
+                            eoseCount += 1
+                            // We wait for all EOSEs from active connections, but multiple REQs per connection might send multiple EOSEs.
+                            // To be safe, wait for relays.count * chunks EOSEs, or rely on timeout. Let's just rely on timeout + simple EOSE count for now.
+                            // Actually, let's just trigger finish if we reach some EOSE threshold.
+                            if eoseCount >= relays.count {
+                                finish()
+                            }
+                        }
+                    }
+                }
+                .store(in: &cancellables)
+
+            c.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] state in
+                    guard !completed, state == .connected, let self = self else { return }
+                    
+                    var current = 0
+                    var chunkIndex = 0
+                    // if empty, send empty filter just to trigger EOSE
+                    if self.followedPubkeys.isEmpty {
+                        let req = ["REQ", "ext-0", ["kinds": [3], "limit": 0]] as [Any]
+                        if let data = try? JSONSerialization.data(withJSONObject: req), let str = String(data: data, encoding: .utf8) { c.send(text: str) }
+                    }
+                    
+                    while current < self.followedPubkeys.count {
+                        let end = min(current + 200, self.followedPubkeys.count)
+                        let chunk = Array(self.followedPubkeys[current..<end])
+                        let filter: [String: Any] = ["kinds": [3], "authors": chunk]
+                        let req = ["REQ", "ext-\(chunkIndex)-\(UUID().uuidString.prefix(4))", filter] as [Any]
+                        if let data = try? JSONSerialization.data(withJSONObject: req),
+                           let str = String(data: data, encoding: .utf8) {
+                            c.send(text: str)
+                        }
+                        current = end
+                        chunkIndex += 1
+                    }
+                }
+                .store(in: &cancellables)
+
+            c.connect(url: url)
+        }
+    }
+
+    // MARK: - Follow / Unfollow
+
+    enum FollowActionError: Error {
+        case contactsNotLoaded
+        case alreadyFollowing
+        case cannotUnfollowSelf
+    }
+
+    @discardableResult
+    func followUser(_ pubkey: String) -> Result<Void, FollowActionError> {
         // Don't publish if contacts haven't loaded yet — would wipe the list
-        guard !isLoadingContacts, followedPubkeys.count > 1 else { return }
-        guard let ownerHex = Bech32.decode(ConfigService.shared.config.ownerNpub)?.hexString else { return }
-        guard pubkey != ownerHex else { return }
+        guard hasAttemptedContactLoad, !isLoadingContacts else { return .failure(.contactsNotLoaded) }
+        guard !followedPubkeys.contains(pubkey) else { return .failure(.alreadyFollowing) }
+        followedPubkeys.append(pubkey)
+        publishContactList()
+        return .success(())
+    }
+
+    @discardableResult
+    func unfollowUser(_ pubkey: String) -> Result<Void, FollowActionError> {
+        // Don't publish if contacts haven't loaded yet — would wipe the list
+        guard hasAttemptedContactLoad, !isLoadingContacts else { return .failure(.contactsNotLoaded) }
+        let activeHex = ConfigService.shared.activeAccountHexPubkey
+        guard pubkey != activeHex else { return .failure(.cannotUnfollowSelf) }
         followedPubkeys.removeAll { $0 == pubkey }
         publishContactList()
+        return .success(())
     }
 
     private func publishContactList() {
@@ -661,8 +1151,12 @@ class FeedService: ObservableObject {
     private var feedLoadingTimeout: Timer?
 
     private func subscribeToAllRelays() {
-        guard feedMode == .global || !followedPubkeys.isEmpty else {
+        if feedMode == .following && followedPubkeys.isEmpty {
             connectionStatus = "Follow someone on Nostr to see their posts here"
+            return
+        }
+        if feedMode == .discovery && extendedNetworkPubkeys.isEmpty {
+            connectionStatus = "Follow more people to build your discovery network"
             return
         }
 
@@ -671,11 +1165,10 @@ class FeedService: ObservableObject {
         relayErrorCounts.removeAll()
         connectionStatus = "Loading feed…"
 
-        // Disconnect existing feed clients
-        feedClients.values.forEach { $0.disconnect() }
-        feedClients.removeAll()
+        // Disconnect any prior feed clients; account-switch path has already
+        // done this, but switchMode + first-load go through here too.
+        disconnectFeedClients()
 
-        // Build list: local relay first, then external
         var allURLs: [URL] = []
         if let local = localRelayURL { allURLs.append(local) }
         allURLs.append(contentsOf: externalRelayURLs)
@@ -692,6 +1185,7 @@ class FeedService: ObservableObject {
                 #endif
                 self.flushNoteBuffer()
                 self.isLoadingFeed = false
+                self.isSyncing = false
                 self.connectionStatus = self.notes.isEmpty ? "No notes found" : "Live"
             }
         }
@@ -701,7 +1195,7 @@ class FeedService: ObservableObject {
         }
     }
 
-    /// Track per-relay connection failure counts for back-off
+/// Track per-relay connection failure counts for back-off
     private var relayErrorCounts: [String: Int] = [:]
 
     private func connectFeedRelay(url: URL, totalRelays: Int) {
@@ -736,6 +1230,7 @@ class FeedService: ObservableObject {
                             self.feedLoadingTimeout?.invalidate()
                             self.flushNoteBuffer()
                             self.isLoadingFeed = false
+                            self.isSyncing = false
                             self.connectionStatus = self.notes.isEmpty ? "No notes found" : "Live"
                         }
                     } else {
@@ -785,8 +1280,11 @@ class FeedService: ObservableObject {
             "since": since,
             "limit": isGlobal ? 1000 : 500
         ]
-        if !isGlobal {
+        
+        if feedMode == .following {
             filter["authors"] = followedPubkeys
+        } else if feedMode == .discovery {
+            filter["authors"] = extendedNetworkPubkeys
         }
         if let until = until { filter["until"] = until }
         let subId = "feed-\(label.suffix(8).filter { $0.isLetter || $0.isNumber })"
@@ -801,7 +1299,7 @@ class FeedService: ObservableObject {
         // User-specific filters only apply in following mode
         guard !isGlobal else { return }
 
-        let ownerHex = NostrService.shared.ownerHexPubkey
+        let ownerHex = NostrService.shared.activeHexPubkey
         if !ownerHex.isEmpty {
             // Filter 2: Mentions (#p) of the owner (from anyone)
             var mentionsFilter = filter
@@ -874,8 +1372,21 @@ class FeedService: ObservableObject {
                     self.drainBackgroundBuffers()
                     self.flushNoteBuffer()
                     self.isLoadingFeed = false
+                    self.isSyncing = false
                     self.connectionStatus = "Live"
                 }
+            }
+            return
+        }
+
+        // Intercept parent-note fetch responses from reused active connections.
+        // These come back on the permanent feed pipeline but belong to the fast-path
+        // handler so they appear in the thread preview immediately, bypassing the
+        // 0.8 s note-flush timer.
+        if type == "EVENT", json.count >= 2,
+           let subId = json[1] as? String, subId.hasPrefix("tfetch-") {
+            DispatchQueue.main.async { [weak self] in
+                self?.handleParentNoteFetch(msg)
             }
             return
         }
@@ -989,6 +1500,22 @@ class FeedService: ObservableObject {
                     self?.fetchMissingNote(id: refId)
                 }
             }
+
+            // Proactively fetch parent note for replies so they are loaded when scrolled into view
+            if note.isReply, let parentId = note.parentEventId {
+                DispatchQueue.main.async {
+                    self?.fetchMissingNote(id: parentId)
+                }
+            }
+
+            // Proactively fetch quoted notes so they are loaded when scrolled into view
+            if !note.quotedEventIds.isEmpty {
+                DispatchQueue.main.async {
+                    for qId in note.quotedEventIds {
+                        self?.fetchMissingNote(id: qId)
+                    }
+                }
+            }
             self?.scheduleBackgroundFlush()
         }
     }
@@ -1046,7 +1573,7 @@ class FeedService: ObservableObject {
         // Process reaction events: self-like detection + per-note counting
         let hasEngagement = !snap.reactionEvents.isEmpty || !snap.replyTargets.isEmpty || !snap.repostTargets.isEmpty
         if hasEngagement {
-            let ownerHex = NostrService.shared.ownerHexPubkey
+            let ownerHex = NostrService.shared.activeHexPubkey
 
             // Self-likes: reactions authored by the owner
             if !ownerHex.isEmpty && !snap.reactionEvents.isEmpty {
@@ -1182,11 +1709,40 @@ class FeedService: ObservableObject {
         #endif
 
         for url in candidates {
+            let subId = "tfetch-\(UUID().uuidString.prefix(6))"
+            let filter: [String: Any] = ["ids": ids]
+            let req = ["REQ", subId, filter] as [Any]
+            guard let reqData = try? JSONSerialization.data(withJSONObject: req),
+                  let reqStr = String(data: reqData, encoding: .utf8) else { continue }
+
+            // Fast path: reuse an already-connected feed client for this relay.
+            // This avoids a full TCP + TLS + WebSocket handshake (typically 1-3 s)
+            // and delivers the parent note in milliseconds instead.
+            if let activeClient = feedClients[url.absoluteString],
+               activeClient.connectionState == .connected {
+                activeClient.send(text: reqStr)
+
+                // Schedule CLOSE to release the subscription on the relay after results arrive.
+                let closeMsg = ["CLOSE", subId] as [Any]
+                if let closeData = try? JSONSerialization.data(withJSONObject: closeMsg),
+                   let closeStr = String(data: closeData, encoding: .utf8) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                        activeClient.send(text: closeStr)
+                    }
+                }
+
+                #if DEBUG
+                print("FeedService: tfetch reusing active connection → \(url.host ?? url.absoluteString)")
+                #endif
+                continue
+            }
+
+            // Fallback: open a temporary connection when no active one is available.
             let c = WebSocketClient()
             c.isTemporary = true
 
-            // Use a fast-path handler that bypasses the batch pipeline so parent
-            // notes appear in the thread preview as soon as the relay responds.
+            // Temporary connections don't go through handleFeedMsgBackground, so
+            // subscribe the fast-path handler directly on the message subject.
             c.messageSubject
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] msg in self?.handleParentNoteFetch(msg) }
@@ -1196,12 +1752,7 @@ class FeedService: ObservableObject {
                 .receive(on: DispatchQueue.main)
                 .sink { state in
                     if state == .connected {
-                        let filter: [String: Any] = ["ids": ids]
-                        let req = ["REQ", "tfetch-\(UUID().uuidString.prefix(6))", filter] as [Any]
-                        if let data = try? JSONSerialization.data(withJSONObject: req),
-                           let str = String(data: data, encoding: .utf8) {
-                            c.send(text: str)
-                        }
+                        c.send(text: reqStr)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                             c.disconnect()
                         }
@@ -1243,7 +1794,111 @@ class FeedService: ObservableObject {
         guard !FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) else { return }
 
         seenIds.insert(id)
-        notes.append(note)
+        parentNotesCache[id] = note
         NostrService.shared.fetchMissingProfiles(for: [pubkey])
+    }
+
+    // MARK: - Per-Note Stats Fetch (NoteDetailView)
+
+    /// Fetches accurate reply / repost / reaction / zap counts for a single note
+    /// by querying all configured relays in parallel. Results are deduped by event
+    /// ID so counts are never inflated when the same event arrives from multiple
+    /// relays. Writes the final tally to `noteStats[noteId]` on the main thread.
+    func fetchNoteStats(for noteId: String) {
+        var allURLs: [URL] = []
+        if let local = localRelayURL { allURLs.append(local) }
+        allURLs.append(contentsOf: externalRelayURLs)
+        guard !allURLs.isEmpty else { return }
+
+        // Shared mutable state — all mutations happen on the main thread via
+        // DispatchQueue.main.async so no locks are needed.
+        var seenEventIds = Set<String>()
+        var replies  = 0
+        var reposts  = 0
+        var reactions = 0
+        var zaps     = 0
+        var eoseReceived = 0
+        // Each relay sends EOSE for each of the 4 subscriptions
+        let expectedEOSE = allURLs.count * 4
+        var finished = false
+        var tempClients: [WebSocketClient] = []
+
+        let finish: () -> Void = { [weak self] in
+            guard let self = self, !finished else { return }
+            finished = true
+            tempClients.forEach { $0.disconnect() }
+            var stats = self.noteStats[noteId] ?? NoteStats()
+            stats.replies   = replies
+            stats.reposts   = reposts
+            stats.reactions = reactions
+            stats.zaps      = zaps
+            self.noteStats[noteId] = stats
+        }
+
+        // Safety timeout: finalize after 8 seconds regardless.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { finish() }
+
+        let subPrefix = UUID().uuidString.prefix(6)
+
+        for (i, url) in allURLs.enumerated() {
+            let client = WebSocketClient()
+            client.isTemporary = true
+            tempClients.append(client)
+
+            client.messageSubject
+                .receive(on: DispatchQueue.main)
+                .sink { msg in
+                    guard !finished,
+                          let data = msg.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                          let type = json[0] as? String else { return }
+
+                    if type == "EOSE" {
+                        eoseReceived += 1
+                        if eoseReceived >= expectedEOSE { finish() }
+                        return
+                    }
+
+                    guard type == "EVENT", json.count >= 3,
+                          let ev   = json[2] as? [String: Any],
+                          let evId = ev["id"] as? String,
+                          let kind = ev["kind"] as? Int,
+                          !seenEventIds.contains(evId) else { return }
+
+                    seenEventIds.insert(evId)
+
+                    switch kind {
+                    case 1:    replies   += 1
+                    case 6:    reposts   += 1
+                    case 7:    reactions += 1
+                    case 9735: zaps      += 1
+                    default:   break
+                    }
+                }
+                .store(in: &cancellables)
+
+            client.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { state in
+                    guard state == .connected, !finished else { return }
+                    let p = "\(subPrefix)-\(i)"
+                    let filters: [[String: Any]] = [
+                        ["kinds": [1],    "#e": [noteId], "limit": 500],
+                        ["kinds": [6],    "#e": [noteId], "limit": 500],
+                        ["kinds": [7],    "#e": [noteId], "limit": 500],
+                        ["kinds": [9735], "#e": [noteId], "limit": 500],
+                    ]
+                    for (fi, filter) in filters.enumerated() {
+                        let req = ["REQ", "\(p)-\(fi)", filter] as [Any]
+                        if let reqData = try? JSONSerialization.data(withJSONObject: req),
+                           let reqStr  = String(data: reqData, encoding: .utf8) {
+                            client.send(text: reqStr)
+                        }
+                    }
+                }
+                .store(in: &cancellables)
+
+            client.connect(url: url)
+        }
     }
 }

@@ -22,7 +22,7 @@ struct SetupWizardView: View {
                     .font(.largeTitle)
                     .foregroundColor(.havenPurple)
                 VStack(alignment: .leading) {
-                    Text("Welcome to Haven")
+                    Text("Welcome to Nostr Vault")
                         .font(.title2.bold())
                     Text("Let's set up your personal Nostr relay")
                         .font(.subheadline)
@@ -98,7 +98,7 @@ struct SetupWizardView: View {
                             .font(.title2.bold())
                             .foregroundColor(.white)
 
-                        Text("A previous Haven process is still running. Run the following command in Terminal to stop it, then relaunch the app.")
+                        Text("A previous Nostr Vault process is still running. Run the following command in Terminal to stop it, then relaunch the app.")
                             .multilineTextAlignment(.center)
                             .foregroundColor(.white.opacity(0.9))
                             .fixedSize(horizontal: false, vertical: true)
@@ -202,7 +202,7 @@ struct SetupWizardView: View {
                         .disabled(!canContinue && !(currentStep == 5 && relayManager.isImporting))
                     }
                 } else {
-                    Button("Launch Haven") {
+                    Button("Launch Nostr Vault") {
                         saveAndComplete()
                     }
                     .buttonStyle(.borderedProminent)
@@ -377,22 +377,22 @@ struct TermsOfServiceStep: View {
                 VStack(alignment: .leading, spacing: 16) {
                     tosSection(
                         title: "Strict EULA",
-                        body: "Haven displays content from the Nostr network, which is decentralized and uncensored. However, Haven has zero tolerance for objectionable content or abusive users. You are solely responsible for the content you publish, and you agree to use the built-in moderation tools to filter or block any offensive material or abusive accounts."
+                        body: "Nostr Vault displays content from the Nostr network, which is decentralized and uncensored. However, Nostr Vault has zero tolerance for objectionable content or abusive users. You are solely responsible for the content you publish, and you agree to use the built-in moderation tools to filter or block any offensive material or abusive accounts."
                     )
 
                     tosSection(
                         title: "Content Moderation",
-                        body: "Haven provides tools to manage content on your relay, including the ability to block users via the blacklist. You can block any user by right-clicking their content and selecting \"Block User\". Blocked users are prevented from posting to your Chat and Inbox relays."
+                        body: "Nostr Vault provides tools to manage content on your relay, including the ability to block users via the blacklist. You can block any user by right-clicking their content and selecting \"Block User\". Blocked users are prevented from posting to your Chat and Inbox relays."
                     )
 
                     tosSection(
                         title: "Web of Trust",
-                        body: "Haven uses a Web of Trust system to filter incoming content on your Chat and Inbox relays. Only users within your trust network can interact with these relays."
+                        body: "Nostr Vault uses a Web of Trust system to filter incoming content on your Chat and Inbox relays. Only users within your trust network can interact with these relays."
                     )
 
                     tosSection(
                         title: "Your Responsibility",
-                        body: "As the relay operator, you are responsible for managing access to your relay. Haven is provided as-is, without warranty. You agree to use Haven in compliance with applicable laws."
+                        body: "As the relay operator, you are responsible for managing access to your relay. Nostr Vault is provided as-is, without warranty. You agree to use Nostr Vault in compliance with applicable laws."
                     )
                 }
                 .padding()
@@ -470,6 +470,7 @@ struct IdentityStep: View {
 
             TextField("npub1...", text: $npub)
                 .textFieldStyle(.roundedBorder)
+                .textContentType(.username)
                 .frame(maxWidth: 350)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 10)
@@ -513,6 +514,7 @@ struct IdentityStep: View {
 
                 SecureField("nsec1...", text: $nsec)
                     .textFieldStyle(.roundedBorder)
+                    .textContentType(.password)
             }
             .frame(maxWidth: 350)
             .opacity(appeared ? 1 : 0)
@@ -534,12 +536,13 @@ struct IdentityStep: View {
                             .font(.caption)
                             .foregroundColor(.orange)
                     }
-                    Text("Set a password to encrypt your private key using NIP-49. You'll need this password each time Haven signs a note.")
+                    Text("Set a password to encrypt your private key using NIP-49. You'll need this password each time Nostr Vault signs a note.")
                         .font(.caption)
                         .foregroundColor(.secondary)
 
                     SecureField("Enter password...", text: $nsecPassword)
                         .textFieldStyle(.roundedBorder)
+                        .textContentType(.newPassword)
 
                     if nsecPassword.isEmpty {
                         Label("Password is required to proceed", systemImage: "exclamationmark.circle.fill")
@@ -552,29 +555,6 @@ struct IdentityStep: View {
                 .offset(y: appeared ? 0 : 10)
                 .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.24), value: appeared)
             }
-
-            Divider()
-                .opacity(appeared ? 1 : 0)
-                .animation(.easeIn(duration: 0.3).delay(0.25), value: appeared)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Whitelisted Npubs (Optional)")
-                    .font(.headline)
-                Text("Add other npubs that can write to your relay")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                NpubListEditor(npubs: $whitelistedNpubs)
-                    .frame(height: 150)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                    )
-            }
-            .frame(maxWidth: 450)
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 10)
-            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.3), value: appeared)
         }
         .padding()
         .onAppear { appeared = true }
@@ -884,7 +864,7 @@ struct SetupImportStep: View {
                 relayManager.cancelImport()
             }
         } message: {
-            Text("Port \(configService.config.relayPort) is currently in use by another process. You can either stop that process manually or choose a different port for Haven.")
+            Text("Port \(configService.config.relayPort) is currently in use by another process. You can either stop that process manually or choose a different port for Nostr Vault.")
         }
     }
 }
@@ -915,7 +895,7 @@ struct SetupRestoreNotesStep: View {
                 .offset(y: appeared ? 0 : 12)
                 .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.1), value: appeared)
 
-            Text("Restore your notes and metadata from a Haven backup")
+            Text("Restore your notes and metadata from a Nostr Vault backup")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -982,7 +962,7 @@ struct SetupRestoreNotesStep: View {
                     }
                     .buttonStyle(.plain)
 
-                    Text("Select a Haven backup (.zip) to restore your notes")
+                    Text("Select a Nostr Vault backup (.zip) to restore your notes")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -1104,7 +1084,7 @@ struct SetupRestoreMediaStep: View {
                 .offset(y: appeared ? 0 : 12)
                 .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.1), value: appeared)
 
-            Text("Bring your existing images and videos into your Haven relay")
+            Text("Bring your existing images and videos into your Nostr Vault relay")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -1360,7 +1340,7 @@ struct SetupSuccessStep: View {
                     .offset(y: showContent ? 0 : 20)
                     .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.3), value: showContent)
 
-                Text("Your Haven relay is configured and ready to go.")
+                Text("Your Nostr Vault relay is configured and ready to go.")
                     .font(.title3)
                     .foregroundColor(.secondary)
                     .opacity(showContent ? 1.0 : 0.0)

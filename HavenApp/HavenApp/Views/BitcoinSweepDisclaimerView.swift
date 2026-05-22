@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BitcoinSweepDisclaimerView: View {
     @Environment(\.dismiss) private var dismiss
+    var onDismiss: (() -> Void)? = nil
     @EnvironmentObject var configService: ConfigService
     @State private var showSweepFlow = false
     @State private var balance: Int = 0
@@ -14,7 +15,7 @@ struct BitcoinSweepDisclaimerView: View {
                 .ignoresSafeArea()
 
             if showSweepFlow {
-                BitcoinSweepView(balanceSats: balance)
+                BitcoinSweepView(balanceSats: balance, onDismiss: onDismiss)
                     .transition(.move(edge: .trailing))
             } else {
                 disclaimerContent
@@ -22,6 +23,9 @@ struct BitcoinSweepDisclaimerView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: showSweepFlow)
+        #if os(macOS)
+        .frame(minWidth: 500, idealWidth: 550, minHeight: 450, idealHeight: 550)
+        #endif
         .onAppear {
             loadBalance()
         }
@@ -113,7 +117,7 @@ struct BitcoinSweepDisclaimerView: View {
                 // Action Buttons
                 VStack(spacing: 12) {
                     // Cancel Button
-                    Button(action: { dismiss() }) {
+                    Button(action: { performDismiss() }) {
                         Text("Cancel")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.white)
@@ -143,7 +147,9 @@ struct BitcoinSweepDisclaimerView: View {
                 .padding(20)
             }
             .navigationTitle("Sweep Bitcoin")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
         }
     }
 
@@ -237,6 +243,14 @@ struct BitcoinSweepDisclaimerView: View {
             } catch {
                 await MainActor.run { isLoadingBalance = false }
             }
+        }
+    }
+
+    private func performDismiss() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
         }
     }
 }

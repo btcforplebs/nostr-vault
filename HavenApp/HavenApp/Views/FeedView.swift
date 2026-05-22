@@ -7,6 +7,12 @@ struct IdentifiableString: Identifiable {
     let id: String
 }
 
+private struct ComposeContext: Identifiable {
+    let id = UUID()
+    let replyTo: FeedNote?
+    let quoteTo: FeedNote?
+}
+
 // MARK: - FeedView
 
 struct FeedView: View {
@@ -14,27 +20,100 @@ struct FeedView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
-    @State private var showingCompose = false
-    @State private var replyToNote: FeedNote?
-    @State private var quoteToNote: FeedNote?
+    @State private var composeContext: ComposeContext?
     @State private var showingRelayStatus = false
     @State private var showingNoteId: String?
+    @State private var showingProfileKey: IdentifiableString?
+    @State private var showingMediaUrl: IdentifiableURL?
     @State private var isRefreshing = false
 
     var body: some View {
         #if os(iOS)
-        NavigationView {
+        NavigationStack {
             rootContent
-                .navigationTitle("Feed")
+                .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(Color.platformControlBackground, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
+                .navigationDestination(for: FeedNote.self) { note in
+                    NoteDetailView(note: note)
+                }
         }
-        .navigationViewStyle(.stack)
         #else
-        rootContent
+        VStack(spacing: 0) {
+            macFeedHeader
+            Divider()
+            rootContent
+        }
         #endif
     }
+
+    #if os(macOS)
+    private var macFeedHeader: some View {
+        HStack(spacing: 12) {
+            // Connection dot
+            Button(action: { showingRelayStatus = true }) {
+                Circle()
+                    .fill(feedService.connectionDotColor)
+                    .frame(width: 10, height: 10)
+                    .shadow(color: feedService.connectionDotColor.opacity(0.8), radius: 3)
+            }
+            .buttonStyle(.plain)
+            .help("Relay Status")
+
+            // Feed mode picker
+            Menu {
+                ForEach(FeedMode.allCases, id: \.self) { mode in
+                    Button(action: { feedService.switchMode(mode) }) {
+                        let displayName = mode == .discovery ? "Discover" : mode.rawValue
+                        Label(displayName, systemImage: feedService.feedMode == mode ? "checkmark" : "")
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    let displayName = feedService.feedMode == .discovery ? "Discover" : feedService.feedMode.rawValue
+                    Text(displayName)
+                        .font(.system(size: 13, weight: .semibold))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .foregroundColor(.primary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            Spacer()
+
+            // Auto-load new posts
+            Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
+                Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(configService.config.autoLoadNewPosts ? Color.havenPurple : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help(configService.config.autoLoadNewPosts ? "Auto-load On" : "Auto-load Off")
+
+            // Reposts toggle
+            Button(action: { configService.config.showReposts.toggle(); configService.save() }) {
+                Image(systemName: "arrow.2.squarepath")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(configService.config.showReposts ? Color.havenPurple : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help(configService.config.showReposts ? "Hide Reposts" : "Show Reposts")
+
+            // Replies toggle
+            Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
+                Image(systemName: configService.config.showReplies ? "message.fill" : "message")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help(configService.config.showReplies ? "Hide Replies" : "Show Replies")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color(red: 0.12, green: 0.12, blue: 0.16))
+    }
+    #endif
 
     @ViewBuilder
     private var rootContent: some View {
@@ -43,10 +122,18 @@ struct FeedView: View {
             Color(red: 0.08, green: 0.08, blue: 0.1).ignoresSafeArea()
 
             Group {
-                if feedService.feedMode == .following && feedService.isLoadingContacts {
+                // Only show the full-screen contact-loading spinner when there
+                // are no cached notes to render. Once a snapshot has been
+                // restored (or notes have streamed in), the background sync
+                // is surfaced via the inline `syncingPill` instead.
+                if feedService.feedMode == .following && feedService.isLoadingContacts && feedService.notes.isEmpty {
                     loadingContactsView
-                } else if feedService.feedMode == .following && feedService.followedPubkeys.isEmpty && !feedService.isLoadingFeed {
+                } else if feedService.feedMode == .discovery && feedService.isLoadingExtendedNetwork && feedService.notes.isEmpty {
+                    loadingExtendedNetworkView
+                } else if feedService.feedMode == .following && feedService.followedPubkeys.isEmpty && !feedService.isLoadingFeed && !feedService.isLoadingContacts {
                     emptyStateView
+                } else if feedService.feedMode == .discovery && feedService.extendedNetworkPubkeys.isEmpty && !feedService.isLoadingFeed && !feedService.isLoadingExtendedNetwork {
+                    emptyDiscoveryStateView
                 } else {
                     feedList
                 }
@@ -55,32 +142,34 @@ struct FeedView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { showingRelayStatus = true }) {
-                    Circle()
-                        .fill(feedService.connectionDotColor)
-                        .frame(width: 12, height: 12)
-                        .shadow(color: feedService.connectionDotColor.opacity(0.8), radius: 4)
-                        .padding(8)
-                        .background(Color.primary.opacity(0.08))
-                        .clipShape(Circle())
-                }
-            }
-
-            ToolbarItem(placement: .principal) {
-                Menu {
-                    ForEach(FeedMode.allCases, id: \.self) { mode in
-                        Button(action: { feedService.switchMode(mode) }) {
-                            Label(mode.rawValue, systemImage: feedService.feedMode == mode ? "checkmark" : "")
+                HStack(spacing: 8) {
+                    Button(action: { showingRelayStatus = true }) {
+                        Circle()
+                            .fill(feedService.connectionDotColor)
+                            .frame(width: 12, height: 12)
+                            .shadow(color: feedService.connectionDotColor.opacity(0.8), radius: 4)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+                    
+                    Menu {
+                        ForEach(FeedMode.allCases, id: \.self) { mode in
+                            Button(action: { feedService.switchMode(mode) }) {
+                                let displayName = mode == .discovery ? "Discover" : mode.rawValue
+                                Label(displayName, systemImage: feedService.feedMode == mode ? "checkmark" : "")
+                            }
                         }
+                    } label: {
+                        HStack(spacing: 4) {
+                            let displayName = feedService.feedMode == .discovery ? "Discover" : feedService.feedMode.rawValue
+                            Text(displayName)
+                                .font(.system(size: 20, weight: .bold))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundColor(.white)
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(feedService.feedMode.rawValue)
-                            .font(.system(size: 16, weight: .semibold))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
-                    }
-                    .foregroundColor(Color.havenPurple)
                 }
             }
 
@@ -115,7 +204,7 @@ struct FeedView: View {
             // Start feed immediately when running, even if still booting.
             // localRelayURL returns nil during boot so no WebSocket errors occur;
             // external relays are contacted right away instead of waiting ~3 minutes.
-            if feedService.notes.isEmpty && !feedService.isLoadingContacts && relayManager.isRunning {
+            if feedService.notes.isEmpty && !feedService.isLoadingContacts {
                 feedService.refresh()
             }
         }
@@ -131,17 +220,13 @@ struct FeedView: View {
                 feedService.refresh()
             }
         }
-        .sheet(isPresented: $showingCompose) {
-            ComposeView(replyTo: replyToNote, quoteTo: quoteToNote)
+        .sheet(item: $composeContext) { ctx in
+            ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
-                .onDisappear {
-                    replyToNote = nil
-                    quoteToNote = nil
-                }
         }
         .sheet(isPresented: $showingRelayStatus) {
-            RelayStatusSheet()
+            RelayStatusSheet(onDismiss: { showingRelayStatus = false })
                 .environmentObject(relayManager)
                 .environmentObject(configService)
                 .environmentObject(nostrService)
@@ -150,9 +235,17 @@ struct FeedView: View {
             get: { showingNoteId.map { IdentifiableString(id: $0) } },
             set: { showingNoteId = $0?.id }
         )) { noteId in
-            NoteDetailViewWrapper(noteId: noteId.id)
+            NoteDetailViewWrapper(noteId: noteId.id, onDismiss: { showingNoteId = nil })
                 .environmentObject(nostrService)
                 .environmentObject(configService)
+        }
+        .sheet(item: $showingProfileKey) { p in
+            ProfileView(pubkey: p.id, onDismiss: { showingProfileKey = nil })
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
+        .sheet(item: $showingMediaUrl) { media in
+            FeedMediaViewer(url: media.url, onDismiss: { showingMediaUrl = nil })
         }
     }
 
@@ -170,6 +263,32 @@ struct FeedView: View {
                         .font(.system(size: 18, weight: .bold, design: .default))
                         .tracking(0.3)
                     Text("fetching your follows")
+                        .font(.system(size: 13, weight: .regular, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Text("This may take a moment")
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary.opacity(0.6))
+                .tracking(0.5)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.platformControlBackground)
+    }
+
+    private var loadingExtendedNetworkView: some View {
+        VStack(spacing: 32) {
+            VStack(spacing: 16) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(Color.havenPurple)
+
+                VStack(spacing: 8) {
+                    Text("Analyzing Network")
+                        .font(.system(size: 18, weight: .bold, design: .default))
+                        .tracking(0.3)
+                    Text("finding mutual connections")
                         .font(.system(size: 13, weight: .regular, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
@@ -260,6 +379,80 @@ struct FeedView: View {
         .background(Color.platformControlBackground)
     }
 
+    private var emptyDiscoveryStateView: some View {
+        VStack(spacing: 40) {
+            if relayManager.isBooting {
+                // Relay is still starting up
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(Color.havenPurple)
+
+                    VStack(spacing: 12) {
+                        Text("Relay Starting...")
+                            .font(.system(size: 22, weight: .bold, design: .default))
+                            .tracking(0.2)
+
+                        Text(relayManager.bootStatusMessage.isEmpty ? "Initializing relay" : relayManager.bootStatusMessage)
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .tracking(0.3)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+            } else {
+                VStack(spacing: 16) {
+                    Image(systemName: "network.badge.shield.half.filled")
+                        .font(.system(size: 56, weight: .thin))
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    VStack(spacing: 12) {
+                        Text("No Discovery Feed")
+                            .font(.system(size: 22, weight: .bold, design: .default))
+                            .tracking(0.2)
+
+                        Text("Follow more people on Nostr to build your extended network")
+                            .font(.system(size: 13, weight: .regular, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .tracking(0.3)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+
+                Button {
+                    feedService.refresh()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Refresh Feed")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(max(16, min(48, 24))) // Adaptive padding
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.platformControlBackground)
+    }
+
     // MARK: - Feed List
 
     private var feedList: some View {
@@ -283,7 +476,7 @@ struct FeedView: View {
                         }
 
                         let filteredNotes = feedService.notes.filter { note in
-                            let isBlacklisted = configService.blacklistedHexPubkeys.contains(note.pubkey)
+                            let isBlacklisted = configService.activeAccountBlockedHexPubkeys.contains(note.pubkey)
                             if isBlacklisted { return false }
                             
                             // Check reposts toggle preference
@@ -310,23 +503,26 @@ struct FeedView: View {
                                              filteredNotes[index+1].id == note.parentEventId
 
                             #if os(iOS)
-                            NavigationLink(destination: NoteDetailView(note: note)) {
+                            NavigationLink(value: note) {
                                 FeedNoteRow(
                                     note: note,
                                     profile: profile,
                                     onReply: {
-                                        // For reposts, reply to the original note
                                         if note.kind == 6, let refId = note.repostedEventId,
-                                           let original = feedService.notes.first(where: { $0.id == refId }) {
-                                            replyToNote = original
+                                           let original = feedService.findNote(id: refId) {
+                                            composeContext = ComposeContext(replyTo: original, quoteTo: nil)
                                         } else {
-                                            replyToNote = note
+                                            composeContext = ComposeContext(replyTo: note, quoteTo: nil)
                                         }
-                                        showingCompose = true
                                     },
                                     onQuote: {
-                                        quoteToNote = note
-                                        showingCompose = true
+                                        composeContext = ComposeContext(replyTo: nil, quoteTo: note)
+                                    },
+                                    onProfile: { pubkey in
+                                        showingProfileKey = IdentifiableString(id: pubkey)
+                                    },
+                                    onMedia: { url in
+                                        showingMediaUrl = IdentifiableURL(url: url)
                                     },
                                     showParent: !parentIsNext,
                                     isReplyToNext: parentIsNext
@@ -339,18 +535,21 @@ struct FeedView: View {
                                 note: note,
                                 profile: profile,
                                 onReply: {
-                                    // For reposts, reply to the original note
                                     if note.kind == 6, let refId = note.repostedEventId,
                                        let original = feedService.notes.first(where: { $0.id == refId }) {
-                                        replyToNote = original
+                                        composeContext = ComposeContext(replyTo: original, quoteTo: nil)
                                     } else {
-                                        replyToNote = note
+                                        composeContext = ComposeContext(replyTo: note, quoteTo: nil)
                                     }
-                                    showingCompose = true
                                 },
                                 onQuote: {
-                                    quoteToNote = note
-                                    showingCompose = true
+                                    composeContext = ComposeContext(replyTo: nil, quoteTo: note)
+                                },
+                                onProfile: { pubkey in
+                                    showingProfileKey = IdentifiableString(id: pubkey)
+                                },
+                                onMedia: { url in
+                                    showingMediaUrl = IdentifiableURL(url: url)
                                 },
                                 showParent: !parentIsNext,
                                 isReplyToNext: parentIsNext
@@ -415,6 +614,31 @@ struct FeedView: View {
                     }
                 }
 
+                // Inline "Syncing…" pill: shown while a background top-up runs
+                // against an already-rendered snapshot (account switch back).
+                // Suppressed when the "New Posts" pill is showing or the full
+                // loading spinner is up.
+                if feedService.isSyncing && feedService.pendingNotes.isEmpty && !feedService.notes.isEmpty {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                        Text("Syncing…")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 14)
+                    .background(
+                        Capsule()
+                            .fill(Color.black.opacity(0.55))
+                            .shadow(color: Color.black.opacity(0.3), radius: 6, x: 0, y: 3)
+                    )
+                    .padding(.top, 12)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .zIndex(1)
+                }
+
                 // Floating "New Posts" indicator
                 if !feedService.pendingNotes.isEmpty {
                     Button(action: {
@@ -464,8 +688,7 @@ struct FeedView: View {
         .overlay(alignment: .bottomTrailing) {
             #if os(iOS)
             Button {
-                replyToNote = nil
-                showingCompose = true
+                composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "square.and.pencil")
@@ -489,7 +712,7 @@ struct FeedView: View {
                 )
             }
             .padding(.trailing, 20)
-            .padding(.bottom, 24)
+            .padding(.bottom, 96)
             .hoverEffect(.lift)
             #endif
         }
@@ -503,6 +726,8 @@ struct FeedNoteRow: View {
     let profile: FeedProfile?
     var onReply: (() -> Void)? = nil
     var onQuote: (() -> Void)? = nil
+    var onProfile: ((String) -> Void)? = nil
+    var onMedia: ((URL) -> Void)? = nil
     var showParent: Bool = true
     var isReplyToNext: Bool = false
 
@@ -510,19 +735,27 @@ struct FeedNoteRow: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
 
-    @State private var showingProfileKey: IdentifiableString?
-    @State private var showingMediaUrl: IdentifiableURL?
     @State private var showingEmojiPicker = false
     @State private var showLightning = false
     @State private var showAmountPicker = false
     @State private var zapAmountSats: String = ""
+    
+    @State private var repostTask: Task<Void, Never>?
+    @State private var showingRepostUndo = false
+    @State private var timeRemaining = 10.0
+    @State private var unlikeTask: Task<Void, Never>?
+    @State private var showingUnlikeUndo = false
+    @State private var unlikeTimeRemaining = 3.0
+    @State private var showingDeleteConfirm = false
+    @State private var showingBroadcastSheet = false
+    @State private var noLightningAddressAlert = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Threading View: Parent Note Preview (shows above the current note)
             if showParent, let pId = note.parentEventId {
-                if let parent = feedService.notes.first(where: { $0.id == pId }) {
-                    NavigationLink(destination: NoteDetailView(note: parent)) {
+                if let parent = feedService.findNote(id: pId) {
+                    NavigationLink(value: parent) {
                         VStack(alignment: .leading, spacing: 0) {
                             HStack(alignment: .top, spacing: 12) {
                                 VStack(spacing: 0) {
@@ -531,13 +764,12 @@ struct FeedNoteRow: View {
                                         .frame(width: 28, height: 28)
                                         .opacity(1.0)
                                         .onTapGesture {
-                                            showingProfileKey = IdentifiableString(id: parent.pubkey)
+                                            onProfile?(parent.pubkey)
                                         }
 
                                     Rectangle()
                                         .fill(Color.havenPurple.opacity(0.3))
-                                        .frame(width: 2)
-                                        .frame(minHeight: 12)
+                                        .frame(width: 2, height: 14)
                                 }
                                 .frame(width: 40) // Match main avatar container width
 
@@ -558,6 +790,7 @@ struct FeedNoteRow: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .fixedSize(horizontal: false, vertical: true)
                 } else {
                     // Skeleton while parent is being fetched
                     HStack(alignment: .top, spacing: 12) {
@@ -567,8 +800,7 @@ struct FeedNoteRow: View {
                                 .frame(width: 28, height: 28)
                             Rectangle()
                                 .fill(Color.havenPurple.opacity(0.3))
-                                .frame(width: 2)
-                                .frame(minHeight: 12)
+                                .frame(width: 2, height: 14)
                         }
                         .frame(width: 40)
                         VStack(alignment: .leading, spacing: 5) {
@@ -582,6 +814,7 @@ struct FeedNoteRow: View {
                         .padding(.top, 2)
                         .padding(.bottom, 8)
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                     .onAppear {
                         feedService.fetchMissingNote(id: pId)
                     }
@@ -612,7 +845,7 @@ struct FeedNoteRow: View {
 
             HStack(alignment: .top, spacing: 12) {
                 VStack(spacing: 0) {
-                    if let pId = note.parentEventId, feedService.notes.contains(where: { $0.id == pId }) {
+                    if let pId = note.parentEventId, feedService.findNote(id: pId) != nil {
                         Rectangle()
                             .fill(Color.havenPurple.opacity(0.3))
                             .frame(width: 2, height: 10)
@@ -620,7 +853,7 @@ struct FeedNoteRow: View {
 
                     AvatarView(url: nostrService.profiles[displayPubkey]?.pictureURL, pubkey: displayPubkey)
                         .frame(width: 40, height: 40)
-                        .onTapGesture { showingProfileKey = IdentifiableString(id: displayPubkey) }
+                        .onTapGesture { onProfile?(displayPubkey) }
 
                     if isReplyToNext {
                         Rectangle()
@@ -726,8 +959,8 @@ struct FeedNoteRow: View {
                     if !note.quotedEventIds.isEmpty {
                         VStack(spacing: 8) {
                             ForEach(note.quotedEventIds, id: \.self) { quoteId in
-                                if let quotedNote = feedService.notes.first(where: { $0.id == quoteId }) {
-                                    NavigationLink(destination: NoteDetailView(note: quotedNote)) {
+                                if let quotedNote = feedService.findNote(id: quoteId) {
+                                    NavigationLink(value: quotedNote) {
                                         QuotedNoteView(note: quotedNote)
                                     }
                                     .buttonStyle(.plain)
@@ -745,16 +978,14 @@ struct FeedNoteRow: View {
 
                     // Actions row - minimal and clean
                     HStack(spacing: 12) {
-                        let stats = feedService.noteStats[note.id]
-                        actionButton(icon: "message", count: stats?.replies ?? 0, action: { onReply?() })
-                        actionButton(icon: "arrow.2.squarepath", count: stats?.reposts ?? 0, action: { repostNote() })
+                        actionButton(icon: "message", action: { onReply?() })
+                        actionButton(icon: "arrow.2.squarepath", action: { repostNote() })
                         actionButton(icon: "quote.closing", action: { quoteNote() })
 
                         let isLiked = feedService.likedEventIds.contains(note.id)
                         actionButton(
                             icon: isLiked ? "heart.fill" : "heart",
                             color: isLiked ? .red : .secondary,
-                            count: stats?.reactions ?? 0,
                             action: { likeNote() }
                         )
                         .scaleEffect(isLiked ? 1.2 : 1.0)
@@ -778,16 +1009,22 @@ struct FeedNoteRow: View {
                             #endif
                         }
                         
-                        if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
+                        if !ConfigService.shared.config.nwcURI.isEmpty {
+                            let lud16 = getLightingAddress(for: note.pubkey)
                             let zapAmount = feedService.zappedEventIds[note.id]
                             let isZapped = zapAmount != nil
+                            let hasLightning = lud16 != nil
                             Button(action: {
-                                Task { await zapNote(lud16: lud16) }
+                                if let lud16 = lud16 {
+                                    Task { await zapNote(lud16: lud16) }
+                                } else {
+                                    noLightningAddressAlert = true
+                                }
                             }) {
                                 HStack(spacing: 4) {
                                     Image(systemName: isZapped ? "bolt.fill" : "bolt")
                                         .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(isZapped ? .orange : .secondary)
+                                        .foregroundColor(isZapped ? .orange : (hasLightning ? .secondary : .secondary.opacity(0.35)))
                                     if let amount = zapAmount, amount > 0 {
                                         Text("\(amount)")
                                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -804,8 +1041,10 @@ struct FeedNoteRow: View {
                             }
                             .buttonStyle(.plain)
                             .onLongPressGesture {
-                                zapAmountSats = String(ConfigService.shared.config.defaultZapAmount / 1000)
-                                showAmountPicker = true
+                                if hasLightning {
+                                    zapAmountSats = String(ConfigService.shared.config.defaultZapAmount / 1000)
+                                    showAmountPicker = true
+                                }
                             }
                         }
 
@@ -813,6 +1052,18 @@ struct FeedNoteRow: View {
                         if onchainZapAmount != nil {
                             OnchainZapDisplay(amountSats: onchainZapAmount)
                         }
+
+                        Button {
+                            showingBroadcastSheet = true
+                        } label: {
+                            Image(systemName: "antenna.radiowaves.left.and.right")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .frame(width: 32, height: 32)
+                                .background(Color.secondary.opacity(0.1))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
 
                         Spacer()
                     }
@@ -863,10 +1114,9 @@ struct FeedNoteRow: View {
                 let identifier = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
                 if identifier.hasPrefix("npub1") || identifier.hasPrefix("nprofile1") {
                     if let decoded = Bech32.decode(identifier) {
-                        showingProfileKey = IdentifiableString(id: decoded.hexString)
+                        onProfile?(decoded.hexString)
                     } else {
-                        // Fallback: show profile view with string if we can't decode (unlikely)
-                        showingProfileKey = IdentifiableString(id: identifier)
+                        onProfile?(identifier)
                     }
                     return .handled
                 }
@@ -874,29 +1124,56 @@ struct FeedNoteRow: View {
             }
             return .systemAction
         })
-        .sheet(item: Binding<IdentifiableString?>(get: { showingProfileKey }, set: { showingProfileKey = $0 })) { p in
-            ProfileView(pubkey: p.id)
+        .overlay(alignment: .bottom) {
+            VStack(spacing: 4) {
+                if showingUnlikeUndo {
+                    UnlikeUndoBanner(timeRemaining: unlikeTimeRemaining, onUndo: undoUnlike)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                if showingRepostUndo {
+                    RepostUndoBanner(timeRemaining: timeRemaining, onUndo: undoRepost)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .padding(.bottom, 8)
+            .padding(.horizontal, 12)
         }
-        .sheet(item: $showingMediaUrl) { media in
-            FeedMediaViewer(url: media.url)
+        .sheet(isPresented: $showingBroadcastSheet) {
+            EventBroadcastSheet(note: note)
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
+        .alert("No Lightning Address", isPresented: $noLightningAddressAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("This user hasn't configured a lightning address, so they can't receive zaps.")
+        }
+        .contextMenu {
+            if note.pubkey == nostrService.activeHexPubkey {
+                Button(role: .destructive) {
+                    showingDeleteConfirm = true
+                } label: {
+                    Label("Delete Post", systemImage: "trash")
+                }
+            }
+        }
+        .alert("Delete Post", isPresented: $showingDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                nostrService.deleteNote(id: note.id)
+                feedService.removeNote(id: note.id)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Request deletion of this post? Not all relays honor NIP-09 deletion requests.")
         }
     }
 
-    private func actionButton(icon: String, color: Color = .secondary, count: Int = 0, action: @escaping () -> Void) -> some View {
+    private func actionButton(icon: String, color: Color = .secondary, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(color)
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(color)
-                }
-            }
-            .frame(height: 32)
-            .padding(.horizontal, count > 0 ? 10 : 0)
-            .frame(minWidth: 32)
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(color)
+            .frame(width: 32, height: 32)
             .background(color.opacity(color == .secondary ? 0.1 : 0.15))
             .clipShape(Capsule())
         }
@@ -920,7 +1197,7 @@ struct FeedNoteRow: View {
             // Single media — full width, proper aspect ratio
             FeedMediaView(
                 url: urls[0],
-                onTap: { showingMediaUrl = IdentifiableURL(url: urls[0]) },
+                onTap: { onMedia?(urls[0]) },
                 maxHeight: 400,
                 isThumbnail: false
             )
@@ -931,7 +1208,7 @@ struct FeedNoteRow: View {
                 ForEach(urls, id: \.absoluteString) { url in
                     FeedMediaView(
                         url: url,
-                        onTap: { showingMediaUrl = IdentifiableURL(url: url) },
+                        onTap: { onMedia?(url) },
                         maxHeight: 400,
                         isThumbnail: false
                     )
@@ -939,7 +1216,7 @@ struct FeedNoteRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .automatic))
+            .mediaTabViewStyleCompat()
             .frame(height: 400)
             // Add a subtle border or background if desired to distinguish bounds
             // But FeedMediaView already has clipShape and overlay
@@ -947,18 +1224,45 @@ struct FeedNoteRow: View {
     }
 
     private func likeNote() {
-        if !feedService.likedEventIds.contains(note.id) {
-            feedService.likedEventIds.insert(note.id)
-            
-            // Proactively update stats locally
-            var currentStats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
-            currentStats.reactions += 1
-            feedService.noteStats[note.id] = currentStats
-            
-            feedService.saveInteractionState()
+        if feedService.likedEventIds.contains(note.id) {
+            startUnlikeCountdown()
+            return
         }
+        feedService.likedEventIds.insert(note.id)
+        var currentStats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+        currentStats.reactions += 1
+        feedService.noteStats[note.id] = currentStats
+        feedService.saveInteractionState()
         guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", note.id, "", "root"], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
+    }
+
+    private func startUnlikeCountdown() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = true }
+        unlikeTimeRemaining = 3.0
+        unlikeTask?.cancel()
+        unlikeTask = Task {
+            for _ in 0..<30 {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                if Task.isCancelled { return }
+                await MainActor.run { unlikeTimeRemaining -= 0.1 }
+            }
+            if Task.isCancelled { return }
+            await MainActor.run {
+                feedService.likedEventIds.remove(note.id)
+                var stats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+                stats.reactions = max(0, stats.reactions - 1)
+                feedService.noteStats[note.id] = stats
+                feedService.saveInteractionState()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = false }
+            }
+        }
+    }
+
+    private func undoUnlike() {
+        unlikeTask?.cancel()
+        unlikeTask = nil
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = false }
     }
     
     private func reactToNote(with emoji: String) {
@@ -977,8 +1281,38 @@ struct FeedNoteRow: View {
     }
 
     private func repostNote() {
-        guard let signed = nostrService.signEvent(kind: 6, content: "", tags: [["e", note.id, "", "root"], ["p", note.pubkey]]) else { return }
-        nostrService.postEvent(signed)
+        showingRepostUndo = true
+        timeRemaining = 10.0
+        repostTask?.cancel()
+        
+        repostTask = Task {
+            for _ in 0..<100 {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    timeRemaining -= 0.1
+                }
+            }
+            
+            if Task.isCancelled { return }
+            
+            guard let signed = nostrService.signEvent(kind: 6, content: "", tags: [["e", note.id, "", "root"], ["p", note.pubkey]]) else { return }
+            nostrService.postEvent(signed)
+            
+            await MainActor.run {
+                withAnimation {
+                    showingRepostUndo = false
+                }
+            }
+        }
+    }
+    
+    private func undoRepost() {
+        repostTask?.cancel()
+        repostTask = nil
+        withAnimation {
+            showingRepostUndo = false
+        }
     }
 
     private func quoteNote() {
@@ -987,8 +1321,10 @@ struct FeedNoteRow: View {
     
     private func getLightingAddress(for pubkey: String) -> String? {
         if let profile = nostrService.profiles[pubkey] {
+            if let lud06 = profile.lud06, !lud06.isEmpty { return "lnurl:" + lud06 }
             if let lud16 = profile.lud16, !lud16.isEmpty { return lud16 }
-            if let nip05 = profile.nip05, !nip05.isEmpty { return nip05 } // Many users use nip05 as lud16
+            // NIP-05 resolves to /.well-known/nostr.json — a completely different endpoint
+            // from the LUD-16 /.well-known/lnurlp/ path. Do NOT use NIP-05 as a lightning address.
         }
         return nil
     }
@@ -1116,7 +1452,14 @@ struct AvatarView: View {
         }
         .frame(width: size, height: size)
         .onAppear { loadImage() }
-        .onChange(of: url) { _, _ in loadImage() }
+        .onChange(of: url) { _, _ in
+            image = nil
+            loadImage()
+        }
+        .onChange(of: pubkey) { _, _ in
+            image = nil
+            loadImage()
+        }
     }
 
     private var avatarGradient: LinearGradient {
@@ -1217,6 +1560,7 @@ struct FeedNoteSkeletonRow: View {
 
 struct RelayStatusSheet: View {
     @Environment(\.dismiss) var dismiss
+    var onDismiss: (() -> Void)? = nil
     @EnvironmentObject var relayManager: RelayProcessManager
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
@@ -1229,7 +1573,7 @@ struct RelayStatusSheet: View {
                 Text("Relay Status")
                     .font(.headline)
                 Spacer()
-                Button(action: { dismiss() }) {
+                Button(action: { performDismiss() }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
                 }
@@ -1249,7 +1593,7 @@ struct RelayStatusSheet: View {
                                     .frame(width: 12, height: 12)
 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Haven Relay")
+                                    Text("Nostr Vault Relay")
                                         .font(.system(size: 16, weight: .bold))
                                     Text(relayManager.isBooting ? "Booting..." : (relayManager.isRunning ? "Connected" : "Disconnected"))
                                         .font(.system(size: 13, design: .monospaced))
@@ -1478,7 +1822,7 @@ struct RelayStatusSheet: View {
             #if os(iOS)
             Divider()
             Button {
-                dismiss()
+                performDismiss()
             } label: {
                 Text("Done")
                     .font(.system(size: 16, weight: .semibold))
@@ -1497,5 +1841,107 @@ struct RelayStatusSheet: View {
         #endif
         .background(Color.platformControlBackground)
         .frame(minWidth: 400, minHeight: 500)
+    }
+
+    private func performDismiss() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
+    }
+}
+
+// MARK: - RepostUndoBanner
+
+struct RepostUndoBanner: View {
+    var timeRemaining: Double
+    var totalTime: Double = 10.0
+    var onUndo: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.2.squarepath")
+                .foregroundColor(.white)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Reposting in \(Int(ceil(timeRemaining)))s")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.3))
+                        Capsule()
+                            .fill(Color.white)
+                            .frame(width: max(0, geo.size.width * (timeRemaining / totalTime)))
+                    }
+                }
+                .frame(height: 4)
+            }
+            
+            Spacer()
+            
+            Button("Undo") {
+                onUndo()
+            }
+            .font(.system(size: 13, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.2))
+            .cornerRadius(6)
+        }
+        .padding(12)
+        .background(Color.havenPurple)
+        .cornerRadius(8)
+        .shadow(color: .black.opacity(0.2), radius: 5, y: 3)
+    }
+}
+
+// MARK: - UnlikeUndoBanner
+
+struct UnlikeUndoBanner: View {
+    var timeRemaining: Double
+    var totalTime: Double = 3.0
+    var onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "heart.slash")
+                .foregroundColor(.white)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Unliking in \(max(1, Int(ceil(timeRemaining))))s")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.3))
+                        Capsule()
+                            .fill(Color.white)
+                            .frame(width: max(0, geo.size.width * (timeRemaining / totalTime)))
+                    }
+                }
+                .frame(height: 4)
+            }
+
+            Spacer()
+
+            Button("Undo") {
+                onUndo()
+            }
+            .font(.system(size: 13, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.2))
+            .cornerRadius(6)
+        }
+        .padding(12)
+        .background(Color.red.opacity(0.85))
+        .cornerRadius(8)
+        .shadow(color: .black.opacity(0.2), radius: 5, y: 3)
     }
 }

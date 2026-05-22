@@ -29,7 +29,7 @@ func blast(ctx context.Context, ev *nostr.Event) {
 	}
 
 	wg.Wait()
-	slog.Info("🔫 blasted event", "id", ev.ID, "relays", successCount.Load())
+	slog.Info("🔫 blasted event", "id", ev.ID, "kind", ev.Kind, "relays", successCount.Load())
 }
 
 func publishWithRetry(ctx context.Context, relayURL string, ev *nostr.Event, timeout time.Duration, maxRetries int) bool {

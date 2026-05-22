@@ -1,9 +1,13 @@
 import SwiftUI
 import Combine
+#if os(iOS)
+import Photos
+#endif
 
 struct ProfileView: View {
     let pubkey: String
     var embeddedInNavigation: Bool = false
+    var onDismiss: (() -> Void)? = nil
 
     @EnvironmentObject var nostrService: NostrService
     @StateObject private var feedService = FeedService.shared
@@ -12,6 +16,15 @@ struct ProfileView: View {
     @Environment(\.openURL) private var openURL
 
     @State private var showingNoteDetail: FeedNote?
+    @State private var selectedMedia: MediaItem? = nil
+    @State private var dragOffset: CGSize = .zero
+    #if os(iOS)
+    @State private var saveToPhotosMessage: String? = nil
+    #endif
+    #if os(macOS)
+    @State private var keyMonitor: Any? = nil
+    #endif
+    
     @State private var showSweep = false
     @State private var showLightning = false
     @State private var showAmountPicker = false
@@ -31,6 +44,12 @@ struct ProfileView: View {
     // Edit profile
     @State private var showingEditProfile = false
 
+    // Following / followers count
+    @State private var followingCount: Int? = nil
+    @State private var followsMe: Bool = false
+    @State private var followersCount: Int? = nil
+    @State private var followerPubkeys = Set<String>()
+
     // Note streaming
     @State private var profileNotes: [FeedNote] = []
     @State private var isLoadingNotes = false
@@ -48,7 +67,12 @@ struct ProfileView: View {
     }
 
     private var isOwnProfile: Bool {
-        nostrService.ownerHexPubkey == pubkey
+        nostrService.activeHexPubkey == pubkey
+    }
+
+    // NWC wallet belongs to the owner only — don't re-fetch balance for whitelisted accounts.
+    private var isOwnerProfile: Bool {
+        Bech32.decode(configService.config.ownerNpub)?.hexString == pubkey
     }
 
     private var isFollowing: Bool {
@@ -66,7 +90,7 @@ struct ProfileView: View {
     // MARK: - Filtered notes for tabs
 
     private var topNotes: [FeedNote] {
-        profileNotes.filter { !$0.isReply && $0.kind != 6 && $0.mediaURLs.isEmpty }
+        profileNotes.filter { !$0.isReply }
     }
 
     private var mediaNotes: [FeedNote] {
@@ -83,6 +107,49 @@ struct ProfileView: View {
         case .media: return mediaNotes
         case .replies: return replyNotes
         }
+    }
+
+    private var displayMedia: [MediaItem] {
+        let items: [(url: URL, note: FeedNote)] = mediaNotes.flatMap { note in
+            note.mediaURLs.map { (url: $0, note: note) }
+        }
+        return items.map { item in
+            let ext = item.url.pathExtension.lowercased()
+            var isGIF = ext == "gif"
+            var isVideo = ["mp4", "mov", "webm", "m4v"].contains(ext)
+            var isAudio = ["mp3", "wav", "ogg", "m4a", "flac"].contains(ext)
+            
+            if let cachedMime = MediaTypeDetector.shared.getCachedContentType(for: item.url) {
+                isGIF = MediaTypeDetector.shared.isGIFContentType(cachedMime)
+                isVideo = MediaTypeDetector.shared.isVideoContentType(cachedMime)
+                isAudio = cachedMime.lowercased().hasPrefix("audio/")
+            }
+            
+            let type: MediaItem.MediaType = isVideo ? .video : (isAudio ? .audio : .image)
+            let mime = isGIF ? "image/gif" : (isVideo ? "video/mp4" : nil)
+            
+            return MediaItem(
+                id: UUID.deterministic(from: item.url.absoluteString),
+                url: item.url,
+                type: type,
+                dateAdded: item.note.createdAt,
+                pubkey: item.note.pubkey,
+                tags: item.note.tags,
+                mimeType: mime
+            )
+        }
+    }
+
+    private var isPresentingViewer: Binding<Bool> {
+        Binding(
+            get: { selectedMedia != nil },
+            set: { presenting in
+                if !presenting {
+                    selectedMedia = nil
+                    dragOffset = .zero
+                }
+            }
+        )
     }
 
     private var sectionCount: (notes: Int, media: Int, replies: Int) {
@@ -112,7 +179,11 @@ struct ProfileView: View {
                     divider
                     sectionTabBar
                     sectionContent
+                        #if os(iOS)
+                        .padding(.bottom, 90)
+                        #else
                         .padding(.bottom, 32)
+                        #endif
                 }
                 .frame(maxWidth: 720)
                 .frame(maxWidth: .infinity)
@@ -121,33 +192,43 @@ struct ProfileView: View {
                 await refreshProfile()
             }
 
-            ZapNotificationBanner()
-                .zIndex(2)
+            VStack(spacing: 6) {
+                ZapNotificationBanner()
+                FollowNotificationBanner()
+            }
+            .zIndex(2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(red: 0.08, green: 0.08, blue: 0.1).ignoresSafeArea())
         .onAppear {
-            if profile == nil {
-                nostrService.fetchMissingProfiles(for: [pubkey])
-            }
+            nostrService.fetchMissingProfiles(for: [pubkey], force: true)
             fetchAuthorNotes()
             deriveBitcoinAddress()
             fetchLightningBalance()
+            #if os(macOS)
+            installKeyMonitor()
+            #endif
         }
         .onDisappear {
             disconnectClients()
+            #if os(macOS)
+            removeKeyMonitor()
+            #endif
         }
         .sheet(item: $showingNoteDetail) { note in
             NavigationStack {
                 NoteDetailView(note: note)
+                    .navigationDestination(for: FeedNote.self) { detailNote in
+                        NoteDetailView(note: detailNote)
+                    }
             }
         }
         .sheet(isPresented: $showSweep) {
-            BitcoinSweepDisclaimerView()
+            BitcoinSweepDisclaimerView(onDismiss: { showSweep = false })
                 .environmentObject(ConfigService.shared)
         }
         .sheet(isPresented: $showingEditProfile) {
-            ProfileEditView(existing: profile ?? FeedProfile(pubkey: pubkey)) { updated in
+            ProfileEditView(onDismiss: { showingEditProfile = false }, existing: profile ?? FeedProfile(pubkey: pubkey)) { updated in
                 applyProfileUpdate(updated)
             }
             .environmentObject(nostrService)
@@ -156,6 +237,15 @@ struct ProfileView: View {
             LightningAnimationView(isAnimating: $showLightning)
                 .allowsHitTesting(false)
         }
+        #if os(iOS)
+        .fullScreenCover(isPresented: isPresentingViewer) {
+            if let item = selectedMedia {
+                mediaViewerContent(for: item)
+            }
+        }
+        #else
+        .overlay(fullScreenOverlay)
+        #endif
         .alert("Zap Amount", isPresented: $showAmountPicker) {
             #if os(iOS)
             TextField("Amount in sats", text: $zapAmountSats)
@@ -179,7 +269,7 @@ struct ProfileView: View {
     private var dismissHeader: some View {
         HStack {
             Spacer()
-            Button(action: { dismiss() }) {
+            Button(action: { performDismiss() }) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 22))
                     .foregroundColor(.secondary.opacity(0.55))
@@ -188,6 +278,14 @@ struct ProfileView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
+    }
+
+    private func performDismiss() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
     }
 
     private var divider: some View {
@@ -260,17 +358,42 @@ struct ProfileView: View {
                 .padding(.vertical, 3)
                 .background(Color.havenPurple.opacity(0.15))
                 .cornerRadius(4)
-        } else if isFollowing {
-            Text("FOLLOWING")
-                .font(.system(size: 9, weight: .heavy))
-                .tracking(0.8)
-                .foregroundColor(.green)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.green.opacity(0.15))
-                .cornerRadius(4)
+        } else if isFollowing && followsMe {
+            HStack(spacing: 3) {
+                Text("∞")
+                    .font(.system(size: 13, weight: .black))
+                Text("MUTUAL")
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(0.8)
+            }
+            .foregroundColor(Color(red: 0.2, green: 0.9, blue: 0.7))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color(red: 0.2, green: 0.9, blue: 0.7).opacity(0.13))
+            .cornerRadius(4)
         } else {
-            EmptyView()
+            HStack(spacing: 4) {
+                if isFollowing {
+                    Text("FOLLOWING")
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.green.opacity(0.15))
+                        .cornerRadius(4)
+                }
+                if followsMe {
+                    Text("FOLLOWS YOU")
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.secondary.opacity(0.12))
+                        .cornerRadius(4)
+                }
+            }
         }
     }
 
@@ -364,6 +487,11 @@ struct ProfileView: View {
             statDivider
             if isOwnProfile {
                 statCell(
+                    value: shortInt(feedService.followedPubkeys.filter { $0 != pubkey }.count),
+                    label: "FOLLOWING"
+                )
+                statDivider
+                statCell(
                     value: lightningBalanceSats.map(shortSats) ?? (isLoadingLightningBalance ? "…" : "—"),
                     label: "⚡ LIGHTNING",
                     tint: lightningBalanceSats != nil ? .orange : .secondary
@@ -375,7 +503,16 @@ struct ProfileView: View {
                     tint: (bitcoinBalance ?? 0) > 0 ? .orange : .secondary
                 )
             } else {
-                statCell(value: shortInt(sectionCount.replies), label: "REPLIES")
+                statCell(
+                    value: followingCount.map(shortInt) ?? "—",
+                    label: "FOLLOWING"
+                )
+                statDivider
+                statCell(
+                    value: followersCount.map(shortInt) ?? "∞",
+                    label: "FOLLOWERS",
+                    tint: followersCount == nil ? Color(red: 0.2, green: 0.9, blue: 0.7).opacity(0.55) : .primary
+                )
                 statDivider
                 if let bal = bitcoinBalance, bal > 0 {
                     statCell(value: shortSats(bal), label: "\u{20BF} ON-CHAIN", tint: .orange)
@@ -540,7 +677,7 @@ struct ProfileView: View {
     }
 
     private func zapInlineButton(lud16: String) -> AnyView {
-        if isOwnProfile {
+        if isOwnerProfile {
             if let bal = lightningBalanceSats {
                 return AnyView(
                     Text("\(shortSats(bal)) sats")
@@ -683,6 +820,8 @@ struct ProfileView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 48)
+        } else if selectedSection == .media {
+            mediaGrid(notes: notes)
         } else {
             LazyVStack(spacing: 0) {
                 ForEach(Array(notes.enumerated()), id: \.element.id) { idx, note in
@@ -703,6 +842,241 @@ struct ProfileView: View {
         }
     }
 
+    private func mediaGrid(notes: [FeedNote]) -> some View {
+        #if os(macOS)
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+        let gridSpacing: CGFloat = 8
+        #else
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
+        let gridSpacing: CGFloat = 6
+        #endif
+        
+        let items = displayMedia
+        
+        return LazyVGrid(columns: columns, spacing: gridSpacing) {
+            ForEach(items) { mediaItem in
+                MediaGridItem(item: mediaItem) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedMedia = mediaItem
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 2)
+    }
+
+    @ViewBuilder
+    private func mediaViewerContent(for item: MediaItem) -> some View {
+        ZStack {
+            Color.black.opacity(0.9 * max(0, 1.0 - (abs(dragOffset.height) / 300.0)))
+                .edgesIgnoringSafeArea(.all)
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedMedia = nil
+                        dragOffset = .zero
+                    }
+                }
+
+            VStack {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Button(action: {
+                            PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
+                        }) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 16, weight: .semibold))
+                                .padding(10)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+
+                        #if os(iOS)
+                        if item.type == .image || item.type == .video {
+                            Button(action: {
+                                saveMediaToPhotos(item: item)
+                            }) {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .padding(10)
+                                    .background(Color.white.opacity(0.1))
+                                    .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        #endif
+
+                        SourceIndicatorView(url: item.url)
+
+                        Spacer()
+
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedMedia = nil
+                                dragOffset = .zero
+                            }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title)
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    #if os(iOS)
+                    if let message = saveToPhotosMessage {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundColor(message.contains("Saved") ? .green : .red)
+                            .transition(.opacity)
+                    }
+                    #endif
+                }
+                .padding()
+                .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
+
+                Spacer()
+
+                TabView(selection: $selectedMedia) {
+                    ForEach(displayMedia) { mediaItem in
+                        ViewerViewMediaItem(mediaItem: mediaItem)
+                            .tag(mediaItem as MediaItem?)
+                    }
+                }
+                .mediaTabViewStyleCompat()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .offset(y: dragOffset.height)
+                .scaleEffect(max(0.8, 1.0 - (abs(dragOffset.height) / 1000.0)))
+                .gesture(
+                    DragGesture()
+                        .onChanged { gesture in
+                            if abs(gesture.translation.height) > abs(gesture.translation.width) || dragOffset.height != 0 {
+                                dragOffset = CGSize(width: 0, height: gesture.translation.height)
+                            }
+                        }
+                        .onEnded { gesture in
+                            if abs(dragOffset.height) > 120 {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    selectedMedia = nil
+                                    dragOffset = .zero
+                                }
+                            } else {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                    dragOffset = .zero
+                                }
+                            }
+                        }
+                )
+
+                Spacer()
+
+                Text(item.shareURL(with: configService).absoluteString)
+                    .font(.caption.monospaced())
+                    .foregroundColor(.secondary)
+                    .padding(.bottom)
+                    .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
+            }
+        }
+        .transition(.opacity)
+        #if os(iOS)
+        .background(ClearFullScreenBackground())
+        #endif
+    }
+
+    @ViewBuilder
+    private var fullScreenOverlay: some View {
+        #if os(macOS)
+        if let item = selectedMedia {
+            mediaViewerContent(for: item)
+        }
+        #endif
+    }
+
+    #if os(iOS)
+    private func saveMediaToPhotos(item: MediaItem) {
+        saveToPhotosMessage = nil
+
+        Task {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else {
+                await MainActor.run {
+                    saveToPhotosMessage = "Photo library access denied"
+                }
+                return
+            }
+
+            let session = URLSession(configuration: .default, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
+            do {
+                let (data, _) = try await session.data(from: item.url)
+
+                if item.type == .video {
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+                    try data.write(to: tempURL)
+                    try await PHPhotoLibrary.shared().performChanges {
+                        PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: tempURL, options: nil)
+                    }
+                    try? FileManager.default.removeItem(at: tempURL)
+                } else {
+                    try await PHPhotoLibrary.shared().performChanges {
+                        let request = PHAssetCreationRequest.forAsset()
+                        let options = PHAssetResourceCreationOptions()
+                        request.addResource(with: .photo, data: data, options: options)
+                    }
+                }
+
+                await MainActor.run {
+                    withAnimation { saveToPhotosMessage = "Saved to Photos" }
+                    Task {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        await MainActor.run { withAnimation { saveToPhotosMessage = nil } }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    saveToPhotosMessage = "Failed to save media"
+                }
+            }
+        }
+    }
+    #endif
+
+    #if os(macOS)
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard selectedMedia != nil else { return event }
+            switch event.keyCode {
+            case 123: // left arrow
+                navigateMedia(direction: -1)
+                return nil
+            case 124: // right arrow
+                navigateMedia(direction: 1)
+                return nil
+            case 53: // escape
+                withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = nil }
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
+    }
+    #endif
+
+    private func navigateMedia(direction: Int) {
+        guard let current = selectedMedia,
+              let index = displayMedia.firstIndex(where: { $0.id == current.id }) else { return }
+        let newIndex = index + direction
+        guard displayMedia.indices.contains(newIndex) else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { selectedMedia = displayMedia[newIndex] }
+    }
+
     private var sectionEmptyIcon: String {
         switch selectedSection {
         case .notes: return "text.bubble"
@@ -720,6 +1094,10 @@ struct ProfileView: View {
         profileNotes.removeAll()
         seenNoteIds.removeAll()
         isLoadingNotes = false
+        followingCount = nil
+        followsMe = false
+        followersCount = nil
+        followerPubkeys.removeAll()
 
         fetchAuthorNotes()
         deriveBitcoinAddress()
@@ -731,7 +1109,7 @@ struct ProfileView: View {
     // MARK: - Lightning balance (own profile)
 
     private func fetchLightningBalance() {
-        guard isOwnProfile, !ConfigService.shared.config.nwcURI.isEmpty else { return }
+        guard isOwnerProfile, !ConfigService.shared.config.nwcURI.isEmpty else { return }
         guard !isLoadingLightningBalance else { return }
         isLoadingLightningBalance = true
         Task {
@@ -804,12 +1182,22 @@ struct ProfileView: View {
                 .receive(on: DispatchQueue.main)
                 .sink { state in
                     if state == .connected {
-                        let filter: [String: Any] = [
-                            "kinds": [1, 30023],
+                        let notesFilter: [String: Any] = [
+                            "kinds": [1, 6, 30023],
                             "authors": [pubkey],
-                            "limit": 50
+                            "limit": 200
                         ]
-                        let req: [Any] = ["REQ", "profile-notes-\(UUID().uuidString.prefix(4))", filter]
+                        let contactFilter: [String: Any] = [
+                            "kinds": [3],
+                            "authors": [pubkey],
+                            "limit": 1
+                        ]
+                        let followersFilter: [String: Any] = [
+                            "kinds": [3],
+                            "#p": [pubkey],
+                            "limit": 1000
+                        ]
+                        let req: [Any] = ["REQ", "profile-\(UUID().uuidString.prefix(6))", notesFilter, contactFilter, followersFilter]
                         if let data = try? JSONSerialization.data(withJSONObject: req),
                            let str = String(data: data, encoding: .utf8) {
                             client.send(text: str)
@@ -837,6 +1225,27 @@ struct ProfileView: View {
            let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData) {
 
             guard event.pubkey == pubkey else { return }
+
+            if event.kind == 3 {
+                let pTags = event.tags.filter { $0.count >= 2 && $0[0] == "p" }
+                if event.pubkey == pubkey {
+                    // This user's own contact list → extract following count and followsMe.
+                    // followsMe is true if they follow ANY of our accounts (owner or
+                    // whitelisted) so the badge is consistent across account switches.
+                    let count = pTags.filter { $0[1] != pubkey }.count
+                    self.followingCount = count
+                    let ourHexKeys: Set<String> = Set(configService.allAccountNpubs.compactMap { Bech32.decode($0)?.hexString })
+                    if !ourHexKeys.isEmpty {
+                        self.followsMe = pTags.contains { ourHexKeys.contains($0[1]) }
+                    }
+                } else {
+                    // Someone else's contact list containing this pubkey → they follow this user
+                    followerPubkeys.insert(event.pubkey)
+                    followersCount = followerPubkeys.count
+                }
+                return
+            }
+
             guard !seenNoteIds.contains(event.id) else { return }
             seenNoteIds.insert(event.id)
 
@@ -951,8 +1360,10 @@ struct ProfileView: View {
 
     private var lightningAddress: String? {
         guard let profile = profile else { return nil }
+        if let lud06 = profile.lud06, !lud06.isEmpty { return "lnurl:" + lud06 }
         if let lud16 = profile.lud16, !lud16.isEmpty { return lud16 }
-        if let nip05 = profile.nip05, !nip05.isEmpty { return nip05 }
+        // NIP-05 resolves to /.well-known/nostr.json — a completely different endpoint
+        // from the LUD-16 /.well-known/lnurlp/ path. Do NOT use NIP-05 as a lightning address.
         return nil
     }
 
@@ -981,10 +1392,37 @@ struct ProfileView: View {
     }
 
     private func toggleFollow() {
+        let name = profile?.bestName ?? shortPubkey
         if isFollowing {
-            feedService.unfollowUser(pubkey)
+            switch feedService.unfollowUser(pubkey) {
+            case .success:
+                FollowNotificationManager.shared.add(recipientName: name, kind: .unfollowed)
+            case .failure(let err):
+                FollowNotificationManager.shared.add(recipientName: name, kind: .failed(unfollowErrorMessage(err)))
+            }
         } else {
-            feedService.followUser(pubkey)
+            switch feedService.followUser(pubkey) {
+            case .success:
+                FollowNotificationManager.shared.add(recipientName: name, kind: .followed)
+            case .failure(let err):
+                FollowNotificationManager.shared.add(recipientName: name, kind: .failed(followErrorMessage(err)))
+            }
+        }
+    }
+
+    private func followErrorMessage(_ err: FeedService.FollowActionError) -> String {
+        switch err {
+        case .contactsNotLoaded: return "Contacts still loading"
+        case .alreadyFollowing:  return "Already following"
+        case .cannotUnfollowSelf: return "Follow failed"
+        }
+    }
+
+    private func unfollowErrorMessage(_ err: FeedService.FollowActionError) -> String {
+        switch err {
+        case .contactsNotLoaded:  return "Contacts still loading"
+        case .cannotUnfollowSelf: return "Can't unfollow yourself"
+        case .alreadyFollowing:   return "Unfollow failed"
         }
     }
 
@@ -1011,6 +1449,7 @@ struct ProfileView: View {
 
 struct ProfileEditView: View {
     @Environment(\.dismiss) private var dismiss
+    var onDismiss: (() -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
 
     let existing: FeedProfile
@@ -1097,7 +1536,7 @@ struct ProfileEditView: View {
 
     private var editHeader: some View {
         HStack {
-            Button("Cancel") { dismiss() }
+            Button("Cancel") { performDismiss() }
                 .foregroundColor(.secondary)
 
             Spacer()
@@ -1291,7 +1730,15 @@ struct ProfileEditView: View {
         onSave(updated)
 
         isSaving = false
-        dismiss()
+        performDismiss()
+    }
+
+    private func performDismiss() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
     }
 }
 

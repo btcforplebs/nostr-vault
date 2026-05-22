@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "BE72801738D94062BD01C051"
-               BuildableName = "HAVEN.app"
+               BuildableName = "Nostr Vault.app"
                BlueprintName = "HavenApp"
                ReferencedContainer = "container:HavenApp.xcodeproj">
             </BuildableReference>
@@ -31,7 +31,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "BE72801738D94062BD01C051"
-            BuildableName = "HAVEN.app"
+            BuildableName = "Nostr Vault.app"
             BlueprintName = "HavenApp"
             ReferencedContainer = "container:HavenApp.xcodeproj">
          </BuildableReference>
@@ -54,7 +54,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "BE72801738D94062BD01C051"
-            BuildableName = "HAVEN.app"
+            BuildableName = "Nostr Vault.app"
             BlueprintName = "HavenApp"
             ReferencedContainer = "container:HavenApp.xcodeproj">
          </BuildableReference>
@@ -71,7 +71,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "BE72801738D94062BD01C051"
-            BuildableName = "HAVEN.app"
+            BuildableName = "Nostr Vault.app"
             BlueprintName = "HavenApp"
             ReferencedContainer = "container:HavenApp.xcodeproj">
          </BuildableReference>

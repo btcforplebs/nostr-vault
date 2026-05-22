@@ -258,6 +258,74 @@ struct NIP49Service {
     static func hasStoredPassword() -> Bool {
         return getPasswordFromKeychain() != nil
     }
+    
+    // MARK: - Per-Account Keychain Storage (whitelisted accounts)
+    
+    /// Returns the Keychain account identifier namespaced by npub
+    private static func keychainAccountId(forNpub npub: String) -> String {
+        return "account-key-password-\(npub)"
+    }
+    
+    /// Stores the NIP-49 password for a specific npub in Keychain
+    @discardableResult
+    static func storePasswordInKeychain(_ password: String, forNpub npub: String) -> Bool {
+        guard let passwordData = password.data(using: .utf8) else { return false }
+        let accountId = keychainAccountId(forNpub: npub)
+        
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: accountId
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+        
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: accountId,
+            kSecValueData as String: passwordData,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+        
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        #if DEBUG
+        print("NIP49Service: Store password for npub \(npub.prefix(12))... status=\(status == errSecSuccess ? "ok" : "\(status)")")
+        #endif
+        return status == errSecSuccess
+    }
+    
+    /// Retrieves the NIP-49 password for a specific npub from Keychain
+    static func getPasswordFromKeychain(forNpub npub: String) -> String? {
+        let accountId = keychainAccountId(forNpub: npub)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: accountId,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        if status == errSecSuccess, let passwordData = result as? Data {
+            return String(data: passwordData, encoding: .utf8)
+        }
+        return nil
+    }
+    
+    /// Removes the stored password for a specific npub from Keychain
+    @discardableResult
+    static func deletePasswordFromKeychain(forNpub npub: String) -> Bool {
+        let accountId = keychainAccountId(forNpub: npub)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: accountId
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
 }
 
 // MARK: - PBKDF2 Helper

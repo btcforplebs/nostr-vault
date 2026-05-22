@@ -133,3 +133,86 @@ extension View {
     }
 }
 
+#if os(iOS)
+/// Walks up to the presenting UIHostingController's view and clears its
+/// background so a `.fullScreenCover` can show a translucent backdrop instead
+/// of the default opaque system background.
+struct ClearFullScreenBackground: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async {
+            view.superview?.superview?.backgroundColor = .clear
+        }
+        return view
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
+#endif
+
+extension View {
+    @ViewBuilder
+    func applyGlassCapsule() -> some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            self.background(
+                Color.clear
+                    .overlay(
+                        Capsule()
+                            .glassEffect(.regular, in: .capsule)
+                    )
+            )
+        } else {
+            self
+                .background(
+                    Color.clear
+                        .overlay(
+                            Capsule()
+                                .fill(.ultraThinMaterial)
+                        )
+                )
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(.white.opacity(0.15), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+        }
+        #else
+        self
+        #endif
+    }
+    
+    @ViewBuilder
+    func applyGlassRect(cornerRadius: CGFloat = 16) -> some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            self.background(
+                Color.clear
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
+                    )
+            )
+        } else {
+            self
+                .background(
+                    Color.clear
+                        .overlay(
+                            RoundedRectangle(cornerRadius: cornerRadius)
+                                .fill(.ultraThinMaterial)
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(.white.opacity(0.15), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+        }
+        #else
+        self
+        #endif
+    }
+}
+

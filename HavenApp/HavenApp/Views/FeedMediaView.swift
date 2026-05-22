@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import ImageIO
 
 // MARK: - Media Type Classification
 
@@ -50,14 +51,18 @@ struct FeedMediaView: View {
     let url: URL
     /// When true, tapping opens the full-screen media viewer.
     var onTap: (() -> Void)? = nil
-    /// Maximum height for the media view. Defaults to 400.
+    /// Maximum height for landscape/square media. Portraits use `portraitMaxHeight`
+    /// so they can grow tall enough to fill the available width instead of being
+    /// letterboxed inside a landscape container.
     var maxHeight: CGFloat = 400
+    /// Maximum height for portrait media. Generous so tall photos/GIFs fill the
+    /// full width instead of leaving empty bars on the sides.
+    var portraitMaxHeight: CGFloat = 600
     /// Whether this is displayed as a thumbnail in a grid (use square aspect ratio).
     var isThumbnail: Bool = false
 
     @State private var mediaType: FeedMediaType?
     @State private var isDetecting: Bool = false
-    @State private var gifAspectRatio: CGFloat? = nil
 
     var body: some View {
         Group {
@@ -86,25 +91,18 @@ struct FeedMediaView: View {
     }
 
     private var gifView: some View {
-        Group {
-            if isThumbnail {
-                AnimatedImage(url: url, contentMode: .fill, shouldAnimate: true,
-                              targetSize: CGSize(width: 300, height: 300))
-                    .frame(maxWidth: .infinity)
-                    .frame(maxHeight: .infinity)
-            } else {
-                AnimatedImage(url: url, contentMode: .fill, shouldAnimate: true,
-                              onLoad: { size in
-                                  guard size.width > 0, size.height > 0 else { return }
-                                  gifAspectRatio = size.width / size.height
-                              })
-                    .aspectRatio(gifAspectRatio ?? 16.0 / 9.0, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .frame(maxHeight: maxHeight)
-            }
-        }
+        FeedGIFView(
+            url: url,
+            isThumbnail: isThumbnail,
+            landscapeMaxHeight: maxHeight,
+            portraitMaxHeight: portraitMaxHeight
+        )
+        .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.5))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.platformSeparator, lineWidth: 0.5)
+        )
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGesture { onTap?() }
     }
@@ -124,16 +122,20 @@ struct FeedMediaView: View {
     }
 
     private var photoView: some View {
-        FeedPhotoView(url: url, isThumbnail: isThumbnail)
-            .frame(maxWidth: .infinity)
-            .frame(maxHeight: isThumbnail ? .infinity : maxHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.platformSeparator, lineWidth: 0.5)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-            .onTapGesture { onTap?() }
+        FeedPhotoView(
+            url: url,
+            isThumbnail: isThumbnail,
+            landscapeMaxHeight: maxHeight,
+            portraitMaxHeight: portraitMaxHeight
+        )
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.platformSeparator, lineWidth: 0.5)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onTapGesture { onTap?() }
     }
 
     private var placeholderView: some View {
@@ -184,11 +186,19 @@ struct FeedMediaView: View {
 // MARK: - FeedPhotoView (cached, aspect-preserving)
 
 /// Renders a photo with proper caching and aspect ratio.
+///
+/// When not in thumbnail mode, the view sizes itself to the image's natural
+/// aspect ratio so portrait photos fill the available width instead of being
+/// letterboxed inside a square/landscape container. A separate portrait cap
+/// keeps extreme aspect ratios from dominating the feed.
 private struct FeedPhotoView: View {
     let url: URL
     let isThumbnail: Bool
+    var landscapeMaxHeight: CGFloat = 400
+    var portraitMaxHeight: CGFloat = 600
 
     @State private var image: PlatformImage?
+    @State private var aspectRatio: CGFloat?
     @State private var isLoading = false
 
     var body: some View {
@@ -206,7 +216,15 @@ private struct FeedPhotoView: View {
                     .tint(Color.havenPurple.opacity(0.6))
             }
         }
+        .aspectRatio(isThumbnail ? nil : aspectRatio, contentMode: .fit)
+        .frame(maxHeight: heightCap)
         .onAppear { loadImage() }
+    }
+
+    private var heightCap: CGFloat {
+        if isThumbnail { return .infinity }
+        guard let ratio = aspectRatio else { return landscapeMaxHeight }
+        return ratio < 1 ? portraitMaxHeight : landscapeMaxHeight
     }
 
     private func loadImage() {
@@ -220,6 +238,7 @@ private struct FeedPhotoView: View {
                     await MainActor.run {
                         withAnimation(.easeIn(duration: 0.2)) {
                             self.image = downsampled
+                            self.aspectRatio = ratioFor(downsampled)
                         }
                         self.isLoading = false
                     }
@@ -227,6 +246,7 @@ private struct FeedPhotoView: View {
                     await MainActor.run {
                         withAnimation(.easeIn(duration: 0.2)) {
                             self.image = img
+                            self.aspectRatio = ratioFor(img)
                         }
                         self.isLoading = false
                     }
@@ -237,5 +257,59 @@ private struct FeedPhotoView: View {
                 await MainActor.run { self.isLoading = false }
             }
         }
+    }
+
+    private func ratioFor(_ img: PlatformImage) -> CGFloat? {
+        let size = img.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        return size.width / size.height
+    }
+}
+
+// MARK: - FeedGIFView (cached, aspect-preserving)
+
+/// Renders a GIF with proper caching, auto-play, and aspect ratio.
+private struct FeedGIFView: View {
+    let url: URL
+    let isThumbnail: Bool
+    var landscapeMaxHeight: CGFloat = 400
+    var portraitMaxHeight: CGFloat = 600
+
+    @State private var aspectRatio: CGFloat?
+    @State private var isLoading = true
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.platformTertiaryGroupedBackground)
+
+            AnimatedImage(
+                url: url,
+                contentMode: isThumbnail ? .fill : .fit,
+                shouldAnimate: true,
+                onLoad: { size in
+                    withAnimation(.easeIn(duration: 0.2)) {
+                        if size.width > 0 && size.height > 0 {
+                            self.aspectRatio = size.width / size.height
+                        }
+                        self.isLoading = false
+                    }
+                }
+            )
+            .opacity(isLoading ? 0 : 1)
+
+            if isLoading {
+                ProgressView()
+                    .tint(Color.havenPurple.opacity(0.6))
+            }
+        }
+        .aspectRatio(isThumbnail ? nil : aspectRatio, contentMode: .fit)
+        .frame(maxHeight: heightCap)
+    }
+
+    private var heightCap: CGFloat {
+        if isThumbnail { return .infinity }
+        guard let ratio = aspectRatio else { return landscapeMaxHeight }
+        return ratio < 1 ? portraitMaxHeight : landscapeMaxHeight
     }
 }

@@ -75,18 +75,17 @@ struct RelayListEditor: View {
             
             HStack {
                 TextField("wss://relay.example.com", text: $newRelay)
-                    .textFieldStyle(.plain)
-                    .padding(8)
+                    .textFieldStyle(.roundedBorder)
                     .onSubmit { addRelay() }
-                
+
                 Button(action: addRelay) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.green)
                 }
                 .buttonStyle(.plain)
                 .disabled(newRelay.isEmpty)
-                .padding(.trailing, 8)
             }
+            .padding(8)
             .background(Color.platformControlBackground)
         }
         .background(Color.platformControlBackground)

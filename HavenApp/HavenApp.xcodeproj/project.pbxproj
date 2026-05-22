@@ -23,6 +23,8 @@
 		1944C38B0920934C57D8F4E3 /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3041B6BA67CC97B2AC442E6D /* FeedView.swift */; };
 		1C825DA9B33BBA981AE9C5AA /* NIP04Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7167339BB13F4557E0E0BB77 /* NIP04Service.swift */; };
 		1F0E85CA638E913E0179BA1D /* MediaTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D08ABA7CDBFD26CF0423E33 /* MediaTypeDetector.swift */; };
+		EB0000000000000000000002 /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB0000000000000000000001 /* EventBroadcastSheet.swift */; };
+				EB0000000000000000000003 /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB0000000000000000000001 /* EventBroadcastSheet.swift */; };
 		1F95FE3EAEC35F682BAF6EDD /* UGCReportingDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2181DC8AEE2B3F8376683F88 /* UGCReportingDialog.swift */; };
 		20909F66629BEC603D2806A0 /* FloatingArrowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6F73BF6DECD70643354714 /* FloatingArrowController.swift */; };
 		21CBAC62986E43C71A184473 /* LogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70CE0E2EC47B06E218FF6548 /* LogsView.swift */; };
@@ -76,6 +78,8 @@
 		8C6C5418A73D68D54599A473 /* MediaTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D08ABA7CDBFD26CF0423E33 /* MediaTypeDetector.swift */; };
 		8D4040B52F55BAC700DC9088 /* MacRelaySyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4040B42F55BAC700DC9088 /* MacRelaySyncService.swift */; };
 		8D4040B62F55BAC700DC9088 /* MacRelaySyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4040B42F55BAC700DC9088 /* MacRelaySyncService.swift */; };
+		8D9A1B3D2F8ABD5100DC9088 /* NetworkSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9A1B3C2F8ABD5100DC9088 /* NetworkSyncService.swift */; };
+		8D9A1B3E2F8ABD5100DC9088 /* NetworkSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9A1B3C2F8ABD5100DC9088 /* NetworkSyncService.swift */; };
 		8D4040C12F55BAD100DC9088 /* MirrorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4040C02F55BAD100DC9088 /* MirrorService.swift */; };
 		8D4040C22F55BAD100DC9088 /* MirrorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4040C02F55BAD100DC9088 /* MirrorService.swift */; };
 		8D4EFA332FBE41C300CF0704 /* OnchainZapDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4EFA322FBE41C300CF0704 /* OnchainZapDisplay.swift */; };
@@ -141,6 +145,7 @@
 		1D1A35E8F156B18C3269D943 /* HavenApp_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp_iOS.swift; sourceTree = "<group>"; };
 		1E7AB74FB3335BCDF2AA8841 /* NoteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteDetailView.swift; sourceTree = "<group>"; };
 		1F4167692AA94E7EC99B29BD /* ComposeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeView.swift; sourceTree = "<group>"; };
+		EB0000000000000000000001 /* EventBroadcastSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventBroadcastSheet.swift; sourceTree = "<group>"; };
 		2181DC8AEE2B3F8376683F88 /* UGCReportingDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UGCReportingDialog.swift; sourceTree = "<group>"; };
 		22D8D67DB985CB4EA94E4FAF /* RelayProcessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayProcessManager.swift; sourceTree = "<group>"; };
 		27A87225270090D65AC98D48 /* libhaven.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven.a; path = build/libhaven.a; sourceTree = SDKROOT; };
@@ -167,6 +172,7 @@
 		848045286D78E78658D43BE3 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		89B8E92EE192A7FDE8094D4D /* SetupWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizardView.swift; sourceTree = "<group>"; };
 		8D4040B42F55BAC700DC9088 /* MacRelaySyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelaySyncService.swift; sourceTree = "<group>"; };
+		8D9A1B3C2F8ABD5100DC9088 /* NetworkSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkSyncService.swift; sourceTree = "<group>"; };
 		8D4040C02F55BAD100DC9088 /* MirrorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorService.swift; sourceTree = "<group>"; };
 		8D4EFA322FBE41C300CF0704 /* OnchainZapDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnchainZapDisplay.swift; sourceTree = "<group>"; };
 		8D4EFA352FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinSweepDisclaimerView.swift; sourceTree = "<group>"; };
@@ -247,6 +253,7 @@
 				4AB6A6872532B023E705FC6C /* RelayListEditor.swift */,
 				A271B5E3364858651DC05603 /* SettingsView.swift */,
 				89B8E92EE192A7FDE8094D4D /* SetupWizardView.swift */,
+				EB0000000000000000000001 /* EventBroadcastSheet.swift */,
 				2181DC8AEE2B3F8376683F88 /* UGCReportingDialog.swift */,
 				A3DD3ED79F874383BC2F54F2 /* VideoPlayerView.swift */,
 				83BF0CF146261B7EFDCB4065 /* ViewerView.swift */,
@@ -386,6 +393,7 @@
 				05E22622B26A3F1A5C9D0A2A /* StatsService.swift */,
 				93ED6BB091A4EBC9250A7858 /* Theming.swift */,
 				8D4040B42F55BAC700DC9088 /* MacRelaySyncService.swift */,
+				8D9A1B3C2F8ABD5100DC9088 /* NetworkSyncService.swift */,
 				8D4040C02F55BAD100DC9088 /* MirrorService.swift */,
 				3CB15AE080BDC0999543399A /* WebSocketClient.swift */,
 				A6DAA5E7383F9175577A61C7 /* ZapService.swift */,
@@ -541,6 +549,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8D4040B52F55BAC700DC9088 /* MacRelaySyncService.swift in Sources */,
+				8D9A1B3D2F8ABD5100DC9088 /* NetworkSyncService.swift in Sources */,
 				8D4040C12F55BAD100DC9088 /* MirrorService.swift in Sources */,
 				390E2CFB9580D897263B22D6 /* AnimatedImage.swift in Sources */,
 				8D4EFA332FBE41C300CF0704 /* OnchainZapDisplay.swift in Sources */,
@@ -586,6 +595,7 @@
 				5E92A621990EB60F7D3CEA01 /* SetupWizardView.swift in Sources */,
 				ED6FCAF4DF7249BB3EB94A07 /* StatsService.swift in Sources */,
 				4672FF7145096D1FF96848F9 /* Theming.swift in Sources */,
+				EB0000000000000000000002 /* EventBroadcastSheet.swift in Sources */,
 				1F95FE3EAEC35F682BAF6EDD /* UGCReportingDialog.swift in Sources */,
 				DBD32E19582D9012E15F92AD /* VideoPlayerView.swift in Sources */,
 				0A9396830C939DF6D4A6CA88 /* ViewerView.swift in Sources */,
@@ -615,6 +625,7 @@
 				00818490B64E8F12D093EDBD /* DashboardView.swift in Sources */,
 				D922EED792F2E8C7811F3696 /* FeedMediaViewer.swift in Sources */,
 				8D4040B62F55BAC700DC9088 /* MacRelaySyncService.swift in Sources */,
+				8D9A1B3E2F8ABD5100DC9088 /* NetworkSyncService.swift in Sources */,
 				8D4040C22F55BAD100DC9088 /* MirrorService.swift in Sources */,
 				66FB9EEC08A2208BCEAC19AD /* FeedProfile.swift in Sources */,
 				B3A065D965688DBC83174179 /* FeedService.swift in Sources */,
@@ -648,6 +659,7 @@
 				79E1E1A82F04ABF7DE2C2957 /* SetupWizardView.swift in Sources */,
 				F869E49FB6A5FA8DDFC1A20C /* StatsService.swift in Sources */,
 				00119641B62DB2BBCEB963B0 /* Theming.swift in Sources */,
+				EB0000000000000000000003 /* EventBroadcastSheet.swift in Sources */,
 				D1FD56BEC02FCA184FCAECAA /* UGCReportingDialog.swift in Sources */,
 				8D4EFA392FBE48B300CF0704 /* BitcoinSweepView.swift in Sources */,
 				8D4EFA3A2FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift in Sources */,
@@ -700,7 +712,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 2.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
-				PRODUCT_NAME = HAVEN;
+				PRODUCT_MODULE_NAME = NostrVault;
+				PRODUCT_NAME = "Nostr Vault";
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp/HavenApp-Bridging-Header.h";
 			};
@@ -740,7 +753,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 2.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
-				PRODUCT_NAME = HAVEN;
+				PRODUCT_MODULE_NAME = NostrVault;
+				PRODUCT_NAME = "Nostr Vault";
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp/HavenApp-Bridging-Header.h";
 			};

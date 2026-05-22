@@ -418,6 +418,89 @@ class ConfigService: ObservableObject {
         #endif
     }
     
+    /// Returns the hex pubkey for the currently active browsing account.
+    /// Falls back to the owner pubkey if no active account is set.
+    var activeAccountHexPubkey: String {
+        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !active.isEmpty, let decoded = Bech32.decode(active) {
+            return decoded.hexString
+        }
+        // Fall back to owner
+        let ownerNpub = config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let decoded = Bech32.decode(ownerNpub) {
+            return decoded.hexString
+        }
+        return ""
+    }
+
+    /// Returns all accounts (owner + whitelisted) as npub strings, deduped
+    var allAccountNpubs: [String] {
+        var result: [String] = [config.ownerNpub]
+        for npub in config.whitelistedNpubs {
+            let trimmed = npub.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && trimmed != config.ownerNpub {
+                result.append(trimmed)
+            }
+        }
+        return result
+    }
+
+    /// Switches the active browsing account. Pass nil or ownerNpub to reset to owner.
+    func switchActiveAccount(to npub: String?) {
+        let target = npub?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if target == config.ownerNpub {
+            config.activeAccountNpub = ""
+        } else {
+            config.activeAccountNpub = target
+        }
+        save()
+    }
+    
+    // MARK: - Per-Account Credential Management
+    
+    /// Encrypts and stores an nsec for a whitelisted account.
+    /// The password is saved to the Keychain namespaced by npub.
+    func setCredential(nsec: String, password: String, forNpub npub: String) throws {
+        let ncryptsec = try NIP49Service.encrypt(nsec: nsec, password: password)
+        config.accountCredentials[npub] = ncryptsec
+        NIP49Service.storePasswordInKeychain(password, forNpub: npub)
+        save()
+    }
+    
+    /// Returns the decrypted hex private key for a whitelisted account.
+    /// Looks up the Keychain password automatically; returns nil if no credential is stored.
+    func getCredentialHexKey(forNpub npub: String) throws -> String? {
+        guard let ncryptsec = config.accountCredentials[npub], !ncryptsec.isEmpty else {
+            return nil
+        }
+        guard let password = NIP49Service.getPasswordFromKeychain(forNpub: npub) else {
+            return nil
+        }
+        let nsec = try NIP49Service.decrypt(ncryptsec: ncryptsec, password: password)
+        // Decode nsec → hex
+        let clean = nsec.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let decoded = Bech32.decode(clean), decoded.hrp == "nsec" {
+            return decoded.hexString
+        }
+        if clean.count == 64, clean.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil {
+            return clean
+        }
+        return nil
+    }
+    
+    /// Returns whether a signing credential is stored for the given npub.
+    func hasCredential(forNpub npub: String) -> Bool {
+        guard let stored = config.accountCredentials[npub] else { return false }
+        return !stored.isEmpty
+    }
+    
+    /// Removes the stored credential and Keychain password for a whitelisted account.
+    func removeCredential(forNpub npub: String) {
+        config.accountCredentials.removeValue(forKey: npub)
+        NIP49Service.deletePasswordFromKeychain(forNpub: npub)
+        save()
+    }
+
     /// Returns a Set of hex pubkeys derived from the whitelisted npubs
     var whitelistedHexPubkeys: Set<String> {
         var hexKeys = Set<String>()
@@ -447,6 +530,89 @@ class ConfigService: ObservableObject {
             }
         }
         return hexKeys
+    }
+
+    /// Returns the active browsing account's blocked hex pubkeys.
+    /// Falls back to owner if active browsing account is empty.
+    var activeAccountBlockedHexPubkeys: Set<String> {
+        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetNpub = active.isEmpty ? config.ownerNpub : active
+        let blockedNpubs = config.blockedNpubsPerAccount[targetNpub] ?? (targetNpub == config.ownerNpub ? config.blacklistedNpubs : [])
+        
+        var hexKeys = Set<String>()
+        for npub in blockedNpubs {
+            let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
+            if clean.isEmpty { continue }
+            if let decoded = Bech32.decode(clean) {
+                hexKeys.insert(decoded.hexString)
+            }
+        }
+        return hexKeys
+    }
+
+    func blockProfile(_ npub: String) {
+        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetNpub = active.isEmpty ? config.ownerNpub : active
+        
+        var current = config.blockedNpubsPerAccount[targetNpub] ?? []
+        if !current.contains(npub) {
+            current.append(npub)
+            config.blockedNpubsPerAccount[targetNpub] = current
+            
+            // Sync owner to blacklistedNpubs for Go backend compatibility
+            if targetNpub == config.ownerNpub {
+                config.blacklistedNpubs = current
+            }
+            save()
+            
+            // Post notification for instant UI refresh
+            NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
+            
+            // Publish updated mute list back to Nostr
+            NostrService.shared.publishMuteList(for: targetNpub, blockedNpubs: current)
+        }
+    }
+    
+    func unblockProfile(_ npub: String) {
+        let active = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetNpub = active.isEmpty ? config.ownerNpub : active
+        
+        var current = config.blockedNpubsPerAccount[targetNpub] ?? []
+        if let index = current.firstIndex(of: npub) {
+            current.remove(at: index)
+            config.blockedNpubsPerAccount[targetNpub] = current
+            
+            // Sync owner to blacklistedNpubs for Go backend compatibility
+            if targetNpub == config.ownerNpub {
+                config.blacklistedNpubs = current
+            }
+            save()
+            
+            // Post notification for instant UI refresh
+            NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
+            
+            // Publish updated mute list back to Nostr
+            NostrService.shared.publishMuteList(for: targetNpub, blockedNpubs: current)
+        }
+    }
+
+    /// Returns a shareable URL for a media item, rewriting local relay hosts
+    /// (127.0.0.1/localhost) to the configured Mac relay's https URL when available.
+    /// External URLs (e.g. existing mirror URLs) are returned unchanged.
+    func externalShareURL(for url: URL) -> URL {
+        let host = url.host?.lowercased() ?? ""
+        let isLocal = host == "127.0.0.1" || host == "localhost" || host == "0.0.0.0"
+        guard isLocal else { return url }
+
+        let macHTTPS = config.macRelayHttpsURL
+        guard !macHTTPS.isEmpty, var components = URLComponents(string: macHTTPS) else {
+            return url
+        }
+        // Preserve the path (typically just the blossom hash) and any query string.
+        let path = url.path.isEmpty ? "/" : url.path
+        components.path = (components.path.hasSuffix("/") ? String(components.path.dropLast()) : components.path) + path
+        components.query = url.query
+        return components.url ?? url
     }
 
 }

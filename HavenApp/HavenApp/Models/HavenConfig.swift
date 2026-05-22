@@ -32,12 +32,12 @@ struct HavenConfig: Codable, Equatable {
     var showBitcoinWallet: Bool = false
     
     // Private Relay
-    var privateRelayName: String = "Haven Private"
-    var privateRelayDescription: String = "My private Haven relay"
+    var privateRelayName: String = "Nostr Vault Private"
+    var privateRelayDescription: String = "My private Nostr Vault relay"
     var privateRelayIcon: String = ""
     
     // Chat Relay
-    var chatRelayName: String = "Haven Chat"
+    var chatRelayName: String = "Nostr Vault Chat"
     var chatRelayDescription: String = "Private chat relay"
     var chatRelayIcon: String = ""
     var chatRelayWotDepth: Int = 3
@@ -46,14 +46,14 @@ struct HavenConfig: Codable, Equatable {
     var chatRelayMinFollowers: Int = 3
     
     // Outbox Relay (Public)
-    var outboxRelayName: String = "Haven Public"
+    var outboxRelayName: String = "Nostr Vault Public"
     var outboxRelayDescription: String = "Public outbox relay"
     var outboxRelayIcon: String = ""
     var outboxMaxEventsPerMinute: Int = 100
     var outboxMaxConnectionsPerMinute: Int = 5
     
     // Inbox Relay
-    var inboxRelayName: String = "Haven Inbox"
+    var inboxRelayName: String = "Nostr Vault Inbox"
     var inboxRelayDescription: String = "Personal inbox relay"
     var inboxRelayIcon: String = ""
     var inboxPullIntervalSeconds: Int = 60
@@ -94,9 +94,21 @@ struct HavenConfig: Codable, Equatable {
     var whitelistedNpubs: [String] = []
     var whitelistedNpubsFile: String = "whitelisted_npubs.json"
     
+    // Active account for UI browsing (empty = use ownerNpub)
+    var activeAccountNpub: String = ""
+    
+    // Per-account encrypted private keys: [npub: ncryptsec]
+    // The owner key is stored separately (ownerNcryptsec). This dict is only for whitelisted accounts.
+    var accountCredentials: [String: String] = [:]
+    
     // Blacklisted Npubs
     var blacklistedNpubs: [String] = []
     var blacklistedNpubsFile: String = "blacklisted_npubs.json"
+
+    // Per-account blocked list (dictionary of npub: [blocked npubs])
+    var blockedNpubsPerAccount: [String: [String]] = [:]
+    // Last processed/published Kind 10000 event timestamp per account (npub: created_at)
+    var blockedNpubsLastSyncTimestamp: [String: Int64] = [:]
 
 
     // Backup
@@ -128,6 +140,10 @@ struct HavenConfig: Codable, Equatable {
         case feedRelays
         case whitelistedNpubs, whitelistedNpubsFile
         case blacklistedNpubs, blacklistedNpubsFile
+        case blockedNpubsPerAccount
+        case blockedNpubsLastSyncTimestamp
+        case activeAccountNpub
+        case accountCredentials
         case backupProvider, backupIntervalHours
         case s3AccessKeyId, s3SecretKey, s3Endpoint, s3Region, s3BucketName
     }
@@ -204,6 +220,12 @@ struct HavenConfig: Codable, Equatable {
         
         blacklistedNpubs = try container.decodeIfPresent([String].self, forKey: .blacklistedNpubs) ?? defaults.blacklistedNpubs
         blacklistedNpubsFile = try container.decodeIfPresent(String.self, forKey: .blacklistedNpubsFile) ?? defaults.blacklistedNpubsFile
+        
+        blockedNpubsPerAccount = try container.decodeIfPresent([String: [String]].self, forKey: .blockedNpubsPerAccount) ?? defaults.blockedNpubsPerAccount
+        blockedNpubsLastSyncTimestamp = try container.decodeIfPresent([String: Int64].self, forKey: .blockedNpubsLastSyncTimestamp) ?? defaults.blockedNpubsLastSyncTimestamp
+        
+        activeAccountNpub = try container.decodeIfPresent(String.self, forKey: .activeAccountNpub) ?? defaults.activeAccountNpub
+        accountCredentials = try container.decodeIfPresent([String: String].self, forKey: .accountCredentials) ?? defaults.accountCredentials
 
         backupProvider = try container.decodeIfPresent(String.self, forKey: .backupProvider) ?? defaults.backupProvider
         backupIntervalHours = try container.decodeIfPresent(Int.self, forKey: .backupIntervalHours) ?? defaults.backupIntervalHours
@@ -215,8 +237,35 @@ struct HavenConfig: Codable, Equatable {
         s3BucketName = try container.decodeIfPresent(String.self, forKey: .s3BucketName) ?? defaults.s3BucketName
     }
     
+    // MARK: - Mac Relay Derived URLs
+
+    /// Strips any scheme and trailing slashes from macRelayURL to give the bare host[:port]
+    var macRelayNormalizedBase: String {
+        var url = macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let schemes = ["wss://", "ws://", "https://", "http://"]
+        for scheme in schemes {
+            if url.lowercased().hasPrefix(scheme) {
+                url = String(url.dropFirst(scheme.count))
+            }
+        }
+        while url.hasSuffix("/") { url = String(url.dropLast()) }
+        return url
+    }
+
+    /// Always returns the wss:// form of macRelayURL (empty string if macRelayURL is empty)
+    var macRelayWssURL: String {
+        let base = macRelayNormalizedBase
+        return base.isEmpty ? "" : "wss://\(base)"
+    }
+
+    /// Always returns the https:// form of macRelayURL (empty string if macRelayURL is empty)
+    var macRelayHttpsURL: String {
+        let base = macRelayNormalizedBase
+        return base.isEmpty ? "" : "https://\(base)"
+    }
+
     // MARK: - Protocol Selection Logic
-    
+
     /// Returns the relay URL without any protocol schemes or trailing slashes
     var sanitizedRelayURL: String {
         var url = relayURL.trimmingCharacters(in: .whitespacesAndNewlines)

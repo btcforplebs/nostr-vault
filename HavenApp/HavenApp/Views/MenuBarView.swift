@@ -4,225 +4,525 @@ struct MenuBarView: View {
     @ObservedObject var configService: ConfigService
     @ObservedObject var relayManager: RelayProcessManager
     @ObservedObject private var feedService = FeedService.shared
+    #if os(macOS)
+    @State private var selectedTab: Tab = .relay
+    #else
     @State private var selectedTab: Tab = .feed
+    #endif
     #if os(macOS)
     @Environment(\.openSettings) var openSettings
     @Environment(\.openWindow) var openWindow
     #endif
     var isPoppedOut: Bool = false
     
+    @ObservedObject private var nostrService = NostrService.shared
     @State private var inactivityTask: Task<Void, Never>?
     @State private var statusPulse = false
     @State private var showingOwnProfile = false
+    @State private var showingAccountSwitcher = false
+    
+    private var activeHex: String {
+        configService.activeAccountHexPubkey
+    }
+    
+    private var isOwner: Bool {
+        configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    private var hasMultipleAccounts: Bool {
+        configService.allAccountNpubs.count > 1
+    }
     
     enum Tab {
         case feed
         case search
+        case profile
         case relay
+        case settings
     }
     
     var body: some View {
         ZStack {
-            // MARK: - Main Content
-            VStack(spacing: 0) {
-                // MARK: - Header
-                HStack {
-                    Label("Haven", systemImage: "server.rack")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.havenPurple)
-                    
-                    Spacer()
-                    
-                    if relayManager.isBooting {
-                        Text(relayManager.bootStatusMessage)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .transition(.opacity)
-                    }
-                    
-                    
-
-
-                    Button(action: {
-                        if relayManager.isRunning {
-                            relayManager.stopRelay()
-                        } else {
-                            relayManager.startRelay(config: configService.config)
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(relayManager.isBooting ? Color.yellow : (relayManager.isRunning ? Color.green : Color.red))
-                                .frame(width: 8, height: 8)
-                                .scaleEffect(relayManager.isRunning && !relayManager.isBooting && statusPulse ? 1.4 : 1.0)
-                                .opacity(relayManager.isRunning && !relayManager.isBooting && statusPulse ? 0.5 : 1.0)
-                                .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: statusPulse)
-                                .onAppear { statusPulse = true }
-                                .onChange(of: relayManager.isRunning) { _, running in statusPulse = running }
-                            Text(relayManager.isBooting ? "Booting Relay" : (relayManager.isRunning ? "Stop Relay" : "Start Relay"))
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(relayManager.isBooting ? Color.yellow.opacity(0.2) : Color.havenPurplePale)
-                        .foregroundColor(relayManager.isBooting ? Color.orange : Color.primary)
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(relayManager.isBooting)
-                }
-                .padding()
-                .background(Color.platformControlBackground)
-                
-                // MARK: - Tabs
-                HStack(spacing: 8) {
-                    Menu {
-                        ForEach(FeedMode.allCases, id: \.self) { mode in
-                            Button(action: {
-                                selectedTab = .feed
-                                feedService.switchMode(mode)
-                            }) {
-                                Label(mode.rawValue, systemImage: feedService.feedMode == mode ? "checkmark" : "")
+            Group {
+                if isPoppedOut {
+                    // MARK: - Premium Desktop Sidebar Layout
+                    HStack(spacing: 0) {
+                        // LEFT SIDEBAR
+                        VStack(alignment: .leading, spacing: 0) {
+                            // Brand Header
+                            HStack(spacing: 10) {
+                                Image(systemName: "server.rack")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.havenPurple)
+                                Text("Nostr Vault")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.white)
+                                Spacer()
+                                
+                                // Live status dot
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(relayManager.isBooting ? Color.yellow : (relayManager.isRunning ? Color.green : Color.red))
+                                        .frame(width: 8, height: 8)
+                                    Text(relayManager.isBooting ? "Booting" : (relayManager.isRunning ? "Online" : "Offline"))
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                }
                             }
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: feedService.feedMode == .global ? "globe" : "list.bullet.rectangle.portrait")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(feedService.feedMode.rawValue)
-                                .font(.system(size: 13, weight: .semibold))
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(selectedTab == .feed ? Color.havenPurple.opacity(0.2) : Color.clear)
-                        .foregroundColor(selectedTab == .feed ? Color.havenPurple : .secondary)
-                        .cornerRadius(8)
-                    }
-                    .buttonStyle(.plain)
-
-                    TabButton(icon: "magnifyingglass", title: "Search", isSelected: selectedTab == .search) {
-                        selectedTab = .search
-                    }
-
-                    TabButton(icon: "doc.text.image", title: "Relay", isSelected: selectedTab == .relay) {
-                        selectedTab = .relay
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.bottom)
-                .background(Color.platformControlBackground)
-                
-                Divider()
-                
-                // MARK: - Content
-                ZStack {
-                    Color.platformControlBackground // Darker background
-                        .ignoresSafeArea()
-                    
-                    switch selectedTab {
-                    case .feed:
-                        FeedView()
-                            .transition(.opacity)
-                    case .search:
-                        SearchView()
-                            .transition(.opacity)
-                    case .relay:
-                        ViewerView()
-                            .transition(.opacity)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .animation(.easeInOut(duration: 0.2), value: selectedTab)
-                
-                Divider()
-                
-                // MARK: - Footer
-                HStack(spacing: 20) {
-                    // Profile button
-                    let ownerPubkey = NostrService.shared.ownerHexPubkey
-                    Button(action: { showingOwnProfile = true }) {
-                        AvatarView(
-                            url: NostrService.shared.profiles[ownerPubkey]?.pictureURL,
-                            pubkey: ownerPubkey
-                        )
-                        .frame(width: 24, height: 24)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.havenPurple.opacity(0.4), lineWidth: 1.5)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .help("My Profile")
-                    .sheet(isPresented: $showingOwnProfile) {
-                        ProfileView(pubkey: ownerPubkey)
-                            .environmentObject(NostrService.shared)
-                            .environmentObject(ConfigService.shared)
-                            .frame(minWidth: 400, minHeight: 500)
-                    }
-
-                    Button(action: {
-                        #if os(macOS)
-                        NSApp.activate(ignoringOtherApps: true)
-                        if #available(macOS 14.0, *) {
-                            openSettings()
-                        } else {
-                            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                        }
-                        #endif
-                    }) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Settings")
-                    
-                    if !isPoppedOut {
-                        Button(action: {
-                            #if os(macOS)
-                            openWindow(id: "viewer-window")
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                NSApp.activate(ignoringOtherApps: true)
-                                for window in NSApp.windows {
-                                    if window.title == "Haven" {
-                                        window.makeKeyAndOrderFront(nil)
-                                        window.level = .normal
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 20)
+                            
+                            Divider()
+                                .background(Color.platformSeparator)
+                                .padding(.bottom, 12)
+                            
+                            // Active Account Section
+                            Button(action: {
+                                if hasMultipleAccounts {
+                                    showingAccountSwitcher.toggle()
+                                } else {
+                                    selectedTab = .profile
+                                }
+                            }) {
+                                HStack(spacing: 12) {
+                                    AvatarView(
+                                        url: nostrService.profiles[activeHex]?.pictureURL,
+                                        pubkey: activeHex
+                                    )
+                                    .frame(width: 32, height: 32)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(
+                                                isOwner ? Color.havenPurple.opacity(0.4) : Color.orange.opacity(0.8),
+                                                lineWidth: isOwner ? 1.5 : 2
+                                            )
+                                    )
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(nostrService.profiles[activeHex]?.bestName ?? (isOwner ? "Owner" : "User"))
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .lineLimit(1)
+                                        Text(isOwner ? "Owner Key" : "Whitelisted")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.secondary)
                                     }
                                     
-                                    if window.level.rawValue > NSWindow.Level.normal.rawValue && window.title.isEmpty {
-                                        window.orderOut(nil)
+                                    Spacer()
+                                    
+                                    if hasMultipleAccounts {
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Color.white.opacity(0.04))
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 16)
+                            .popover(isPresented: $showingAccountSwitcher, arrowEdge: .trailing) {
+                                AccountSwitcherView(configService: configService)
+                            }
+                            .contextMenu {
+                                Button("View Profile") { selectedTab = .profile }
+                                if hasMultipleAccounts {
+                                    Divider()
+                                    ForEach(configService.allAccountNpubs, id: \.self) { npub in
+                                        let activeNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        let isOwner = npub == configService.config.ownerNpub
+                                        let isActive = activeNpub.isEmpty ? isOwner : npub == activeNpub
+                                        let hex = Bech32.decode(npub)?.hexString ?? ""
+                                        let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
+                                        
+                                        Button {
+                                            configService.switchActiveAccount(to: npub)
+                                        } label: {
+                                            if isActive {
+                                                Label(name, systemImage: "checkmark")
+                                            } else {
+                                                Text(name)
+                                            }
+                                        }
                                     }
                                 }
                             }
-                            #endif
-                        }) {
-                            Image(systemName: "arrow.up.forward.square")
-                                .font(.system(size: 16))
+                            
+                            // Sidebar Tabs
+                            VStack(spacing: 4) {
+                                SidebarTabButton(icon: "list.bullet.rectangle.portrait", title: "Feed", isSelected: selectedTab == .feed) {
+                                    selectedTab = .feed
+                                }
+                                
+                                SidebarTabButton(icon: "magnifyingglass", title: "Search", isSelected: selectedTab == .search) {
+                                    selectedTab = .search
+                                }
+                                
+                                SidebarTabButton(icon: "person.crop.circle", title: "My Profile", isSelected: selectedTab == .profile) {
+                                    selectedTab = .profile
+                                }
+                                
+                                SidebarTabButton(icon: "doc.text.image", title: "Relay", isSelected: selectedTab == .relay) {
+                                    selectedTab = .relay
+                                }
+                                
+                                SidebarTabButton(icon: "gearshape.fill", title: "Settings", isSelected: selectedTab == .settings) {
+                                    selectedTab = .settings
+                                }
+                            }
+                            .padding(.horizontal, 8)
+                            
+                            Spacer()
+                            
+                            // Quick start/stop relay action inside sidebar footer
+                            VStack(spacing: 8) {
+                                Button(action: {
+                                    if relayManager.isRunning {
+                                        relayManager.stopRelay()
+                                    } else {
+                                        relayManager.startRelay(config: configService.config)
+                                    }
+                                }) {
+                                    HStack {
+                                        Image(systemName: relayManager.isRunning ? "stop.circle.fill" : "play.circle.fill")
+                                            .foregroundColor(relayManager.isRunning ? .red : .green)
+                                        Text(relayManager.isBooting ? "Booting..." : (relayManager.isRunning ? "Stop Relay" : "Start Relay"))
+                                            .font(.system(size: 13, weight: .semibold))
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(relayManager.isRunning ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
+                                    .cornerRadius(8)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(relayManager.isBooting)
+                                
+                                Button("Quit Nostr Vault") {
+                                    #if os(macOS)
+                                    NSApp.terminate(nil)
+                                    #endif
+                                }
+                                .buttonStyle(.plain)
                                 .foregroundColor(.secondary)
+                                .font(.system(size: 12))
+                                .padding(.top, 4)
+                            }
+                            .padding(16)
                         }
-                        .buttonStyle(.plain)
-                        .help("Pop Out")
+                        .frame(width: 220)
+                        .background(Color(red: 0.1, green: 0.1, blue: 0.13))
+                        
+                        Divider()
+                            .background(Color.platformSeparator)
+                        
+                        // MAIN CONTENT AREA
+                        ZStack {
+                            Color(red: 0.08, green: 0.08, blue: 0.1)
+                                .ignoresSafeArea()
+                            
+                            switch selectedTab {
+                            case .feed:
+                                FeedView()
+                                    .transition(.opacity)
+                            case .search:
+                                SearchView()
+                                    .transition(.opacity)
+                            case .profile:
+                                ProfileView(pubkey: activeHex)
+                                    .environmentObject(nostrService)
+                                    .environmentObject(configService)
+                                    .transition(.opacity)
+                            case .relay:
+                                ViewerView()
+                                    .environmentObject(relayManager)
+                                    .environmentObject(configService)
+                                    .environmentObject(nostrService)
+                                    .environmentObject(StatsService.shared)
+                                    .transition(.opacity)
+                            case .settings:
+                                SettingsView(isEmbedded: true)
+                                    .environmentObject(relayManager)
+                                    .environmentObject(configService)
+                                    .environmentObject(nostrService)
+                                    .environmentObject(StatsService.shared)
+                                    .transition(.opacity)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .animation(.easeInOut(duration: 0.15), value: selectedTab)
                     }
-                    
-                    Spacer()
-                    
-                    Button("Quit Haven") {
-                        #if os(macOS)
-                        NSApp.terminate(nil)
-                        #endif
+                } else {
+                    // Original Narrow Layout (Menu Bar dropdown)
+                    VStack(spacing: 0) {
+                        // MARK: - Header
+                        HStack {
+                            Label("Nostr Vault", systemImage: "server.rack")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.havenPurple)
+                            
+                            Spacer()
+                            
+                            if relayManager.isBooting {
+                                Text(relayManager.bootStatusMessage)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .transition(.opacity)
+                            }
+                            
+                            HStack(spacing: 8) {
+                                Button(action: {
+                                    selectedTab = .relay
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                        NotificationCenter.default.post(name: NSNotification.Name("OpenRelayDashboard"), object: nil)
+                                    }
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "gauge")
+                                            .font(.system(size: 12))
+                                        Text("Dashboard")
+                                            .font(.system(size: 12, weight: .semibold))
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.white.opacity(0.08))
+                                    .foregroundColor(.primary)
+                                    .cornerRadius(12)
+                                }
+                                .buttonStyle(.plain)
+
+                                Button(action: {
+                                    if relayManager.isRunning {
+                                        relayManager.stopRelay()
+                                    } else {
+                                        relayManager.startRelay(config: configService.config)
+                                    }
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(relayManager.isBooting ? Color.yellow : (relayManager.isRunning ? Color.green : Color.red))
+                                            .frame(width: 8, height: 8)
+                                            .scaleEffect(relayManager.isRunning && !relayManager.isBooting && statusPulse ? 1.4 : 1.0)
+                                            .opacity(relayManager.isRunning && !relayManager.isBooting && statusPulse ? 0.5 : 1.0)
+                                            .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: statusPulse)
+                                            .onAppear { statusPulse = true }
+                                            .onChange(of: relayManager.isRunning) { _, running in statusPulse = running }
+                                        Text(relayManager.isBooting ? "Booting Relay" : (relayManager.isRunning ? "Stop Relay" : "Start Relay"))
+                                            .font(.system(size: 12, weight: .semibold))
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(relayManager.isBooting ? Color.yellow.opacity(0.2) : Color.havenPurplePale)
+                                    .foregroundColor(relayManager.isBooting ? Color.orange : Color.primary)
+                                    .cornerRadius(12)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(relayManager.isBooting)
+                            }
+                        }
+                        .padding()
+                        .background(Color.platformControlBackground)
+                        
+                        Divider()
+                        
+                        // MARK: - Content
+                        ZStack {
+                            Color.platformControlBackground // Darker background
+                                .ignoresSafeArea()
+                            
+                            switch selectedTab {
+                            case .feed:
+                                FeedView()
+                                    .transition(.opacity)
+                            case .search:
+                                SearchView()
+                                    .transition(.opacity)
+                            case .profile:
+                                ProfileView(pubkey: activeHex)
+                                    .environmentObject(nostrService)
+                                    .environmentObject(configService)
+                                    .transition(.opacity)
+                            case .relay:
+                                ViewerView()
+                                    .environmentObject(relayManager)
+                                    .environmentObject(configService)
+                                    .environmentObject(nostrService)
+                                    .environmentObject(StatsService.shared)
+                                    .transition(.opacity)
+                            case .settings:
+                                SettingsView(isEmbedded: true)
+                                    .environmentObject(relayManager)
+                                    .environmentObject(configService)
+                                    .environmentObject(nostrService)
+                                    .environmentObject(StatsService.shared)
+                                    .transition(.opacity)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .animation(.easeInOut(duration: 0.2), value: selectedTab)
+                        
+                        Divider()
+
+                        // MARK: - Tabs (bottom nav)
+                        HStack(spacing: 0) {
+                                TabButton(icon: "list.bullet.rectangle.portrait", title: "Feed", isSelected: selectedTab == .feed) {
+                                    selectedTab = .feed
+                                }
+                                .contextMenu {
+                                    ForEach(FeedMode.allCases, id: \.self) { mode in
+                                        Button(action: {
+                                            selectedTab = .feed
+                                            feedService.switchMode(mode)
+                                        }) {
+                                            Label(mode.rawValue, systemImage: feedService.feedMode == mode ? "checkmark" : "")
+                                        }
+                                    }
+                                }
+
+                                TabButton(icon: "magnifyingglass", title: "Search", isSelected: selectedTab == .search) {
+                                    selectedTab = .search
+                                }
+
+                                TabButton(icon: "person.crop.circle", title: "Profile", isSelected: selectedTab == .profile) {
+                                    selectedTab = .profile
+                                }
+
+                                TabButton(icon: "doc.text.image", title: "Relay", isSelected: selectedTab == .relay) {
+                                    selectedTab = .relay
+                                }
+
+                                TabButton(icon: "gearshape.fill", title: "Settings", isSelected: selectedTab == .settings) {
+                                    selectedTab = .settings
+                                }
+                            }
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 8)
+                            .background(Color.platformControlBackground)
+
+                            Divider()
+
+                        // MARK: - Footer
+                        HStack(spacing: 20) {
+                            // MARK: - Account Avatar / Switcher
+                            Button(action: {
+                                if hasMultipleAccounts {
+                                    showingAccountSwitcher.toggle()
+                                } else {
+                                    selectedTab = .profile
+                                }
+                            }) {
+                                ZStack(alignment: .bottomTrailing) {
+                                    AvatarView(
+                                        url: nostrService.profiles[activeHex]?.pictureURL,
+                                        pubkey: activeHex
+                                    )
+                                    .frame(width: 26, height: 26)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(
+                                                isOwner ? Color.havenPurple.opacity(0.4) : Color.orange.opacity(0.8),
+                                                lineWidth: isOwner ? 1.5 : 2
+                                            )
+                                    )
+
+                                    // Badge when browsing as non-owner
+                                    if !isOwner {
+                                        Circle()
+                                            .fill(Color.orange)
+                                            .frame(width: 7, height: 7)
+                                            .overlay(Circle().stroke(Color.black, lineWidth: 1))
+                                            .offset(x: 1, y: 1)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .help(hasMultipleAccounts ? "Switch Account" : "My Profile")
+                            .simultaneousGesture(
+                                LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                                    if hasMultipleAccounts {
+                                        showingAccountSwitcher = true
+                                    }
+                                }
+                            )
+                            .popover(isPresented: $showingAccountSwitcher, arrowEdge: .bottom) {
+                                AccountSwitcherView(configService: configService)
+                            }
+                            .contextMenu {
+                                Button("View Profile") { selectedTab = .profile }
+                                if hasMultipleAccounts {
+                                    Divider()
+                                    ForEach(configService.allAccountNpubs, id: \.self) { npub in
+                                        let activeNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        let isOwner = npub == configService.config.ownerNpub
+                                        let isActive = activeNpub.isEmpty ? isOwner : npub == activeNpub
+                                        let hex = Bech32.decode(npub)?.hexString ?? ""
+                                        let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
+                                        
+                                        Button {
+                                            configService.switchActiveAccount(to: npub)
+                                        } label: {
+                                            if isActive {
+                                                Label(name, systemImage: "checkmark")
+                                            } else {
+                                                Text(name)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if !isPoppedOut {
+                                Button(action: {
+                                    #if os(macOS)
+                                    openWindow(id: "viewer-window")
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                        NSApp.activate(ignoringOtherApps: true)
+                                        for window in NSApp.windows {
+                                            if window.title == "Nostr Vault" {
+                                                window.makeKeyAndOrderFront(nil)
+                                                window.level = .normal
+                                            }
+                                            
+                                            if window.level.rawValue > NSWindow.Level.normal.rawValue && window.title.isEmpty {
+                                                window.orderOut(nil)
+                                            }
+                                        }
+                                    }
+                                    #endif
+                                }) {
+                                    Image(systemName: "arrow.up.forward.square")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Pop Out")
+                            }
+                            
+                            Spacer()
+                            
+                            Button("Quit Nostr Vault") {
+                                #if os(macOS)
+                                NSApp.terminate(nil)
+                                #endif
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 13))
+                        }
+                        .padding()
+                        .background(Color.platformControlBackground)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 13))
                 }
-                .padding()
-                .background(Color.platformControlBackground)
             }
             .disabled(relayManager.isImporting) // Disable interaction when importing
-            
+            .onChange(of: configService.config.activeAccountNpub) { _, _ in
+                // Force feed service to reload with the new account's perspective
+                feedService.switchMode(feedService.feedMode)
+            }
+
             // MARK: - Import Overlay
             if relayManager.isImporting {
                 ZStack {
@@ -326,7 +626,7 @@ struct MenuBarView: View {
                             .font(.title2.bold())
                             .foregroundColor(.white)
 
-                        Text("A previous Haven process is still running. Run the following command in Terminal to stop it, then relaunch the app.")
+                        Text("A previous Nostr Vault process is still running. Run the following command in Terminal to stop it, then relaunch the app.")
                             .multilineTextAlignment(.center)
                             .foregroundColor(.white.opacity(0.9))
                             .fixedSize(horizontal: false, vertical: true)
@@ -402,7 +702,7 @@ struct MenuBarView: View {
         inactivityTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 60_000_000_000)
             if !Task.isCancelled {
-                selectedTab = .feed
+                selectedTab = .relay
             }
         }
     }
@@ -410,6 +710,43 @@ struct MenuBarView: View {
     private func stopInactivityTimer() {
         inactivityTask?.cancel()
         inactivityTask = nil
+    }
+}
+
+struct SidebarTabButton: View {
+    let icon: String
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(isSelected ? .white : (isHovered ? .primary : .secondary))
+                    .frame(width: 20, height: 20)
+                
+                Text(title)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                    .foregroundColor(isSelected ? .white : (isHovered ? .primary : .secondary))
+                
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.havenPurple : (isHovered ? Color.white.opacity(0.06) : Color.clear))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 
@@ -423,18 +760,290 @@ struct TabButton: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 16, weight: isSelected ? .semibold : .medium))
+                    .scaleEffect(isSelected ? 1.1 : 1.0)
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10, weight: isSelected ? .semibold : .regular))
             }
-            .foregroundColor(isSelected ? .white : .secondary)
+            .foregroundColor(isSelected ? Color.havenPurple : .secondary)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(isSelected ? Color.havenPurple : Color.clear)
-            .cornerRadius(6)
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - AccountSwitcherView
+
+struct AccountSwitcherView: View {
+    @ObservedObject var configService: ConfigService
+    @ObservedObject private var nostrService = NostrService.shared
+
+    // Key import sheet state
+    @State private var importingNpub: String? = nil
+    @State private var importNsec: String = ""
+    @State private var importPassword: String = ""
+    @State private var importConfirm: String = ""
+    @State private var importError: String? = nil
+    @State private var importSuccess: Bool = false
+
+    private var activeNpub: String {
+        let a = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        return a.isEmpty ? configService.config.ownerNpub : a
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Accounts")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            // Account rows
+            VStack(spacing: 2) {
+                ForEach(configService.allAccountNpubs, id: \.self) { npub in
+                    accountRow(npub: npub)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+        .frame(width: 270)
+        .background(Color.platformControlBackground)
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { importingNpub.map { IdentifiableString(id: $0) } },
+            set: { importingNpub = $0?.id }
+        )) { item in
+            importKeySheet(forNpub: item.id)
+        }
+    }
+
+    @ViewBuilder
+    private func accountRow(npub: String) -> some View {
+        let isOwner = npub == configService.config.ownerNpub
+        let isActive = npub == activeNpub
+        let hex = Bech32.decode(npub)?.hexString ?? ""
+        let profile = nostrService.profiles[hex]
+        let displayName = profile?.bestName ?? String(npub.prefix(16)) + "..."
+        let hasKey = isOwner || configService.hasCredential(forNpub: npub)
+
+        Button(action: {
+            configService.switchActiveAccount(to: npub)
+        }) {
+            HStack(spacing: 10) {
+                // Avatar
+                ZStack(alignment: .bottomTrailing) {
+                    AvatarView(url: profile?.pictureURL, pubkey: hex)
+                        .frame(width: 34, height: 34)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    isActive
+                                        ? (isOwner ? Color.havenPurple : Color.orange)
+                                        : Color.clear,
+                                    lineWidth: 2
+                                )
+                        )
+                }
+
+                // Name + badges
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(displayName)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+
+                        if isOwner {
+                            Text("Owner")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(Color.havenPurple)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.havenPurple.opacity(0.15))
+                                .cornerRadius(4)
+                        }
+                    }
+
+                    Text(npub.prefix(20) + "...")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                // Key status / import
+                if !hasKey {
+                    Button(action: { importingNpub = npub }) {
+                        Image(systemName: "key.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.orange)
+                            .padding(6)
+                            .background(Color.orange.opacity(0.12))
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Import signing key")
+                } else {
+                    Image(systemName: "key.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary.opacity(0.4))
+                }
+
+                // Active checkmark
+                Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 15))
+                    .foregroundColor(isActive ? Color.havenPurple : .secondary.opacity(0.3))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(isActive ? Color.havenPurple.opacity(0.08) : Color.clear)
+            .cornerRadius(8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 6)
+    }
+
+    // MARK: - Import Key Sheet
+
+    @ViewBuilder
+    private func importKeySheet(forNpub npub: String) -> some View {
+        let hex = Bech32.decode(npub)?.hexString ?? ""
+        let profile = nostrService.profiles[hex]
+        let displayName = profile?.bestName ?? String(npub.prefix(20)) + "..."
+
+        VStack(spacing: 0) {
+            // Sheet header
+            HStack {
+                AvatarView(url: profile?.pictureURL, pubkey: hex)
+                    .frame(width: 32, height: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Import Key")
+                        .font(.headline)
+                    Text(displayName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            .padding()
+
+            Divider()
+
+            Form {
+                Section("Private Key") {
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $importNsec)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 70)
+                            .padding(4)
+                            .background(Color.platformControlBackground)
+                            .cornerRadius(6)
+                            .autocorrectionDisabled()
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                        if importNsec.isEmpty {
+                            Text("nsec1...")
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundColor(.secondary.opacity(0.5))
+                                .padding(8)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    Text("Enter the nsec for \(displayName)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
+                Section("Encrypt with Password (NIP-49)") {
+                    // Hidden username field anchors AutoFill to the npub so the
+                    // nsec text editor above is not captured as the username.
+                    TextField("", text: .constant(npub))
+                        .textContentType(.username)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    SecureField("Password", text: $importPassword)
+                        .textContentType(.newPassword)
+                    SecureField("Confirm Password", text: $importConfirm)
+                        .textContentType(.newPassword)
+                    Label("Password saved to Keychain automatically", systemImage: "lock.fill")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                }
+
+                if let error = importError {
+                    Section {
+                        Text(error).font(.caption).foregroundColor(.red)
+                    }
+                }
+                if importSuccess {
+                    Section {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                            Text("Key imported successfully!").font(.caption).fontWeight(.semibold)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    resetImportForm()
+                    importingNpub = nil
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Import") {
+                    saveImportedKey(forNpub: npub)
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(importNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || importPassword.isEmpty)
+            }
+            .padding()
+        }
+        .frame(width: 420, height: 480)
+    }
+
+    private func saveImportedKey(forNpub npub: String) {
+        let nsecTrimmed = importNsec.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nsecTrimmed.isEmpty else { importError = "Private key cannot be empty"; return }
+        guard importPassword == importConfirm else { importError = "Passwords do not match"; return }
+        guard importPassword.count >= 8 else { importError = "Password must be at least 8 characters"; return }
+
+        do {
+            try configService.setCredential(nsec: nsecTrimmed, password: importPassword, forNpub: npub)
+            importSuccess = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                resetImportForm()
+                importingNpub = nil
+            }
+        } catch {
+            importError = "Failed to encrypt key: \(error.localizedDescription)"
+        }
+    }
+
+    private func resetImportForm() {
+        importNsec = ""
+        importPassword = ""
+        importConfirm = ""
+        importError = nil
+        importSuccess = false
     }
 }
 
@@ -464,7 +1073,7 @@ struct SearchView: View {
         var label: String {
             switch self {
             case .all: return "All"
-            case .havenRelay: return "Haven Relay"
+            case .havenRelay: return "Nostr Vault Relay"
             case .network: return "Network"
             }
         }
@@ -571,27 +1180,21 @@ struct SearchView: View {
         .onTapGesture {
             searchFieldFocused = false
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    searchFieldFocused = false
-                }
-                .foregroundColor(Color.havenPurple)
-            }
-        }
         #endif
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfile.map { IdentifiableString(id: $0) } },
             set: { showingProfile = $0?.id }
         )) { profile in
-            ProfileView(pubkey: profile.id)
+            ProfileView(pubkey: profile.id, onDismiss: { showingProfile = nil })
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
         .sheet(item: $showingNoteDetail) { note in
             NavigationStack {
                 NoteDetailView(note: note)
+                    .navigationDestination(for: FeedNote.self) { detailNote in
+                        NoteDetailView(note: detailNote)
+                    }
             }
         }
     }
@@ -721,6 +1324,9 @@ struct SearchView: View {
                 }
             }
             .padding(.vertical, 16)
+            #if os(iOS)
+            .padding(.bottom, 90)
+            #endif
         }
     }
 
@@ -806,10 +1412,13 @@ struct SearchView: View {
         isSearching = true
         let trimmedQuery = query.lowercased().trimmingCharacters(in: .whitespaces)
 
+        let localProfiles = nostrService.profiles
+        let localNotes = feedService.notes
+
         DispatchQueue.global(qos: .userInitiated).async {
             var results = SearchResults()
 
-            for (pubkey, profile) in nostrService.profiles {
+            for (pubkey, profile) in localProfiles {
                 if profile.bestName.lowercased().contains(trimmedQuery) ||
                    pubkey.lowercased().contains(trimmedQuery) ||
                    (profile.about?.lowercased().contains(trimmedQuery) ?? false) {
@@ -817,7 +1426,7 @@ struct SearchView: View {
                 }
             }
 
-            let relevantNotes = feedService.notes.filter { note in
+            let relevantNotes = localNotes.filter { note in
                 note.content.lowercased().contains(trimmedQuery)
             }
             results.notes = relevantNotes.prefix(20).map { $0 }

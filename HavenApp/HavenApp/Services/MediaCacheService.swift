@@ -108,22 +108,52 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     /// Internal version that resolves file paths even for local relay URLs.
     /// Used for components like AVAsset thumbnail generation which can handle raw files.
     func internalLocalFileURL(for url: URL) -> URL? {
-        // 1. Try to find if it's a local Blossom file we already have
-        let hashValue = self.hash(url: url)
-        if hashValue.count == 64 {
-            let blossomURL = blossomDirectory.appendingPathComponent(hashValue)
-            if FileManager.default.fileExists(atPath: blossomURL.path) {
-                return blossomURL
-            }
+        // 1. Local relay media-tab URLs may point at files in Blossom by their
+        // exact filename, not only by a bare sha256 hash. Resolve those directly
+        // so AVFoundation does not have to stream through localhost on iOS.
+        if isLocalURL(url), let localBlossomURL = blossomFile(named: url.lastPathComponent) {
+            return localBlossomURL
         }
 
-        // 2. Try the general cache
+        // 2. Try to find if it's a local Blossom file we already have by hash.
+        let hashValue = self.hash(url: url)
+        if hashValue.count == 64, let localBlossomURL = blossomFile(forHash: hashValue, extensionHint: url.pathExtension) {
+            return localBlossomURL
+        }
+
+        // 3. Try the general cache
         let path = cachePath(for: url)
         if FileManager.default.fileExists(atPath: path.path) {
             return path
         }
 
         return nil
+    }
+
+    private func blossomFile(named filename: String) -> URL? {
+        guard !filename.isEmpty, filename != ".", filename != ".." else { return nil }
+        let fileURL = blossomDirectory.appendingPathComponent(filename)
+        return FileManager.default.fileExists(atPath: fileURL.path) ? fileURL : nil
+    }
+
+    private func blossomFile(forHash hash: String, extensionHint: String) -> URL? {
+        if let exact = blossomFile(named: hash) {
+            return exact
+        }
+
+        if !extensionHint.isEmpty, let withExtension = blossomFile(named: "\(hash).\(extensionHint)") {
+            return withExtension
+        }
+
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: blossomDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        return contents.first { $0.lastPathComponent.hasPrefix("\(hash).") }
     }
 
     /// Ensures the local file has a proper extension for AVFoundation playback.

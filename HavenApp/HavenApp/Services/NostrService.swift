@@ -52,6 +52,7 @@ class NostrService: ObservableObject {
         setupThrottling()
         loadProfiles()
         updateOwnerHex()
+        prefetchWhitelistedProfiles()
 
         // Handle npub changes (e.g. after setup)
         ConfigService.shared.$config
@@ -59,12 +60,18 @@ class NostrService: ObservableObject {
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 self.updateOwnerHex()
+                self.prefetchWhitelistedProfiles()
             }
             .store(in: &cancellables)
     }
 
     @Published var profiles: [String: FeedProfile] = [:]
     private(set) var ownerHexPubkey: String = ""
+
+    /// The active browsing identity hex pubkey. Falls back to owner if no override is set.
+    var activeHexPubkey: String {
+        ConfigService.shared.activeAccountHexPubkey
+    }
 
     private var lastConnectLog: Date = .distantPast
     private func shouldLogConnect() -> Bool {
@@ -86,6 +93,17 @@ class NostrService: ObservableObject {
         } else {
             self.ownerHexPubkey = ""
         }
+    }
+
+    /// Pre-fetches profiles for the owner + all whitelisted npubs so avatars
+    /// are ready when the account switcher is opened.
+    private func prefetchWhitelistedProfiles() {
+        let allNpubs = ConfigService.shared.allAccountNpubs
+        let hexPubkeys = allNpubs.compactMap { npub -> String? in
+            let trimmed = npub.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Bech32.decode(trimmed)?.hexString
+        }
+        fetchMissingProfiles(for: hexPubkeys)
     }
 
     private func setupMetadataFlusher() {
@@ -166,6 +184,7 @@ class NostrService: ObservableObject {
             print("NostrService: Loaded \(relayLists.count) relay lists from cache")
             #endif
         }
+
     }
 
 
@@ -215,8 +234,8 @@ class NostrService: ObservableObject {
         }
     }
 
-    func fetchMissingProfiles(for pubkeys: [String]) {
-        let missing = pubkeys.filter { profiles[$0] == nil && !profilesInFlight.contains($0) }
+    func fetchMissingProfiles(for pubkeys: [String], force: Bool = false) {
+        let missing = pubkeys.filter { (force || profiles[$0] == nil) && !profilesInFlight.contains($0) }
         guard !missing.isEmpty else { return }
 
         for pubkey in missing {
@@ -235,7 +254,7 @@ class NostrService: ObservableObject {
     private func sendProfileRequest(to client: WebSocketClient, pubkeys: [String]) {
         let subscriptionId = "meta-\(UUID().uuidString.prefix(8))"
         let filter: [String: Any] = [
-            "kinds": [0, 10002],
+            "kinds": [0, 10002, 10000],
             "authors": pubkeys
         ]
 
@@ -262,6 +281,12 @@ class NostrService: ObservableObject {
         #endif
 
         let uniqueRelays = Array(Set(relays)).compactMap { URL(string: $0) }
+
+        // Safety net: clear the in-flight guard 10s after the attempt starts
+        // regardless of outcome, so a failed fetch can be retried later.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            self?.relaysInFlight.remove(pubkey)
+        }
 
         for url in uniqueRelays {
             let client = WebSocketClient()
@@ -340,39 +365,82 @@ class NostrService: ObservableObject {
     /// - Returns: The signed NostrEvent, or nil if signing fails
     func signEvent(kind: Int, content: String, tags: [[String]] = [], password: String? = nil) -> NostrEvent? {
         var sk: String?
-
-        // Try NIP-49 decryption if ncryptsec exists
         let config = ConfigService.shared.config
-        if !config.ownerNcryptsec.isEmpty {
-            // Use provided password, or try to get from Keychain
-            let pwd = password ?? NIP49Service.getPasswordFromKeychain()
-            if let pwd = pwd {
-                do {
-                    sk = try config.getDecryptedHexKey(password: pwd)
-                } catch {
-                    print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
+        
+        // Determine which account is signing
+        let activeNpub = config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        let signingAsOwner = activeNpub.isEmpty || activeNpub == config.ownerNpub
+        
+        if signingAsOwner {
+            // ── Owner signing path (existing logic) ──────────────────────────
+            if !config.ownerNcryptsec.isEmpty {
+                let pwd = password ?? NIP49Service.getPasswordFromKeychain()
+                if let pwd = pwd {
+                    do {
+                        sk = try config.getDecryptedHexKey(password: pwd)
+                    } catch {
+                        print("NostrService: NIP-49 decrypt failed: \(error.localizedDescription)")
+                        return nil
+                    }
+                } else {
+                    print("NostrService: NIP-49 key exists but no password in Keychain")
                     return nil
                 }
             } else {
-                print("NostrService: NIP-49 key exists but no password in Keychain")
-                return nil
+                sk = config.ownerHexKey
             }
         } else {
-            // Fallback to plaintext ownerHexKey (backward compatibility)
-            sk = config.ownerHexKey
+            // ── Whitelisted account signing path ─────────────────────────────
+            do {
+                if let hexKey = try ConfigService.shared.getCredentialHexKey(forNpub: activeNpub) {
+                    sk = hexKey
+                } else {
+                    // No credential stored for this account — fall back to owner key
+                    print("NostrService: No credential for active account \(activeNpub.prefix(16))..., falling back to owner")
+                    if !config.ownerNcryptsec.isEmpty {
+                        let pwd = password ?? NIP49Service.getPasswordFromKeychain()
+                        if let pwd = pwd {
+                            sk = try config.getDecryptedHexKey(password: pwd)
+                        }
+                    } else {
+                        sk = config.ownerHexKey
+                    }
+                }
+            } catch {
+                print("NostrService: Failed to decrypt whitelisted account key: \(error.localizedDescription)")
+                return nil
+            }
         }
 
         guard let sk = sk, !sk.isEmpty else {
-            print("NostrService: Cannot sign - no private key available (ncryptsec empty=\(config.ownerNcryptsec.isEmpty), nsec empty=\(config.ownerNsec.isEmpty))")
+            print("NostrService: Cannot sign - no private key available")
             return nil
         }
 
+        // Use the active account's pubkey for the event
+        let signingPubkey = signingAsOwner ? ownerHexPubkey : activeHexPubkey
+
+        var finalTags = tags
+        if !finalTags.contains(where: { $0.first == "client" }) {
+            #if os(iOS)
+            let clientName: String
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                clientName = "Nostr Vault on iPadOS"
+            } else {
+                clientName = "Nostr Vault on iOS"
+            }
+            #else
+            let clientName = "Nostr Vault on MacOS"
+            #endif
+            finalTags.append(["client", clientName])
+        }
+
         let eventDict: [String: Any] = [
-            "pubkey": ownerHexPubkey,
+            "pubkey": signingPubkey,
             "created_at": Int64(Date().timeIntervalSince1970),
             "kind": kind,
             "content": content,
-            "tags": tags
+            "tags": finalTags
         ]
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
@@ -400,6 +468,41 @@ class NostrService: ObservableObject {
         } catch {
             print("NostrService: Failed to decode signed event: \(error) — JSON: \(signedJsonStr.prefix(200))")
             return nil
+        }
+    }
+
+    /// Publishes a signed Kind 10000 (Mute List) event to configured relays for the active account
+    @MainActor
+    func publishMuteList(for accountNpub: String, blockedNpubs: [String]) {
+        // Convert npubs to hex pubkeys
+        let hexKeys = blockedNpubs.compactMap { npub -> String? in
+            let clean = npub.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Bech32.decode(clean)?.hexString
+        }
+        
+        let tags = hexKeys.map { ["p", $0] }
+        
+        // Temporarily store the active account so we sign as the target account
+        let originalActive = ConfigService.shared.config.activeAccountNpub
+        
+        // Temporarily set activeAccountNpub to sign with the correct key
+        ConfigService.shared.config.activeAccountNpub = (accountNpub == ConfigService.shared.config.ownerNpub) ? "" : accountNpub
+        
+        // Sign event
+        if let event = signEvent(kind: 10000, content: "", tags: tags) {
+            postEvent(event)
+            
+            // Restore active account and save sync timestamp
+            ConfigService.shared.config.activeAccountNpub = originalActive
+            ConfigService.shared.config.blockedNpubsLastSyncTimestamp[accountNpub] = event.created_at
+            ConfigService.shared.save()
+            #if DEBUG
+            print("NostrService: Successfully published Kind 10000 mute list with \(tags.count) tags for \(accountNpub.prefix(8))")
+            #endif
+        } else {
+            // Restore active account on failure
+            ConfigService.shared.config.activeAccountNpub = originalActive
+            print("NostrService: Failed to sign Kind 10000 mute list for \(accountNpub.prefix(8))")
         }
     }
 
@@ -490,7 +593,7 @@ class NostrService: ObservableObject {
         // 3. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction
         if event.kind == 1 || event.kind == 6 || event.kind == 7 {
             // Find target author's pubkey from 'p' tags (skipping own pubkey)
-            let targetPubkey = event.tags.first { $0.count >= 2 && $0[0] == "p" && $0[1] != ownerHexPubkey }?[1]
+            let targetPubkey = event.tags.first { $0.count >= 2 && $0[0] == "p" && $0[1] != activeHexPubkey }?[1]
 
             if let targetPubkey = targetPubkey, let targetRelays = relayLists[targetPubkey] {
                 #if DEBUG
@@ -525,6 +628,43 @@ class NostrService: ObservableObject {
             }
         }
 
+        // Refresh stats after a short delay so the backend database has processed the event
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            let config = ConfigService.shared.config
+            let urlString = config.relayURL.isEmpty ? "localhost:\(config.relayPort)" : config.relayURL
+            StatsService.shared.refreshStats(relayURLString: urlString)
+        }
+    }
+
+    /// Broadcasts a raw signed event dict (including sig) to configured Blastr relays.
+    /// Use this to re-broadcast an existing event without re-signing it.
+    func broadcastRawEvent(_ eventDict: [String: Any]) {
+        let msg = ["EVENT", eventDict] as [Any]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg),
+              let str = String(data: data, encoding: .utf8) else { return }
+
+        var relays = ConfigService.shared.config.blastrRelays
+        if relays.isEmpty {
+            relays = ["wss://relay.damus.io", "wss://relay.primal.net", "wss://nos.lol"]
+        }
+
+        for urlStr in relays {
+            guard let url = URL(string: urlStr) else { continue }
+            let client = WebSocketClient()
+            client.isTemporary = true
+            client.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { state in
+                    if state == .connected {
+                        client.send(text: str)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            client.disconnect()
+                        }
+                    }
+                }
+                .store(in: &cancellables)
+            client.connect(url: url)
+        }
     }
 
     /// Reports an event using Kind 1984
@@ -577,6 +717,18 @@ class NostrService: ObservableObject {
         postEvent(signed)
         #if DEBUG
         print("NostrService: Posted Kind 1984 report for user \(pubkey)")
+        #endif
+    }
+
+    /// Publishes a NIP-09 deletion request (kind 5) for the given event ID
+    func deleteNote(id: String) {
+        guard let signed = signEvent(kind: 5, content: "", tags: [["e", id]]) else {
+            print("NostrService: Failed to sign deletion event")
+            return
+        }
+        postEvent(signed)
+        #if DEBUG
+        print("NostrService: Posted Kind 5 deletion request for event \(id)")
         #endif
     }
 
@@ -738,7 +890,7 @@ class NostrService: ObservableObject {
 
         var filter: [String: Any] = [
             "limit": isHistorical ? 100 : 200,
-            "kinds": [0, 1, 3, 4, 6, 7, 1063, 30023, 9735]
+            "kinds": [0, 1, 3, 4, 6, 7, 1063, 30023, 9735, 10000]
         ]
         if let until = until {
             filter["until"] = until
@@ -752,7 +904,7 @@ class NostrService: ObservableObject {
 
         // CRITICAL: Always subscribe to mentions (#p) of the owner so "tagged notes"
         // from people we don't follow still show up in the viewer.
-        let ownerHex = self.ownerHexPubkey
+        let ownerHex = self.activeHexPubkey
         if !ownerHex.isEmpty {
             var mentionsFilter = filter
             mentionsFilter["#p"] = [ownerHex]
@@ -840,6 +992,7 @@ class NostrService: ObservableObject {
                     let nip05 = metadata["nip05"] as? String
                     let about = metadata["about"] as? String
                     let lud16 = metadata["lud16"] as? String
+                    let lud06 = metadata["lud06"] as? String
                     let website = metadata["website"] as? String
 
                     DispatchQueue.main.async { [weak self] in
@@ -871,6 +1024,10 @@ class NostrService: ObservableObject {
                             profile.lud16 = lud16
                             changed = true
                         }
+                        if profile.lud06 != lud06 {
+                            profile.lud06 = lud06
+                            changed = true
+                        }
                         if profile.website != website {
                             profile.website = website
                             changed = true
@@ -888,34 +1045,71 @@ class NostrService: ObservableObject {
             }
 
             if event.kind == 10002 {
-                // Handling Kind 10002 (Relay List Metadata)
-                // NIP-65: ["r", relay_url, "read" | "write"]
+                // NIP-65: ["r", relay_url, "read" | "write"], no marker = both
                 var inboxRelays: [String] = []
                 for tag in event.tags {
                     if tag.count >= 2 && tag[0] == "r" {
-                        let url = tag[1]
                         let type = tag.count >= 3 ? tag[2] : ""
-
-                        // "read" means this is where the user RECEIVES notes (inbox)
-                        // If no type is specified, it's both read and write
                         if type == "read" || type == "" {
-                            inboxRelays.append(url)
+                            inboxRelays.append(tag[1])
                         }
                     }
                 }
 
-                if !inboxRelays.isEmpty {
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self = self else { return }
-                        self.relayLists[event.pubkey] = inboxRelays
-                        self.relaysInFlight.remove(event.pubkey)
-                        self.saveProfilesThrottled()
-                        #if DEBUG
-                        print("NostrService: Cached \(inboxRelays.count) inbox relays for \(event.pubkey.prefix(8))")
-                        #endif
+                let pubkey = event.pubkey
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    if !inboxRelays.isEmpty {
+                        self.relayLists[pubkey] = inboxRelays
                     }
+                    self.relaysInFlight.remove(pubkey)
+                    self.saveProfilesThrottled()
+                }
+                return
+            }
 
-
+            if event.kind == 10000 {
+                // Parse Kind 10000 (Mute List)
+                var blockedHexKeys: [String] = []
+                for tag in event.tags {
+                    if tag.count >= 2 && tag[0] == "p" {
+                        blockedHexKeys.append(tag[1])
+                    }
+                }
+                
+                // Find which of our accounts matches this event's pubkey
+                let allNpubs = ConfigService.shared.allAccountNpubs
+                if let matchingNpub = allNpubs.first(where: { npub in
+                    Bech32.decode(npub)?.hexString == event.pubkey
+                }) {
+                    // Map hex keys to npubs
+                    let blockedNpubs = blockedHexKeys.compactMap { hexKey -> String? in
+                        guard let data = Bech32.hexToData(hexKey) else { return nil }
+                        return Bech32.encode(hrp: "npub", data: data)
+                    }
+                    
+                    DispatchQueue.main.async {
+                        let currentBlocks = ConfigService.shared.config.blockedNpubsPerAccount[matchingNpub] ?? []
+                        let lastSync = ConfigService.shared.config.blockedNpubsLastSyncTimestamp[matchingNpub] ?? 0
+                        
+                        if event.created_at >= lastSync && Set(currentBlocks) != Set(blockedNpubs) {
+                            ConfigService.shared.config.blockedNpubsPerAccount[matchingNpub] = blockedNpubs
+                            ConfigService.shared.config.blockedNpubsLastSyncTimestamp[matchingNpub] = event.created_at
+                            
+                            // If this is the owner's account, sync to Go relay's blacklistedNpubs and save
+                            if matchingNpub == ConfigService.shared.config.ownerNpub {
+                                ConfigService.shared.config.blacklistedNpubs = blockedNpubs
+                            }
+                            
+                            ConfigService.shared.save()
+                            
+                            #if DEBUG
+                            print("NostrService: Synced \(blockedNpubs.count) blocks from Kind 10000 for \(matchingNpub.prefix(8))")
+                            #endif
+                            
+                            NotificationCenter.default.post(name: NSNotification.Name("BlockedAccountsUpdated"), object: nil)
+                        }
+                    }
                 }
                 return
             }
@@ -1161,46 +1355,53 @@ class NostrService: ObservableObject {
                         var hasResumed = false
 
                         messageCancellable = client.messageSubject
-                            .filter { $0.contains(subscriptionId) }
-                            .first()
                             .timeout(.seconds(10), scheduler: DispatchQueue.main)
                             .sink { completion in
                                 if !hasResumed {
                                     hasResumed = true
-                                    if case .failure = completion {
-                                        #if DEBUG
-                                        print("NostrService [\(relayTag)]: COUNT response timeout")
-                                        #endif
-                                    } else {
-                                        #if DEBUG
-                                        print("NostrService [\(relayTag)]: Message stream finished before COUNT")
-                                        #endif
-                                    }
+                                    #if DEBUG
+                                    print("NostrService [\(relayTag)]: COUNT response timeout or completion")
+                                    #endif
                                     continuation.resume(returning: nil)
                                 }
                             } receiveValue: { msg in
-                                if !hasResumed {
-                                    hasResumed = true
-                                    #if DEBUG
-                                    print("NostrService [\(relayTag)]: Received response: \(msg.prefix(200))")
-                                    #endif
+                                guard let data = msg.data(using: .utf8),
+                                      let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                                      json.count >= 3,
+                                      let type = json[0] as? String,
+                                      let subId = json[1] as? String,
+                                      subId == subscriptionId else {
+                                    return
+                                }
 
-                                    if let data = msg.data(using: .utf8),
-                                       let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-                                       json.count >= 3,
-                                       let result = json[2] as? [String: Any],
-                                       let count = (result["count"] as? Int) ?? (result["count"] as? NSNumber)?.intValue {
-                                        continuation.resume(returning: count)
-                                    } else {
-                                        #if DEBUG
-                                        print("NostrService [\(relayTag)]: Failed to parse COUNT JSON")
-                                        #endif
-                                        continuation.resume(returning: nil)
+                                if type == "COUNT" {
+                                    if let payload = json[2] as? [String: Any],
+                                       let rawCount = payload["count"] {
+                                        let extractedCount: Int
+                                        if let intVal = rawCount as? Int {
+                                            extractedCount = intVal
+                                        } else if let doubleVal = rawCount as? Double {
+                                            extractedCount = Int(doubleVal)
+                                        } else if let numberVal = rawCount as? NSNumber {
+                                            extractedCount = numberVal.intValue
+                                        } else if let stringVal = rawCount as? String, let intVal = Int(stringVal) {
+                                            extractedCount = intVal
+                                        } else {
+                                            extractedCount = 0
+                                        }
+                                        
+                                        if !hasResumed {
+                                            hasResumed = true
+                                            #if DEBUG
+                                            print("NostrService [\(relayTag)]: Received COUNT, count: \(extractedCount)")
+                                            #endif
+                                            continuation.resume(returning: extractedCount)
+                                        }
                                     }
                                 }
                             }
 
-                        // Send the actual request
+                        // Send the actual COUNT request
                         let req = ["COUNT", subscriptionId, filter] as [Any]
                         if let reqData = try? JSONSerialization.data(withJSONObject: req),
                            let reqString = String(data: reqData, encoding: .utf8) {

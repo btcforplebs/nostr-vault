@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct UGCReportingDialog: View {
     @Environment(\.dismiss) var dismiss
+    var onDismiss: (() -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     
@@ -13,9 +14,10 @@ public struct UGCReportingDialog: View {
     @State private var description = ""
     @State private var isReporting = false
     
-    public init(eventId: String?, pubkey: String, onReport: @escaping () -> Void) {
+    public init(eventId: String?, pubkey: String, onDismiss: (() -> Void)? = nil, onReport: @escaping () -> Void) {
         self.eventId = eventId
         self.pubkey = pubkey
+        self.onDismiss = onDismiss
         self.onReport = onReport
     }
     
@@ -82,7 +84,7 @@ public struct UGCReportingDialog: View {
             Text("Report Content")
                 .font(.system(size: 18, weight: .bold))
             Spacer()
-            Button(action: { dismiss() }) {
+            Button(action: { performDismiss() }) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundColor(.secondary)
                     .font(.title2)
@@ -96,7 +98,7 @@ public struct UGCReportingDialog: View {
     private var footer: some View {
         HStack(spacing: 16) {
             Button("Cancel") {
-                dismiss()
+                performDismiss()
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 20)
@@ -141,6 +143,14 @@ public struct UGCReportingDialog: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             isReporting = false
             onReport()
+            performDismiss()
+        }
+    }
+    
+    private func performDismiss() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
             dismiss()
         }
     }
@@ -148,14 +158,7 @@ public struct UGCReportingDialog: View {
     private func blockUser(hexPubkey: String) {
         guard let data = Bech32.hexToData(hexPubkey),
               let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-        if !configService.config.blacklistedNpubs.contains(npub) {
-            configService.config.blacklistedNpubs.append(npub)
-            configService.save()
-            
-            #if DEBUG
-            print("ReportingDialog: Automatically blacklisted \(npub)")
-            #endif
-        }
+        configService.blockProfile(npub)
     }
 }
 

@@ -340,6 +340,9 @@ class RelayProcessManager: ObservableObject {
         guard self.isRunning || self.isBooting || self.isImporting else {
             self.state = .idle
             isRunning = false
+            #if os(macOS)
+            NetworkSyncService.shared.stop()
+            #endif
             completion?()
             return
         }
@@ -360,6 +363,9 @@ class RelayProcessManager: ObservableObject {
             self.state = .idle
             self.isRunning = false
             self.isShuttingDown = false
+            #if os(macOS)
+            NetworkSyncService.shared.stop()
+            #endif
             completion?()
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: stopTimeoutItem)
@@ -379,6 +385,9 @@ class RelayProcessManager: ObservableObject {
                 self?.state = .idle
                 self?.isRunning = false
                 self?.isShuttingDown = false
+                #if os(macOS)
+                NetworkSyncService.shared.stop()
+                #endif
 
                 // If we were stopping to start an import, trigger it now
                 if let importConfig = self?.pendingImportConfig {
@@ -412,6 +421,9 @@ class RelayProcessManager: ObservableObject {
                 self?.isRunning = false
                 self?.isBooting = false
                 self?.isLocked = false
+                #if os(macOS)
+                NetworkSyncService.shared.stop()
+                #endif
                 self?.needsLockFix = false
                 self?.showProcessKillAlert = false
                 self?.isShuttingDown = false
@@ -534,6 +546,9 @@ class RelayProcessManager: ObservableObject {
         isRunning = false
         isBooting = false
         isImporting = true
+        #if os(macOS)
+        NetworkSyncService.shared.stop()
+        #endif
         // Reset the log-based event counter so import counts don't
         // carry over and corrupt the post-import stats refresh.
         eventsStored = 0
@@ -797,9 +812,15 @@ class RelayProcessManager: ObservableObject {
                let count = Int(components[importedIndex + 1]) {
                 batch.eventsStoredDelta += count
             }
-        } else if line.contains("new note") || line.contains("new reaction") ||
-                  line.contains("new zap") || line.contains("new encrypted message") ||
-                  line.contains("new gift-wrapped") || line.contains("new repost") {
+        } else if line.contains("event stored") {
+            batch.eventsStoredDelta += 1
+        } else if line.contains("new note") ||
+                  line.contains("new repost") ||
+                  line.contains("new reaction") ||
+                  line.contains("new zap") ||
+                  line.contains("new encrypted message") ||
+                  line.contains("new event kind") ||
+                  line.contains("blasted event") {
             batch.eventsStoredDelta += 1
         }
 
@@ -905,6 +926,9 @@ class RelayProcessManager: ObservableObject {
                 isBooting = false
                 bootStatusMessage = ""
                 cancelBootWatchdog()
+                #if os(macOS)
+                NetworkSyncService.shared.start()
+                #endif
             }
         }
 

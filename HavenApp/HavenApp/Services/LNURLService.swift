@@ -47,6 +47,29 @@ enum LNURLService {
             throw LNURLError.invalidAddress
         }
         
+        return try await fetchPayResponse(from: url)
+    }
+    
+    /// Resolves a raw bech32-encoded LNURL (lud06) to an LNURL Pay Response.
+    /// The bech32 string decodes to a plain UTF-8 HTTPS URL which is then fetched directly.
+    static func resolveRawLNURL(_ lnurl: String) async throws -> LNURLPayResponse {
+        // Strip scheme prefix if present (we add "lnurl:" as a sentinel internally)
+        let raw = lnurl.lowercased().hasPrefix("lnurl:") ? String(lnurl.dropFirst(6)) : lnurl
+        
+        // bech32 decode — HRP is "lnurl", data is the UTF-8 encoded URL bytes
+        guard let decoded = Bech32.decode(raw),
+              let urlString = String(data: decoded.data, encoding: .utf8),
+              let url = URL(string: urlString) else {
+            RelayProcessManager.shared.addLog("LNURL: Failed to decode lud06 bech32: \(raw.prefix(20))…", level: "ERROR")
+            throw LNURLError.invalidAddress
+        }
+        
+        RelayProcessManager.shared.addLog("LNURL: Resolved lud06 to \(url.absoluteString)", level: "DEBUG")
+        return try await fetchPayResponse(from: url)
+    }
+
+    /// Shared HTTP fetch + decode for any LNURL pay endpoint URL.
+    private static func fetchPayResponse(from url: URL) async throws -> LNURLPayResponse {
         RelayProcessManager.shared.addLog("LNURL: Resolving \(url.absoluteString)", level: "DEBUG")
         let (data, response) = try await URLSession.shared.data(from: url)
         

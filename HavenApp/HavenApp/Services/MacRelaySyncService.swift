@@ -23,6 +23,15 @@ class MacRelaySyncService: ObservableObject {
     private var syncedEventIds = Set<String>()
     private var pendingEvents: [[String: Any]] = []
     private let processingQueue = DispatchQueue(label: "com.haven.mac-relay-sync", qos: .userInitiated)
+
+    // BadgerDB (Haven's default) enforces MaxLimit=1000. The query engine honours
+    // filter.Limit only when 0 < filter.Limit <= MaxLimit; values above MaxLimit
+    // silently fall back to MaxLimit/4 = 250.  Requesting exactly 1000 therefore
+    // maximises events per page on BadgerDB, and still fits within LMDB's 1500 cap.
+    private let pageLimit = 1000
+    // Per-page tracking — reset at the start of each REQ.
+    private var pageEventCount: Int = 0
+    private var pageOldestTimestamp: Int64 = Int64.max
     
     /// UserDefaults key for the last successful sync timestamp
     private let lastSyncKey = "com.haven.macRelay.lastSyncTimestamp"
@@ -97,14 +106,18 @@ class MacRelaySyncService: ObservableObject {
     // MARK: - Sync Logic
     
     private func performSync(macRelayURL: String, fromTimestamp: Int64? = nil) {
-        // Normalize the URL — ensure it has wss:// scheme
+        // Normalize the URL — convert any scheme (including https://) to wss://
         var url = macRelayURL
-        if !url.hasPrefix("wss://") && !url.hasPrefix("ws://") {
+        if url.hasPrefix("https://") {
+            url = "wss://" + url.dropFirst("https://".count)
+        } else if url.hasPrefix("http://") {
+            url = "ws://" + url.dropFirst("http://".count)
+        } else if !url.hasPrefix("wss://") && !url.hasPrefix("ws://") {
             url = "wss://" + url
         }
-        
-        // Connect to root (all events), /inbox, then aggregate
-        let endpoints = [url, url + "/inbox"]
+
+        // Connect to all relay endpoints to get complete sync
+        let endpoints = [url, url + "/inbox", url + "/private", url + "/chat"]
         
         isSyncing = true
         notesSynced = 0
@@ -122,46 +135,51 @@ class MacRelaySyncService: ObservableObject {
         syncFromEndpoints(endpoints, index: 0, since: startTime)
     }
     
-    private func syncFromEndpoints(_ endpoints: [String], index: Int, since: Int64) {
+    /// Iterates through each relay endpoint sequentially, paginating within each endpoint
+    /// using `until` as a cursor until fewer than `pageLimit` events are returned.
+    private func syncFromEndpoints(_ endpoints: [String], index: Int, since: Int64, until: Int64? = nil) {
         guard index < endpoints.count else {
-            // All endpoints done — flush to local relay
             finishSync()
             return
         }
-        
+
         let endpoint = endpoints[index]
         guard let url = URL(string: endpoint) else {
             syncFromEndpoints(endpoints, index: index + 1, since: since)
             return
         }
-        
+
+        // Reset page-level tracking for this request
+        pageEventCount = 0
+        pageOldestTimestamp = Int64.max
+
         let wsClient = WebSocketClient()
         wsClient.isTemporary = true
         self.client = wsClient
-        
+
         let subId = "mac-sync-\(UUID().uuidString.prefix(6))"
-        
+
         wsClient.messageSubject
             .receive(on: processingQueue)
             .sink { [weak self] message in
                 self?.processMessage(message, subId: subId, endpoints: endpoints, index: index, since: since)
             }
             .store(in: &cancellables)
-        
+
         wsClient.$connectionState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 guard let self = self else { return }
                 switch state {
                 case .connected:
-                    self.syncStatus = "Fetching from \(url.host ?? "Mac relay")..."
-                    self.sendSyncRequest(to: wsClient, subId: subId, url: url, since: since)
+                    let pageDesc = until != nil ? " (page, until \(until!))" : ""
+                    self.syncStatus = "Fetching from \(url.host ?? "Mac relay")\(pageDesc)..."
+                    self.sendSyncRequest(to: wsClient, subId: subId, url: url, since: since, until: until)
                 case .error:
                     #if DEBUG
                     print("MacRelaySyncService: Connection error to \(endpoint)")
                     #endif
-                    self.syncStatus = "Connection error"
-                    // Try next endpoint
+                    // On error, skip to next endpoint
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         self.syncFromEndpoints(endpoints, index: index + 1, since: since)
                     }
@@ -170,115 +188,110 @@ class MacRelaySyncService: ObservableObject {
                 }
             }
             .store(in: &cancellables)
-        
+
         wsClient.connect(url: url)
-        
-        // Safety timeout: if nothing happens in 30 seconds, move on
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+
+        // Safety timeout per page — 60 seconds is generous for 500 events
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
             guard let self = self, self.isSyncing else { return }
-            // If we're still trying to fetch from this endpoint, move on
             if self.client === wsClient && wsClient.connectionState != .disconnected {
                 #if DEBUG
-                print("MacRelaySyncService: Timeout for \(endpoint), moving to next")
+                print("MacRelaySyncService: Timeout for \(endpoint) until=\(until ?? -1), advancing")
                 #endif
                 wsClient.disconnect()
                 self.syncFromEndpoints(endpoints, index: index + 1, since: since)
             }
         }
     }
-    
-    private func sendSyncRequest(to client: WebSocketClient, subId: String, url: URL, since: Int64) {
-        // Resolve ownerHex directly from config to be safe
+
+    private func sendSyncRequest(to client: WebSocketClient, subId: String, url: URL, since: Int64, until: Int64? = nil) {
         let npub = ConfigService.shared.config.ownerNpub
         let ownerHex = Bech32.decode(npub)?.hexString ?? ""
-        
-        if ownerHex.isEmpty {
-            #if DEBUG
-            print("MacRelaySyncService: Owner Hex is empty, cannot filter correctly")
-            #endif
-        }
 
-        // Kinds: Profile (0), Note (1), Contacts (3), DM (4), Repost (6), Reaction (7), 
-        // File Metadata (1063), Long-form (30023), Zap (9735), GiftWrap (1059)
-        let kinds = [0, 1, 3, 4, 6, 7, 1059, 1063, 30023, 9735]
-        
-        // Strategy: Since the Mac relay is a PRIVATE relay for this owner, it only contains 
-        // data the user cares about (their notes, notes from people they follow, and mentions).
-        // Therefore, we don't strictly NEED the authors list — we can just request ALL events 
-        // of relevant kinds since our last sync.
-        
-        var filter1: [String: Any] = [
-            "kinds": kinds,
-            "limit": 20000
-        ]
-        
-        if since > 0 {
-            filter1["since"] = since
-        }
-        
+        // Page-size request. Haven (khatru) caps at 500; requesting exactly pageLimit lets us
+        // detect when we've hit the cap and need to paginate.
+        var filter1: [String: Any] = ["limit": pageLimit]
+        if since > 0 { filter1["since"] = since }
+        if let u = until { filter1["until"] = u }
+
         var filters: [Any] = [filter1]
-        
-        // Filter 2: Explicit mentions of the owner (Double-check inbox/mentions)
+
         if !ownerHex.isEmpty {
-            var filter2: [String: Any] = [
-                "kinds": kinds,
-                "#p": [ownerHex],
-                "limit": 5000
-            ]
-            if since > 0 {
-                filter2["since"] = since
-            }
+            var filter2: [String: Any] = ["#p": [ownerHex], "limit": pageLimit]
+            if since > 0 { filter2["since"] = since }
+            if let u = until { filter2["until"] = u }
             filters.append(filter2)
         }
-        
-        // Send filters
+
         let req: [Any] = ["REQ", subId] + filters
 
-        
         if let data = try? JSONSerialization.data(withJSONObject: req),
            let str = String(data: data, encoding: .utf8) {
             #if DEBUG
-            print("MacRelaySyncService: Syncing from \(url.path) since \(since) with p-tags(\(ownerHex.prefix(8)))")
+            print("MacRelaySyncService: REQ \(url.path) since=\(since) until=\(until ?? -1) ownerHex=\(ownerHex.prefix(8))")
             #endif
             client.send(text: str)
         }
     }
-    
+
     private func processMessage(_ message: String, subId: String, endpoints: [String], index: Int, since: Int64) {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               json.count >= 2,
               let type = json[0] as? String else { return }
-        
+
         if type == "EOSE" {
-            // End of stored events — close this subscription and move on
+            // Send CLOSE for this subscription
             let closeMsg: [Any] = ["CLOSE", subId]
-            if let closeData = try? JSONSerialization.data(withJSONObject: closeMsg),
-               let closeStr = String(data: closeData, encoding: .utf8) {
-                DispatchQueue.main.async { [weak self] in
-                    self?.client?.send(text: closeStr)
-                }
+            if let d = try? JSONSerialization.data(withJSONObject: closeMsg),
+               let s = String(data: d, encoding: .utf8) {
+                DispatchQueue.main.async { [weak self] in self?.client?.send(text: s) }
             }
-            
+
+            // Capture page state before the async hop
+            let gotFullPage = pageEventCount >= pageLimit
+            let oldest = pageOldestTimestamp
+
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 guard let self = self else { return }
                 self.client?.disconnect()
-                self.syncFromEndpoints(endpoints, index: index + 1, since: since)
+
+                // If we received a full page and haven't walked back to `since` yet, paginate
+                if gotFullPage && oldest > since && oldest != Int64.max {
+                    #if DEBUG
+                    print("MacRelaySyncService: Full page (\(self.pageEventCount) events), paginating with until=\(oldest - 1)")
+                    #endif
+                    self.syncFromEndpoints(endpoints, index: index, since: since, until: oldest - 1)
+                } else {
+                    // Fewer than a full page — this endpoint is exhausted, move on
+                    #if DEBUG
+                    print("MacRelaySyncService: Endpoint done (\(self.pageEventCount) events on last page), next endpoint")
+                    #endif
+                    self.syncFromEndpoints(endpoints, index: index + 1, since: since)
+                }
             }
             return
         }
-        
+
         guard type == "EVENT", json.count >= 3,
               let eventDict = json[2] as? [String: Any],
               let eventId = eventDict["id"] as? String else { return }
-        
-        // Deduplicate
+
+        // Deduplicate globally across all pages/endpoints
         if syncedEventIds.contains(eventId) { return }
         syncedEventIds.insert(eventId)
-        
-        // Buffer the raw event dict for later injection into local relay
+
         pendingEvents.append(eventDict)
-        
+
+        // Track page-level stats for pagination decision
+        pageEventCount += 1
+        if let ts = eventDict["created_at"] as? Int64 {
+            if ts < pageOldestTimestamp { pageOldestTimestamp = ts }
+        } else if let ts = eventDict["created_at"] as? Int {
+            let ts64 = Int64(ts)
+            if ts64 < pageOldestTimestamp { pageOldestTimestamp = ts64 }
+        }
+
         DispatchQueue.main.async { [weak self] in
             self?.notesSynced = self?.syncedEventIds.count ?? 0
             self?.syncStatus = "Synced \(self?.notesSynced ?? 0) notes..."

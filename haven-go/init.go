@@ -186,7 +186,7 @@ func initRelays(ctx context.Context) error {
 
 	privateRelay.RejectEvent = append(privateRelay.RejectEvent,
 		policies.RejectEventsWithBase64Media,
-		policies.EventIPRateLimiter(
+		whitelistBypassEventRateLimiter(
 			privateRelayLimits.EventIPLimiterTokensPerInterval,
 			time.Minute*time.Duration(privateRelayLimits.EventIPLimiterInterval),
 			privateRelayLimits.EventIPLimiterMaxTokens,
@@ -249,7 +249,7 @@ func initRelays(ctx context.Context) error {
 
 	chatRelay.RejectEvent = append(chatRelay.RejectEvent,
 		policies.RejectEventsWithBase64Media,
-		policies.EventIPRateLimiter(
+		whitelistBypassEventRateLimiter(
 			chatRelayLimits.EventIPLimiterTokensPerInterval,
 			time.Minute*time.Duration(chatRelayLimits.EventIPLimiterInterval),
 			chatRelayLimits.EventIPLimiterMaxTokens,
@@ -313,7 +313,7 @@ func initRelays(ctx context.Context) error {
 
 	outboxRelay.RejectEvent = append(outboxRelay.RejectEvent,
 		policies.RejectEventsWithBase64Media,
-		policies.EventIPRateLimiter(
+		whitelistBypassEventRateLimiter(
 			outboxRelayLimits.EventIPLimiterTokensPerInterval,
 			time.Minute*time.Duration(outboxRelayLimits.EventIPLimiterInterval),
 			outboxRelayLimits.EventIPLimiterMaxTokens,
@@ -330,6 +330,7 @@ func initRelays(ctx context.Context) error {
 	)
 
 	outboxRelay.StoreEvent = append(outboxRelay.StoreEvent, outboxDB.SaveEvent, func(ctx context.Context, event *nostr.Event) error {
+		slog.Info("event stored")
 		go blast(ctx, event)
 		return nil
 	})
@@ -404,7 +405,7 @@ func initRelays(ctx context.Context) error {
 
 	inboxRelay.RejectEvent = append(inboxRelay.RejectEvent,
 		policies.RejectEventsWithBase64Media,
-		policies.EventIPRateLimiter(
+		whitelistBypassEventRateLimiter(
 			inboxRelayLimits.EventIPLimiterTokensPerInterval,
 			time.Minute*time.Duration(inboxRelayLimits.EventIPLimiterInterval),
 			inboxRelayLimits.EventIPLimiterMaxTokens,
@@ -423,7 +424,10 @@ func initRelays(ctx context.Context) error {
 		),
 	)
 
-	inboxRelay.StoreEvent = append(inboxRelay.StoreEvent, inboxDB.SaveEvent)
+	inboxRelay.StoreEvent = append(inboxRelay.StoreEvent, inboxDB.SaveEvent, func(ctx context.Context, event *nostr.Event) error {
+		slog.Info("event stored")
+		return nil
+	})
 	inboxRelay.QueryEvents = append(inboxRelay.QueryEvents, inboxDB.QueryEvents)
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)
 	inboxRelay.CountEvents = append(inboxRelay.CountEvents, inboxDB.CountEvents)

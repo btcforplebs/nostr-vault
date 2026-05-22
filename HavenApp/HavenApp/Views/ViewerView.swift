@@ -43,6 +43,7 @@ struct ViewerView: View {
     #if os(iOS)
     @State private var saveToPhotosMessage: String?
     #endif
+    @State private var requestedMissingIds = Set<String>()
 
     // Debounce mechanism for updateDisplayData
     @State private var updateTask: Task<Void, Never>?
@@ -105,9 +106,9 @@ struct ViewerView: View {
         let currentEvents = nostrService.events
         let currentNoteMedia = nostrService.noteMedia
         let currentBlossom = blossomMedia
-        let owner = nostrService.ownerHexPubkey
+        let owner = nostrService.activeHexPubkey
         let whitelist = configService.whitelistedHexPubkeys
-        let blacklist = configService.blacklistedHexPubkeys
+        let blacklist = configService.activeAccountBlockedHexPubkeys
 
         #if DEBUG
         print("updateDisplayData: blossom=\(currentBlossom.count) noteMedia=\(currentNoteMedia.count) events=\(currentEvents.count) filter=\(currentFilter) source=\(mediaSourceFilter)")
@@ -137,22 +138,37 @@ struct ViewerView: View {
 
                     let likedNoteIds = Set(rxMap.keys)
                     var filtered = currentEvents.filter { noteKinds.contains($0.kind) && likedNoteIds.contains($0.id) }
-                    // Sort by number of reactions (most liked first)
-                    filtered.sort { (rxMap[$0.id]?.count ?? 0) > (rxMap[$1.id]?.count ?? 0) }
+                    // Sort by number of reactions (most liked first), then by date
+                    filtered.sort { 
+                        let count0 = rxMap[$0.id]?.count ?? 0
+                        let count1 = rxMap[$1.id]?.count ?? 0
+                        if count0 == count1 { return $0.createdAtDate > $1.createdAtDate }
+                        return count0 > count1 
+                    }
 
                     let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
 
+                    let finalRxMap = rxMap
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
-                        self.reactionMap = rxMap
+                        self.reactionMap = finalRxMap
                         self.displayLikedNotes = Array(result.prefix(self.maxDisplayedItems))
                     }
                 } else {
                     // My Likes: notes I reacted to (kind 7 from me)
-                    let myLikedNoteIds = Set(currentEvents.filter { $0.kind == 7 && $0.pubkey == owner }.compactMap { event in
-                        event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
-                    })
-                    let filtered = currentEvents.filter { noteKinds.contains($0.kind) && myLikedNoteIds.contains($0.id) }
+                    var myLikeDates: [String: Date] = [:]
+                    for event in currentEvents where event.kind == 7 && event.pubkey == owner {
+                        if let targetId = event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
+                            if let existing = myLikeDates[targetId] {
+                                if event.createdAtDate > existing { myLikeDates[targetId] = event.createdAtDate }
+                            } else {
+                                myLikeDates[targetId] = event.createdAtDate
+                            }
+                        }
+                    }
+                    let myLikedNoteIds = Set(myLikeDates.keys)
+                    var filtered = currentEvents.filter { noteKinds.contains($0.kind) && myLikedNoteIds.contains($0.id) }
+                    filtered.sort { (myLikeDates[$0.id] ?? Date.distantPast) > (myLikeDates[$1.id] ?? Date.distantPast) }
 
                     let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
 
@@ -199,9 +215,10 @@ struct ViewerView: View {
 
                     let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
 
+                    let finalZMap = zMap
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
-                        self.zapMap = zMap
+                        self.zapMap = finalZMap
                         self.displayZappedNotes = Array(result.prefix(self.maxDisplayedItems))
                     }
                 } else {
@@ -446,12 +463,7 @@ struct ViewerView: View {
     @ViewBuilder
     private func headerView(isNarrow: Bool) -> some View {
         VStack(spacing: 12) {
-            #if os(macOS)
-            HStack {
-                relayDashboardButton
-                Spacer()
-            }
-            #endif
+
 
             if isNarrow {
                 VStack(alignment: .leading, spacing: 10) {
@@ -586,35 +598,83 @@ struct ViewerView: View {
             ZStack {
                 Color(red: 0.08, green: 0.08, blue: 0.1).ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    headerView(isNarrow: geometry.size.width < 500)
+                #if os(macOS)
+                if geometry.size.width > 680 {
+                    let availableDashboardHeight = max(420, geometry.size.height - 300)
+                    let preferredDashboardHeight = max(620, geometry.size.height * 0.56)
+                    let dashboardHeight = min(preferredDashboardHeight, availableDashboardHeight)
 
-                    Divider()
+                    VStack(spacing: 0) {
+                        DashboardView(isSidebar: false)
+                            .frame(height: dashboardHeight)
+                            .clipped()
+                            .environmentObject(relayManager)
+                            .environmentObject(configService)
+                            .environmentObject(nostrService)
+                            .environmentObject(StatsService.shared)
+                        
+                        Divider()
+                            .background(Color.platformSeparator)
+                        
+                        VStack(spacing: 0) {
+                            desktopHeaderView
+                            
+                            Divider()
+                            
+                            ScrollView {
+                                listContent
 
-                    ScrollView {
-                        listContent
-
-                        if !displayNotes.isEmpty || !displayMedia.isEmpty || !displayLikedNotes.isEmpty {
-                            Color.clear
-                                .frame(height: 1)
-                                .padding(.bottom, 20)
-                                .onAppear {
-                                    if !nostrService.isFetching && (!displayNotes.isEmpty || !displayMedia.isEmpty) {
-                                        loadMore()
-                                    }
+                                if !displayNotes.isEmpty || !displayMedia.isEmpty || !displayLikedNotes.isEmpty {
+                                    Color.clear
+                                        .frame(height: 1)
+                                        .padding(.bottom, 20)
+                                        .onAppear {
+                                            if !nostrService.isFetching && (!displayNotes.isEmpty || !displayMedia.isEmpty) {
+                                                loadMore()
+                                            }
+                                        }
+                                        .id(nostrService.events.count)
                                 }
-                                .id(nostrService.events.count)
+                            }
+                            .refreshable {
+                                refreshAll()
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
+                        .clipped()
                     }
-                    .refreshable {
-                        #if os(iOS)
-                        MacRelaySyncService.shared.syncIfConfigured()
-                        #endif
-                        refreshAll()
+                } else {
+                    if showingRelayDashboard {
+                        VStack(spacing: 0) {
+                            HStack {
+                                Text("Relay Dashboard")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Button("Done") {
+                                    showingRelayDashboard = false
+                                }
+                                .keyboardShortcut(.defaultAction)
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 14)
+                            .background(Color(red: 0.12, green: 0.12, blue: 0.15))
+                            
+                            Divider()
+                            
+                            DashboardView()
+                                .environmentObject(relayManager)
+                                .environmentObject(configService)
+                                .environmentObject(nostrService)
+                                .environmentObject(StatsService.shared)
+                        }
+                    } else {
+                        compactViewContent(isNarrow: geometry.size.width < 500)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
                 }
+                #else
+                compactViewContent(isNarrow: geometry.size.width < 500)
+                #endif
             }
         }
         .onAppear {
@@ -642,7 +702,16 @@ struct ViewerView: View {
                 initialLoad = true
             }
         }
+        #if os(iOS)
+        // Present over the entire window (including the custom tab bar) on iOS.
+        .fullScreenCover(isPresented: isPresentingViewer) {
+            if let item = selectedMedia {
+                mediaViewerContent(for: item)
+            }
+        }
+        #else
         .overlay(fullScreenOverlay)
+        #endif
         .modifier(ViewerChangeHandlers(
             viewMode: viewMode,
             likesFilter: likesFilter,
@@ -652,7 +721,8 @@ struct ViewerView: View {
             mediaSourceFilter: mediaSourceFilter,
             eventsCount: nostrService.events.count,
             noteMediaCount: nostrService.noteMedia.count,
-            blacklistedNpubs: configService.config.blacklistedNpubs,
+            blacklistedNpubs: configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub] ?? (configService.config.activeAccountNpub.isEmpty ? configService.config.blacklistedNpubs : []),
+            activeAccountNpub: configService.config.activeAccountNpub,
             blossomCount: blossomMedia.count,
             onResetAndUpdate: {
                 maxDisplayedItems = 50
@@ -682,20 +752,24 @@ struct ViewerView: View {
         .onReceive(NotificationCenter.default.publisher(for: .macRelaySyncComplete)) { _ in
             refreshAll()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenRelayDashboard"))) { _ in
+            showingRelayDashboard = true
+        }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
             set: { showingProfilePubkey = $0?.id }
         )) { p in
-            ProfileView(pubkey: p.id)
+            ProfileView(pubkey: p.id, onDismiss: { showingProfilePubkey = nil })
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingNoteId.map { IdentifiableString(id: $0) } },
             set: { showingNoteId = $0?.id }
         )) { noteId in
-            NoteDetailViewWrapper(noteId: noteId.id)
+            NoteDetailViewWrapper(noteId: noteId.id, onDismiss: { showingNoteId = nil })
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        #if os(iOS)
         .sheet(isPresented: $showingRelayDashboard) {
             NavigationView {
                 DashboardView()
@@ -704,67 +778,125 @@ struct ViewerView: View {
                     .environmentObject(nostrService)
                     .environmentObject(StatsService.shared)
                     .navigationTitle("Relay Dashboard")
-                    #if os(iOS)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
+                        ToolbarItem(placement: .confirmationAction) {
                             Button("Done") { showingRelayDashboard = false }
                         }
                     }
-                    #endif
             }
-            #if os(macOS)
-            .frame(minWidth: 400, minHeight: 400)
-            #endif
         }
+        #endif
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { showingRelayDashboard = true }) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 12, height: 12)
-                        .shadow(color: statusColor.opacity(0.8), radius: 4)
-                        .padding(8)
-                        .background(Color.primary.opacity(0.08))
-                        .clipShape(Circle())
-                }
-            }
-            
-            ToolbarItem(placement: .principal) {
-                Menu {
-                    Button(action: { viewMode = .notes }) {
-                        Label("Notes", systemImage: viewMode == .notes ? "checkmark" : "")
+                HStack(spacing: 8) {
+                    Button(action: { showingRelayDashboard = true }) {
+                        Circle()
+                            .fill(statusColor)
+                            .frame(width: 12, height: 12)
+                            .shadow(color: statusColor.opacity(0.8), radius: 4)
+                            .padding(8)
+                            .background(Color.primary.opacity(0.08))
+                            .clipShape(Circle())
                     }
-                    Button(action: {
-                        viewMode = .media
-                        if relayManager.isRunning && !relayManager.isBooting {
-                            loadLocalMedia()
+
+                    Menu {
+                        Button(action: { viewMode = .notes }) {
+                            Label("Notes", systemImage: viewMode == .notes ? "checkmark" : "")
                         }
-                    }) {
-                        Label("Media", systemImage: viewMode == .media ? "checkmark" : "")
+                        Button(action: {
+                            viewMode = .media
+                            if relayManager.isRunning && !relayManager.isBooting {
+                                loadLocalMedia()
+                            }
+                        }) {
+                            Label("Media", systemImage: viewMode == .media ? "checkmark" : "")
+                        }
+                        Button(action: {
+                            viewMode = .likes
+                            fetchMissingLikedNotes()
+                        }) {
+                            Label("Likes", systemImage: viewMode == .likes ? "checkmark" : "")
+                        }
+                        Button(action: { viewMode = .zaps }) {
+                            Label("Zaps", systemImage: viewMode == .zaps ? "checkmark" : "")
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(viewModeTitle)
+                                .font(.system(size: 20, weight: .bold))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundColor(.white)
                     }
-                    Button(action: {
-                        viewMode = .likes
-                        fetchMissingLikedNotes()
-                    }) {
-                        Label("Likes", systemImage: viewMode == .likes ? "checkmark" : "")
-                    }
-                    Button(action: { viewMode = .zaps }) {
-                        Label("Zaps", systemImage: viewMode == .zaps ? "checkmark" : "")
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(viewModeTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
-                    }
-                    .foregroundColor(Color.havenPurple)
                 }
             }
         }
         #endif
+    }
+
+    @ViewBuilder
+    private func compactViewContent(isNarrow: Bool) -> some View {
+        VStack(spacing: 0) {
+            headerView(isNarrow: isNarrow)
+
+            Divider()
+
+            ScrollView {
+                listContent
+
+                if !displayNotes.isEmpty || !displayMedia.isEmpty || !displayLikedNotes.isEmpty {
+                    Color.clear
+                        .frame(height: 1)
+                        .padding(.bottom, 20)
+                        .onAppear {
+                            if !nostrService.isFetching && (!displayNotes.isEmpty || !displayMedia.isEmpty) {
+                                loadMore()
+                            }
+                        }
+                        .id(nostrService.events.count)
+                }
+
+                #if os(iOS)
+                Color.clear
+                    .frame(height: 80)
+                #endif
+            }
+            .refreshable {
+                #if os(iOS)
+                MacRelaySyncService.shared.syncIfConfigured()
+                #endif
+                refreshAll()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var desktopHeaderView: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 16) {
+                modeView
+                
+                Spacer()
+                
+                if viewMode == .notes {
+                    filterView
+                } else if viewMode == .likes {
+                    likesFilterView
+                } else if viewMode == .zaps {
+                    zapsFilterView
+                }
+            }
+            
+            searchOrSourceBar
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal)
+        .padding(.vertical, 12)
+        .background(Color(red: 0.12, green: 0.12, blue: 0.16))
     }
     
     private var notesButton: some View {
@@ -1256,124 +1388,147 @@ struct ViewerView: View {
     }
     
     @ViewBuilder
-    private var fullScreenOverlay: some View {
-        if let item = selectedMedia {
-            ZStack {
-                Color.black.opacity(0.9 * max(0, 1.0 - (abs(dragOffset.height) / 300.0)))
-                    .edgesIgnoringSafeArea(.all)
-                    .onTapGesture { 
-                        withAnimation(.easeInOut(duration: 0.2)) { 
-                            selectedMedia = nil 
-                            dragOffset = .zero
-                        } 
+    private func mediaViewerContent(for item: MediaItem) -> some View {
+        ZStack {
+            Color.black.opacity(0.9 * max(0, 1.0 - (abs(dragOffset.height) / 300.0)))
+                .edgesIgnoringSafeArea(.all)
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedMedia = nil
+                        dragOffset = .zero
                     }
-                
-                VStack {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
+                }
+
+            VStack {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Button(action: {
+                            PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
+                        }) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 16, weight: .semibold))
+                                .padding(10)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+
+                        #if os(iOS)
+                        if item.type == .image || item.type == .video {
                             Button(action: {
-                                PlatformClipboard.copy(item.url.absoluteString)
+                                saveMediaToPhotos(item: item)
                             }) {
-                                Label("Copy Link", systemImage: "doc.on.doc")
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .padding(10)
                                     .background(Color.white.opacity(0.1))
                                     .cornerRadius(8)
                             }
                             .buttonStyle(.plain)
-
-                            #if os(iOS)
-                            if item.type == .image || item.type == .video {
-                                Button(action: {
-                                    saveMediaToPhotos(item: item)
-                                }) {
-                                    Label("Save to Photos", systemImage: "square.and.arrow.down")
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .background(Color.white.opacity(0.1))
-                                        .cornerRadius(8)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            #endif
-
-                            SourceIndicatorView(url: item.url)
-
-                            Spacer()
-
-                            Button(action: { 
-                                withAnimation(.easeInOut(duration: 0.2)) { 
-                                    selectedMedia = nil 
-                                    dragOffset = .zero
-                                } 
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.title)
-                                    .foregroundColor(.white.opacity(0.6))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        #if os(iOS)
-                        if let message = saveToPhotosMessage {
-                            Text(message)
-                                .font(.caption)
-                                .foregroundColor(message.contains("Saved") ? .green : .red)
-                                .transition(.opacity)
                         }
                         #endif
-                    }
-                    .padding()
-                    .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
-                    
-                    Spacer()
-                    
-                    TabView(selection: $selectedMedia) {
-                        ForEach(displayMedia) { mediaItem in
-                            ViewerViewMediaItem(mediaItem: mediaItem)
-                                .tag(mediaItem as MediaItem?)
+
+                        SourceIndicatorView(url: item.url)
+
+                        Spacer()
+
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedMedia = nil
+                                dragOffset = .zero
+                            }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title)
+                                .foregroundColor(.white.opacity(0.6))
                         }
+                        .buttonStyle(.plain)
                     }
-                    .mediaTabViewStyleCompat()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .offset(y: dragOffset.height)
-                    .scaleEffect(max(0.8, 1.0 - (abs(dragOffset.height) / 1000.0)))
-                    .gesture(
-                        DragGesture()
-                            .onChanged { gesture in
-                                // Only capture vertical drags to not conflict with horizontal swiping
-                                if abs(gesture.translation.height) > abs(gesture.translation.width) || dragOffset.height != 0 {
-                                    dragOffset = CGSize(width: 0, height: gesture.translation.height)
+                    #if os(iOS)
+                    if let message = saveToPhotosMessage {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundColor(message.contains("Saved") ? .green : .red)
+                            .transition(.opacity)
+                    }
+                    #endif
+                }
+                .padding()
+                .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
+
+                Spacer()
+
+                TabView(selection: $selectedMedia) {
+                    ForEach(displayMedia) { mediaItem in
+                        ViewerViewMediaItem(mediaItem: mediaItem)
+                            .tag(mediaItem as MediaItem?)
+                    }
+                }
+                .mediaTabViewStyleCompat()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .offset(y: dragOffset.height)
+                .scaleEffect(max(0.8, 1.0 - (abs(dragOffset.height) / 1000.0)))
+                .gesture(
+                    DragGesture()
+                        .onChanged { gesture in
+                            // Only capture vertical drags to not conflict with horizontal swiping
+                            if abs(gesture.translation.height) > abs(gesture.translation.width) || dragOffset.height != 0 {
+                                dragOffset = CGSize(width: 0, height: gesture.translation.height)
+                            }
+                        }
+                        .onEnded { gesture in
+                            if abs(dragOffset.height) > 120 {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    selectedMedia = nil
+                                    dragOffset = .zero
+                                }
+                            } else {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                    dragOffset = .zero
                                 }
                             }
-                            .onEnded { gesture in
-                                if abs(dragOffset.height) > 120 {
-                                    withAnimation(.easeOut(duration: 0.2)) {
-                                        selectedMedia = nil
-                                        dragOffset = .zero
-                                    }
-                                } else {
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                                        dragOffset = .zero
-                                    }
-                                }
-                            }
-                    )
+                        }
+                )
 
-                    Spacer()
+                Spacer()
 
-                    Text(item.url.absoluteString)
-                        .font(.caption.monospaced())
-                        .foregroundColor(.secondary)
-                        .padding(.bottom)
-                        .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
+                Text(configService.externalShareURL(for: item.url).absoluteString)
+                    .font(.caption.monospaced())
+                    .foregroundColor(.secondary)
+                    .padding(.bottom)
+                    .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
+            }
+        }
+        .transition(.opacity)
+        #if os(iOS)
+        .background(ClearFullScreenBackground())
+        #endif
+        #if os(macOS)
+        .onAppear { installKeyMonitor() }
+        .onDisappear { removeKeyMonitor() }
+        #endif
+    }
+
+    /// macOS path: traditional in-window overlay.
+    @ViewBuilder
+    private var fullScreenOverlay: some View {
+        if let item = selectedMedia {
+            mediaViewerContent(for: item)
+        }
+    }
+
+    /// Binding wrapping `selectedMedia` for `.fullScreenCover(isPresented:)`.
+    /// Resets the drag offset when dismissed so the next presentation isn't shifted.
+    private var isPresentingViewer: Binding<Bool> {
+        Binding(
+            get: { selectedMedia != nil },
+            set: { presenting in
+                if !presenting {
+                    selectedMedia = nil
+                    dragOffset = .zero
                 }
             }
-            .transition(.opacity)
-            #if os(macOS)
-            .onAppear { installKeyMonitor() }
-            .onDisappear { removeKeyMonitor() }
-            #endif
-        }
+        )
     }
 
     private func navigateMedia(direction: Int) {
@@ -1429,11 +1584,12 @@ struct ViewerView: View {
             URL(string: configService.config.nostrURL + "/inbox")!
         ]
 
-        // Also query the Mac relay's inbox for tagged notes the local relay may
+        // Also query the Mac relay for tagged notes the local relay may
         // not have (e.g. due to shorter WoT depth or notes missed while suspended).
         let macURL = configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !macURL.isEmpty, let macInbox = URL(string: macURL + "/inbox") {
-            urls.append(macInbox)
+        if !macURL.isEmpty {
+            if let macRelay = URL(string: macURL) { urls.append(macRelay) }
+            if let macInbox = URL(string: macURL + "/inbox") { urls.append(macInbox) }
         }
         
         var authorsSet = Set<String>()
@@ -1449,16 +1605,17 @@ struct ViewerView: View {
     
     /// Fetch notes referenced by the owner's likes that aren't already in the events array.
     private func fetchMissingLikedNotes() {
-        let owner = nostrService.ownerHexPubkey
+        let owner = nostrService.activeHexPubkey
         guard !owner.isEmpty else { return }
 
         let likedNoteIds = Set(nostrService.events.filter { $0.kind == 7 && $0.pubkey == owner }.compactMap { event in
             event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
         })
         let existingIds = Set(nostrService.events.map { $0.id })
-        let missingIds = Array(likedNoteIds.subtracting(existingIds))
+        let missingIds = Array(likedNoteIds.subtracting(existingIds).subtracting(requestedMissingIds))
 
         guard !missingIds.isEmpty else { return }
+        for id in missingIds { requestedMissingIds.insert(id) }
 
         #if DEBUG
         print("ViewerView: Fetching \(missingIds.count) missing liked notes")
@@ -1599,7 +1756,7 @@ struct ViewerView: View {
         Task {
             let relayDataDir = configService.relayDataDir
             let blossomPath = configService.config.blossomPath
-            let ownerHex = nostrService.ownerHexPubkey
+            let ownerHex = nostrService.activeHexPubkey
             let webURL = configService.config.webURL
             let rpm = relayManager
 
@@ -1661,6 +1818,7 @@ struct ViewerView: View {
 struct LikedByRow: View {
     let reactorPubkeys: [String]
     @EnvironmentObject var nostrService: NostrService
+    @State private var showingReactors = false
 
     private var uniqueReactors: [String] {
         Array(Set(reactorPubkeys))
@@ -1670,14 +1828,15 @@ struct LikedByRow: View {
         let unique = uniqueReactors
         HStack(spacing: 6) {
             Image(systemName: "heart.fill")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(.red)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.pink)
 
             HStack(spacing: -6) {
                 ForEach(unique.prefix(5), id: \.self) { pubkey in
                     let profile = nostrService.profiles[pubkey]
-                    AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 20)
+                    AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 22)
                         .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 1.5))
+                        .shadow(color: Color.black.opacity(0.1), radius: 2)
                 }
             }
 
@@ -1687,11 +1846,20 @@ struct LikedByRow: View {
             let remaining = unique.count - names.count
 
             Text(likedByText(names: names, remaining: remaining))
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.secondary)
                 .lineLimit(1)
 
             Spacer()
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            showingReactors = true
+        }
+        .sheet(isPresented: $showingReactors) {
+            ReactorsListView(pubkeys: unique, onDismiss: { showingReactors = false })
+                .environmentObject(nostrService)
         }
         .onAppear {
             let missing = unique.filter { nostrService.profiles[$0] == nil }
@@ -1709,6 +1877,57 @@ struct LikedByRow: View {
         }
         text += " liked"
         return text
+    }
+}
+
+struct ReactorsListView: View {
+    let pubkeys: [String]
+    var onDismiss: (() -> Void)? = nil
+    @EnvironmentObject var nostrService: NostrService
+    @Environment(\.presentationMode) var presentationMode
+
+    var body: some View {
+        NavigationView {
+            List(pubkeys, id: \.self) { pubkey in
+                let profile = nostrService.profiles[pubkey]
+                HStack(spacing: 12) {
+                    AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 40)
+                        .overlay(Circle().stroke(Color.platformSecondaryGroupedBackground, lineWidth: 2))
+                        .shadow(color: Color.black.opacity(0.1), radius: 3)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(profile?.bestName ?? "npub…" + String(pubkey.suffix(6)))
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.primary)
+                        if let nip05 = profile?.nip05, !nip05.isEmpty {
+                            Text(nip05)
+                                .font(.system(size: 13))
+                                .foregroundColor(Color.havenPurple)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .listStyle(.plain)
+            .navigationTitle("Liked By")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        if let onDismiss = onDismiss {
+                            onDismiss()
+                        } else {
+                            presentationMode.wrappedValue.dismiss()
+                        }
+                    }
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 300, minHeight: 400)
+        #endif
     }
 }
 
@@ -1909,7 +2128,7 @@ struct NoteRow: View {
     }
     
     var noteType: NoteType {
-        if event.pubkey == nostrService.ownerHexPubkey {
+        if event.pubkey == nostrService.activeHexPubkey {
             return .mine
         }
         if configService.whitelistedHexPubkeys.contains(event.pubkey) {
@@ -2021,7 +2240,7 @@ struct NoteRow: View {
             }
         }
         .sheet(isPresented: $showingReportDialog) {
-            UGCReportingDialog(eventId: event.id, pubkey: event.pubkey) {
+            UGCReportingDialog(eventId: event.id, pubkey: event.pubkey, onDismiss: { showingReportDialog = false }) {
                 // Background refresh will handle hiding it, but we can proactively trigger update
                 nostrService.objectWillChange.send()
             }
@@ -2070,10 +2289,7 @@ struct NoteRow: View {
     private func blockUser(hexPubkey: String) {
         guard let data = Bech32.hexToData(hexPubkey),
               let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-        if !configService.config.blacklistedNpubs.contains(npub) {
-            configService.config.blacklistedNpubs.append(npub)
-            configService.save()
-        }
+        configService.blockProfile(npub)
     }
 
     func timeAgo(from date: Date) -> String {
@@ -2223,7 +2439,7 @@ struct MediaGridItem: View {
                 Group {
                     // Use item.type instead of url extension checks for Blossom compatibility
                     if item.type == .video {
-                        VideoThumbnailView(url: item.url)
+                        VideoThumbnailView(url: item.url, mimeType: item.mimeType)
                     } else if item.type == .audio {
                         ZStack {
                             Color(red: 0.1, green: 0.1, blue: 0.14)
@@ -2247,8 +2463,8 @@ struct MediaGridItem: View {
                             }
                             .padding(4)
                         }
-                    } else if item.url.isGIF {
-                        AnimatedImage(url: item.url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 250, height: 250))
+                    } else if item.isAnimatedGIF {
+                        AnimatedImage(url: item.url, contentMode: .fill, shouldAnimate: true, targetSize: CGSize(width: 250, height: 250))
                     } else {
                         // Default to image for non-video/audio items
                         RetryableAsyncImage(url: item.url, contentMode: .fill, targetSize: CGSize(width: 250, height: 250))
@@ -2265,7 +2481,7 @@ struct MediaGridItem: View {
             .onTapGesture { onSelect() }
         .contextMenu {
             Button(action: {
-                PlatformClipboard.copy(item.url.absoluteString)
+                PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
             }) {
                 Label("Copy Link", systemImage: "doc.on.doc")
             }
@@ -2286,7 +2502,7 @@ struct MediaGridItem: View {
                 .disabled(isMirroringToLocal)
             }
             #endif
-            if let pubkey = item.pubkey, pubkey != nostrService.ownerHexPubkey {
+            if let pubkey = item.pubkey, pubkey != nostrService.activeHexPubkey {
                 Button(action: {
                     showingReportDialog = true
                 }) {
@@ -2298,17 +2514,14 @@ struct MediaGridItem: View {
                 Button(action: {
                     guard let data = Bech32.hexToData(pubkey),
                           let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-                    if !configService.config.blacklistedNpubs.contains(npub) {
-                        configService.config.blacklistedNpubs.append(npub)
-                        configService.save()
-                    }
+                    configService.blockProfile(npub)
                 }) {
                     Label("Block User", systemImage: "hand.raised.fill")
                 }
             }
         }
         .sheet(isPresented: $showingReportDialog) {
-            UGCReportingDialog(eventId: nil, pubkey: item.pubkey ?? "") {
+            UGCReportingDialog(eventId: nil, pubkey: item.pubkey ?? "", onDismiss: { showingReportDialog = false }) {
                 nostrService.objectWillChange.send()
             }
             .environmentObject(nostrService)
@@ -2511,9 +2724,15 @@ struct RetryableAsyncImage: View {
 
 struct VideoThumbnailView: View {
     let url: URL
+    let mimeType: String?
     @State private var thumbnail: PlatformImage? = nil
     @State private var isLoading = true
     @State private var id = UUID()
+    
+    init(url: URL, mimeType: String? = nil) {
+        self.url = url
+        self.mimeType = mimeType
+    }
     
     var body: some View {
         GeometryReader { geo in
@@ -2527,49 +2746,53 @@ struct VideoThumbnailView: View {
                     
                     Image(systemName: "play.circle.fill")
                         .font(.system(size: 40))
-                        .foregroundColor(.white.opacity(0.8))
-                        .shadow(radius: 4)
+                        .foregroundColor(.white.opacity(0.85))
+                        .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
                 } else if isLoading {
                     ZStack {
-                        Rectangle().fill(Color.gray.opacity(0.1))
-                        ProgressView().controlSize(.small)
+                        LinearGradient(
+                            colors: [Color(red: 0.12, green: 0.12, blue: 0.16), Color(red: 0.06, green: 0.06, blue: 0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white.opacity(0.6))
+                        
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.white.opacity(0.3))
+                            .shadow(radius: 2)
                     }
                 } else {
                     ZStack {
-                        Rectangle().fill(Color.havenPurplePale.opacity(0.3))
+                        LinearGradient(
+                            colors: [Color(red: 0.16, green: 0.16, blue: 0.22), Color(red: 0.08, green: 0.08, blue: 0.12)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        
                         VStack(spacing: 6) {
-                            Image(systemName: "video.fill.badge.plus")
-                                .font(.system(size: 28))
-                                .foregroundColor(.havenPurple.opacity(0.8))
+                            Image(systemName: "video.fill")
+                                .font(.system(size: 22))
+                                .foregroundColor(.havenPurple.opacity(0.7))
                             
-                            VStack(spacing: 2) {
-                                Text("No Preview")
-                                    .font(.system(size: 11, weight: .bold))
-                                Text("Error 404")
-                                    .font(.system(size: 9))
-                                    .textCase(.uppercase)
-                            }
-                            .foregroundColor(.havenPurple)
-                            
-                            Button(action: {
-                                id = UUID()
-                                loadThumbnail()
-                            }) {
-                                Text("Try Again")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                    .background(Color.havenPurple)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(4)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.top, 4)
+                            Text("Video")
+                                .font(.system(size: 10, weight: .bold, design: .default))
+                                .foregroundColor(.secondary.opacity(0.8))
+                                .tracking(0.5)
                         }
-                        .padding(8)
+                        .padding(.bottom, 4)
+                        
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.white.opacity(0.75))
+                            .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
                     }
                 }
             }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
         .id(id)
         .onAppear {
@@ -2681,6 +2904,7 @@ struct ViewerChangeHandlers: ViewModifier {
     let eventsCount: Int
     let noteMediaCount: Int
     let blacklistedNpubs: [String]
+    let activeAccountNpub: String
     let blossomCount: Int
     let onResetAndUpdate: () -> Void
     let onUpdate: () -> Void
@@ -2698,6 +2922,7 @@ struct ViewerChangeHandlers: ViewModifier {
             .onChange(of: eventsCount) { _, _ in onEventsChange() }
             .onChange(of: noteMediaCount) { _, _ in onUpdate() }
             .onChange(of: blacklistedNpubs) { _, _ in onUpdate() }
+            .onChange(of: activeAccountNpub) { _, _ in onResetAndUpdate() }
             .onChange(of: blossomCount) { _, _ in onUpdate() }
     }
 }
@@ -2712,13 +2937,17 @@ struct ViewerViewMediaItem: View {
         self._resolvedType = State(initialValue: mediaItem.type)
     }
     
+    private var isVideoByMime: Bool {
+        mediaItem.mimeType?.lowercased().hasPrefix("video/") == true
+    }
+
     var body: some View {
         Group {
             if isLoadingType {
                 ProgressView()
                     .tint(.white)
-            } else if resolvedType == .video {
-                VideoPlayerView(url: mediaItem.url)
+            } else if resolvedType == .video || isVideoByMime {
+                VideoPlayerView(url: mediaItem.url, mimeType: mediaItem.mimeType)
             } else if resolvedType == .audio {
                 AudioPlayerView(url: mediaItem.url)
             } else if resolvedType == .unknown {
@@ -2736,7 +2965,7 @@ struct ViewerViewMediaItem: View {
                             .foregroundColor(.secondary)
                     }
                 }
-            } else if mediaItem.url.isGIF {
+            } else if mediaItem.isAnimatedGIF {
                 AnimatedImage(url: mediaItem.url, contentMode: .fit, shouldAnimate: true)
             } else {
                 RetryableAsyncImage(url: mediaItem.url, contentMode: .fit)
@@ -2787,4 +3016,3 @@ struct ViewerViewMediaItem: View {
         }
     }
 }
-

@@ -4,8 +4,30 @@ import UniformTypeIdentifiers
 import CryptoKit
 import AVFoundation
 
+/// Imports a PhotosPickerItem video as a file URL on disk, avoiding loading the
+/// entire video into memory. The system writes the picked file into our app's
+/// temp area; we copy it to a known location we can clean up later.
+struct ImportedVideoFile: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { video in
+            SentTransferredFile(video.url)
+        } importing: { received in
+            let ext = received.file.pathExtension.isEmpty ? "mov" : received.file.pathExtension
+            let dest = FileManager.default.temporaryDirectory
+                .appendingPathComponent("haven-upload-\(UUID().uuidString)")
+                .appendingPathExtension(ext)
+            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.copyItem(at: received.file, to: dest)
+            return ImportedVideoFile(url: dest)
+        }
+    }
+}
+
 struct ComposeView: View {
     @Environment(\.dismiss) var dismiss
+    var onDismiss: (() -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
 
@@ -19,6 +41,11 @@ struct ComposeView: View {
     
     @StateObject private var uploadInfoProvider = MediaUploadsIndicatorInfoProvider()
 
+    // @mention state
+    @State private var mentionQuery: String? = nil          // nil = popup hidden
+    @State private var mentionResults: [FeedProfile] = []
+    @State private var taggedPubkeys: [String] = []         // hex pubkeys of tagged users
+
     private var blossomService: BlossomService {
         BlossomService(configService: configService, nostrService: nostrService)
     }
@@ -30,7 +57,10 @@ struct ComposeView: View {
     
     struct Attachment: Identifiable {
         let id = UUID()
-        let data: Data
+        // Exactly one of `data` or `fileURL` is set. Images use `data` (small,
+        // possibly transcoded); videos use `fileURL` so they stream from disk.
+        let data: Data?
+        let fileURL: URL?
         var type: UTType
         var url: URL?
         var isUploaded: Bool = false
@@ -51,7 +81,8 @@ struct ComposeView: View {
     }
 
     private var composeContent: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
                 #if os(macOS)
                 header
                 #endif
@@ -62,19 +93,30 @@ struct ComposeView: View {
                             replyHeader(parent: parent)
                         }
 
-                        ZStack(alignment: .topLeading) {
-                            if content.isEmpty {
-                                Text("What's happening?")
-                                    .foregroundColor(.secondary.opacity(0.6))
-                                    .padding(.top, 10)
-                                    .padding(.leading, 4)
-                            }
+                        HStack(alignment: .top, spacing: 12) {
+                            AvatarView(
+                                url: nostrService.profiles[configService.activeAccountHexPubkey]?.pictureURL,
+                                pubkey: configService.activeAccountHexPubkey
+                            )
+                            .frame(width: 36, height: 36)
                             
-                            TextEditor(text: $content)
-                                .focused($isTextEditorFocused)
-                                .font(.system(size: 16))
-                                .frame(minHeight: 200)
-                                .scrollContentBackground(.hidden)
+                            ZStack(alignment: .topLeading) {
+                                if content.isEmpty {
+                                    Text("What's happening?")
+                                        .foregroundColor(.secondary.opacity(0.6))
+                                        .padding(.top, 10)
+                                        .padding(.leading, 4)
+                                }
+                                
+                                TextEditor(text: $content)
+                                    .focused($isTextEditorFocused)
+                                    .font(.system(size: 16))
+                                    .frame(minHeight: 200)
+                                    .scrollContentBackground(.hidden)
+                                    .onChange(of: content) { _, newValue in
+                                        updateMentionQuery(in: newValue)
+                                    }
+                            }
                         }
                         
                         if !attachments.isEmpty {
@@ -93,6 +135,13 @@ struct ComposeView: View {
                 
                 footer
             }
+
+            // @mention popup
+            if let _ = mentionQuery, !mentionResults.isEmpty {
+                mentionPopup
+                    .padding(.bottom, 60) // sits just above the footer toolbar
+            }
+        }
             .background(Color.platformSecondaryGroupedBackground)
             .navigationTitle(replyTo != nil ? "Reply" : quoteTo != nil ? "Quote" : "New Note")
             #if os(iOS)
@@ -101,7 +150,7 @@ struct ComposeView: View {
             .toolbar {
                 #if os(iOS)
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { performDismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Post") { postNote() }
@@ -125,13 +174,127 @@ struct ComposeView: View {
                     isTextEditorFocused = true
                 }
             }
+            .onDisappear {
+                cleanupAttachmentTempFiles()
+            }
 
+    }
+
+    // MARK: - @mention popup
+
+    private var mentionPopup: some View {
+        VStack(spacing: 0) {
+            ForEach(mentionResults.prefix(5)) { profile in
+                Button {
+                    insertMention(profile)
+                } label: {
+                    HStack(spacing: 10) {
+                        AvatarView(url: profile.pictureURL, pubkey: profile.pubkey, size: 36)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(profile.bestName)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                            if let nip05 = profile.nip05, !nip05.isEmpty {
+                                Text(nip05)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if profile.id != mentionResults.prefix(5).last?.id {
+                    Divider().padding(.horizontal, 14)
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.platformControlBackground)
+                .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.havenPurple.opacity(0.2), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: mentionResults.count)
+    }
+
+    /// Called every time `content` changes — finds the @query at the cursor tail.
+    private func updateMentionQuery(in text: String) {
+        // Look for the last `@` that hasn't been terminated by whitespace or newline
+        guard let atRange = text.range(of: "@", options: .backwards) else {
+            mentionQuery = nil
+            mentionResults = []
+            return
+        }
+
+        let queryStart = text.index(after: atRange.lowerBound)
+        let tail = String(text[queryStart...])
+
+        // If there is whitespace or newline after the @, the mention is done
+        if tail.contains(" ") || tail.contains("\n") {
+            mentionQuery = nil
+            mentionResults = []
+            return
+        }
+
+        mentionQuery = tail
+        filterMentionResults(query: tail)
+    }
+
+    private func filterMentionResults(query: String) {
+        let followed = FeedService.shared.followedPubkeys
+        let allProfiles = followed.compactMap { nostrService.profiles[$0] }
+
+        if query.isEmpty {
+            // Show first 5 followed profiles when query is empty (just typed @)
+            mentionResults = Array(allProfiles.prefix(5))
+        } else {
+            let lower = query.lowercased()
+            mentionResults = allProfiles.filter { profile in
+                (profile.bestName.lowercased().contains(lower)) ||
+                (profile.name?.lowercased().contains(lower) ?? false) ||
+                (profile.nip05?.lowercased().contains(lower) ?? false)
+            }
+        }
+    }
+
+    private func insertMention(_ profile: FeedProfile) {
+        // Encode pubkey as npub
+        guard let data = Bech32.hexToData(profile.pubkey),
+              let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+
+        // Replace the trailing `@query` with `nostr:npub1...`
+        if let atRange = content.range(of: "@", options: .backwards) {
+            content = String(content[content.startIndex..<atRange.lowerBound])
+                + "nostr:\(npub) "
+        } else {
+            content += "nostr:\(npub) "
+        }
+
+        // Track the mention so we can add the `p` tag
+        if !taggedPubkeys.contains(profile.pubkey) {
+            taggedPubkeys.append(profile.pubkey)
+        }
+
+        withAnimation {
+            mentionQuery = nil
+            mentionResults = []
+        }
     }
 
     #if os(macOS)
     private var header: some View {
         HStack {
-            Button("Cancel") { dismiss() }
+            Button("Cancel") { performDismiss() }
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
             
@@ -153,13 +316,14 @@ struct ComposeView: View {
     #endif
 
     private var footer: some View {
-        HStack(spacing: 12) {
+        let purple = Color.havenPurple
+        return HStack(spacing: 12) {
             PhotosPicker(selection: $selectedItems, maxSelectionCount: max(1, 4 - attachments.count), matching: .images) {
                 Image(systemName: "photo.on.rectangle.angled")
                     .font(.title3)
-                    .foregroundColor(Color.havenPurple)
+                    .foregroundColor(purple)
                     .padding(10)
-                    .background(Color.havenPurple.opacity(0.1))
+                    .background(purple.opacity(0.1))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
@@ -167,9 +331,9 @@ struct ComposeView: View {
             PhotosPicker(selection: $selectedItems, maxSelectionCount: max(1, 4 - attachments.count), matching: .videos) {
                 Image(systemName: "video.fill")
                     .font(.title3)
-                    .foregroundColor(Color.havenPurple)
+                    .foregroundColor(purple)
                     .padding(10)
-                    .background(Color.havenPurple.opacity(0.1))
+                    .background(purple.opacity(0.1))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
@@ -246,7 +410,7 @@ struct ComposeView: View {
                                     .scaledToFill()
                                     .frame(width: 100, height: 100)
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                            } else if let img = PlatformImage(data: attachment.data) {
+                            } else if let data = attachment.data, let img = PlatformImage(data: data) {
                                 Image(platformImage: img)
                                     .resizable()
                                     .scaledToFill()
@@ -283,6 +447,9 @@ struct ComposeView: View {
                         }
                         
                         Button {
+                            if let fileURL = attachment.fileURL {
+                                try? FileManager.default.removeItem(at: fileURL)
+                            }
                             attachments.removeAll { $0.id == attachment.id }
                         } label: {
                             Image(systemName: "xmark.circle.fill")
@@ -302,76 +469,124 @@ struct ComposeView: View {
         for item in selectedItems {
             // Get the specific content type
             let contentType = item.supportedContentTypes.first ?? .image
-            
-            item.loadTransferable(type: Data.self) { result in
-                switch result {
-                case .success(let data):
-                    if let data = data {
-                        let isVideo = contentType.conforms(to: .movie) || contentType.conforms(to: .video)
-                        var thumbnail: PlatformImage? = nil
-                        if isVideo {
-                            thumbnail = self.generateVideoThumbnail(from: data)
-                        }
-                        
-                        DispatchQueue.main.async {
-                            var finalData = data
-                            var finalType = contentType
-                            
-                            // Convert HEIC/HEIF to JPEG
-                            if !isVideo && (contentType.conforms(to: .heic) || contentType.conforms(to: .heif)) {
-                                #if os(iOS)
-                                if let image = UIImage(data: data),
-                                   let jpegData = image.jpegData(compressionQuality: 0.8) {
-                                    finalData = jpegData
-                                    finalType = .jpeg
-                                }
-                                #elseif os(macOS)
-                                if let image = NSImage(data: data),
-                                   let tiffData = image.tiffRepresentation,
-                                   let bitmapRep = NSBitmapImageRep(data: tiffData),
-                                   let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
-                                    finalData = jpegData
-                                    finalType = .jpeg
-                                }
-                                #endif
-                            }
-                            
-                            self.attachments.append(Attachment(data: finalData, type: finalType, thumbnail: thumbnail))
-                        }
-                    }
-                case .failure(let error):
-                    print("Failed to load media: \(error)")
-                }
+            let isVideo = contentType.conforms(to: .movie) || contentType.conforms(to: .video)
+
+            if isVideo {
+                loadVideoItem(item, contentType: contentType)
+            } else {
+                loadImageItem(item, contentType: contentType)
             }
         }
         selectedItems = []
     }
+
+    private func loadVideoItem(_ item: PhotosPickerItem, contentType: UTType) {
+        item.loadTransferable(type: ImportedVideoFile.self) { result in
+            switch result {
+            case .success(let video):
+                guard let video = video else { return }
+                let thumbnail = self.generateVideoThumbnail(url: video.url)
+                // Prefer the actual file extension's UTType (e.g. .mpeg4Movie)
+                // so preferredMIMEType yields the right Content-Type on upload.
+                let derivedType = UTType(filenameExtension: video.url.pathExtension) ?? contentType
+                DispatchQueue.main.async {
+                    self.attachments.append(Attachment(
+                        data: nil,
+                        fileURL: video.url,
+                        type: derivedType,
+                        thumbnail: thumbnail
+                    ))
+                }
+            case .failure(let error):
+                print("Failed to load video: \(error)")
+            }
+        }
+    }
+
+    private func loadImageItem(_ item: PhotosPickerItem, contentType: UTType) {
+        item.loadTransferable(type: Data.self) { result in
+            switch result {
+            case .success(let data):
+                guard let data = data else { return }
+                DispatchQueue.main.async {
+                    var finalData = data
+                    var finalType = contentType
+
+                    // Convert HEIC/HEIF to JPEG
+                    if contentType.conforms(to: .heic) || contentType.conforms(to: .heif) {
+                        #if os(iOS)
+                        if let image = UIImage(data: data),
+                           let jpegData = image.jpegData(compressionQuality: 0.8) {
+                            finalData = jpegData
+                            finalType = .jpeg
+                        }
+                        #elseif os(macOS)
+                        if let image = NSImage(data: data),
+                           let tiffData = image.tiffRepresentation,
+                           let bitmapRep = NSBitmapImageRep(data: tiffData),
+                           let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
+                            finalData = jpegData
+                            finalType = .jpeg
+                        }
+                        #endif
+                    }
+
+                    self.attachments.append(Attachment(
+                        data: finalData,
+                        fileURL: nil,
+                        type: finalType,
+                        thumbnail: nil
+                    ))
+                }
+            case .failure(let error):
+                print("Failed to load media: \(error)")
+            }
+        }
+    }
     
-    private func generateVideoThumbnail(from data: Data) -> PlatformImage? {
-        let tempDirectory = FileManager.default.temporaryDirectory
-        let tempFileURL = tempDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
-        
+    /// Computes the SHA256 of a file by streaming it in 1 MB chunks so large
+    /// videos don't sit fully in memory.
+    static func streamingSHA256(of url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        let chunkSize = 1 << 20  // 1 MiB
+        while true {
+            let chunk: Data
+            do {
+                chunk = try handle.read(upToCount: chunkSize) ?? Data()
+            } catch {
+                return nil
+            }
+            if chunk.isEmpty { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private func cleanupAttachmentTempFiles() {
+        for attachment in attachments {
+            if let fileURL = attachment.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
+    }
+
+    private func generateVideoThumbnail(url: URL) -> PlatformImage? {
+        let asset = AVAsset(url: url)
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        imageGenerator.appliesPreferredTrackTransform = true
+
+        let time = CMTime(seconds: 0.0, preferredTimescale: 600)
         do {
-            try data.write(to: tempFileURL)
-            let asset = AVAsset(url: tempFileURL)
-            let imageGenerator = AVAssetImageGenerator(asset: asset)
-            imageGenerator.appliesPreferredTrackTransform = true
-            
-            let time = CMTime(seconds: 0.0, preferredTimescale: 600)
             let cgImage = try imageGenerator.copyCGImage(at: time, actualTime: nil)
-            
             #if os(macOS)
-            let size = NSSize(width: cgImage.width, height: cgImage.height)
-            let thumbnail = NSImage(cgImage: cgImage, size: size)
+            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
             #else
-            let thumbnail = UIImage(cgImage: cgImage)
+            return UIImage(cgImage: cgImage)
             #endif
-            
-            try? FileManager.default.removeItem(at: tempFileURL)
-            return thumbnail
         } catch {
             print("Error generating video thumbnail: \(error)")
-            try? FileManager.default.removeItem(at: tempFileURL)
             return nil
         }
     }
@@ -388,16 +603,41 @@ struct ComposeView: View {
             // Upload all attachments and fail if any fail
             for i in attachments.indices {
                 uploadInfoProvider.setCurrentIndex(i + 1, type: attachments[i].type)
-                let sha256 = SHA256.hash(data: attachments[i].data).map { String(format: "%02x", $0) }.joined()
                 let mimeType = attachments[i].type.preferredMIMEType ?? "application/octet-stream"
-                guard let url = await blossomService.uploadAndMirror(
-                    data: attachments[i].data,
-                    sha256: sha256,
-                    contentType: mimeType,
-                    progress: { progressFraction in
-                        self.uploadInfoProvider.updateProgress(progressFraction)
+                let progressHandler: (Double) -> Void = { progressFraction in
+                    self.uploadInfoProvider.updateProgress(progressFraction)
+                }
+
+                let uploadedURL: URL?
+                if let fileURL = attachments[i].fileURL {
+                    guard let sha256 = ComposeView.streamingSHA256(of: fileURL) else {
+                        DispatchQueue.main.async {
+                            error = "Failed to read video file for upload."
+                            isPosting = false
+                            isUploading = false
+                            uploadInfoProvider.reset()
+                        }
+                        return
                     }
-                ) else {
+                    uploadedURL = await blossomService.uploadAndMirror(
+                        fileURL: fileURL,
+                        sha256: sha256,
+                        contentType: mimeType,
+                        progress: progressHandler
+                    )
+                } else if let data = attachments[i].data {
+                    let sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                    uploadedURL = await blossomService.uploadAndMirror(
+                        data: data,
+                        sha256: sha256,
+                        contentType: mimeType,
+                        progress: progressHandler
+                    )
+                } else {
+                    uploadedURL = nil
+                }
+
+                guard let url = uploadedURL else {
                     DispatchQueue.main.async {
                         error = "Failed to upload media to Blossom mirrors. Check your connection and try again."
                         isPosting = false
@@ -412,6 +652,7 @@ struct ComposeView: View {
             }
             isUploading = false
             uploadInfoProvider.reset()
+            cleanupAttachmentTempFiles()
 
             // 2. Build Event
             var tags: [[String]] = []
@@ -428,6 +669,15 @@ struct ComposeView: View {
                 } else {
                     tags.append(["e", parent.id, "", "reply"])
                     tags.append(["p", parent.pubkey])
+                }
+            }
+
+            // @mention p-tags
+            for mentionedPubkey in taggedPubkeys {
+                // Avoid duplicating p-tags already added for reply/quote
+                let alreadyTagged = tags.contains { $0.first == "p" && $0.count > 1 && $0[1] == mentionedPubkey }
+                if !alreadyTagged {
+                    tags.append(["p", mentionedPubkey])
                 }
             }
 
@@ -463,8 +713,16 @@ struct ComposeView: View {
                 FeedService.shared.addNote(feedNote)
 
                 isPosting = false
-                dismiss()
+                performDismiss()
             }
+        }
+    }
+
+    private func performDismiss() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
         }
     }
 }

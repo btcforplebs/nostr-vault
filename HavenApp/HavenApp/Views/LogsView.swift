@@ -4,6 +4,7 @@ struct LogsView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     /// Observe the separate LogStore so only this view redraws on log changes.
     @ObservedObject var logStore: LogStore
+    var hideHeader: Bool = false
     @State private var showCopiedScrub = false
 
     var body: some View {
@@ -74,29 +75,31 @@ struct LogsView: View {
 
     private var macOSBody: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("System Logs")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
+            if !hideHeader {
+                // Header
+                HStack {
+                    Text("System Logs")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
 
-                Spacer()
+                    Spacer()
 
-                Button(action: copyLogs) {
-                    if showCopiedScrub {
-                        Label("Copied!", systemImage: "checkmark")
-                    } else {
-                        Label("Copy Logs", systemImage: "doc.on.doc")
+                    Button(action: copyLogs) {
+                        if showCopiedScrub {
+                            Label("Copied!", systemImage: "checkmark")
+                        } else {
+                            Label("Copy Logs", systemImage: "doc.on.doc")
+                        }
                     }
+                    .disabled(logStore.logs.isEmpty)
+                    .help("Copy logs to clipboard")
                 }
-                .disabled(logStore.logs.isEmpty)
-                .help("Copy logs to clipboard")
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-            .background(.ultraThinMaterial)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial)
 
-            Divider()
+                Divider()
+            }
 
             ScrollViewReader { proxy in
                 List(logStore.logs) { log in

@@ -5,7 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.5.0 macOS / 1.1 iOS (Build 1)] - 2026-05-20
+## [2.5.0 MacOS / 1.1 iOS (Build 8)] - 2026-05-22
+
+### Fixed
+- **iOS Note Detail Text Wrapping & Font Size Fix**: Resolved a visual layout bug on iOS where the parsed markdown text inside `NoteDetailView` would scale excessively large under custom Dynamic Type profiles and overflow the screen boundaries horizontally. Fixed by locking the system font size to a highly readable 16 pt with standard color/spacing, and applying `.fixedSize(horizontal: false, vertical: true)` to ensure correct text wrapping behavior within dynamic SwiftUI scroll containers.
+
+## [2.5.0 MacOS / 1.1 iOS (Build 7)] - 2026-05-21
+
+### Changed
+- **App Renamed to Nostr Vault**: Completed front-facing rename from Haven to Nostr Vault. Updated `PRODUCT_NAME` in Xcode build settings (Debug + Release), all user-visible strings in `MenuBarView` ("Quit Nostr Vault", stale-process error, "Nostr Vault Relay" search tab label), the backup restore description in `SettingsView`, and both iOS privacy permission strings in `HavenApp-iOS/Info.plist`. Internal Go codebase, bundle identifiers, and Swift type names are unchanged.
+
+## [2.5.0 MacOS / 1.1 iOS (Build 6)] - 2026-05-21
+
+### Added
+- **Natural Aspect-Preserving Media Layouts**: Replaced rigid and square/letterboxed constraints for photos and GIFs in `FeedMediaView` with high-fidelity, aspect-aware bounds (`.aspectRatio(contentMode: .fit)`).
+- **Dual Landscape/Portrait Sizing Model**: Introduced an adaptive dual-height cap (`maxHeight: 400` / `portraitMaxHeight: 600`) so that portrait media can fill the available horizontal width naturally, while limiting extremely tall images to prevent feed drowning.
+- **Dedicated Sub-components for Media Rendering**: Refactored `FeedMediaView` to use isolated `FeedPhotoView` and `FeedGIFView` helpers, streamlining asynchronous loading, animation state, and layout calculations.
+
+### Changed
+- **Proactive Background Nostr Prefetching**: Overhauled threading performance by triggering asynchronous parent and quote note prefetching inside `FeedService.handleFeedMsgBackground`. Missing notes are fetched on background message processing immediately after events are parsed, dramatically speeding up scrolling loads for deep conversation trees.
+
+### Fixed
+- **Goofy Thread Spacing & Vertical Line Stretching**: Fixed a severe visual bug in `FeedView` / `FeedNoteRow` where reply rows containing photos or GIFs would stretch vertical layout boundaries and the thread connector line. Enforced rigid thread sizing (`width: 2, height: 14`) and applied `.fixedSize(horizontal: false, vertical: true)` on nested thread rows to ensure layout integrity.
+
+## [2.5.0 MacOS / 1.1 iOS (Build 5)] - 2026-05-21
+
+### Changed
+- **NIP-45 COUNT Query Integration**: Refactored the relay event-counting mechanism in `NostrService` to use NIP-45 `COUNT` queries instead of `REQ` subscriptions. This resolves the issue where server-enforced event limit caps on standard subscriptions caused incorrect and capped event counts.
+- **Unified Total Relay Events Stat**: Consolidated notes and reactions tracking on the dashboard into a single, comprehensive "Total Relay Events" metric, querying all event types with an empty filter payload.
+
+## [2.5.0 MacOS / 1.1 iOS (Build 4)] - 2026-05-21
+
+### Added
+- **Bidirectional Nostr Mute List Syncing (Kind 10000)**: Fully integrated Nostr Kind 10000 (Mute List) events. The app automatically fetches and merges remote mute lists on startup or profile fetch, and publishes signed Kind 10000 events to relays when blocking or unblocking an npub.
+- **Per-Account Block Lists**: Replaced the global blacklisted npubs list with a namespaced dictionary `blockedNpubsPerAccount` in `HavenConfig` to track block lists individually per active profile.
+- **Unified Blocked Accounts Settings Pane**: Added a new "Blocked" settings tab (`BlockedSettingsView`) displaying profile details, avatars, and search-to-block functionality for the active browsing account.
+
+### Changed
+- **Settings UI Consolidation**: Merged "Identity" and "Access Control" configuration tabs into a single unified "Accounts" settings pane (`AccountsSettingsView`).
+- **Implicit Account Whitelisting**: Added accounts (primary and secondary) are now implicitly whitelisted, eliminating the manual whitelisting step.
+- **Primary Owner Block Sync to Relay**: Configured the primary Owner's personal block list to sync directly to the Go relay's `blacklisted_npubs.json` file for backend connection-level rejection.
+
+## [2.5.0 MacOS / 1.1 iOS (Build 3)] - 2026-05-21
+
+### Added
+- **iOS Floating "Liquid Glass" Tab Bar**: Replaced the native system bottom tab bar on iOS with a premium, floating "Liquid Glass" tab bar featuring a rounded capsule design, `.ultraThinMaterial` blur background, a soft drop shadow, a white reflective gradient stroke overlay, and spring scale micro-animations for active buttons.
+- **Dynamic Profile Tab Avatar**: Upgraded the Profile navigation tab on iOS to display the active account's custom `AvatarView` instead of a static vector icon, dynamically updating in real-time when switching accounts.
+- **Tab Bar Profile Fast-Switching**: Integrated the multi-account selector into a hold (context menu) gesture directly on the bottom bar's Profile tab item, enabling effortless account switching from anywhere in the app.
+- **Real-Time Feed Reloading on Account Switch**: Configured `FeedService` to observe active Nostr identity shifts, automatically clearing feed caches, resetting relay subscriptions, and fetching the contact list for the newly selected account to refresh the following feed instantly.
+
+### Changed
+- **iOS Feed Header Cleanup**: Removed the legacy profile switcher dropdown from the top-left toolbar of the iOS feed view, leaving the connection status dot as a cleaner, dedicated indicator.
+
+## [2.5.0 MacOS / 1.1 iOS (Build 2)] - 2026-05-20
+
+### Added
+- **@mention Tagging in Compose**: Typing `@` while drafting a note now shows a live-filtered popup of followed users. Selecting a person inserts their `nostr:npub1…` mention token into the note body and automatically adds the corresponding `p` tag to the published event for proper Nostr mention routing.
+- **NIP-89 App Handler Client Tagging**: Implemented automatic NIP-89 client identification tagging by default for all signed and published Nostr events. The tag dynamically identifies the target environment, tagging as `"Nostr Vault on iPadOS"` on iPadOS, `"Nostr Vault on iOS"` on iOS, and `"Nostr Vault on MacOS"` on MacOS.
+
+### Fixed
+- **LNURL Resolution for LUD-16 Addresses**: Fixed incorrect fallback that used a profile's NIP-05 identifier as a Lightning address when `lud16` was absent. NIP-05 and LUD-16 share the same `user@domain.com` format but resolve to completely different endpoints — this caused silent zap failures for any account whose NIP-05 domain doesn't also serve LNURL-pay.
+- **LUD-06 (Raw LNURL) Zap Support**: Accounts that publish a raw bech32 `lnurl1…` string in the `lud06` metadata field (instead of a LUD-16 address) can now be zapped. `FeedProfile` stores `lud06`, `NostrService` parses it from Kind 0 metadata, and `LNURLService` decodes the bech32 payload to recover the HTTPS pay endpoint without a DNS lookup.
+- **MacOS Compilation Fixes**: Resolved MacOS build errors by replacing unsupported `.tabViewStyle(.page(...))` with `.mediaTabViewStyleCompat()` in `NoteDetailView` and `FeedView`, and wrapping the iOS-only `.navigationBarTitleDisplayMode(.inline)` modifier in a platform-check preprocessor macro inside `BitcoinSweepDisclaimerView`.
+
+## [2.5.0 MacOS / 1.1 iOS (Build 1)] - 2026-05-20
 
 ### Added
 - **Bitcoin Taproot Address Derivation**: Implemented native BIP-341 key-path-only Taproot (P2TR) address derivation from the user's Nostr secp256k1 public key in `haven-go/bitcoin.go`. Uses `btcsuite/btcd` for all cryptographic operations — no external process required.
@@ -13,8 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bitcoin Sweep Disclaimer View**: Added `BitcoinSweepDisclaimerView` — a pre-sweep confirmation sheet that loads the wallet's spendable balance live from the Mempool API before the user can proceed, with a loading indicator and error state for failed fetches.
 - **Bitcoin Price Service**: New `PriceService.swift` singleton that fetches the live BTC/USD spot price from the Mempool API and exposes it app-wide, used to display fiat-equivalent values in the sweep flow and elsewhere.
 - **On-chain Zap Display**: Added `OnchainZapDisplay.swift` — a dedicated component for rendering on-chain (Taproot) zap receipts in the note detail and profile views, alongside existing Lightning zap display.
-- **Search Tab (macOS)**: Added a full **Search** tab to the macOS Menu Bar sidebar, backed by `SearchView` — a multi-source search UI supporting users, notes, links, and hashtags, with a segmented source filter (`All / Haven Relay / Network`).
-- **My Profile Quick-Access (macOS)**: The macOS sidebar footer now renders the owner's avatar using `AvatarView`, tapping it opens `ProfileView` in a sheet without navigating away from the current tab.
+- **Search Tab (MacOS)**: Added a full **Search** tab to the MacOS Menu Bar sidebar, backed by `SearchView` — a multi-source search UI supporting users, notes, links, and hashtags, with a segmented source filter (`All / Haven Relay / Network`).
+- **My Profile Quick-Access (MacOS)**: The MacOS sidebar footer now renders the owner's avatar using `AvatarView`, tapping it opens `ProfileView` in a sheet without navigating away from the current tab.
 - **Emoji Picker Component**: Extracted a reusable `EmojiPickerView` component (available in both `Views/` and `Views/Components/`) for use in `ComposeView` and replies, with category tabs and search.
 - **Feed Media View Component**: Extracted `FeedMediaView` into a standalone component under `Views/Components/` for better code reuse across the feed and note detail.
 - **Autoload New Posts Toggle**: Added a `bolt.circle` / `bolt.circle.fill` toolbar button in the iOS Feed toolbar to toggle `autoLoadNewPosts` on/off without entering Settings.

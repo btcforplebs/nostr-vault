@@ -11,6 +11,23 @@ struct BlobDescriptor: Codable {
     let uploaded: Int?
 }
 
+/// Source for a Blossom upload — either in-memory data or an on-disk file.
+/// File uploads stream from disk, avoiding loading large videos into memory.
+enum UploadSource {
+    case data(Data)
+    case file(URL)
+
+    var byteCount: Int {
+        switch self {
+        case .data(let d):
+            return d.count
+        case .file(let url):
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+            return (attrs?[.size] as? Int) ?? 0
+        }
+    }
+}
+
 /// Handles uploading media to local and external Blossom servers
 class BlossomService {
     let configService: ConfigService
@@ -46,8 +63,18 @@ class BlossomService {
     ///   - sha256: The SHA256 hash of the data (hex string)
     /// - Returns: External mirror URL if at least one mirror succeeds, nil if all fail
     func uploadAndMirror(data: Data, sha256: String, contentType: String = "application/octet-stream", progress: ((Double) -> Void)? = nil) async -> URL? {
+        return await uploadAndMirror(source: .data(data), sha256: sha256, contentType: contentType, progress: progress)
+    }
+
+    /// File-based variant that streams the upload from disk — use for large
+    /// videos so the file doesn't sit fully in memory during upload.
+    func uploadAndMirror(fileURL: URL, sha256: String, contentType: String = "application/octet-stream", progress: ((Double) -> Void)? = nil) async -> URL? {
+        return await uploadAndMirror(source: .file(fileURL), sha256: sha256, contentType: contentType, progress: progress)
+    }
+
+    private func uploadAndMirror(source: UploadSource, sha256: String, contentType: String, progress: ((Double) -> Void)?) async -> URL? {
         let port = await MainActor.run { configService.config.relayPort }
-        
+
         #if os(macOS)
         let localURLStr = "http://127.0.0.1:\(port)"
         #else
@@ -55,7 +82,7 @@ class BlossomService {
         #endif
 
         // Step 1: Upload to local Blossom first (skip detailed progress since it is local and instant)
-        let localSuccess = await uploadToServer(data: data, url: localURLStr, sha256: sha256, contentType: contentType, useLocalhostSession: true)
+        let localSuccess = await uploadToServer(source: source, url: localURLStr, sha256: sha256, contentType: contentType, useLocalhostSession: true)
         guard localSuccess != nil else {
             logger.error("Failed to upload to local Blossom at \(localURLStr)")
             return nil
@@ -79,7 +106,7 @@ class BlossomService {
                     group.addTask {
                         // Only report progress for the first remote mirror to avoid progress jitter
                         let progressHandler = (index == 0) ? progress : nil
-                        let result = await self.uploadToServer(data: data, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: false, progress: progressHandler)
+                        let result = await self.uploadToServer(source: source, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: false, progress: progressHandler)
                         return (mirrorURL, result)
                     }
                 }
@@ -112,7 +139,7 @@ class BlossomService {
 
     /// Upload media to a specific Blossom server with retry logic
     /// Uses Blossom HTTP Auth (kind 24242, per BUD-01 spec)
-    private func uploadToServer(data: Data, url: String, sha256: String, contentType: String, useLocalhostSession: Bool, progress: ((Double) -> Void)? = nil) async -> URL? {
+    private func uploadToServer(source: UploadSource, url: String, sha256: String, contentType: String, useLocalhostSession: Bool, progress: ((Double) -> Void)? = nil) async -> URL? {
         let maxRetries = 3
         let parsedURL = URL(string: url)
         // isOnDeviceRelay: strict localhost only — used for response parsing (skip BlobDescriptor)
@@ -178,13 +205,19 @@ class BlossomService {
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
             request.timeoutInterval = 600  // 10 minutes for large file uploads to external mirrors
 
-            logger.debug("Uploading to \(uploadURL.absoluteString), Blossom auth event kind 24242, data size: \(data.count) bytes")
+            logger.debug("Uploading to \(uploadURL.absoluteString), Blossom auth event kind 24242, data size: \(source.byteCount) bytes")
 
             do {
                 // Use the appropriate URLSession
                 let session = useLocalhostSession ? localhostSession : remoteSession
                 let delegate = progress.map { UploadProgressDelegate(progressHandler: $0) }
-                let (responseData, response) = try await session.upload(for: request, from: data, delegate: delegate)
+                let (responseData, response): (Data, URLResponse)
+                switch source {
+                case .data(let bytes):
+                    (responseData, response) = try await session.upload(for: request, from: bytes, delegate: delegate)
+                case .file(let fileURL):
+                    (responseData, response) = try await session.upload(for: request, fromFile: fileURL, delegate: delegate)
+                }
 
                 if let httpResponse = response as? HTTPURLResponse, (200...201).contains(httpResponse.statusCode) {
                     // For external/mirror servers, parse BUD-02 Blob Descriptor for the canonical URL
@@ -343,6 +376,8 @@ class BlossomService {
         let relayDataDir = await MainActor.run { configService.relayDataDir }
         let blossomPath = await MainActor.run { configService.config.blossomPath }
         let ownerPubkey = await MainActor.run { nostrService.ownerHexPubkey }
+        let whitelistedPubkeys = await MainActor.run { configService.whitelistedHexPubkeys }
+        let allPubkeys = ([ownerPubkey] + Array(whitelistedPubkeys)).filter { !$0.isEmpty }
 
         guard !mirrors.isEmpty else {
             logger.warning("No Blossom mirrors configured")
@@ -359,6 +394,7 @@ class BlossomService {
         }
 
         // Discover blobs from mirrors using BUD-02 /list endpoint with cursor pagination
+        // Queries each pubkey (owner + whitelisted) on each mirror
         var remoteBlobHashes: Set<String> = []
         for mirror in mirrors {
             guard var mirrorURL = URL(string: mirror) else { continue }
@@ -369,54 +405,57 @@ class BlossomService {
                 if let secureURL = components?.url { mirrorURL = secureURL }
             }
 
-            let baseListURL = mirrorURL.appendingPathComponent("list").appendingPathComponent(ownerPubkey)
-            var cursor: String? = nil
-            var totalForMirror = 0
+            for pubkey in allPubkeys {
+                let baseListURL = mirrorURL.appendingPathComponent("list").appendingPathComponent(pubkey)
+                var cursor: String? = nil
+                var totalForPubkey = 0
 
-            // Paginate through all results (BUD-02: cursor = sha256 of last blob, limit = page size)
-            while true {
-                var components = URLComponents(url: baseListURL, resolvingAgainstBaseURL: false)
-                var queryItems: [URLQueryItem] = []
-                if let cursor = cursor {
-                    queryItems.append(URLQueryItem(name: "cursor", value: cursor))
-                }
-                if !queryItems.isEmpty {
-                    components?.queryItems = queryItems
-                }
-
-                guard let pageURL = components?.url else { break }
-                var request = URLRequest(url: pageURL)
-                request.timeoutInterval = 30
-
-                do {
-                    let (data, response) = try await remoteSession.data(for: request)
-                    guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else { break }
-
-                    guard let descriptors = try? JSONDecoder().decode([BlobDescriptor].self, from: data),
-                          !descriptors.isEmpty else { break }
-
-                    for desc in descriptors {
-                        if let hash = desc.sha256 {
-                            remoteBlobHashes.insert(hash)
-                        }
+                // Paginate through all results (BUD-02: cursor = sha256 of last blob, limit = page size)
+                while true {
+                    var components = URLComponents(url: baseListURL, resolvingAgainstBaseURL: false)
+                    var queryItems: [URLQueryItem] = []
+                    if let cursor = cursor {
+                        queryItems.append(URLQueryItem(name: "cursor", value: cursor))
                     }
-                    totalForMirror += descriptors.count
+                    if !queryItems.isEmpty {
+                        components?.queryItems = queryItems
+                    }
 
-                    // Use last sha256 as cursor for next page
-                    // If we got fewer results than a full page, this is the last page
-                    guard let lastHash = descriptors.last?.sha256 else { break }
-                    if descriptors.count < 250 {
+                    guard let pageURL = components?.url else { break }
+                    var request = URLRequest(url: pageURL)
+                    request.timeoutInterval = 30
+
+                    do {
+                        let (data, response) = try await remoteSession.data(for: request)
+                        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else { break }
+
+                        guard let descriptors = try? JSONDecoder().decode([BlobDescriptor].self, from: data),
+                              !descriptors.isEmpty else { break }
+
+                        for desc in descriptors {
+                            if let hash = desc.sha256 {
+                                remoteBlobHashes.insert(hash)
+                            }
+                        }
+                        totalForPubkey += descriptors.count
+
+                        // Use last sha256 as cursor for next page
+                        // If we got fewer results than a full page, this is the last page
+                        guard let lastHash = descriptors.last?.sha256 else { break }
+                        if descriptors.count < 250 {
+                            break
+                        }
+                        cursor = lastHash
+                    } catch {
+                        logger.warning("Failed to list blobs from \(mirror) for \(pubkey.prefix(8)): \(error.localizedDescription)")
                         break
                     }
-                    cursor = lastHash
-                } catch {
-                    logger.warning("Failed to list blobs from \(mirror): \(error.localizedDescription)")
-                    break
                 }
-            }
 
-            if totalForMirror > 0 {
-                logger.info("Found \(totalForMirror) blobs on \(mirror) for owner")
+                if totalForPubkey > 0 {
+                    let label = pubkey == ownerPubkey ? "owner" : "whitelisted \(pubkey.prefix(8))"
+                    logger.info("Found \(totalForPubkey) blobs on \(mirror) for \(label)")
+                }
             }
         }
 
@@ -470,6 +509,7 @@ class BlossomService {
         let relayDataDir = await MainActor.run { configService.relayDataDir }
         let blossomPath = await MainActor.run { configService.config.blossomPath }
         let ownerPubkey = await MainActor.run { nostrService.ownerHexPubkey }
+        let whitelistedPubkeys = await MainActor.run { configService.whitelistedHexPubkeys }
 
         // Get local blob hashes
         let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
@@ -480,11 +520,10 @@ class BlossomService {
             localHashes = []
         }
 
-        // Find remote media URLs from the owner's notes that aren't stored locally
+        // Find remote media URLs from owner + whitelisted accounts that aren't stored locally
         var urlsToMirror: [URL] = []
         for item in noteMedia {
-            // Only mirror the owner's own media
-            guard item.pubkey == ownerPubkey else { continue }
+            guard let pubkey = item.pubkey, pubkey == ownerPubkey || whitelistedPubkeys.contains(pubkey) else { continue }
             // Skip local URLs
             let host = item.url.host?.lowercased() ?? ""
             if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" { continue }

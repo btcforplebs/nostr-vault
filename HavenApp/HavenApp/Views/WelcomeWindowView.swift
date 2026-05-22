@@ -24,7 +24,7 @@ struct WelcomeWindowView: View {
                 
                 // Welcome Text
                 VStack(spacing: 12) {
-                    Text("Welcome to Haven")
+                    Text("Welcome to Nostr Vault")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.primary)
                     
@@ -43,7 +43,7 @@ struct WelcomeWindowView: View {
                             .frame(width: 32)
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Haven lives in your menu bar")
+                            Text("Nostr Vault lives in your menu bar")
                                 .font(.system(size: 15, weight: .semibold))
                             
                             Text("Look for the")
@@ -132,7 +132,7 @@ struct WelcomeWindowView: View {
             #if os(macOS)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 NSApp.activate(ignoringOtherApps: true)
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Welcome to Haven" }) {
+                if let window = NSApplication.shared.windows.first(where: { $0.title == "Welcome to Nostr Vault" }) {
                     window.makeKeyAndOrderFront(nil)
                     window.center()
                 }

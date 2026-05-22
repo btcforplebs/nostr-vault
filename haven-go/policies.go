@@ -3,11 +3,27 @@ package main
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/bitvora/haven/pkg/wot"
 	"github.com/fiatjaf/khatru"
+	"github.com/fiatjaf/khatru/policies"
 	"github.com/nbd-wtf/go-nostr"
 )
+
+// whitelistBypassEventRateLimiter wraps EventIPRateLimiter so that events from
+// whitelisted pubkeys (the owner and any allowed accounts) are never rate-limited.
+// This prevents the relay's own sync and heavy publishing from being blocked by
+// the IP-based bucket that was designed to throttle external strangers.
+func whitelistBypassEventRateLimiter(tokensPerInterval int, interval time.Duration, maxTokens int) func(ctx context.Context, evt *nostr.Event) (bool, string) {
+	inner := policies.EventIPRateLimiter(tokensPerInterval, interval, maxTokens)
+	return func(ctx context.Context, evt *nostr.Event) (bool, string) {
+		if _, ok := config.WhitelistedPubKeys[evt.PubKey]; ok {
+			return false, ""
+		}
+		return inner(ctx, evt)
+	}
+}
 
 func MustBeWhitelistedToQuery(ctx context.Context, _ nostr.Filter) (bool, string) {
 	authenticatedUser := khatru.GetAuthed(ctx)

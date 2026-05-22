@@ -148,3 +148,112 @@ struct ZapPill: View {
         }
     }
 }
+
+// MARK: - Follow Notification Model
+
+struct FollowNotification: Identifiable {
+    let id = UUID()
+    let recipientName: String
+    let kind: Kind
+
+    enum Kind: Equatable {
+        case followed
+        case unfollowed
+        case failed(String)
+    }
+}
+
+// MARK: - Follow Notification Manager
+
+@MainActor
+class FollowNotificationManager: ObservableObject {
+    static let shared = FollowNotificationManager()
+
+    @Published var notifications: [FollowNotification] = []
+
+    func add(recipientName: String, kind: FollowNotification.Kind) {
+        let notification = FollowNotification(recipientName: recipientName, kind: kind)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            notifications.insert(notification, at: 0)
+        }
+        let dismissDelay: TimeInterval = {
+            if case .failed = kind { return 5.0 }
+            return 3.0
+        }()
+        let id = notification.id
+        DispatchQueue.main.asyncAfter(deadline: .now() + dismissDelay) { [weak self] in
+            withAnimation(.easeOut(duration: 0.4)) {
+                self?.notifications.removeAll { $0.id == id }
+            }
+        }
+    }
+}
+
+// MARK: - Follow Notification Banner
+
+struct FollowNotificationBanner: View {
+    @ObservedObject private var manager = FollowNotificationManager.shared
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ForEach(manager.notifications) { notification in
+                FollowPill(notification: notification)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .opacity.combined(with: .scale(scale: 0.8))
+                    ))
+            }
+        }
+        .padding(.top, 12)
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: manager.notifications.map(\.id))
+    }
+}
+
+// MARK: - Follow Pill
+
+struct FollowPill: View {
+    let notification: FollowNotification
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: iconName)
+                .font(.system(size: 12, weight: .bold))
+
+            Text(label)
+                .font(.system(size: 13, weight: .bold))
+                .lineLimit(1)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 20)
+        .background(
+            Capsule()
+                .fill(pillColor)
+                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+        )
+        .foregroundColor(.white)
+    }
+
+    private var iconName: String {
+        switch notification.kind {
+        case .followed:   return "person.badge.plus"
+        case .unfollowed: return "person.badge.minus"
+        case .failed:     return "xmark"
+        }
+    }
+
+    private var label: String {
+        switch notification.kind {
+        case .followed:           return "Followed \(notification.recipientName)"
+        case .unfollowed:         return "Unfollowed \(notification.recipientName)"
+        case .failed(let reason): return reason
+        }
+    }
+
+    private var pillColor: Color {
+        switch notification.kind {
+        case .followed:   return Color(red: 0.2, green: 0.8, blue: 0.6)
+        case .unfollowed: return Color(white: 0.35)
+        case .failed:     return .red.opacity(0.85)
+        }
+    }
+}

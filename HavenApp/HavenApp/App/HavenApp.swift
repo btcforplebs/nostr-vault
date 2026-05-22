@@ -15,7 +15,7 @@ struct HavenApp: App {
     
     var body: some Scene {
         #if os(macOS)
-        MenuBarExtra("Haven", systemImage: "server.rack") {
+        MenuBarExtra("Nostr Vault", systemImage: "server.rack") {
             MenuBarContent(configService: configService, relayManager: relayManager)
                 .environmentObject(configService)
                 .environmentObject(relayManager)
@@ -26,7 +26,7 @@ struct HavenApp: App {
         .menuBarExtraStyle(.window)
 
         // Window for Setup / Welcome
-        Window("Haven Setup", id: "setup") {
+        Window("Nostr Vault Setup", id: "setup") {
             SetupWizardView {
                 // On complete, we can dismiss this window.
                 // However, we can't easily dismiss from here without a binding or environment.
@@ -58,16 +58,16 @@ struct HavenApp: App {
                 .preferredColorScheme(.dark)
         }
 
-        Window("Haven", id: "viewer-window") {
+        Window("Nostr Vault", id: "viewer-window") {
             MenuBarView(configService: configService, relayManager: relayManager, isPoppedOut: true)
                 .environmentObject(configService)
                 .environmentObject(relayManager)
                 .environmentObject(nostrService)
                 .environmentObject(statsService)
                 .preferredColorScheme(.dark)
-                .frame(minWidth: 600, minHeight: 500)
+                .frame(minWidth: 800, minHeight: 950)
         }
-        .defaultSize(width: 900, height: 700)
+        .defaultSize(width: 1000, height: 1200)
         #else
         WindowGroup {
             MenuBarContent(configService: configService, relayManager: relayManager)
@@ -103,7 +103,7 @@ struct MenuBarContent: View {
                             .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.1), value: isVisible)
                         
                         VStack(spacing: 8) {
-                            Text("Welcome to Haven")
+                            Text("Welcome to Nostr Vault")
                                 .font(.system(.title2, design: .rounded).bold())
                                 .offset(y: isVisible ? 0 : 15)
                                 .opacity(isVisible ? 1 : 0)
@@ -179,7 +179,7 @@ struct MenuBarContent: View {
                             .font(.title2.bold())
                             .foregroundColor(.white)
 
-                        Text("A previous Haven process is still running. Run the following command in Terminal to stop it, then relaunch the app.")
+                        Text("A previous Nostr Vault process is still running. Run the following command in Terminal to stop it, then relaunch the app.")
                             .multilineTextAlignment(.center)
                             .foregroundColor(.white.opacity(0.9))
                             .fixedSize(horizontal: false, vertical: true)

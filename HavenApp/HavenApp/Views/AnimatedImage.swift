@@ -51,6 +51,15 @@ struct ImageDownsampler {
     }
 }
 
+struct AnimatedImageHelper {
+    /// Sniffs the GIF87a / GIF89a magic bytes for extensionless URLs (blossom hashes).
+    static func isGIFData(_ data: Data) -> Bool {
+        guard data.count >= 6 else { return false }
+        let magic = data.prefix(6)
+        return magic == Data("GIF87a".utf8) || magic == Data("GIF89a".utf8)
+    }
+}
+
 #if os(macOS)
 struct AnimatedImage: NSViewRepresentable {
     let url: URL
@@ -88,7 +97,10 @@ struct AnimatedImage: NSViewRepresentable {
             guard let data else { return }
 
             let image: PlatformImage?
-            if let targetSize = self.targetSize {
+            if url.pathExtension.lowercased() == "gif" || AnimatedImageHelper.isGIFData(data) {
+                // On macOS, NSImage natively handles animated GIFs when loaded from Data
+                image = NSImage(data: data)
+            } else if let targetSize = self.targetSize {
                 image = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height))
             } else {
                 image = NSImage(data: data)
@@ -209,10 +221,10 @@ struct AnimatedImage: UIViewRepresentable {
             guard let data else { return }
 
             let image: UIImage?
-            if let targetSize = self.targetSize {
-                image = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height))
-            } else if url.isGIF {
+            if url.isGIF || AnimatedImageHelper.isGIFData(data) {
                 image = Self.makeAnimatedGIF(data: data)
+            } else if let targetSize = self.targetSize {
+                image = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height))
             } else {
                 image = UIImage(data: data)
             }
@@ -227,7 +239,7 @@ struct AnimatedImage: UIViewRepresentable {
 
     /// Decodes all GIF frames via CGImageSource and returns an animating UIImage.
     /// UIImage(data:) only decodes the first frame, so looping requires this.
-    private static func makeAnimatedGIF(data: Data) -> UIImage? {
+    nonisolated private static func makeAnimatedGIF(data: Data) -> UIImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let count = CGImageSourceGetCount(source)
         guard count > 1 else { return UIImage(data: data) }
@@ -248,6 +260,7 @@ struct AnimatedImage: UIViewRepresentable {
 
         return UIImage.animatedImage(with: frames, duration: totalDuration)
     }
+
 }
 #endif
 

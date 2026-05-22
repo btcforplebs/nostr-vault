@@ -1,6 +1,12 @@
 import SwiftUI
 import Combine
 
+private struct ComposeContext: Identifiable {
+    let id = UUID()
+    let replyTo: FeedNote?
+    let quoteTo: FeedNote?
+}
+
 struct NoteDetailView: View {
     let note: FeedNote
     @StateObject private var feedService = FeedService.shared
@@ -8,7 +14,7 @@ struct NoteDetailView: View {
     @EnvironmentObject var configService: ConfigService
     @Environment(\.presentationMode) var presentationMode
     
-    @State private var showingReplyCompose = false
+    @State private var composeContext: ComposeContext?
     @State private var isLoadingReplies = false
     @State private var parentNotes: [FeedNote] = []
     @State private var isLoadingParents = false
@@ -18,7 +24,15 @@ struct NoteDetailView: View {
     @State private var showingNoteId: String?
     @State private var showingMediaUrl: IdentifiableURL?
     @State private var showingReportDialog = false
+    @State private var showingDeleteConfirm = false
     @State private var showingEmojiPicker = false
+    @State private var showAmountPicker = false
+    @State private var zapAmountSats: String = ""
+    @State private var showingBroadcastSheet = false
+    @State private var noLightningAddressAlert = false
+    @State private var unlikeTask: Task<Void, Never>?
+    @State private var showingUnlikeUndo = false
+    @State private var unlikeTimeRemaining = 3.0
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -39,6 +53,10 @@ struct NoteDetailView: View {
 
                         // Replies Section
                         repliesSection
+
+                        #if os(iOS)
+                        Color.clear.frame(height: 90)
+                        #endif
                     }
                     .padding()
                 }
@@ -55,6 +73,14 @@ struct NoteDetailView: View {
 
             ZapNotificationBanner()
                 .zIndex(1)
+        }
+        .overlay(alignment: .bottom) {
+            if showingUnlikeUndo {
+                UnlikeUndoBanner(timeRemaining: unlikeTimeRemaining, onUndo: undoUnlike)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .background(Color.platformSecondaryGroupedBackground)
         .refreshable {
@@ -73,18 +99,33 @@ struct NoteDetailView: View {
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 8) {
                     Button {
-                        showingReplyCompose = true
+                        let replyTarget: FeedNote = {
+                            if note.kind == 6, let refId = note.repostedEventId,
+                               let original = feedService.findNote(id: refId) {
+                                return original
+                            }
+                            return note
+                        }()
+                        composeContext = ComposeContext(replyTo: replyTarget, quoteTo: nil)
                     } label: {
                         Image(systemName: "arrowshape.turn.up.left.fill")
                     }
                     
                     Menu {
+                        if note.pubkey == nostrService.activeHexPubkey {
+                            Button(role: .destructive, action: {
+                                showingDeleteConfirm = true
+                            }) {
+                                Label("Delete Post", systemImage: "trash")
+                            }
+                        }
+
                         Button(action: {
                             showingReportDialog = true
                         }) {
                             Label("Report Post", systemImage: "flag.fill")
                         }
-                        
+
                         Button(action: {
                             blockUser(hexPubkey: note.pubkey)
                         }) {
@@ -96,23 +137,15 @@ struct NoteDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingReplyCompose) {
-            // For reposts (kind 6), reply to the original note, not the repost wrapper
-            let replyTarget: FeedNote = {
-                if note.kind == 6, let refId = note.repostedEventId,
-                   let original = feedService.notes.first(where: { $0.id == refId }) {
-                    return original
-                }
-                return note
-            }()
-            ComposeView(replyTo: replyTarget)
+        .sheet(item: $composeContext) { ctx in
+            ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
         .sheet(isPresented: $showingReportDialog) {
-            UGCReportingDialog(eventId: note.id, pubkey: note.pubkey) {
+            UGCReportingDialog(eventId: note.id, pubkey: note.pubkey, onDismiss: { showingReportDialog = false }) {
                 nostrService.objectWillChange.send()
-                presentationMode.wrappedValue.dismiss()
+                showingReportDialog = false
             }
             .environmentObject(nostrService)
             .environmentObject(configService)
@@ -120,6 +153,7 @@ struct NoteDetailView: View {
         .onAppear {
             fetchParents()
             fetchReplies()
+            feedService.fetchNoteStats(for: note.id)
             let profile = nostrService.profiles[note.pubkey]
             if profile == nil {
                 nostrService.fetchMissingProfiles(for: [note.pubkey])
@@ -133,18 +167,38 @@ struct NoteDetailView: View {
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
             set: { showingProfilePubkey = $0?.id }
         )) { p in
-            ProfileView(pubkey: p.id)
+            ProfileView(pubkey: p.id, onDismiss: { showingProfilePubkey = nil })
         }
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingNoteId.map { IdentifiableString(id: $0) } },
             set: { showingNoteId = $0?.id }
         )) { noteId in
-            NoteDetailViewWrapper(noteId: noteId.id)
+            NoteDetailViewWrapper(noteId: noteId.id, onDismiss: { showingNoteId = nil })
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
         .sheet(item: $showingMediaUrl) { media in
-            FeedMediaViewer(url: media.url)
+            FeedMediaViewer(url: media.url, onDismiss: { showingMediaUrl = nil })
+        }
+        .sheet(isPresented: $showingBroadcastSheet) {
+            EventBroadcastSheet(note: note)
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
+        .alert("No Lightning Address", isPresented: $noLightningAddressAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("This user hasn't configured a lightning address, so they can't receive zaps.")
+        }
+        .alert("Delete Post", isPresented: $showingDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                nostrService.deleteNote(id: note.id)
+                FeedService.shared.removeNote(id: note.id)
+                presentationMode.wrappedValue.dismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Request deletion of this post? Not all relays honor NIP-09 deletion requests.")
         }
     }
     
@@ -179,9 +233,13 @@ struct NoteDetailView: View {
 
             // Content — for empty-content reposts, show the referenced note
             if note.kind == 6 && note.content.isEmpty, let refId = note.repostedEventId,
-               let original = feedService.notes.first(where: { $0.id == refId }) {
+               let original = feedService.findNote(id: refId) {
                 Text(NostrContentFormatter.format(original.content, mediaURLs: original.mediaURLs, hideQuotes: true))
-                    .font(.body)
+                    .font(.system(size: 16, weight: .regular, design: .default))
+                    .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                    .lineSpacing(3)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
 
                 if !original.mediaURLs.isEmpty {
@@ -189,7 +247,11 @@ struct NoteDetailView: View {
                 }
             } else {
                 Text(NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs, hideQuotes: true))
-                    .font(.body)
+                    .font(.system(size: 16, weight: .regular, design: .default))
+                    .foregroundColor(Color(red: 1, green: 1, blue: 1))
+                    .lineSpacing(3)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .environment(\.openURL, OpenURLAction { url in
                         if url.scheme == "nostr" {
@@ -214,8 +276,8 @@ struct NoteDetailView: View {
             if !note.quotedEventIds.isEmpty {
                 VStack(spacing: 8) {
                     ForEach(note.quotedEventIds, id: \.self) { quoteId in
-                        if let quotedNote = feedService.notes.first(where: { $0.id == quoteId }) {
-                            NavigationLink(destination: NoteDetailView(note: quotedNote)) {
+                        if let quotedNote = feedService.findNote(id: quoteId) {
+                            NavigationLink(value: quotedNote) {
                                 QuotedNoteView(note: quotedNote)
                                     .environmentObject(nostrService)
                             }
@@ -236,10 +298,20 @@ struct NoteDetailView: View {
             HStack(spacing: 24) {
                 let stats = feedService.noteStats[note.id]
                 actionButton(icon: "message", count: stats?.replies) {
-                    showingReplyCompose = true
+                    let replyTarget: FeedNote = {
+                        if note.kind == 6, let refId = note.repostedEventId,
+                           let original = feedService.findNote(id: refId) {
+                            return original
+                        }
+                        return note
+                    }()
+                    composeContext = ComposeContext(replyTo: replyTarget, quoteTo: nil)
                 }
                 actionButton(icon: "arrow.2.squarepath", count: stats?.reposts) {
                     repostNote()
+                }
+                actionButton(icon: "quote.closing", count: nil) {
+                    composeContext = ComposeContext(replyTo: nil, quoteTo: note)
                 }
 
                 let isLiked = feedService.likedEventIds.contains(note.id)
@@ -271,17 +343,29 @@ struct NoteDetailView: View {
                     #endif
                 }
 
-                if !ConfigService.shared.config.nwcURI.isEmpty, let lud16 = getLightingAddress(for: note.pubkey) {
+                if !ConfigService.shared.config.nwcURI.isEmpty {
+                    let lud16 = getLightingAddress(for: note.pubkey)
                     let isZapped = feedService.zappedEventIds[note.id] != nil
+                    let hasLightning = lud16 != nil
                     actionButton(
                         icon: isZapped ? "bolt.fill" : "bolt",
-                        color: isZapped ? .orange : .secondary,
-                        count: nil
+                        color: isZapped ? .orange : (hasLightning ? .secondary : .secondary.opacity(0.35)),
+                        count: stats?.zaps
                     ) {
-                        Task { await zapNote(lud16: lud16) }
+                        if let lud16 = lud16 {
+                            Task { await zapNote(lud16: lud16) }
+                        } else {
+                            noLightningAddressAlert = true
+                        }
                     }
                     .scaleEffect(isZapped ? 1.2 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isZapped)
+                    .onLongPressGesture {
+                        if hasLightning {
+                            zapAmountSats = String(ConfigService.shared.config.defaultZapAmount / 1000)
+                            showAmountPicker = true
+                        }
+                    }
                 }
 
                 let onchainZapAmount = feedService.onchainZapEventIds[note.id]
@@ -289,8 +373,8 @@ struct NoteDetailView: View {
                     OnchainZapDisplay(amountSats: onchainZapAmount)
                         .scaleEffect(1.0)
                 }
-                
-                 ShareLink(
+
+                ShareLink(
                     item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
                     subject: Text("Nostr Note"),
                     message: Text("Check out this note on Nostr")
@@ -299,10 +383,34 @@ struct NoteDetailView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
-                
+
+                Button {
+                    showingBroadcastSheet = true
+                } label: {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+
                 Spacer()
             }
             .padding(.top, 8)
+        }
+        .alert("Zap Amount", isPresented: $showAmountPicker) {
+            TextField("Amount in sats", text: $zapAmountSats)
+                #if os(iOS)
+                .keyboardType(.numberPad)
+                #endif
+            Button("Zap!") {
+                if let amount = Int(zapAmountSats),
+                   let lud16 = getLightingAddress(for: note.pubkey) {
+                    Task { await zapNote(lud16: lud16, amount: amount) }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Enter the amount of sats you want to zap.")
         }
     }
     
@@ -310,7 +418,7 @@ struct NoteDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
 
             ForEach(parentNotes) { parent in
-                NavigationLink(destination: NoteDetailView(note: parent)) {
+                NavigationLink(value: parent) {
                     let parentProfile = nostrService.profiles[parent.pubkey]
                     CompactNoteRow(note: parent, profile: parentProfile)
                 }
@@ -347,7 +455,13 @@ struct NoteDetailView: View {
                     ThreadedReplyNode(
                         reply: reply,
                         allNotes: feedService.notes,
-                        depth: 1
+                        depth: 1,
+                        onReply: { target in
+                            composeContext = ComposeContext(replyTo: target, quoteTo: nil)
+                        },
+                        onQuote: { target in
+                            composeContext = ComposeContext(replyTo: nil, quoteTo: target)
+                        }
                     )
                 }
             }
@@ -380,7 +494,7 @@ struct NoteDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .automatic))
+            .mediaTabViewStyleCompat()
             .frame(height: 400)
             .padding(.top, 4)
         }
@@ -479,7 +593,7 @@ struct NoteDetailView: View {
             )
 
             if !FeedNote.isNoiseOrSpam(content: content, tags: tags) {
-                if !feedService.notes.contains(where: { $0.id == id }) {
+                if feedService.findNote(id: id) == nil {
                     feedService.addNote(reply)
                 }
                 
@@ -495,20 +609,47 @@ struct NoteDetailView: View {
     }
     
     private func likeNote() {
-        if !feedService.likedEventIds.contains(note.id) {
-            feedService.likedEventIds.insert(note.id)
-            
-            // Proactively update stats locally
-            var currentStats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
-            currentStats.reactions += 1
-            feedService.noteStats[note.id] = currentStats
-            
-            feedService.saveInteractionState()
+        if feedService.likedEventIds.contains(note.id) {
+            startUnlikeCountdown()
+            return
         }
+        feedService.likedEventIds.insert(note.id)
+        var currentStats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+        currentStats.reactions += 1
+        feedService.noteStats[note.id] = currentStats
+        feedService.saveInteractionState()
         guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", note.id], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
     }
-    
+
+    private func startUnlikeCountdown() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = true }
+        unlikeTimeRemaining = 3.0
+        unlikeTask?.cancel()
+        unlikeTask = Task {
+            for _ in 0..<30 {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                if Task.isCancelled { return }
+                await MainActor.run { unlikeTimeRemaining -= 0.1 }
+            }
+            if Task.isCancelled { return }
+            await MainActor.run {
+                feedService.likedEventIds.remove(note.id)
+                var stats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+                stats.reactions = max(0, stats.reactions - 1)
+                feedService.noteStats[note.id] = stats
+                feedService.saveInteractionState()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = false }
+            }
+        }
+    }
+
+    private func undoUnlike() {
+        unlikeTask?.cancel()
+        unlikeTask = nil
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = false }
+    }
+
     private func reactToNote(with emoji: String) {
         if !feedService.likedEventIds.contains(note.id) {
             feedService.likedEventIds.insert(note.id)
@@ -527,10 +668,7 @@ struct NoteDetailView: View {
     private func blockUser(hexPubkey: String) {
         guard let data = Bech32.hexToData(hexPubkey),
               let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-        if !configService.config.blacklistedNpubs.contains(npub) {
-            configService.config.blacklistedNpubs.append(npub)
-            configService.save()
-        }
+        configService.blockProfile(npub)
         nostrService.objectWillChange.send()
         presentationMode.wrappedValue.dismiss()
     }
@@ -542,14 +680,16 @@ struct NoteDetailView: View {
 
     private func getLightingAddress(for pubkey: String) -> String? {
         if let profile = nostrService.profiles[pubkey] {
+            if let lud06 = profile.lud06, !lud06.isEmpty { return "lnurl:" + lud06 }
             if let lud16 = profile.lud16, !lud16.isEmpty { return lud16 }
-            if let nip05 = profile.nip05, !nip05.isEmpty { return nip05 }
+            // NIP-05 resolves to /.well-known/nostr.json — a completely different endpoint
+            // from the LUD-16 /.well-known/lnurlp/ path. Do NOT use NIP-05 as a lightning address.
         }
         return nil
     }
     
-    private func zapNote(lud16: String) async {
-        let amountSats = ConfigService.shared.config.defaultZapAmount / 1000
+    private func zapNote(lud16: String, amount: Int? = nil) async {
+        let amountSats = amount ?? (ConfigService.shared.config.defaultZapAmount / 1000)
         
         do {
             try await ZapService.shared.zapNote(
@@ -694,25 +834,33 @@ struct ThreadedReplyNode: View {
     let reply: FeedNote
     let allNotes: [FeedNote]
     let depth: Int
-    
+    var onReply: ((FeedNote) -> Void)? = nil
+    var onQuote: ((FeedNote) -> Void)? = nil
+
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
-    
+
     var body: some View {
         let childReplies = allNotes.filter { $0.parentEventId == reply.id }
             .sorted(by: { $0.createdAt < $1.createdAt })
-        
+
         VStack(alignment: .leading, spacing: 8) {
-            NavigationLink(destination: NoteDetailView(note: reply)) {
+            NavigationLink(value: reply) {
                 let replyProfile = nostrService.profiles[reply.pubkey]
-                FeedNoteRow(note: reply, profile: replyProfile, showParent: false)
+                FeedNoteRow(
+                    note: reply,
+                    profile: replyProfile,
+                    onReply: { onReply?(reply) },
+                    onQuote: { onQuote?(reply) },
+                    showParent: false
+                )
             }
             .buttonStyle(.plain)
             
             if !childReplies.isEmpty {
                 if depth >= 5 {
                     // Prevent excessive indentation squishing on narrow mobile screens
-                    NavigationLink(destination: NoteDetailView(note: reply)) {
+                    NavigationLink(value: reply) {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.turn.down.right")
                                 .font(.system(size: 11, weight: .bold))
@@ -742,7 +890,9 @@ struct ThreadedReplyNode: View {
                                 ThreadedReplyNode(
                                     reply: child,
                                     allNotes: allNotes,
-                                    depth: depth + 1
+                                    depth: depth + 1,
+                                    onReply: onReply,
+                                    onQuote: onQuote
                                 )
                             }
                         }
@@ -797,10 +947,12 @@ struct CompactNoteRow: View {
 
 struct NoteDetailViewWrapper: View {
     let noteId: String
+    var onDismiss: (() -> Void)? = nil
     @State private var resolvedNote: FeedNote?
     @State private var isLoading = true
     @State private var error: String?
-    
+
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     @StateObject private var feedService = FeedService.shared
@@ -830,7 +982,11 @@ struct NoteDetailViewWrapper: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") {
-                        // Dismiss handled by sheet binding
+                        if let onDismiss = onDismiss {
+                            onDismiss()
+                        } else {
+                            dismiss()
+                        }
                     }
                 }
             }
@@ -841,7 +997,7 @@ struct NoteDetailViewWrapper: View {
     }
 
     private func fetchNote() {
-        if let existing = feedService.notes.first(where: { $0.id == noteId }) {
+        if let existing = feedService.findNote(id: noteId) {
             self.resolvedNote = existing
             self.isLoading = false
             return

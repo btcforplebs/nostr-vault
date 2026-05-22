@@ -8,6 +8,7 @@ struct IdentifiableURL: Identifiable {
 
 struct FeedMediaViewer: View {
     let url: URL
+    var onDismiss: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     
     @State private var scale: CGFloat = 1.0
@@ -75,7 +76,7 @@ struct FeedMediaViewer: View {
                         } else {
                             // Check height for dismissal
                             if abs(value.translation.height) > 100 {
-                                dismiss()
+                                performDismiss()
                             } else {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     offset = .zero
@@ -104,7 +105,7 @@ struct FeedMediaViewer: View {
                 HStack {
                     Spacer()
                     Button {
-                        dismiss()
+                        performDismiss()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 32))
@@ -116,6 +117,14 @@ struct FeedMediaViewer: View {
                 }
                 Spacer()
             }
+        }
+    }
+    
+    private func performDismiss() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
         }
     }
     

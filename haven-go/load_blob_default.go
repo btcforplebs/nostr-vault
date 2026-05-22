@@ -10,5 +10,5 @@ import (
 
 func loadBlob(_ context.Context, sha256 string, ext string) (io.ReadSeeker, error) {
 	slog.Debug("loading blob", "sha256", sha256, "ext", ext)
-	return fs.Open(config.BlossomPath + sha256)
+	return openBlobFile(sha256, ext)
 }

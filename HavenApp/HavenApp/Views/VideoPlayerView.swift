@@ -4,9 +4,12 @@ import AVFoundation
 
 struct VideoPlayerView: View {
     let url: URL
+    /// Optional MIME hint used when the URL has no extension (e.g. Blossom hashes).
+    /// AVFoundation can't infer the container format without it, so playback fails silently.
+    var mimeType: String? = nil
     @State private var player: AVPlayer?
     @State private var loadError: String? = nil
-    
+
     @State private var viewSize: CGSize = .zero
     
     var body: some View {
@@ -123,12 +126,14 @@ struct VideoPlayerView: View {
         // content type from the URL alone. We must provide an explicit MIME type hint via
         // AVURLAssetOverrideMIMETypeKey so AVPlayer knows how to demux the stream.
         var assetOptions: [String: Any] = [:]
-        if !finalURL.isFileURL && finalURL.pathExtension.isEmpty {
-            // Try to get the actual MIME type from the detector cache, fall back to video/mp4
-            let mimeType = MediaTypeDetector.shared.getCachedContentType(for: url) ?? "video/mp4"
-            assetOptions[AVURLAssetOverrideMIMETypeKey] = mimeType
+        if finalURL.pathExtension.isEmpty {
+            // Prefer caller-supplied mime, then the detector cache, fall back to video/mp4
+            let resolved = mimeType
+                ?? MediaTypeDetector.shared.getCachedContentType(for: url)
+                ?? "video/mp4"
+            assetOptions[AVURLAssetOverrideMIMETypeKey] = resolved
             #if DEBUG
-            print("VideoPlayerView: Using MIME override '\(mimeType)' for extensionless URL")
+            print("VideoPlayerView: Using MIME override '\(resolved)' for extensionless URL")
             #endif
         }
         
@@ -294,19 +299,26 @@ struct InlineFeedVideoPlayer: View {
 struct InlinePlayerLayer: NSViewRepresentable {
     let player: AVPlayer
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+    func makeNSView(context: Context) -> PlayerNSView {
+        let view = PlayerNSView()
         view.wantsLayer = true
-        let playerLayer = AVPlayerLayer(player: player)
-        playerLayer.videoGravity = .resizeAspectFill
-        view.layer = playerLayer
+        if let playerLayer = view.layer as? AVPlayerLayer {
+            playerLayer.player = player
+            playerLayer.videoGravity = .resizeAspectFill
+        }
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(_ nsView: PlayerNSView, context: Context) {
         if let playerLayer = nsView.layer as? AVPlayerLayer, playerLayer.player != player {
             playerLayer.player = player
         }
+    }
+}
+
+class PlayerNSView: NSView {
+    override func makeBackingLayer() -> CALayer {
+        return AVPlayerLayer()
     }
 }
 #else

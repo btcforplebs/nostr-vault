@@ -13,6 +13,18 @@ struct ContentView: View {
 
     @State private var selectedTab = 0
 
+    init() {
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+        appearance.backgroundColor = UIColor.black.withAlphaComponent(0.12)
+        appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
+        appearance.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
+        UINavigationBar.appearance().standardAppearance = appearance
+        UINavigationBar.appearance().scrollEdgeAppearance = appearance
+        UINavigationBar.appearance().compactAppearance = appearance
+    }
+
     var body: some View {
         Group {
             if !configService.config.hasCompletedSetup {
@@ -67,39 +79,47 @@ struct iPadSidebarView: View {
                     Label("Settings", systemImage: "gearshape")
                 }
             }
-            .navigationTitle("Haven")
+            .navigationTitle("Nostr Vault")
         } detail: {
             switch selectedTab {
             case 0:
                 FeedView()
             case 1:
-                NavigationView {
+                NavigationStack {
                     SearchView()
                         .navigationTitle("Search")
                         .navigationBarTitleDisplayMode(.inline)
+                        .navigationDestination(for: FeedNote.self) { note in
+                            NoteDetailView(note: note)
+                        }
                 }
-                .navigationViewStyle(.stack)
             case 2:
-                NavigationView {
-                    ProfileView(pubkey: nostrService.ownerHexPubkey, embeddedInNavigation: true)
-                        .navigationTitle("Profile")
-                        .navigationBarTitleDisplayMode(.inline)
+                NavigationStack {
+                    ProfileView(pubkey: configService.activeAccountHexPubkey, embeddedInNavigation: true)
+                        .id(configService.activeAccountHexPubkey)
+                        .navigationBarHidden(true)
+                        .navigationDestination(for: FeedNote.self) { note in
+                            NoteDetailView(note: note)
+                        }
                 }
-                .navigationViewStyle(.stack)
             case 3:
-                NavigationView {
+                NavigationStack {
                     ViewerView()
                         .navigationTitle("Relay")
                         .navigationBarTitleDisplayMode(.inline)
+                        .navigationDestination(for: FeedNote.self) { note in
+                            NoteDetailView(note: note)
+                        }
                 }
-                .navigationViewStyle(.stack)
             case 4:
-                NavigationView {
+                NavigationStack {
                     SettingsView()
                         .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.inline)
+                        .navigationDestination(for: FeedNote.self) { note in
+                            NoteDetailView(note: note)
+                        }
                 }
-                .navigationViewStyle(.stack)
             default:
                 FeedView()
             }
@@ -135,52 +155,62 @@ struct iPhoneTabView: View {
         TabView(selection: $selectedTab) {
             // Feed Tab
             FeedView()
-                .tabItem {
-                    Label("Feed", systemImage: "person.2.wave.2")
-                }
+                .toolbar(.hidden, for: .tabBar)
                 .tag(0)
 
             // Search Tab
-            NavigationView {
+            NavigationStack {
                 SearchView()
                     .navigationTitle("Search")
                     .navigationBarTitleDisplayMode(.inline)
+                    .navigationDestination(for: FeedNote.self) { note in
+                        NoteDetailView(note: note)
+                    }
             }
-            .navigationViewStyle(.stack)
-            .tabItem { Label("Search", systemImage: "magnifyingglass") }
+            .toolbar(.hidden, for: .tabBar)
             .tag(1)
 
             // Profile Tab (own profile)
-            NavigationView {
-                ProfileView(pubkey: nostrService.ownerHexPubkey, embeddedInNavigation: true)
-                    .navigationTitle("Profile")
-                    .navigationBarTitleDisplayMode(.inline)
+            NavigationStack {
+                ProfileView(pubkey: configService.activeAccountHexPubkey, embeddedInNavigation: true)
+                    .id(configService.activeAccountHexPubkey) // Force reload when account changes
+                    .navigationBarHidden(true)
+                    .navigationDestination(for: FeedNote.self) { note in
+                        NoteDetailView(note: note)
+                    }
             }
-            .navigationViewStyle(.stack)
-            .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+            .toolbar(.hidden, for: .tabBar)
             .tag(2)
 
             // Relay Tab (Notes & Media stored in local relay)
-            NavigationView {
+            NavigationStack {
                 ViewerView()
                     .navigationTitle("Relay")
                     .navigationBarTitleDisplayMode(.inline)
+                    .navigationDestination(for: FeedNote.self) { note in
+                        NoteDetailView(note: note)
+                    }
             }
-            .navigationViewStyle(.stack)
-            .tabItem { Label("Relay", systemImage: "doc.text.image") }
+            .toolbar(.hidden, for: .tabBar)
             .tag(3)
 
             // Settings Tab
-            NavigationView {
+            NavigationStack {
                 SettingsView()
                     .navigationTitle("Settings")
                     .navigationBarTitleDisplayMode(.inline)
+                    .navigationDestination(for: FeedNote.self) { note in
+                        NoteDetailView(note: note)
+                    }
             }
-            .navigationViewStyle(.stack)
-            .tabItem { Label("Settings", systemImage: "gearshape") }
+            .toolbar(.hidden, for: .tabBar)
             .tag(4)
         }
         .tint(.havenPurple)
+        .toolbar(.hidden, for: .tabBar) // Hide the native tab bar
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            customTabBar
+        }
         .onAppear {
             if configService.config.hasCompletedSetup && relayManager.state == .idle {
                 relayManager.startRelay(config: configService.config)
@@ -197,6 +227,114 @@ struct iPhoneTabView: View {
         .onChange(of: selectedTab) { _, tab in
             if tab == 0 { feedService.markViewed() }
         }
+    }
+
+    private var customTabBar: some View {
+        HStack(spacing: 0) {
+            tabButton(index: 0, title: "Feed", systemImage: "person.2.wave.2") {
+                NotificationCenter.default.post(name: NSNotification.Name("ScrollToTop"), object: nil)
+                FeedService.shared.refresh()
+            }
+            tabButton(index: 1, title: "Search", systemImage: "magnifyingglass")
+            profileTabButton()
+            tabButton(index: 3, title: "Relay", systemImage: "doc.text.image")
+            tabButton(index: 4, title: "Settings", systemImage: "gearshape")
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
+        .applyGlassCapsule()
+        .compositingGroup()
+        .padding(.horizontal, 16)
+        .padding(.bottom, safeAreaBottomPadding > 0 ? 2 : 8)
+    }
+
+    private func tabButton(index: Int, title: String, systemImage: String, onReselect: (() -> Void)? = nil) -> some View {
+        Button(action: {
+            if selectedTab == index {
+                onReselect?()
+            } else {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    selectedTab = index
+                }
+            }
+        }) {
+            VStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 20, weight: selectedTab == index ? .semibold : .regular))
+                    .scaleEffect(selectedTab == index ? 1.15 : 1.0)
+                    .frame(height: 24)
+                
+                Text(title)
+                    .font(.system(size: 10, weight: selectedTab == index ? .semibold : .regular))
+            }
+            .foregroundColor(selectedTab == index ? .havenPurple : .secondary.opacity(0.8))
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func profileTabButton() -> some View {
+        let index = 2
+        let activeHex = configService.activeAccountHexPubkey
+        let avatarURL = nostrService.profiles[activeHex]?.pictureURL
+        
+        return Button(action: {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                selectedTab = index
+            }
+        }) {
+            VStack(spacing: 4) {
+                AvatarView(
+                    url: avatarURL,
+                    pubkey: activeHex,
+                    size: 24
+                )
+                .scaleEffect(selectedTab == index ? 1.15 : 1.0)
+                .frame(height: 24)
+                
+                Text("Profile")
+                    .font(.system(size: 10, weight: selectedTab == index ? .semibold : .regular))
+            }
+            .foregroundColor(selectedTab == index ? .havenPurple : .secondary.opacity(0.8))
+            .frame(maxWidth: .infinity)
+        }
+        .contextMenu {
+            if configService.allAccountNpubs.count > 1 {
+                ForEach(configService.allAccountNpubs, id: \.self) { npub in
+                    let isOwner = npub == configService.config.ownerNpub
+                    let activeAccountNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let isActive = activeAccountNpub.isEmpty ? isOwner : npub == activeAccountNpub
+                    let hex = Bech32.decode(npub)?.hexString ?? ""
+                    let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
+                    
+                    Button {
+                        configService.switchActiveAccount(to: npub)
+                        feedService.switchMode(feedService.feedMode)
+                    } label: {
+                        if isActive {
+                            Label(name, systemImage: "checkmark")
+                        } else {
+                            Text(name)
+                        }
+                    }
+                }
+            } else {
+                Text("No other accounts")
+            }
+        }
+    }
+
+
+    private var safeAreaBottomPadding: CGFloat {
+        #if os(iOS)
+        let keyWindow = UIApplication.shared.connectedScenes
+            .filter({$0.activationState == .foregroundActive})
+            .compactMap({$0 as? UIWindowScene})
+            .first?.windows
+            .filter({$0.isKeyWindow}).first
+        return keyWindow?.safeAreaInsets.bottom ?? 0
+        #else
+        return 0
+        #endif
     }
 }
 

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BitcoinSweepView: View {
     let balanceSats: Int
+    var onDismiss: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var destAddress = ""
@@ -85,8 +86,14 @@ struct BitcoinSweepView: View {
             .navigationTitle("Sweep Bitcoin")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                        .foregroundColor(.havenPurple)
+                    Button("Close") {
+                        if let onDismiss = onDismiss {
+                            onDismiss()
+                        } else {
+                            dismiss()
+                        }
+                    }
+                    .foregroundColor(.havenPurple)
                 }
             }
         }

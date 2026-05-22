@@ -14,9 +14,10 @@ extension NumberFormatter {
 struct SettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
-    @State private var selectedTab: SettingsTab = .identity
+    @State private var selectedTab: SettingsTab = .accounts
     @State private var saveTask: Task<Void, Never>?
     @State private var isRestarting = false
+    var isEmbedded: Bool = false
     
     private var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.3.0"
@@ -34,28 +35,30 @@ struct SettingsView: View {
     }
     
     enum SettingsTab: String, CaseIterable, Identifiable {
-        case identity = "Identity"
-        case accessControl = "Access Control"
+        case accounts = "Accounts"
+        case blocked = "Blocked"
         case appearance = "Appearance"
         case feed = "Feed Relays"
         case importNotes = "Import"
         case backup = "Backup"
         case blastr = "Blastr"
+        case macRelay = "Mac Relay"
         case advanced = "Advanced"
         case wallet = "Wallet"
         case logs = "Logs"
-        
+
         var id: String { self.rawValue }
-        
+
         var icon: String {
             switch self {
-            case .identity: return "person.badge.key"
-            case .accessControl: return "shield.lefthalf.filled"
+            case .accounts: return "person.badge.key"
+            case .blocked: return "person.crop.circle.badge.xmark"
             case .appearance: return "paintpalette"
             case .feed: return "newspaper"
             case .importNotes: return "square.and.arrow.down"
             case .backup: return "externaldrive.fill"
             case .blastr: return "paperplane"
+            case .macRelay: return "desktopcomputer"
             case .advanced: return "gearshape.2"
             case .wallet: return "bitcoinsign.circle"
             case .logs: return "list.bullet.rectangle"
@@ -86,20 +89,163 @@ struct SettingsView: View {
     }
 
     private var macOSBody: some View {
-        VStack(spacing: 0) {
-            TabView(selection: $selectedTab) {
-                ForEach(SettingsTab.allCases) { tab in
-                    destinationFor(tab)
-                        .tabItem { Label(tab.rawValue, systemImage: tab.icon) }
-                        .tag(tab)
+        HStack(spacing: 0) {
+            settingsSidebar
+            
+            Divider()
+                .background(Color.platformSeparator)
+            
+            // CONTENT VIEW DETAIL PANEL
+            ZStack {
+                Color(red: 0.08, green: 0.08, blue: 0.1)
+                    .ignoresSafeArea()
+                
+                VStack(alignment: .leading, spacing: 0) {
+                    // Header of active settings panel
+                    HStack {
+                        Text(selectedTab.rawValue)
+                            .font(.title2.bold())
+                            .foregroundColor(.white)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    
+                    Divider()
+                        .background(Color.platformSeparator)
+                    
+                    ScrollView {
+                        destinationFor(selectedTab)
+                            .environmentObject(configService)
+                            .environmentObject(relayManager)
+                            .padding(24)
+                    }
                 }
             }
-            .environmentObject(configService)
-            .environmentObject(relayManager)
-            
-            footer
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 800, height: 600)
+        .frame(maxWidth: isEmbedded ? .infinity : 900, maxHeight: isEmbedded ? .infinity : 650)
+    }
+
+    private var settingsSidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header inside settings sidebar
+            HStack(spacing: 8) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.havenPurple)
+                Text("Settings")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 20)
+            
+            Divider()
+                .background(Color.platformSeparator)
+                .padding(.bottom, 12)
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    settingsSidebarSection("Profile", items: [.accounts, .blocked])
+                    settingsSidebarSection("Appearance", items: [.appearance])
+                    settingsSidebarSection("Relay Configuration", items: [.feed, .blastr, .importNotes, .backup])
+                    settingsSidebarSection("System", items: [.wallet, .advanced, .logs])
+                }
+                .padding(.horizontal, 8)
+            }
+            
+            Spacer()
+            
+            Divider()
+                .background(Color.platformSeparator)
+            
+            // Save & Restart / About in sidebar bottom
+            VStack(spacing: 8) {
+                if isRestarting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.vertical, 8)
+                } else {
+                    Button(action: restartRelay) {
+                        Text("Save & Restart Relay")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Color.havenPurple)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled((!needsRestart && configService.config == relayManager.lastConfig) || !relayManager.isRunning)
+                }
+                
+                VStack(spacing: 2) {
+                    Text("Nostr Vault v\(appVersion)")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.secondary)
+                    Text("Abuse Reporting: npub1vxlh...g0nvx")
+                        .font(.system(size: 8, design: .monospaced))
+                        .foregroundColor(.secondary.opacity(0.8))
+                        .onTapGesture {
+                            PlatformClipboard.copy("npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx")
+                        }
+                }
+                .padding(.top, 4)
+            }
+            .padding(12)
+            .background(Color.black.opacity(0.15))
+        }
+        .frame(width: 220)
+        .background(Color(red: 0.1, green: 0.1, blue: 0.13))
+    }
+    
+    private func settingsSidebarSection(_ title: String, items: [SettingsTab]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.secondary.opacity(0.7))
+                .padding(.horizontal, 8)
+                .padding(.bottom, 2)
+            
+            ForEach(items) { item in
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        selectedTab = item
+                    }
+                }) {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(iconBackgroundColor(for: item))
+                                .frame(width: 20, height: 20)
+                            Image(systemName: item.icon)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        
+                        Text(item.rawValue)
+                            .font(.system(size: 12, weight: selectedTab == item ? .semibold : .medium))
+                            .foregroundColor(selectedTab == item ? .white : .secondary)
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(selectedTab == item ? Color.havenPurple.opacity(0.15) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(selectedTab == item ? Color.havenPurple.opacity(0.3) : Color.clear, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.bottom, 8)
     }
     
     #if os(iOS)
@@ -114,8 +260,8 @@ struct SettingsView: View {
             .listRowBackground(Color.clear)
 
             Section("Profile") {
-                tabLink(.identity)
-                tabLink(.accessControl)
+                tabLink(.accounts)
+                tabLink(.blocked)
             }
             
             Section("Appearance") {
@@ -127,8 +273,9 @@ struct SettingsView: View {
                 tabLink(.blastr)
                 tabLink(.importNotes)
                 tabLink(.backup)
+                tabLink(.macRelay)
             }
-            
+
             Section("System") {
                 tabLink(.wallet)
                 tabLink(.advanced)
@@ -137,7 +284,7 @@ struct SettingsView: View {
             
             Section("About") {
                 VStack(spacing: 4) {
-                    Text("Haven Relay")
+                    Text("Nostr Vault")
                         .font(.headline)
                     Text("Version \(appVersion)")
                         .font(.caption)
@@ -171,7 +318,7 @@ struct SettingsView: View {
                         Divider()
                             .padding(.vertical, 8)
                             
-                        Link("Privacy Policy", destination: URL(string: "https://havenformac.btcforplebs.com/privacy.html")!)
+                        Link("Privacy Policy", destination: URL(string: "https://nostrvault.app/privacy.html")!)
                             .font(.caption)
                             .foregroundColor(.havenPurple)
                     }
@@ -206,13 +353,14 @@ struct SettingsView: View {
 
     private func iconBackgroundColor(for tab: SettingsTab) -> Color {
         switch tab {
-        case .identity: return .blue
-        case .accessControl: return .green
+        case .accounts: return .blue
+        case .blocked: return .red
         case .appearance: return .purple
         case .feed: return .pink
         case .importNotes: return .orange
         case .backup: return .indigo
         case .blastr: return .cyan
+        case .macRelay: return .teal
         case .advanced: return .gray
         case .wallet: return .orange
         case .logs: return .secondary
@@ -234,13 +382,19 @@ struct SettingsView: View {
     private func destinationFor(_ tab: SettingsTab) -> some View {
         Group {
             switch tab {
-            case .identity: IdentitySettingsView()
-            case .accessControl: AccessControlSettingsView()
+            case .accounts: AccountsSettingsView()
+            case .blocked: BlockedSettingsView()
             case .appearance: AppearanceSettingsView()
             case .feed: FeedSettingsView()
             case .importNotes: ImportSettingsView()
             case .backup: BackupSettingsView()
             case .blastr: BlastrSettingsView()
+            case .macRelay:
+                #if os(iOS)
+                MacRelaySettingsView()
+                #else
+                EmptyView()
+                #endif
             case .advanced: AdvancedSettingsView()
             case .wallet: WalletSettingsView()
             case .logs: LogsView(logStore: relayManager.logStore)
@@ -281,7 +435,7 @@ struct SettingsView: View {
             
             // About Section for macOS
             VStack(spacing: 4) {
-                Text("Haven Relay v\(appVersion)")
+                Text("Nostr Vault v\(appVersion)")
                     .font(.caption.bold())
                 Text("Abuse Reporting: npub1vxlh...g0nvx")
                     .font(.system(size: 9, design: .monospaced))
@@ -289,7 +443,7 @@ struct SettingsView: View {
                     .onTapGesture {
                         PlatformClipboard.copy("npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx")
                     }
-                Link("Privacy Policy", destination: URL(string: "https://havenformac.btcforplebs.com/privacy.html")!)
+                Link("Privacy Policy", destination: URL(string: "https://nostrvault.com/privacy.html")!)
                     .font(.system(size: 10))
                     .foregroundColor(.havenPurple)
                     .padding(.top, 2)
@@ -341,568 +495,437 @@ struct RestartBanner: View {
     }
 }
 
-struct IdentitySettingsView: View {
+
+struct AccountsSettingsView: View {
     @EnvironmentObject var configService: ConfigService
-    @State private var showUpdateKey = false
-    @State private var newNsec = ""
-    @State private var newPassword = ""
-    @State private var confirmPassword = ""
-    @State private var updateError: String?
-    @State private var updateSuccess = false
+    @ObservedObject private var nostrService = NostrService.shared
+    
+    // Add Account Sheet
+    @State private var showAddAccount = false
+    
+    // Import Key Sheet
+    @State private var importingNpub: String? = nil
 
     var body: some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Owner npub")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    
-                    TextEditor(text: $configService.config.ownerNpub)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 100)
-                        .padding(8)
-                        .background(Color.platformControlBackground)
-                        .cornerRadius(8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                        )
-                    
-                    Text("Your Nostr public key in npub format. This key has administrative access to the relay.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                ForEach(configService.allAccountNpubs, id: \.self) { npub in
+                    accountRow(npub: npub)
                 }
-                .padding(.vertical, 4)
-            } header: {
-                Text("Owner Identity")
-            }
-
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    if !configService.config.ownerNcryptsec.isEmpty {
-                        HStack {
-                            Image(systemName: "lock.fill")
-                                .foregroundColor(.green)
-                            Text("Private Key (Encrypted)")
-                                .font(.subheadline.bold())
-                            Spacer()
-                            HStack(spacing: 8) {
-                                Button(action: { showUpdateKey = true }) {
-                                    Text("Update")
-                                        .font(.caption)
-                                }
-                                .buttonStyle(.bordered)
-                                Button(role: .destructive) {
-                                    configService.config.ownerNcryptsec = ""
-                                    configService.config.ownerNsec = ""
-                                    configService.save()
-                                } label: {
-                                    Text("Clear")
-                                        .font(.caption)
-                                }
-                                .buttonStyle(.bordered)
-                            }
+                .onDelete { indexSet in
+                    // allAccountNpubs prepends ownerNpub at index 0 — skip it
+                    for index in indexSet {
+                        guard index > 0 else { continue }
+                        let npub = configService.allAccountNpubs[index]
+                        configService.config.whitelistedNpubs.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == npub }
+                        if configService.config.activeAccountNpub == npub {
+                            configService.config.activeAccountNpub = ""
                         }
-                        .padding(8)
-                        .background(Color.platformControlBackground)
-                        .cornerRadius(8)
-
-                        Text("Your private key is encrypted with NIP-49. You'll be prompted for your password when signing notes.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    } else if !configService.config.ownerNsec.isEmpty {
-                        HStack {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
-                            Text("Private Key (Plaintext)")
-                                .font(.subheadline.bold())
-                            Spacer()
-                            HStack(spacing: 8) {
-                                Button(action: { showUpdateKey = true }) {
-                                    Text("Update")
-                                        .font(.caption)
-                                }
-                                .buttonStyle(.bordered)
-                                Button(role: .destructive) {
-                                    configService.config.ownerNsec = ""
-                                    configService.save()
-                                } label: {
-                                    Text("Clear")
-                                        .font(.caption)
-                                }
-                                .buttonStyle(.bordered)
-                            }
-                        }
-                        .padding(8)
-                        .background(Color.platformControlBackground)
-                        .cornerRadius(8)
-
-                        Text("This key is stored in plaintext. For security, update it to encrypt with NIP-49.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    } else {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Image(systemName: "key.slash")
-                                    .foregroundColor(.red)
-                                Text("No private key configured")
-                                    .font(.subheadline.bold())
-                            }
-
-                            Text("Import your nsec (private key) to compose and sign notes")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            Button(action: { showUpdateKey = true }) {
-                                HStack {
-                                    Image(systemName: "plus.circle.fill")
-                                    Text("Import Private Key")
-                                }
-                                .font(.subheadline.bold())
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(Color.havenPurple)
-                                .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(8)
-                        .background(Color.red.opacity(0.05))
-                        .cornerRadius(8)
-                        .border(Color.red.opacity(0.2), width: 1)
                     }
-                }
-                .padding(.vertical, 4)
-            } header: {
-                Text("Private Key")
-            }
-
-            #if os(macOS)
-            Section {
-                TextField("relay.example.com", text: $configService.config.relayURL)
-
-                HStack {
-                    Text("Port")
-                    Spacer()
-                    TextField("8080", value: $configService.config.relayPort, formatter: NumberFormatter.noSeparator)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 80)
+                    configService.save()
                 }
             } header: {
-                Text("Connection")
+                Text("Accounts")
             } footer: {
-                Text("The hostname and port where your relay will be accessible.")
+                Text("Tap an account to make it active. Swipe left to remove a whitelisted account.")
             }
-            #endif
+            
+            Section {
+                Button(action: {
+                    showAddAccount = true
+                }) {
+                    Label("Add Account", systemImage: "plus.circle.fill")
+                }
+            }
         }
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .sheet(isPresented: $showUpdateKey) {
-            updateKeySheet
+        .sheet(isPresented: $showAddAccount) {
+            AddAccountSheetView(onDismiss: { showAddAccount = false }, configService: configService)
         }
-    }
-
-    private var updateKeySheet: some View {
-        Group {
-            #if os(iOS)
-            NavigationView {
-                updateKeyForm
-                    .navigationTitle(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import Private Key" : "Update Private Key")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button("Cancel") {
-                                resetForm()
-                                showUpdateKey = false
-                            }
-                        }
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import" : "Update") {
-                                savePrivateKey()
-                            }
-                            .disabled(newNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newPassword.isEmpty)
-                        }
-                    }
-            }
-            #else
-            VStack(spacing: 0) {
-                Text(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import Private Key" : "Update Private Key")
-                    .font(.headline)
-                    .padding()
-                
-                Divider()
-                
-                updateKeyForm
-                
-                Divider()
-                
-                HStack {
-                    Spacer()
-                    Button("Cancel") {
-                        resetForm()
-                        showUpdateKey = false
-                    }
-                    .keyboardShortcut(.cancelAction)
-                    
-                    Button(configService.config.ownerNcryptsec.isEmpty && configService.config.ownerNsec.isEmpty ? "Import" : "Update") {
-                        savePrivateKey()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(newNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newPassword.isEmpty)
-                }
-                .padding()
-            }
-            .frame(width: 450, height: 500)
-            #endif
+        .sheet(item: Binding<IdentifiableString?>(
+            get: { importingNpub.map { IdentifiableString(id: $0) } },
+            set: { importingNpub = $0?.id }
+        )) { item in
+            ImportKeySheetView(onDismiss: { importingNpub = nil }, configService: configService, npub: item.id)
         }
-    }
-
-    private var updateKeyForm: some View {
-        Form {
-            Section("Enter Private Key") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("nsec (Nostr Secret Key)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    ZStack(alignment: .topLeading) {
-                        TextEditor(text: $newNsec)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(minHeight: 80)
-                            .padding(4)
-                            .background(Color.platformControlBackground)
-                            .cornerRadius(6)
-                            .autocorrectionDisabled()
-                            .disableAutocorrection(true)
-                            #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.asciiCapable)
-                            #endif
-                        
-                        HStack {
-                            Spacer()
-                            VStack {
-                                Button(action: pastePrivateKey) {
-                                    Image(systemName: "doc.on.clipboard")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.secondary)
-                                        .padding(8)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(4)
-                    }
-                    
-                    Text("Long press or tap the clipboard icon to paste your private key")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Section("Set Password (NIP-49 Encryption)") {
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        SecureField("Password", text: $newPassword)
-                        SecureField("Confirm Password", text: $confirmPassword)
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label("Password will be securely stored in your Keychain", systemImage: "lock.fill")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                        Text("Haven uses your password to automatically decrypt your key when signing notes. You won't need to enter it each time.")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.top, 4)
-                }
-            }
-
-            if let error = updateError {
-                Section {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-            }
-
-            if updateSuccess {
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Private key updated successfully!")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                        }
-                        HStack {
-                            Image(systemName: "lock.fill")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                            Text("Password saved to Keychain — Haven will use it automatically when signing notes")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-        .groupedFormStyleCompat()
-    }
-
-    private func savePrivateKey() {
-        let nsecTrimmed = newNsec.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !nsecTrimmed.isEmpty else {
-            updateError = "Private key cannot be empty"
-            return
-        }
-
-        guard newPassword == confirmPassword else {
-            updateError = "Passwords do not match"
-            return
-        }
-
-        guard newPassword.count >= 8 else {
-            updateError = "Password must be at least 8 characters"
-            return
-        }
-
-        do {
-            configService.config.ownerNcryptsec = try NIP49Service.encrypt(nsec: nsecTrimmed, password: newPassword)
-            configService.config.ownerNsec = ""
-            // Store password in Keychain for auto-signing
-            _ = NIP49Service.storePasswordInKeychain(newPassword)
-            configService.save()
-
-            updateSuccess = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                resetForm()
-                showUpdateKey = false
-            }
-        } catch {
-            updateError = "Failed to encrypt key: \(error.localizedDescription)"
-        }
-    }
-
-    private func resetForm() {
-        newNsec = ""
-        newPassword = ""
-        confirmPassword = ""
-        updateError = nil
-        updateSuccess = false
     }
     
-    private func pastePrivateKey() {
-        #if os(iOS)
-        if let pasteString = UIPasteboard.general.string {
-            newNsec = pasteString
-        }
-        #else
-        if let pasteString = NSPasteboard.general.string(forType: .string) {
-            newNsec = pasteString
-        }
-        #endif
-    }
-}
-
-struct AccessControlSettingsView: View {
-    @EnvironmentObject var configService: ConfigService
-    @State private var selectedList: ListType = .whitelist
-
-    enum ListType: String, CaseIterable {
-        case whitelist = "Whitelist"
-        case blacklist = "Blacklist"
-    }
-
-    var body: some View {
-        #if os(iOS)
-        iOSBody
-        #else
-        macOSBody
-        #endif
-    }
-
-    #if os(macOS)
-    private var macOSBody: some View {
-        HStack(spacing: 0) {
-            List(ListType.allCases, id: \.self, selection: $selectedList) { listType in
-                Label(listType.rawValue, systemImage: listType == .whitelist ? "checkmark.shield" : "xmark.shield")
-            }
-            .frame(width: 140)
-            .listStyle(.sidebar)
-
-            Divider()
-
-            Form {
-                content(for: selectedList)
-            }
-            .groupedFormStyleCompat()
-            .padding()
-        }
-    }
-    #endif
-
-    #if os(iOS)
-    private var iOSBody: some View {
-        Form {
-            Section {
-                Picker("List Type", selection: $selectedList) {
-                    ForEach(ListType.allCases, id: \.self) { listType in
-                        Text(listType.rawValue).tag(listType)
+    private func accountRow(npub: String) -> some View {
+        let hex = Bech32.decode(npub)?.hexString ?? ""
+        let profile = nostrService.profiles[hex]
+        let displayName = profile?.bestName ?? String(npub.prefix(12)) + "..."
+        let isActive = (npub == configService.config.activeAccountNpub)
+        let isOwner = (npub == configService.config.ownerNpub)
+        let hasKey = isOwner || configService.hasCredential(forNpub: npub)
+        
+        return HStack(spacing: 12) {
+            AvatarView(url: profile?.pictureURL, pubkey: hex)
+                .frame(width: 38, height: 38)
+                .overlay(
+                    Circle().stroke(
+                        isActive ? (isOwner ? Color.havenPurple : Color.orange) : Color.clear,
+                        lineWidth: 2
+                    )
+                )
+                
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(displayName).fontWeight(.semibold)
+                    if isOwner {
+                        Text("Owner").font(.system(size: 10, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.havenPurple.opacity(0.2)).foregroundColor(.havenPurple).cornerRadius(4)
+                    }
+                    if hasKey {
+                        Image(systemName: "key.fill").foregroundColor(.orange).font(.system(size: 10))
                     }
                 }
-                .pickerStyle(.segmented)
+                Text(npub).font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
             }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets())
-
-            content(for: selectedList)
+            
+            Spacer()
+            
+            if !hasKey {
+                Button("Import Key") {
+                    importingNpub = npub
+                }.font(.caption).buttonStyle(.bordered)
+            }
+            
+            if isActive {
+                Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+            }
         }
-        .groupedFormStyleCompat()
-    }
-    #endif
-
-    @ViewBuilder
-    private func content(for type: ListType) -> some View {
-        switch type {
-        case .whitelist:
-            Section {
-                NpubListEditor(npubs: $configService.config.whitelistedNpubs)
-            } header: {
-                Text("Whitelisted Npubs")
-            } footer: {
-                Text("Additional npubs that can write to your private relay. Your owner npub is always included.")
-            }
-
-        case .blacklist:
-            Section {
-                NpubListEditor(npubs: $configService.config.blacklistedNpubs)
-            } header: {
-                Text("Blacklisted Npubs")
-            } footer: {
-                Text("Npubs that are explicitly blocked from your Chat and Inbox relays.")
-            }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            configService.config.activeAccountNpub = npub
+            configService.save()
         }
     }
 }
 
-struct NpubListEditor: View {
-    @Binding var npubs: [String]
-    @State private var newNpub: String = ""
+struct AddAccountSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    var onDismiss: (() -> Void)? = nil
+    @ObservedObject var configService: ConfigService
+    @State private var addInput = ""
+    @State private var addError: String? = nil
 
     var body: some View {
-        Group {
-            #if os(iOS)
-            iOSContent
-            #else
-            macOSContent
-            #endif
-        }
-    }
-
-    #if os(iOS)
-    private var iOSContent: some View {
-        Group {
-            ForEach(npubs.indices, id: \.self) { index in
-                HStack {
-                    Text(npubs[index])
-                        .font(.system(.body, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                    Button(role: .destructive) {
-                        npubs.remove(at: index)
-                    } label: {
-                        Image(systemName: "trash")
-                            .foregroundColor(.red)
-                    }
-                }
-            }
-
-            HStack {
-                TextField("Add npub1...", text: $newNpub)
-                    .font(.system(.body, design: .monospaced))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled(true)
-
-                Button(action: addNpub) {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.havenPurple)
-                        .font(.title3)
-                }
-                .disabled(newNpub.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-    }
-    #endif
-
-    private var macOSContent: some View {
+        #if os(macOS)
         VStack(spacing: 0) {
             HStack {
-                TextField("npub1...", text: $newNpub)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { addNpub() }
-
-                Button(action: addNpub) {
-                    Image(systemName: "plus.circle.fill")
+                Button("Cancel") {
+                    performDismiss()
                 }
-                .disabled(newNpub.trimmingCharacters(in: .whitespaces).isEmpty)
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Text("Add Account")
+                    .font(.headline)
+                
+                Spacer()
+                
+                Button("Add") {
+                    processAddAccount()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.havenPurple)
+                .disabled(addInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+            .padding()
+            .background(Color.platformControlBackground.opacity(0.5))
+            
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Npub")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                
+                TextEditor(text: $addInput)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(height: 80)
+                    .padding(6)
+                    .background(Color.platformControlBackground)
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                    )
+                
+                if let error = addError {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+            }
+            .padding(20)
+            
+            Spacer()
+        }
+        .background(Color.platformSecondaryGroupedBackground)
+        .frame(width: 460, height: 210)
+        #else
+        NavigationView {
+            Form {
+                Section("Npub") {
+                    TextEditor(text: $addInput)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 80)
+                }
+                if let error = addError { Text(error).foregroundColor(.red) }
+            }
+            .navigationTitle("Add Account")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { performDismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Add") { processAddAccount() } }
+            }
+        }
+        #endif
+    }
 
-            List {
-                ForEach(npubs, id: \.self) { npub in
-                    HStack {
-                        Text(npub)
+    private func processAddAccount() {
+        let input = addInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard input.starts(with: "npub") else {
+            addError = "Must be an npub"; return
+        }
+        if !configService.config.whitelistedNpubs.contains(input) {
+            configService.config.whitelistedNpubs.append(input)
+        }
+        configService.save()
+        performDismiss()
+    }
+
+    private func performDismiss() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
+    }
+}
+
+struct ImportKeySheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    var onDismiss: (() -> Void)? = nil
+    @ObservedObject var configService: ConfigService
+    let npub: String
+
+    @State private var importNsec = ""
+    @State private var importPassword = ""
+    @State private var importConfirm = ""
+    @State private var importError: String? = nil
+
+    var body: some View {
+        #if os(macOS)
+        VStack(spacing: 0) {
+            HStack {
+                Button("Cancel") {
+                    performDismiss()
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Text("Import Key")
+                    .font(.headline)
+                
+                Spacer()
+                
+                Button("Import") {
+                    processImport()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.havenPurple)
+                .disabled(importNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || importPassword.isEmpty || importConfirm.isEmpty)
+            }
+            .padding()
+            .background(Color.platformControlBackground.opacity(0.5))
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Private Key (nsec)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        
+                        TextEditor(text: $importNsec)
                             .font(.system(.body, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer()
-                        Button {
-                            npubs.removeAll { $0 == npub }
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundColor(.red)
+                            .frame(height: 80)
+                            .padding(6)
+                            .background(Color.platformControlBackground)
+                            .cornerRadius(6)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                            )
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Encrypt with Password")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        // Hidden username field anchors AutoFill to the npub
+                        // so the nsec is not captured as the username.
+                        TextField("", text: .constant(npub))
+                            .textContentType(.username)
+                            .frame(width: 0, height: 0)
+                            .opacity(0)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+
+                        SecureField("Password", text: $importPassword)
+                            .textFieldStyle(.roundedBorder)
+                            .textContentType(.newPassword)
+                            .font(.body)
+
+                        SecureField("Confirm Password", text: $importConfirm)
+                            .textFieldStyle(.roundedBorder)
+                            .textContentType(.newPassword)
+                            .font(.body)
+                    }
+                    
+                    if let error = importError {
+                        Text(error)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                    }
+                }
+                .padding(20)
+            }
+        }
+        .background(Color.platformSecondaryGroupedBackground)
+        .frame(width: 480, height: 350)
+        #else
+        NavigationView {
+            Form {
+                Section("Private Key") {
+                    TextEditor(text: $importNsec).font(.system(.body, design: .monospaced)).frame(minHeight: 80)
+                }
+                Section("Encrypt with Password") {
+                    // Hidden username field anchors AutoFill to the npub
+                    // so the nsec is not captured as the username.
+                    TextField("", text: .constant(npub))
+                        .textContentType(.username)
+                        .frame(width: 0, height: 0)
+                        .opacity(0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    SecureField("Password", text: $importPassword)
+                        .textContentType(.newPassword)
+                    SecureField("Confirm", text: $importConfirm)
+                        .textContentType(.newPassword)
+                }
+                if let error = importError { Text(error).foregroundColor(.red) }
+            }
+            .navigationTitle("Import Key")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { performDismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Import") {
+                    processImport()
+                }}
+            }
+        }
+        #endif
+    }
+
+    private func processImport() {
+        guard importPassword == importConfirm, importPassword.count >= 8 else {
+            importError = "Password must be at least 8 characters and match confirm password"
+            return
+        }
+        do {
+            try configService.setCredential(nsec: importNsec, password: importPassword, forNpub: npub)
+            performDismiss()
+        } catch {
+            importError = "Failed to import and encrypt key"
+        }
+    }
+
+    private func performDismiss() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
+    }
+}
+
+struct BlockedSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    @ObservedObject private var nostrService = NostrService.shared
+    
+    @State private var searchInput = ""
+    @State private var isSearching = false
+    
+    var blockedNpubs: [String] {
+        configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub] ?? []
+    }
+    
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    TextField("npub1...", text: $searchInput)
+                        .textFieldStyle(.roundedBorder)
+                        .autocorrectionDisabled()
+                    Button("Block") {
+                        if searchInput.starts(with: "npub1") {
+                            configService.blockProfile(searchInput.trimmingCharacters(in: .whitespacesAndNewlines))
+                            searchInput = ""
                         }
-                        .buttonStyle(.plain)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!searchInput.starts(with: "npub1"))
+                }
+            } header: {
+                Text("Block Profile")
+            } footer: {
+                Text("Enter an npub to block it. Blocked profiles cannot interact with you.")
+            }
+            
+            Section("Blocked Accounts") {
+                if blockedNpubs.isEmpty {
+                    Text("No blocked accounts.").foregroundColor(.secondary)
+                } else {
+                    ForEach(blockedNpubs, id: \.self) { npub in
+                        let hex = Bech32.decode(npub)?.hexString ?? ""
+                        let profile = nostrService.profiles[hex]
+                        let displayName = profile?.bestName ?? String(npub.prefix(12)) + "..."
+                        
+                        HStack {
+                            AvatarView(url: profile?.pictureURL, pubkey: hex)
+                                .frame(width: 32, height: 32)
+                            VStack(alignment: .leading) {
+                                Text(displayName).fontWeight(.semibold)
+                                Text(npub).font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
+                            }
+                            Spacer()
+                            Button("Unblock") {
+                                configService.unblockProfile(npub)
+                            }.foregroundColor(.red)
+                        }
                     }
                 }
             }
         }
-    }
-
-    private func addNpub() {
-        let trimmed = newNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !npubs.contains(trimmed) else { return }
-        npubs.append(trimmed)
-        newNpub = ""
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
-
 
 struct AdvancedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var showResetConfirmation = false
-    #if os(iOS)
-    @StateObject private var macSyncService = MacRelaySyncService.shared
-    #endif
-    
+
     var body: some View {
         Form {
-            #if os(iOS)
-            macRelaySyncSection
-            #endif
             Section {
                 Stepper("Max Events: \(configService.config.outboxMaxEventsPerMinute) / min", 
                        value: $configService.config.outboxMaxEventsPerMinute, in: 10...1000, step: 10)
@@ -1035,93 +1058,6 @@ struct AdvancedSettingsView: View {
         }
     }
 
-    #if os(iOS)
-    private var macRelaySyncSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Mac Relay URL")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                
-                TextField("wss://relay.example.com", text: $configService.config.macRelayURL)
-                    .font(.system(.body, design: .monospaced))
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                    .padding(10)
-                    .background(Color.platformControlBackground)
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                    )
-                
-                Text("Enter the WebSocket URL of your always-on Mac Haven relay. The iOS app will sync any notes it missed while backgrounded.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.vertical, 4)
-            
-            // Sync status & button
-            if !configService.config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        if macSyncService.isSyncing {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text(macSyncService.syncStatus)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } else if !macSyncService.syncStatus.isEmpty {
-                            HStack(spacing: 6) {
-                                Image(systemName: macSyncService.notesSynced > 0 ? "checkmark.circle.fill" : "info.circle.fill")
-                                    .foregroundColor(macSyncService.notesSynced > 0 ? .green : .blue)
-                                    .font(.caption)
-                                Text(macSyncService.syncStatus)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        if let lastSync = macSyncService.lastSyncDate {
-                            Text("Last sync: \(lastSync, style: .relative) ago")
-                                .font(.caption2)
-                                .foregroundColor(.secondary.opacity(0.7))
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        macSyncService.forceSync()
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                            Text("Sync Now")
-                        }
-                        .font(.subheadline.bold())
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.havenPurple)
-                        .cornerRadius(8)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(macSyncService.isSyncing)
-                }
-            }
-        } header: {
-            HStack(spacing: 6) {
-                Image(systemName: "desktopcomputer")
-                Text("Mac Relay Sync")
-            }
-        } footer: {
-            Text("Connect to your always-on Mac Haven relay to sync notes the iOS app missed while in the background.")
-        }
-    }
-    #endif
 }
 
 
@@ -1198,7 +1134,7 @@ struct BackupSettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Import Notes")
                             .font(.body)
-                        Text("Restore notes from a Haven JSONL backup (.zip)")
+                        Text("Restore notes from a Nostr Vault JSONL backup (.zip)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -1356,7 +1292,7 @@ struct BackupSettingsView: View {
         statusMessage = "Preparing JSONL export..."
         
         let tempDir = NSTemporaryDirectory()
-        let tempPath = (tempDir as NSString).appendingPathComponent("haven-backup-\(Date().timeIntervalSince1970).zip")
+        let tempPath = (tempDir as NSString).appendingPathComponent("nostrvault-backup-\(Date().timeIntervalSince1970).zip")
         
         relayManager.runBackupExport(config: configService.config, outputPath: tempPath) { success in
             Task { @MainActor in
@@ -1367,7 +1303,7 @@ struct BackupSettingsView: View {
                     return
                 }
                 #if os(macOS)
-                presentSavePanel(title: "Save JSONL Backup", defaultName: "haven-backup.zip", tempPath: tempPath)
+                presentSavePanel(title: "Save JSONL Backup", defaultName: "nostrvault-backup.zip", tempPath: tempPath)
                 #else
                 shareFile(at: tempPath)
                 #endif
@@ -1570,7 +1506,7 @@ struct BackupSettingsView: View {
 
 struct FeedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
-    
+
     var body: some View {
         Form {
             Section {
@@ -1709,7 +1645,7 @@ struct WalletSettingsView: View {
             } header: {
                 Text("Nostr Wallet Connect (NWC) URI")
             } footer: {
-                Text("Paste your nostr+walletconnect:// URI here to enable sending Zaps directly from Haven.")
+                Text("Paste your nostr+walletconnect:// URI here to enable sending Zaps directly from Nostr Vault.")
             }
 
             if !configService.config.nwcURI.isEmpty {
@@ -1840,7 +1776,7 @@ struct WalletSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .sheet(isPresented: $showSweepDisclaimer) {
-            BitcoinSweepDisclaimerView()
+            BitcoinSweepDisclaimerView(onDismiss: { showSweepDisclaimer = false })
                 .environmentObject(configService)
         }
         .onAppear {
@@ -1934,7 +1870,7 @@ struct AppearanceSettingsView: View {
             } header: {
                 Text("Accent Theme")
             } footer: {
-                Text("Choose an accent color for the Haven interface. This will change the primary color and gradients across the application.")
+                Text("Choose an accent color for the Nostr Vault interface. This will change the primary color and gradients across the application.")
             }
         }
         .groupedFormStyleCompat()
@@ -2039,6 +1975,258 @@ struct ThemeCard: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+}
+#endif
+
+#if os(iOS)
+/// iOS-only settings page for the always-on Mac Nostr Vault relay.
+/// A single https:// URL entry derives the WSS address for sync and optionally
+/// populates Import relays, Blastr relays, and Blossom mirrors automatically.
+struct MacRelaySettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    @StateObject private var macSyncService = MacRelaySyncService.shared
+
+    /// Track computed URLs from the previous save so we can migrate array entries on URL change.
+    @State private var prevWssURL: String = ""
+    @State private var prevHttpsURL: String = ""
+
+    var body: some View {
+        Form {
+            // ── URL Input ──────────────────────────────────────────────
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("https://relay.example.com", text: $configService.config.macRelayURL)
+                        .font(.system(.body, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .padding(10)
+                        .background(Color.platformControlBackground)
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                        )
+
+                    Text("Enter your Mac relay in any format — https://, wss://, or bare domain. All derived addresses below are computed automatically.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                HStack(spacing: 6) {
+                    Image(systemName: "desktopcomputer")
+                    Text("Mac Relay URL")
+                }
+            }
+
+            // ── Derived Addresses ──────────────────────────────────────
+            let wssURL = configService.config.macRelayWssURL
+            let httpsURL = configService.config.macRelayHttpsURL
+
+            if !wssURL.isEmpty {
+                Section {
+                    // Always-on: WebSocket sync
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.body)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("WebSocket Sync")
+                                .font(.subheadline.bold())
+                            Text(wssURL)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.vertical, 2)
+
+                    // Include in Import
+                    let inImport = configService.config.importSeedRelays.contains(wssURL)
+                    Toggle(isOn: Binding(
+                        get: { inImport },
+                        set: { include in syncImportRelay(wssURL: wssURL, include: include) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Include in Import")
+                                .font(.body)
+                            Text(wssURL)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    // Include in Blastr
+                    let inBlastr = configService.config.blastrRelays.contains(wssURL)
+                    Toggle(isOn: Binding(
+                        get: { inBlastr },
+                        set: { include in syncBlastrRelay(wssURL: wssURL, include: include) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Include in Blastr")
+                                .font(.body)
+                            Text(wssURL)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    // Include as Blossom Mirror
+                    let inMirror = configService.config.blossomMirrors.contains(httpsURL)
+                    Toggle(isOn: Binding(
+                        get: { inMirror },
+                        set: { include in syncMirror(httpsURL: httpsURL, include: include) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Include as Blossom Mirror")
+                                .font(.body)
+                            Text(httpsURL)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                } header: {
+                    Text("Derived Addresses")
+                } footer: {
+                    Text("WebSocket sync runs automatically whenever the app is foregrounded. Enabling Import, Blastr, or Blossom Mirror adds your Mac relay to those lists so outbound traffic also reaches your personal relay.")
+                }
+
+                // ── Sync Controls ──────────────────────────────────────
+                Section {
+                    if macSyncService.isSyncing {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text(macSyncService.syncStatus)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else if !macSyncService.syncStatus.isEmpty {
+                        HStack(spacing: 6) {
+                            Image(systemName: macSyncService.notesSynced > 0 ? "checkmark.circle.fill" : "info.circle.fill")
+                                .foregroundColor(macSyncService.notesSynced > 0 ? .green : .blue)
+                                .font(.caption)
+                            Text(macSyncService.syncStatus)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if let lastSync = macSyncService.lastSyncDate {
+                        HStack(spacing: 6) {
+                            Image(systemName: "clock")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("Last sync \(lastSync, style: .relative) ago")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        Button(action: { macSyncService.forceSync() }) {
+                            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.havenPurple)
+                        .disabled(macSyncService.isSyncing)
+
+                        Button(action: {
+                            macSyncService.resetSync()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                macSyncService.forceSync()
+                            }
+                        }) {
+                            Label("Full Resync", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Color.havenPurple)
+                        .disabled(macSyncService.isSyncing)
+                    }
+                } header: {
+                    Text("Sync")
+                } footer: {
+                    Text("Sync Now fetches notes missed since the last sync. Full Resync resets the timestamp and re-fetches everything from the beginning.")
+                }
+            }
+        }
+        .groupedFormStyleCompat()
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            prevWssURL = configService.config.macRelayWssURL
+            prevHttpsURL = configService.config.macRelayHttpsURL
+        }
+        .onChange(of: configService.config.macRelayURL) { _, _ in
+            migrateRelayURLs()
+        }
+    }
+
+    // MARK: - Toggle helpers
+
+    private func syncImportRelay(wssURL: String, include: Bool) {
+        if include {
+            if !configService.config.importSeedRelays.contains(wssURL) {
+                configService.config.importSeedRelays.append(wssURL)
+            }
+        } else {
+            configService.config.importSeedRelays.removeAll { $0 == wssURL }
+        }
+        configService.save()
+    }
+
+    private func syncBlastrRelay(wssURL: String, include: Bool) {
+        if include {
+            if !configService.config.blastrRelays.contains(wssURL) {
+                configService.config.blastrRelays.append(wssURL)
+            }
+        } else {
+            configService.config.blastrRelays.removeAll { $0 == wssURL }
+        }
+        configService.save()
+    }
+
+    private func syncMirror(httpsURL: String, include: Bool) {
+        if include {
+            if !configService.config.blossomMirrors.contains(httpsURL) {
+                configService.config.blossomMirrors.append(httpsURL)
+            }
+        } else {
+            configService.config.blossomMirrors.removeAll { $0 == httpsURL }
+        }
+        configService.save()
+    }
+
+    // MARK: - URL change migration
+
+    /// When the Mac relay URL changes, update any array entries that were derived from the old URL
+    /// so Import relays, Blastr relays, and Blossom Mirrors stay in sync automatically.
+    private func migrateRelayURLs() {
+        let newWss = configService.config.macRelayWssURL
+        let newHttps = configService.config.macRelayHttpsURL
+
+        if !prevWssURL.isEmpty && prevWssURL != newWss {
+            configService.config.importSeedRelays = configService.config.importSeedRelays
+                .map { $0 == prevWssURL ? newWss : $0 }
+                .filter { !$0.isEmpty }
+            configService.config.blastrRelays = configService.config.blastrRelays
+                .map { $0 == prevWssURL ? newWss : $0 }
+                .filter { !$0.isEmpty }
+        }
+
+        if !prevHttpsURL.isEmpty && prevHttpsURL != newHttps {
+            configService.config.blossomMirrors = configService.config.blossomMirrors
+                .map { $0 == prevHttpsURL ? newHttps : $0 }
+                .filter { !$0.isEmpty }
+        }
+
+        prevWssURL = newWss
+        prevHttpsURL = newHttps
     }
 }
 #endif
