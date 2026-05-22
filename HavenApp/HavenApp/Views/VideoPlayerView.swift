@@ -301,25 +301,38 @@ struct InlinePlayerLayer: NSViewRepresentable {
 
     func makeNSView(context: Context) -> PlayerNSView {
         let view = PlayerNSView()
-        view.wantsLayer = true
-        if let playerLayer = view.layer as? AVPlayerLayer {
-            playerLayer.player = player
-            playerLayer.videoGravity = .resizeAspectFill
-        }
+        view.playerLayer.player = player
+        view.playerLayer.videoGravity = .resizeAspectFill
         return view
     }
 
     func updateNSView(_ nsView: PlayerNSView, context: Context) {
-        if let playerLayer = nsView.layer as? AVPlayerLayer, playerLayer.player != player {
-            playerLayer.player = player
+        if nsView.playerLayer.player != player {
+            nsView.playerLayer.player = player
         }
     }
 }
 
 class PlayerNSView: NSView {
-    override func makeBackingLayer() -> CALayer {
-        return AVPlayerLayer()
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.isOpaque = true
     }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        wantsLayer = true
+        layer?.isOpaque = true
+    }
+
+    override func makeBackingLayer() -> CALayer {
+        let playerLayer = AVPlayerLayer()
+        playerLayer.isOpaque = true
+        return playerLayer
+    }
+
+    var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 }
 #else
 struct InlinePlayerLayer: UIViewRepresentable {

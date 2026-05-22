@@ -585,18 +585,131 @@ class BlossomService {
         #endif
     }
 
+    /// Delete media from mirrors only
+    /// - Parameter sha256: The SHA256 hash of the media to delete
+    /// - Returns: true if deletion succeeded on at least one mirror, false if all failed
+    func deleteFromMirrors(sha256: String) async -> Bool {
+        let mirrors = await MainActor.run { configService.config.blossomMirrors }
+        guard !mirrors.isEmpty else {
+            logger.warning("No Blossom mirrors configured for deletion")
+            return false
+        }
+
+        var successCount = 0
+        for mirror in mirrors {
+            guard var mirrorURL = URL(string: mirror) else { continue }
+
+            // Ensure HTTPS for remote servers
+            if mirrorURL.scheme == "http" && !isLocalhost(mirrorURL) {
+                var components = URLComponents(url: mirrorURL, resolvingAgainstBaseURL: false)
+                components?.scheme = "https"
+                if let secureURL = components?.url {
+                    mirrorURL = secureURL
+                }
+            }
+
+            let deleteURL = mirrorURL.appendingPathComponent(sha256)
+            var request = URLRequest(url: deleteURL)
+            request.httpMethod = "DELETE"
+            request.timeoutInterval = 30
+
+            // Create Blossom auth event for deletion per BUD-02 spec
+            let expirationTimestamp = Int64(Date().timeIntervalSince1970) + 3600
+            let authTags = [
+                ["t", "delete"],
+                ["x", sha256],
+                ["expiration", String(expirationTimestamp)]
+            ]
+
+            let authContent = "Delete blob \(sha256.prefix(8))..."
+
+            let authEvent = await MainActor.run {
+                nostrService.signEvent(kind: 24242, content: authContent, tags: authTags)
+            }
+
+            guard let authEvent = authEvent else {
+                logger.error("Failed to create Blossom auth event for deletion from \(mirror)")
+                continue
+            }
+
+            guard let authJSON = try? JSONEncoder().encode(authEvent) else {
+                logger.error("Failed to encode auth event for deletion from \(mirror)")
+                continue
+            }
+
+            let authBase64 = authJSON.base64EncodedString()
+            request.setValue("Nostr \(authBase64)", forHTTPHeaderField: "Authorization")
+
+            do {
+                let (_, response) = try await remoteSession.data(for: request)
+                if let httpResponse = response as? HTTPURLResponse, (200...204).contains(httpResponse.statusCode) {
+                    logger.info("Successfully deleted \(sha256.prefix(8)) from mirror \(mirror)")
+                    successCount += 1
+                } else {
+                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                    logger.warning("Failed to delete from \(mirror) with status \(statusCode)")
+                }
+            } catch {
+                logger.error("Error deleting from \(mirror): \(error.localizedDescription)")
+            }
+        }
+
+        return successCount > 0
+    }
+
+    /// Delete media from local Blossom storage
+    /// - Parameter sha256: The SHA256 hash of the media to delete
+    /// - Returns: true if deletion succeeded, false otherwise
+    func deleteFromLocal(sha256: String) async -> Bool {
+        let relayDataDir = await MainActor.run { configService.relayDataDir }
+        let blossomPath = await MainActor.run { configService.config.blossomPath }
+        let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
+
+        // Try to delete the exact hash
+        let fileURL = blossomDir.appendingPathComponent(sha256)
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            do {
+                try FileManager.default.removeItem(at: fileURL)
+                logger.info("Successfully deleted \(sha256.prefix(8)) from local storage")
+                return true
+            } catch {
+                logger.error("Failed to delete from local storage: \(error.localizedDescription)")
+                return false
+            }
+        }
+
+        // Try to find file with hash + extension (e.g., sha256.jpg)
+        do {
+            let contents = try FileManager.default.contentsOfDirectory(atPath: blossomDir.path)
+            for filename in contents {
+                if filename.hasPrefix(sha256) && filename.count > 64 {
+                    let extensionedURL = blossomDir.appendingPathComponent(filename)
+                    try FileManager.default.removeItem(at: extensionedURL)
+                    logger.info("Successfully deleted \(filename) from local storage")
+                    return true
+                }
+            }
+        } catch {
+            logger.error("Failed to search local directory: \(error.localizedDescription)")
+            return false
+        }
+
+        logger.warning("Media file not found in local storage: \(sha256.prefix(8))")
+        return false
+    }
+
     /// Check if a URL is localhost
     private func isLocalhost(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
         if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" {
             return true
         }
-        
+
         // Also consider local network IPs as local (e.g. Tailscale 100.x.x.x, 192.168.x.x, 10.x.x.x, .ts.net)
         if host.hasPrefix("100.") || host.hasPrefix("192.168.") || host.hasPrefix("10.") || host.hasPrefix("172.") || host.hasSuffix(".ts.net") {
             return true
         }
-        
+
         return false
     }
 }

@@ -4,6 +4,10 @@ import CryptoKit
 import AVFoundation
 import CoreMedia
 
+extension Notification.Name {
+    static let mediaNotFoundChanged = Notification.Name("MediaCacheServiceNotFoundChanged")
+}
+
 class MediaCacheService: ObservableObject, @unchecked Sendable {
     static let shared = MediaCacheService()
 
@@ -12,8 +16,15 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     private let playableLock = NSLock()
 
     private let cacheDirectory: URL
+    private let thumbnailDirectory: URL
     private var inFlightDownloads: [String: [CheckedContinuation<Data?, Never>]] = [:]
     private let downloadLock = NSLock()
+
+    // In-memory thumbnail cache (keyed by url hash). Disk cache backs this.
+    private var thumbnailMemoryCache: [String: PlatformImage] = [:]
+    private let thumbnailCacheLock = NSLock()
+    // Per-url in-flight thumbnail jobs to coalesce parallel requests
+    private var inFlightThumbnails: [String: [CheckedContinuation<PlatformImage?, Never>]] = [:]
 
     let downloadQueue: OperationQueue = {
         let queue = OperationQueue()
@@ -36,20 +47,68 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     private var localHost: String = ""
     private let hostLock = NSLock()
 
+    // User-flagged 404 URLs (persisted to UserDefaults). Filtering uses this set to
+    // route flagged items to the dedicated 404 bucket in the viewer.
+    private var notFoundURLs: Set<String> = []
+    private let notFoundLock = NSLock()
+    private let notFoundDefaultsKey = "MediaCacheService.notFoundURLs"
+
 
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let havenAppSupport = appSupport.appendingPathComponent("Haven", isDirectory: true)
         let dbDir = havenAppSupport.appendingPathComponent("haven_database", isDirectory: true)
         self.cacheDirectory = dbDir.appendingPathComponent("cache")
+        self.thumbnailDirectory = dbDir.appendingPathComponent("thumbnails")
         self.blossomDirectory = dbDir.appendingPathComponent("blossom")
 
         createCacheDirectory()
+
+        if let stored = UserDefaults.standard.array(forKey: notFoundDefaultsKey) as? [String] {
+            notFoundURLs = Set(stored)
+        }
+    }
+
+    // MARK: - 404 Tracking
+
+    func isKnown404(url: URL) -> Bool {
+        notFoundLock.lock()
+        defer { notFoundLock.unlock() }
+        return notFoundURLs.contains(url.absoluteString)
+    }
+
+    func known404Set() -> Set<String> {
+        notFoundLock.lock()
+        defer { notFoundLock.unlock() }
+        return notFoundURLs
+    }
+
+    func markNotFound(url: URL) {
+        notFoundLock.lock()
+        let inserted = notFoundURLs.insert(url.absoluteString).inserted
+        let snapshot = Array(notFoundURLs)
+        notFoundLock.unlock()
+        guard inserted else { return }
+        UserDefaults.standard.set(snapshot, forKey: notFoundDefaultsKey)
+        NotificationCenter.default.post(name: .mediaNotFoundChanged, object: url)
+    }
+
+    func unmarkNotFound(url: URL) {
+        notFoundLock.lock()
+        let removed = notFoundURLs.remove(url.absoluteString) != nil
+        let snapshot = Array(notFoundURLs)
+        notFoundLock.unlock()
+        guard removed else { return }
+        UserDefaults.standard.set(snapshot, forKey: notFoundDefaultsKey)
+        NotificationCenter.default.post(name: .mediaNotFoundChanged, object: url)
     }
 
     private func createCacheDirectory() {
         if !FileManager.default.fileExists(atPath: cacheDirectory.path) {
             try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        }
+        if !FileManager.default.fileExists(atPath: thumbnailDirectory.path) {
+            try? FileManager.default.createDirectory(at: thumbnailDirectory, withIntermediateDirectories: true)
         }
     }
 
@@ -157,11 +216,14 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     }
 
     /// Ensures the local file has a proper extension for AVFoundation playback.
-    /// If the file is extensionless (Blossom), creates a temporary symlink with .mp4 extension.
-    func preparePlayableURL(for url: URL) -> URL? {
+    /// If the file is extensionless (Blossom), creates a temporary symlink with the inferred
+    /// extension (from the source URL or `extensionHint`, defaulting to `.mp4`).
+    func preparePlayableURL(for url: URL, extensionHint: String? = nil) -> URL? {
         guard let localURL = internalLocalFileURL(for: url) else { return nil }
 
-        // If it already has an extension, we're good
+        let resolvedExt = inferContainerExtension(sourceURL: url, localURL: localURL, mimeHint: extensionHint)
+
+        // If it already has a usable extension, we're good
         if !localURL.pathExtension.isEmpty {
             return localURL
         }
@@ -173,9 +235,9 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
             return existingInfo
         }
 
-        // Create a temp symlink with .mp4 extension
+        // Create a temp symlink with the resolved extension
         let tempDir = FileManager.default.temporaryDirectory
-        let symlinkName = localURL.lastPathComponent + ".mp4"
+        let symlinkName = localURL.lastPathComponent + "." + resolvedExt
         let symlinkURL = tempDir.appendingPathComponent(symlinkName)
 
         do {
@@ -195,6 +257,28 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
             #endif
             return localURL // Fallback to original
         }
+    }
+
+    /// Decides what container extension to use for a symlink. Order of preference:
+    /// 1. mimeHint (mime type string OR a plain extension)
+    /// 2. source URL pathExtension
+    /// 3. local URL pathExtension (when present)
+    /// 4. fallback `mp4`
+    private func inferContainerExtension(sourceURL: URL, localURL: URL, mimeHint: String?) -> String {
+        if let hint = mimeHint?.lowercased(), !hint.isEmpty {
+            if hint.contains("webm") { return "webm" }
+            if hint.contains("quicktime") || hint.contains("mov") { return "mov" }
+            if hint.contains("m4v") { return "m4v" }
+            if hint.contains("hevc") || hint.contains("h265") { return "mp4" }
+            if hint.contains("mp4") || hint.contains("mpeg") { return "mp4" }
+            // If caller passed a bare extension like "mov"
+            if hint.count <= 5 && !hint.contains("/") { return hint }
+        }
+        let srcExt = sourceURL.pathExtension.lowercased()
+        if !srcExt.isEmpty { return srcExt }
+        let localExt = localURL.pathExtension.lowercased()
+        if !localExt.isEmpty { return localExt }
+        return "mp4"
     }
 
     func fetchData(url: URL) async -> Data? {
@@ -253,38 +337,215 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         }
     }
 
-    func generateThumbnail(for url: URL) async -> PlatformImage? {
-        // Resolve local file first to see if we can just use it directly
-        // This is important for "Local" (Blossom) files where preparePlayableURL might try to make a symlink
-        let resolvedURL = self.localFileURL(for: url)
+    // MARK: - Video Thumbnails
 
-        return await withCheckedContinuation { continuation in
-            let operation = BlockOperation {
-                // 2. Prepare playable URL (handling symlinks if needed)
-                let playableURL = self.preparePlayableURL(for: url) ?? resolvedURL ?? url
+    /// Returns a thumbnail synchronously if we have one in memory or on disk. Cheap; safe
+    /// to call from view init or onAppear before async work kicks off.
+    func cachedThumbnail(for url: URL) -> PlatformImage? {
+        let key = hash(url: url)
+        thumbnailCacheLock.lock()
+        if let image = thumbnailMemoryCache[key] {
+            thumbnailCacheLock.unlock()
+            return image
+        }
+        thumbnailCacheLock.unlock()
 
-                // 3. Generate
-                let asset = AVAsset(url: playableURL)
-                let generator = AVAssetImageGenerator(asset: asset)
-                generator.appliesPreferredTrackTransform = true
-                generator.maximumSize = CGSize(width: 400, height: 400)
+        let diskPath = thumbnailDiskPath(for: key)
+        guard FileManager.default.fileExists(atPath: diskPath.path),
+              let data = try? Data(contentsOf: diskPath),
+              let image = PlatformImage(data: data) else {
+            return nil
+        }
 
-                let time = CMTime(seconds: 0.1, preferredTimescale: 60)
+        thumbnailCacheLock.lock()
+        thumbnailMemoryCache[key] = image
+        thumbnailCacheLock.unlock()
+        return image
+    }
 
-                do {
-                     let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
-                     let image = PlatformImage(cgImage: cgImage, size: .zero)
-                     continuation.resume(returning: image)
-                } catch {
-                     #if DEBUG
-                     print("MediaCacheService: Thumbnail generation failed for \(url.lastPathComponent): \(error)")
-                     #endif
-                     continuation.resume(returning: nil)
+    /// Generates (or fetches from cache) a thumbnail for the given video URL.
+    /// Surefire pipeline:
+    /// 1. Check memory + disk caches.
+    /// 2. Ensure a local file exists (download remote if necessary).
+    /// 3. Build a properly-extensioned local file URL so AVFoundation accepts the container.
+    /// 4. Try several time points with loose tolerance; first success wins.
+    /// 5. Persist to memory + disk so subsequent renders are instant.
+    func generateThumbnail(for url: URL, mimeType: String? = nil) async -> PlatformImage? {
+        if let cached = cachedThumbnail(for: url) {
+            return cached
+        }
+
+        let key = hash(url: url)
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<PlatformImage?, Never>) in
+            downloadLock.lock()
+            if inFlightThumbnails[key] != nil {
+                // Already running — join the waiter list and let the leader broadcast.
+                inFlightThumbnails[key]?.append(continuation)
+                downloadLock.unlock()
+                return
+            }
+            // We're the leader. Reserve the slot and kick off the job.
+            inFlightThumbnails[key] = []
+            downloadLock.unlock()
+
+            Task.detached(priority: .utility) { [weak self] in
+                guard let self = self else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                await self.runThumbnailJob(url: url, key: key, mimeType: mimeType, leader: continuation)
+            }
+        }
+    }
+
+    private func runThumbnailJob(url: URL, key: String, mimeType: String?, leader: CheckedContinuation<PlatformImage?, Never>) async {
+        // 1. Ensure the file is on disk. For remote URLs that aren't cached, pull them down.
+        if internalLocalFileURL(for: url) == nil, !isLocalURL(url) {
+            _ = await fetchData(url: url)
+        }
+
+        // 2. Run AVAssetImageGenerator on the throttled queue.
+        let image: PlatformImage? = await withCheckedContinuation { (inner: CheckedContinuation<PlatformImage?, Never>) in
+            let op = BlockOperation { [weak self] in
+                let result = self?.renderThumbnail(url: url, mimeType: mimeType)
+                inner.resume(returning: result)
+            }
+            self.thumbnailQueue.addOperation(op)
+        }
+
+        // 3. Persist + broadcast
+        if let image = image {
+            thumbnailCacheLock.lock()
+            thumbnailMemoryCache[key] = image
+            thumbnailCacheLock.unlock()
+            saveThumbnailToDisk(image, key: key)
+        }
+
+        downloadLock.lock()
+        let waiters = inFlightThumbnails[key] ?? []
+        inFlightThumbnails.removeValue(forKey: key)
+        downloadLock.unlock()
+
+        leader.resume(returning: image)
+        for waiter in waiters {
+            waiter.resume(returning: image)
+        }
+    }
+
+    /// Performs the actual AVFoundation work. Runs on the throttled thumbnail queue.
+    private func renderThumbnail(url: URL, mimeType: String?) -> PlatformImage? {
+        // Prefer a local file (Blossom or cache) over hitting HTTPS. AVAssetImageGenerator
+        // is far more reliable on a real file than on a remote URL — especially with self-signed certs.
+        let playableURL: URL = {
+            if let prepared = self.preparePlayableURL(for: url, extensionHint: mimeType) {
+                return prepared
+            }
+            if let local = self.internalLocalFileURL(for: url) {
+                return local
+            }
+            return url
+        }()
+
+        #if DEBUG
+        print("MediaCacheService: renderThumbnail url=\(url.absoluteString) playable=\(playableURL.absoluteString) isFile=\(playableURL.isFileURL)")
+        #endif
+
+        let asset = AVURLAsset(url: playableURL, options: [AVURLAssetPreferPreciseDurationAndTimingKey: false])
+
+        // Times to try, in order. First reachable keyframe wins.
+        var times: [CMTime] = [
+            CMTime(seconds: 0.0, preferredTimescale: 600),
+            CMTime(seconds: 0.5, preferredTimescale: 600),
+            CMTime(seconds: 1.0, preferredTimescale: 600),
+            CMTime(seconds: 3.0, preferredTimescale: 600),
+        ]
+        // Add a duration-relative target as a last resort (in case the head is unreadable).
+        let duration = asset.duration
+        if duration.isValid && !duration.isIndefinite && duration.seconds > 5 {
+            times.append(CMTime(seconds: min(duration.seconds * 0.1, 10), preferredTimescale: 600))
+        }
+
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 600, height: 600)
+        // Loose tolerance: take whatever frame is closest. Strict tolerance is the #1 reason
+        // generation fails on videos without keyframes at the exact requested time.
+        generator.requestedTimeToleranceBefore = CMTime(seconds: 5, preferredTimescale: 600)
+        generator.requestedTimeToleranceAfter = CMTime(seconds: 5, preferredTimescale: 600)
+
+        for time in times {
+            do {
+                let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
+                #if os(macOS)
+                return NSImage(cgImage: cgImage, size: NSZeroSize)
+                #else
+                return UIImage(cgImage: cgImage)
+                #endif
+            } catch {
+                #if DEBUG
+                print("MediaCacheService: thumb attempt at \(time.seconds)s failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                #endif
+                continue
+            }
+        }
+
+        // Last resort: if the local file has no extension and we somehow used the wrong one,
+        // try one more symlink with a different extension permutation.
+        if let local = self.internalLocalFileURL(for: url), local.pathExtension.isEmpty {
+            for alt in ["mp4", "mov", "m4v", "webm"] {
+                if let symlink = self.makeOneOffSymlink(for: local, extension: alt) {
+                    let altAsset = AVURLAsset(url: symlink)
+                    let altGen = AVAssetImageGenerator(asset: altAsset)
+                    altGen.appliesPreferredTrackTransform = true
+                    altGen.maximumSize = CGSize(width: 600, height: 600)
+                    altGen.requestedTimeToleranceBefore = CMTime(seconds: 5, preferredTimescale: 600)
+                    altGen.requestedTimeToleranceAfter = CMTime(seconds: 5, preferredTimescale: 600)
+                    if let cg = try? altGen.copyCGImage(at: CMTime(seconds: 0.5, preferredTimescale: 600), actualTime: nil) {
+                        #if os(macOS)
+                        return NSImage(cgImage: cg, size: NSZeroSize)
+                        #else
+                        return UIImage(cgImage: cg)
+                        #endif
+                    }
                 }
             }
-
-            self.thumbnailQueue.addOperation(operation)
         }
+
+        #if DEBUG
+        print("MediaCacheService: Thumbnail generation exhausted all fallbacks for \(url.lastPathComponent)")
+        #endif
+        return nil
+    }
+
+    private func makeOneOffSymlink(for localURL: URL, extension ext: String) -> URL? {
+        let tempDir = FileManager.default.temporaryDirectory
+        let symlinkURL = tempDir.appendingPathComponent("thumb_\(UUID().uuidString).\(ext)")
+        do {
+            try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: localURL)
+            return symlinkURL
+        } catch {
+            return nil
+        }
+    }
+
+    private func thumbnailDiskPath(for key: String) -> URL {
+        return thumbnailDirectory.appendingPathComponent("\(key).jpg")
+    }
+
+    private func saveThumbnailToDisk(_ image: PlatformImage, key: String) {
+        let path = thumbnailDiskPath(for: key)
+        #if os(macOS)
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let data = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) else {
+            return
+        }
+        try? data.write(to: path)
+        #else
+        guard let data = image.jpegData(compressionQuality: 0.7) else { return }
+        try? data.write(to: path)
+        #endif
     }
 
     func updateLocalHost(_ host: String) {
@@ -352,11 +613,21 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
             let cacheContents = try FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)
             var deletedCount = 0
             for fileURL in cacheContents {
+                // Skip the thumbnails directory — we handle it separately so it stays initialized
+                if fileURL.lastPathComponent == "thumbnails" { continue }
                 try FileManager.default.removeItem(at: fileURL)
                 deletedCount += 1
             }
+            if let thumbContents = try? FileManager.default.contentsOfDirectory(at: thumbnailDirectory, includingPropertiesForKeys: nil) {
+                for fileURL in thumbContents {
+                    try? FileManager.default.removeItem(at: fileURL)
+                }
+            }
+            thumbnailCacheLock.lock()
+            thumbnailMemoryCache.removeAll()
+            thumbnailCacheLock.unlock()
             #if DEBUG
-            print("MediaCacheService: Cleared \(deletedCount) cached files (Blossom data preserved)")
+            print("MediaCacheService: Cleared \(deletedCount) cached files + thumbnails (Blossom data preserved)")
             #endif
         } catch {
             #if DEBUG

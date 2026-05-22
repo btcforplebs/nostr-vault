@@ -43,17 +43,15 @@ struct DashboardView: View {
             // When booting finishes, refresh the full stats including remote relay counts
             if !isBooting && relayManager.isRunning {
                 let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
-                statsService.refreshStats(relayURLString: urlString)
+                // Delay slightly to ensure WebSocket connections can bind successfully
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    statsService.refreshStats(relayURLString: urlString)
+                }
             }
         }
         .onChange(of: relayManager.importCompleted) { _, completed in
             if completed {
                 isPreparingImport = false
-                let urlString = configService.config.relayURL.isEmpty ? "localhost:\(configService.config.relayPort)" : configService.config.relayURL
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    guard relayManager.isRunning, !relayManager.isBooting else { return }
-                    statsService.refreshStats(relayURLString: urlString)
-                }
             }
         }
         .onChange(of: relayManager.isImporting) { _, isImporting in

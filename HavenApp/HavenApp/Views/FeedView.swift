@@ -742,10 +742,10 @@ struct FeedNoteRow: View {
     
     @State private var repostTask: Task<Void, Never>?
     @State private var showingRepostUndo = false
-    @State private var timeRemaining = 10.0
-    @State private var unlikeTask: Task<Void, Never>?
-    @State private var showingUnlikeUndo = false
-    @State private var unlikeTimeRemaining = 3.0
+    @State private var timeRemaining = 5.0
+    @State private var postCreationCountdownTask: Task<Void, Never>?
+    @State private var showingPostCreatedCountdown = false
+    @State private var postCreationTimeRemaining = 10.0
     @State private var showingDeleteConfirm = false
     @State private var showingBroadcastSheet = false
     @State private var noLightningAddressAlert = false
@@ -917,7 +917,6 @@ struct FeedNoteRow: View {
                                     .foregroundColor(Color(red: 1, green: 1, blue: 1))
                                     .lineSpacing(2)
                                     .lineLimit(nil)
-                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             .padding(.top, 4)
 
@@ -944,7 +943,6 @@ struct FeedNoteRow: View {
                                 .foregroundColor(Color(red: 1, green: 1, blue: 1))
                                 .lineSpacing(2)
                                 .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.top, 4)
 
@@ -979,7 +977,16 @@ struct FeedNoteRow: View {
                     // Actions row - minimal and clean
                     HStack(spacing: 12) {
                         actionButton(icon: "message", action: { onReply?() })
-                        actionButton(icon: "arrow.2.squarepath", action: { repostNote() })
+
+                        let isReposted = feedService.repostedEventIds.contains(note.id)
+                        actionButton(
+                            icon: "arrow.2.squarepath",
+                            color: isReposted ? .green : .secondary,
+                            action: { repostNote() }
+                        )
+                        .scaleEffect(isReposted ? 1.2 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isReposted)
+
                         actionButton(icon: "quote.closing", action: { quoteNote() })
 
                         let isLiked = feedService.likedEventIds.contains(note.id)
@@ -1068,6 +1075,11 @@ struct FeedNoteRow: View {
                         Spacer()
                     }
                     .padding(.top, 4)
+
+                    if showingPostCreatedCountdown {
+                        PostCreatedCountdownBanner(timeRemaining: postCreationTimeRemaining)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 } // End of RHS VStack (name, time, content, actions)
             } // End of Main Note Content HStack
         } // End of Outer VStack (root row)
@@ -1125,18 +1137,12 @@ struct FeedNoteRow: View {
             return .systemAction
         })
         .overlay(alignment: .bottom) {
-            VStack(spacing: 4) {
-                if showingUnlikeUndo {
-                    UnlikeUndoBanner(timeRemaining: unlikeTimeRemaining, onUndo: undoUnlike)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                if showingRepostUndo {
-                    RepostUndoBanner(timeRemaining: timeRemaining, onUndo: undoRepost)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+            if showingRepostUndo {
+                RepostUndoBanner(timeRemaining: timeRemaining, onUndo: undoRepost)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 8)
+                    .padding(.horizontal, 12)
             }
-            .padding(.bottom, 8)
-            .padding(.horizontal, 12)
         }
         .sheet(isPresented: $showingBroadcastSheet) {
             EventBroadcastSheet(note: note)
@@ -1165,6 +1171,35 @@ struct FeedNoteRow: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Request deletion of this post? Not all relays honor NIP-09 deletion requests.")
+        }
+        .onAppear {
+            let ageInSeconds = Date().timeIntervalSince(note.createdAt)
+            if ageInSeconds < 0.5 && note.pubkey == nostrService.activeHexPubkey {
+                showingPostCreatedCountdown = true
+                postCreationTimeRemaining = 10.0
+                postCreationCountdownTask?.cancel()
+
+                postCreationCountdownTask = Task {
+                    for _ in 0..<100 {
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                        if Task.isCancelled { return }
+                        await MainActor.run {
+                            postCreationTimeRemaining -= 0.1
+                        }
+                    }
+
+                    if !Task.isCancelled {
+                        await MainActor.run {
+                            withAnimation {
+                                showingPostCreatedCountdown = false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .onDisappear {
+            postCreationCountdownTask?.cancel()
         }
     }
 
@@ -1224,45 +1259,24 @@ struct FeedNoteRow: View {
     }
 
     private func likeNote() {
-        if feedService.likedEventIds.contains(note.id) {
-            startUnlikeCountdown()
+        let noteId = note.id
+        if feedService.likedEventIds.contains(noteId) {
+            UnlikeNotificationManager.shared.startCountdown {
+                self.feedService.likedEventIds.remove(noteId)
+                var stats = self.feedService.noteStats[noteId] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+                stats.reactions = max(0, stats.reactions - 1)
+                self.feedService.noteStats[noteId] = stats
+                self.feedService.saveInteractionState()
+            }
             return
         }
-        feedService.likedEventIds.insert(note.id)
-        var currentStats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+        feedService.likedEventIds.insert(noteId)
+        var currentStats = feedService.noteStats[noteId] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
         currentStats.reactions += 1
-        feedService.noteStats[note.id] = currentStats
+        feedService.noteStats[noteId] = currentStats
         feedService.saveInteractionState()
-        guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", note.id, "", "root"], ["p", note.pubkey]]) else { return }
+        guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", noteId, "", "root"], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
-    }
-
-    private func startUnlikeCountdown() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = true }
-        unlikeTimeRemaining = 3.0
-        unlikeTask?.cancel()
-        unlikeTask = Task {
-            for _ in 0..<30 {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-                if Task.isCancelled { return }
-                await MainActor.run { unlikeTimeRemaining -= 0.1 }
-            }
-            if Task.isCancelled { return }
-            await MainActor.run {
-                feedService.likedEventIds.remove(note.id)
-                var stats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
-                stats.reactions = max(0, stats.reactions - 1)
-                feedService.noteStats[note.id] = stats
-                feedService.saveInteractionState()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = false }
-            }
-        }
-    }
-
-    private func undoUnlike() {
-        unlikeTask?.cancel()
-        unlikeTask = nil
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = false }
     }
     
     private func reactToNote(with emoji: String) {
@@ -1282,23 +1296,24 @@ struct FeedNoteRow: View {
 
     private func repostNote() {
         showingRepostUndo = true
-        timeRemaining = 10.0
+        timeRemaining = 5.0
         repostTask?.cancel()
-        
+
         repostTask = Task {
-            for _ in 0..<100 {
+            for _ in 0..<50 {
                 try? await Task.sleep(nanoseconds: 100_000_000)
                 if Task.isCancelled { return }
                 await MainActor.run {
                     timeRemaining -= 0.1
                 }
             }
-            
+
             if Task.isCancelled { return }
-            
+
             guard let signed = nostrService.signEvent(kind: 6, content: "", tags: [["e", note.id, "", "root"], ["p", note.pubkey]]) else { return }
             nostrService.postEvent(signed)
-            
+            feedService.repostedEventIds.insert(note.id)
+
             await MainActor.run {
                 withAnimation {
                     showingRepostUndo = false
@@ -1899,20 +1914,17 @@ struct RepostUndoBanner: View {
     }
 }
 
-// MARK: - UnlikeUndoBanner
-
-struct UnlikeUndoBanner: View {
+struct PostCreatedCountdownBanner: View {
     var timeRemaining: Double
-    var totalTime: Double = 3.0
-    var onUndo: () -> Void
+    var totalTime: Double = 10.0
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "heart.slash")
+            Image(systemName: "checkmark.circle.fill")
                 .foregroundColor(.white)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Unliking in \(max(1, Int(ceil(timeRemaining))))s")
+                Text("Post created - editing in \(Int(ceil(timeRemaining)))s")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
 
@@ -1928,19 +1940,9 @@ struct UnlikeUndoBanner: View {
             }
 
             Spacer()
-
-            Button("Undo") {
-                onUndo()
-            }
-            .font(.system(size: 13, weight: .bold))
-            .foregroundColor(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.2))
-            .cornerRadius(6)
         }
         .padding(12)
-        .background(Color.red.opacity(0.85))
+        .background(Color.green.opacity(0.85))
         .cornerRadius(8)
         .shadow(color: .black.opacity(0.2), radius: 5, y: 3)
     }

@@ -21,7 +21,12 @@ class MacRelaySyncService: ObservableObject {
     private var client: WebSocketClient?
     private var cancellables = Set<AnyCancellable>()
     private var syncedEventIds = Set<String>()
-    private var pendingEvents: [[String: Any]] = []
+    private var pendingEvents: [String: [[String: Any]]] = [
+        "outbox": [],
+        "inbox": [],
+        "private": [],
+        "chat": []
+    ]
     private let processingQueue = DispatchQueue(label: "com.haven.mac-relay-sync", qos: .userInitiated)
 
     // BadgerDB (Haven's default) enforces MaxLimit=1000. The query engine honours
@@ -121,7 +126,12 @@ class MacRelaySyncService: ObservableObject {
         
         isSyncing = true
         notesSynced = 0
-        pendingEvents.removeAll()
+        pendingEvents = [
+            "outbox": [],
+            "inbox": [],
+            "private": [],
+            "chat": []
+        ]
         syncedEventIds.removeAll()
         syncStatus = "Connecting to Mac relay..."
         
@@ -281,7 +291,18 @@ class MacRelaySyncService: ObservableObject {
         if syncedEventIds.contains(eventId) { return }
         syncedEventIds.insert(eventId)
 
-        pendingEvents.append(eventDict)
+        let endpoint = endpoints[index]
+        let dbKey: String
+        if endpoint.hasSuffix("/inbox") {
+            dbKey = "inbox"
+        } else if endpoint.hasSuffix("/private") {
+            dbKey = "private"
+        } else if endpoint.hasSuffix("/chat") {
+            dbKey = "chat"
+        } else {
+            dbKey = "outbox"
+        }
+        pendingEvents[dbKey, default: []].append(eventDict)
 
         // Track page-level stats for pagination decision
         pageEventCount += 1
@@ -302,7 +323,8 @@ class MacRelaySyncService: ObservableObject {
     // MARK: - Finish & Inject into Local Relay
     
     private func finishSync() {
-        guard !pendingEvents.isEmpty else {
+        let totalCount = pendingEvents.values.reduce(0) { $0 + $1.count }
+        guard totalCount > 0 else {
             isSyncing = false
             syncStatus = "Already up to date"
             lastSyncDate = Date()
@@ -312,38 +334,31 @@ class MacRelaySyncService: ObservableObject {
             return
         }
 
-        syncStatus = "Saving \(pendingEvents.count) events to local relay..."
+        syncStatus = "Saving \(totalCount) events to local relay..."
 
         #if DEBUG
-        print("MacRelaySyncService: Injecting \(pendingEvents.count) events into local relay")
+        print("MacRelaySyncService: Injecting \(totalCount) events into local relay")
         #endif
 
         let localURLStr = ConfigService.shared.config.nostrURL
         guard let outboxURL = URL(string: localURLStr),
-              let inboxURL = URL(string: localURLStr + "/inbox") else {
+              let inboxURL = URL(string: localURLStr + "/inbox"),
+              let privateURL = URL(string: localURLStr + "/private"),
+              let chatURL = URL(string: localURLStr + "/chat") else {
             syncStatus = "Error: Invalid local relay URL"
             isSyncing = false
             return
         }
 
-        // Partition events: owner/whitelisted go to outbox, tagged notes go to inbox
-        let whitelisted = ConfigService.shared.whitelistedHexPubkeys
-        var outboxEvents: [[String: Any]] = []
-        var inboxEvents: [[String: Any]] = []
-
-        for eventDict in pendingEvents {
-            if let pubkey = eventDict["pubkey"] as? String, whitelisted.contains(pubkey) {
-                outboxEvents.append(eventDict)
-            } else {
-                inboxEvents.append(eventDict)
-            }
-        }
+        let outboxEvents = pendingEvents["outbox"] ?? []
+        let inboxEvents = pendingEvents["inbox"] ?? []
+        let privateEvents = pendingEvents["private"] ?? []
+        let chatEvents = pendingEvents["chat"] ?? []
 
         #if DEBUG
-        print("MacRelaySyncService: Routing \(outboxEvents.count) to outbox, \(inboxEvents.count) to inbox")
+        print("MacRelaySyncService: Routing \(outboxEvents.count) to outbox, \(inboxEvents.count) to inbox, \(privateEvents.count) to private, \(chatEvents.count) to chat")
         #endif
 
-        let allEvents = pendingEvents
         let group = DispatchGroup()
         var maxTimestamp: Int64 = self.lastSyncTimestamp
 
@@ -401,16 +416,20 @@ class MacRelaySyncService: ObservableObject {
         }
 
         // Track max timestamp across all events
-        for eventDict in allEvents {
-            if let ts = eventDict["created_at"] as? Int64 {
-                maxTimestamp = max(maxTimestamp, ts)
-            } else if let ts = eventDict["created_at"] as? Int {
-                maxTimestamp = max(maxTimestamp, Int64(ts))
+        for (_, events) in pendingEvents {
+            for eventDict in events {
+                if let ts = eventDict["created_at"] as? Int64 {
+                    maxTimestamp = max(maxTimestamp, ts)
+                } else if let ts = eventDict["created_at"] as? Int {
+                    maxTimestamp = max(maxTimestamp, Int64(ts))
+                }
             }
         }
 
         injectEvents(outboxEvents, to: outboxURL, label: "outbox")
         injectEvents(inboxEvents, to: inboxURL, label: "inbox")
+        injectEvents(privateEvents, to: privateURL, label: "private")
+        injectEvents(chatEvents, to: chatURL, label: "chat")
 
         group.notify(queue: .main) { [weak self] in
             guard let self = self else { return }
@@ -418,10 +437,10 @@ class MacRelaySyncService: ObservableObject {
             self.lastSyncTimestamp = min(maxTimestamp, nowTimestamp)
             self.isSyncing = false
             self.lastSyncDate = Date()
-            self.syncStatus = "Synced \(allEvents.count) notes"
+            self.syncStatus = "Synced \(totalCount) notes"
 
             #if DEBUG
-            print("MacRelaySyncService: Sync complete — \(allEvents.count) events injected, maxTimestamp=\(maxTimestamp)")
+            print("MacRelaySyncService: Sync complete — \(totalCount) events injected, maxTimestamp=\(maxTimestamp)")
             #endif
 
             NotificationCenter.default.post(name: .macRelaySyncComplete, object: nil)

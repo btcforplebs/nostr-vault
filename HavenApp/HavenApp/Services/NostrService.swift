@@ -1453,6 +1453,7 @@ class NostrService: ObservableObject {
         case "tiff", "tif": return "image/tiff"
         case "svg": return "image/svg+xml"
         case "mp4": return "video/mp4"
+        case "hevc", "h265": return "video/mp4"
         case "mov": return "video/quicktime"
         case "webm": return "video/webm"
         case "mp3": return "audio/mpeg"
@@ -1511,7 +1512,7 @@ class NostrService: ObservableObject {
     }
 
     func extractMediaURLs(from content: String) -> [URL] {
-        let pattern = #"(https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic|tiff)(?:\?\S+)?)|(https?://\S+?/blossom/[a-f0-9]{64})|(https?://\S+?/[a-f0-9]{64})"#
+        let pattern = #"(https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic|tiff|hevc|h265)(?:\?\S+)?)|(https?://\S+?/blossom/[a-f0-9]{64})|(https?://\S+?/[a-f0-9]{64})"#
 
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
         let nsString = content as NSString

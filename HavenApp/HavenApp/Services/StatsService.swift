@@ -45,6 +45,17 @@ class StatsService: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+        
+        // Refresh counts from database when iOS sync completes
+        NotificationCenter.default.publisher(for: .macRelaySyncComplete)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                let config = ConfigService.shared.config
+                let urlString = config.relayURL.isEmpty ? "localhost:\(config.relayPort)" : config.relayURL
+                self.refreshStats(relayURLString: urlString)
+            }
+            .store(in: &cancellables)
     }
     
     func refreshStats(relayURLString: String? = nil) {
@@ -92,7 +103,9 @@ class StatsService: ObservableObject {
                 
                 let relayURLs = [
                     baseURL,
-                    baseURL.appendingPathComponent("inbox")
+                    baseURL.appendingPathComponent("inbox"),
+                    baseURL.appendingPathComponent("private"),
+                    baseURL.appendingPathComponent("chat")
                 ]
                 
                 #if DEBUG
@@ -168,7 +181,9 @@ class StatsService: ObservableObject {
 
         let relayURLs = [
             baseURL,
-            baseURL.appendingPathComponent("inbox")
+            baseURL.appendingPathComponent("inbox"),
+            baseURL.appendingPathComponent("private"),
+            baseURL.appendingPathComponent("chat")
         ]
 
         // Common Nostr kinds to query — covers profile, social, media, lists, long-form, zaps, DMs

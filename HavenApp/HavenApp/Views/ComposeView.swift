@@ -99,6 +99,29 @@ struct ComposeView: View {
                                 pubkey: configService.activeAccountHexPubkey
                             )
                             .frame(width: 36, height: 36)
+                            .contextMenu {
+                                if configService.allAccountNpubs.count > 1 {
+                                    ForEach(configService.allAccountNpubs, id: \.self) { npub in
+                                        let isOwner = npub == configService.config.ownerNpub
+                                        let activeAccountNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        let isActive = activeAccountNpub.isEmpty ? isOwner : npub == activeAccountNpub
+                                        let hex = Bech32.decode(npub)?.hexString ?? ""
+                                        let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
+                                        
+                                        Button {
+                                            configService.switchActiveAccount(to: npub)
+                                        } label: {
+                                            if isActive {
+                                                Label(name, systemImage: "checkmark")
+                                            } else {
+                                                Text(name)
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Text("No other accounts")
+                                }
+                            }
                             
                             ZStack(alignment: .topLeading) {
                                 if content.isEmpty {

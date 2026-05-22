@@ -105,7 +105,7 @@ struct FeedNote: Identifiable, Hashable, Equatable {
     // MARK: - Static parsers (called once at init)
 
     private static let mediaRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic)(?:\?\S+)?"#, options: .caseInsensitive)
+        try? NSRegularExpression(pattern: #"https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic|hevc|h265)(?:\?\S+)?"#, options: .caseInsensitive)
     }()
 
     private static let quoteRegex: NSRegularExpression? = {
@@ -324,6 +324,7 @@ class FeedService: ObservableObject {
     @Published var newNoteCount: Int = 0
     @Published var pendingNotes: [FeedNote] = []
     @Published var likedEventIds: Set<String> = []
+    @Published var repostedEventIds: Set<String> = []
     @Published var zappedEventIds: [String: Int] = [:]
     @Published var onchainZapEventIds: [String: Int] = [:]
     /// Per-note engagement counts (replies, reactions, reposts) from relay data.

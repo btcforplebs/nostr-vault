@@ -23,6 +23,8 @@ struct ViewerView: View {
     @State private var mediaSourceFilter: MediaSourceFilter = .all
     @State private var likesFilter: LikesFilter = .likedByOthers
     @State private var zapsFilter: ZapsFilter = .zappedByOthers
+    @State private var mediaLocationFilter: MediaLocationFilter = .all
+    @State private var mediaTypeFilter: Set<MediaTypeFilter> = [.photo, .video, .gif, .other]
 
     // Cached display data (computed in background)
     @State private var displayNotes: [NostrEvent] = []
@@ -83,6 +85,20 @@ struct ViewerView: View {
         case blossom
         case cache
     }
+
+    enum MediaLocationFilter {
+        case all
+        case blossom
+        case cache
+        case notFound
+    }
+
+    enum MediaTypeFilter: String, CaseIterable {
+        case photo = "Photo"
+        case video = "Video"
+        case gif = "GIF"
+        case other = "Other"
+    }
     
     // MARK: - Background Processing
     
@@ -114,9 +130,16 @@ struct ViewerView: View {
         print("updateDisplayData: blossom=\(currentBlossom.count) noteMedia=\(currentNoteMedia.count) events=\(currentEvents.count) filter=\(currentFilter) source=\(mediaSourceFilter)")
         #endif
         let currentMode = viewMode
-        let sourceFilter = mediaSourceFilter
+        let currentLocationFilter = mediaLocationFilter
+        let currentTypeFilter = mediaTypeFilter
         let currentLikesFilter = likesFilter
         let currentZapsFilter = zapsFilter
+        let currentMirrorHosts: Set<String> = Set(
+            configService.config.blossomMirrors.compactMap {
+                URL(string: $0)?.host?.lowercased()
+            }
+        )
+        let currentNotFound = MediaCacheService.shared.known404Set()
         let gen = updateGeneration
 
         Task.detached(priority: .userInitiated) {
@@ -211,7 +234,10 @@ struct ViewerView: View {
                     let zappedNoteIds = Set(zMap.keys)
                     var filtered = currentEvents.filter { noteKinds.contains($0.kind) && zappedNoteIds.contains($0.id) }
                     // Sort by total sats received (most zapped first)
-                    filtered.sort { (zMap[$0.id]?.reduce(0) { $0 + $1.amount } ?? 0) > (zMap[$1.id]?.reduce(0) { $0 + $1.amount } ?? 0) }
+                    let zapTotals = { (noteId: String) -> Int64 in
+                        zMap[noteId]?.reduce(0) { $0 + $1.amount } ?? 0
+                    }
+                    filtered.sort { zapTotals($0.id) > zapTotals($1.id) }
 
                     let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
 
@@ -276,7 +302,7 @@ struct ViewerView: View {
             } else {
                 // Compute Media
                 var latestItems: [String: MediaItem] = [:]
-                
+
                 let remoteItems = currentNoteMedia.filter { item in
                     if let pk = item.pubkey, blacklist.contains(pk) { return false }
 
@@ -295,7 +321,7 @@ struct ViewerView: View {
                         return whitelist.contains(pk) && pk != owner
                     }
                 }
-                
+
                 // Build hash → event timestamp lookup from ALL noteMedia (unfiltered)
                 // so blossom items get correct dates even when no noteMedia match survives filtering
                 var eventTimestamps: [String: Date] = [:]
@@ -308,11 +334,21 @@ struct ViewerView: View {
                     }
                 }
 
+                // Track every URL we've seen per hash so we can later prefer a mirror URL
+                // for display (and for the Blossom/Cache/404 classification).
+                var urlsByKey: [String: [URL]] = [:]
+                let recordURL: (String, URL) -> Void = { key, url in
+                    var existing = urlsByKey[key] ?? []
+                    if !existing.contains(url) { existing.append(url) }
+                    urlsByKey[key] = existing
+                }
+
                 // Add blossom items first — they have accurate mime detection from local bytes + relay
                 // Apply event timestamps where available instead of file modification dates
-                if (currentFilter == .all || currentFilter == .mine) && (sourceFilter == .all || sourceFilter == .blossom) {
+                if currentFilter == .all || currentFilter == .mine {
                     for item in currentBlossom {
                         let key = self.normalizedKeyStatic(for: item.url)
+                        recordURL(key, item.url)
                         if let eventDate = eventTimestamps[key] {
                             latestItems[key] = MediaItem(
                                 id: item.id,
@@ -329,24 +365,47 @@ struct ViewerView: View {
                     }
                 }
 
-                if sourceFilter == .all || sourceFilter == .cache {
-                    for item in remoteItems {
-                        let key = self.normalizedKeyStatic(for: item.url)
-                        if let existing = latestItems[key] {
-                            // Blossom item exists — keep its superior mime detection
-                            // but use the nostr event's created_at as the authoritative date
-                            latestItems[key] = MediaItem(
-                                id: existing.id,
-                                url: existing.url,
-                                type: existing.type,
-                                dateAdded: item.dateAdded, // event timestamp
-                                pubkey: item.pubkey ?? existing.pubkey,
-                                tags: item.tags ?? existing.tags,
-                                mimeType: existing.mimeType ?? item.mimeType
-                            )
-                        } else {
-                            latestItems[key] = item
-                        }
+                for item in remoteItems {
+                    let key = self.normalizedKeyStatic(for: item.url)
+                    recordURL(key, item.url)
+                    if let existing = latestItems[key] {
+                        // Blossom item exists — keep its superior mime detection
+                        // but use the nostr event's created_at as the authoritative date
+                        latestItems[key] = MediaItem(
+                            id: existing.id,
+                            url: existing.url,
+                            type: existing.type,
+                            dateAdded: item.dateAdded, // event timestamp
+                            pubkey: item.pubkey ?? existing.pubkey,
+                            tags: item.tags ?? existing.tags,
+                            mimeType: existing.mimeType ?? item.mimeType
+                        )
+                    } else {
+                        latestItems[key] = item
+                    }
+                }
+
+                // Promote each merged item to its best display URL.
+                // Priority: known mirror URL > current URL > any other recorded URL.
+                // This makes the Blossom filter pick up locally-stored items whose canonical
+                // URL is on a configured mirror.
+                let mirrorHostsCapture = currentMirrorHosts
+                let isOnMirror: (URL) -> Bool = { url in
+                    guard let host = url.host?.lowercased() else { return false }
+                    return mirrorHostsCapture.contains(host)
+                }
+                for (key, item) in latestItems {
+                    let candidates = urlsByKey[key] ?? [item.url]
+                    if !isOnMirror(item.url), let mirrorURL = candidates.first(where: isOnMirror) {
+                        latestItems[key] = MediaItem(
+                            id: item.id,
+                            url: mirrorURL,
+                            type: item.type,
+                            dateAdded: item.dateAdded,
+                            pubkey: item.pubkey,
+                            tags: item.tags,
+                            mimeType: item.mimeType
+                        )
                     }
                 }
                 
@@ -363,9 +422,54 @@ struct ViewerView: View {
                         unmatched.append(item)
                     }
                 }
-                timestamped.sort(by: { $0.dateAdded > $1.dateAdded })
-                unmatched.sort(by: { $0.dateAdded > $1.dateAdded })
-                var result = timestamped + unmatched
+
+                // Filter by media type
+                let typeFilterSet = currentTypeFilter
+                let isGif = { (item: MediaItem) -> Bool in
+                    let ext = item.url.pathExtension.lowercased()
+                    return ext == "gif" || item.mimeType?.lowercased().contains("gif") == true
+                }
+
+                var filtered = timestamped.filter { item in
+                    if isGif(item) { return typeFilterSet.contains(.gif) }
+                    switch item.type {
+                    case .image: return typeFilterSet.contains(.photo)
+                    case .video: return typeFilterSet.contains(.video)
+                    case .audio: return typeFilterSet.contains(.other)
+                    case .unknown: return typeFilterSet.contains(.other)
+                    }
+                }
+                var unfilteredUnmatched = unmatched.filter { item in
+                    if isGif(item) { return typeFilterSet.contains(.gif) }
+                    switch item.type {
+                    case .image: return typeFilterSet.contains(.photo)
+                    case .video: return typeFilterSet.contains(.video)
+                    case .audio: return typeFilterSet.contains(.other)
+                    case .unknown: return typeFilterSet.contains(.other)
+                    }
+                }
+
+                // Apply location filter: blossom (URL on a configured mirror) /
+                // cache (everything else not flagged) / notFound (user-flagged 404) / all (blossom+cache).
+                let notFoundCapture = currentNotFound
+                let locationFilter = currentLocationFilter
+                let passesLocation: (MediaItem) -> Bool = { item in
+                    let is404 = notFoundCapture.contains(item.url.absoluteString)
+                    let onMirror = isOnMirror(item.url)
+                    switch locationFilter {
+                    case .all: return !is404
+                    case .blossom: return onMirror && !is404
+                    case .cache: return !onMirror && !is404
+                    case .notFound: return is404
+                    }
+                }
+                filtered = filtered.filter(passesLocation)
+                unfilteredUnmatched = unfilteredUnmatched.filter(passesLocation)
+
+                // Sort by date added, newest first
+                filtered.sort(by: { $0.dateAdded > $1.dateAdded })
+                unfilteredUnmatched.sort(by: { $0.dateAdded > $1.dateAdded })
+                var result = filtered + unfilteredUnmatched
 
                 #if DEBUG
                 let timestampCount = eventTimestamps.count
@@ -393,9 +497,13 @@ struct ViewerView: View {
                         if ["jpg", "jpeg", "png", "gif", "webp", "avif", "heic"].contains(ext) {
                             sniffedType = .image
                             sniffedMime = "image/\(ext == "jpg" ? "jpeg" : ext)"
-                        } else if ["mp4", "mov", "webm", "avi"].contains(ext) {
+                        } else if ["mp4", "mov", "webm", "avi", "hevc", "h265"].contains(ext) {
                             sniffedType = .video
-                            sniffedMime = "video/\(ext)"
+                            if ["hevc", "h265"].contains(ext) {
+                                sniffedMime = "video/mp4"
+                            } else {
+                                sniffedMime = "video/\(ext)"
+                            }
                         } else if ["mp3", "wav", "ogg", "m4a", "flac"].contains(ext) {
                             sniffedType = .audio
                             sniffedMime = "audio/\(ext)"
@@ -512,62 +620,42 @@ struct ViewerView: View {
     }
 
     @ViewBuilder
-    private var relayDashboardButton: some View {
-        Button(action: { showingRelayDashboard = true }) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
-                    .shadow(color: statusColor.opacity(0.6), radius: 3)
-                Text("Relay Dashboard")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(statusColor.opacity(0.15))
-            .foregroundColor(.primary)
-            .cornerRadius(12)
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
     private var searchOrSourceBar: some View {
-        HStack {
+        Group {
             if viewMode == .notes || viewMode == .likes || viewMode == .zaps {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 14, weight: .semibold))
-                TextField(viewMode == .zaps ? "Search zapped notes..." : viewMode == .likes ? "Search liked notes..." : "Search notes...", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14, weight: .regular))
-                    .focused($isSearchFocused)
-                    .submitLabel(.search)
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 14, weight: .semibold))
+                    TextField(viewMode == .zaps ? "Search zapped notes..." : viewMode == .likes ? "Search liked notes..." : "Search notes...", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14, weight: .regular))
+                        .focused($isSearchFocused)
+                        .submitLabel(.search)
 
-                if !searchText.isEmpty {
-                    Button(action: {
-                        searchText = ""
-                        isSearchFocused = false
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 14, weight: .semibold))
+                    if !searchText.isEmpty {
+                        Button(action: {
+                            searchText = ""
+                            isSearchFocused = false
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                }
+                .padding(10)
+                .background(Color(red: 0.12, green: 0.12, blue: 0.16))
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
+                .onTapGesture {
+                    if !isSearchFocused && viewMode != .media {
+                        isSearchFocused = true
+                    }
                 }
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    sourceFilterView
-                }
-            }
-        }
-        .padding(10)
-        .background(Color(red: 0.12, green: 0.12, blue: 0.16))
-        .cornerRadius(8)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
-        .onTapGesture {
-            if !isSearchFocused && viewMode != .media {
-                isSearchFocused = true
+                sourceFilterView
             }
         }
     }
@@ -719,6 +807,8 @@ struct ViewerView: View {
             searchText: searchText,
             contentFilter: contentFilter,
             mediaSourceFilter: mediaSourceFilter,
+            mediaLocationFilter: mediaLocationFilter,
+            mediaTypeFilter: mediaTypeFilter,
             eventsCount: nostrService.events.count,
             noteMediaCount: nostrService.noteMedia.count,
             blacklistedNpubs: configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub] ?? (configService.config.activeAccountNpub.isEmpty ? configService.config.blacklistedNpubs : []),
@@ -751,6 +841,9 @@ struct ViewerView: View {
         #endif
         .onReceive(NotificationCenter.default.publisher(for: .macRelaySyncComplete)) { _ in
             refreshAll()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .mediaNotFoundChanged)) { _ in
+            scheduleUpdateDisplayData()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenRelayDashboard"))) { _ in
             showingRelayDashboard = true
@@ -788,6 +881,8 @@ struct ViewerView: View {
         }
         #endif
         #if os(iOS)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 HStack(spacing: 8) {
@@ -962,21 +1057,52 @@ struct ViewerView: View {
     }
     
     private var sourceFilterView: some View {
-        HStack(spacing: 2) {
-            FilterButton(title: "All Sources", color: .secondary, isSelected: mediaSourceFilter == .all) {
-                mediaSourceFilter = .all
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    Image(systemName: "tray.full")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, 2)
+
+                    FilterButton(title: "All", color: .havenPurple, isSelected: mediaLocationFilter == .all) {
+                        mediaLocationFilter = .all
+                    }
+                    FilterButton(title: "Blossom", color: .havenPurple, isSelected: mediaLocationFilter == .blossom) {
+                        mediaLocationFilter = .blossom
+                    }
+                    FilterButton(title: "Cache", color: .havenPurple, isSelected: mediaLocationFilter == .cache) {
+                        mediaLocationFilter = .cache
+                    }
+                    FilterButton(title: "404", color: .havenPurple, isSelected: mediaLocationFilter == .notFound) {
+                        mediaLocationFilter = .notFound
+                    }
+                }
             }
-            FilterButton(title: "Blossom", color: .havenPurple, isSelected: mediaSourceFilter == .blossom) {
-                mediaSourceFilter = .blossom
-            }
-            FilterButton(title: "Cache", color: Color(red: 1, green: 0.6, blue: 0.1), isSelected: mediaSourceFilter == .cache) {
-                mediaSourceFilter = .cache
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    Image(systemName: "photo.on.rectangle")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, 2)
+
+                    ForEach(MediaTypeFilter.allCases, id: \.self) { typeFilter in
+                        FilterButton(
+                            title: typeFilter.rawValue,
+                            color: .havenPurple,
+                            isSelected: mediaTypeFilter.contains(typeFilter)
+                        ) {
+                            if mediaTypeFilter.contains(typeFilter) {
+                                mediaTypeFilter.remove(typeFilter)
+                            } else {
+                                mediaTypeFilter.insert(typeFilter)
+                            }
+                        }
+                    }
+                }
             }
         }
-        .padding(4)
-        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
-        .cornerRadius(8)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
     }
     
     private var likesFilterView: some View {
@@ -2201,7 +2327,6 @@ struct NoteRow: View {
                     .foregroundColor(Color(red: 1, green: 1, blue: 1))
                     .lineSpacing(2)
                     .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(14)
@@ -2304,7 +2429,7 @@ struct RepostedNoteView: View {
     @EnvironmentObject var nostrService: NostrService
 
     private static let mediaPattern = try! NSRegularExpression(
-        pattern: #"https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic)(?:\?\S+)?"#,
+        pattern: #"https?://\S+?\.(?:jpg|jpeg|png|gif|webp|mp4|mov|webm|heic|hevc|h265)(?:\?\S+)?"#,
         options: .caseInsensitive
     )
 
@@ -2362,7 +2487,6 @@ struct RepostedNoteView: View {
                     .foregroundColor(Color(red: 0.9, green: 0.9, blue: 0.9))
                     .lineSpacing(2)
                     .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             // Image/video previews
@@ -2400,8 +2524,8 @@ struct MediaPreviewRow: View {
         Group {
             if url.isVideo {
                 VideoThumbnailView(url: url)
-                    .aspectRatio(contentMode: .fill)
-                    .frame(maxHeight: 250)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 200)
                     .cornerRadius(8)
                     .clipped()
             } else if url.isGIF {
@@ -2502,6 +2626,22 @@ struct MediaGridItem: View {
                 .disabled(isMirroringToLocal)
             }
             #endif
+
+            Divider()
+
+            if MediaCacheService.shared.isKnown404(url: item.url) {
+                Button(action: {
+                    MediaCacheService.shared.unmarkNotFound(url: item.url)
+                }) {
+                    Label("Remove from 404", systemImage: "arrow.uturn.backward.circle")
+                }
+            } else {
+                Button(action: {
+                    MediaCacheService.shared.markNotFound(url: item.url)
+                }) {
+                    Label("Mark as 404", systemImage: "xmark.octagon")
+                }
+            }
             if let pubkey = item.pubkey, pubkey != nostrService.activeHexPubkey {
                 Button(action: {
                     showingReportDialog = true
@@ -2725,13 +2865,17 @@ struct RetryableAsyncImage: View {
 struct VideoThumbnailView: View {
     let url: URL
     let mimeType: String?
-    @State private var thumbnail: PlatformImage? = nil
-    @State private var isLoading = true
+    @State private var thumbnail: PlatformImage?
+    @State private var isLoading: Bool
     @State private var id = UUID()
-    
+
     init(url: URL, mimeType: String? = nil) {
         self.url = url
         self.mimeType = mimeType
+        // Seed from cache so we never show a loading flash on subsequent renders.
+        let cached = MediaCacheService.shared.cachedThumbnail(for: url)
+        _thumbnail = State(initialValue: cached)
+        _isLoading = State(initialValue: cached == nil)
     }
     
     var body: some View {
@@ -2801,27 +2945,14 @@ struct VideoThumbnailView: View {
     }
     
     private func loadThumbnail() {
+        if thumbnail != nil { return }
         isLoading = true
-        
+
         Task {
-            // 1. Check if we already have it locally (cached or blossom)
-            if !MediaCacheService.shared.isCached(url: url) && !MediaCacheService.shared.getSource(for: url).isLocal {
-                guard let _ = await MediaCacheService.shared.fetchData(url: url) else {
-                    await MainActor.run { self.isLoading = false }
-                    return
-                }
-            }
-            
-            // 2. Generate using the throttled service
-            if let image = await MediaCacheService.shared.generateThumbnail(for: url) {
-                await MainActor.run {
-                    self.thumbnail = image
-                    self.isLoading = false
-                }
-            } else {
-                await MainActor.run {
-                    self.isLoading = false
-                }
+            let image = await MediaCacheService.shared.generateThumbnail(for: url, mimeType: mimeType)
+            await MainActor.run {
+                self.thumbnail = image
+                self.isLoading = false
             }
         }
     }
@@ -2901,6 +3032,8 @@ struct ViewerChangeHandlers: ViewModifier {
     let searchText: String
     let contentFilter: ViewerView.ContentFilter
     let mediaSourceFilter: ViewerView.MediaSourceFilter
+    let mediaLocationFilter: ViewerView.MediaLocationFilter
+    let mediaTypeFilter: Set<ViewerView.MediaTypeFilter>
     let eventsCount: Int
     let noteMediaCount: Int
     let blacklistedNpubs: [String]
@@ -2916,6 +3049,8 @@ struct ViewerChangeHandlers: ViewModifier {
             .onChange(of: searchText) { _, _ in onResetAndUpdate() }
             .onChange(of: contentFilter) { _, _ in onResetAndUpdate() }
             .onChange(of: mediaSourceFilter) { _, _ in onUpdate() }
+            .onChange(of: mediaLocationFilter) { _, _ in onUpdate() }
+            .onChange(of: mediaTypeFilter) { _, _ in onUpdate() }
             .onChange(of: likesFilter) { _, _ in onResetAndUpdate() }
             .onChange(of: zapsFilter) { _, _ in onResetAndUpdate() }
             .onChange(of: viewMode) { _, newMode in onViewModeChange(newMode) }
@@ -2983,7 +3118,7 @@ struct ViewerViewMediaItem: View {
         }
         
         let ext = mediaItem.url.pathExtension.lowercased()
-        if ["mp4", "mov", "webm", "avi"].contains(ext) {
+        if ["mp4", "mov", "webm", "avi", "hevc", "h265"].contains(ext) {
             resolvedType = .video
         } else if ["jpg", "jpeg", "png", "gif", "webp", "avif", "heic"].contains(ext) {
             resolvedType = .image

@@ -31,7 +31,10 @@ struct SettingsView: View {
     
     var needsRestart: Bool {
         guard let lastLaunch = relayManager.lastConfig else { return false }
-        return configService.config != lastLaunch
+        var current = configService.config
+        let last = lastLaunch
+        current.activeAccountNpub = last.activeAccountNpub
+        return current != last
     }
     
     enum SettingsTab: String, CaseIterable, Identifiable {

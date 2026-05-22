@@ -204,7 +204,10 @@ func initRelays(ctx context.Context) error {
 
 	privateRelay.OnConnect = append(privateRelay.OnConnect, khatru.RequestAuth)
 
-	privateRelay.StoreEvent = append(privateRelay.StoreEvent, privateDB.SaveEvent)
+	privateRelay.StoreEvent = append(privateRelay.StoreEvent, privateDB.SaveEvent, func(ctx context.Context, event *nostr.Event) error {
+		slog.Info("event stored")
+		return nil
+	})
 	privateRelay.QueryEvents = append(privateRelay.QueryEvents, privateDB.QueryEvents)
 	privateRelay.DeleteEvent = append(privateRelay.DeleteEvent, privateDB.DeleteEvent)
 	privateRelay.CountEvents = append(privateRelay.CountEvents, privateDB.CountEvents)
@@ -269,7 +272,10 @@ func initRelays(ctx context.Context) error {
 
 	chatRelay.OnConnect = append(chatRelay.OnConnect, khatru.RequestAuth)
 
-	chatRelay.StoreEvent = append(chatRelay.StoreEvent, chatDB.SaveEvent)
+	chatRelay.StoreEvent = append(chatRelay.StoreEvent, chatDB.SaveEvent, func(ctx context.Context, event *nostr.Event) error {
+		slog.Info("event stored")
+		return nil
+	})
 	chatRelay.QueryEvents = append(chatRelay.QueryEvents, chatDB.QueryEvents)
 	chatRelay.DeleteEvent = append(chatRelay.DeleteEvent, chatDB.DeleteEvent)
 	chatRelay.CountEvents = append(chatRelay.CountEvents, chatDB.CountEvents)

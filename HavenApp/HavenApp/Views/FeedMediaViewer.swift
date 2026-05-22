@@ -1,5 +1,7 @@
 import SwiftUI
 import AVKit
+import CryptoKit
+import os.log
 
 struct IdentifiableURL: Identifiable {
     let id = UUID()
@@ -10,15 +12,40 @@ struct FeedMediaViewer: View {
     let url: URL
     var onDismiss: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
-    
+    @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var configService: ConfigService
+
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
-    
+
     @State private var isVideo: Bool = false
     @State private var isGIF: Bool = false
     @State private var isLoadingType: Bool = true
+
+    @State private var isMirroring: Bool = false
+    @State private var mirrorStatus: MirrorStatus? = nil
+    @State private var isDeleting: Bool = false
+    @State private var deleteStatus: DeleteStatus? = nil
+
+    enum MirrorStatus {
+        case loading
+        case success
+        case failed(String)
+    }
+
+    enum DeleteStatus {
+        case loading
+        case success
+        case failed(String)
+    }
+
+    private let logger = Logger(subsystem: "com.bitvora.haven", category: "media-viewer")
+
+    private var blossomService: BlossomService {
+        BlossomService(configService: configService, nostrService: nostrService)
+    }
     
     var body: some View {
         ZStack {
@@ -103,6 +130,18 @@ struct FeedMediaViewer: View {
             
             VStack {
                 HStack {
+                    if !isLoadingType && !isMirroring {
+                        Button {
+                            mirrorToBlossomTapped()
+                        } label: {
+                            Image(systemName: "square.and.arrow.up.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.white.opacity(0.9))
+                                .padding(20)
+                                .shadow(radius: 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
                     Spacer()
                     Button {
                         performDismiss()
@@ -116,6 +155,48 @@ struct FeedMediaViewer: View {
                     .buttonStyle(.plain)
                 }
                 Spacer()
+
+                if !isLoadingType && isDeleting {
+                    HStack(spacing: 16) {
+                        Button(role: .destructive) {
+                            deleteFromMirrorsTapped()
+                        } label: {
+                            Label("Delete from mirrors", systemImage: "trash")
+                        }
+
+                        Button(role: .destructive) {
+                            deleteEverywhereTapped()
+                        } label: {
+                            Label("Delete everywhere", systemImage: "trash.fill")
+                        }
+
+                        Spacer()
+
+                        Button("Cancel") {
+                            isDeleting = false
+                            deleteStatus = nil
+                        }
+                    }
+                    .padding(16)
+                    .background(Color.black.opacity(0.8))
+                    .cornerRadius(8)
+                    .padding(16)
+                }
+            }
+            .onLongPressGesture {
+                if !isLoadingType && !isMirroring {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isDeleting.toggle()
+                    }
+                }
+            }
+
+            if let status = mirrorStatus {
+                mirrorStatusView(status)
+            }
+
+            if let status = deleteStatus {
+                deleteStatusView(status)
             }
         }
     }
@@ -130,7 +211,7 @@ struct FeedMediaViewer: View {
     
     private func detectType() {
         let ext = url.pathExtension.lowercased()
-        if ["mp4", "mov", "webm", "m4v"].contains(ext) {
+        if ["mp4", "mov", "webm", "m4v", "hevc", "h265"].contains(ext) {
             isVideo = true
             isLoadingType = false
         } else if ext == "gif" {
@@ -173,6 +254,267 @@ struct FeedMediaViewer: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
         }
+    }
+
+    private func mirrorToBlossomTapped() {
+        isMirroring = true
+        mirrorStatus = .loading
+
+        Task {
+            defer {
+                isMirroring = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                    withAnimation(.easeOut(duration: 0.4)) {
+                        self.mirrorStatus = nil
+                    }
+                }
+            }
+
+            do {
+                let data = try await downloadMedia()
+                let sha256 = SHA256.hash(data: data)
+                let sha256String = sha256.compactMap { String(format: "%02x", $0) }.joined()
+                let contentType = determineContentType()
+
+                if let _ = await self.blossomService.uploadAndMirror(
+                    data: data,
+                    sha256: sha256String,
+                    contentType: contentType
+                ) {
+                    await MainActor.run {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                            mirrorStatus = .success
+                        }
+                    }
+                } else {
+                    await MainActor.run {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                            mirrorStatus = .failed("Failed to mirror to Blossom")
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        mirrorStatus = .failed(error.localizedDescription)
+                    }
+                }
+            }
+        }
+    }
+
+    private func deleteFromMirrorsTapped() {
+        deleteStatus = .loading
+
+        Task {
+            let sha256 = extractSHA256FromURL()
+            guard !sha256.isEmpty else {
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        deleteStatus = .failed("Could not extract hash from URL")
+                        isDeleting = false
+                    }
+                }
+                return
+            }
+
+            let success = await blossomService.deleteFromMirrors(sha256: sha256)
+            await MainActor.run {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                    deleteStatus = success ? .success : .failed("Failed to delete from mirrors")
+                    isDeleting = false
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    withAnimation(.easeOut(duration: 0.4)) {
+                        self.deleteStatus = nil
+                    }
+                }
+            }
+        }
+    }
+
+    private func deleteEverywhereTapped() {
+        deleteStatus = .loading
+
+        Task {
+            let sha256 = extractSHA256FromURL()
+            guard !sha256.isEmpty else {
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        deleteStatus = .failed("Could not extract hash from URL")
+                        isDeleting = false
+                    }
+                }
+                return
+            }
+
+            let localSuccess = await blossomService.deleteFromLocal(sha256: sha256)
+            let mirrorsSuccess = await blossomService.deleteFromMirrors(sha256: sha256)
+
+            await MainActor.run {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                    if localSuccess || mirrorsSuccess {
+                        deleteStatus = .success
+                    } else {
+                        deleteStatus = .failed("Failed to delete media")
+                    }
+                    isDeleting = false
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    withAnimation(.easeOut(duration: 0.4)) {
+                        self.deleteStatus = nil
+                        self.performDismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func extractSHA256FromURL() -> String {
+        // Try to extract the 64-char hash from the URL path
+        let lastComponent = url.deletingPathExtension().lastPathComponent
+        if lastComponent.count == 64 && lastComponent.allSatisfy({ $0.isHexDigit }) {
+            return lastComponent
+        }
+        return ""
+    }
+
+    private func downloadMedia() async throws -> Data {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let mediaType = isVideo ? "video" : isGIF ? "GIF" : "image"
+            throw NSError(domain: "DownloadError", code: status, userInfo: [NSLocalizedDescriptionKey: "Failed to download \(mediaType): HTTP \(status)"])
+        }
+
+        return data
+    }
+
+    private func determineContentType() -> String {
+        if isVideo {
+            let ext = url.pathExtension.lowercased()
+            switch ext {
+            case "mp4": return "video/mp4"
+            case "mov": return "video/quicktime"
+            case "webm": return "video/webm"
+            case "m4v": return "video/mp4"
+            case "hevc", "h265": return "video/hevc"
+            default: return "video/mp4"
+            }
+        } else if isGIF {
+            return "image/gif"
+        } else {
+            let ext = url.pathExtension.lowercased()
+            switch ext {
+            case "jpg", "jpeg": return "image/jpeg"
+            case "png": return "image/png"
+            case "webp": return "image/webp"
+            case "avif": return "image/avif"
+            case "heic": return "image/heic"
+            default: return "image/jpeg"
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func mirrorStatusView(_ status: MirrorStatus) -> some View {
+        VStack {
+            switch status {
+            case .loading:
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(.white)
+                    Text("Mirroring to Blossom...")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .background(Capsule().fill(Color.blue.opacity(0.85)))
+                .foregroundColor(.white)
+
+            case .success:
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Mirrored to Blossom")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .background(Capsule().fill(Color(red: 0.2, green: 0.8, blue: 0.6)))
+                .foregroundColor(.white)
+
+            case .failed(let message):
+                HStack(spacing: 8) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(message)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(2)
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .background(Capsule().fill(Color.red.opacity(0.8)))
+                .foregroundColor(.white)
+            }
+        }
+        .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+        .transition(.asymmetric(
+            insertion: .move(edge: .bottom).combined(with: .opacity),
+            removal: .opacity
+        ))
+    }
+
+    @ViewBuilder
+    private func deleteStatusView(_ status: DeleteStatus) -> some View {
+        VStack {
+            switch status {
+            case .loading:
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(.white)
+                    Text("Deleting...")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .background(Capsule().fill(Color.red.opacity(0.85)))
+                .foregroundColor(.white)
+
+            case .success:
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Deleted")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .background(Capsule().fill(Color(red: 0.8, green: 0.2, blue: 0.2)))
+                .foregroundColor(.white)
+
+            case .failed(let message):
+                HStack(spacing: 8) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(message)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(2)
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .background(Capsule().fill(Color.red.opacity(0.8)))
+                .foregroundColor(.white)
+            }
+        }
+        .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+        .transition(.asymmetric(
+            insertion: .move(edge: .bottom).combined(with: .opacity),
+            removal: .opacity
+        ))
     }
 }
 

@@ -19,7 +19,7 @@ enum FeedMediaType {
             return .photo
         case "gif":
             return .gif
-        case "mp4", "mov", "webm", "m4v":
+        case "mp4", "mov", "webm", "m4v", "hevc", "h265":
             return .video
         default:
             return ext.isEmpty ? nil : nil // Unknown extension — need HEAD

@@ -798,7 +798,7 @@ class RelayProcessManager: ObservableObject {
         }
 
         // Event counts
-        if line.contains("Imported") && line.contains("notes") {
+        if line.contains("Imported") && line.contains("notes") && !line.contains("complete") {
             let components = line.components(separatedBy: " ")
             if let importedIndex = components.firstIndex(of: "Imported"),
                importedIndex + 1 < components.count,
@@ -1585,8 +1585,11 @@ class RelayProcessManager: ObservableObject {
         if brandSet.contains("avif") || brandSet.contains("avis") {
             return "image/avif"
         }
-        if brandSet.contains("heic") || brandSet.contains("heix") || brandSet.contains("hevc") {
+        if brandSet.contains("heic") || brandSet.contains("heix") {
             return "image/heic"
+        }
+        if brandSet.contains("hevc") || brandSet.contains("hev1") || brandSet.contains("hvc1") {
+            return "video/mp4"
         }
         if brandSet.contains("qt  ") {
             return "video/quicktime"

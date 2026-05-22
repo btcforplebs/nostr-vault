@@ -272,7 +272,7 @@ extension URL {
     
     var isVideo: Bool {
         let ext = self.pathExtension.lowercased()
-        return ext == "mov" || ext == "mp4" || ext == "webm"
+        return ["mov", "mp4", "webm", "m4v", "hevc", "h265"].contains(ext)
     }
     
     var isWebP: Bool {

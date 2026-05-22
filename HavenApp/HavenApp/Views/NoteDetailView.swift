@@ -30,9 +30,6 @@ struct NoteDetailView: View {
     @State private var zapAmountSats: String = ""
     @State private var showingBroadcastSheet = false
     @State private var noLightningAddressAlert = false
-    @State private var unlikeTask: Task<Void, Never>?
-    @State private var showingUnlikeUndo = false
-    @State private var unlikeTimeRemaining = 3.0
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -73,14 +70,6 @@ struct NoteDetailView: View {
 
             ZapNotificationBanner()
                 .zIndex(1)
-        }
-        .overlay(alignment: .bottom) {
-            if showingUnlikeUndo {
-                UnlikeUndoBanner(timeRemaining: unlikeTimeRemaining, onUndo: undoUnlike)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 20)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
         }
         .background(Color.platformSecondaryGroupedBackground)
         .refreshable {
@@ -239,7 +228,6 @@ struct NoteDetailView: View {
                     .foregroundColor(Color(red: 1, green: 1, blue: 1))
                     .lineSpacing(3)
                     .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
 
                 if !original.mediaURLs.isEmpty {
@@ -251,7 +239,6 @@ struct NoteDetailView: View {
                     .foregroundColor(Color(red: 1, green: 1, blue: 1))
                     .lineSpacing(3)
                     .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .environment(\.openURL, OpenURLAction { url in
                         if url.scheme == "nostr" {
@@ -502,11 +489,11 @@ struct NoteDetailView: View {
 
     private func actionButton(icon: String, color: Color = .secondary, count: Int?, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            VStack(spacing: 2) {
                 Image(systemName: icon)
                 if let count = count, count > 0 {
                     Text("\(count)")
-                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 }
             }
             .font(.subheadline)
@@ -609,45 +596,24 @@ struct NoteDetailView: View {
     }
     
     private func likeNote() {
-        if feedService.likedEventIds.contains(note.id) {
-            startUnlikeCountdown()
+        let noteId = note.id
+        if feedService.likedEventIds.contains(noteId) {
+            UnlikeNotificationManager.shared.startCountdown {
+                self.feedService.likedEventIds.remove(noteId)
+                var stats = self.feedService.noteStats[noteId] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+                stats.reactions = max(0, stats.reactions - 1)
+                self.feedService.noteStats[noteId] = stats
+                self.feedService.saveInteractionState()
+            }
             return
         }
-        feedService.likedEventIds.insert(note.id)
-        var currentStats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
+        feedService.likedEventIds.insert(noteId)
+        var currentStats = feedService.noteStats[noteId] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
         currentStats.reactions += 1
-        feedService.noteStats[note.id] = currentStats
+        feedService.noteStats[noteId] = currentStats
         feedService.saveInteractionState()
-        guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", note.id], ["p", note.pubkey]]) else { return }
+        guard let signed = nostrService.signEvent(kind: 7, content: "+", tags: [["e", noteId], ["p", note.pubkey]]) else { return }
         nostrService.postEvent(signed)
-    }
-
-    private func startUnlikeCountdown() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = true }
-        unlikeTimeRemaining = 3.0
-        unlikeTask?.cancel()
-        unlikeTask = Task {
-            for _ in 0..<30 {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-                if Task.isCancelled { return }
-                await MainActor.run { unlikeTimeRemaining -= 0.1 }
-            }
-            if Task.isCancelled { return }
-            await MainActor.run {
-                feedService.likedEventIds.remove(note.id)
-                var stats = feedService.noteStats[note.id] ?? NoteStats(replies: 0, reactions: 0, reposts: 0)
-                stats.reactions = max(0, stats.reactions - 1)
-                feedService.noteStats[note.id] = stats
-                feedService.saveInteractionState()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = false }
-            }
-        }
-    }
-
-    private func undoUnlike() {
-        unlikeTask?.cancel()
-        unlikeTask = nil
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showingUnlikeUndo = false }
     }
 
     private func reactToNote(with emoji: String) {

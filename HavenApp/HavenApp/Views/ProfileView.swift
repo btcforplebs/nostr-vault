@@ -44,6 +44,9 @@ struct ProfileView: View {
     // Edit profile
     @State private var showingEditProfile = false
 
+    // Compose post
+    @State private var showingCompose = false
+
     // Following / followers count
     @State private var followingCount: Int? = nil
     @State private var followsMe: Bool = false
@@ -116,7 +119,7 @@ struct ProfileView: View {
         return items.map { item in
             let ext = item.url.pathExtension.lowercased()
             var isGIF = ext == "gif"
-            var isVideo = ["mp4", "mov", "webm", "m4v"].contains(ext)
+            var isVideo = ["mp4", "mov", "webm", "m4v", "hevc", "h265"].contains(ext)
             var isAudio = ["mp3", "wav", "ogg", "m4a", "flac"].contains(ext)
             
             if let cachedMime = MediaTypeDetector.shared.getCachedContentType(for: item.url) {
@@ -226,6 +229,11 @@ struct ProfileView: View {
         .sheet(isPresented: $showSweep) {
             BitcoinSweepDisclaimerView(onDismiss: { showSweep = false })
                 .environmentObject(ConfigService.shared)
+        }
+        .sheet(isPresented: $showingCompose) {
+            ComposeView(onDismiss: { showingCompose = false })
+                .environmentObject(nostrService)
+                .environmentObject(configService)
         }
         .sheet(isPresented: $showingEditProfile) {
             ProfileEditView(onDismiss: { showingEditProfile = false }, existing: profile ?? FeedProfile(pubkey: pubkey)) { updated in
@@ -416,11 +424,26 @@ struct ProfileView: View {
     private var actionRow: some View {
         HStack(spacing: 8) {
             if isOwnProfile {
-                Button(action: { showingEditProfile = true }) {
+                Button(action: { showingCompose = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "pencil")
                             .font(.system(size: 12, weight: .semibold))
-                        Text("Edit Profile")
+                        Text("Post")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Color.havenPurple)
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: { showingEditProfile = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Edit")
                             .font(.system(size: 13, weight: .semibold))
                     }
                     .foregroundColor(.havenPurple)

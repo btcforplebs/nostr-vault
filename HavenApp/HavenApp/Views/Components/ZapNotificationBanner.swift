@@ -62,14 +62,63 @@ class ZapNotificationManager: ObservableObject {
     }
 }
 
+// MARK: - Unlike Notification Manager
+
+@MainActor
+class UnlikeNotificationManager: ObservableObject {
+    static let shared = UnlikeNotificationManager()
+
+    @Published var isShowing = false
+    @Published var timeRemaining: Double = 3.0
+    private var task: Task<Void, Never>?
+    private var onUnlike: (() -> Void)?
+
+    func startCountdown(onUnlike: @escaping () -> Void) {
+        cancel()
+        self.onUnlike = onUnlike
+        timeRemaining = 3.0
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { isShowing = true }
+        task = Task {
+            for _ in 0..<30 {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                if Task.isCancelled { return }
+                await MainActor.run { self.timeRemaining -= 0.1 }
+            }
+            if Task.isCancelled { return }
+            await MainActor.run {
+                self.onUnlike?()
+                self.onUnlike = nil
+                withAnimation(.easeOut(duration: 0.4)) { self.isShowing = false }
+            }
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+        onUnlike = nil
+        withAnimation(.easeOut(duration: 0.4)) { isShowing = false }
+    }
+}
+
 // MARK: - Zap Notification Banner (floating pill)
 
 struct ZapNotificationBanner: View {
-    @ObservedObject private var manager = ZapNotificationManager.shared
+    @ObservedObject private var zapManager = ZapNotificationManager.shared
+    @ObservedObject private var unlikeManager = UnlikeNotificationManager.shared
 
     var body: some View {
         VStack(spacing: 6) {
-            ForEach(manager.notifications) { notification in
+            if unlikeManager.isShowing {
+                UnlikePill(timeRemaining: unlikeManager.timeRemaining) {
+                    unlikeManager.cancel()
+                }
+                .transition(.asymmetric(
+                    insertion: .move(edge: .top).combined(with: .opacity),
+                    removal: .opacity.combined(with: .scale(scale: 0.8))
+                ))
+            }
+            ForEach(zapManager.notifications) { notification in
                 ZapPill(notification: notification)
                     .transition(.asymmetric(
                         insertion: .move(edge: .top).combined(with: .opacity),
@@ -78,7 +127,41 @@ struct ZapNotificationBanner: View {
             }
         }
         .padding(.top, 12)
-        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: manager.notifications.map(\.id))
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: zapManager.notifications.map(\.id))
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: unlikeManager.isShowing)
+    }
+}
+
+// MARK: - Unlike Pill
+
+struct UnlikePill: View {
+    let timeRemaining: Double
+    let onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "heart.slash.fill")
+                .font(.system(size: 12, weight: .bold))
+
+            Text("Unliking in \(max(1, Int(ceil(timeRemaining))))s")
+                .font(.system(size: 13, weight: .bold))
+
+            Button("Undo") { onUndo() }
+                .font(.system(size: 12, weight: .bold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.25))
+                .clipShape(Capsule())
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 20)
+        .background(
+            Capsule()
+                .fill(Color.red.opacity(0.85))
+                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+        )
+        .foregroundColor(.white)
+        .buttonStyle(.plain)
     }
 }
 

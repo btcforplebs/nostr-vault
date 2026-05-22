@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0 MacOS / 1.1 iOS (Build 10)] - 2026-05-22
+
+### Fixed
+- **macOS Video Opacity**: Fixed videos appearing transparent/see-through on macOS by setting `isOpaque = true` on the AVPlayerLayer backing layer in `InlinePlayerLayer`.
+
+## [2.5.0 MacOS / 1.1 iOS (Build 9)] - 2026-05-22
+
+### Added
+- **Countdown Timers for User Actions**: Implemented dual countdown timers for both post creation and reposting. When a post is created, a 10-second countdown appears below it labeled "Post created - editing in Xs", giving users a window to edit or delete. When reposting, a 5-second countdown displays "Reposting in Xs" before the action is confirmed.
+- **Repost Icon Status Indicator**: The repost button (`arrow.2.squarepath`) now lights up green with a subtle scale animation when a post has been reposted, providing visual feedback similar to the liked heart icon. Tracked via new `repostedEventIds: Set<String>` in `FeedService`.
+
+### Changed
+- **Profile Switching UX**: Fixed unnecessary "Restart Required" banner that appeared when switching between profiles/accounts. The `activeAccountNpub` field is now excluded from the relay restart check, as it's an app-level preference, not a relay configuration change.
+
 ## [2.5.0 MacOS / 1.1 iOS (Build 8)] - 2026-05-22
 
 ### Fixed
