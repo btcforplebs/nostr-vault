@@ -210,22 +210,29 @@ struct ViewerView: View {
                     // My notes that received reactions from others
                     let myNoteIds = Set(currentEvents.filter { $0.pubkey == owner && noteKinds.contains($0.kind) }.map { $0.id })
 
-                    // Build reaction map: noteId -> [reactor pubkeys]
+                    // Build reaction map: noteId -> [reactor pubkeys] + track newest reaction time per note
                     var rxMap: [String: [String]] = [:]
+                    var latestReaction: [String: Date] = [:]
                     for event in currentEvents where event.kind == 7 && event.pubkey != owner {
                         if let targetId = event.tags.first(where: { $0.count >= 2 && $0[0] == "e" && myNoteIds.contains($0[1]) })?[1] {
                             rxMap[targetId, default: []].append(event.pubkey)
+                            let d = event.createdAtDate
+                            if let existing = latestReaction[targetId] {
+                                if d > existing { latestReaction[targetId] = d }
+                            } else {
+                                latestReaction[targetId] = d
+                            }
                         }
                     }
 
                     let likedNoteIds = Set(rxMap.keys)
                     var filtered = currentEvents.filter { noteKinds.contains($0.kind) && likedNoteIds.contains($0.id) }
-                    // Sort by number of reactions (most liked first), then by date
-                    filtered.sort { 
-                        let count0 = rxMap[$0.id]?.count ?? 0
-                        let count1 = rxMap[$1.id]?.count ?? 0
-                        if count0 == count1 { return $0.createdAtDate > $1.createdAtDate }
-                        return count0 > count1 
+                    // Sort by newest reaction first, tiebreaking by note date
+                    filtered.sort {
+                        let d0 = latestReaction[$0.id] ?? Date.distantPast
+                        let d1 = latestReaction[$1.id] ?? Date.distantPast
+                        if d0 == d1 { return $0.createdAtDate > $1.createdAtDate }
+                        return d0 > d1
                     }
 
                     let result = currentSearch.isEmpty ? filtered : filtered.filter { $0.content.localizedCaseInsensitiveContains(currentSearch) }
@@ -633,11 +640,9 @@ struct ViewerView: View {
     @ViewBuilder
     private func headerView(isNarrow: Bool) -> some View {
         VStack(spacing: 12) {
-
-
+            #if os(macOS)
             if isNarrow {
                 VStack(alignment: .leading, spacing: 10) {
-                    #if os(macOS)
                     HStack {
                         modeView
                         Spacer()
@@ -645,7 +650,6 @@ struct ViewerView: View {
                             uploadButton
                         }
                     }
-                    #endif
                     if viewMode == .notes {
                         ScrollView(.horizontal, showsIndicators: false) {
                             filterView
@@ -662,14 +666,11 @@ struct ViewerView: View {
                 }
             } else {
                 HStack {
-                    #if os(macOS)
                     modeView
                     Spacer()
                     if viewMode == .media {
                         uploadButton
-                    }
-                    #endif
-                    if viewMode == .notes {
+                    } else if viewMode == .notes {
                         filterView
                     } else if viewMode == .likes {
                         likesFilterView
@@ -678,6 +679,7 @@ struct ViewerView: View {
                     }
                 }
             }
+            #endif
 
             searchOrSourceBar
         }
@@ -1050,8 +1052,15 @@ struct ViewerView: View {
                     }
                 }
             }
-            if viewMode == .media {
-                ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if viewMode == .notes {
+                    HStack(spacing: 16) {
+                        IconFilterButton(icon: "square.stack", tooltip: "All", isSelected: contentFilter == .all, color: .havenPurple) { contentFilter = .all }
+                        IconFilterButton(icon: "person.fill", tooltip: "My Notes", isSelected: contentFilter == .mine, color: .havenPurple) { contentFilter = .mine }
+                        IconFilterButton(icon: "at", tooltip: "Tagged", isSelected: contentFilter == .tagged, color: .havenPurple) { contentFilter = .tagged }
+                        IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Whitelisted", isSelected: contentFilter == .whitelist, color: .havenPurple) { contentFilter = .whitelist }
+                    }
+                } else if viewMode == .media {
                     let purple = Color.havenPurple
                     PhotosPicker(selection: $selectedUploadItems, matching: .any(of: [.images, .videos])) {
                         Image(systemName: "plus")
@@ -1061,6 +1070,16 @@ struct ViewerView: View {
                             .background(purple.opacity(0.85))
                             .clipShape(Circle())
                             .shadow(color: purple.opacity(0.4), radius: 4, x: 0, y: 2)
+                    }
+                } else if viewMode == .likes {
+                    HStack(spacing: 16) {
+                        IconFilterButton(icon: "heart.fill", tooltip: "Liked by others", isSelected: likesFilter == .likedByOthers, color: .havenPurple) { likesFilter = .likedByOthers }
+                        IconFilterButton(icon: "heart", tooltip: "My likes", isSelected: likesFilter == .myLikes, color: .havenPurple) { likesFilter = .myLikes }
+                    }
+                } else {
+                    HStack(spacing: 16) {
+                        IconFilterButton(icon: "bolt.fill", tooltip: "Zapped by others", isSelected: zapsFilter == .zappedByOthers, color: .havenPurple) { zapsFilter = .zappedByOthers }
+                        IconFilterButton(icon: "bolt", tooltip: "My zaps", isSelected: zapsFilter == .myZaps, color: .havenPurple) { zapsFilter = .myZaps }
                     }
                 }
             }
@@ -2645,6 +2664,25 @@ struct FilterButton: View {
     }
 }
 
+struct IconFilterButton: View {
+    let icon: String
+    let tooltip: String
+    let isSelected: Bool
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(isSelected ? color : .secondary)
+                .animation(.easeInOut(duration: 0.15), value: isSelected)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(tooltip)
+    }
+}
+
 struct ModeButton: View {
     let title: String
     let icon: String
@@ -2656,14 +2694,15 @@ struct ModeButton: View {
             HStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
                 Text(title)
                     .font(.system(size: 13, weight: .semibold, design: .default))
                     .lineLimit(1)
+                    .foregroundColor(.white)
             }
             .fixedSize()
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .foregroundColor(isSelected ? .white : .secondary)
             .background(isSelected ? .havenPurple : Color.clear)
             .cornerRadius(20)
             .overlay(
