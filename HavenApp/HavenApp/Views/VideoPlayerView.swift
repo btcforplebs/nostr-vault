@@ -299,17 +299,21 @@ struct InlineFeedVideoPlayer: View {
 #if os(macOS)
 struct InlinePlayerLayer: NSViewRepresentable {
     let player: AVPlayer
+    var videoGravity: AVLayerVideoGravity = .resizeAspectFill
 
     func makeNSView(context: Context) -> PlayerNSView {
         let view = PlayerNSView()
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspectFill
+        view.playerLayer.videoGravity = videoGravity
         return view
     }
 
     func updateNSView(_ nsView: PlayerNSView, context: Context) {
         if nsView.playerLayer.player != player {
             nsView.playerLayer.player = player
+        }
+        if nsView.playerLayer.videoGravity != videoGravity {
+            nsView.playerLayer.videoGravity = videoGravity
         }
     }
 }
@@ -338,17 +342,21 @@ class PlayerNSView: NSView {
 #else
 struct InlinePlayerLayer: UIViewRepresentable {
     let player: AVPlayer
+    var videoGravity: AVLayerVideoGravity = .resizeAspectFill
 
     func makeUIView(context: Context) -> PlayerUIView {
         let view = PlayerUIView()
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspectFill
+        view.playerLayer.videoGravity = videoGravity
         return view
     }
 
     func updateUIView(_ uiView: PlayerUIView, context: Context) {
         if uiView.playerLayer.player != player {
             uiView.playerLayer.player = player
+        }
+        if uiView.playerLayer.videoGravity != videoGravity {
+            uiView.playerLayer.videoGravity = videoGravity
         }
     }
 
@@ -429,7 +437,7 @@ struct FullScreenVideoPlayer: View {
                         .foregroundColor(.white)
                 }
             } else if let player = player {
-                InlinePlayerLayer(player: player)
+                InlinePlayerLayer(player: player, videoGravity: .resizeAspect)
                     .onTapGesture { togglePlayPause() }
 
                 // Momentary play/pause feedback icon

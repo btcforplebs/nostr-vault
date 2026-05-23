@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Viewer Filter Buttons Moved to Navigation Bar (iOS)**: The content filter controls (All, My Notes, Tagged, Whitelisted on Notes; Liked/My Likes on Likes; Zapped/My Zaps on Zaps; Upload on Media) have been moved from the inline header area into the trailing navigation bar, matching the icon-button style of the Feed toolbar. Each tab shows contextual SF Symbol icon buttons that turn `havenPurple` when active.
 
+### Fixed
+- **Full-Screen Video Aspect Ratio**: Tapping a video in the feed now plays it at its native aspect ratio instead of being cropped/zoomed to fill the screen. Horizontal videos no longer appear blown up in the full-screen viewer. Fixed by introducing a `videoGravity` parameter on `InlinePlayerLayer` and using `.resizeAspect` (letterbox) inside `FullScreenVideoPlayer`, while the inline feed cards continue to use `.resizeAspectFill`.
+
 ## [2.5.0 MacOS / 1.1 iOS (Build 3)] - 2026-05-23
 
 ### Added
