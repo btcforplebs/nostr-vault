@@ -5,84 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.5.0 MacOS / 1.1 iOS (Build 10)] - 2026-05-22
-
-### Fixed
-- **macOS Video Opacity**: Fixed videos appearing transparent/see-through on macOS by setting `isOpaque = true` on the AVPlayerLayer backing layer in `InlinePlayerLayer`.
-
-## [2.5.0 MacOS / 1.1 iOS (Build 9)] - 2026-05-22
-
-### Added
-- **Countdown Timers for User Actions**: Implemented dual countdown timers for both post creation and reposting. When a post is created, a 10-second countdown appears below it labeled "Post created - editing in Xs", giving users a window to edit or delete. When reposting, a 5-second countdown displays "Reposting in Xs" before the action is confirmed.
-- **Repost Icon Status Indicator**: The repost button (`arrow.2.squarepath`) now lights up green with a subtle scale animation when a post has been reposted, providing visual feedback similar to the liked heart icon. Tracked via new `repostedEventIds: Set<String>` in `FeedService`.
-
-### Changed
-- **Profile Switching UX**: Fixed unnecessary "Restart Required" banner that appeared when switching between profiles/accounts. The `activeAccountNpub` field is now excluded from the relay restart check, as it's an app-level preference, not a relay configuration change.
-
-## [2.5.0 MacOS / 1.1 iOS (Build 8)] - 2026-05-22
-
-### Fixed
-- **iOS Note Detail Text Wrapping & Font Size Fix**: Resolved a visual layout bug on iOS where the parsed markdown text inside `NoteDetailView` would scale excessively large under custom Dynamic Type profiles and overflow the screen boundaries horizontally. Fixed by locking the system font size to a highly readable 16 pt with standard color/spacing, and applying `.fixedSize(horizontal: false, vertical: true)` to ensure correct text wrapping behavior within dynamic SwiftUI scroll containers.
-
-## [2.5.0 MacOS / 1.1 iOS (Build 7)] - 2026-05-21
-
-### Changed
-- **App Renamed to Nostr Vault**: Completed front-facing rename from Haven to Nostr Vault. Updated `PRODUCT_NAME` in Xcode build settings (Debug + Release), all user-visible strings in `MenuBarView` ("Quit Nostr Vault", stale-process error, "Nostr Vault Relay" search tab label), the backup restore description in `SettingsView`, and both iOS privacy permission strings in `HavenApp-iOS/Info.plist`. Internal Go codebase, bundle identifiers, and Swift type names are unchanged.
-
-## [2.5.0 MacOS / 1.1 iOS (Build 6)] - 2026-05-21
-
-### Added
-- **Natural Aspect-Preserving Media Layouts**: Replaced rigid and square/letterboxed constraints for photos and GIFs in `FeedMediaView` with high-fidelity, aspect-aware bounds (`.aspectRatio(contentMode: .fit)`).
-- **Dual Landscape/Portrait Sizing Model**: Introduced an adaptive dual-height cap (`maxHeight: 400` / `portraitMaxHeight: 600`) so that portrait media can fill the available horizontal width naturally, while limiting extremely tall images to prevent feed drowning.
-- **Dedicated Sub-components for Media Rendering**: Refactored `FeedMediaView` to use isolated `FeedPhotoView` and `FeedGIFView` helpers, streamlining asynchronous loading, animation state, and layout calculations.
-
-### Changed
-- **Proactive Background Nostr Prefetching**: Overhauled threading performance by triggering asynchronous parent and quote note prefetching inside `FeedService.handleFeedMsgBackground`. Missing notes are fetched on background message processing immediately after events are parsed, dramatically speeding up scrolling loads for deep conversation trees.
-
-### Fixed
-- **Goofy Thread Spacing & Vertical Line Stretching**: Fixed a severe visual bug in `FeedView` / `FeedNoteRow` where reply rows containing photos or GIFs would stretch vertical layout boundaries and the thread connector line. Enforced rigid thread sizing (`width: 2, height: 14`) and applied `.fixedSize(horizontal: false, vertical: true)` on nested thread rows to ensure layout integrity.
-
-## [2.5.0 MacOS / 1.1 iOS (Build 5)] - 2026-05-21
-
-### Changed
-- **NIP-45 COUNT Query Integration**: Refactored the relay event-counting mechanism in `NostrService` to use NIP-45 `COUNT` queries instead of `REQ` subscriptions. This resolves the issue where server-enforced event limit caps on standard subscriptions caused incorrect and capped event counts.
-- **Unified Total Relay Events Stat**: Consolidated notes and reactions tracking on the dashboard into a single, comprehensive "Total Relay Events" metric, querying all event types with an empty filter payload.
-
-## [2.5.0 MacOS / 1.1 iOS (Build 4)] - 2026-05-21
-
-### Added
-- **Bidirectional Nostr Mute List Syncing (Kind 10000)**: Fully integrated Nostr Kind 10000 (Mute List) events. The app automatically fetches and merges remote mute lists on startup or profile fetch, and publishes signed Kind 10000 events to relays when blocking or unblocking an npub.
-- **Per-Account Block Lists**: Replaced the global blacklisted npubs list with a namespaced dictionary `blockedNpubsPerAccount` in `HavenConfig` to track block lists individually per active profile.
-- **Unified Blocked Accounts Settings Pane**: Added a new "Blocked" settings tab (`BlockedSettingsView`) displaying profile details, avatars, and search-to-block functionality for the active browsing account.
-
-### Changed
-- **Settings UI Consolidation**: Merged "Identity" and "Access Control" configuration tabs into a single unified "Accounts" settings pane (`AccountsSettingsView`).
-- **Implicit Account Whitelisting**: Added accounts (primary and secondary) are now implicitly whitelisted, eliminating the manual whitelisting step.
-- **Primary Owner Block Sync to Relay**: Configured the primary Owner's personal block list to sync directly to the Go relay's `blacklisted_npubs.json` file for backend connection-level rejection.
-
-## [2.5.0 MacOS / 1.1 iOS (Build 3)] - 2026-05-21
-
-### Added
-- **iOS Floating "Liquid Glass" Tab Bar**: Replaced the native system bottom tab bar on iOS with a premium, floating "Liquid Glass" tab bar featuring a rounded capsule design, `.ultraThinMaterial` blur background, a soft drop shadow, a white reflective gradient stroke overlay, and spring scale micro-animations for active buttons.
-- **Dynamic Profile Tab Avatar**: Upgraded the Profile navigation tab on iOS to display the active account's custom `AvatarView` instead of a static vector icon, dynamically updating in real-time when switching accounts.
-- **Tab Bar Profile Fast-Switching**: Integrated the multi-account selector into a hold (context menu) gesture directly on the bottom bar's Profile tab item, enabling effortless account switching from anywhere in the app.
-- **Real-Time Feed Reloading on Account Switch**: Configured `FeedService` to observe active Nostr identity shifts, automatically clearing feed caches, resetting relay subscriptions, and fetching the contact list for the newly selected account to refresh the following feed instantly.
-
-### Changed
-- **iOS Feed Header Cleanup**: Removed the legacy profile switcher dropdown from the top-left toolbar of the iOS feed view, leaving the connection status dot as a cleaner, dedicated indicator.
-
-## [2.5.0 MacOS / 1.1 iOS (Build 2)] - 2026-05-20
-
-### Added
-- **@mention Tagging in Compose**: Typing `@` while drafting a note now shows a live-filtered popup of followed users. Selecting a person inserts their `nostr:npub1…` mention token into the note body and automatically adds the corresponding `p` tag to the published event for proper Nostr mention routing.
-- **NIP-89 App Handler Client Tagging**: Implemented automatic NIP-89 client identification tagging by default for all signed and published Nostr events. The tag dynamically identifies the target environment, tagging as `"Nostr Vault on iPadOS"` on iPadOS, `"Nostr Vault on iOS"` on iOS, and `"Nostr Vault on MacOS"` on MacOS.
-
-### Fixed
-- **LNURL Resolution for LUD-16 Addresses**: Fixed incorrect fallback that used a profile's NIP-05 identifier as a Lightning address when `lud16` was absent. NIP-05 and LUD-16 share the same `user@domain.com` format but resolve to completely different endpoints — this caused silent zap failures for any account whose NIP-05 domain doesn't also serve LNURL-pay.
-- **LUD-06 (Raw LNURL) Zap Support**: Accounts that publish a raw bech32 `lnurl1…` string in the `lud06` metadata field (instead of a LUD-16 address) can now be zapped. `FeedProfile` stores `lud06`, `NostrService` parses it from Kind 0 metadata, and `LNURLService` decodes the bech32 payload to recover the HTTPS pay endpoint without a DNS lookup.
-- **MacOS Compilation Fixes**: Resolved MacOS build errors by replacing unsupported `.tabViewStyle(.page(...))` with `.mediaTabViewStyleCompat()` in `NoteDetailView` and `FeedView`, and wrapping the iOS-only `.navigationBarTitleDisplayMode(.inline)` modifier in a platform-check preprocessor macro inside `BitcoinSweepDisclaimerView`.
-
-## [2.5.0 MacOS / 1.1 iOS (Build 1)] - 2026-05-20
+## [2.5.0 MacOS / 1.1 iOS (Build 3)] - 2026-05-23
 
 ### Added
 - **Bitcoin Taproot Address Derivation**: Implemented native BIP-341 key-path-only Taproot (P2TR) address derivation from the user's Nostr secp256k1 public key in `haven-go/bitcoin.go`. Uses `btcsuite/btcd` for all cryptographic operations — no external process required.
@@ -98,6 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Repost Toggle**: Added a dedicated `arrow.2.squarepath` toolbar button in the iOS Feed toolbar to quickly show/hide reposts inline.
 - **Go Module: Bitcoin Dependencies**: Added `btcsuite/btcd`, `btcsuite/btcutil`, and `decred/dcrd/dcrec/secp256k1` to `haven-go/go.mod` / `go.sum` for the on-chain transaction layer.
 - **C-Shared Bridge Export**: Exported the Bitcoin sweep and address derivation functions via `haven-go/cshared.go` so they are callable from Swift through the embedded `libhaven.a` bridge.
+- **@mention Tagging in Compose**: Typing `@` while drafting a note now shows a live-filtered popup of followed users. Selecting a person inserts their `nostr:npub1…` mention token into the note body and automatically adds the corresponding `p` tag to the published event for proper Nostr mention routing.
+- **NIP-89 App Handler Client Tagging**: Implemented automatic NIP-89 client identification tagging by default for all signed and published Nostr events. The tag dynamically identifies the target environment, tagging as `"Nostr Vault on iPadOS"` on iPadOS, `"Nostr Vault on iOS"` on iOS, and `"Nostr Vault on MacOS"` on MacOS.
+- **Bidirectional Nostr Mute List Syncing (Kind 10000)**: Fully integrated Nostr Kind 10000 (Mute List) events. The app automatically fetches and merges remote mute lists on startup or profile fetch, and publishes signed Kind 10000 events to relays when blocking or unblocking an npub.
+- **Per-Account Block Lists**: Replaced the global blacklisted npubs list with a namespaced dictionary `blockedNpubsPerAccount` in `HavenConfig` to track block lists individually per active profile.
+- **Unified Blocked Accounts Settings Pane**: Added a new "Blocked" settings tab (`BlockedSettingsView`) displaying profile details, avatars, and search-to-block functionality for the active browsing account.
+- **Natural Aspect-Preserving Media Layouts**: Replaced rigid and square/letterboxed constraints for photos and GIFs in `FeedMediaView` with high-fidelity, aspect-aware bounds (`.aspectRatio(contentMode: .fit)`).
+- **Dual Landscape/Portrait Sizing Model**: Introduced an adaptive dual-height cap (`maxHeight: 400` / `portraitMaxHeight: 600`) so that portrait media can fill the available horizontal width naturally, while limiting extremely tall images to prevent feed drowning.
+- **Dedicated Sub-components for Media Rendering**: Refactored `FeedMediaView` to use isolated `FeedPhotoView` and `FeedGIFView` helpers, streamlining asynchronous loading, animation state, and layout calculations.
+- **Countdown Timers for User Actions**: Implemented dual countdown timers for both post creation and reposting. When a post is created, a 10-second countdown appears below it labeled "Post created - editing in Xs", giving users a window to edit or delete. When reposting, a 5-second countdown displays "Reposting in Xs" before the action is confirmed.
+- **Repost Icon Status Indicator**: The repost button (`arrow.2.squarepath`) now lights up green with a subtle scale animation when a post has been reposted, providing visual feedback similar to the liked heart icon. Tracked via new `repostedEventIds: Set<String>` in `FeedService`.
+- **iOS Floating "Liquid Glass" Tab Bar**: Replaced the native system bottom tab bar on iOS with a premium, floating "Liquid Glass" tab bar featuring a rounded capsule design, `.ultraThinMaterial` blur background, a soft drop shadow, a white reflective gradient stroke overlay, and spring scale micro-animations for active buttons.
+- **Dynamic Profile Tab Avatar**: Upgraded the Profile navigation tab on iOS to display the active account's custom `AvatarView` instead of a static vector icon, dynamically updating in real-time when switching accounts.
+- **Tab Bar Profile Fast-Switching**: Integrated the multi-account selector into a hold (context menu) gesture directly on the bottom bar's Profile tab item, enabling effortless account switching from anywhere in the app.
+- **Real-Time Feed Reloading on Account Switch**: Configured `FeedService` to observe active Nostr identity shifts, automatically clearing feed caches, resetting relay subscriptions, and fetching the contact list for the newly selected account to refresh the following feed instantly.
+- **App Renamed to Nostr Vault**: Completed front-facing rename from Haven to Nostr Vault. Updated `PRODUCT_NAME` in Xcode build settings (Debug + Release), all user-visible strings in `MenuBarView` ("Quit Nostr Vault", stale-process error, "Nostr Vault Relay" search tab label), the backup restore description in `SettingsView`, and both iOS privacy permission strings in `HavenApp-iOS/Info.plist`. Internal Go codebase, bundle identifiers, and Swift type names are unchanged.
+- **iOS Note Detail Text Wrapping & Font Size Fix**: Resolved a visual layout bug on iOS where the parsed markdown text inside `NoteDetailView` would scale excessively large under custom Dynamic Type profiles and overflow the screen boundaries horizontally. Fixed by locking the system font size to a highly readable 16 pt with standard color/spacing, and applying `.fixedSize(horizontal: false, vertical: true)` to ensure correct text wrapping behavior within dynamic SwiftUI scroll containers.
+- **macOS Video Opacity**: Fixed videos appearing transparent/see-through on macOS by setting `isOpaque = true` on the AVPlayerLayer backing layer in `InlinePlayerLayer`.
+- **Blossom Storage Breakdown**: Added an interactive breakdown modal in the Dashboard that categorizes stored blobs by media type (Images, Videos, Audio, Other), showing both count and storage size per category.
 
 ### Changed
 - **Bitcoin Sweep Refactored into Disclaimer+Action Pattern**: Replaced the old `BitcoinSweepView` with a two-step flow — `BitcoinSweepDisclaimerView` (balance confirmation) leading to the sweep action — triggered as a sheet from `SettingsView`. Removed all deprecated `BitcoinSweepView.swift` duplicates (`Views/`, `Views/Components/`, `HavenApp/` root).
@@ -118,6 +59,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HavenConfig Model Extended**: Added `autoLoadNewPosts` and `showReposts` boolean fields to `HavenConfig.swift` for the new toolbar toggles.
 - **MediaItem Model**: Minor additions to `MediaItem.swift` for improved MIME / source tagging.
 - **FeedProfile Model**: Small additions to `FeedProfile.swift` for search result rendering.
+- **Settings UI Consolidation**: Merged "Identity" and "Access Control" configuration tabs into a single unified "Accounts" settings pane (`AccountsSettingsView`).
+- **Implicit Account Whitelisting**: Added accounts (primary and secondary) are now implicitly whitelisted, eliminating the manual whitelisting step.
+- **Primary Owner Block Sync to Relay**: Configured the primary Owner's personal block list to sync directly to the Go relay's `blacklisted_npubs.json` file for backend connection-level rejection.
+- **Proactive Background Nostr Prefetching**: Overhauled threading performance by triggering asynchronous parent and quote note prefetching inside `FeedService.handleFeedMsgBackground`. Missing notes are fetched on background message processing immediately after events are parsed, dramatically speeding up scrolling loads for deep conversation trees.
+- **NIP-45 COUNT Query Integration**: Refactored the relay event-counting mechanism in `NostrService` to use NIP-45 `COUNT` queries instead of `REQ` subscriptions. This resolves the issue where server-enforced event limit caps on standard subscriptions caused incorrect and capped event counts.
+- **Unified Total Relay Events Stat**: Consolidated notes and reactions tracking on the dashboard into a single, comprehensive "Total Relay Events" metric, querying all event types with an empty filter payload.
+- **Profile Switching UX**: Fixed unnecessary "Restart Required" banner that appeared when switching between profiles/accounts. The `activeAccountNpub` field is now excluded from the relay restart check, as it's an app-level preference, not a relay configuration change.
+- **iOS Feed Header Cleanup**: Removed the legacy profile switcher dropdown from the top-left toolbar of the iOS feed view, leaving the connection status dot as a cleaner, dedicated indicator.
+- **Improved Likes/Zaps Loading States**: Enhanced ViewerView with debounced settle states (1.5s) for likes and zaps lists to prevent spinner flashing during real-time updates. Prevents unnecessary UI thrashing when content has already been displayed.
 
 ### Fixed
 - **GIF Spacing Bug**: Resolved unintended top padding above GIF content in `FeedNoteRow` / `feedMediaCarousel` by correcting the `AnimatedImage` frame modifier chain.
@@ -125,6 +75,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Search Bar Keyboard Dismissal**: Added `@FocusState` management to the viewer/search inputs so tapping the list or the ✕ clear button properly dismisses the keyboard.
 - **ZapNotifier Relay Integration**: Fixed `ZapNotificationBanner` to properly subscribe to the Haven relay's WebSocket for incoming zap receipts and update pill state (`Zapping… → Zapped! / Zap failed`) in real-time.
 - **Carousel Image Swiping**: Fixed swipe gesture recognizer conflict in `FeedMediaView` carousels so horizontal swipes page between images without accidentally triggering vertical scroll.
+- **Goofy Thread Spacing & Vertical Line Stretching**: Fixed a severe visual bug in `FeedView` / `FeedNoteRow` where reply rows containing photos or GIFs would stretch vertical layout boundaries and the thread connector line. Enforced rigid thread sizing (`width: 2, height: 14`) and applied `.fixedSize(horizontal: false, vertical: true)` on nested thread rows to ensure layout integrity.
+- **LNURL Resolution for LUD-16 Addresses**: Fixed incorrect fallback that used a profile's NIP-05 identifier as a Lightning address when `lud16` was absent. NIP-05 and LUD-16 share the same `user@domain.com` format but resolve to completely different endpoints — this caused silent zap failures for any account whose NIP-05 domain doesn't also serve LNURL-pay.
+- **LUD-06 (Raw LNURL) Zap Support**: Accounts that publish a raw bech32 `lnurl1…` string in the `lud06` metadata field (instead of a LUD-16 address) can now be zapped. `FeedProfile` stores `lud06`, `NostrService` parses it from Kind 0 metadata, and `LNURLService` decodes the bech32 payload to recover the HTTPS pay endpoint without a DNS lookup.
+- **MacOS Compilation Fixes**: Resolved MacOS build errors by replacing unsupported `.tabViewStyle(.page(...))` with `.mediaTabViewStyleCompat()` in `NoteDetailView` and `FeedView`, and wrapping the iOS-only `.navigationBarTitleDisplayMode(.inline)` modifier in a platform-check preprocessor macro inside `BitcoinSweepDisclaimerView`.
 
 ## [2.4.0 macOS / 1.0 iOS (Build 7)] - 2026-05-19
 

@@ -14,6 +14,7 @@ struct DashboardView: View {
     @State private var relaysExpanded = false
     @State private var statusAnimate = false
     @State private var showingKindBreakdown = false
+    @State private var showingBlossomBreakdown = false
     
     var isSidebar: Bool = false
     
@@ -63,6 +64,11 @@ struct DashboardView: View {
             EventKindBreakdownView()
                 .environmentObject(statsService)
         }
+        .sheet(isPresented: $showingBlossomBreakdown) {
+            BlossomBreakdownView()
+                .environmentObject(statsService)
+                .environmentObject(configService)
+        }
     }
 
     #if os(macOS)
@@ -101,7 +107,8 @@ struct DashboardView: View {
                     title: "Blossom Storage",
                     value: statsService.formattedBlossomSize,
                     icon: "server.rack",
-                    color: .green
+                    color: .green,
+                    action: { showingBlossomBreakdown = true }
                 )
                 
                 StatsCard(
@@ -363,7 +370,7 @@ struct DashboardView: View {
                         LazyVGrid(columns: columns, spacing: 8) {
                             StatsCard(title: "Total Relay Events", value: "\(statsService.loadedEventsCount)", icon: "doc.text.fill", color: Color.havenPurple, isLoading: statsService.isUpdatingCount && statsService.loadedEventsCount == 0, action: { showingKindBreakdown = true })
                             StatsCard(title: "Storage Used", value: statsService.formattedStorageSize, icon: "internaldrive.fill", color: .blue)
-                            StatsCard(title: "Blossom Storage", value: statsService.formattedBlossomSize, icon: "server.rack", color: .green)
+                            StatsCard(title: "Blossom Storage", value: statsService.formattedBlossomSize, icon: "server.rack", color: .green, action: { showingBlossomBreakdown = true })
                             StatsCard(title: "Media Cache", value: statsService.formattedCacheSize, icon: "photo.stack.fill", color: .orange)
                         }
                         .padding(.horizontal)
@@ -1139,6 +1146,184 @@ struct EventKindBreakdownView: View {
         isLoading = true
         counts = await statsService.fetchCountsByKind()
         isLoading = false
+    }
+}
+
+struct BlossomBreakdownView: View {
+    @EnvironmentObject var statsService: StatsService
+    @EnvironmentObject var configService: ConfigService
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var blobs: [BlobDescriptor] = []
+    @State private var isLoading = true
+
+    private var totalCount: Int { blobs.count }
+    private var totalSize: Int { blobs.compactMap(\.size).reduce(0, +) }
+
+    private struct TypeBucket {
+        let label: String
+        let icon: String
+        let color: Color
+        let count: Int
+        let size: Int
+    }
+
+    private var buckets: [TypeBucket] {
+        var images = (count: 0, size: 0), videos = (count: 0, size: 0), audio = (count: 0, size: 0), other = (count: 0, size: 0)
+        for blob in blobs {
+            let t = blob.type ?? ""
+            let s = blob.size ?? 0
+            if t.hasPrefix("image/") { images.count += 1; images.size += s }
+            else if t.hasPrefix("video/") { videos.count += 1; videos.size += s }
+            else if t.hasPrefix("audio/") { audio.count += 1; audio.size += s }
+            else { other.count += 1; other.size += s }
+        }
+        return [
+            TypeBucket(label: "Images", icon: "photo.fill", color: .blue, count: images.count, size: images.size),
+            TypeBucket(label: "Videos", icon: "video.fill", color: .orange, count: videos.count, size: videos.size),
+            TypeBucket(label: "Audio", icon: "waveform", color: .purple, count: audio.count, size: audio.size),
+            TypeBucket(label: "Other", icon: "doc.fill", color: .secondary, count: other.count, size: other.size),
+        ].filter { $0.count > 0 }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.08, green: 0.08, blue: 0.1).ignoresSafeArea()
+
+                if isLoading {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .controlSize(.large)
+                            .tint(Color.havenPurple)
+                        Text("Counting blobs…")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(totalCount)")
+                                        .font(.system(size: 28, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                    Text("Total Blobs")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text(ByteCountFormatter.string(fromByteCount: Int64(totalSize), countStyle: .file))
+                                        .font(.system(size: 28, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                    Text("Total Size")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .padding(16)
+                            .background(Color.havenPurple.opacity(0.1))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                            .padding(.top, 12)
+
+                            VStack(spacing: 1) {
+                                ForEach(buckets, id: \.label) { bucket in
+                                    BlobTypeRow(
+                                        label: bucket.label,
+                                        icon: bucket.icon,
+                                        color: bucket.color,
+                                        count: bucket.count,
+                                        size: bucket.size,
+                                        total: totalSize
+                                    )
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 24)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Blob Breakdown")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: { Task { await reload() } }) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .disabled(isLoading)
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 520, idealWidth: 560, minHeight: 560, idealHeight: 640)
+        #endif
+        .task { await reload() }
+    }
+
+    private func reload() async {
+        isLoading = true
+        let pubkey = configService.activeAccountHexPubkey
+        blobs = await statsService.fetchBlobList(for: pubkey)
+        isLoading = false
+    }
+}
+
+private struct BlobTypeRow: View {
+    let label: String
+    let icon: String
+    let color: Color
+    let count: Int
+    let size: Int
+    let total: Int
+
+    private var sizePercent: Double {
+        guard total > 0 else { return 0 }
+        return Double(size) / Double(total)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(color)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                Text("\(count) \(count == 1 ? "blob" : "blobs")")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundColor(color)
+                Text(String(format: "%.1f%%", sizePercent * 100))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(red: 0.12, green: 0.12, blue: 0.12).opacity(0.6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.white.opacity(0.04), lineWidth: 0.5)
+        )
+        .cornerRadius(8)
     }
 }
 

@@ -341,4 +341,18 @@ class StatsService: ObservableObject {
     var formattedCacheSize: String {
         ByteCountFormatter.string(fromByteCount: cacheSize, countStyle: .file)
     }
+
+    func fetchBlobList(for hexPubkey: String) async -> [BlobDescriptor] {
+        let config = ConfigService.shared.config
+        #if os(macOS)
+        let baseURLString = "http://127.0.0.1:\(config.relayPort)"
+        let session = URLSession.shared
+        #else
+        let baseURLString = "https://127.0.0.1:\(config.relayPort)"
+        let session = URLSession(configuration: .default, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
+        #endif
+        guard let url = URL(string: "\(baseURLString)/list/\(hexPubkey)") else { return [] }
+        guard let (data, _) = try? await session.data(from: url) else { return [] }
+        return (try? JSONDecoder().decode([BlobDescriptor].self, from: data)) ?? []
+    }
 }

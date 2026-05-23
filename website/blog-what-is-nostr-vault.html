@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What Is Nostr Vault? — The Personal Relay You Actually Control</title>
+    <meta name="description" content="A deep dive into what Nostr Vault does: a personal Nostr relay for Mac and iOS with four relay types, Blossom media hosting, Lightning zaps, and native on-chain Bitcoin sweeps derived from your nsec.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="assets/haven_icon.png">
+    <style>
+        /* Blog-specific layout overrides */
+        .blog-hero {
+            min-height: auto;
+            padding: 120px 20px 60px;
+            text-align: center;
+        }
+
+        .blog-hero h1 {
+            font-size: 3.6rem;
+            max-width: 900px;
+            margin: 0 auto 20px;
+            line-height: 1.15;
+        }
+
+        .blog-meta {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-bottom: 16px;
+        }
+
+        .blog-tagline {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            max-width: 680px;
+            margin: 0 auto;
+        }
+
+        /* Article body */
+        .article-wrapper {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 60px 20px 120px;
+        }
+
+        .article-wrapper h2 {
+            font-size: 2rem;
+            font-weight: 800;
+            margin: 60px 0 18px;
+            letter-spacing: -0.5px;
+            background: linear-gradient(180deg, #fff 0%, #bbb 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .article-wrapper h3 {
+            font-size: 1.35rem;
+            font-weight: 700;
+            margin: 40px 0 12px;
+            color: #fff;
+        }
+
+        .article-wrapper p {
+            font-size: 1.1rem;
+            line-height: 1.8;
+            color: var(--text-secondary);
+            margin-bottom: 22px;
+        }
+
+        .article-wrapper strong {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .article-wrapper a {
+            color: #FF6B2B;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+
+        .article-wrapper a:hover {
+            color: #FF8C00;
+        }
+
+        .article-wrapper ul,
+        .article-wrapper ol {
+            margin: 0 0 22px 24px;
+        }
+
+        .article-wrapper li {
+            font-size: 1.1rem;
+            line-height: 1.8;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .article-wrapper li strong {
+            color: #fff;
+        }
+
+        .article-wrapper code {
+            background: rgba(255,255,255,0.07);
+            border: 1px solid var(--glass-border);
+            padding: 2px 7px;
+            border-radius: 5px;
+            font-size: 0.92em;
+            font-family: "SF Mono", "Fira Code", monospace;
+            color: #e0e0e0;
+        }
+
+        .article-wrapper blockquote {
+            border-left: 3px solid #FF6B2B;
+            padding: 16px 24px;
+            margin: 32px 0;
+            background: rgba(255, 107, 43, 0.06);
+            border-radius: 0 12px 12px 0;
+        }
+
+        .article-wrapper blockquote p {
+            margin: 0;
+            font-style: italic;
+            color: #ccc;
+        }
+
+        /* Relay type grid */
+        .relay-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin: 32px 0 40px;
+        }
+
+        .relay-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 28px 32px;
+            border-radius: 16px;
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+        }
+
+        .relay-card .relay-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .relay-card.private .relay-label { color: #bb86fc; }
+        .relay-card.chat    .relay-label { color: #03dac6; }
+        .relay-card.inbox   .relay-label { color: #61afef; }
+        .relay-card.outbox  .relay-label { color: #e5c07b; }
+
+        .relay-card h4 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        .relay-card p {
+            font-size: 0.95rem;
+            line-height: 1.65;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        /* Divider */
+        .section-divider {
+            height: 1px;
+            background: var(--glass-border);
+            margin: 60px 0;
+        }
+
+        /* Pull quote */
+        .pull-quote {
+            font-size: 1.5rem;
+            font-weight: 700;
+            line-height: 1.4;
+            text-align: center;
+            padding: 40px 20px;
+            color: #fff;
+            letter-spacing: -0.3px;
+        }
+
+        .pull-quote span {
+            background: linear-gradient(135deg, #FF2E00 0%, #FF8C00 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Back link */
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 40px;
+            transition: color 0.2s ease;
+        }
+
+        .back-link:hover {
+            color: #fff;
+        }
+
+        /* CTA strip at bottom */
+        .blog-cta {
+            text-align: center;
+            padding: 80px 20px;
+            background: linear-gradient(180deg, transparent 0%, rgba(255, 69, 0, 0.05) 100%);
+        }
+
+        .blog-cta h2 {
+            font-size: 2.4rem;
+            font-weight: 800;
+            margin-bottom: 14px;
+        }
+
+        .blog-cta p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            max-width: 540px;
+            margin: 0 auto 28px;
+        }
+
+        .blog-cta .cta-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .blog-hero h1 { font-size: 2.4rem; }
+            .article-wrapper { padding: 40px 16px 80px; }
+            .article-wrapper h2 { font-size: 1.6rem; margin-top: 40px; }
+            .pull-quote { font-size: 1.2rem; }
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="logo">
+            <img src="assets/haven_icon.png" alt="Nostr Vault Logo">
+            <span>NOSTR VAULT</span>
+        </div>
+        <div class="actions">
+            <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn-testflight"
+                style="padding: 10px 20px; border-radius: 20px; font-weight: 600; font-size: 0.9rem; margin-right: 10px;">TestFlight</a>
+            <a href="https://github.com/btcforplebs/haven-mac" class="btn-download">GitHub</a>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <header class="hero blog-hero">
+        <p class="blog-meta">May 2026 &nbsp;·&nbsp; Deep Dive</p>
+        <h1>What Is Nostr Vault?<br>The Personal Relay You Actually Control.</h1>
+        <p class="blog-tagline">A plain-language walkthrough of everything Nostr Vault does &mdash; from running four relay types in a single app to sweeping on-chain Bitcoin straight from your nsec.</p>
+    </header>
+
+    <!-- Article -->
+    <article class="article-wrapper">
+
+        <a href="index.html" class="back-link">← Back to Home</a>
+
+        <p>
+            Most people on Nostr post their notes to public relays they don't own. Those relays go down, get
+            censored, start charging, or simply disappear &mdash; and so do the notes on them. Every like, every
+            reply, every DM you've ever sent exists only as long as a stranger chooses to keep it online. That's
+            not sovereignty. That's renting a shelf in someone else's storage unit and hoping they don't change
+            the locks.
+        </p>
+
+        <p>
+            <strong>Nostr Vault is a personal Nostr relay.</strong> Its primary job is to run on your own hardware
+            &mdash; your Mac, your iPhone &mdash; and act as a permanent home for every note you post, receive, or
+            get tagged in, regardless of what happens to the public relays where those notes originally appeared.
+            It watches the network, pulls notes that mention you, stores them locally, and keeps them safe. The
+            notes survive because <em>you</em> keep them, not because some relay operator happens to.
+        </p>
+
+        <blockquote>
+            <p>Think of Nostr Vault less like a Twitter client and more like a personal mail server &mdash; one that
+            also has a built-in email app for reading and writing. The relay and the backup system are the core;
+            the client is a bonus that comes with the package.</p>
+        </blockquote>
+
+        <p>
+            Yes, Nostr Vault includes a full feed, compose view, zaps, and media viewer. You can use it as your
+            daily Nostr client. But that's not what makes it different from every other Nostr app. What makes it
+            different is that everything you do flows through a relay <em>you control</em>, and your notes exist on
+            infrastructure <em>you own</em>.
+        </p>
+
+        <h2>Why a Personal Relay Matters</h2>
+
+        <p>
+            Nostr is a protocol, not a platform. The protocol guarantees that your identity (your key pair) is
+            yours forever &mdash; no one can take it. But the protocol doesn't guarantee that your <em>notes</em> are
+            preserved anywhere. Notes live on relays. Relays are servers. Servers go offline.
+        </p>
+
+        <p>
+            The standard advice is to post to multiple public relays so your notes are redundant. That helps, but
+            it doesn't solve the underlying problem: you're still dependent on relays you don't control, and those
+            relays don't actively watch the network to collect <em>all</em> events that involve you. If someone
+            replies to your note on a relay you don't monitor, you might never see that reply. If a zap receipt
+            lands on a relay that goes offline before you sync, it's gone.
+        </p>
+
+        <p>
+            A personal relay solves this differently. It's <strong>your</strong> server, running on hardware you
+            own. It actively pulls events that tag you from the broader network. When you post a note, it gets
+            stored locally <em>first</em> and blasted to the network second &mdash; so even if every public relay
+            vanished tomorrow, your notes would still exist on your device. Other clients can connect to your relay
+            directly and fetch your full history. Your relay is your source of truth.
+        </p>
+
+        <h2>Where It Came From</h2>
+
+        <p>
+            The Go code at the heart of Nostr Vault comes from
+            <a href="https://github.com/bitvora/haven" target="_blank" rel="noopener">bitvora/haven</a> &mdash; HAVEN
+            (High Availability Vault for Events on Nostr), the most sovereign personal relay in the Nostr ecosystem.
+            That codebase is MIT-licensed, community-audited, and runs relay infrastructure for some of the most
+            privacy-conscious people on Nostr.
+        </p>
+
+        <p>
+            The Mac and iOS wrapper is a fork that does something technically unusual: instead of shipping the Go relay
+            as a separate process or a Docker container, it compiles the entire Go codebase into a static C library
+            (<code>libhaven.a</code>) and links it <em>directly</em> into the Swift app binary. One process. No helper
+            daemons. No orphaned background jobs. The relay and the UI are a single executable that you can
+            cryptographically verify yourself.
+        </p>
+
+        <h2>The Four Relay Model</h2>
+
+        <p>
+            Most relays do one thing: accept events and serve them back. Nostr Vault runs <strong>four distinct relay
+            types simultaneously</strong>, each with its own access rules, purpose, and endpoint. Together they give you
+            complete control over who can read your notes, who can write to your relay, and where your messages get
+            stored.
+        </p>
+
+        <div class="relay-grid">
+            <div class="relay-card private">
+                <div class="relay-label">Private Relay</div>
+                <h4>Your locked vault</h4>
+                <p>Only the relay owner and explicitly whitelisted npubs can read or write here. Protected by NIP-42
+                   Auth. Use it for eCash tokens, draft notes, encrypted messages, or anything you never want a
+                   third party to see.</p>
+            </div>
+            <div class="relay-card chat">
+                <div class="relay-label">Chat Relay</div>
+                <h4>Trust-gated DMs</h4>
+                <p>Accepts only encrypted DMs and group chat events (NIP-04 and NIP-17 kinds). Anyone in your
+                   Web of Trust can reach you here, but strangers are locked out automatically by Auth.</p>
+            </div>
+            <div class="relay-card inbox">
+                <div class="relay-label">Inbox Relay</div>
+                <h4>Where the world tags you</h4>
+                <p>Zaps, reactions, replies &mdash; any event that tags the relay owner or a whitelisted npub arrives
+                   here. The relay actively pulls tagged notes from other relays so your inbox is always complete,
+                   even when you're offline.</p>
+            </div>
+            <div class="relay-card outbox">
+                <div class="relay-label">Outbox Relay</div>
+                <h4>Your public broadcast tower</h4>
+                <p>Your notes live here and are publicly readable by anyone. When you publish, your note is
+                   simultaneously "blasted" outward to your configured list of seed relays, ensuring maximum
+                   reach across the Nostr network.</p>
+            </div>
+        </div>
+
+        <p>
+            This isn't just theoretical structure &mdash; every relay type runs on a separate endpoint under the same
+            local server, so your Nostr client can connect to each one independently. The private relay at
+            <code>/private</code> is completely unreachable to anyone who doesn't have your credentials, while the
+            outbox at <code>/</code> can be publicly advertised in your Kind&nbsp;10002 relay list.
+        </p>
+
+        <h2>Blossom: A Built-in Media Server</h2>
+
+        <p>
+            Text-only Nostr isn't enough for most people. Nostr Vault ships a full <strong>Blossom media server</strong>
+            (BUD-02 compliant) alongside the relay. When you post a photo or a video, it gets uploaded to your own
+            Blossom instance first, then mirrored to one or more public Blossom hosts you configure. The URL that goes
+            into your note points to an external mirror &mdash; so even if your local relay is offline, your media
+            stays visible.
+        </p>
+
+        <p>
+            Upload authentication uses Nostr's BUD-02 spec: a signed kind&nbsp;24242 event with operation-type tags,
+            a SHA-256 hash of the file, and an expiration time. Only you (and whitelisted npubs) can upload. Anyone
+            can view. Media files are stored on-device and can be exported, backed up, or migrated at any time.
+        </p>
+
+        <p>
+            The media viewer inside the app supports images, GIFs (with animated playback), videos, and audio files.
+            MIME types are detected via both file extension and magic bytes, so extensionless Blossom hashes display
+            correctly without guessing.
+        </p>
+
+        <h2>Web of Trust: Spam Protection That Doesn't Rely on Centralized Lists</h2>
+
+        <p>
+            Nostr is permissionless by design, which means without some kind of filter, your relay would fill up with
+            spam and unsolicited content immediately. Nostr Vault uses a <strong>Web of Trust (WoT)</strong> system
+            derived from your follow graph to decide who can reach you.
+        </p>
+
+        <p>
+            The idea is simple: if you follow someone, or if someone you follow follows them, they're in your WoT.
+            The chat and inbox relays enforce this automatically &mdash; someone three hops outside your graph can't
+            drop a DM into your inbox. You configure the depth (how many hops counts as "trusted") and the refresh
+            interval (daily, weekly, etc.) from the Settings panel. The WoT graph is cached locally so startup is fast
+            even when the network is slow.
+        </p>
+
+        <p>
+            For finer control, you can supplement WoT with explicit <strong>whitelist and blacklist</strong> management.
+            Whitelisted npubs get full relay access regardless of WoT status. Blacklisted npubs are rejected at the
+            connection level before they can even send a message. Blocks are per-account and sync to the Nostr
+            Kind&nbsp;10000 mute list, so your blocks stay consistent across other Nostr clients too.
+        </p>
+
+        <h2>Lightning Zaps and NWC</h2>
+
+        <p>
+            Nostr Vault integrates <strong>Lightning payments</strong> through Nostr Wallet Connect (NWC). Connect
+            your existing Lightning wallet &mdash; Alby, Mutiny, or any NWC-compatible wallet &mdash; and you can
+            send zaps directly from the feed, note detail, or profile view.
+        </p>
+
+        <p>
+            Zapping is not a background operation you fire and forget. There's a live animated notification banner
+            that tracks each payment in real-time: <em>Zapping&hellip;</em> transitions to <em>Zapped!</em> (or
+            <em>Zap failed</em>) with a pulsing lightning bolt animation. Zap history is tracked per-account and
+            displayed in dedicated Likes &amp; Zaps tabs with stacked avatar previews and satoshi totals.
+        </p>
+
+        <p>
+            When you reply or react to someone else's note, Nostr Vault automatically fetches their Kind&nbsp;10002
+            relay configuration and delivers your response to their inbox relays directly. Your zap or reply doesn't
+            just go to a generic public relay and hope for the best &mdash; it goes where the recipient actually reads.
+        </p>
+
+        <div class="pull-quote">
+            Your nsec is your key to the Lightning network. And, now,
+            <span>your key to the Bitcoin blockchain.</span>
+        </div>
+
+        <h2>On-chain Bitcoin: Your nsec Is Your Wallet</h2>
+
+        <p>
+            This is the feature that makes Nostr Vault unlike any other Nostr client. Your Nostr private key
+            (<code>nsec</code>) is a secp256k1 key pair &mdash; the same cryptographic primitive that Bitcoin uses.
+            Nostr Vault takes that insight seriously.
+        </p>
+
+        <p>
+            Inside the embedded Go relay, there is a native <strong>BIP-341 Taproot (P2TR) address derivation</strong>
+            routine. Using <code>btcsuite/btcd</code>, it derives a key-path-only Taproot address directly from your
+            Nostr public key. You get a real Bitcoin address you can receive funds to &mdash; no separate wallet app,
+            no hardware device, no seed phrase import.
+        </p>
+
+        <p>
+            When you're ready to move the coins, the <strong>Bitcoin Sweep</strong> flow:
+        </p>
+
+        <ol>
+            <li>Fetches your UTXOs from a self-hosted Mempool instance you configure.</li>
+            <li>Displays your spendable balance in sats and the live BTC/USD fiat equivalent.</li>
+            <li>Constructs a raw Taproot transaction using key-path spending (<code>tapTweakHash</code>).</li>
+            <li>Signs it with Schnorr signatures using your nsec (the same key you use to sign Nostr events).</li>
+            <li>Broadcasts the transaction directly to the network.</li>
+        </ol>
+
+        <p>
+            No external process. No browser extension. No third-party signing service. The entire transaction lifecycle
+            happens inside the app, in the same Go code that runs your relay. The sweep also renders on-chain Taproot
+            zap receipts alongside standard Lightning zap receipts in the UI, so the two payment rails feel
+            equally first-class.
+        </p>
+
+        <p>
+            This is not a replacement for a dedicated Bitcoin wallet with proper UTXO management and coin control.
+            It's a <em>sweep</em> tool for moving funds you've accumulated at your nsec-derived address into a wallet
+            of your choice. The Bitcoin address is deterministic from your nsec, which means it's always recoverable
+            and always yours.
+        </p>
+
+        <h2>Keys, Encryption, and the Keychain</h2>
+
+        <p>
+            Your private key is the most sensitive piece of data on your device. Nostr Vault never stores your nsec
+            in plaintext. It uses <strong>NIP-49 encryption</strong> (<code>ncryptsec</code>) to wrap your key with
+            a password you choose, using scrypt as the key derivation function.
+        </p>
+
+        <p>
+            The password itself lives in the <strong>macOS or iOS system Keychain</strong>, not in app storage or
+            iCloud sync. When you open the app, the Keychain supplies the password to decrypt the ncryptsec, the
+            key is used for signing, and then it's discarded &mdash; it never sits in memory longer than necessary and
+            never touches the filesystem in readable form.
+        </p>
+
+        <p>
+            For multi-account setups, each identity is stored separately. You can fast-switch between accounts from
+            anywhere in the app using a long-press on the Profile tab on iOS, or the account selector in the Mac
+            sidebar. Each account has its own block list, its own relay configuration, and its own cached WoT graph.
+        </p>
+
+        <h2>The Built-in Client: A Bonus, Not the Point</h2>
+
+        <p>
+            Because Nostr Vault already has your keys and your relay, it can also function as your primary Nostr
+            client &mdash; and it does. But it's worth being honest about the hierarchy here: the relay comes first.
+            The client exists so you don't <em>need</em> a separate app to use your relay. If you already have a
+            Nostr client you love, connect it to your Nostr Vault relay and keep using it. Your relay will still
+            back up everything you post there.
+        </p>
+
+        <p>
+            For those who do use the built-in client, it's fully-featured: Following and Global feed modes, real-time
+            note streaming, threaded replies with visual connectors, reposts with expanded parent notes, and live
+            engagement stats fetched via NIP-45 <code>COUNT</code> queries (which give accurate counts instead of
+            the capped results you get from standard subscription limits).
+        </p>
+
+        <p>
+            Composing a note supports live <code>@mention</code> tagging from your follow list, emoji picker
+            integration, and automatic NIP-89 client tagging. When you reply or react to someone, Nostr Vault
+            looks up their Kind&nbsp;10002 relay list and delivers your response to their actual inbox relays rather
+            than hoping they happen to read from wherever you publish.
+        </p>
+
+        <p>
+            The UI adapts to each platform. On Mac, the relay lives in the menu bar; the main interface is a
+            popout window with a sidebar, a dedicated Search tab, and multi-source search across users, notes,
+            links, and hashtags. On iPhone it's a floating "Liquid Glass" tab bar with spring animations. On iPad
+            it's a full <code>NavigationSplitView</code> sidebar layout. Every platform gets a native experience,
+            not a web view wrapper.
+        </p>
+
+        <h2>Mac as Your Always-On Home Base</h2>
+
+        <p>
+            The most powerful configuration is a Mac running Nostr Vault 24/7 behind a domain name. With a reverse
+            proxy (Nginx, Caddy, or Apache) pointing <code>relay.yourdomain.com</code> at the local port, your
+            relay becomes publicly reachable. Other people can follow you on your own relay. Other clients can sync
+            directly to your outbox. Your notes exist on infrastructure <em>you</em> own.
+        </p>
+
+        <p>
+            The iOS app integrates with this setup through <strong>Mac Relay Sync</strong>: when you open Nostr Vault
+            on your phone, it connects to your always-on Mac relay and pulls any notes you missed while your phone
+            was offline or asleep. Pull-to-refresh in the feed triggers a manual sync. This means your phone's
+            feed is always anchored to a relay you trust rather than patched together from whatever public relays
+            happen to be online.
+        </p>
+
+        <p>
+            If you don't have a Mac or a domain, the iOS app still runs a local relay that acts as a private Blastr:
+            it broadcasts your notes outward to your configured relay list, keeping your notes alive across the
+            network even when you're not publishing from a dedicated server.
+        </p>
+
+        <h2>Backup and Recovery</h2>
+
+        <p>
+            Sovereignty means nothing if you lose your data. Nostr Vault uses a portable <strong>JSONL format</strong>
+            for note backups &mdash; one event per line, human-readable, importable into any HAVEN-compatible relay.
+            You can export manually from the Dashboard at any time, or configure periodic cloud backups to any
+            S3-compatible storage provider.
+        </p>
+
+        <p>
+            Restoring is equally straightforward: import a <code>.jsonl</code> file or a <code>.zip</code> archive
+            through the Settings panel or the Setup Wizard. Checksum and integrity verification run automatically
+            before any data is written, so a corrupted backup fails loudly rather than silently overwriting
+            good data.
+        </p>
+
+        <p>
+            Blossom media is backed up separately. The Setup Wizard includes a dedicated media restore step that can
+            pull your media library from a remote Blossom server over the network, so even a fresh install on a
+            new machine can recover your full media history without manual file transfers.
+        </p>
+
+        <div class="section-divider"></div>
+
+        <h2>Open Source, Verifiable, and Yours</h2>
+
+        <p>
+            Nostr Vault is fully open source. The Go backend is MIT-licensed and can be audited, compiled, and
+            verified independently of the Swift wrapper. The build script for the Go static library is wired into
+            Xcode's build phases, and the <a href="https://github.com/btcforplebs/haven-mac" target="_blank" rel="noopener">
+            full build and verification instructions</a> are documented in the repository. You don't have to trust
+            the binary &mdash; you can build it yourself.
+        </p>
+
+        <p>
+            The iOS version is available on <a href="https://testflight.apple.com/join/kN3zE1H1" target="_blank" rel="noopener">TestFlight</a>.
+            The Mac version is available as a signed download from the GitHub releases page. Both targets share the
+            same Go relay binary and the same Swift service layer &mdash; the codebase is genuinely unified, not two
+            separate apps that happen to look similar.
+        </p>
+
+        <p>
+            If you've been waiting for a reason to run your own relay &mdash; one that doesn't require a Linux VPS,
+            a Docker compose file, or an afternoon fighting with nginx configs &mdash; this is it. Install it. Run it.
+            Keep your notes.
+        </p>
+
+    </article>
+
+    <!-- CTA -->
+    <section class="blog-cta">
+        <h2 class="fade-in-up">Ready to own your relay?</h2>
+        <p class="fade-in-up delay-100">Native on Mac, iPad, and iPhone. Bitcoin-aware. Encrypted by default. Verifiable from source.</p>
+        <div class="cta-buttons fade-in-up delay-200">
+            <a href="https://testflight.apple.com/join/kN3zE1H1" class="btn btn-testflight">Join iOS TestFlight</a>
+            <a href="https://github.com/btcforplebs/haven-mac/releases" class="btn btn-primary">Download for Mac</a>
+            <a href="https://github.com/btcforplebs/haven-mac" class="btn btn-primary" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #fff;">View Source</a>
+        </div>
+    </section>
+
+    <footer>
+        <p>&copy; 2026 Nostr Vault. Built on top of the incredible work by <a href="https://github.com/bitvora/haven">bitvora</a>.</p>
+        <p style="margin-top: 10px; font-size: 0.8rem; opacity: 0.6;">Designed with passion. | <a href="privacy.html" style="color: #FF6B2B; text-decoration: none;">Privacy Policy</a></p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

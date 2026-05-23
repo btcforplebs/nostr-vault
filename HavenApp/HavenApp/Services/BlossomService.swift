@@ -3,12 +3,20 @@ import CryptoKit
 import os.log
 
 /// BUD-02 Blob Descriptor returned by Blossom servers on successful upload
-struct BlobDescriptor: Codable {
-    let url: String
-    let sha256: String?
-    let size: Int?
-    let type: String?
-    let uploaded: Int?
+public struct BlobDescriptor: Codable {
+    public let url: String
+    public let sha256: String?
+    public let size: Int?
+    public let type: String?
+    public let uploaded: Int?
+
+    public init(url: String, sha256: String?, size: Int?, type: String?, uploaded: Int?) {
+        self.url = url
+        self.sha256 = sha256
+        self.size = size
+        self.type = type
+        self.uploaded = uploaded
+    }
 }
 
 /// Source for a Blossom upload — either in-memory data or an on-disk file.

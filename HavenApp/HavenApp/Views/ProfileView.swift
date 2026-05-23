@@ -1208,7 +1208,8 @@ struct ProfileView: View {
             "wss://relay.primal.net",
             "wss://relay.nos.social"
         ] : feedRelays
-        relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
+        // Cap at 1 external relay to avoid multiplying data fetches across all relays.
+        relayURLs.append(contentsOf: externalStrs.prefix(1).compactMap { URL(string: $0) })
 
         for url in relayURLs {
             let client = WebSocketClient()
@@ -1228,7 +1229,7 @@ struct ProfileView: View {
                         let notesFilter: [String: Any] = [
                             "kinds": [1, 6, 30023],
                             "authors": [pubkey],
-                            "limit": 200
+                            "limit": 50
                         ]
                         let contactFilter: [String: Any] = [
                             "kinds": [3],
@@ -1238,7 +1239,7 @@ struct ProfileView: View {
                         let followersFilter: [String: Any] = [
                             "kinds": [3],
                             "#p": [pubkey],
-                            "limit": 1000
+                            "limit": 100
                         ]
                         let req: [Any] = ["REQ", "profile-\(UUID().uuidString.prefix(6))", notesFilter, contactFilter, followersFilter]
                         if let data = try? JSONSerialization.data(withJSONObject: req),
@@ -1303,6 +1304,12 @@ struct ProfileView: View {
 
             profileNotes.append(note)
             profileNotes.sort { $0.createdAt > $1.createdAt }
+
+            // Trigger fetch of the original note for empty-content reposts
+            if event.kind == 6 && event.content.isEmpty,
+               let refId = event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
+                feedService.fetchMissingNote(id: refId)
+            }
 
             if profile == nil {
                 nostrService.fetchMissingProfiles(for: [pubkey])

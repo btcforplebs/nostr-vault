@@ -490,6 +490,10 @@ class FeedService: ObservableObject {
         pendingNotes.removeAll()
         noteBuffer.removeAll()
         seenIds.removeAll()
+        fetchingNoteIds.removeAll()
+        noteFetchQueue.removeAll()
+        noteFetchTimer?.invalidate()
+        noteFetchTimer = nil
         noteStats.removeAll()
         likedEventIds.removeAll()
         zappedEventIds.removeAll()
@@ -683,6 +687,10 @@ class FeedService: ObservableObject {
         pendingNotes.removeAll()
         noteBuffer.removeAll()
         seenIds.removeAll()
+        fetchingNoteIds.removeAll()
+        noteFetchQueue.removeAll()
+        noteFetchTimer?.invalidate()
+        noteFetchTimer = nil
         noteStats.removeAll()
         newNoteCount = 0
         newSinceLastView = Date()
@@ -797,7 +805,7 @@ class FeedService: ObservableObject {
     /// Requests a fetch for a note that is missing from the local state.
     /// Used for resolving thread parents.
     func fetchMissingNote(id: String) {
-        guard !seenIds.contains(id), !fetchingNoteIds.contains(id) else { return }
+        guard findNote(id: id) == nil, !fetchingNoteIds.contains(id) else { return }
         fetchingNoteIds.insert(id)
         noteFetchQueue.insert(id)
         scheduleNoteFetchFlush()
@@ -1274,12 +1282,12 @@ class FeedService: ObservableObject {
     }
 
     private func sendFeedSubscription(client: WebSocketClient, label: String, until: Int64? = nil) {
-        let since = Int64(Date().timeIntervalSince1970) - (30 * 24 * 3600) // last 30 days
+        let since = Int64(Date().timeIntervalSince1970) - (3 * 24 * 3600) // last 3 days
         let isGlobal = feedMode == .global
         var filter: [String: Any] = [
             "kinds": [1, 6, 30023],
             "since": since,
-            "limit": isGlobal ? 1000 : 500
+            "limit": isGlobal ? 75 : 75
         ]
         
         if feedMode == .following {
@@ -1306,6 +1314,7 @@ class FeedService: ObservableObject {
             var mentionsFilter = filter
             mentionsFilter["#p"] = [ownerHex]
             mentionsFilter["authors"] = nil // From anyone
+            mentionsFilter["limit"] = 50
             let mReq = ["REQ", "m-\(subId)", mentionsFilter] as [Any]
             if let mData = try? JSONSerialization.data(withJSONObject: mReq),
                let mStr = String(data: mData, encoding: .utf8) {
@@ -1318,7 +1327,7 @@ class FeedService: ObservableObject {
                 "kinds": [7],
                 "authors": followedPubkeys,
                 "since": since,
-                "limit": 2000
+                "limit": 150
             ]
             if let until = until { reactionsFilter["until"] = until }
             let rxReq = ["REQ", "rx-\(subId)", reactionsFilter] as [Any]
@@ -1332,7 +1341,7 @@ class FeedService: ObservableObject {
                 "kinds": [9735],
                 "#p": [ownerHex],
                 "since": since,
-                "limit": 500
+                "limit": 50
             ]
             if let until = until { incomingZapsFilter["until"] = until }
             let inZapsReq = ["REQ", "zaps-in-\(subId)", incomingZapsFilter] as [Any]
@@ -1346,7 +1355,7 @@ class FeedService: ObservableObject {
                 "kinds": [9734],
                 "authors": [ownerHex],
                 "since": since,
-                "limit": 500
+                "limit": 50
             ]
             if let until = until { outgoingZapsFilter["until"] = until }
             let outZapsReq = ["REQ", "zaps-out-\(subId)", outgoingZapsFilter] as [Any]
@@ -1438,7 +1447,6 @@ class FeedService: ObservableObject {
 
         var parsedContent = content
         var originalPubkey: String? = nil
-        var repostNeedsFetch: String? = nil
 
         if kind == 6 {
             if let data = content.data(using: .utf8),
@@ -1447,11 +1455,8 @@ class FeedService: ObservableObject {
                 parsedContent = innerContent
                 originalPubkey = inner["pubkey"] as? String
             } else {
-                // Empty-content repost — extract the referenced event ID from e-tags
+                // Empty-content repost — views resolve the referenced event via fetchMissingNote on render.
                 parsedContent = ""
-                if let refId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
-                    repostNeedsFetch = refId
-                }
             }
         }
 
@@ -1473,7 +1478,6 @@ class FeedService: ObservableObject {
 
         // Accumulate on processing queue — NO per-event main thread dispatch
         let acc = self.bgAccumulator
-        let fetchId = repostNeedsFetch
         processingQueue.async { [weak self] in
             acc.notes.append(note)
             acc.profiles.append(pubkey)
@@ -1495,28 +1499,8 @@ class FeedService: ObservableObject {
                 }
             }
 
-            // Trigger fetch of the original note for empty-content reposts
-            if let refId = fetchId {
-                DispatchQueue.main.async {
-                    self?.fetchMissingNote(id: refId)
-                }
-            }
-
-            // Proactively fetch parent note for replies so they are loaded when scrolled into view
-            if note.isReply, let parentId = note.parentEventId {
-                DispatchQueue.main.async {
-                    self?.fetchMissingNote(id: parentId)
-                }
-            }
-
-            // Proactively fetch quoted notes so they are loaded when scrolled into view
-            if !note.quotedEventIds.isEmpty {
-                DispatchQueue.main.async {
-                    for qId in note.quotedEventIds {
-                        self?.fetchMissingNote(id: qId)
-                    }
-                }
-            }
+            // Parents are prefetched in applySnapshot (proactive, so they arrive before
+            // the child row appears). Repost/quoted fetches still happen on onAppear.
             self?.scheduleBackgroundFlush()
         }
     }
@@ -1559,11 +1543,20 @@ class FeedService: ObservableObject {
     /// Apply a drained snapshot to main-actor state.
     private func applySnapshot(_ snap: BackgroundAccumulator.Snapshot) {
         var added = false
+        var parentIdsToFetch: [String] = []
         for note in snap.notes {
             guard !seenIds.contains(note.id) else { continue }
             seenIds.insert(note.id)
             noteBuffer.append(note)
             added = true
+            // Prefetch parents proactively so they're cached before the row scrolls
+            // into view — otherwise the child renders before the parent arrives.
+            if let parentId = note.parentEventId {
+                parentIdsToFetch.append(parentId)
+            }
+        }
+        for parentId in parentIdsToFetch {
+            fetchMissingNote(id: parentId)
         }
 
         let uniquePubkeys = Set(snap.profiles).subtracting(Set(NostrService.shared.profiles.keys))
@@ -1703,7 +1696,15 @@ class FeedService: ObservableObject {
         let ids = Array(noteFetchQueue)
         noteFetchQueue.removeAll()
 
-        let candidates: [URL] = ([localRelayURL] + externalRelayURLs).compactMap { $0 }
+        // Fan out to local + all external relays — first response wins, later ones
+        // are dropped by handleParentNoteFetch's findNote guard. Local-only was too
+        // slow because replies often reference notes from people you don't follow,
+        // which are not mirrored on the local relay.
+        var candidates: [URL] = []
+        if let local = localRelayURL {
+            candidates.append(local)
+        }
+        candidates.append(contentsOf: externalRelayURLs)
 
         #if DEBUG
         print("FeedService: Fetching \(ids.count) missing notes for threading")
@@ -1781,7 +1782,9 @@ class FeedService: ObservableObject {
               let tags      = ev["tags"]       as? [[String]]
         else { return }
 
-        guard !seenIds.contains(id) else { return }
+        // Use findNote rather than seenIds: a note can be in seenIds but evicted from
+        // notes[] by the 800-cap flush, in which case we still need it in parentNotesCache.
+        guard findNote(id: id) == nil else { return }
 
         let note = FeedNote(
             id: id,
@@ -1794,7 +1797,7 @@ class FeedService: ObservableObject {
 
         guard !FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) else { return }
 
-        seenIds.insert(id)
+        fetchingNoteIds.remove(id)
         parentNotesCache[id] = note
         NostrService.shared.fetchMissingProfiles(for: [pubkey])
     }
@@ -1806,9 +1809,13 @@ class FeedService: ObservableObject {
     /// ID so counts are never inflated when the same event arrives from multiple
     /// relays. Writes the final tally to `noteStats[noteId]` on the main thread.
     func fetchNoteStats(for noteId: String) {
+        // Prefer local relay; only fall back to one external relay to cap data use.
         var allURLs: [URL] = []
-        if let local = localRelayURL { allURLs.append(local) }
-        allURLs.append(contentsOf: externalRelayURLs)
+        if let local = localRelayURL {
+            allURLs.append(local)
+        } else if let first = externalRelayURLs.first {
+            allURLs.append(first)
+        }
         guard !allURLs.isEmpty else { return }
 
         // Shared mutable state — all mutations happen on the main thread via
@@ -1884,10 +1891,10 @@ class FeedService: ObservableObject {
                     guard state == .connected, !finished else { return }
                     let p = "\(subPrefix)-\(i)"
                     let filters: [[String: Any]] = [
-                        ["kinds": [1],    "#e": [noteId], "limit": 500],
-                        ["kinds": [6],    "#e": [noteId], "limit": 500],
-                        ["kinds": [7],    "#e": [noteId], "limit": 500],
-                        ["kinds": [9735], "#e": [noteId], "limit": 500],
+                        ["kinds": [1],    "#e": [noteId], "limit": 100],
+                        ["kinds": [6],    "#e": [noteId], "limit": 100],
+                        ["kinds": [7],    "#e": [noteId], "limit": 100],
+                        ["kinds": [9735], "#e": [noteId], "limit": 100],
                     ]
                     for (fi, filter) in filters.enumerated() {
                         let req = ["REQ", "\(p)-\(fi)", filter] as [Any]

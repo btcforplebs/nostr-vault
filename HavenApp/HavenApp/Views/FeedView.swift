@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -839,7 +840,7 @@ struct FeedNoteRow: View {
             // For empty-content reposts, resolve the original author from the fetched note
             let displayPubkey: String = {
                 if note.kind == 6 && note.content.isEmpty, let refId = note.repostedEventId,
-                   let original = feedService.notes.first(where: { $0.id == refId }) {
+                   let original = feedService.findNote(id: refId) {
                     return original.pubkey
                 }
                 return note.pubkey
@@ -911,7 +912,7 @@ struct FeedNoteRow: View {
 
                     // Content Body — for empty-content reposts, show the referenced note
                     if note.kind == 6 && note.content.isEmpty, let refId = note.repostedEventId {
-                        if let original = feedService.notes.first(where: { $0.id == refId }) {
+                        if let original = feedService.findNote(id: refId) {
                             let formattedOriginal = NostrContentFormatter.format(original.content, mediaURLs: original.mediaURLs, hideQuotes: true)
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(formattedOriginal)
@@ -1099,6 +1100,21 @@ struct FeedNoteRow: View {
         .hoverEffect(.lift)
         #endif
         .clipped()
+        .onAppear {
+            // Fetch referenced notes only when this row becomes visible (lazy).
+            if note.isReply, let parentId = note.parentEventId,
+               feedService.findNote(id: parentId) == nil {
+                feedService.fetchMissingNote(id: parentId)
+            }
+            if note.kind == 6, note.content.isEmpty,
+               let refId = note.repostedEventId,
+               feedService.findNote(id: refId) == nil {
+                feedService.fetchMissingNote(id: refId)
+            }
+            for qId in note.quotedEventIds where feedService.findNote(id: qId) == nil {
+                feedService.fetchMissingNote(id: qId)
+            }
+        }
         .overlay {
             LightningAnimationView(isAnimating: $showLightning)
                 .allowsHitTesting(false)
@@ -1364,18 +1380,104 @@ struct FeedNoteRow: View {
 
 private final class AvatarImageCache {
     static let shared = AvatarImageCache()
-    private var cache = NSCache<NSURL, PlatformImage>()
+
+    private let cache = NSCache<NSURL, PlatformImage>()
+    private var inFlight: [URL: [(PlatformImage?) -> Void]] = [:]
+    private let lock = NSLock()
+
+    // Downsample target — large enough for a profile header on @3x retina,
+    // small enough that 300 entries fit in ~24 MB.
+    private static let targetPixelSize: CGFloat = 256
+    private static let estimatedCostPerEntry = 256 * 256 * 4 // bytes
 
     init() {
-        cache.countLimit = 200
+        cache.countLimit = 300
+        cache.totalCostLimit = 24 * 1024 * 1024
     }
 
     func image(for url: URL) -> PlatformImage? {
         cache.object(forKey: url as NSURL)
     }
 
-    func store(_ image: PlatformImage, for url: URL) {
-        cache.setObject(image, forKey: url as NSURL)
+    private func store(_ image: PlatformImage, for url: URL) {
+        cache.setObject(image, forKey: url as NSURL, cost: Self.estimatedCostPerEntry)
+    }
+
+    /// Loads an avatar, hitting (in order): memory cache → on-disk cache → network.
+    /// Coalesces concurrent requests for the same URL and skips known-404s.
+    /// `completion` is always called on the main thread.
+    func load(url: URL, completion: @escaping (PlatformImage?) -> Void) {
+        if let cached = image(for: url) {
+            completion(cached)
+            return
+        }
+        if MediaCacheService.shared.isKnown404(url: url) {
+            completion(nil)
+            return
+        }
+
+        lock.lock()
+        if inFlight[url] != nil {
+            inFlight[url]?.append(completion)
+            lock.unlock()
+            return
+        }
+        inFlight[url] = [completion]
+        lock.unlock()
+
+        MediaCacheService.shared.downloadQueue.addOperation { [weak self] in
+            guard let self = self else { return }
+
+            // Disk cache
+            if let data = MediaCacheService.shared.loadFromCache(url: url),
+               let img = Self.downsample(data: data) {
+                self.finish(url: url, image: img)
+                return
+            }
+
+            // Network
+            URLSession.shared.dataTask(with: url) { data, response, _ in
+                guard let data = data,
+                      let http = response as? HTTPURLResponse,
+                      (200..<300).contains(http.statusCode),
+                      let img = Self.downsample(data: data) else {
+                    self.finish(url: url, image: nil)
+                    return
+                }
+                MediaCacheService.shared.saveToCache(url: url, data: data)
+                self.finish(url: url, image: img)
+            }.resume()
+        }
+    }
+
+    private func finish(url: URL, image: PlatformImage?) {
+        if let image = image {
+            store(image, for: url)
+        }
+        lock.lock()
+        let callbacks = inFlight.removeValue(forKey: url) ?? []
+        lock.unlock()
+        DispatchQueue.main.async {
+            callbacks.forEach { $0(image) }
+        }
+    }
+
+    private static func downsample(data: Data) -> PlatformImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: targetPixelSize
+        ]
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        #if canImport(AppKit)
+        return NSImage(cgImage: cgImage, size: .zero)
+        #else
+        return UIImage(cgImage: cgImage)
+        #endif
     }
 }
 
@@ -1437,19 +1539,17 @@ struct AvatarView: View {
     private func loadImage() {
         guard let url = url else { return }
 
-        // Check in-memory cache first
+        // Fast synchronous path for the memory cache so already-loaded avatars
+        // render without a flash.
         if let cached = AvatarImageCache.shared.image(for: url) {
             if image == nil { image = cached }
             return
         }
 
         guard image == nil else { return }
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            if let data = data, let img = PlatformImage(data: data) {
-                AvatarImageCache.shared.store(img, for: url)
-                DispatchQueue.main.async { image = img }
-            }
-        }.resume()
+        AvatarImageCache.shared.load(url: url) { img in
+            if let img = img { image = img }
+        }
     }
 }
 

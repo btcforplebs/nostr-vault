@@ -38,6 +38,15 @@ struct ViewerView: View {
     @State private var displayZappedNotes: [NostrEvent] = []
     /// Maps note ID -> list of (zapper pubkey, amount in sats)
     @State private var zapMap: [String: [(pubkey: String, amount: Int64)]] = [:]
+
+    // Stable loading state for likes/zaps lists so the spinner doesn't flash
+    // on every streaming event update once content has been shown.
+    @State private var likesHasLoadedOnce: Bool = false
+    @State private var likesInitialSettled: Bool = false
+    @State private var likesSettleTask: Task<Void, Never>?
+    @State private var zapsHasLoadedOnce: Bool = false
+    @State private var zapsInitialSettled: Bool = false
+    @State private var zapsSettleTask: Task<Void, Never>?
     #if os(macOS)
     @State private var keyMonitor: Any? = nil
     #endif
@@ -129,6 +138,41 @@ struct ViewerView: View {
         }
     }
 
+    /// Flips `likesInitialSettled` to true once fetching has been quiet for ~1.5s
+    /// while in likes mode. Lets the empty state appear without flashing the
+    /// spinner on every transient `isFetching` toggle.
+    private func updateLikesSettleState() {
+        likesSettleTask?.cancel()
+        let busy = nostrService.isFetching || relayManager.isBooting
+        if busy {
+            likesInitialSettled = false
+            return
+        }
+        likesSettleTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            if !(nostrService.isFetching || relayManager.isBooting) {
+                likesInitialSettled = true
+            }
+        }
+    }
+
+    private func updateZapsSettleState() {
+        zapsSettleTask?.cancel()
+        let busy = nostrService.isFetching || relayManager.isBooting
+        if busy {
+            zapsInitialSettled = false
+            return
+        }
+        zapsSettleTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            if !(nostrService.isFetching || relayManager.isBooting) {
+                zapsInitialSettled = true
+            }
+        }
+    }
+
     private func updateDisplayData() {
         // Capture current state strongly for the background task
         let currentFilter = contentFilter
@@ -189,8 +233,14 @@ struct ViewerView: View {
                     let finalRxMap = rxMap
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
-                        self.reactionMap = finalRxMap
-                        self.displayLikedNotes = Array(result.prefix(self.maxDisplayedItems))
+                        let newDisplay = Array(result.prefix(self.maxDisplayedItems))
+                        if self.displayLikedNotes.map({ $0.id }) != newDisplay.map({ $0.id }) {
+                            self.displayLikedNotes = newDisplay
+                        }
+                        if self.reactionMap != finalRxMap {
+                            self.reactionMap = finalRxMap
+                        }
+                        if !newDisplay.isEmpty { self.likesHasLoadedOnce = true }
                     }
                 } else {
                     // My Likes: notes I reacted to (kind 7 from me)
@@ -212,8 +262,12 @@ struct ViewerView: View {
 
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
-                        self.reactionMap = [:]
-                        self.displayLikedNotes = Array(result.prefix(self.maxDisplayedItems))
+                        let newDisplay = Array(result.prefix(self.maxDisplayedItems))
+                        if self.displayLikedNotes.map({ $0.id }) != newDisplay.map({ $0.id }) {
+                            self.displayLikedNotes = newDisplay
+                        }
+                        if !self.reactionMap.isEmpty { self.reactionMap = [:] }
+                        if !newDisplay.isEmpty { self.likesHasLoadedOnce = true }
                     }
                 }
             } else if currentMode == .zaps {
@@ -259,8 +313,12 @@ struct ViewerView: View {
                     let finalZMap = zMap
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
+                        let newDisplay = Array(result.prefix(self.maxDisplayedItems))
+                        if self.displayZappedNotes.map({ $0.id }) != newDisplay.map({ $0.id }) {
+                            self.displayZappedNotes = newDisplay
+                        }
                         self.zapMap = finalZMap
-                        self.displayZappedNotes = Array(result.prefix(self.maxDisplayedItems))
+                        if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
                     }
                 } else {
                     // My Zaps: notes I zapped
@@ -281,8 +339,12 @@ struct ViewerView: View {
 
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
-                        self.zapMap = [:]
-                        self.displayZappedNotes = Array(result.prefix(self.maxDisplayedItems))
+                        let newDisplay = Array(result.prefix(self.maxDisplayedItems))
+                        if self.displayZappedNotes.map({ $0.id }) != newDisplay.map({ $0.id }) {
+                            self.displayZappedNotes = newDisplay
+                        }
+                        if !self.zapMap.isEmpty { self.zapMap = [:] }
+                        if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
                     }
                 }
             } else if currentMode == .notes {
@@ -579,6 +641,9 @@ struct ViewerView: View {
                     HStack {
                         modeView
                         Spacer()
+                        if viewMode == .media {
+                            uploadButton
+                        }
                     }
                     #endif
                     if viewMode == .notes {
@@ -600,6 +665,9 @@ struct ViewerView: View {
                     #if os(macOS)
                     modeView
                     Spacer()
+                    if viewMode == .media {
+                        uploadButton
+                    }
                     #endif
                     if viewMode == .notes {
                         filterView
@@ -834,6 +902,10 @@ struct ViewerView: View {
                 scheduleUpdateDisplayData()
                 if newMode == .likes {
                     fetchMissingLikedNotes()
+                    updateLikesSettleState()
+                }
+                if newMode == .zaps {
+                    updateZapsSettleState()
                 }
             },
             onEventsChange: {
@@ -843,6 +915,30 @@ struct ViewerView: View {
                 }
             }
         ))
+        .onChange(of: likesFilter) { _, _ in
+            likesHasLoadedOnce = false
+            likesInitialSettled = false
+            updateLikesSettleState()
+        }
+        .onChange(of: zapsFilter) { _, _ in
+            zapsHasLoadedOnce = false
+            zapsInitialSettled = false
+            updateZapsSettleState()
+        }
+        .onChange(of: configService.config.activeAccountNpub) { _, _ in
+            likesHasLoadedOnce = false
+            likesInitialSettled = false
+            zapsHasLoadedOnce = false
+            zapsInitialSettled = false
+        }
+        .onChange(of: nostrService.isFetching) { _, _ in
+            if viewMode == .likes { updateLikesSettleState() }
+            if viewMode == .zaps { updateZapsSettleState() }
+        }
+        .onChange(of: relayManager.isBooting) { _, _ in
+            if viewMode == .likes { updateLikesSettleState() }
+            if viewMode == .zaps { updateZapsSettleState() }
+        }
         .onReceive(MirrorService.shared.$state) { newState in
             if newState == .complete {
                 loadLocalMedia()
@@ -956,14 +1052,15 @@ struct ViewerView: View {
             }
             if viewMode == .media {
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    let purple = Color.havenPurple
                     PhotosPicker(selection: $selectedUploadItems, matching: .any(of: [.images, .videos])) {
                         Image(systemName: "plus")
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.white)
                             .padding(8)
-                            .background(Color.havenPurple.opacity(0.85))
+                            .background(purple.opacity(0.85))
                             .clipShape(Circle())
-                            .shadow(color: Color.havenPurple.opacity(0.4), radius: 4, x: 0, y: 2)
+                            .shadow(color: purple.opacity(0.4), radius: 4, x: 0, y: 2)
                     }
                 }
             }
@@ -1201,9 +1298,14 @@ struct ViewerView: View {
     }
 
     private var likesList: some View {
-        let isLoading = nostrService.isFetching || relayManager.isBooting
+        let isFetching = nostrService.isFetching || relayManager.isBooting
+        // Keep showing the loading view until we've either populated content
+        // (likesHasLoadedOnce) or settled into a confirmed-empty state.
+        let showLoading = displayLikedNotes.isEmpty
+            && !likesHasLoadedOnce
+            && (isFetching || !likesInitialSettled)
         return Group {
-            if displayLikedNotes.isEmpty && isLoading {
+            if showLoading {
                 VStack(spacing: 32) {
                     VStack(spacing: 16) {
                         ProgressView()
@@ -1265,7 +1367,7 @@ struct ViewerView: View {
                                 tags: event.tags,
                                 kind: event.kind
                             ))) {
-                                NoteRow(event: event)
+                                NoteRow(event: event, truncate: true)
                                     .padding(.horizontal, 16)
                                     .onAppear {
                                         if event.id == displayLikedNotes.last?.id {
@@ -1275,7 +1377,7 @@ struct ViewerView: View {
                             }
                             .buttonStyle(.plain)
                             #else
-                            NoteRow(event: event)
+                            NoteRow(event: event, truncate: true)
                                 .padding(.horizontal, 16)
                                 .onAppear {
                                     if event.id == displayLikedNotes.last?.id {
@@ -1305,9 +1407,12 @@ struct ViewerView: View {
     }
 
     private var zapsList: some View {
-        let isLoading = nostrService.isFetching || relayManager.isBooting
+        let isFetching = nostrService.isFetching || relayManager.isBooting
+        let showLoading = displayZappedNotes.isEmpty
+            && !zapsHasLoadedOnce
+            && (isFetching || !zapsInitialSettled)
         return Group {
-            if displayZappedNotes.isEmpty && isLoading {
+            if showLoading {
                 VStack(spacing: 32) {
                     VStack(spacing: 16) {
                         ProgressView()
@@ -1368,7 +1473,7 @@ struct ViewerView: View {
                                 tags: event.tags,
                                 kind: event.kind
                             ))) {
-                                NoteRow(event: event)
+                                NoteRow(event: event, truncate: true)
                                     .padding(.horizontal, 16)
                                     .onAppear {
                                         if event.id == displayZappedNotes.last?.id {
@@ -1378,7 +1483,7 @@ struct ViewerView: View {
                             }
                             .buttonStyle(.plain)
                             #else
-                            NoteRow(event: event)
+                            NoteRow(event: event, truncate: true)
                                 .padding(.horizontal, 16)
                                 .onAppear {
                                     if event.id == displayZappedNotes.last?.id {
@@ -2574,10 +2679,14 @@ struct ModeButton: View {
 
 struct NoteRow: View {
     let event: NostrEvent
+    /// When true, clamp the body to a few lines and append a "Show more"
+    /// affordance. Used by compact contexts like the likes/zaps lists.
+    var truncate: Bool = false
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     @State private var isHovered = false
     @State private var showingReportDialog = false
+    @State private var isExpanded = false
     
     var cleanContent: String {
         return event.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2645,24 +2754,12 @@ struct NoteRow: View {
         VStack(alignment: .leading, spacing: 10) {
             // Header with profile and timestamp
             HStack(alignment: .center, spacing: 12) {
-                if let profile = nostrService.profiles[event.pubkey], let pictureURL = profile.pictureURL {
-                    CachedAsyncImage(url: pictureURL) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Circle()
-                            .fill(avatarGradientForType(noteType))
-                            .overlay(Image(systemName: "person.fill").font(.system(size: 10, weight: .bold)).foregroundColor(.white))
-                    }
-                    .frame(width: 40, height: 40)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
-                } else {
-                    Circle()
-                        .fill(avatarGradientForType(noteType))
-                        .frame(width: 40, height: 40)
-                        .overlay(Image(systemName: "person.fill").font(.system(size: 10, weight: .bold)).foregroundColor(.white))
-                        .overlay(Circle().stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
-                }
+                AvatarView(
+                    url: nostrService.profiles[event.pubkey]?.pictureURL,
+                    pubkey: event.pubkey,
+                    size: 40
+                )
+                .overlay(Circle().stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.5))
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
@@ -2704,7 +2801,17 @@ struct NoteRow: View {
                     .font(.system(size: 15, weight: .regular, design: .default))
                     .foregroundColor(Color(red: 1, green: 1, blue: 1))
                     .lineSpacing(2)
-                    .lineLimit(nil)
+                    .lineLimit(truncate && !isExpanded ? 8 : nil)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if truncate && !isExpanded && cleanContent.count > 240 {
+                    Button(action: { withAnimation(.easeInOut(duration: 0.15)) { isExpanded = true } }) {
+                        Text("Show more")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.havenPurple)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .padding(14)

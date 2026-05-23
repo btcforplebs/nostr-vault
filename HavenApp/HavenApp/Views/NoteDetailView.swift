@@ -294,9 +294,16 @@ struct NoteDetailView: View {
                     }()
                     composeContext = ComposeContext(replyTo: replyTarget, quoteTo: nil)
                 }
-                actionButton(icon: "arrow.2.squarepath", count: stats?.reposts) {
+                let isReposted = feedService.repostedEventIds.contains(note.id)
+                actionButton(
+                    icon: "arrow.2.squarepath",
+                    color: isReposted ? .green : .secondary,
+                    count: stats?.reposts
+                ) {
                     repostNote()
                 }
+                .scaleEffect(isReposted ? 1.2 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.45), value: isReposted)
                 actionButton(icon: "quote.closing", count: nil) {
                     composeContext = ComposeContext(replyTo: nil, quoteTo: note)
                 }
@@ -646,8 +653,7 @@ struct NoteDetailView: View {
     }
     
     private func repostNote() {
-        guard let signed = nostrService.signEvent(kind: 6, content: "", tags: [["e", note.id], ["p", note.pubkey]]) else { return }
-        nostrService.postEvent(signed)
+        PendingPostManager.shared.startRepost(sourceNote: note, nostrService: nostrService)
     }
 
     private func getLightingAddress(for pubkey: String) -> String? {
