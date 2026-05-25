@@ -93,9 +93,17 @@ class PendingPostManager: ObservableObject {
         actionType = .repost
         timeRemaining = ActionType.repost.totalTime
         beginCountdown {
+            // NIP-18: content SHOULD be the stringified JSON of the reposted event,
+            // and the e tag is just ["e", id, relay-hint] — no NIP-10 marker.
+            let embedded: String = {
+                guard let original = nostrService.events.first(where: { $0.id == sourceNote.id }),
+                      let data = try? JSONEncoder().encode(original),
+                      let json = String(data: data, encoding: .utf8) else { return "" }
+                return json
+            }()
             guard let signed = nostrService.signEvent(
-                kind: 6, content: "",
-                tags: [["e", sourceNote.id, "", "root"], ["p", sourceNote.pubkey]]
+                kind: 6, content: embedded,
+                tags: [["e", sourceNote.id, ""], ["p", sourceNote.pubkey]]
             ) else { return }
             nostrService.postEvent(signed)
             FeedService.shared.repostedEventIds.insert(sourceNote.id)

@@ -40,32 +40,56 @@ struct FeedNote: Identifiable, Hashable, Equatable {
     let repostedEventId: String?
 
     init(id: String, pubkey: String, content: String, createdAt: Date, tags: [[String]], kind: Int, repostedBy: String? = nil) {
-        self.id = id
-        self.pubkey = pubkey
-        self.content = content
-        self.createdAt = createdAt
-        self.tags = tags
-        self.kind = kind
-        self.repostedBy = repostedBy
+        // NIP-18: a kind 6 repost SHOULD embed the full original event as stringified JSON
+        // in `content`. When present, swap to the inner author/content/tags so the UI renders
+        // the reposted note directly. The outer pubkey becomes `repostedBy`.
+        // Always compute `repostedEventId` from the OUTER e-tag before any swap.
+        let outerETags = tags.filter { $0.count >= 2 && $0[0] == "e" }
+        let outerRepostedEventId = kind == 6 ? outerETags.first?[1] : nil
 
-        // Cache tag-derived properties
-        let eTags = tags.filter { $0.count >= 2 && $0[0] == "e" }
+        var resolvedPubkey = pubkey
+        var resolvedContent = content
+        var resolvedTags = tags
+        var resolvedRepostedBy = repostedBy
+
+        if kind == 6,
+           let data = content.data(using: .utf8),
+           let inner = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let innerContent = inner["content"] as? String,
+           let innerPubkey = inner["pubkey"] as? String {
+            resolvedPubkey = innerPubkey
+            resolvedContent = innerContent
+            if let innerTags = inner["tags"] as? [[String]] {
+                resolvedTags = innerTags
+            }
+            if resolvedRepostedBy == nil { resolvedRepostedBy = pubkey }
+        }
+
+        self.id = id
+        self.pubkey = resolvedPubkey
+        self.content = resolvedContent
+        self.createdAt = createdAt
+        self.tags = resolvedTags
+        self.kind = kind
+        self.repostedBy = resolvedRepostedBy
+
+        // Cache tag-derived properties (use resolved tags so inner imeta/reply data wins)
+        let eTags = resolvedTags.filter { $0.count >= 2 && $0[0] == "e" }
         let nonMentionETags = eTags.filter { tag in
             guard tag.count >= 4 else { return true }
             return tag[3] != "mention"
         }
         // Kind 6 reposts have e-tags but are not replies
         self.isReply = kind != 6 && !nonMentionETags.isEmpty
-        self.replyToPubkey = kind != 6 ? tags.first { $0.count >= 2 && $0[0] == "p" }?[1] : nil
-        self.parentEventId = kind != 6 ? tags.last { $0.count >= 2 && $0[0] == "e" }?[1] : nil
+        self.replyToPubkey = kind != 6 ? resolvedTags.first { $0.count >= 2 && $0[0] == "p" }?[1] : nil
+        self.parentEventId = kind != 6 ? resolvedTags.last { $0.count >= 2 && $0[0] == "e" }?[1] : nil
 
-        // For kind 6 reposts, capture the referenced event ID
-        self.repostedEventId = kind == 6 ? eTags.first?[1] : nil
+        self.repostedEventId = outerRepostedEventId
 
         // Cache regex-derived properties (expensive — only compute once)
-        let contentURLs = Self.parseMediaURLs(from: content)
+        let contentURLs = Self.parseMediaURLs(from: resolvedContent)
         // NIP-92 imeta tags carry URLs for uploads without file extensions
-        let imetaURLs: [URL] = tags.compactMap { tag in
+        let imetaURLs: [URL] = resolvedTags.compactMap { tag in
             guard tag.first == "imeta", tag.count >= 2 else { return nil }
             for field in tag.dropFirst() {
                 if field.hasPrefix("url ") {
@@ -77,7 +101,7 @@ struct FeedNote: Identifiable, Hashable, Equatable {
         }
         var seen = Set<String>()
         self.mediaURLs = (contentURLs + imetaURLs).filter { seen.insert($0.absoluteString).inserted }
-        self.quotedEventIds = Self.parseQuotedEventIds(from: content)
+        self.quotedEventIds = Self.parseQuotedEventIds(from: resolvedContent)
     }
 
     var replyCount: Int {
@@ -902,6 +926,11 @@ class FeedService: ObservableObject {
 
         let finish: ([String], String, WebSocketClient) -> Void = { [weak self] pubkeys, content, winner in
             guard let self = self, !completed else { return }
+            // Discard responses that raced past an account switch.
+            guard ownerHex == ConfigService.shared.activeAccountHexPubkey else {
+                clients.forEach { $0.disconnect() }
+                return
+            }
             completed = true
             self.contactLoadingTimeout?.invalidate()
             // Disconnect all clients including the winner
@@ -909,14 +938,14 @@ class FeedService: ObservableObject {
 
             var finalPubkeys = pubkeys
             if !finalPubkeys.contains(ownerHex) { finalPubkeys.append(ownerHex) }
-            
+
             // Auto-follow whitelisted accounts so they appear in the default feed
             for npub in ConfigService.shared.config.whitelistedNpubs {
                 if let hex = Bech32.decode(npub)?.hexString, !finalPubkeys.contains(hex) {
                     finalPubkeys.append(hex)
                 }
             }
-            
+
             self.followedPubkeys = finalPubkeys
             self.contactListContent = content
             self.isLoadingContacts = false
@@ -954,6 +983,11 @@ class FeedService: ObservableObject {
                         eoseCount += 1
                         // All relays returned EOSE with no usable contact list
                         if eoseCount >= relays.count && !completed {
+                            guard ownerHex == ConfigService.shared.activeAccountHexPubkey else {
+                                completed = true
+                                clients.forEach { $0.disconnect() }
+                                return
+                            }
                             completed = true
                             self.contactLoadingTimeout?.invalidate()
                             clients.forEach { $0.disconnect() }
@@ -1445,26 +1479,12 @@ class FeedService: ObservableObject {
             return
         }
 
-        var parsedContent = content
-        var originalPubkey: String? = nil
-
-        if kind == 6 {
-            if let data = content.data(using: .utf8),
-               let inner = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let innerContent = inner["content"] as? String {
-                parsedContent = innerContent
-                originalPubkey = inner["pubkey"] as? String
-            } else {
-                // Empty-content repost — views resolve the referenced event via fetchMissingNote on render.
-                parsedContent = ""
-            }
-        }
-
-        // Build FeedNote on background thread (including regex caching in init)
+        // FeedNote.init handles kind 6 JSON embedding internally: it swaps to the inner
+        // author/content/tags and sets repostedBy. Passing the raw event through is enough.
         let note = FeedNote(
             id: id,
-            pubkey: originalPubkey ?? pubkey,
-            content: parsedContent,
+            pubkey: pubkey,
+            content: content,
             createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
             tags: tags,
             kind: kind,
@@ -1481,7 +1501,9 @@ class FeedService: ObservableObject {
         processingQueue.async { [weak self] in
             acc.notes.append(note)
             acc.profiles.append(pubkey)
-            if let op = originalPubkey { acc.profiles.append(op) }
+            // After FeedNote.init swaps for kind 6 reposts, note.pubkey is the original author.
+            // Fetch their profile too so the reposted card renders with the right name/avatar.
+            if note.pubkey != pubkey { acc.profiles.append(note.pubkey) }
 
             // Track engagement: replies (kind 1 with parent) and reposts (kind 6)
             if kind == 1 {

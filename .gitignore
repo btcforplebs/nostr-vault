@@ -5,3 +5,4 @@
 *.txt
 /build
 /build_data
+*.build

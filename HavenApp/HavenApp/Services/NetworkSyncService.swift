@@ -201,8 +201,7 @@ class NetworkSyncService {
 
         client.$connectionState
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] state in
-                guard let self else { return }
+            .sink { state in
                 if state == .connected {
                     let msg: [Any] = ["EVENT", eventDict]
                     if let data = try? JSONSerialization.data(withJSONObject: msg),

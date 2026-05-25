@@ -21,7 +21,10 @@ This major update introduces the **initial launch of Haven for iOS**, a unified 
 *   **App Transport Security**: Fixed media playback and local networking permissions issues on both platforms.
 *   **Relay Stability**: Removed legacy helper processes and improved connection handling to prevent crashes.
 *   **Feed Threading**: Fixed logic for displaying parent/child note relationships and improved deduplication.
+*   **Blossom Mirroring**: Fully aligned Blossom mirroring implementation with the standard BUD-01/BUD-02 specs, correcting the Nostr authorization scheme, parsing canonical `BlobDescriptor` responses, handling local network SSL trust/Tailscale, and improving memory efficiency during large uploads.
+*   **NIP-18 Reposts**: Corrected kind 6 repost structure to contain stringified event JSON in `content` per Nostr specification, improving FeedNote rendering, automatic missing profile loading for reposted authors, and race safety during rapid active account switching.
 *   **MIME Detection**: Improved media type detection for Blossom and Nostr media attachments.
 *   **Sandbox & Permissions**: Optimized the data import and export pipeline to fully comply with modern macOS sandbox requirements.
 
 Thank you for being part of the Haven community!
+
