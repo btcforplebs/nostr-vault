@@ -28,7 +28,12 @@ struct FeedView: View {
     @State private var showingNoteId: String?
     @State private var showingProfileKey: IdentifiableString?
     @State private var showingMediaUrl: IdentifiableURL?
+    @State private var selectedGridMediaNoteId: String?
+    @State private var isShowingGridMediaViewer = false
+    @State private var gridMediaSnapshot: [FeedNote] = []
+    @State private var galleryDragOffset: CGSize = .zero
     @State private var isRefreshing = false
+    @State private var showingGlobalMediaWarning = false
 
     var body: some View {
         #if os(iOS)
@@ -85,32 +90,55 @@ struct FeedView: View {
 
             Spacer()
 
-            // Auto-load new posts
-            Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
-                Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(configService.config.autoLoadNewPosts ? Color.havenPurple : .secondary)
-            }
-            .buttonStyle(.plain)
-            .help(configService.config.autoLoadNewPosts ? "Auto-load On" : "Auto-load Off")
+            if feedService.feedMode == .media {
+                Button(action: {
+                    feedService.mediaFeedMode = .following
+                    feedService.refresh()
+                }) {
+                    Image(systemName: feedService.mediaFeedMode == .following ? "person.2.fill" : "person.2")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(feedService.mediaFeedMode == .following ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Following Media")
 
-            // Reposts toggle
-            Button(action: { configService.config.showReposts.toggle(); configService.save() }) {
-                Image(systemName: "arrow.2.squarepath")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(configService.config.showReposts ? Color.havenPurple : .secondary)
-            }
-            .buttonStyle(.plain)
-            .help(configService.config.showReposts ? "Hide Reposts" : "Show Reposts")
+                Button(action: {
+                    showingGlobalMediaWarning = true
+                }) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(feedService.mediaFeedMode == .global ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Global Media")
+            } else {
+                // Auto-load new posts
+                Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
+                    Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(configService.config.autoLoadNewPosts ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(configService.config.autoLoadNewPosts ? "Auto-load On" : "Auto-load Off")
 
-            // Replies toggle
-            Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
-                Image(systemName: configService.config.showReplies ? "message.fill" : "message")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                // Reposts toggle
+                Button(action: { configService.config.showReposts.toggle(); configService.save() }) {
+                    Image(systemName: "arrow.2.squarepath")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(configService.config.showReposts ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(configService.config.showReposts ? "Hide Reposts" : "Show Reposts")
+
+                // Replies toggle
+                Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
+                    Image(systemName: configService.config.showReplies ? "message.fill" : "message")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(configService.config.showReplies ? "Hide Replies" : "Show Replies")
             }
-            .buttonStyle(.plain)
-            .help(configService.config.showReplies ? "Hide Replies" : "Show Replies")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -129,11 +157,14 @@ struct FeedView: View {
                 // are no cached notes to render. Once a snapshot has been
                 // restored (or notes have streamed in), the background sync
                 // is surfaced via the inline `syncingPill` instead.
-                if feedService.feedMode == .following && feedService.isLoadingContacts && feedService.notes.isEmpty {
+                let showLoadingContacts = (feedService.feedMode == .following || (feedService.feedMode == .media && feedService.mediaFeedMode == .following)) && feedService.isLoadingContacts && feedService.notes.isEmpty
+                let showEmptyState = (feedService.feedMode == .following || (feedService.feedMode == .media && feedService.mediaFeedMode == .following)) && feedService.followedPubkeys.isEmpty && !feedService.isLoadingFeed && !feedService.isLoadingContacts
+
+                if showLoadingContacts {
                     loadingContactsView
                 } else if feedService.feedMode == .discovery && feedService.isLoadingExtendedNetwork && feedService.notes.isEmpty {
                     loadingExtendedNetworkView
-                } else if feedService.feedMode == .following && feedService.followedPubkeys.isEmpty && !feedService.isLoadingFeed && !feedService.isLoadingContacts {
+                } else if showEmptyState {
                     emptyStateView
                 } else if feedService.feedMode == .discovery && feedService.extendedNetworkPubkeys.isEmpty && !feedService.isLoadingFeed && !feedService.isLoadingExtendedNetwork {
                     emptyDiscoveryStateView
@@ -178,25 +209,44 @@ struct FeedView: View {
 
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 16) {
-                    // Autoload new posts button
-                    Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
-                        Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(configService.config.autoLoadNewPosts ? Color.havenPurple : .secondary)
-                    }
-                    
-                    // Reposts toggle button
-                    Button(action: { configService.config.showReposts.toggle(); configService.save() }) {
-                        Image(systemName: "arrow.2.squarepath")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(configService.config.showReposts ? Color.havenPurple : .secondary)
-                    }
-                    
-                    // Replies toggle button
-                    Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
-                        Image(systemName: configService.config.showReplies ? "message.fill" : "message")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                    if feedService.feedMode == .media {
+                        Button(action: {
+                            feedService.mediaFeedMode = .following
+                            feedService.refresh()
+                        }) {
+                            Image(systemName: feedService.mediaFeedMode == .following ? "person.2.fill" : "person.2")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(feedService.mediaFeedMode == .following ? Color.havenPurple : .secondary)
+                        }
+                        
+                        Button(action: {
+                            showingGlobalMediaWarning = true
+                        }) {
+                            Image(systemName: "globe")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(feedService.mediaFeedMode == .global ? Color.havenPurple : .secondary)
+                        }
+                    } else {
+                        // Autoload new posts button
+                        Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
+                            Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(configService.config.autoLoadNewPosts ? Color.havenPurple : .secondary)
+                        }
+                        
+                        // Reposts toggle button
+                        Button(action: { configService.config.showReposts.toggle(); configService.save() }) {
+                            Image(systemName: "arrow.2.squarepath")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(configService.config.showReposts ? Color.havenPurple : .secondary)
+                        }
+                        
+                        // Replies toggle button
+                        Button(action: { configService.config.showReplies.toggle(); configService.save() }) {
+                            Image(systemName: configService.config.showReplies ? "message.fill" : "message")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                        }
                     }
                 }
             }
@@ -254,6 +304,58 @@ struct FeedView: View {
         }
         .sheet(item: $showingMediaUrl) { media in
             FeedMediaViewer(url: media.url, onDismiss: { showingMediaUrl = nil })
+        }
+        .sheet(isPresented: $isShowingGridMediaViewer) {
+            ZStack {
+                Color.black
+                    .opacity(max(0.1, 1.0 - (abs(galleryDragOffset.height) / 500.0)))
+                    .ignoresSafeArea()
+                
+                TabView(selection: $selectedGridMediaNoteId) {
+                    ForEach(gridMediaSnapshot) { note in
+                        if let firstMediaURL = note.mediaURLs.first {
+                            FeedMediaViewer(url: firstMediaURL, enableDragDismiss: false, onDismiss: { isShowingGridMediaViewer = false })
+                                .tag(note.id as String?)
+                        }
+                    }
+                }
+                .mediaTabViewStyleCompat()
+                .offset(y: galleryDragOffset.height)
+                .scaleEffect(max(0.8, 1.0 - (abs(galleryDragOffset.height) / 1000.0)))
+                .gesture(
+                    DragGesture()
+                        .onChanged { gesture in
+                            if abs(gesture.translation.height) > abs(gesture.translation.width) || galleryDragOffset.height != 0 {
+                                galleryDragOffset = CGSize(width: 0, height: gesture.translation.height)
+                            }
+                        }
+                        .onEnded { gesture in
+                            if abs(galleryDragOffset.height) > 120 {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    isShowingGridMediaViewer = false
+                                    galleryDragOffset = .zero
+                                }
+                            } else {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                    galleryDragOffset = .zero
+                                }
+                            }
+                        }
+                )
+            }
+            .ignoresSafeArea()
+            .onDisappear {
+                selectedGridMediaNoteId = nil
+            }
+        }
+        .alert("Sensitive Content Warning", isPresented: $showingGlobalMediaWarning) {
+            Button("Proceed", role: .destructive) {
+                feedService.mediaFeedMode = .global
+                feedService.refresh()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The global media feed shows unmoderated content shared across the entire Nostr network. This may include sensitive, explicit, or NSFW media.")
         }
     }
 
@@ -473,7 +575,10 @@ struct FeedView: View {
                             .frame(height: 1)
                             .id("top")
 
-                        LazyVStack(spacing: 12) {
+                        if feedService.feedMode == .media {
+                            mediaGridView
+                        } else {
+                            LazyVStack(spacing: 12) {
 
                         // Loading header
                         if feedService.isLoadingFeed && feedService.notes.isEmpty {
@@ -601,6 +706,7 @@ struct FeedView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
                     }
+                    }
                 }
                 .refreshable {
                     isRefreshing = true
@@ -724,6 +830,125 @@ struct FeedView: View {
             .hoverEffect(.lift)
             #endif
         }
+    }
+
+    private var mediaGridView: some View {
+        Group {
+            let filteredNotes = feedService.notes.filter { note in
+                let isBlacklisted = configService.activeAccountBlockedHexPubkeys.contains(note.pubkey)
+                if isBlacklisted { return false }
+                return !note.mediaURLs.isEmpty
+            }
+
+            if filteredNotes.isEmpty && !feedService.isLoadingFeed {
+                VStack(spacing: 20) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 56, weight: .thin))
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Text("No Media Found")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                    Text(feedService.mediaFeedMode == .following ? "Your followers haven't shared any media yet." : "No global media found on connected relays.")
+                        .font(.system(size: 13, weight: .regular, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 400)
+            } else {
+                let columns = [
+                    GridItem(.flexible(), spacing: 2),
+                    GridItem(.flexible(), spacing: 2),
+                    GridItem(.flexible(), spacing: 2)
+                ]
+
+                LazyVGrid(columns: columns, spacing: 2) {
+                    ForEach(filteredNotes) { note in
+                        if let firstMediaURL = note.mediaURLs.first {
+                            gridCell(for: note, url: firstMediaURL)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    gridMediaSnapshot = filteredNotes
+                                    selectedGridMediaNoteId = note.id
+                                    isShowingGridMediaViewer = true
+                                }
+                                .onLongPressGesture(minimumDuration: 0.5) {
+                                    showingNoteId = note.id
+                                }
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+                
+                // Show "Show earlier" button for pagination
+                if !filteredNotes.isEmpty {
+                    Button {
+                        feedService.loadMore()
+                    } label: {
+                        HStack(spacing: 8) {
+                            if feedService.isLoadingFeed {
+                                ProgressView().controlSize(.small).tint(Color.havenPurple)
+                            } else {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            Text(feedService.isLoadingFeed ? "Loading..." : "Show earlier")
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        }
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.platformTertiaryGroupedBackground)
+                        .cornerRadius(10)
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.platformSeparator, lineWidth: 1))
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(feedService.isLoadingFeed)
+                }
+                
+                Color.clear.frame(height: 80) // Space for floating button
+            }
+        }
+    }
+
+    private func gridCell(for note: FeedNote, url: URL) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topTrailing) {
+                FeedMediaView(url: url, isThumbnail: true)
+                    .frame(width: geo.size.width, height: geo.size.width)
+                    .clipped()
+
+                // Indicators overlay
+                HStack(spacing: 4) {
+                    if note.mediaURLs.count > 1 {
+                        Image(systemName: "square.fill.on.square.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(4)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    } else if let extensionType = FeedMediaType.fromExtension(url), extensionType == .video {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(4)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+                .padding(6)
+            }
+        }
+        .aspectRatio(1, contentMode: .fill)
     }
 }
 
@@ -981,7 +1206,8 @@ struct FeedNoteRow: View {
                     HStack(spacing: 12) {
                         actionButton(icon: "message", action: { onReply?() })
 
-                        let isReposted = feedService.repostedEventIds.contains(note.id)
+                        let repostCheckId = note.repostedEventId ?? note.id
+                        let isReposted = feedService.repostedEventIds.contains(repostCheckId)
                         actionButton(
                             icon: "arrow.2.squarepath",
                             color: isReposted ? .green : .secondary,

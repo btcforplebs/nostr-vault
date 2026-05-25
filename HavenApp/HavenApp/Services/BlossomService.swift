@@ -583,7 +583,6 @@ class BlossomService: @unchecked Sendable {
         let blossomPath = await MainActor.run { configService.config.blossomPath }
         let ownerPubkey = await MainActor.run { nostrService.ownerHexPubkey }
         let whitelistedPubkeys = await MainActor.run { configService.whitelistedHexPubkeys }
-        let followedPubkeys = await MainActor.run { FeedService.shared.followedPubkeys }
 
         // Get local blob hashes
         let blossomDir = relayDataDir.appendingPathComponent(blossomPath)
@@ -594,13 +593,12 @@ class BlossomService: @unchecked Sendable {
             localHashes = []
         }
 
-        // Find remote media URLs from owner, whitelisted, or followed accounts that aren't stored locally
+        // Find remote media URLs from owner or whitelisted accounts that aren't stored locally
         var urlsToMirror: [URL] = []
         for item in noteMedia {
             guard let pubkey = item.pubkey,
                   pubkey == ownerPubkey ||
-                  whitelistedPubkeys.contains(pubkey) ||
-                  followedPubkeys.contains(pubkey) else { continue }
+                  whitelistedPubkeys.contains(pubkey) else { continue }
             // Skip local URLs
             let host = item.url.host?.lowercased() ?? ""
             if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" { continue }

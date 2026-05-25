@@ -2,6 +2,76 @@ import SwiftUI
 import AVKit
 import AVFoundation
 
+// MARK: - VideoPlayerCache
+
+class VideoPlayerCache: ObservableObject {
+    static let shared = VideoPlayerCache()
+    private var cache: [URL: AVPlayer] = [:]
+    private var observers: [URL: NSObjectProtocol] = [:]
+    private var accessOrder: [URL] = []
+    private let limit = 10
+    private let lock = NSLock()
+    
+    /// Tracks which video URL is currently being viewed full-screen so we don't pause it when the feed cell goes off-screen
+    @Published var activeFullScreenURL: URL? = nil
+
+    func player(for url: URL) -> AVPlayer {
+        lock.lock()
+        defer { lock.unlock() }
+
+        // Update LRU access order
+        if let index = accessOrder.firstIndex(of: url) {
+            accessOrder.remove(at: index)
+        }
+        accessOrder.append(url)
+
+        if let existing = cache[url] {
+            return existing
+        }
+
+        let finalURL = MediaCacheService.shared.preparePlayableURL(for: url) ?? url
+
+        var assetOptions: [String: Any] = [:]
+        if !finalURL.isFileURL && finalURL.pathExtension.isEmpty {
+            let mimeType = MediaTypeDetector.shared.getCachedContentType(for: url) ?? "video/mp4"
+            assetOptions[AVURLAssetOverrideMIMETypeKey] = mimeType
+        }
+
+        let asset = AVURLAsset(url: finalURL, options: assetOptions)
+        let playerItem = AVPlayerItem(asset: asset)
+        let player = AVPlayer(playerItem: playerItem)
+        player.isMuted = true
+        
+        // Auto-looping logic
+        let observer = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { [weak player] _ in
+            player?.seek(to: .zero)
+            player?.play()
+        }
+
+        cache[url] = player
+        observers[url] = observer
+
+        // Evict oldest if limit exceeded
+        if cache.count > limit {
+            if let oldest = accessOrder.first {
+                accessOrder.removeFirst()
+                if let oldPlayer = cache.removeValue(forKey: oldest) {
+                    oldPlayer.pause()
+                }
+                if let oldObserver = observers.removeValue(forKey: oldest) {
+                    NotificationCenter.default.removeObserver(oldObserver)
+                }
+            }
+        }
+
+        return player
+    }
+}
+
 struct VideoPlayerView: View {
     let url: URL
     /// Optional MIME hint used when the URL has no extension (e.g. Blossom hashes).
@@ -164,12 +234,14 @@ struct InlineFeedVideoPlayer: View {
     let url: URL
     /// Called when the user taps the video body (excluding the mute button).
     var onTap: (() -> Void)? = nil
+    @ObservedObject private var cache = VideoPlayerCache.shared
     @State private var player: AVPlayer?
     @State private var isMuted: Bool = true
     @State private var isPlaying: Bool = false
     @State private var loadError: String? = nil
     @State private var thumbnail: PlatformImage? = nil
     @State private var loopObserver: NSObjectProtocol? = nil
+    @State private var isReadyToPlay: Bool = false
 
     var body: some View {
         GeometryReader { geo in
@@ -189,9 +261,49 @@ struct InlineFeedVideoPlayer: View {
                         .foregroundColor(.white.opacity(0.85))
                         .shadow(color: .black.opacity(0.5), radius: 4)
                 } else if let player = player {
-                    InlinePlayerLayer(player: player)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .onTapGesture { onTap?() }
+                    ZStack {
+                        if cache.activeFullScreenURL != url {
+                            InlinePlayerLayer(player: player)
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .allowsHitTesting(false) // Let touches fall through natively for seamless swiping and tapping!
+                                .onReceive(player.publisher(for: \.timeControlStatus)) { status in
+                                    if status == .playing {
+                                        withAnimation(.easeOut(duration: 0.3)) {
+                                            isReadyToPlay = true
+                                        }
+                                    }
+                                }
+                                .onReceive(player.publisher(for: \.status)) { status in
+                                    if status == .readyToPlay {
+                                        if player.rate > 0 || CMTimeGetSeconds(player.currentTime()) > 0.1 {
+                                            withAnimation(.easeOut(duration: 0.3)) {
+                                                isReadyToPlay = true
+                                            }
+                                        }
+                                    }
+                                }
+                        } else {
+                            // Detached for full-screen: render static thumbnail
+                            if let thumb = thumbnail {
+                                Image(platformImage: thumb)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: geo.size.width, height: geo.size.height)
+                            }
+                        }
+
+                        // Seamless thumbnail overlay that fades out once player starts rendering
+                        if !isReadyToPlay && cache.activeFullScreenURL != url, let thumb = thumbnail {
+                            Image(platformImage: thumb)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: geo.size.width, height: geo.size.height)
+                                .transition(.opacity)
+                        }
+                    }
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onTap?() }
                 } else {
                     // Loading — show thumbnail or progress
                     if let thumb = thumbnail {
@@ -234,8 +346,11 @@ struct InlineFeedVideoPlayer: View {
                 }
             }
             .onDisappear {
-                player?.pause()
-                isPlaying = false
+                if VideoPlayerCache.shared.activeFullScreenURL != url {
+                    player?.pause()
+                    isPlaying = false
+                    isReadyToPlay = false
+                }
             }
         }
     }
@@ -254,42 +369,10 @@ struct InlineFeedVideoPlayer: View {
     }
 
     private func setupPlayer() {
-        let finalURL = MediaCacheService.shared.preparePlayableURL(for: url) ?? url
-
-        // Safety check for local files
-        if finalURL.isFileURL {
-            let actualPath = finalURL.resolvingSymlinksInPath().path
-            if !FileManager.default.fileExists(atPath: actualPath) {
-                loadError = "File not found"
-                return
-            }
-        }
-
-        // Build asset with MIME hint for extensionless URLs
-        var assetOptions: [String: Any] = [:]
-        if !finalURL.isFileURL && finalURL.pathExtension.isEmpty {
-            let mimeType = MediaTypeDetector.shared.getCachedContentType(for: url) ?? "video/mp4"
-            assetOptions[AVURLAssetOverrideMIMETypeKey] = mimeType
-        }
-
-        let asset = AVURLAsset(url: finalURL, options: assetOptions)
-        let playerItem = AVPlayerItem(asset: asset)
-        let newPlayer = AVPlayer(playerItem: playerItem)
-        newPlayer.isMuted = true
-
-        // Loop: when playback ends, seek back to start
-        let observer = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: playerItem,
-            queue: .main
-        ) { _ in
-            newPlayer.seek(to: .zero)
-            newPlayer.play()
-        }
-        self.loopObserver = observer
-
-        self.player = newPlayer
-        newPlayer.play()
+        let cachedPlayer = VideoPlayerCache.shared.player(for: url)
+        cachedPlayer.isMuted = isMuted
+        self.player = cachedPlayer
+        cachedPlayer.play()
         isPlaying = true
     }
 }
@@ -316,6 +399,10 @@ struct InlinePlayerLayer: NSViewRepresentable {
             nsView.playerLayer.videoGravity = videoGravity
         }
     }
+    
+    static func dismantleNSView(_ nsView: PlayerNSView, coordinator: Coordinator) {
+        nsView.playerLayer.player = nil
+    }
 }
 
 class PlayerNSView: NSView {
@@ -335,6 +422,11 @@ class PlayerNSView: NSView {
         let playerLayer = AVPlayerLayer()
         playerLayer.isOpaque = true
         return playerLayer
+    }
+    
+    override func layout() {
+        super.layout()
+        playerLayer.frame = bounds
     }
 
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
@@ -358,6 +450,10 @@ struct InlinePlayerLayer: UIViewRepresentable {
         if uiView.playerLayer.videoGravity != videoGravity {
             uiView.playerLayer.videoGravity = videoGravity
         }
+    }
+    
+    static func dismantleUIView(_ uiView: PlayerUIView, coordinator: Coordinator) {
+        uiView.playerLayer.player = nil
     }
 
     class PlayerUIView: UIView {
@@ -411,7 +507,7 @@ struct NativeVideoPlayer: UIViewControllerRepresentable {
 // MARK: - FullScreenVideoPlayer
 
 /// Chromeless full-screen video player for use in FeedMediaViewer.
-/// Matches the visual language of InlineFeedVideoPlayer but unmuted, with tap-to-pause.
+/// Matches the visual language of InlineFeedVideoPlayer but unmuted, with tap-to-pause, custom scrubber, and iPad optimizations.
 struct FullScreenVideoPlayer: View {
     let url: URL
     var mimeType: String? = nil
@@ -421,7 +517,24 @@ struct FullScreenVideoPlayer: View {
     @State private var isPlaying: Bool = true
     @State private var showPlayIcon: Bool = false
     @State private var loadError: String? = nil
-    @State private var loopObserver: NSObjectProtocol? = nil
+    
+    // Scrubber / playback tracking
+    @State private var currentTime: Double = 0
+    @State private var duration: Double = 0
+    @State private var isScrubbing: Bool = false
+    @State private var timeObserverToken: Any? = nil
+
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
+    private var isPadOrMac: Bool {
+        #if os(iOS)
+        return UIDevice.current.userInterfaceIdiom == .pad || horizontalSizeClass == .regular
+        #else
+        return true
+        #endif
+    }
 
     var body: some View {
         ZStack {
@@ -438,6 +551,12 @@ struct FullScreenVideoPlayer: View {
                 }
             } else if let player = player {
                 InlinePlayerLayer(player: player, videoGravity: .resizeAspect)
+                    .allowsHitTesting(false)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onTapGesture { togglePlayPause() }
 
                 // Momentary play/pause feedback icon
@@ -449,34 +568,169 @@ struct FullScreenVideoPlayer: View {
                         .background(Circle().fill(Color.black.opacity(0.5)))
                         .transition(.opacity)
                 }
+                
+                // Sleek Custom Glassmorphic Scrubber Bar
+                VStack {
+                    Spacer()
+                    
+                    HStack(spacing: isPadOrMac ? 16 : 12) {
+                        // Play/Pause button
+                        Button(action: togglePlayPause) {
+                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: isPadOrMac ? 18 : 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: isPadOrMac ? 44 : 36, height: isPadOrMac ? 44 : 36)
+                                .background(Circle().fill(Color.white.opacity(0.2)))
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut(.space, modifiers: [])
+                        
+                        // Current time label
+                        Text(formatTime(currentTime))
+                            .font(.system(size: isPadOrMac ? 13 : 11, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.8))
+                            .frame(width: isPadOrMac ? 50 : 42, alignment: .leading)
+                        
+                        // Scrubber Slider
+                        Slider(value: Binding(
+                            get: { currentTime },
+                            set: { newValue in
+                                currentTime = newValue
+                                if isScrubbing {
+                                    // Live seek scrubbing for highly interactive experience
+                                    player.seek(to: CMTime(seconds: newValue, preferredTimescale: 1000))
+                                }
+                            }
+                        ), in: 0...max(1, duration), onEditingChanged: { scrubbing in
+                            isScrubbing = scrubbing
+                            if scrubbing {
+                                player.pause()
+                            } else {
+                                player.seek(to: CMTime(seconds: currentTime, preferredTimescale: 1000)) { _ in
+                                    if isPlaying {
+                                        player.play()
+                                    }
+                                }
+                            }
+                        })
+                        .tint(Color.havenPurple)
+                        
+                        // Total duration label
+                        Text(formatTime(duration))
+                            .font(.system(size: isPadOrMac ? 13 : 11, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.8))
+                            .frame(width: isPadOrMac ? 50 : 42, alignment: .trailing)
+                        
+                        // Mute button
+                        Button(action: toggleMute) {
+                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .font(.system(size: isPadOrMac ? 17 : 15, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: isPadOrMac ? 44 : 36, height: isPadOrMac ? 44 : 36)
+                                .background(Circle().fill(Color.white.opacity(0.2)))
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut("m", modifiers: [])
+                        
+                        // Hidden keyboard shortcut buttons for seeking
+                        Button(action: seekBackward) { EmptyView() }
+                            .keyboardShortcut(.leftArrow, modifiers: [])
+                            .opacity(0)
+                            .frame(width: 0, height: 0)
+                        
+                        Button(action: seekForward) { EmptyView() }
+                            .keyboardShortcut(.rightArrow, modifiers: [])
+                            .opacity(0)
+                            .frame(width: 0, height: 0)
+                    }
+                    .padding(.horizontal, isPadOrMac ? 24 : 16)
+                    .padding(.vertical, isPadOrMac ? 16 : 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: isPadOrMac ? 24 : 16)
+                            .fill(Color.black.opacity(0.5))
+                            .background(.ultraThinMaterial)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: isPadOrMac ? 24 : 16)
+                            .stroke(Color.white.opacity(isPadOrMac ? 0.15 : 0.08), lineWidth: 1)
+                    )
+                    .frame(maxWidth: isPadOrMac ? 640 : .infinity)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, isPadOrMac ? 32 : 20)
+                }
             } else {
                 ProgressView().tint(.white)
             }
+        }
+        .onAppear {
+            VideoPlayerCache.shared.activeFullScreenURL = url
+            setupPlayer()
+        }
+        .onDisappear {
+            VideoPlayerCache.shared.activeFullScreenURL = nil
+            removeTimeObserver()
+            // Restore standard inline muted play
+            player?.isMuted = true
+            player = nil
+        }
+    }
 
-            // Mute button — bottom right, same style as inline player
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Button(action: toggleMute) {
-                        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.white)
-                            .padding(10)
-                            .background(Circle().fill(Color.black.opacity(0.6)))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(16)
-                }
+    private func formatTime(_ seconds: Double) -> String {
+        guard !seconds.isNaN && !seconds.isInfinite else { return "00:00" }
+        let secs = Int(seconds)
+        let m = (secs % 3600) / 60
+        let s = secs % 60
+        return String(format: "%02d:%02d", m, s)
+    }
+
+    private func seekBackward() {
+        guard let player = player else { return }
+        let currentSeconds = CMTimeGetSeconds(player.currentTime())
+        let targetSeconds = max(0, currentSeconds - 5)
+        player.seek(to: CMTime(seconds: targetSeconds, preferredTimescale: 1000))
+    }
+
+    private func seekForward() {
+        guard let player = player else { return }
+        let currentSeconds = CMTimeGetSeconds(player.currentTime())
+        let durationSeconds = duration
+        let targetSeconds = min(durationSeconds, currentSeconds + 5)
+        player.seek(to: CMTime(seconds: targetSeconds, preferredTimescale: 1000))
+    }
+
+    private func addTimeObserver() {
+        guard let player = player else { return }
+        
+        // Initial duration fetch
+        if let durationTime = player.currentItem?.duration {
+            let durationSeconds = CMTimeGetSeconds(durationTime)
+            if !durationSeconds.isNaN && !durationSeconds.isInfinite {
+                self.duration = durationSeconds
             }
         }
-        .onAppear { setupPlayer() }
-        .onDisappear {
-            player?.pause()
-            if let obs = loopObserver {
-                NotificationCenter.default.removeObserver(obs)
+        
+        let interval = CMTime(seconds: 0.25, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak player] time in
+            guard let player = player else { return }
+            
+            // Re-fetch duration in case it loaded asynchronously
+            if let durationTime = player.currentItem?.duration {
+                let durationSeconds = CMTimeGetSeconds(durationTime)
+                if !durationSeconds.isNaN && !durationSeconds.isInfinite {
+                    self.duration = durationSeconds
+                }
             }
-            player = nil
+            
+            if !isScrubbing {
+                self.currentTime = CMTimeGetSeconds(time)
+            }
+        }
+    }
+
+    private func removeTimeObserver() {
+        if let token = timeObserverToken {
+            player?.removeTimeObserver(token)
+            timeObserverToken = nil
         }
     }
 
@@ -499,41 +753,15 @@ struct FullScreenVideoPlayer: View {
     }
 
     private func setupPlayer() {
-        let finalURL = MediaCacheService.shared.preparePlayableURL(for: url) ?? url
-
-        if finalURL.isFileURL {
-            let actualPath = finalURL.resolvingSymlinksInPath().path
-            guard FileManager.default.fileExists(atPath: actualPath) else {
-                loadError = "File not found"
-                return
-            }
-        }
-
-        var assetOptions: [String: Any] = [:]
-        if !finalURL.isFileURL && finalURL.pathExtension.isEmpty {
-            let resolved = mimeType
-                ?? MediaTypeDetector.shared.getCachedContentType(for: url)
-                ?? "video/mp4"
-            assetOptions[AVURLAssetOverrideMIMETypeKey] = resolved
-        }
-
-        let asset = AVURLAsset(url: finalURL, options: assetOptions)
-        let playerItem = AVPlayerItem(asset: asset)
-        let newPlayer = AVPlayer(playerItem: playerItem)
-        newPlayer.isMuted = false
-
-        let observer = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: playerItem,
-            queue: .main
-        ) { _ in
-            newPlayer.seek(to: .zero)
-            newPlayer.play()
-        }
-        loopObserver = observer
-
-        self.player = newPlayer
-        newPlayer.play()
+        let cachedPlayer = VideoPlayerCache.shared.player(for: url)
+        
+        // Full screen default unmuted
+        cachedPlayer.isMuted = isMuted
+        
+        self.player = cachedPlayer
+        addTimeObserver()
+        
+        cachedPlayer.play()
         isPlaying = true
     }
 }

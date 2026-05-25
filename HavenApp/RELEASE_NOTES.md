@@ -1,30 +1,30 @@
-# Haven App v2.4.0 (macOS) / v1.0 (iOS) Release Notes
+# Haven App v2.5.1 (macOS) / v1.1.1 (iOS) Release Notes
 
-This major update introduces the **initial launch of Haven for iOS**, a unified C-archive architecture, NIP-49 private key encryption, and full support for Nostr Zaps and Wallet Connect.
+This update introduces major performance and experience enhancements to media feeds and full-screen video playback across macOS, iOS, and iPadOS. We have resolved critical gesture swallowing bugs, redesigned full-screen video controls with high-fidelity glassmorphic overlays, and optimized playback transitions via shared players.
 
 > [!IMPORTANT]
-> **macOS Installation Note**: Haven is currently unsigned code. macOS will likely block the application from opening by default. To bypass this, **Right-Click (or Control-Click)** the app and select **Open**. You may need to do this twice.
+> **Performance Tip**: When viewing videos in the feed, you can now tap once to open full-screen playback instantly, or long-press (0.5s) to view the note's detail tree. Tapping inside the full-screen player also supports native hardware keyboard shortcuts on iPad and macOS!
 
 ## Key Features & Improvements
 
-*   **iOS Support (1.0)**: Haven is now available on iOS! A unified codebase means the same robust relay technology and features are now available in your pocket.
-*   **C-Shared Library Architecture**: The Go relay is now linked directly into the Swift binary as a static library. This eliminates external process management and ensures a more stable, unified application.
-*   **NIP-49 Private Key Encryption**: Secure your Nostr identity with password-based encryption (ncryptsec). Your password is saved in the system Keychain for a seamless, secure signing experience.
-*   **Nostr Zaps & NWC**: Support for Nostr Wallet Connect (NWC) lets you tip and be tipped directly from within Haven using Zaps.
-*   **Mac Relay Sync (iOS Exclusive)**: Since mobile relays don't run 24/7, you can now connect your iOS Haven app to your always-on Mac Haven relay to sync missed notes automatically.
-*   **Feed Overhaul**: Added pull-to-refresh, a "New Posts" indicator, and a context-aware media filter.
-*   **Web of Trust Persistence**: WoT results are now cached locally, dramatically reducing startup time on subsequent launches.
-*   **UGC Reporting & Safety**: Full support for reporting and blocking users to ensure a safe community environment.
+*   **Shared Video Player Cache (`VideoPlayerCache`)**: Implemented a size-limited LRU pool (up to 10 instances) of `AVPlayer`. Inline feed playback now transitions seamlessly into full-screen without stopping or restarting the track, preserving the exact current playhead.
+*   **Premium Glassmorphic Playback Controls**: Built a stunning, floating controls console utilizing an `.ultraThinMaterial` pill with a soft reflective border. Features a high-fidelity seek scrubber, monospace timecode display, play/pause and mute/unmute buttons.
+*   **iPad & Wide-Screen Scaling**: The floating media controls panel automatically adapts, centers, and scales dynamically on large canvas screens and landscape devices.
+*   **Hardware Keyboard Mappings**: Standardized desktop/iPad hardware keys inside the media viewer—press **Spacebar** to toggle play/pause, **M** to mute/unmute, and **Left / Right Arrow Keys** to skip 5 seconds backward/forward.
+*   **Buffer Thumbnail Overlays**: Eliminated empty black boxes during video initialization by overlaying static thumbnails that fade out smoothly once the active player frame starts rendering.
+*   **Grid Navigation & Swipe Carousel**: Tapping media cells launches a swipeable, full-screen horizontal paging view (`TabView`) populated by a static snapshot (`gridMediaSnapshot`) captured at tap-time, safeguarding your swiping position against background feed syncs.
 
-## Bug Fixes
+## Bug Fixes & Refinement
 
-*   **App Transport Security**: Fixed media playback and local networking permissions issues on both platforms.
-*   **Relay Stability**: Removed legacy helper processes and improved connection handling to prevent crashes.
-*   **Feed Threading**: Fixed logic for displaying parent/child note relationships and improved deduplication.
-*   **Blossom Mirroring**: Fully aligned Blossom mirroring implementation with the standard BUD-01/BUD-02 specs, correcting the Nostr authorization scheme, parsing canonical `BlobDescriptor` responses, handling local network SSL trust/Tailscale, and improving memory efficiency during large uploads.
-*   **NIP-18 Reposts**: Corrected kind 6 repost structure to contain stringified event JSON in `content` per Nostr specification, improving FeedNote rendering, automatic missing profile loading for reposted authors, and race safety during rapid active account switching.
-*   **MIME Detection**: Improved media type detection for Blossom and Nostr media attachments.
-*   **Sandbox & Permissions**: Optimized the data import and export pipeline to fully comply with modern macOS sandbox requirements.
+*   **Gesture Conflict Resolution**: Resolved native `AVPlayerLayer` gesture capturing issues by bypassing hit-testing on the core layer. This allows scroll and drag-to-dismiss gestures to flow seamlessly to parent SwiftUI views.
+*   **Horizontal Media Swiping**: Restricted the drag-to-dismiss gesture inside the full-screen `FeedMediaViewer` to the vertical axis when unzoomed. This prevents visual conflicts and enables smooth, native horizontal swiping between images and videos in the sheet carousel.
+*   **Video Swiping & Tap-to-Pause**: Placed an `.allowsHitTesting(false)` overlay on the native full-screen video layer and paired it with a transparent tap-capturing ZStack, allowing swipes to bubble up natively to the paging container while preserving play/pause tapping.
+*   **Global Feed Sensitive Content Warning**: Overhauled warning flow to display a Sensitive Content Warning confirmation dialog every single time the user clicks or switches to the Global Media Feed, enforcing continuous compliance.
+*   **Horizontal Swipe Carousel Dismissal**: Fixed sheet presentation conflict in `FeedView` where horizontal swiping triggered immediate page dismiss-and-reappear animations, by transitioning the sheet container to be presented via a simple boolean `isShowingGridMediaViewer` rather than the active selection's identity.
+*   **Conditional Tap Event Swallowing**: Standardized dynamic touch handling with a custom `.onTapGestureIfSome` helper, ensuring standard cell interaction is preserved without intercepting parent lists.
+*   **Full-Screen Video Aspect Ratio**: Fixed aspect ratio calculation inside `FullScreenVideoPlayer` by replacing generic fill bounds with `.resizeAspect` (letterbox) to render wide videos perfectly, while keeping `.resizeAspectFill` for inline feed cards.
+*   **Blossom Mirroring Spec Compliance**: Aligned authorization HTTP headers with the canonical BUD-02 standard using the correct `Nostr` token prefix, standardizing JSON response parsing, and enabling trust bypass for local Tailscale/LAN IP ranges.
+*   **NIP-18 Reposts Formatting**: Standardized kind 6 repost publication structure to stringify root event contents inside `content` and attach correct `e`/`p` markers.
+*   **Account Switching Safety**: Prevented flight crosstalk and visual corruption during active account shifts by discarding pending contact lists and background relay requests dynamically.
 
 Thank you for being part of the Haven community!
-

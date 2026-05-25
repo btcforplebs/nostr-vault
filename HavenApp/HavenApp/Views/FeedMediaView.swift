@@ -104,19 +104,28 @@ struct FeedMediaView: View {
                 .stroke(Color.platformSeparator, lineWidth: 0.5)
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
-        .onTapGesture { onTap?() }
+        .onTapGestureIfSome(onTap)
     }
 
     private var videoView: some View {
-        InlineFeedVideoPlayer(url: url, onTap: onTap)
-            .aspectRatio(1, contentMode: .fill)
-            .frame(maxWidth: .infinity)
-            .frame(maxHeight: isThumbnail ? .infinity : maxHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.platformSeparator, lineWidth: 0.5)
-            )
+        Group {
+            if isThumbnail {
+                FeedVideoThumbnailView(url: url)
+                    .aspectRatio(1, contentMode: .fill)
+            } else {
+                InlineFeedVideoPlayer(url: url, onTap: onTap)
+                    .aspectRatio(1, contentMode: .fill)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(maxHeight: isThumbnail ? .infinity : maxHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.platformSeparator, lineWidth: 0.5)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onTapGestureIfSome(onTap)
     }
 
     private var photoView: some View {
@@ -133,7 +142,7 @@ struct FeedMediaView: View {
                 .stroke(Color.platformSeparator, lineWidth: 0.5)
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
-        .onTapGesture { onTap?() }
+        .onTapGestureIfSome(onTap)
     }
 
     private var placeholderView: some View {
@@ -284,7 +293,7 @@ private struct FeedGIFView: View {
             AnimatedImage(
                 url: url,
                 contentMode: isThumbnail ? .fill : .fit,
-                shouldAnimate: true,
+                shouldAnimate: !isThumbnail,
                 onLoad: { size in
                     withAnimation(.easeIn(duration: 0.2)) {
                         if size.width > 0 && size.height > 0 {
@@ -309,5 +318,54 @@ private struct FeedGIFView: View {
         if isThumbnail { return .infinity }
         guard let ratio = aspectRatio else { return landscapeMaxHeight }
         return ratio < 1 ? portraitMaxHeight : landscapeMaxHeight
+    }
+}
+
+// MARK: - FeedVideoThumbnailView
+
+private struct FeedVideoThumbnailView: View {
+    let url: URL
+    @State private var thumbnail: PlatformImage? = nil
+
+    var body: some View {
+        ZStack {
+            Color.platformTertiaryGroupedBackground
+
+            if let thumb = thumbnail {
+                Image(platformImage: thumb)
+                    .resizable()
+                    .scaledToFill()
+                    .transition(.opacity.animation(.easeIn(duration: 0.15)))
+            } else {
+                ProgressView()
+                    .tint(Color.havenPurple.opacity(0.6))
+            }
+        }
+        .onAppear { loadThumbnail() }
+    }
+
+    private func loadThumbnail() {
+        if let cached = MediaCacheService.shared.cachedThumbnail(for: url) {
+            self.thumbnail = cached
+            return
+        }
+        Task {
+            if let thumb = await MediaCacheService.shared.generateThumbnail(for: url) {
+                await MainActor.run { self.thumbnail = thumb }
+            }
+        }
+    }
+}
+
+// MARK: - View Extension
+
+extension View {
+    @ViewBuilder
+    func onTapGestureIfSome(_ action: (() -> Void)?) -> some View {
+        if let action = action {
+            self.onTapGesture { action() }
+        } else {
+            self
+        }
     }
 }

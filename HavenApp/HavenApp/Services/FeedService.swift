@@ -244,6 +244,8 @@ final class BackgroundAccumulator: @unchecked Sendable {
     var replyTargets: [String] = []
     /// Note IDs that were reposted (from kind 6 events).
     var repostTargets: [String] = []
+    /// Raw event JSON strings for NIP-18 repost embedding (id → stringified JSON with sig).
+    var rawEventEntries: [(id: String, json: String)] = []
     var flushScheduled = false
 
     /// Dedup set for engagement events (reactions, etc.) to avoid double-counting
@@ -259,6 +261,7 @@ final class BackgroundAccumulator: @unchecked Sendable {
         let reactionEvents: [(targetId: String, pubkey: String)]
         let replyTargets: [String]
         let repostTargets: [String]
+        let rawEventEntries: [(id: String, json: String)]
     }
 
     func drain() -> Snapshot {
@@ -267,13 +270,15 @@ final class BackgroundAccumulator: @unchecked Sendable {
             profiles: profiles,
             reactionEvents: reactionEvents,
             replyTargets: replyTargets,
-            repostTargets: repostTargets
+            repostTargets: repostTargets,
+            rawEventEntries: rawEventEntries
         )
         notes.removeAll(keepingCapacity: true)
         profiles.removeAll(keepingCapacity: true)
         reactionEvents.removeAll(keepingCapacity: true)
         replyTargets.removeAll(keepingCapacity: true)
         repostTargets.removeAll(keepingCapacity: true)
+        rawEventEntries.removeAll(keepingCapacity: true)
         flushScheduled = false
 
         // Cap dedup set to prevent unbounded growth
@@ -286,11 +291,17 @@ final class BackgroundAccumulator: @unchecked Sendable {
 
 // MARK: - FeedService
 
-/// Feed mode: following (contacts only) or global (all notes from relays).
+enum MediaFeedMode: String, CaseIterable {
+    case following = "Following"
+    case global = "Global"
+}
+
+/// Feed mode: following (contacts only), discovery (extended network), global (all notes), or media grid.
 enum FeedMode: String, CaseIterable {
     case following = "Following"
     case discovery = "Discovery"
     case global = "Global"
+    case media = "Media"
 }
 
 /// Per-account, in-memory snapshot of the feed state. Captured before switching
@@ -322,6 +333,7 @@ class FeedService: ObservableObject {
     static let shared = FeedService()
 
     @Published var feedMode: FeedMode = .following
+    @Published var mediaFeedMode: MediaFeedMode = .following
     @Published var notes: [FeedNote] = []
     @Published var parentNotesCache: [String: FeedNote] = [:]
     @Published var followedPubkeys: [String] = []
@@ -353,6 +365,11 @@ class FeedService: ObservableObject {
     @Published var onchainZapEventIds: [String: Int] = [:]
     /// Per-note engagement counts (replies, reactions, reposts) from relay data.
     @Published var noteStats: [String: NoteStats] = [:]
+
+    /// Cache of raw event JSON strings for NIP-18 repost embedding.
+    /// Key: event ID, Value: complete stringified JSON of the event (includes sig).
+    private(set) var rawEventCache: [String: String] = [:]
+    private static let maxRawEventCacheSize = 1000
 
     // Preserve the original kind 3 content (relay hints) to avoid wiping it on follow/unfollow
     private var contactListContent: String = ""
@@ -568,7 +585,7 @@ class FeedService: ObservableObject {
             // Background top-up: subscribe to relays but keep the cached feed
             // visible. The inline syncing pill replaces the full-screen spinner.
             topUpFromRelays()
-        } else if feedMode == .global {
+        } else if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
             subscribeToAllRelays()
         } else {
             refresh()
@@ -723,7 +740,7 @@ class FeedService: ObservableObject {
         disconnectFeedClients()
         cancellables.removeAll()
 
-        if mode == .global {
+        if mode == .global || (mode == .media && mediaFeedMode == .global) {
             // Global mode doesn't need contacts — subscribe directly
             subscribeToAllRelays()
         } else {
@@ -749,7 +766,7 @@ class FeedService: ObservableObject {
         disconnectFeedClients()
         cancellables.removeAll()
 
-        if feedMode == .global {
+        if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
             subscribeToAllRelays()
         } else {
             refresh()
@@ -769,7 +786,8 @@ class FeedService: ObservableObject {
     /// kicks off a contact-list re-fetch in parallel so a stale follow set
     /// gets updated without blocking the visible feed.
     private func topUpFromRelays() {
-        guard !followedPubkeys.isEmpty || feedMode == .global else {
+        let isGlobalLike = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+        guard !followedPubkeys.isEmpty || isGlobalLike else {
             // Snapshot had no follows — fall back to the cold-start flow.
             refresh()
             return
@@ -779,7 +797,7 @@ class FeedService: ObservableObject {
         newSinceLastView = Date()
 
         // 1. Subscribe to relays immediately using the cached follow set.
-        if feedMode == .global || !followedPubkeys.isEmpty {
+        if isGlobalLike || !followedPubkeys.isEmpty {
             subscribeToAllRelays()
         }
 
@@ -847,7 +865,7 @@ class FeedService: ObservableObject {
     func loadMore() {
         guard !isLoadingFeed, let oldest = notes.last?.createdAt else { return }
         let until = Int64(oldest.timeIntervalSince1970) - 1
-        if feedMode == .following && followedPubkeys.isEmpty { return }
+        if (feedMode == .following || (feedMode == .media && mediaFeedMode == .following)) && followedPubkeys.isEmpty { return }
         if feedMode == .discovery && extendedNetworkPubkeys.isEmpty { return }
 
         isLoadingFeed = true
@@ -1194,7 +1212,7 @@ class FeedService: ObservableObject {
     private var feedLoadingTimeout: Timer?
 
     private func subscribeToAllRelays() {
-        if feedMode == .following && followedPubkeys.isEmpty {
+        if (feedMode == .following || (feedMode == .media && mediaFeedMode == .following)) && followedPubkeys.isEmpty {
             connectionStatus = "Follow someone on Nostr to see their posts here"
             return
         }
@@ -1317,14 +1335,15 @@ class FeedService: ObservableObject {
 
     private func sendFeedSubscription(client: WebSocketClient, label: String, until: Int64? = nil) {
         let since = Int64(Date().timeIntervalSince1970) - (3 * 24 * 3600) // last 3 days
-        let isGlobal = feedMode == .global
+        let isGlobal = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+        let limitVal = feedMode == .media ? 150 : 75
         var filter: [String: Any] = [
             "kinds": [1, 6, 30023],
             "since": since,
-            "limit": isGlobal ? 75 : 75
+            "limit": limitVal
         ]
         
-        if feedMode == .following {
+        if feedMode == .following || (feedMode == .media && mediaFeedMode == .following) {
             filter["authors"] = followedPubkeys
         } else if feedMode == .discovery {
             filter["authors"] = extendedNetworkPubkeys
@@ -1496,11 +1515,29 @@ class FeedService: ObservableObject {
             return
         }
 
+        // NIP-18: Cache raw event JSON for repost embedding.
+        // For kind 1/30023: serialize the full event dict (includes sig).
+        // For kind 6 with embedded content: the content IS the inner event's JSON.
+        var rawEntries: [(id: String, json: String)] = []
+        if kind == 1 || kind == 30023 {
+            if let data = try? JSONSerialization.data(withJSONObject: ev, options: []),
+               let json = String(data: data, encoding: .utf8) {
+                rawEntries.append((id: id, json: json))
+            }
+        }
+        if kind == 6, !content.isEmpty,
+           let innerData = content.data(using: .utf8),
+           let inner = try? JSONSerialization.jsonObject(with: innerData) as? [String: Any],
+           let innerId = inner["id"] as? String {
+            rawEntries.append((id: innerId, json: content))
+        }
+
         // Accumulate on processing queue — NO per-event main thread dispatch
         let acc = self.bgAccumulator
         processingQueue.async { [weak self] in
             acc.notes.append(note)
             acc.profiles.append(pubkey)
+            acc.rawEventEntries.append(contentsOf: rawEntries)
             // After FeedNote.init swaps for kind 6 reposts, note.pubkey is the original author.
             // Fetch their profile too so the reposted card renders with the right name/avatar.
             if note.pubkey != pubkey { acc.profiles.append(note.pubkey) }
@@ -1621,6 +1658,19 @@ class FeedService: ObservableObject {
                 updated[targetId] = s
             }
             noteStats = updated
+        }
+
+        // Merge raw event JSON entries into the cache for NIP-18 repost embedding
+        if !snap.rawEventEntries.isEmpty {
+            for entry in snap.rawEventEntries {
+                rawEventCache[entry.id] = entry.json
+            }
+            // Cap cache size to prevent unbounded growth
+            if rawEventCache.count > Self.maxRawEventCacheSize {
+                let overflow = rawEventCache.count - Self.maxRawEventCacheSize
+                let keysToRemove = Array(rawEventCache.keys.prefix(overflow))
+                for key in keysToRemove { rawEventCache.removeValue(forKey: key) }
+            }
         }
 
         if added {
@@ -1818,6 +1868,14 @@ class FeedService: ObservableObject {
         )
 
         guard !FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) else { return }
+
+        // Cache raw event JSON for NIP-18 repost embedding
+        if kind == 1 || kind == 30023 {
+            if let evData = try? JSONSerialization.data(withJSONObject: ev, options: []),
+               let evJSON = String(data: evData, encoding: .utf8) {
+                rawEventCache[id] = evJSON
+            }
+        }
 
         fetchingNoteIds.remove(id)
         parentNotesCache[id] = note

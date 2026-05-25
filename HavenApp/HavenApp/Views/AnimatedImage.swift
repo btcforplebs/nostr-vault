@@ -222,7 +222,11 @@ struct AnimatedImage: UIViewRepresentable {
 
             let image: UIImage?
             if url.isGIF || AnimatedImageHelper.isGIFData(data) {
-                image = Self.makeAnimatedGIF(data: data)
+                if self.shouldAnimate {
+                    image = Self.makeAnimatedGIF(data: data)
+                } else {
+                    image = UIImage(data: data)
+                }
             } else if let targetSize = self.targetSize {
                 image = await ImageDownsampler.downsample(data: data, maxDimension: max(targetSize.width, targetSize.height))
             } else {

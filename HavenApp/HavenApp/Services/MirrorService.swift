@@ -48,15 +48,14 @@ class MirrorService: ObservableObject {
                 totalCount += count
             }
 
-            // 2. Mirror from note media URLs (handles any server) - includes all historical notes from local relay and feed notes
+            // 2. Mirror from note media URLs (handles any server) - includes all historical notes from local relay
             statusText = "Scanning notes for media..."
             let ownerMedia = await self.fetchAllOwnerMedia(configService: configService, nostrService: nostrService)
-            let feedMedia = self.fetchFeedMedia(nostrService: nostrService)
             
             // Deduplicate combined media by URL
             var seenURLs = Set<URL>()
             var noteMedia: [MediaItem] = []
-            for item in (ownerMedia + feedMedia) {
+            for item in ownerMedia {
                 if seenURLs.insert(item.url).inserted {
                     noteMedia.append(item)
                 }
@@ -86,29 +85,7 @@ class MirrorService: ObservableObject {
         }
     }
 
-    /// Extracts media items from active feed notes in FeedService.shared.notes
-    @MainActor
-    private func fetchFeedMedia(nostrService: NostrService) -> [MediaItem] {
-        let notes = FeedService.shared.notes
-        var items: [MediaItem] = []
-        for note in notes {
-            for url in note.mediaURLs {
-                let mime = NostrService.mimeFromExtension(url)
-                let mediaType = NostrService.mediaTypeFromMime(mime, url: url)
-                let item = MediaItem(
-                    id: UUID(),
-                    url: url,
-                    type: mediaType,
-                    dateAdded: note.createdAt,
-                    pubkey: note.pubkey,
-                    tags: note.tags,
-                    mimeType: mime
-                )
-                items.append(item)
-            }
-        }
-        return items
-    }
+    /// Extracts media items from active feed notes in FeedService.shared.notes (owner and whitelisted only)
 
     /// Fetches all historical notes for the owner from the local relay, extracting associated media URLs.
     /// This ensures we discover past uploads that are no longer actively in the feed buffer.

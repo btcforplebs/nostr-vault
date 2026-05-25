@@ -10,6 +10,7 @@ struct IdentifiableURL: Identifiable {
 
 struct FeedMediaViewer: View {
     let url: URL
+    var enableDragDismiss: Bool = true
     var onDismiss: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var nostrService: NostrService
@@ -29,6 +30,7 @@ struct FeedMediaViewer: View {
     @State private var hasJustMirrored: Bool = false
     @State private var isDeleting: Bool = false
     @State private var deleteStatus: DeleteStatus? = nil
+    @State private var isCopied: Bool = false
 
     enum MirrorStatus {
         case loading
@@ -85,7 +87,8 @@ struct FeedMediaViewer: View {
                         }
                     }
             )
-            .simultaneousGesture(
+            .simultaneousGestureIf(
+                enableDragDismiss,
                 DragGesture()
                     .onChanged { value in
                         if scale > 1.0 {
@@ -94,8 +97,9 @@ struct FeedMediaViewer: View {
                                 height: lastOffset.height + value.translation.height
                             )
                         } else {
-                            // Swipe to dismiss tracking
-                            offset = value.translation
+                            // Swipe to dismiss tracking - ONLY vertical when not zoomed
+                            // This allows simultaneous gesture in parent TabView to handle horizontal page swiping.
+                            offset = CGSize(width: 0, height: value.translation.height)
                         }
                     }
                     .onEnded { value in
@@ -133,23 +137,57 @@ struct FeedMediaViewer: View {
                 HStack {
                     if !isLoadingType && !isMirroring {
                         if isOnMirror {
-                            HStack(spacing: 6) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                Text("Mirrored to Blossom")
-                                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                            }
-                            .foregroundColor(.white.opacity(0.95))
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 14)
-                            .background(
-                                Capsule()
-                                    .fill(Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8))
-                                    .overlay(
+                            HStack(spacing: 8) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 16, weight: .semibold))
+                                    Text("Mirrored to Blossom")
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                }
+                                .foregroundColor(.white.opacity(0.95))
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 14)
+                                .background(
+                                    Capsule()
+                                        .fill(Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8))
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                                        )
+                                )
+
+                                Button(action: {
+                                    let link = getMirroredLink()
+                                    PlatformClipboard.copy(link)
+                                    withAnimation(.spring()) {
+                                        isCopied = true
+                                    }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                                        withAnimation(.easeInOut(duration: 0.3)) {
+                                            isCopied = false
+                                        }
+                                    }
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: isCopied ? "checkmark.circle.fill" : "doc.on.doc.fill")
+                                            .font(.system(size: 14, weight: .semibold))
+                                        Text(isCopied ? "Copied!" : "Copy Link")
+                                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                                    }
+                                    .foregroundColor(.white.opacity(0.95))
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 14)
+                                    .background(
                                         Capsule()
-                                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                                            .fill(isCopied ? Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8) : Color.white.opacity(0.2))
+                                            .overlay(
+                                                Capsule()
+                                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                                            )
                                     )
-                            )
+                                }
+                                .buttonStyle(.plain)
+                            }
                             .shadow(color: Color.black.opacity(0.3), radius: 4)
                             .padding(20)
                         } else {
@@ -429,6 +467,19 @@ struct FeedMediaViewer: View {
         return url.deletingPathExtension().lastPathComponent
     }
 
+    private func getMirroredLink() -> String {
+        let hash = extractSHA256FromURL()
+        if !hash.isEmpty {
+            let port = configService.config.relayPort
+            #if os(macOS)
+            return "http://127.0.0.1:\(port)/\(hash)"
+            #else
+            return "https://localhost:\(port)/\(hash)"
+            #endif
+        }
+        return url.absoluteString
+    }
+
     private var isOnMirror: Bool {
         if hasJustMirrored { return true }
 
@@ -653,6 +704,17 @@ struct MediaViewerPhoto: View {
             } else {
                 await MainActor.run { self.loadFailed = true }
             }
+        }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func simultaneousGestureIf<T: Gesture>(_ enabled: Bool, _ gesture: T) -> some View {
+        if enabled {
+            self.simultaneousGesture(gesture)
+        } else {
+            self
         }
     }
 }

@@ -294,7 +294,8 @@ struct NoteDetailView: View {
                     }()
                     composeContext = ComposeContext(replyTo: replyTarget, quoteTo: nil)
                 }
-                let isReposted = feedService.repostedEventIds.contains(note.id)
+                let repostCheckId = note.repostedEventId ?? note.id
+                let isReposted = feedService.repostedEventIds.contains(repostCheckId)
                 actionButton(
                     icon: "arrow.2.squarepath",
                     color: isReposted ? .green : .secondary,
@@ -426,7 +427,8 @@ struct NoteDetailView: View {
     }
 
     private var repliesSection: some View {
-        let currentReplies = feedService.notes.filter { $0.parentEventId == note.id }
+        let targetId = (note.kind == 6 && note.repostedEventId != nil) ? note.repostedEventId! : note.id
+        let currentReplies = feedService.notes.filter { $0.parentEventId == targetId }
             .sorted(by: { $0.createdAt < $1.createdAt })
             
         return VStack(alignment: .leading, spacing: 12) {
@@ -547,7 +549,8 @@ struct NoteDetailView: View {
                 .receive(on: DispatchQueue.main)
                 .sink { state in
                     if state == .connected {
-                        let filter: [String: Any] = ["kinds": [1], "#e": [self.note.id], "limit": 100]
+                        let targetId = (self.note.kind == 6 && self.note.repostedEventId != nil) ? self.note.repostedEventId! : self.note.id
+                        let filter: [String: Any] = ["kinds": [1], "#e": [targetId], "limit": 100]
                         let req = ["REQ", subId, filter] as [Any]
                         if let data = try? JSONSerialization.data(withJSONObject: req),
                            let str = String(data: data, encoding: .utf8) {
@@ -840,13 +843,13 @@ struct ThreadedReplyNode: View {
             .buttonStyle(.plain)
             
             if !childReplies.isEmpty {
-                if depth >= 5 {
+                if depth >= 3 {
                     // Prevent excessive indentation squishing on narrow mobile screens
                     NavigationLink(value: reply) {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.turn.down.right")
                                 .font(.system(size: 11, weight: .bold))
-                            Text("Show \(childReplies.count) more replies")
+                            Text("Show \(childReplies.count) more \(childReplies.count == 1 ? "reply" : "replies")")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                         }
                         .foregroundColor(Color.havenPurple)
@@ -854,7 +857,7 @@ struct ThreadedReplyNode: View {
                         .padding(.horizontal, 12)
                         .background(Color.havenPurple.opacity(0.1))
                         .cornerRadius(8)
-                        .padding(.leading, depth < 3 ? 16 : 8)
+                        .padding(.leading, 8)
                     }
                     .buttonStyle(.plain)
                 } else {
@@ -863,10 +866,10 @@ struct ThreadedReplyNode: View {
                         Rectangle()
                             .fill(Color.havenPurple.opacity(0.25))
                             .frame(width: 1.5)
-                            .padding(.leading, depth < 3 ? 16 : 8)
-                            .padding(.trailing, depth < 3 ? 12 : 6)
+                            .padding(.leading, 8)
+                            .padding(.trailing, 6)
                             .padding(.vertical, 2)
-                        
+
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(childReplies) { child in
                                 ThreadedReplyNode(

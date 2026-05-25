@@ -92,21 +92,28 @@ class PendingPostManager: ObservableObject {
         bannerNoteId = sourceNote.id
         actionType = .repost
         timeRemaining = ActionType.repost.totalTime
+
+        // NIP-18: always repost the ORIGINAL event, not a repost wrapper.
+        // For kind 6 notes, repostedEventId points to the original kind 1 event.
+        let originalId = sourceNote.repostedEventId ?? sourceNote.id
+        let originalPubkey = sourceNote.pubkey // already swapped to inner author for kind 6
+
         beginCountdown {
-            // NIP-18: content SHOULD be the stringified JSON of the reposted event,
-            // and the e tag is just ["e", id, relay-hint] — no NIP-10 marker.
-            let embedded: String = {
-                guard let original = nostrService.events.first(where: { $0.id == sourceNote.id }),
-                      let data = try? JSONEncoder().encode(original),
-                      let json = String(data: data, encoding: .utf8) else { return "" }
-                return json
-            }()
+            // NIP-18: content SHOULD be the stringified JSON of the reposted event.
+            // Look up from FeedService's raw event cache (includes sig for verification).
+            let embedded = FeedService.shared.rawEventCache[originalId] ?? ""
+
+            // NIP-18: e tag MUST include a relay URL as its third entry.
+            let relayHint = ConfigService.shared.config.feedRelays.first
+                ?? ConfigService.shared.config.blastrRelays.first
+                ?? ""
+
             guard let signed = nostrService.signEvent(
                 kind: 6, content: embedded,
-                tags: [["e", sourceNote.id, ""], ["p", sourceNote.pubkey]]
+                tags: [["e", originalId, relayHint], ["p", originalPubkey]]
             ) else { return }
             nostrService.postEvent(signed)
-            FeedService.shared.repostedEventIds.insert(sourceNote.id)
+            FeedService.shared.repostedEventIds.insert(originalId)
         }
     }
 

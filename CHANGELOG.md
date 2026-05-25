@@ -7,14 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.5.1 MacOS / 1.1.1 iOS] - 2026-05-25
 
+### Added
+- **Feed Media Grid Tab**: Added a dedicated "Media" feed mode with an Instagram-style 3-column grid layout displaying media-containing posts. Supports Following and Global sub-modes with tap-to-open full-screen swipeable carousel and long-press to view note details.
+- **Copy Blossom Link Button**: Added a "Copy Link" button next to the "Mirrored to Blossom" badge in the media viewer, allowing quick clipboard copy of the local Blossom URL with animated confirmation feedback.
+- **Shared Video Player Pool (`VideoPlayerCache`)**: Implemented a size-limited cache (up to 10 instances) of `AVPlayer` that dynamically fetches, plays, and evicts players based on LRU ordering, solving transition and playback initialization latency.
+- **Premium Glassmorphic Video Scrubber & Playback Controls**: Built a custom, floating playback controls console utilizing `.ultraThinMaterial` pill borders. Includes standard seek scrubber, play/pause and mute/unmute buttons, and a monospace track timeline.
+- **Hardware Keyboard Shortcuts**: Configured native system key bindings inside the media viewer (`Space` to toggle play/pause, `M` to toggle mute, and `Left`/`Right` arrow keys for 5-second skipping).
+- **Conditional Tap Modifier (`onTapGestureIfSome`)**: Added a utility SwiftUI modifier enabling touch interactions to ignore unhandled taps, preventing child gesture conflict and allowing seamless underlying list scrolling.
+- **NIP-18 Raw Event Cache**: Added an in-memory cache of raw event JSON strings (capped at 1,000 entries) in `FeedService` for proper NIP-18 repost embedding with full event signatures.
+- **Video Thumbnail View**: Added `FeedVideoThumbnailView` for rendering static video thumbnails in grid cells instead of spinning up live players, using `MediaCacheService` cached thumbnails.
+
 ### Changed
 - **Viewer Filter Buttons Moved to Navigation Bar (iOS)**: The content filter controls (All, My Notes, Tagged, Whitelisted on Notes; Liked/My Likes on Likes; Zapped/My Zaps on Zaps; Upload on Media) have been moved from the inline header area into the trailing navigation bar, matching the icon-button style of the Feed toolbar. Each tab shows contextual SF Symbol icon buttons that turn `havenPurple` when active.
+- **Seamless Full-Screen Video Transition**: Integrated video player caching into both inline feed playback and the expanded media viewer to ensure the playing video seamlessly transitions to full-screen from its exact current frame without stopping or restarting.
+- **iPad and Wide-Screen Optimization**: Upgraded full-screen video overlay so the floating controls console automatically centers and adjusts dynamically on wide-screen monitors or iPad canvases.
+- **Note Feed Swipe Carousel Snapshotting**: Extracted static snapshotted data collections (`gridMediaSnapshot`) when launching the swipe-to-dismiss horizontal `TabView` viewer, preventing layout updates or feed list refreshes from stuttering or resetting the user's swiped view state.
+- **Blossom Mirroring Scope Narrowed**: Limited media mirroring to only owner and whitelisted account media, removing the previously included followed accounts' media to reduce storage usage and mirroring time.
+- **Thread Depth Collapse Threshold**: Reduced reply thread nesting depth from 5 to 3 levels before showing "Show N more replies" navigation links, improving readability on narrow mobile screens.
+- **NIP-18 Repost Targeting**: Repost actions now correctly target the original kind 1 event when reposting a kind 6 repost, use the `rawEventCache` for embedding signed event JSON, and include relay hints in the `e` tag per spec.
 
 ### Fixed
 - **Blossom Mirroring Spec Compliance**: Fixed standard HTTP Auth headers to use the correct `Nostr` prefix, decoded standard BUD-02 `BlobDescriptor` from server JSON responses for canonical paths, resolved self-signed SSL/TLS verification for localhost, and bypassed HTTPS enforcement for Tailscale/LAN environments.
 - **NIP-18 Reposts**: Corrected kind 6 repost embedding to include stringified event JSON within `content` and set clean `e` and `p` tags without legacy root markers.
 - **Account Switch Safety**: Discarded contact list queries and loading actions if an active profile shift happens during flight, preventing visual corruption/cross-talk.
 - **Full-Screen Video Aspect Ratio**: Tapping a video in the feed now plays it at its native aspect ratio instead of being cropped/zoomed to fill the screen. Horizontal videos no longer appear blown up in the full-screen viewer. Fixed by introducing a `videoGravity` parameter on `InlinePlayerLayer` and using `.resizeAspect` (letterbox) inside `FullScreenVideoPlayer`, while the inline feed cards continue to use `.resizeAspectFill`.
+- **Feed Video Loading Black Boxes**: Integrated smooth KVO observer overlays displaying video thumbnails on loading players, fading them out gracefully once the active frame starts rendering (`timeControlStatus == .playing`).
+- **Grid Navigation Swipe & Tap Conflict**: Added `.allowsHitTesting(false)` overlays to native AVPlayer view instances, ensuring child layers do not swallow list gestures and letting taps/swipes fall through flawlessly to SwiftUI container controls.
+- **Full-Screen Media Viewer Swiping**: Restructured the vertical drag-to-dismiss gesture in `FeedMediaViewer` to ignore horizontal drags when scale is `1.0`, enabling clean horizontal swipe page transitions between images and videos in the `TabView` carousel.
+- **Video Swiping and Tap-to-Pause**: Disabled hit testing (`.allowsHitTesting(false)`) on the native video player layer inside `FullScreenVideoPlayer` and introduced a transparent tap-capturing overlay, allowing swipe gestures to bubble up natively to the page controller while keeping tap-to-pause functional.
+- **Autoplay Prevention on Media Grids**: Modified media grid cell renderings (in both the Feed Media Tab and user profile grids) to disable autoplay for GIFs and videos when displayed as thumbnail items, resolving performance stutters.
+- **Global Feed Sensitive Content Warning**: Overhauled warning flow to display a Sensitive Content Warning confirmation dialog every single time the user clicks or switches to the Global Media Feed, enforcing continuous compliance.
+- **Horizontal Swipe Carousel Dismissal**: Fixed sheet presentation conflict in `FeedView` where horizontal swiping triggered immediate page dismiss-and-reappear animations, by transitioning the sheet container to be presented via a simple boolean `isShowingGridMediaViewer` rather than the active selection's identity.
+- **Kind 6 Repost Reply Threading**: Fixed `NoteDetailView` to show replies for the original event when viewing a kind 6 repost, and corrected the real-time reply WebSocket subscription to target the original event ID.
+- **Repost Status Indicator on Reposts**: The repost button now correctly checks the original event ID for kind 6 notes, preventing the green indicator from not appearing on already-reposted content.
+- **Reply Count Grammar**: Fixed "Show N more replies" text to use singular "reply" when there is exactly one child reply.
+- **macOS Player Layer Sizing**: Added `layout()` override to `PlayerNSView` to keep the `AVPlayerLayer` frame in sync with the view bounds during resizes.
+- **Player Layer Memory Cleanup**: Added `dismantleNSView`/`dismantleUIView` to clear `AVPlayerLayer` player references when views are destroyed, preventing retain cycles.
 
 ## [2.5.0 MacOS / 1.1 iOS (Build 3)] - 2026-05-23
 
