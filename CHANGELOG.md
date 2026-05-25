@@ -5,12 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.5.1 MacOS / 1.1.1 iOS] - 2026-05-25
 
 ### Changed
 - **Viewer Filter Buttons Moved to Navigation Bar (iOS)**: The content filter controls (All, My Notes, Tagged, Whitelisted on Notes; Liked/My Likes on Likes; Zapped/My Zaps on Zaps; Upload on Media) have been moved from the inline header area into the trailing navigation bar, matching the icon-button style of the Feed toolbar. Each tab shows contextual SF Symbol icon buttons that turn `havenPurple` when active.
 
 ### Fixed
+- **Blossom Mirroring Spec Compliance**: Fixed standard HTTP Auth headers to use the correct `Nostr` prefix, decoded standard BUD-02 `BlobDescriptor` from server JSON responses for canonical paths, resolved self-signed SSL/TLS verification for localhost, and bypassed HTTPS enforcement for Tailscale/LAN environments.
+- **NIP-18 Reposts**: Corrected kind 6 repost embedding to include stringified event JSON within `content` and set clean `e` and `p` tags without legacy root markers.
+- **Account Switch Safety**: Discarded contact list queries and loading actions if an active profile shift happens during flight, preventing visual corruption/cross-talk.
 - **Full-Screen Video Aspect Ratio**: Tapping a video in the feed now plays it at its native aspect ratio instead of being cropped/zoomed to fill the screen. Horizontal videos no longer appear blown up in the full-screen viewer. Fixed by introducing a `videoGravity` parameter on `InlinePlayerLayer` and using `.resizeAspect` (letterbox) inside `FullScreenVideoPlayer`, while the inline feed cards continue to use `.resizeAspectFill`.
 
 ## [2.5.0 MacOS / 1.1 iOS (Build 3)] - 2026-05-23
