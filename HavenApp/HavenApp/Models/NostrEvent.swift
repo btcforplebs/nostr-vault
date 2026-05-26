@@ -35,6 +35,7 @@ struct NostrEvent: Codable, Identifiable {
         case 10000: return "Mute List"
         case 10001: return "Pin List"
         case 10002: return "Relay List"
+        case 10063: return "Server List"
         case 13194: return "Wallet Info"
         case 22242: return "Client Auth"
         case 30023: return "Long-form Post"

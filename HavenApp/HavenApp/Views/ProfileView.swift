@@ -34,10 +34,14 @@ struct ProfileView: View {
     @State private var copiedNpub = false
     @State private var copiedLightning = false
     @State private var copiedBitcoinAddress = false
+    @State private var copiedSPAddress = false
 
     // Bitcoin on-chain
     @State private var bitcoinBalance: Int? = nil
     @State private var bitcoinAddress: String? = nil
+
+    // Silent Payment address
+    @State private var silentPaymentAddress: String? = nil
 
     // Lightning (NWC) balance — own profile only
     @State private var lightningBalanceSats: Int? = nil
@@ -48,6 +52,16 @@ struct ProfileView: View {
 
     // Compose post
     @State private var showingCompose = false
+
+    // Message composer
+    @State private var showingMessageComposer = false
+
+    // DM inbox
+    @State private var showingDMInbox = false
+
+    // Wallet views
+    @State private var showingOnChain = false
+    @State private var showingLightning = false
 
     // Following / followers count
     @State private var followingCount: Int? = nil
@@ -164,44 +178,36 @@ struct ProfileView: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack(alignment: .top) {
-            ScrollView {
-                VStack(spacing: 0) {
-                    if !embeddedInNavigation {
-                        dismissHeader
-                    }
-                    headerBlock
-                    actionRow
-                        .padding(.top, 4)
-                    if let about = profile?.about, !about.isEmpty {
-                        bioBlock(about)
-                    }
-                    divider
-                    statsBlock
-                    activityRow
-                    divider
-                    identityBlock
-                    divider
-                    sectionTabBar
-                    sectionContent
-                        #if os(iOS)
-                        .padding(.bottom, 90)
-                        #else
-                        .padding(.bottom, 32)
-                        #endif
+        ScrollView {
+            VStack(spacing: 0) {
+                if !embeddedInNavigation && !isOwnProfile {
+                    dismissHeader
                 }
-                .frame(maxWidth: 720)
-                .frame(maxWidth: .infinity)
+                headerBlock
+                actionRow
+                    .padding(.top, 4)
+                if let about = profile?.about, !about.isEmpty {
+                    bioBlock(about)
+                }
+                divider
+                statsBlock
+                activityRow
+                divider
+                identityBlock
+                divider
+                sectionTabBar
+                sectionContent
+                    #if os(iOS)
+                    .padding(.bottom, 90)
+                    #else
+                    .padding(.bottom, 32)
+                    #endif
             }
-            .refreshable {
-                await refreshProfile()
-            }
-
-            VStack(spacing: 6) {
-                ZapNotificationBanner()
-                FollowNotificationBanner()
-            }
-            .zIndex(2)
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity)
+        }
+        .refreshable {
+            await refreshProfile()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(red: 0.08, green: 0.08, blue: 0.1).ignoresSafeArea())
@@ -209,6 +215,7 @@ struct ProfileView: View {
             nostrService.fetchMissingProfiles(for: [pubkey], force: true)
             fetchAuthorNotes()
             deriveBitcoinAddress()
+            deriveSilentPaymentAddress()
             fetchLightningBalance()
             #if os(macOS)
             installKeyMonitor()
@@ -240,11 +247,134 @@ struct ProfileView: View {
             BitcoinSweepDisclaimerView(onDismiss: { showSweep = false })
                 .environmentObject(ConfigService.shared)
         }
+        .sheet(isPresented: $showingOnChain) {
+            NavigationStack {
+                WalletOnChainTab()
+                    .environmentObject(nostrService)
+                    .environmentObject(configService)
+                    .navigationTitle("On-Chain")
+                    #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                    #endif
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { showingOnChain = false }
+                                .foregroundColor(.havenPurple)
+                        }
+                    }
+            }
+            #if os(macOS)
+            .frame(minWidth: 500, minHeight: 550)
+            #endif
+        }
+        .sheet(isPresented: $showingLightning) {
+            NavigationStack {
+                WalletLightningTab()
+                    .environmentObject(nostrService)
+                    .environmentObject(configService)
+                    .navigationTitle("Lightning")
+                    #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                    #endif
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { showingLightning = false }
+                                .foregroundColor(.havenPurple)
+                        }
+                    }
+            }
+            #if os(macOS)
+            .frame(minWidth: 500, minHeight: 550)
+            #endif
+        }
         .sheet(isPresented: $showingCompose) {
             ComposeView(onDismiss: { showingCompose = false })
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        #if os(iOS)
+        .toolbar {
+            ToolbarItemGroup(placement: .navigationBarLeading) {
+                if isOwnProfile {
+                    Button(action: { showingOnChain = true }) {
+                        Image(systemName: "bitcoinsign.circle.fill")
+                            .foregroundColor(.orange)
+                    }
+                    Button(action: { showingLightning = true }) {
+                        Image(systemName: "bolt.fill")
+                            .foregroundColor(.yellow)
+                    }
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if isOwnProfile {
+                    Button(action: { showingDMInbox = true }) {
+                        Image(systemName: "bubble.right.fill")
+                            .foregroundColor(.havenPurple)
+                    }
+                } else {
+                    Button(action: { showingMessageComposer = true }) {
+                        Image(systemName: "message.fill")
+                            .foregroundColor(.havenPurple)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingMessageComposer) {
+            MessageComposerView(recipientPubkey: pubkey)
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
+        .sheet(isPresented: $showingDMInbox) {
+            NavigationStack {
+                DMInboxView()
+                    .environmentObject(nostrService)
+                    .environmentObject(configService)
+            }
+        }
+        #else
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                if isOwnProfile {
+                    Button(action: { showingOnChain = true }) {
+                        Image(systemName: "bitcoinsign.circle.fill")
+                            .foregroundColor(.orange)
+                    }
+                    .help("On-Chain")
+                }
+            }
+            ToolbarItem(placement: .automatic) {
+                if isOwnProfile {
+                    Button(action: { showingLightning = true }) {
+                        Image(systemName: "bolt.fill")
+                            .foregroundColor(.yellow)
+                    }
+                    .help("Lightning")
+                }
+            }
+            ToolbarItem(placement: .automatic) {
+                if isOwnProfile {
+                    Button(action: { showingDMInbox = true }) {
+                        Image(systemName: "bubble.right.fill")
+                            .foregroundColor(.havenPurple)
+                    }
+                    .help("Messages")
+                }
+            }
+        }
+        .sheet(isPresented: $showingDMInbox) {
+            DMInboxView()
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+                .frame(minWidth: 480, minHeight: 500)
+        }
+        .sheet(isPresented: $showingMessageComposer) {
+            DMThreadView(counterpartyPubkey: pubkey)
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+                .frame(minWidth: 440, minHeight: 400)
+        }
+        #endif
         .sheet(isPresented: $showingEditProfile) {
             ProfileEditView(onDismiss: { showingEditProfile = false }, existing: profile ?? FeedProfile(pubkey: pubkey)) { updated in
                 applyProfileUpdate(updated)
@@ -479,6 +609,21 @@ struct ProfileView: View {
                 }
                 .buttonStyle(.plain)
 
+                Button(action: { showingMessageComposer = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "message.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Message")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(.havenPurple)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Color.havenPurple.opacity(0.12))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+
                 if !ConfigService.shared.config.nwcURI.isEmpty, lightningAddress != nil {
                     Button(action: {
                         if let lud16 = lightningAddress {
@@ -666,6 +811,27 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+
+            if let spAddr = silentPaymentAddress {
+                identityDivider
+                identityRow(
+                    label: "SILENT PAYMENT",
+                    value: formattedAddress(spAddr),
+                    icon: "eye.slash.fill",
+                    tint: Color(red: 0.6, green: 0.4, blue: 1.0),
+                    copied: copiedSPAddress,
+                    trailing: AnyView(
+                        Text("BETA")
+                            .font(.system(size: 9, weight: .black))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.red)
+                            .cornerRadius(4)
+                    ),
+                    action: { copyToClipboard(spAddr); triggerCopied($copiedSPAddress) }
+                )
             }
 
             if let website = profile?.website, !website.isEmpty,
@@ -1144,6 +1310,7 @@ struct ProfileView: View {
 
         fetchAuthorNotes()
         deriveBitcoinAddress()
+        deriveSilentPaymentAddress()
         fetchLightningBalance()
 
         try? await Task.sleep(nanoseconds: 500_000_000)
@@ -1325,6 +1492,17 @@ struct ProfileView: View {
         }
         profileClients.removeAll()
         profileCancellables.removeAll()
+    }
+
+    // MARK: - Silent Payment
+
+    private func deriveSilentPaymentAddress() {
+        do {
+            let spAddr = try SilentPaymentService.deriveAddress(hexPubkey: pubkey)
+            silentPaymentAddress = spAddr
+        } catch {
+            silentPaymentAddress = nil
+        }
     }
 
     // MARK: - Bitcoin

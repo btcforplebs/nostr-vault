@@ -72,7 +72,11 @@ struct FeedView: View {
                 ForEach(FeedMode.allCases, id: \.self) { mode in
                     Button(action: { feedService.switchMode(mode) }) {
                         let displayName = mode == .discovery ? "Discover" : mode.rawValue
-                        Label(displayName, systemImage: feedService.feedMode == mode ? "checkmark" : "")
+                        if feedService.feedMode == mode {
+                            Label(displayName, systemImage: "checkmark")
+                        } else {
+                            Text(displayName)
+                        }
                     }
                 }
             } label: {
@@ -191,7 +195,11 @@ struct FeedView: View {
                         ForEach(FeedMode.allCases, id: \.self) { mode in
                             Button(action: { feedService.switchMode(mode) }) {
                                 let displayName = mode == .discovery ? "Discover" : mode.rawValue
-                                Label(displayName, systemImage: feedService.feedMode == mode ? "checkmark" : "")
+                                if feedService.feedMode == mode {
+                            Label(displayName, systemImage: "checkmark")
+                        } else {
+                            Text(displayName)
+                        }
                             }
                         }
                     } label: {
@@ -787,9 +795,6 @@ struct FeedView: View {
                     .zIndex(1)
                 }
 
-                // Floating zap status pill
-                ZapNotificationBanner()
-                    .zIndex(2)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ScrollToTop"))) { _ in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

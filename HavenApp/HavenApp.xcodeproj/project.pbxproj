@@ -19,6 +19,7 @@
 		10E6C6B7E07DA9D13ABCF3F8 /* NotificationNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04523F59A639178480E832F1 /* NotificationNames.swift */; };
 		14ABF30BD7FF762D64D8EE9A /* NostrEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D0631CF48FD1659E6F1005 /* NostrEvent.swift */; };
 		153C669E4280A9BDBDE81676 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCB7EF5F402D9835CC63612F /* DashboardView.swift */; };
+		181A20D1BDF43139FC45DAD7 /* NIP44Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4BE714B3E17900FD46C8BF /* NIP44Service.swift */; };
 		18EE26703E5765D972FEE57B /* templates in Resources */ = {isa = PBXBuildFile; fileRef = 0FDA644A2B01FFA0F183C0D7 /* templates */; };
 		1944C38B0920934C57D8F4E3 /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3041B6BA67CC97B2AC442E6D /* FeedView.swift */; };
 		1C825DA9B33BBA981AE9C5AA /* NIP04Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7167339BB13F4557E0E0BB77 /* NIP04Service.swift */; };
@@ -52,6 +53,7 @@
 		51ED58D5C396F531FC08B75B /* HavenConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3056CC16711F7E38B7FE86D /* HavenConfig.swift */; };
 		53D20A98943D467A4CA6030B /* PlatformCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */; };
 		54589E01037B327AFBF6A553 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 917FF6B76ACEFA8BD210FC37 /* ProfileView.swift */; };
+		562D7CA51F8D0A3598112F38 /* DMThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05475C3340F734D5B71DFF59 /* DMThreadView.swift */; };
 		587441300839972EAF70AF41 /* NIP49Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ABEDE255E82775CCD37559 /* NIP49Service.swift */; };
 		5E92A621990EB60F7D3CEA01 /* SetupWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89B8E92EE192A7FDE8094D4D /* SetupWizardView.swift */; };
 		6299766B577696BB8E498D3B /* PlatformCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */; };
@@ -92,7 +94,12 @@
 		8D50F9282FBE3B1400755BE8 /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D50F91F2FBE3B1400755BE8 /* EmojiPickerView.swift */; };
 		8D9A1B3D2F8ABD5100DC9088 /* NetworkSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9A1B3C2F8ABD5100DC9088 /* NetworkSyncService.swift */; };
 		8D9A1B3E2F8ABD5100DC9088 /* NetworkSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9A1B3C2F8ABD5100DC9088 /* NetworkSyncService.swift */; };
+		8D9BDAFA2FC4B78A0030830C /* MessageComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9BDAF92FC4B78A0030830C /* MessageComposerView.swift */; };
+		8D9BDAFB2FC4B78A0030830C /* MessageComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9BDAF92FC4B78A0030830C /* MessageComposerView.swift */; };
+		8D9BDAFD2FC4C2DF0030830C /* DMInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9BDAFC2FC4C2DF0030830C /* DMInboxView.swift */; };
+		8D9BDAFE2FC4C2DF0030830C /* DMInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D9BDAFC2FC4C2DF0030830C /* DMInboxView.swift */; };
 		9A29693B7623772411B51DE7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A271B5E3364858651DC05603 /* SettingsView.swift */; };
+		A596441EC025BF56EB65EF0F /* DMThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05475C3340F734D5B71DFF59 /* DMThreadView.swift */; };
 		A9175BE3300E9CE097E14F26 /* BlossomService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803F7E83A0267F02449FA666 /* BlossomService.swift */; };
 		AA0000000000000000000001 /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000003 /* NostrService.swift */; };
 		AA0000000000000000000002 /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000003 /* NostrService.swift */; };
@@ -123,21 +130,43 @@
 		DBD32E19582D9012E15F92AD /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3DD3ED79F874383BC2F54F2 /* VideoPlayerView.swift */; };
 		DDF232D616C179F4250BAA90 /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E04A276931F29CD944A3474 /* CachedAsyncImage.swift */; };
 		E0D882CB85829D6B7D8940E5 /* NostrContentFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF76B5373E734C5934402DBD /* NostrContentFormatter.swift */; };
+		E2389BDAE865939E68BC3A87 /* NIP17Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9140488955952DAF1FB978 /* NIP17Service.swift */; };
 		E50C4B4F8787584FC7E29EA2 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 848045286D78E78658D43BE3 /* MenuBarView.swift */; };
 		EB0000000000000000000002 /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB0000000000000000000001 /* EventBroadcastSheet.swift */; };
 		EB0000000000000000000003 /* EventBroadcastSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB0000000000000000000001 /* EventBroadcastSheet.swift */; };
 		EB4512C28AE4AC919EA3D2E0 /* ViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83BF0CF146261B7EFDCB4065 /* ViewerView.swift */; };
 		EB507637E1020661C1CC0C16 /* LightningAnimationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C4DB7AE9CD6CD117019324D /* LightningAnimationView.swift */; };
 		EB757B8BCE5DE46338963484 /* QuotedNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0470608431CE649B6E55F7D /* QuotedNoteView.swift */; };
+		ECB1ABFA9935636DED817BA3 /* NIP17Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9140488955952DAF1FB978 /* NIP17Service.swift */; };
 		ED6FCAF4DF7249BB3EB94A07 /* StatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E22622B26A3F1A5C9D0A2A /* StatsService.swift */; };
+		F0694D267F5D22ACDBC17561 /* NIP44Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4BE714B3E17900FD46C8BF /* NIP44Service.swift */; };
+		F1279E34C9790D996125E66C /* DMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CADB0CCFC9247268CD1B658A /* DMService.swift */; };
 		F22FA656E63FA88BF7E97461 /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E04A276931F29CD944A3474 /* CachedAsyncImage.swift */; };
 		F869E49FB6A5FA8DDFC1A20C /* StatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E22622B26A3F1A5C9D0A2A /* StatsService.swift */; };
 		F909E9664DAB54DA38575736 /* WelcomeWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34B22EE405098B9706D5B1D8 /* WelcomeWindowView.swift */; };
 		F909FCD41DFC0995A6916DD8 /* FeedMediaViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EDBCA3BC62E9A4C8AA9E128 /* FeedMediaViewer.swift */; };
+		FD2EF06496ED0E1808AC256F /* DMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CADB0CCFC9247268CD1B658A /* DMService.swift */; };
+		SP2000000000000000000001 /* SilentPaymentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000001 /* SilentPaymentService.swift */; };
+		SP2000000000000000000002 /* WalletView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000002 /* WalletView.swift */; };
+		SP2000000000000000000003 /* WalletOnChainTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000003 /* WalletOnChainTab.swift */; };
+		SP2000000000000000000004 /* WalletLightningTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000004 /* WalletLightningTab.swift */; };
+		SP3000000000000000000001 /* SilentPaymentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000001 /* SilentPaymentService.swift */; };
+		SP3000000000000000000002 /* WalletView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000002 /* WalletView.swift */; };
+		SP3000000000000000000003 /* WalletOnChainTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000003 /* WalletOnChainTab.swift */; };
+		SP3000000000000000000004 /* WalletLightningTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000004 /* WalletLightningTab.swift */; };
+		SP2000000000000000000010 /* SPStoredUTXO.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000010 /* SPStoredUTXO.swift */; };
+		SP2000000000000000000011 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000011 /* MempoolAPIService.swift */; };
+		SP2000000000000000000012 /* SPScanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000012 /* SPScanService.swift */; };
+		SP3000000000000000000010 /* SPStoredUTXO.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000010 /* SPStoredUTXO.swift */; };
+		SP3000000000000000000011 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000011 /* MempoolAPIService.swift */; };
+		SP3000000000000000000012 /* SPScanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP1000000000000000000012 /* SPScanService.swift */; };
+		SP6000000000000000000001 /* SilentPaymentsKit in Frameworks */ = {isa = PBXBuildFile; productRef = SP5000000000000000000001 /* SilentPaymentsKit */; };
+		SP6000000000000000000002 /* SilentPaymentsKit in Frameworks */ = {isa = PBXBuildFile; productRef = SP5000000000000000000002 /* SilentPaymentsKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		04523F59A639178480E832F1 /* NotificationNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationNames.swift; sourceTree = "<group>"; };
+		05475C3340F734D5B71DFF59 /* DMThreadView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DMThreadView.swift; path = HavenApp/Views/DMThreadView.swift; sourceTree = "<group>"; };
 		05E22622B26A3F1A5C9D0A2A /* StatsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsService.swift; sourceTree = "<group>"; };
 		0E04A276931F29CD944A3474 /* CachedAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedAsyncImage.swift; sourceTree = "<group>"; };
 		0FBC15E9329FDE2D78ED1BD1 /* AnimatedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedImage.swift; sourceTree = "<group>"; };
@@ -180,6 +209,8 @@
 		8D50F91F2FBE3B1400755BE8 /* EmojiPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerView.swift; sourceTree = "<group>"; };
 		8D50F9202FBE3B1400755BE8 /* FeedMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaView.swift; sourceTree = "<group>"; };
 		8D9A1B3C2F8ABD5100DC9088 /* NetworkSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkSyncService.swift; sourceTree = "<group>"; };
+		8D9BDAF92FC4B78A0030830C /* MessageComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageComposerView.swift; sourceTree = "<group>"; };
+		8D9BDAFC2FC4C2DF0030830C /* DMInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DMInboxView.swift; sourceTree = "<group>"; };
 		8EDBCA3BC62E9A4C8AA9E128 /* FeedMediaViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaViewer.swift; sourceTree = "<group>"; };
 		915DF9A0796218139DE0703E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		917FF6B76ACEFA8BD210FC37 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -194,9 +225,12 @@
 		AA0000000000000000000003 /* NostrService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrService.swift; sourceTree = "<group>"; };
 		AECE3C16F322D12D0CC02FC1 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		BB0000000000000000000003 /* MediaCacheService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCacheService.swift; sourceTree = "<group>"; };
+		BC4BE714B3E17900FD46C8BF /* NIP44Service.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NIP44Service.swift; path = HavenApp/Services/NIP44Service.swift; sourceTree = "<group>"; };
 		BDD4B836CEC441DEA7228D5E /* PendingPostManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingPostManager.swift; sourceTree = "<group>"; };
 		C3D0631CF48FD1659E6F1005 /* NostrEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrEvent.swift; sourceTree = "<group>"; };
+		CADB0CCFC9247268CD1B658A /* DMService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DMService.swift; path = HavenApp/Services/DMService.swift; sourceTree = "<group>"; };
 		CC0000000000000000000003 /* ZapNotificationBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapNotificationBanner.swift; sourceTree = "<group>"; };
+		CD9140488955952DAF1FB978 /* NIP17Service.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NIP17Service.swift; path = HavenApp/Services/NIP17Service.swift; sourceTree = "<group>"; };
 		D402A79FB4D7F03B9F67E1D2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		D5EBFDB16A8828F3C12C4343 /* HavenApp-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HavenApp-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven_ios.a; path = build/ios/libhaven_ios.a; sourceTree = SDKROOT; };
@@ -208,6 +242,13 @@
 		FB04FF5ECC6BE85A9D783C18 /* FeedProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedProfile.swift; sourceTree = "<group>"; };
 		FCB7EF5F402D9835CC63612F /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		FE2060B412DD17816F0495D8 /* MediaItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItem.swift; sourceTree = "<group>"; };
+		SP1000000000000000000001 /* SilentPaymentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilentPaymentService.swift; sourceTree = "<group>"; };
+		SP1000000000000000000002 /* WalletView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletView.swift; sourceTree = "<group>"; };
+		SP1000000000000000000003 /* WalletOnChainTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletOnChainTab.swift; sourceTree = "<group>"; };
+		SP1000000000000000000004 /* WalletLightningTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletLightningTab.swift; sourceTree = "<group>"; };
+		SP1000000000000000000010 /* SPStoredUTXO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SPStoredUTXO.swift; sourceTree = "<group>"; };
+		SP1000000000000000000011 /* MempoolAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MempoolAPIService.swift; sourceTree = "<group>"; };
+		SP1000000000000000000012 /* SPScanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SPScanService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -216,6 +257,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0731D8B3DE085946811D3C1A /* libhaven.a in Frameworks */,
+				SP6000000000000000000001 /* SilentPaymentsKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -224,6 +266,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4B8B584EB02021A488F995CF /* libhaven_ios.a in Frameworks */,
+				SP6000000000000000000002 /* SilentPaymentsKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -233,6 +276,7 @@
 		0D0EC42ECC4212D7E35F0A45 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				8D9BDAF92FC4B78A0030830C /* MessageComposerView.swift */,
 				0FBC15E9329FDE2D78ED1BD1 /* AnimatedImage.swift */,
 				7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */,
 				8D4EFA352FBE48B300CF0704 /* BitcoinSweepDisclaimerView.swift */,
@@ -253,6 +297,7 @@
 				8D4EFA322FBE41C300CF0704 /* OnchainZapDisplay.swift */,
 				7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */,
 				917FF6B76ACEFA8BD210FC37 /* ProfileView.swift */,
+				8D9BDAFC2FC4C2DF0030830C /* DMInboxView.swift */,
 				4AB6A6872532B023E705FC6C /* RelayListEditor.swift */,
 				A271B5E3364858651DC05603 /* SettingsView.swift */,
 				89B8E92EE192A7FDE8094D4D /* SetupWizardView.swift */,
@@ -260,10 +305,31 @@
 				2181DC8AEE2B3F8376683F88 /* UGCReportingDialog.swift */,
 				A3DD3ED79F874383BC2F54F2 /* VideoPlayerView.swift */,
 				83BF0CF146261B7EFDCB4065 /* ViewerView.swift */,
+				SP1000000000000000000004 /* WalletLightningTab.swift */,
+				SP1000000000000000000003 /* WalletOnChainTab.swift */,
+				SP1000000000000000000002 /* WalletView.swift */,
 				34B22EE405098B9706D5B1D8 /* WelcomeWindowView.swift */,
 			);
 			name = Views;
 			path = HavenApp/Views;
+			sourceTree = "<group>";
+		};
+		2266412EFA43E3675FD9D4F9 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				BC4BE714B3E17900FD46C8BF /* NIP44Service.swift */,
+				CD9140488955952DAF1FB978 /* NIP17Service.swift */,
+				CADB0CCFC9247268CD1B658A /* DMService.swift */,
+			);
+			name = Services;
+			sourceTree = "<group>";
+		};
+		22A4F77B23D55D5BB60AFFE0 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				05475C3340F734D5B71DFF59 /* DMThreadView.swift */,
+			);
+			name = Views;
 			sourceTree = "<group>";
 		};
 		2F6458DDD6182931FDCAB6E1 /* Frameworks */ = {
@@ -286,11 +352,27 @@
 			path = HavenApp/App;
 			sourceTree = "<group>";
 		};
+		457AC85A1B82B6CCB9022836 /* HavenApp */ = {
+			isa = PBXGroup;
+			children = (
+				B65F1B0C69BDDFD2EA693474 /* HavenApp */,
+			);
+			name = HavenApp;
+			sourceTree = "<group>";
+		};
 		4D4FD437C63EB19F3EF782D9 /* Components */ = {
 			isa = PBXGroup;
 			children = (
 			);
 			name = Components;
+			sourceTree = "<group>";
+		};
+		51DFAECCE77ECC30197B3D1B /* haven */ = {
+			isa = PBXGroup;
+			children = (
+				457AC85A1B82B6CCB9022836 /* HavenApp */,
+			);
+			name = haven;
 			sourceTree = "<group>";
 		};
 		57C46A4214CF004FAFC6D86F /* HavenApp */ = {
@@ -323,6 +405,7 @@
 				2F6458DDD6182931FDCAB6E1 /* Frameworks */,
 				5A21732AE3ED1711ABA42459 /* Products */,
 				57C46A4214CF004FAFC6D86F /* HavenApp */,
+				A0657B8080803873E17EDB1E,
 			);
 			sourceTree = "<group>";
 		};
@@ -333,6 +416,22 @@
 				649EE87FE3A42105E4EC17E9 /* haven */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		A0657B8080803873E17EDB1E = {
+			isa = PBXGroup;
+			children = (
+				FC8D5EC67EA15B841A5A677B /* Users */,
+			);
+			sourceTree = "<group>";
+		};
+		B65F1B0C69BDDFD2EA693474 /* HavenApp */ = {
+			isa = PBXGroup;
+			children = (
+				2266412EFA43E3675FD9D4F9 /* Services */,
+				22A4F77B23D55D5BB60AFFE0 /* Views */,
+			);
+			name = HavenApp;
 			sourceTree = "<group>";
 		};
 		C771C5975780DEB107590D5C /* HavenApp-iOS */ = {
@@ -347,6 +446,14 @@
 			path = "HavenApp-iOS";
 			sourceTree = "<group>";
 		};
+		CC938CA75FBF5FAD52E53F3E /* logandetty */ = {
+			isa = PBXGroup;
+			children = (
+				51DFAECCE77ECC30197B3D1B /* haven */,
+			);
+			name = logandetty;
+			sourceTree = "<group>";
+		};
 		D2F039631F5DCD9EAE61B656 /* Models */ = {
 			isa = PBXGroup;
 			children = (
@@ -354,6 +461,7 @@
 				E3056CC16711F7E38B7FE86D /* HavenConfig.swift */,
 				FE2060B412DD17816F0495D8 /* MediaItem.swift */,
 				C3D0631CF48FD1659E6F1005 /* NostrEvent.swift */,
+				SP1000000000000000000010 /* SPStoredUTXO.swift */,
 			);
 			name = Models;
 			path = HavenApp/Models;
@@ -394,6 +502,9 @@
 				BB0000000000000000000003 /* MediaCacheService.swift */,
 				75ED38A5B67740F711EB5C45 /* PushNotificationService.swift */,
 				22D8D67DB985CB4EA94E4FAF /* RelayProcessManager.swift */,
+				SP1000000000000000000001 /* SilentPaymentService.swift */,
+				SP1000000000000000000011 /* MempoolAPIService.swift */,
+				SP1000000000000000000012 /* SPScanService.swift */,
 				05E22622B26A3F1A5C9D0A2A /* StatsService.swift */,
 				93ED6BB091A4EBC9250A7858 /* Theming.swift */,
 				8D4040B42F55BAC700DC9088 /* MacRelaySyncService.swift */,
@@ -405,6 +516,14 @@
 			);
 			name = Services;
 			path = HavenApp/Services;
+			sourceTree = "<group>";
+		};
+		FC8D5EC67EA15B841A5A677B /* Users */ = {
+			isa = PBXGroup;
+			children = (
+				CC938CA75FBF5FAD52E53F3E /* logandetty */,
+			);
+			name = Users;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -424,6 +543,9 @@
 			dependencies = (
 			);
 			name = "HavenApp-iOS";
+			packageProductDependencies = (
+				SP5000000000000000000002 /* SilentPaymentsKit */,
+			);
 			productName = "HavenApp-iOS";
 			productReference = D5EBFDB16A8828F3C12C4343 /* HavenApp-iOS.app */;
 			productType = "com.apple.product-type.application";
@@ -442,6 +564,9 @@
 			dependencies = (
 			);
 			name = HavenApp;
+			packageProductDependencies = (
+				SP5000000000000000000001 /* SilentPaymentsKit */,
+			);
 			productName = HavenApp;
 			productReference = 51EA54117C5443C0DA93781D /* HAVEN.app */;
 			productType = "com.apple.product-type.application";
@@ -473,6 +598,9 @@
 			);
 			mainGroup = 80B1027B0530E6A11574AD02;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				SP4000000000000000000001 /* XCLocalSwiftPackageReference "SilentPaymentsKit" */,
+			);
 			productRefGroup = 5A21732AE3ED1711ABA42459 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -560,6 +688,7 @@
 				2F2E46994E838BCF6F8FCA7B /* AppDelegate.swift in Sources */,
 				D04D39305F6A1088ECFBE1AE /* AudioPlayerView.swift in Sources */,
 				AB84ADE390F047D2226B293C /* BlossomService.swift in Sources */,
+				8D9BDAFE2FC4C2DF0030830C /* DMInboxView.swift in Sources */,
 				45736A51CC2641208CAA0812 /* PendingPostManager.swift in Sources */,
 				F22FA656E63FA88BF7E97461 /* CachedAsyncImage.swift in Sources */,
 				2F01D696DE1AD2109C69A981 /* ComposeView.swift in Sources */,
@@ -592,6 +721,7 @@
 				8D50F9272FBE3B1400755BE8 /* FeedMediaView.swift in Sources */,
 				8D50F9282FBE3B1400755BE8 /* EmojiPickerView.swift in Sources */,
 				EB757B8BCE5DE46338963484 /* QuotedNoteView.swift in Sources */,
+				8D9BDAFA2FC4B78A0030830C /* MessageComposerView.swift in Sources */,
 				D95FE9EAEC6CDCF53AC7E1E5 /* RelayListEditor.swift in Sources */,
 				6A0000000000000000000001 /* LogStore.swift in Sources */,
 				68FF85AB0479AECDE076D18D /* RelayProcessManager.swift in Sources */,
@@ -613,6 +743,17 @@
 				30D8A68AB9D5370D2047AD1D /* ZapService.swift in Sources */,
 				30D8A68AB9D5370D2047AD1E /* PriceService.swift in Sources */,
 				CC0000000000000000000001 /* ZapNotificationBanner.swift in Sources */,
+				F0694D267F5D22ACDBC17561 /* NIP44Service.swift in Sources */,
+				ECB1ABFA9935636DED817BA3 /* NIP17Service.swift in Sources */,
+				FD2EF06496ED0E1808AC256F /* DMService.swift in Sources */,
+				562D7CA51F8D0A3598112F38 /* DMThreadView.swift in Sources */,
+				SP2000000000000000000001 /* SilentPaymentService.swift in Sources */,
+				SP2000000000000000000010 /* SPStoredUTXO.swift in Sources */,
+				SP2000000000000000000011 /* MempoolAPIService.swift in Sources */,
+				SP2000000000000000000012 /* SPScanService.swift in Sources */,
+				SP2000000000000000000002 /* WalletView.swift in Sources */,
+				SP2000000000000000000003 /* WalletOnChainTab.swift in Sources */,
+				SP2000000000000000000004 /* WalletLightningTab.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -644,10 +785,12 @@
 				7B63B96C1A2672ED35DAE97E /* LogsView.swift in Sources */,
 				C8F9F8DCF05C8D05CBFD37F2 /* MediaItem.swift in Sources */,
 				8C6C5418A73D68D54599A473 /* MediaTypeDetector.swift in Sources */,
+				8D9BDAFD2FC4C2DF0030830C /* DMInboxView.swift in Sources */,
 				D3ED7A3CC129E99735F99CB6 /* MenuBarView.swift in Sources */,
 				1C825DA9B33BBA981AE9C5AA /* NIP04Service.swift in Sources */,
 				68B07631D12BD4CAFDE6AF86 /* NIP49Service.swift in Sources */,
 				6B7C1697E43C11DAD27D850A /* NWCService.swift in Sources */,
+				8D9BDAFB2FC4B78A0030830C /* MessageComposerView.swift in Sources */,
 				E0D882CB85829D6B7D8940E5 /* NostrContentFormatter.swift in Sources */,
 				14ABF30BD7FF762D64D8EE9A /* NostrEvent.swift in Sources */,
 				7D819C17829EEEDB078DA4AB /* NoteDetailView.swift in Sources */,
@@ -678,6 +821,17 @@
 				4E9D41F92A23243785F106A0 /* ZapService.swift in Sources */,
 				4E9D41F92A23243785F106A1 /* PriceService.swift in Sources */,
 				CC0000000000000000000002 /* ZapNotificationBanner.swift in Sources */,
+				181A20D1BDF43139FC45DAD7 /* NIP44Service.swift in Sources */,
+				E2389BDAE865939E68BC3A87 /* NIP17Service.swift in Sources */,
+				F1279E34C9790D996125E66C /* DMService.swift in Sources */,
+				A596441EC025BF56EB65EF0F /* DMThreadView.swift in Sources */,
+				SP3000000000000000000001 /* SilentPaymentService.swift in Sources */,
+				SP3000000000000000000010 /* SPStoredUTXO.swift in Sources */,
+				SP3000000000000000000011 /* MempoolAPIService.swift in Sources */,
+				SP3000000000000000000012 /* SPScanService.swift in Sources */,
+				SP3000000000000000000002 /* WalletView.swift in Sources */,
+				SP3000000000000000000003 /* WalletOnChainTab.swift in Sources */,
+				SP3000000000000000000004 /* WalletLightningTab.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -988,6 +1142,26 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		SP4000000000000000000001 /* XCLocalSwiftPackageReference "SilentPaymentsKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = SilentPaymentsKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		SP5000000000000000000001 /* SilentPaymentsKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = SP4000000000000000000001 /* XCLocalSwiftPackageReference "SilentPaymentsKit" */;
+			productName = SilentPaymentsKit;
+		};
+		SP5000000000000000000002 /* SilentPaymentsKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = SP4000000000000000000001 /* XCLocalSwiftPackageReference "SilentPaymentsKit" */;
+			productName = SilentPaymentsKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AE43EF833F554F033032D12B /* Project object */;
 }

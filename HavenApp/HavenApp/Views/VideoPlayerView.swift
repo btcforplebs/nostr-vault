@@ -26,13 +26,24 @@ class VideoPlayerCache: ObservableObject {
         accessOrder.append(url)
 
         if let existing = cache[url] {
-            return existing
+            // Evict broken players so they get recreated with (potentially now-correct) MIME info
+            if existing.currentItem?.status != .failed && existing.currentItem?.error == nil {
+                return existing
+            }
+            #if DEBUG
+            print("VideoPlayerCache: Evicting failed player for \(url.lastPathComponent)")
+            #endif
+            existing.pause()
+            if let obs = observers.removeValue(forKey: url) {
+                NotificationCenter.default.removeObserver(obs)
+            }
+            cache.removeValue(forKey: url)
         }
 
         let finalURL = MediaCacheService.shared.preparePlayableURL(for: url) ?? url
 
         var assetOptions: [String: Any] = [:]
-        if !finalURL.isFileURL && finalURL.pathExtension.isEmpty {
+        if finalURL.pathExtension.isEmpty {
             let mimeType = MediaTypeDetector.shared.getCachedContentType(for: url) ?? "video/mp4"
             assetOptions[AVURLAssetOverrideMIMETypeKey] = mimeType
         }

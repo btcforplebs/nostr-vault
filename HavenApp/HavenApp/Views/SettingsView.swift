@@ -42,6 +42,7 @@ struct SettingsView: View {
         case blocked = "Blocked"
         case appearance = "Appearance"
         case feed = "Feed Relays"
+        case dm = "DM Relays"
         case importNotes = "Import"
         case backup = "Backup"
         case blastr = "Blastr"
@@ -59,6 +60,7 @@ struct SettingsView: View {
             case .blocked: return "person.crop.circle.badge.xmark"
             case .appearance: return "paintpalette"
             case .feed: return "newspaper"
+            case .dm: return "bubble.left.and.bubble.right"
             case .importNotes: return "square.and.arrow.down"
             case .backup: return "externaldrive.fill"
             case .blastr: return "paperplane"
@@ -363,6 +365,7 @@ struct SettingsView: View {
         case .blocked: return .red
         case .appearance: return .purple
         case .feed: return .pink
+        case .dm: return .mint
         case .importNotes: return .orange
         case .backup: return .indigo
         case .blastr: return .cyan
@@ -393,6 +396,7 @@ struct SettingsView: View {
             case .blocked: BlockedSettingsView()
             case .appearance: AppearanceSettingsView()
             case .feed: FeedSettingsView()
+            case .dm: DMSettingsView()
             case .importNotes: ImportSettingsView()
             case .backup: BackupSettingsView()
             case .blastr: BlastrSettingsView()
@@ -1479,6 +1483,76 @@ struct FeedSettingsView: View {
     }
 }
 
+struct DMSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+    @State private var showPublishSuccess = false
+    @State private var publishTask: Task<Void, Never>?
+
+    var body: some View {
+        Form {
+            Section {
+                RelayListEditor(relays: $configService.config.dmRelays)
+                    .onChange(of: configService.config.dmRelays) { _, _ in
+                        // Auto-publish when relays change (debounced)
+                        publishTask?.cancel()
+                        publishTask = Task {
+                            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 second debounce
+                            if !Task.isCancelled {
+                                publishDMRelayList()
+                            }
+                        }
+                    }
+            } header: {
+                Text("DM Relays")
+            } footer: {
+                Text("NIP-17 encrypted DMs are sent to these relays. Your local Haven relay and Mac relay (if configured) are automatically added when publishing.")
+            }
+
+            if showPublishSuccess {
+                Section {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("DM relay preferences published to network")
+                            .font(.caption)
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .onDisappear {
+            publishTask?.cancel()
+        }
+    }
+
+    private func publishDMRelayList() {
+        var relays = configService.config.dmRelays
+
+        // Always include local relay
+        let localRelay = "wss://127.0.0.1:\(configService.config.relayPort)"
+        if !relays.contains(localRelay) {
+            relays.insert(localRelay, at: 0)
+        }
+
+        // Include Mac relay if configured
+        if !configService.config.macRelayURL.isEmpty && !relays.contains(configService.config.macRelayURL) {
+            relays.append(configService.config.macRelayURL)
+        }
+
+        NostrService.shared.publishDMRelayList(dmRelays: relays)
+
+        // Show success feedback
+        showPublishSuccess = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            showPublishSuccess = false
+        }
+    }
+}
+
 struct BlastrSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     
@@ -2110,6 +2184,7 @@ struct MacRelaySettingsView: View {
             configService.config.blossomMirrors.removeAll { $0 == httpsURL }
         }
         configService.save()
+        NostrService.shared.publishServerList()
     }
 
     // MARK: - URL change migration
@@ -2232,6 +2307,7 @@ struct BlossomSettingsView: View {
                             Button(action: {
                                 configService.config.blossomMirrors.removeAll(where: { $0 == url })
                                 configService.save()
+                                NostrService.shared.publishServerList()
                             }) {
                                 Image(systemName: "minus.circle")
                                     .foregroundColor(.red)
@@ -2348,6 +2424,7 @@ struct BlossomSettingsView: View {
             if !configService.config.blossomMirrors.contains(trimmed) {
                 configService.config.blossomMirrors.append(trimmed)
                 configService.save()
+                NostrService.shared.publishServerList()
                 newMirrorURL = ""
             }
         }

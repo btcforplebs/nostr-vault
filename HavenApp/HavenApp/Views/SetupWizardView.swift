@@ -1255,6 +1255,7 @@ struct SetupRestoreMediaStep: View {
         if !configService.config.blossomMirrors.contains(trimmedURL) {
             configService.config.blossomMirrors.append(trimmedURL)
             configService.save()
+            NostrService.shared.publishServerList()
         }
 
         Task {

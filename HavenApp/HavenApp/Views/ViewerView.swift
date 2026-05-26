@@ -64,7 +64,11 @@ struct ViewerView: View {
     // Media Uploads
     @State private var selectedUploadItems: [PhotosPickerItem] = []
     @State private var showingFileImporter = false
-    
+    @State private var showingPhotoPicker = false
+    @State private var showingUploadOptions = false
+    @State private var isPastingContent = false
+    @State private var pasteError: String?
+
     private var blossomService: BlossomService {
         BlossomService(configService: configService, nostrService: nostrService)
     }
@@ -834,13 +838,6 @@ struct ViewerView: View {
                 compactViewContent(isNarrow: geometry.size.width < 500)
                 #endif
                 
-                VStack {
-                    MediaUploadNotificationBanner()
-                    Spacer()
-                }
-                .padding(.top, 12)
-                .allowsHitTesting(false)
-                .zIndex(10)
             }
         }
         .onAppear {
@@ -1002,6 +999,13 @@ struct ViewerView: View {
         .onChange(of: selectedUploadItems) { _, items in
             if !items.isEmpty {
                 handleUploadSelectedItems(items)
+                showingPhotoPicker = false
+            }
+        }
+        .onChange(of: showingPhotoPicker) { _, newValue in
+            if newValue {
+                // Trigger the PhotosPicker by attaching it conditionally
+                // This is handled in the view hierarchy
             }
         }
 
@@ -1023,7 +1027,11 @@ struct ViewerView: View {
 
                     Menu {
                         Button(action: { viewMode = .notes }) {
-                            Label("Notes", systemImage: viewMode == .notes ? "checkmark" : "")
+                            if viewMode == .notes {
+                                Label("Notes", systemImage: "checkmark")
+                            } else {
+                                Text("Notes")
+                            }
                         }
                         Button(action: {
                             viewMode = .media
@@ -1031,16 +1039,28 @@ struct ViewerView: View {
                                 loadLocalMedia()
                             }
                         }) {
-                            Label("Media", systemImage: viewMode == .media ? "checkmark" : "")
+                            if viewMode == .media {
+                                Label("Media", systemImage: "checkmark")
+                            } else {
+                                Text("Media")
+                            }
                         }
                         Button(action: {
                             viewMode = .likes
                             fetchMissingLikedNotes()
                         }) {
-                            Label("Likes", systemImage: viewMode == .likes ? "checkmark" : "")
+                            if viewMode == .likes {
+                                Label("Likes", systemImage: "checkmark")
+                            } else {
+                                Text("Likes")
+                            }
                         }
                         Button(action: { viewMode = .zaps }) {
-                            Label("Zaps", systemImage: viewMode == .zaps ? "checkmark" : "")
+                            if viewMode == .zaps {
+                                Label("Zaps", systemImage: "checkmark")
+                            } else {
+                                Text("Zaps")
+                            }
                         }
                     } label: {
                         HStack(spacing: 4) {
@@ -1061,15 +1081,53 @@ struct ViewerView: View {
                         IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Whitelisted", isSelected: contentFilter == .whitelist, color: .havenPurple) { contentFilter = .whitelist }
                     }
                 } else if viewMode == .media {
-                    let purple = Color.havenPurple
-                    PhotosPicker(selection: $selectedUploadItems, matching: .any(of: [.images, .videos])) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(8)
-                            .background(purple.opacity(0.85))
-                            .clipShape(Circle())
-                            .shadow(color: purple.opacity(0.4), radius: 4, x: 0, y: 2)
+                    HStack(spacing: 12) {
+                        let purple = Color.havenPurple
+
+                        // Upload button with action sheet
+                        Button(action: { showingUploadOptions = true }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .background(purple.opacity(0.85))
+                                .clipShape(Circle())
+                                .shadow(color: purple.opacity(0.4), radius: 4, x: 0, y: 2)
+                        }
+                        .confirmationDialog("Upload Media", isPresented: $showingUploadOptions) {
+                            Button("Photos") {
+                                showingPhotoPicker = true
+                            }
+                            Button("Files") {
+                                showingFileImporter = true
+                            }
+                            Button("Cancel", role: .cancel) { }
+                        }
+
+                        // PhotosPicker triggered by state
+                        if showingPhotoPicker {
+                            PhotosPicker(selection: $selectedUploadItems, matching: .any(of: [.images, .videos])) {
+                                EmptyView()
+                            }
+                            .onChange(of: selectedUploadItems) {
+                                showingPhotoPicker = false
+                            }
+                        }
+
+                        Button(action: handlePasteFromClipboard) {
+                            Image(systemName: "doc.on.clipboard")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .background(
+                                    isPastingContent
+                                        ? Color.gray.opacity(0.85)
+                                        : purple.opacity(0.85)
+                                )
+                                .clipShape(Circle())
+                                .shadow(color: purple.opacity(0.4), radius: 4, x: 0, y: 2)
+                        }
+                        .disabled(isPastingContent)
                     }
                 } else if viewMode == .likes {
                     HStack(spacing: 16) {
@@ -1139,7 +1197,10 @@ struct ViewerView: View {
                 } else if viewMode == .zaps {
                     zapsFilterView
                 } else if viewMode == .media {
-                    uploadButton
+                    HStack(spacing: 8) {
+                        uploadButton
+                        pasteButton
+                    }
                 }
             }
             
@@ -1152,7 +1213,14 @@ struct ViewerView: View {
     }
 
     private var uploadButton: some View {
-        Button(action: { showingFileImporter = true }) {
+        Menu {
+            Button(action: { showingPhotoPicker = true }) {
+                Label("Photos", systemImage: "photo")
+            }
+            Button(action: { showingFileImporter = true }) {
+                Label("Files", systemImage: "folder")
+            }
+        } label: {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .bold))
@@ -1172,9 +1240,40 @@ struct ViewerView: View {
             .cornerRadius(12)
             .shadow(color: Color.havenPurple.opacity(0.3), radius: 4, x: 0, y: 2)
         }
-        .buttonStyle(.plain)
+        .menuStyle(.automatic)
     }
-    
+
+    private var pasteButton: some View {
+        Button(action: handlePasteFromClipboard) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 11, weight: .bold))
+                Text("Paste")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                Group {
+                    if isPastingContent {
+                        Color.gray
+                    } else {
+                        LinearGradient(
+                            colors: [Color.havenPurple, Color.havenPurpleLight],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    }
+                }
+            )
+            .cornerRadius(12)
+            .shadow(color: Color.havenPurple.opacity(0.3), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+        .disabled(isPastingContent)
+    }
+
     private var notesButton: some View {
         ModeButton(title: "Notes", icon: "doc.text", isSelected: viewMode == .notes) {
             viewMode = .notes
@@ -2378,6 +2477,89 @@ struct ViewerView: View {
                             MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Upload failed.")
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private func handlePasteFromClipboard() {
+        // Set loading state immediately
+        isPastingContent = true
+        pasteError = nil
+
+        Task {
+            let blossom = blossomService
+            var success = false
+            var notificationId: UUID? = nil
+
+            // SCENARIO 1: Check for image data first (higher priority)
+            if PlatformClipboard.hasImage(), let imageData = PlatformClipboard.getImageData() {
+                notificationId = await MainActor.run {
+                    MediaUploadNotificationManager.shared.add(filename: "pasted-image")
+                }
+
+                // Follow same pattern as handleUploadSelectedItems for images
+                let sha256 = SHA256.hash(data: imageData).map { String(format: "%02x", $0) }.joined()
+
+                let uploadedURL = await blossom.uploadAndMirror(
+                    data: imageData,
+                    sha256: sha256,
+                    contentType: "image/jpeg"
+                ) { progress in
+                    Task { @MainActor in
+                        if let id = notificationId {
+                            MediaUploadNotificationManager.shared.updateProgress(id: id, progress: progress)
+                        }
+                    }
+                }
+
+                success = uploadedURL != nil
+            }
+            // SCENARIO 2: Check for URL string
+            else if let clipboardString = PlatformClipboard.getString() {
+                let trimmed = clipboardString.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                guard let url = URL(string: trimmed),
+                      url.scheme == "http" || url.scheme == "https" else {
+                    await MainActor.run {
+                        isPastingContent = false
+                        pasteError = "Clipboard does not contain a valid URL or image"
+                    }
+                    return
+                }
+
+                let filename = url.lastPathComponent.isEmpty
+                    ? "media-\(UUID().uuidString.prefix(8))"
+                    : url.lastPathComponent
+
+                notificationId = await MainActor.run {
+                    MediaUploadNotificationManager.shared.add(filename: filename)
+                }
+
+                // Use existing BlossomService.downloadFromURL
+                success = await blossom.downloadFromURL(url: url)
+            }
+            else {
+                // Clipboard is empty or unsupported content
+                await MainActor.run {
+                    isPastingContent = false
+                    pasteError = "Clipboard is empty or contains unsupported content"
+                }
+                return
+            }
+
+            // Update UI on main thread
+            await MainActor.run {
+                isPastingContent = false
+
+                if success, let id = notificationId {
+                    MediaUploadNotificationManager.shared.markSuccess(id: id)
+                    loadLocalMedia()
+                } else if let id = notificationId {
+                    MediaUploadNotificationManager.shared.markFailed(
+                        id: id,
+                        message: "Failed to paste media"
+                    )
                 }
             }
         }

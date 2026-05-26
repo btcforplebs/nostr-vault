@@ -122,7 +122,7 @@ func loadConfig() Config {
 		WotFetchTimeoutSeconds:               getEnvInt("WOT_FETCH_TIMEOUT_SECONDS", 30),
 		WotRefreshInterval:                   getEnvDuration("WOT_REFRESH_INTERVAL", 24*time.Hour),
 		WotCachePath:                         getEnvString("WOT_CACHE_PATH", "wot_cache.json"),
-		WotCacheTTLMinutes:                   getEnvInt("WOT_CACHE_TTL_MINUTES", 1440),
+		WotCacheTTLMinutes:                   getEnvInt("WOT_CACHE_TTL_MINUTES", 4320),
 		WhitelistedPubKeys:                   getNpubsFromFile(getEnvString("WHITELISTED_NPUBS_FILE", "")),
 		BlacklistedPubKeys:                   getNpubsFromFile(getEnvString("BLACKLISTED_NPUBS_FILE", "")),
 		LogLevel:                             getEnvString("HAVEN_LOG_LEVEL", "INFO"),

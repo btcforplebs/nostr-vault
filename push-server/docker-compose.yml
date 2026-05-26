@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  push-server:
+    build: .
+    container_name: nostrvault-push-server
+    restart: unless-stopped
+    ports:
+      - "7766:7766"
+    volumes:
+      # Mount APNs certificate
+      - ./certs:/app/certs:ro
+      # Persist database
+      - ./data:/app/data
+    environment:
+      # APNs Configuration (from .env file)
+      - APNS_KEY_PATH=/app/certs/AuthKey_XXXXXXXXXX.p8
+      - APNS_KEY_ID=${APNS_KEY_ID}
+      - APNS_TEAM_ID=${APNS_TEAM_ID}
+      - APNS_TOPIC=${APNS_TOPIC}
+      - APNS_USE_SANDBOX=${APNS_USE_SANDBOX:-false}
+
+      # Server Configuration
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=7766
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/push_server.db
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7766/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - nostrvault-network
+
+networks:
+  nostrvault-network:
+    driver: bridge

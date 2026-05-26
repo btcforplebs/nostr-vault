@@ -20,6 +20,7 @@ import (
 	"github.com/mailru/easyjson"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip04"
+	"github.com/nbd-wtf/go-nostr/nip44"
 	"github.com/spf13/afero"
 )
 
@@ -415,6 +416,36 @@ func DecryptNIP04C(ciphertext *C.char, pubkey *C.char, privkey *C.char) *C.char 
 	decrypted, err := nip04.Decrypt(C.GoString(ciphertext), sharedSecret)
 	if err != nil {
 		slog.Error("DecryptNIP04C: Decrypt failed", "err", err)
+		return nil
+	}
+	return C.CString(decrypted)
+}
+
+//export EncryptNIP44C
+func EncryptNIP44C(plaintext *C.char, pubkey *C.char, privkey *C.char) *C.char {
+	convKey, err := nip44.GenerateConversationKey(C.GoString(pubkey), C.GoString(privkey))
+	if err != nil {
+		slog.Error("EncryptNIP44C: GenerateConversationKey failed", "err", err)
+		return nil
+	}
+	encrypted, err := nip44.Encrypt(C.GoString(plaintext), convKey)
+	if err != nil {
+		slog.Error("EncryptNIP44C: Encrypt failed", "err", err)
+		return nil
+	}
+	return C.CString(encrypted)
+}
+
+//export DecryptNIP44C
+func DecryptNIP44C(ciphertext *C.char, pubkey *C.char, privkey *C.char) *C.char {
+	convKey, err := nip44.GenerateConversationKey(C.GoString(pubkey), C.GoString(privkey))
+	if err != nil {
+		slog.Error("DecryptNIP44C: GenerateConversationKey failed", "err", err)
+		return nil
+	}
+	decrypted, err := nip44.Decrypt(C.GoString(ciphertext), convKey)
+	if err != nil {
+		slog.Error("DecryptNIP44C: Decrypt failed", "err", err)
 		return nil
 	}
 	return C.CString(decrypted)

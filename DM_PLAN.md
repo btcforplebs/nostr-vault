@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add a private messenger using NIP-17 (Gift-Wrapped DMs) with NIP-44 (ChaCha20-Poly1305) encryption. The local relay already has a dedicated `/inbox` endpoint that stores kind 1059 gift-wrapped events — we just need to wire up the Swift side.
+Add a private messenger using NIP-17 (Gift-Wrapped DMs) with NIP-44 (ChaCha20 + HMAC-SHA256) encryption. The local relay already has a dedicated `/inbox` endpoint that stores kind 1059 gift-wrapped events — we just need to wire up the Swift side.
 
 ---
 
@@ -12,9 +12,9 @@ Add a private messenger using NIP-17 (Gift-Wrapped DMs) with NIP-44 (ChaCha20-Po
 
 **Sending:**
 1. Create a **rumor** — unsigned kind 14 with plaintext content and `["p", recipient_pubkey]` tag
-2. Create a **seal** — NIP-44 encrypt the JSON of the rumor using `sender_sk` + `recipient_pk`, sign as kind 13 with sender's key (randomize `created_at` ± 2 days)
+2. Create a **seal** — NIP-44 encrypt the JSON of the rumor using `sender_sk` + `recipient_pk`, sign as kind 13 with sender's key (randomize `created_at` up to 2 days in the past)
 3. Create a **gift wrap** — generate a one-time ephemeral keypair, NIP-44 encrypt the JSON of the seal using `ephemeral_sk` + `recipient_pk`, sign as kind 1059 with ephemeral key, add `["p", recipient_pubkey]` tag
-4. Publish kind 1059 to local `/inbox` relay + recipient's inbox relays (from their NIP-65 kind 10002)
+4. Publish kind 1059 to local `/inbox` relay + recipient's DM relays (from their kind 10050, fallback to read relays from kind 10002)
 
 **Receiving:**
 1. Subscribe to local `/inbox` for kind 1059 where `#p` tag = own pubkey
@@ -63,6 +63,8 @@ func DecryptNIP44C(ciphertext *C.char, pubkey *C.char, privkey *C.char) *C.char 
 ```
 
 Add `"github.com/nbd-wtf/go-nostr/nip44"` to the import block — it's already in `go.sum` (v0.52.3).
+
+**Note:** Verify that the `nip44` package implements the correct spec (ChaCha20 stream cipher + HMAC-SHA256 authentication, NOT ChaCha20-Poly1305).
 
 After adding, run `build_haven.sh` and update the three header files:
 - `HavenApp/build/libhaven.h`
@@ -130,7 +132,7 @@ enum NIP17Service {
 
 **Implementation notes:**
 - `createGiftWrap`: build rumor → NIP-44 seal with sender key → generate ephemeral keypair via `GenerateKeyPairC()` → NIP-44 gift wrap with ephemeral key → sign both seal and gift wrap via `SignEventC()`
-- Randomize `created_at` on seal and gift wrap: `Date().addingTimeInterval(Double.random(in: -172800...0))` (within 2 days)
+- Randomize `created_at` on seal and gift wrap: `Date().addingTimeInterval(Double.random(in: -172800...0))` (up to 2 days in the past for metadata privacy)
 - Rumor `id` is computed as SHA256 of the canonical serialization (same as regular events) but no `sig` field
 
 ---
@@ -171,6 +173,7 @@ class DMService: ObservableObject {
 
     private func handleIncomingGiftWrap(_ event: NostrEvent)
     private func inboxRelayURL() -> URL?  // wss://127.0.0.1:<port>/inbox
+    private func fetchRecipientDMRelays(_ pubkey: String) async -> [String]  // kind 10050, fallback to kind 10002 read relays
 }
 ```
 
@@ -179,7 +182,10 @@ class DMService: ObservableObject {
 { "kinds": [1059], "#p": ["<own_pubkey>"] }
 ```
 
-Connect to the local `/inbox` endpoint using the existing `WebSocketClient`. Outgoing DMs also publish to recipient's inbox relays fetched from their kind 10002 relay list (already cached in `NostrService.relayLists`).
+Connect to the local `/inbox` endpoint using the existing `WebSocketClient`. Outgoing DMs also publish to recipient's DM relays:
+1. First check for kind 10050 (DM relay preferences specific to NIP-17)
+2. Fallback to read relays from kind 10002 if no kind 10050 exists
+3. `NostrService.relayLists` already caches kind 10002 — add similar caching for kind 10050
 
 ---
 
@@ -253,8 +259,9 @@ Add a Messages nav button (envelope icon: `envelope` or `bubble.left.and.bubble.
 
 ## Open Questions
 
-- **Outgoing relay routing**: When sending a DM, publish to the recipient's NIP-65 inbox relays in addition to the local relay. `NostrService.relayLists` already caches kind 10002 — confirm the inbox relay entries are the `read` relays (tag `r` without `write` marker, or with `read` marker).
+- **Outgoing relay routing**: When sending a DM, publish to the recipient's kind 10050 DM relay preferences (fallback to read relays from kind 10002). Need to add caching for kind 10050 similar to the existing `NostrService.relayLists` caching for kind 10002. For kind 10002, read relays are those with tag `r` that have explicit `read` marker or no marker at all (no marker = both read/write).
 - **Persistence**: Decrypted messages should be cached locally (e.g., in a JSON file under the Haven app support directory) so they don't need re-decryption on every launch. Consider a simple `[String: [DMMessage]]` keyed by conversation pubkey.
 - **Sent DMs**: To see your own sent messages, you need to also gift-wrap a copy to yourself (wrap with `["p", own_pubkey]`) and publish it to your own inbox. This is the NIP-17 spec recommendation.
 - **Notifications**: `PushNotificationService` likely fires on incoming relay events — hook DMService into the same path so new DMs trigger a notification.
 - **iOS**: `NIP44Service.swift` uses the same C bridge as macOS, so it works for both targets automatically once `cshared.go` is updated and the iOS library is rebuilt.
+- **Security limitation**: NIP-44 does not provide forward secrecy — if a private key is compromised, all previous conversations encrypted with that key can be decrypted. This is a known limitation of the protocol.

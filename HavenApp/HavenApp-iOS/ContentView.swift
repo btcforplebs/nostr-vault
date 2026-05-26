@@ -39,6 +39,12 @@ struct ContentView: View {
                 }
             }
         }
+        .onAppear {
+            DMService.shared.startListening()
+
+            // Request push notification permissions and register for APNs
+            PushNotificationService.shared.requestPermissionAndRegister()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenViewer)) { _ in
             selectedTab = 3 // Relay tab
         }
@@ -95,9 +101,10 @@ struct iPadSidebarView: View {
                 }
             case 2:
                 NavigationStack {
-                    ProfileView(pubkey: configService.activeAccountHexPubkey, embeddedInNavigation: true)
+                    ProfileView(pubkey: configService.activeAccountHexPubkey, embeddedInNavigation: false)
                         .id(configService.activeAccountHexPubkey)
-                        .navigationBarHidden(true)
+                        .navigationTitle("Profile")
+                        .navigationBarTitleDisplayMode(.inline)
                         .navigationDestination(for: FeedNote.self) { note in
                             NoteDetailView(note: note)
                         }
@@ -139,6 +146,15 @@ struct iPadSidebarView: View {
         .onChange(of: selectedTab) { _, tab in
             if tab == 0 { feedService.markViewed() }
         }
+        .overlay(alignment: .top) {
+            VStack(spacing: 6) {
+                ZapNotificationBanner()
+                FollowNotificationBanner()
+                MediaUploadNotificationBanner()
+            }
+            .padding(.top, 4)
+            .allowsHitTesting(true)
+        }
     }
 }
 
@@ -172,9 +188,10 @@ struct iPhoneTabView: View {
 
             // Profile Tab (own profile)
             NavigationStack {
-                ProfileView(pubkey: configService.activeAccountHexPubkey, embeddedInNavigation: true)
+                ProfileView(pubkey: configService.activeAccountHexPubkey, embeddedInNavigation: false)
                     .id(configService.activeAccountHexPubkey) // Force reload when account changes
-                    .navigationBarHidden(true)
+                    .navigationTitle("Profile")
+                    .navigationBarTitleDisplayMode(.inline)
                     .navigationDestination(for: FeedNote.self) { note in
                         NoteDetailView(note: note)
                     }
@@ -205,11 +222,21 @@ struct iPhoneTabView: View {
             }
             .toolbar(.hidden, for: .tabBar)
             .tag(4)
+
         }
         .tint(.havenPurple)
         .toolbar(.hidden, for: .tabBar) // Hide the native tab bar
         .safeAreaInset(edge: .bottom, spacing: 0) {
             customTabBar
+        }
+        .overlay(alignment: .top) {
+            VStack(spacing: 6) {
+                ZapNotificationBanner()
+                FollowNotificationBanner()
+                MediaUploadNotificationBanner()
+            }
+            .padding(.top, 4)
+            .allowsHitTesting(true)
         }
         .onAppear {
             if configService.config.hasCompletedSetup && relayManager.state == .idle {
@@ -276,7 +303,7 @@ struct iPhoneTabView: View {
         let index = 2
         let activeHex = configService.activeAccountHexPubkey
         let avatarURL = nostrService.profiles[activeHex]?.pictureURL
-        
+
         return Button(action: {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 selectedTab = index
@@ -290,7 +317,7 @@ struct iPhoneTabView: View {
                 )
                 .scaleEffect(selectedTab == index ? 1.15 : 1.0)
                 .frame(height: 24)
-                
+
                 Text("Profile")
                     .font(.system(size: 10, weight: selectedTab == index ? .semibold : .regular))
             }
@@ -305,7 +332,7 @@ struct iPhoneTabView: View {
                     let isActive = activeAccountNpub.isEmpty ? isOwner : npub == activeAccountNpub
                     let hex = Bech32.decode(npub)?.hexString ?? ""
                     let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
-                    
+
                     Button {
                         configService.switchActiveAccount(to: npub)
                         feedService.switchMode(feedService.feedMode)

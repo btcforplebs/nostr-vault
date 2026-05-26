@@ -110,6 +110,18 @@ class BlossomService: @unchecked Sendable {
                         group.addTask {
                             let parsed = URL(string: mirror)
                             let useLocal = parsed.map { self.isLocalhost($0) } ?? false
+
+                            // BUD-06: Preflight check — skip mirror if server rejects
+                            let accepted = await self.preflightCheck(
+                                url: mirror, sha256: sha256,
+                                contentLength: data.count, contentType: contentType,
+                                useLocalhostSession: useLocal
+                            )
+                            guard accepted else {
+                                self.logger.info("saveToLocalRelay: skipping \(mirror) — BUD-06 preflight rejected")
+                                return
+                            }
+
                             let result = await self.uploadToServer(source: .data(data), url: mirror, sha256: sha256, contentType: contentType, useLocalhostSession: useLocal)
                             if result != nil {
                                 self.logger.info("saveToLocalRelay: also mirrored to \(mirror)")
@@ -161,6 +173,18 @@ class BlossomService: @unchecked Sendable {
                         let progressHandler = (index == 0) ? progress : nil
                         let parsed = URL(string: mirrorURL)
                         let useLocalSession = parsed.map { self.isLocalhost($0) } ?? false
+
+                        // BUD-06: Preflight check — skip mirror if server rejects
+                        let accepted = await self.preflightCheck(
+                            url: mirrorURL, sha256: sha256,
+                            contentLength: source.byteCount, contentType: contentType,
+                            useLocalhostSession: useLocalSession
+                        )
+                        guard accepted else {
+                            self.logger.info("BUD-06: Skipping mirror \(mirrorURL) — preflight rejected")
+                            return (mirrorURL, nil)
+                        }
+
                         let result = await self.uploadToServer(source: source, url: mirrorURL, sha256: sha256, contentType: contentType, useLocalhostSession: useLocalSession, progress: progressHandler)
                         return (mirrorURL, result)
                     }
@@ -318,6 +342,68 @@ class BlossomService: @unchecked Sendable {
 
         logger.error("Upload to \(url) failed after \(maxRetries) attempts")
         return nil
+    }
+
+    // MARK: - BUD-06: Upload Preflight
+
+    /// BUD-06: Pre-flight check via HEAD /upload before attempting a PUT upload.
+    /// Returns true if the server would accept the upload, false if the mirror should be skipped.
+    /// Fail-open: returns true on network errors or if the server doesn't support BUD-06.
+    private func preflightCheck(url: String, sha256: String, contentLength: Int, contentType: String, useLocalhostSession: Bool) async -> Bool {
+        guard var serverURL = URL(string: url) else { return true }
+
+        let isLocalNetwork = isLocalhost(serverURL)
+        if serverURL.scheme == "http" && !isLocalNetwork {
+            var components = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)
+            components?.scheme = "https"
+            if let secureURL = components?.url { serverURL = secureURL }
+        }
+
+        let uploadURL = serverURL.appendingPathComponent("upload")
+
+        // Kind 24242 auth — same as uploadToServer
+        let expirationTimestamp = Int64(Date().timeIntervalSince1970) + 3600
+        let authTags = [
+            ["t", "upload"],
+            ["x", sha256],
+            ["expiration", String(expirationTimestamp)]
+        ]
+        let authContent = "Preflight \(sha256.prefix(8))..."
+
+        guard let authEvent = await MainActor.run(body: {
+            nostrService.signEvent(kind: 24242, content: authContent, tags: authTags)
+        }) else {
+            logger.warning("BUD-06: Failed to sign preflight auth for \(url)")
+            return true // Fail-open
+        }
+
+        guard let authJSON = try? JSONEncoder().encode(authEvent) else { return true }
+        let authBase64 = authJSON.base64EncodedString()
+
+        var request = URLRequest(url: uploadURL)
+        request.httpMethod = "HEAD"
+        request.setValue("Nostr \(authBase64)", forHTTPHeaderField: "Authorization")
+        request.setValue(sha256, forHTTPHeaderField: "X-SHA-256")
+        request.setValue(String(contentLength), forHTTPHeaderField: "X-Content-Length")
+        request.setValue(contentType, forHTTPHeaderField: "X-Content-Type")
+        request.timeoutInterval = 15
+
+        do {
+            let session = useLocalhostSession ? localhostSession : remoteSession
+            let (_, response) = try await session.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    logger.debug("BUD-06: Preflight OK for \(url)")
+                    return true
+                }
+                let reason = httpResponse.value(forHTTPHeaderField: "X-Reason") ?? "none"
+                logger.info("BUD-06: Preflight rejected by \(url) — status \(httpResponse.statusCode), reason: \(reason)")
+                return false
+            }
+        } catch {
+            logger.warning("BUD-06: Preflight network error for \(url): \(error.localizedDescription)")
+        }
+        return true // Fail-open
     }
 
     // MARK: - Download & Mirror from External Servers

@@ -364,7 +364,7 @@ struct MenuBarView: View {
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .animation(.easeInOut(duration: 0.2), value: selectedTab)
-                        
+
                         Divider()
 
                         // MARK: - Tabs (bottom nav)
@@ -378,7 +378,11 @@ struct MenuBarView: View {
                                             selectedTab = .feed
                                             feedService.switchMode(mode)
                                         }) {
-                                            Label(mode.rawValue, systemImage: feedService.feedMode == mode ? "checkmark" : "")
+                                            if feedService.feedMode == mode {
+                                                Label(mode.rawValue, systemImage: "checkmark")
+                                            } else {
+                                                Text(mode.rawValue)
+                                            }
                                         }
                                     }
                                 }
@@ -683,9 +687,18 @@ struct MenuBarView: View {
                 .zIndex(100)
             }
         }
+        .overlay(alignment: .top) {
+            VStack(spacing: 6) {
+                ZapNotificationBanner()
+                FollowNotificationBanner()
+                MediaUploadNotificationBanner()
+            }
+            .padding(.top, 4)
+        }
         #if os(macOS)
         .onAppear {
             FloatingArrowController.shared.dismiss()
+            DMService.shared.startListening()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             startInactivityTimer()
@@ -694,7 +707,7 @@ struct MenuBarView: View {
             stopInactivityTimer()
         }
         #endif
-        
+
 
     }
     

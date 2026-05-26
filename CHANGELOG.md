@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1 macOS / 1.1.1 iOS] - 2026-05-25
+
+> [!IMPORTANT]
+> **Feature Heavy Release**: This version introduces three flagship features — **NIP-17 Private Messaging**, an integrated **Bitcoin Wallet** (Lightning + On-Chain), and **Silent Payments (BIP-352)** for privacy-preserving Bitcoin receiving. Push notifications with deep linking are now live on iOS.
+
+### Added
+- **NIP-17 Private Direct Messaging**: Full end-to-end encrypted messaging using the NIP-17 gift wrap protocol with NIP-44 (ChaCha20 + HMAC-SHA256) encryption. Three-layer privacy model: rumor (kind 14) → seal (kind 13) → gift wrap (kind 1059) with ephemeral keypairs and randomized timestamps for metadata protection.
+- **NIP-04 Legacy DM Support**: Backward-compatible support for legacy NIP-04 encrypted DMs with per-conversation protocol toggle. Orange warning badges indicate weaker NIP-04 messages within a thread.
+- **DM Inbox View**: Full conversation list UI with unread count badges, avatar display, message previews, and relative timestamps. NIP-42 authenticated connection to local relay's `/chat` and `/inbox` endpoints.
+- **DM Thread View**: Chat bubble interface with right-aligned (own) and left-aligned (counterparty) messages, day grouping, and real-time message arrival via WebSocket subscription.
+- **Message Composer**: New conversation creation with user search, npub/hex input validation, and profile preview before sending.
+- **DM Relay Routing**: Outgoing DMs are published to recipient's kind 10050 DM relay preferences, with fallback to kind 10002 read relays, ensuring delivery across the fragmented Nostr relay network.
+- **Wallet View**: New dedicated Wallet tab with segmented Lightning and On-Chain sub-tabs, consolidating all payment functionality into a unified interface.
+- **Lightning Wallet Tab**: Full NWC-powered Lightning wallet with real-time balance display, bolt11 invoice generation with QR codes, invoice payment with amount verification, and Lightning address display.
+- **On-Chain Wallet Tab**: Taproot (BIP-341) address display with QR code, balance fetching from Mempool API, and sweep-to-external-wallet functionality with fee estimation.
+- **Silent Payments (BIP-352) — Beta**: Privacy-preserving Bitcoin receiving integrated with Nostr. Single static `sp1...` address generates unlimited unique on-chain addresses. Uses sender notifications via NIP-17 gift wraps for instant detection without blockchain scanning.
+- **Silent Payment Scan Service**: Listens for NIP-17 notifications containing `txid`, `tweak`, and `blockhash`. Fetches transaction outputs from Mempool API, verifies ownership via `SilentPaymentsKit`, and stores per-output spend keys in Keychain with hardware-backed security.
+- **Silent Payment Sweep**: Sweep all discovered Silent Payment UTXOs to an external address with selectable fee rates (economy/1hr/30min/fast) and real-time fee estimates from Mempool API.
+- **Silent Payment Address on Profiles**: Profile views now display the user's `sp1...` Silent Payment address (derived from their Nostr pubkey) with copy-to-clipboard support.
+- **SPStoredUTXO Model**: Persistent UTXO tracking with transaction ID, output index, taproot key, amount, sender pubkey, BIP-352 label, and sweep status.
+- **Push Notifications (APNs)**: Native iOS push notification support for DMs (kind 1059/4), mentions (kind 1), and zaps (kind 9735) with deep linking — tap a notification to jump directly to the relevant view.
+- **Remote Push Server**: Optional Mac Mini APNs forwarding server support with device token registration for reliable notification delivery when the app is backgrounded.
+- **NIP-44 C Bridge**: Added `EncryptNIP44C` and `DecryptNIP44C` exports to the Go C-shared library, enabling Swift to call Go's NIP-44 implementation for DM encryption.
+- **Paste Media to Blossom**: New "Paste" button in the Media viewer toolbar that uploads clipboard content directly to Blossom storage. Supports pasting images (PNG, TIFF, JPEG) from the clipboard or pasting a URL to download and mirror the remote file — with upload progress notifications and error feedback.
+- **Clipboard Read APIs**: Cross-platform `getString()`, `getImageData()`, and `hasImage()` clipboard utilities in `PlatformCompat` for paste functionality.
+- **Blossom BUD-06 Preflight**: Before uploading to mirror servers, sends preflight requests to check acceptance, preventing wasted bandwidth on rejections.
+
+### Changed
+- **ProfileView Overhaul**: Added DM button, wallet quick-access links (Lightning and On-Chain), Silent Payment address display, and removed ZStack wrapper in favor of a cleaner ScrollView-first layout.
+- **ViewerView DM Integration**: Messages tab integrated into the Viewer for macOS, providing quick access to the DM inbox alongside existing Notes/Likes/Zaps tabs.
+- **MenuBarView**: Auto-starts DM service on appear, moves notification banners to top-level overlay, cleaner menu checkmarks.
+- **iOS ContentView**: Auto-starts DM service, requests push notification permissions on launch, top-level notification banner overlay, improved iPad split view.
+- **NWCService Extended**: Added `makeInvoice` and `getBalance` request types to support the Lightning wallet tab's receive and balance display features.
+- **NostrService DM Relay Lists**: Now tracks kind 10050 (NIP-17 DM relay preferences) for outgoing DM routing with fallback chain to kind 10002 and default relays.
+- **Web of Trust Cache TTL**: Extended from 24 hours to 72 hours to reduce relay load during WoT graph fetching.
+- **ZapNotificationBanner Elevated**: Moved from individual view overlays (FeedView, NoteDetailView) to a single top-level overlay in the root container for consistent display.
+- **Video Player Cache Eviction**: Players that fail to load are now evicted and recreated on retry, with improved MIME type handling for extensionless video files.
+
+### Fixed
+- **NoteDetailView Scroll Performance**: Removed conflicting z-index overlays that caused scroll jitter on iOS.
+- **Feed Menu Icons**: Removed empty icon placeholders from feed mode menu items for cleaner presentation.
+- **Video MIME Detection**: Videos without file extensions now use cached content type from the media service for correct playback initialization.
+
 ## [2.5.1 MacOS / 1.1.1 iOS] - 2026-05-25
 
 ### Added

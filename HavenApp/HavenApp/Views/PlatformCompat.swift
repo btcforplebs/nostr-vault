@@ -84,6 +84,42 @@ struct PlatformClipboard {
         UIPasteboard.general.string = string
         #endif
     }
+
+    /// Read string from clipboard (for URLs)
+    static func getString() -> String? {
+        #if canImport(AppKit)
+        return NSPasteboard.general.string(forType: .string)
+        #elseif canImport(UIKit)
+        return UIPasteboard.general.string
+        #endif
+    }
+
+    /// Read image data from clipboard
+    static func getImageData() -> Data? {
+        #if canImport(AppKit)
+        guard let items = NSPasteboard.general.pasteboardItems else { return nil }
+        for item in items {
+            if let data = item.data(forType: NSPasteboard.PasteboardType.png) { return data }
+            if let data = item.data(forType: NSPasteboard.PasteboardType.tiff) { return data }
+            // Also check for generic image type
+            if let data = item.data(forType: NSPasteboard.PasteboardType("public.image")) { return data }
+        }
+        return nil
+        #elseif canImport(UIKit)
+        return UIPasteboard.general.image?.jpegData(compressionQuality: 0.85)
+        #endif
+    }
+
+    /// Check if clipboard contains an image
+    static func hasImage() -> Bool {
+        #if canImport(AppKit)
+        guard let types = NSPasteboard.general.types else { return false }
+        return types.contains(.png) || types.contains(.tiff)
+            || types.contains(NSPasteboard.PasteboardType("public.image"))
+        #elseif canImport(UIKit)
+        return UIPasteboard.general.hasImages
+        #endif
+    }
 }
 
 // MARK: - Open URL

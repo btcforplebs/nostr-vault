@@ -32,44 +32,39 @@ struct NoteDetailView: View {
     @State private var noLightningAddressAlert = false
 
     var body: some View {
-        ZStack(alignment: .top) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Thread History (Parents)
-                        if !parentNotes.isEmpty {
-                            threadSection
-                            Divider()
-                        }
-
-                        // Main Note
-                        mainNoteSection
-                            .id("mainNote")
-
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Thread History (Parents)
+                    if !parentNotes.isEmpty {
+                        threadSection
                         Divider()
-
-                        // Replies Section
-                        repliesSection
-
-                        #if os(iOS)
-                        Color.clear.frame(height: 90)
-                        #endif
                     }
-                    .padding()
+
+                    // Main Note
+                    mainNoteSection
+                        .id("mainNote")
+
+                    Divider()
+
+                    // Replies Section
+                    repliesSection
+
+                    #if os(iOS)
+                    Color.clear.frame(height: 90)
+                    #endif
                 }
-                .onChange(of: isLoadingParents) { _, loading in
-                    if !loading && !parentNotes.isEmpty {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                proxy.scrollTo("mainNote", anchor: .top)
-                            }
+                .padding()
+            }
+            .onChange(of: isLoadingParents) { _, loading in
+                if !loading && !parentNotes.isEmpty {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            proxy.scrollTo("mainNote", anchor: .top)
                         }
                     }
                 }
             }
-
-            ZapNotificationBanner()
-                .zIndex(1)
         }
         .background(Color.platformSecondaryGroupedBackground)
         .refreshable {

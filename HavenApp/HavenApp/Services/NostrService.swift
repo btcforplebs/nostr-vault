@@ -29,6 +29,13 @@ class NostrService: ObservableObject {
     @Published var relayLists: [String: [String]] = [:] // [Pubkey: [InboxRelayURLs]]
     private var relaysInFlight = Set<String>()
 
+    // DM Relay List Cache (Kind 10050 - NIP-17)
+    @Published var dmRelayLists: [String: [String]] = [:] // [Pubkey: [DMRelayURLs]]
+    private var dmRelaysInFlight = Set<String>()
+
+    // BUD-03: User Server Lists (Kind 10063)
+    @Published var serverLists: [String: [String]] = [:] // [Pubkey: [BlossomServerURLs]]
+
     // Batching updates to the UI
     private let eventUpdateSubject = PassthroughSubject<Void, Never>()
 
@@ -185,6 +192,26 @@ class NostrService: ObservableObject {
             #endif
         }
 
+        // Load Server Lists (BUD-03)
+        let serverListsURL = havenDir.appendingPathComponent("server_lists.json")
+        if let data = try? Data(contentsOf: serverListsURL),
+           let loaded = try? JSONDecoder().decode([String: [String]].self, from: data) {
+            self.serverLists = loaded
+            #if DEBUG
+            print("NostrService: Loaded \(serverLists.count) server lists from cache")
+            #endif
+        }
+
+        // Load DM Relay Lists (Kind 10050 - NIP-17)
+        let dmRelayListsURL = havenDir.appendingPathComponent("dm_relay_lists.json")
+        if let data = try? Data(contentsOf: dmRelayListsURL),
+           let loaded = try? JSONDecoder().decode([String: [String]].self, from: data) {
+            self.dmRelayLists = loaded
+            #if DEBUG
+            print("NostrService: Loaded \(dmRelayLists.count) DM relay lists from cache")
+            #endif
+        }
+
     }
 
 
@@ -198,6 +225,8 @@ class NostrService: ObservableObject {
             lastProfileSave = now
             saveProfiles()
             saveRelayLists()
+            saveDMRelayLists()
+            saveServerLists()
         }
     }
 
@@ -210,6 +239,32 @@ class NostrService: ObservableObject {
 
             if let data = try? JSONEncoder().encode(listsCopy) {
                 try? data.write(to: relayListsURL)
+            }
+        }
+    }
+
+    private func saveDMRelayLists() {
+        let listsCopy = dmRelayLists
+        DispatchQueue.global(qos: .utility).async {
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
+            let dmRelayListsURL = havenDir.appendingPathComponent("dm_relay_lists.json")
+
+            if let data = try? JSONEncoder().encode(listsCopy) {
+                try? data.write(to: dmRelayListsURL)
+            }
+        }
+    }
+
+    private func saveServerLists() {
+        let listsCopy = serverLists
+        DispatchQueue.global(qos: .utility).async {
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let havenDir = appSupport.appendingPathComponent("Haven", isDirectory: true)
+            let serverListsURL = havenDir.appendingPathComponent("server_lists.json")
+
+            if let data = try? JSONEncoder().encode(listsCopy) {
+                try? data.write(to: serverListsURL)
             }
         }
     }
@@ -254,7 +309,7 @@ class NostrService: ObservableObject {
     private func sendProfileRequest(to client: WebSocketClient, pubkeys: [String]) {
         let subscriptionId = "meta-\(UUID().uuidString.prefix(8))"
         let filter: [String: Any] = [
-            "kinds": [0, 10002, 10000],
+            "kinds": [0, 10002, 10050, 10000, 10063],
             "authors": pubkeys
         ]
 
@@ -503,6 +558,55 @@ class NostrService: ObservableObject {
             // Restore active account on failure
             ConfigService.shared.config.activeAccountNpub = originalActive
             print("NostrService: Failed to sign Kind 10000 mute list for \(accountNpub.prefix(8))")
+        }
+    }
+
+    /// BUD-03: Publishes a Kind 10063 (User Server List) event advertising Blossom mirrors.
+    /// Call whenever blossomMirrors changes (settings, setup wizard).
+    @MainActor
+    func publishServerList() {
+        let mirrors = ConfigService.shared.config.activeBlossomMirrors
+        guard !mirrors.isEmpty else {
+            #if DEBUG
+            print("NostrService: No Blossom mirrors configured, skipping Kind 10063 publish")
+            #endif
+            return
+        }
+
+        // Build ["server", url] tags — ordered by reliability (local relay first via activeBlossomMirrors)
+        let tags = mirrors.map { ["server", $0] }
+
+        if let event = signEvent(kind: 10063, content: "", tags: tags) {
+            postEvent(event)
+            #if DEBUG
+            print("NostrService: Published Kind 10063 server list with \(tags.count) servers")
+            #endif
+        } else {
+            print("NostrService: Failed to sign Kind 10063 server list")
+        }
+    }
+
+    /// NIP-17: Publishes a Kind 10050 (DM Relay List) event advertising which relays to send DMs to.
+    /// Call whenever relay preferences change or during initial setup.
+    @MainActor
+    func publishDMRelayList(dmRelays: [String]) {
+        guard !dmRelays.isEmpty else {
+            #if DEBUG
+            print("NostrService: No DM relays configured, skipping Kind 10050 publish")
+            #endif
+            return
+        }
+
+        // Build ["r", relay_url] tags for DM relays
+        let tags = dmRelays.map { ["r", $0] }
+
+        if let event = signEvent(kind: 10050, content: "", tags: tags) {
+            postEvent(event)
+            #if DEBUG
+            print("NostrService: Published Kind 10050 DM relay list with \(tags.count) relays")
+            #endif
+        } else {
+            print("NostrService: Failed to sign Kind 10050 DM relay list")
         }
     }
 
@@ -890,7 +994,7 @@ class NostrService: ObservableObject {
 
         var filter: [String: Any] = [
             "limit": isHistorical ? 100 : 200,
-            "kinds": [0, 1, 3, 4, 6, 7, 1063, 30023, 9735, 10000]
+            "kinds": [0, 1, 3, 4, 6, 7, 1063, 30023, 9735, 10000, 10063]
         ]
         if let until = until {
             filter["until"] = until
@@ -1063,6 +1167,47 @@ class NostrService: ObservableObject {
                         self.relayLists[pubkey] = inboxRelays
                     }
                     self.relaysInFlight.remove(pubkey)
+                    self.saveProfilesThrottled()
+                }
+                return
+            }
+
+            if event.kind == 10050 {
+                // NIP-17: DM relay preferences — ["r", relay_url]
+                var dmRelays: [String] = []
+                for tag in event.tags {
+                    if tag.count >= 2 && tag[0] == "r" {
+                        dmRelays.append(tag[1])
+                    }
+                }
+
+                let pubkey = event.pubkey
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    if !dmRelays.isEmpty {
+                        self.dmRelayLists[pubkey] = dmRelays
+                    }
+                    self.dmRelaysInFlight.remove(pubkey)
+                    self.saveProfilesThrottled()
+                }
+                return
+            }
+
+            if event.kind == 10063 {
+                // BUD-03: Parse ["server", url] tags for Blossom server list
+                var servers: [String] = []
+                for tag in event.tags {
+                    if tag.count >= 2 && tag[0] == "server" {
+                        servers.append(tag[1])
+                    }
+                }
+
+                let pubkey = event.pubkey
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    if !servers.isEmpty {
+                        self.serverLists[pubkey] = servers
+                    }
                     self.saveProfilesThrottled()
                 }
                 return

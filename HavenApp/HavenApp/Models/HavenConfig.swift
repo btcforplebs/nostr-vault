@@ -30,6 +30,10 @@ struct HavenConfig: Codable, Equatable {
 
     // Bitcoin Taproot wallet (derived from Nostr keypair via BIP-341)
     var showBitcoinWallet: Bool = false
+
+    // Push Notifications (optional Mac Mini server)
+    var pushServerURL: String = "" // e.g., http://192.168.1.100:8000 or Tailscale IP
+    var enableRemotePushServer: Bool = false
     
     // Private Relay
     var privateRelayName: String = "Nostr Vault Private"
@@ -89,7 +93,14 @@ struct HavenConfig: Codable, Equatable {
         "wss://relay.primal.net",
         "wss://nos.lol"
     ]
-    
+
+    // NIP-17: DM Relays (kind 10050)
+    var dmRelays: [String] = [
+        "wss://relay.damus.io",
+        "wss://relay.primal.net",
+        "wss://nos.lol"
+    ]
+
     // Whitelisted Npubs (multi-npub support)
     var whitelistedNpubs: [String] = []
     var whitelistedNpubsFile: String = "whitelisted_npubs.json"
@@ -129,6 +140,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, disableMediaCache, allowNetworkAccess, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
+        case pushServerURL, enableRemotePushServer
         case macRelayURL
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
@@ -177,6 +189,9 @@ struct HavenConfig: Codable, Equatable {
         autoLoadNewPosts = try container.decodeIfPresent(Bool.self, forKey: .autoLoadNewPosts) ?? defaults.autoLoadNewPosts
         showReposts = try container.decodeIfPresent(Bool.self, forKey: .showReposts) ?? defaults.showReposts
         showBitcoinWallet = try container.decodeIfPresent(Bool.self, forKey: .showBitcoinWallet) ?? defaults.showBitcoinWallet
+
+        pushServerURL = try container.decodeIfPresent(String.self, forKey: .pushServerURL) ?? defaults.pushServerURL
+        enableRemotePushServer = try container.decodeIfPresent(Bool.self, forKey: .enableRemotePushServer) ?? defaults.enableRemotePushServer
         
         privateRelayName = try container.decodeIfPresent(String.self, forKey: .privateRelayName) ?? defaults.privateRelayName
         privateRelayDescription = try container.decodeIfPresent(String.self, forKey: .privateRelayDescription) ?? defaults.privateRelayDescription

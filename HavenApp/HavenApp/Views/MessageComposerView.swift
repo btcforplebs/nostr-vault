@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 
+#if os(iOS)
 struct MessageComposerView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var nostrService: NostrService
@@ -21,12 +22,12 @@ struct MessageComposerView: View {
         if searchText.isEmpty {
             return []
         }
-        return nostrService.profiles.keys.filter { pubkey in
+        return Array(nostrService.profiles.keys.filter { pubkey in
             let profile = nostrService.profiles[pubkey]
             let name = profile?.bestName ?? ""
             return name.lowercased().contains(searchText.lowercased()) ||
                    pubkey.lowercased().contains(searchText.lowercased())
-        }.prefix(10).map(String.init)
+        }.prefix(10))
     }
 
     var canSend: Bool {
@@ -64,10 +65,10 @@ struct MessageComposerView: View {
                                                         .frame(width: 32, height: 32)
 
                                                     VStack(alignment: .leading, spacing: 2) {
-                                                        Text(nostrService.profiles[pubkey]?.bestName ?? String(pubkey.prefix(8)))
+                                                        Text(nostrService.profiles[pubkey]?.bestName ?? String(Array(pubkey.prefix(8))))
                                                             .font(.system(size: 13, weight: .semibold))
                                                             .foregroundColor(.primary)
-                                                        Text(String(pubkey.prefix(12)) + "…")
+                                                        Text(String(Array(pubkey.prefix(12))) + "…")
                                                             .font(.system(size: 11, design: .monospaced))
                                                             .foregroundColor(.secondary)
                                                     }
@@ -177,18 +178,13 @@ struct MessageComposerView: View {
                 // Actions
                 HStack(spacing: 12) {
                     #if os(iOS)
-                    PhotosPicker(selection: .constant(nil), matching: .images) {
+                    Button(action: {}) {
                         Image(systemName: "photo")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.havenPurple)
                             .padding(12)
                             .background(Color.havenPurple.opacity(0.12))
                             .cornerRadius(8)
-                    }
-                    .onChange(of: showPhotoPicker) { _, show in
-                        if show {
-                            showPhotoPicker = false
-                        }
                     }
                     #endif
 
@@ -255,3 +251,4 @@ struct MessageComposerView: View {
         .environmentObject(NostrService.shared)
         .environmentObject(ConfigService.shared)
 }
+#endif
