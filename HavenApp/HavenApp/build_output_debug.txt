@@ -1,5 +1,0 @@
-Command line invocation:
-    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -scheme HavenApp -project HavenApp.xcodeproj -configuration Debug build
-
-2026-01-21 13:42:01.565 xcodebuild[44690:2336192] Writing error result bundle to /var/folders/gk/b5g6r9x52ybb30bwwxt0_8fh0000gn/T/ResultBundle_2026-21-01_13-42-0001.xcresult
-xcodebuild: error: 'HavenApp.xcodeproj' does not exist.
