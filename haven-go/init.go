@@ -41,6 +41,24 @@ var (
 	privateDB    DBBackend
 )
 
+// getHTTPScheme returns the appropriate HTTP scheme based on the URL.
+// Returns "http://" for .onion domains (Tor), "https://" for regular domains.
+func getHTTPScheme(url string) string {
+	if strings.Contains(url, ".onion") {
+		return "http://"
+	}
+	return "https://"
+}
+
+// getWSScheme returns the appropriate WebSocket scheme based on the URL.
+// Returns "ws://" for .onion domains (Tor), "wss://" for regular domains.
+func getWSScheme(url string) string {
+	if strings.Contains(url, ".onion") {
+		return "ws://"
+	}
+	return "wss://"
+}
+
 var (
 	chatRelay *khatru.Relay
 	chatDB    DBBackend
@@ -264,8 +282,8 @@ func CloseDBs() {
 //     "1" on iOS (App Transport Security requires HTTPS even for localhost),
 //     "0" on macOS/Android (plain HTTP locally, TLS only for a public domain).
 func relayServiceURL(path string) string {
-	scheme := "https"
 	host := config.RelayURL
+	scheme := strings.TrimSuffix(getHTTPScheme(host), "://")
 	if host == "" {
 		host = fmt.Sprintf("127.0.0.1:%d", config.RelayPort)
 		if os.Getenv("HAVEN_ENABLE_TLS") != "1" {
@@ -351,7 +369,7 @@ func initRelays(ctx context.Context) error {
 	mux.HandleFunc("GET /private", func(w http.ResponseWriter, r *http.Request) {
 		tmpl, err := template.ParseFiles("templates/index.html")
 		if err != nil {
-			renderFallbackPage(w, config.PrivateRelayName, config.PrivateRelayDescription, "wss://"+config.RelayURL+"/private")
+			renderFallbackPage(w, config.PrivateRelayName, config.PrivateRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL+"/private")
 			return
 		}
 		data := struct {
@@ -363,7 +381,7 @@ func initRelays(ctx context.Context) error {
 			RelayName:        config.PrivateRelayName,
 			RelayPubkey:      nPubToPubkey(config.PrivateRelayNpub),
 			RelayDescription: config.PrivateRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL + "/private",
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL + "/private",
 		}
 		if err := tmpl.Execute(w, data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -433,7 +451,7 @@ func initRelays(ctx context.Context) error {
 	mux.HandleFunc("GET /chat", func(w http.ResponseWriter, r *http.Request) {
 		tmpl, err := template.ParseFiles("templates/index.html")
 		if err != nil {
-			renderFallbackPage(w, config.ChatRelayName, config.ChatRelayDescription, "wss://"+config.RelayURL+"/chat")
+			renderFallbackPage(w, config.ChatRelayName, config.ChatRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL+"/chat")
 			return
 		}
 		data := struct {
@@ -445,7 +463,7 @@ func initRelays(ctx context.Context) error {
 			RelayName:        config.ChatRelayName,
 			RelayPubkey:      nPubToPubkey(config.ChatRelayNpub),
 			RelayDescription: config.ChatRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL + "/chat",
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL + "/chat",
 		}
 		err = tmpl.Execute(w, data)
 		if err != nil {
@@ -503,7 +521,7 @@ func initRelays(ctx context.Context) error {
 
 		tmpl, err := template.ParseFiles("templates/feed.html")
 		if err != nil {
-			renderFallbackPage(w, config.OutboxRelayName, config.OutboxRelayDescription, "wss://"+config.RelayURL)
+			renderFallbackPage(w, config.OutboxRelayName, config.OutboxRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL)
 			return
 		}
 
@@ -513,7 +531,7 @@ func initRelays(ctx context.Context) error {
 			RelayName:        config.OutboxRelayName,
 			RelayPubkey:      nPubToPubkey(config.OutboxRelayNpub),
 			RelayDescription: config.OutboxRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL,
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL,
 			Notes:            notes,
 		}
 
@@ -522,7 +540,7 @@ func initRelays(ctx context.Context) error {
 		}
 	})
 
-	blossomServer = blossom.New(outboxRelay, "https://"+config.RelayURL)
+	blossomServer = blossom.New(outboxRelay, getHTTPScheme(config.RelayURL)+config.RelayURL)
 	blossomServer.Store = blossom.EventStoreBlobIndexWrapper{Store: blossomDB, ServiceURL: blossomServer.ServiceURL}
 	blossomServer.StoreBlob = append(blossomServer.StoreBlob, func(ctx context.Context, sha256 string, ext string, body []byte) error {
 		slog.Debug("storing blob", "sha256", sha256, "ext", ext)
@@ -639,7 +657,7 @@ func initRelays(ctx context.Context) error {
 	mux.HandleFunc("GET /inbox", func(w http.ResponseWriter, r *http.Request) {
 		tmpl, err := template.ParseFiles("templates/index.html")
 		if err != nil {
-			renderFallbackPage(w, config.InboxRelayName, config.InboxRelayDescription, "wss://"+config.RelayURL+"/inbox")
+			renderFallbackPage(w, config.InboxRelayName, config.InboxRelayDescription, getWSScheme(config.RelayURL)+config.RelayURL+"/inbox")
 			return
 		}
 		data := struct {
@@ -651,7 +669,7 @@ func initRelays(ctx context.Context) error {
 			RelayName:        config.InboxRelayName,
 			RelayPubkey:      nPubToPubkey(config.InboxRelayNpub),
 			RelayDescription: config.InboxRelayDescription,
-			RelayURL:         "wss://" + config.RelayURL + "/inbox",
+			RelayURL:         getWSScheme(config.RelayURL) + config.RelayURL + "/inbox",
 		}
 		if err := tmpl.Execute(w, data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -695,7 +713,7 @@ func initRelays(ctx context.Context) error {
 	feedRelay.ReplaceEvent = append(feedRelay.ReplaceEvent, feedDB.ReplaceEvent)
 
 	feedRelay.Router().HandleFunc("GET /feed", func(w http.ResponseWriter, r *http.Request) {
-		renderFallbackPage(w, feedRelay.Info.Name, feedRelay.Info.Description, "wss://"+config.RelayURL+"/feed")
+		renderFallbackPage(w, feedRelay.Info.Name, feedRelay.Info.Description, getWSScheme(config.RelayURL)+config.RelayURL+"/feed")
 	})
 
 	return nil

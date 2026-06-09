@@ -9,7 +9,7 @@ import (
 
 func migrateBlossomMetadata(ctx context.Context, bl *blossom.BlossomServer) {
 	// Create a temporary Blossom dbWrapper for the migration
-	outboxDBWrapper := blossom.EventStoreBlobIndexWrapper{Store: outboxDB, ServiceURL: "https://" + config.RelayURL}
+	outboxDBWrapper := blossom.EventStoreBlobIndexWrapper{Store: outboxDB, ServiceURL: getHTTPScheme(config.RelayURL) + config.RelayURL}
 
 	// List all BlobDescriptor for the relay owner pubkey
 	ownerPubkey := nPubToPubkey(config.OwnerNpub)
