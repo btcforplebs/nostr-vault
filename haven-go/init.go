@@ -343,6 +343,7 @@ func initRelays(ctx context.Context) error {
 			privateRelayLimits.EventIPLimiterMaxTokens,
 		),
 		MustBeWhitelistedToPost,
+		MustNotBeDeleted(privateDB),
 	)
 
 	privateRelay.RejectConnection = append(privateRelay.RejectConnection,
@@ -362,6 +363,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(privateRelay, privateDB)
 	privateRelay.DeleteEvent = append(privateRelay.DeleteEvent, privateDB.DeleteEvent)
+	privateRelay.OverwriteDeletionOutcome = append(privateRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	privateRelay.ReplaceEvent = append(privateRelay.ReplaceEvent, privateDB.ReplaceEvent)
 
 	mux := privateRelay.Router()
@@ -414,6 +416,7 @@ func initRelays(ctx context.Context) error {
 		MustNotBeBlacklistedToPost,
 		MustBeInWotToPost,
 		EventMustBeChatRelated,
+		MustNotBeDeleted(chatDB),
 	)
 
 	chatRelay.RejectConnection = append(chatRelay.RejectConnection,
@@ -444,6 +447,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(chatRelay, chatDB)
 	chatRelay.DeleteEvent = append(chatRelay.DeleteEvent, chatDB.DeleteEvent)
+	chatRelay.OverwriteDeletionOutcome = append(chatRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	chatRelay.ReplaceEvent = append(chatRelay.ReplaceEvent, chatDB.ReplaceEvent)
 
 	mux = chatRelay.Router()
@@ -494,6 +498,7 @@ func initRelays(ctx context.Context) error {
 			outboxRelayLimits.EventIPLimiterMaxTokens,
 		),
 		MustBeWhitelistedToPost,
+		MustNotBeDeleted(outboxDB),
 	)
 
 	outboxRelay.RejectConnection = append(outboxRelay.RejectConnection,
@@ -512,6 +517,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(outboxRelay, outboxDB)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
+	outboxRelay.OverwriteDeletionOutcome = append(outboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent)
 
 	mux = outboxRelay.Router()
@@ -608,6 +614,7 @@ func initRelays(ctx context.Context) error {
 		MustNotBeBlacklistedToPost,
 		MustBeInWotToPost,
 		MustTagWhitelistedPubKey,
+		MustNotBeDeleted(inboxDB),
 	)
 
 	inboxRelay.RejectConnection = append(inboxRelay.RejectConnection,
@@ -650,6 +657,7 @@ func initRelays(ctx context.Context) error {
 	// Queries (plain and NIP-50 search) and counts; see search.go.
 	enableSearch(inboxRelay, inboxDB)
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)
+	inboxRelay.OverwriteDeletionOutcome = append(inboxRelay.OverwriteDeletionOutcome, OwnerCanDeleteAnyEvent)
 	inboxRelay.ReplaceEvent = append(inboxRelay.ReplaceEvent, inboxDB.ReplaceEvent)
 
 	mux = inboxRelay.Router()
