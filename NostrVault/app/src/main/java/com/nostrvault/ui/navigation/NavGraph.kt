@@ -223,6 +223,9 @@ fun NostrVaultNavHost(
                     onNewMessage = {
                         navController.navigate(Screen.NewMessage.createRoute())
                     },
+                    onGroups = {
+                        navController.navigate(Screen.GroupList.route)
+                    },
                 )
             }
 

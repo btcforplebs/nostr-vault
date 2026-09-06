@@ -101,6 +101,7 @@ class DMInboxViewModel @Inject constructor(
 fun DMInboxScreen(
     onConversationClick: (String) -> Unit,
     onNewMessage: () -> Unit = {},
+    onGroups: () -> Unit = {},
     viewModel: DMInboxViewModel = hiltViewModel(),
 ) {
     val conversations by viewModel.conversations.collectAsState()
@@ -162,8 +163,13 @@ fun DMInboxScreen(
 
                 Spacer(Modifier.weight(1f))
 
-                // Trailing pill: compose new message
+                // Trailing pill: groups, mark all read, compose new message.
+                // Groups (NIP-29) lives beside DMs here to match the iOS inbox,
+                // which offers DMs / Groups as one segmented picker.
                 GlassPill {
+                    IconButton(onClick = onGroups, modifier = Modifier.size(40.dp)) {
+                        Icon(NostrVaultIcons.Groups, "Groups", tint = colors.primary, modifier = Modifier.size(25.dp))
+                    }
                     IconButton(onClick = { viewModel.markAllAsRead() }, modifier = Modifier.size(40.dp)) {
                         Icon(NostrVaultIcons.MarkAllRead, "Mark all read", tint = colors.primary, modifier = Modifier.size(25.dp))
                     }
