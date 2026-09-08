@@ -197,7 +197,7 @@ struct BitcoinSweepView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(canSweep ? Color.orange : Color.secondary.opacity(0.3))
+                .background(canSweep ? Color.havenPurple : Color.secondary.opacity(0.3))
                 .cornerRadius(12)
             }
             .buttonStyle(.plain)

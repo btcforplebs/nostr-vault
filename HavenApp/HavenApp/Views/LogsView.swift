@@ -234,12 +234,5 @@ struct LogsView: View {
         }
     }
 
-    func colorFor(level: String) -> Color {
-        switch level {
-        case "ERROR": return .red
-        case "WARN": return .orange
-        case "DEBUG": return .gray
-        default: return .blue
-        }
-    }
+    func colorFor(level: String) -> Color { .logLevel(level) }
 }

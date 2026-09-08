@@ -76,7 +76,7 @@ struct GroupChatView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 22))
                         .overlay(
                             RoundedRectangle(cornerRadius: 22)
-                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                                .stroke(Color.borderStrong, lineWidth: 1)
                         )
 
                     Button(action: sendMessage) {
@@ -281,9 +281,7 @@ struct GroupMessageBubbleView: View {
                                 endPoint: .bottomTrailing
                             )
                         } else {
-                            ConfigService.shared.config.useOLED
-                                ? Color(red: 0.08, green: 0.08, blue: 0.10)
-                                : Color(red: 0.16, green: 0.16, blue: 0.20)
+                            Color.platformSecondaryGroupedBackground
                         }
                     }
                 )

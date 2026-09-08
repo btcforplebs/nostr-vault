@@ -175,18 +175,18 @@ struct ReasonRow: View {
                 Spacer()
                 if selectedValue == value {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.havenPurple)
                 } else {
                     Image(systemName: "circle")
                         .foregroundColor(.secondary)
                 }
             }
             .padding()
-            .background(selectedValue == value ? Color.blue.opacity(0.1) : Color.secondary.opacity(0.05))
+            .background(selectedValue == value ? Color.havenPurple.opacity(0.1) : Color.secondary.opacity(0.05))
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(selectedValue == value ? Color.blue.opacity(0.3) : Color.clear, lineWidth: 1)
+                    .stroke(selectedValue == value ? Color.havenPurple.opacity(0.3) : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)

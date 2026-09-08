@@ -59,6 +59,33 @@ extension Color {
     /// custom mint somewhere else.
     static var havenOnline: Color { Color(red: 0.2, green: 0.85, blue: 0.5) }
 
+    /// The colour of a log line, by level.
+    ///
+    /// Three consoles carried their own copy of this switch and disagreed on
+    /// the default: the relay dashboard and the Blossom pane painted INFO
+    /// green, the Logs window painted it blue. Blue wins — green in this app
+    /// means "running", and an INFO line is the *ordinary* case, so colouring
+    /// every one of them with the health colour drowns out the dot that
+    /// actually reports health.
+    static func logLevel(_ level: String) -> Color {
+        switch level {
+        case "ERROR": return .red
+        case "WARN": return .orange
+        case "DEBUG": return .gray
+        default: return .blue
+        }
+    }
+
+    /// Vouched-for. The NIP-05 seal, a MUTUAL follow badge, and the vault's
+    /// tag-based filters (Tagged, Whitelisted) all say the same thing about an
+    /// account: someone stands behind it.
+    ///
+    /// Deliberately not [havenOnline]. That green means *running* — a service
+    /// health signal — and the two were close enough (#33CC99 against #33D980)
+    /// that the app had drifted into using a health colour for trust and a
+    /// second, brighter teal (#33E6B3) for the same idea two views away.
+    static let havenVerified = Color(red: 0.2, green: 0.8, blue: 0.6)
+
     // MARK: - Surface ramp
     //
     // The app is OLED-black and had no elevation: four semantically distinct

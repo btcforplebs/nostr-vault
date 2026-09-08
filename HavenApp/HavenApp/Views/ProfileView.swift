@@ -590,7 +590,7 @@ struct ProfileView: View {
                     if let nip05 = profile?.nip05, !nip05.isEmpty {
                         Image(systemName: "checkmark.seal.fill")
                             .font(.appSystem(size: 13))
-                            .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
+                            .foregroundColor(Color.havenVerified)
                     }
 
                     Spacer(minLength: 0)
@@ -642,10 +642,10 @@ struct ProfileView: View {
                     .font(.appSystem(size: 9, weight: .heavy))
                     .tracking(0.8)
             }
-            .foregroundColor(Color(red: 0.2, green: 0.9, blue: 0.7))
+            .foregroundColor(Color.havenVerified)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Color(red: 0.2, green: 0.9, blue: 0.7).opacity(0.13))
+            .background(Color.havenVerified.opacity(0.13))
             .cornerRadius(4)
         } else {
             HStack(spacing: 4) {
@@ -839,7 +839,7 @@ struct ProfileView: View {
                 statCell(
                     value: followersCount.map(shortInt) ?? "∞",
                     label: "FOLLOWERS",
-                    tint: followersCount == nil ? Color(red: 0.2, green: 0.9, blue: 0.7).opacity(0.55) : .primary
+                    tint: followersCount == nil ? Color.havenVerified.opacity(0.55) : .primary
                 )
             }
         }

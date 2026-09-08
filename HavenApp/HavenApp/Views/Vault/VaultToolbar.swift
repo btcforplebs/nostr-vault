@@ -159,9 +159,9 @@ extension VaultView {
             #endif
         }
         .padding(4)
-        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .background(Color.platformTertiaryGroupedBackground)
         .cornerRadius(20)
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.platformSeparator, lineWidth: 0.8))
     }
 
     var compactToggleButton: some View {
@@ -184,17 +184,17 @@ extension VaultView {
             FilterButton(title: "My Notes", color: .havenPurple, isSelected: contentFilter == .mine) {
                 contentFilter = .mine
             }
-            FilterButton(title: "Tagged", color: Color(red: 0.2, green: 0.8, blue: 0.6), isSelected: contentFilter == .tagged) {
+            FilterButton(title: "Tagged", color: Color.havenVerified, isSelected: contentFilter == .tagged) {
                 contentFilter = .tagged
             }
-            FilterButton(title: "Whitelisted", color: Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.7), isSelected: contentFilter == .whitelist) {
+            FilterButton(title: "Whitelisted", color: Color.havenVerified.opacity(0.7), isSelected: contentFilter == .whitelist) {
                 contentFilter = .whitelist
             }
         }
         .padding(4)
-        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .background(Color.platformTertiaryGroupedBackground)
         .cornerRadius(8)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.8))
     }
 
     var likesFilterView: some View {
@@ -213,9 +213,9 @@ extension VaultView {
             }
         }
         .padding(4)
-        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .background(Color.platformTertiaryGroupedBackground)
         .cornerRadius(8)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.8))
     }
 
     var zapsFilterView: some View {
@@ -234,8 +234,8 @@ extension VaultView {
             }
         }
         .padding(4)
-        .background(Color(red: 0.15, green: 0.15, blue: 0.2))
+        .background(Color.platformTertiaryGroupedBackground)
         .cornerRadius(8)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.2, green: 0.2, blue: 0.25), lineWidth: 0.8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.8))
     }
 }
