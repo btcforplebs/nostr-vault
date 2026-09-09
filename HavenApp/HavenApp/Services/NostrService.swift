@@ -479,6 +479,93 @@ class NostrService: ObservableObject {
         globalSearchCancellables.removeAll()
     }
 
+    // MARK: - Local Relay Search
+
+    private var localSearchClients: [WebSocketClient] = []
+    private var localSearchCancellables = Set<AnyCancellable>()
+
+    /// Searches the local relay's full stored dataset, not just whatever the
+    /// feed subscription has already loaded into memory. The relay's LMDB/Badger
+    /// backends no-op any filter with `search` set (they just close the channel),
+    /// so this sends a broad kind 0/1 REQ with no `search` field and filters
+    /// client-side, mirroring `globalSearch` otherwise.
+    func localRelaySearch(query: String, relayURL: URL, completion: @escaping (GlobalSearchResults) -> Void) {
+        cancelLocalRelaySearch()
+
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        guard trimmed.count >= 2 else {
+            completion(GlobalSearchResults())
+            return
+        }
+
+        let collector = GlobalSearchCollector()
+        let subId = "lsearch-\(UUID().uuidString.prefix(8))"
+        var didFinish = false
+
+        let finish: () -> Void = { [weak self] in
+            guard let self = self else { return }
+            if didFinish { return }
+            didFinish = true
+            let raw = collector.snapshot()
+            self.cancelLocalRelaySearch()
+
+            var results = GlobalSearchResults()
+            results.notes = raw.notes.filter { $0.content.lowercased().contains(lower) }
+            results.profiles = raw.profiles.filter { profile in
+                profile.bestName.lowercased().contains(lower) ||
+                profile.pubkey.lowercased().contains(lower) ||
+                (profile.about?.lowercased().contains(lower) ?? false)
+            }
+
+            DispatchQueue.main.async {
+                for profile in results.profiles where self.profiles[profile.pubkey] == nil {
+                    self.profiles[profile.pubkey] = profile
+                }
+                completion(results)
+            }
+        }
+
+        let client = WebSocketClient()
+        client.isTemporary = true
+
+        client.messageSubject
+            .receive(on: processingQueue)
+            .sink { message in collector.ingest(message: message, subId: subId) }
+            .store(in: &localSearchCancellables)
+
+        client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { state in
+                if state == .connected {
+                    let notesFilter: [String: Any] = ["kinds": [1], "limit": 2000]
+                    let profileFilter: [String: Any] = ["kinds": [0], "limit": 1000]
+                    let req = ["REQ", subId, notesFilter, profileFilter] as [Any]
+                    if let data = try? JSONSerialization.data(withJSONObject: req),
+                       let str = String(data: data, encoding: .utf8) {
+                        client.send(text: str)
+                    }
+                }
+            }
+            .store(in: &localSearchCancellables)
+
+        client.connect(url: relayURL)
+        localSearchClients.append(client)
+
+        // Local relay is on-box and fast; a short fixed window is enough
+        // (mirrors globalSearch's EOSE-less timeout approach).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            finish()
+        }
+    }
+
+    /// Tears down any in-flight local relay search connections.
+    func cancelLocalRelaySearch() {
+        for client in localSearchClients { client.disconnect() }
+        localSearchClients.removeAll()
+        localSearchCancellables.removeAll()
+    }
+
     /// Registers a temporary client in `temporaryClients` and arranges
     /// for it to be removed when it disconnects or errors out.
     private func trackTemporaryClient(_ client: WebSocketClient) {

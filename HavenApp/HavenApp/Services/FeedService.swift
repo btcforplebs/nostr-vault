@@ -292,7 +292,7 @@ class FeedService: ObservableObject {
     // All access is serialized on processingQueue.
     private let bgAccumulator = BackgroundAccumulator()
 
-    private var localRelayURL: URL? {
+    var localRelayURL: URL? {
         // Only include the local relay when it is confirmed running.
         // During boot (WoT initialization, ~3 min) the HTTP server may be
         // listening but not fully ready, causing WebSocket failures.

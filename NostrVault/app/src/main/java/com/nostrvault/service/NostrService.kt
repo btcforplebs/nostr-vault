@@ -84,6 +84,7 @@ class NostrService @Inject constructor(
         private const val BASE_RECONNECT_DELAY_MS = 2_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val SEARCH_TIMEOUT_MS = 4_000L
+        private const val LOCAL_SEARCH_TIMEOUT_MS = 2_500L
         private const val TEMP_CLIENT_DISCONNECT_MS = 3_000L
         private const val METADATA_POOL_SIZE = 3
         private const val METADATA_IDLE_TIMEOUT_MS = 60_000L
@@ -227,6 +228,8 @@ class NostrService @Inject constructor(
 
     private val searchClients = mutableSetOf<WebSocketClient>()
     private val searchClientsLock = ReentrantLock()
+    private val localSearchClients = mutableSetOf<WebSocketClient>()
+    private val localSearchClientsLock = ReentrantLock()
 
     // ── Account switch ────────────────────────────────────────────────
 
@@ -1439,6 +1442,92 @@ class NostrService @Inject constructor(
         searchClientsLock.withLock {
             searchClients.forEach { it.disconnect() }
             searchClients.clear()
+        }
+    }
+
+    /**
+     * Searches the local relay's full stored dataset, not just whatever the
+     * feed subscription has already loaded into memory. The relay's LMDB/Badger
+     * backends no-op any filter with `search` set (they just close the channel),
+     * so this sends a broad kind 0/1 REQ with no `search` field and filters
+     * client-side, mirroring [globalSearch] otherwise.
+     */
+    fun localRelaySearch(query: String, onResult: (GlobalSearchResults) -> Unit) {
+        cancelLocalRelaySearch()
+
+        val trimmed = query.trim()
+        val lower = trimmed.lowercase()
+        if (trimmed.length < 2) {
+            onResult(GlobalSearchResults())
+            return
+        }
+
+        val relayUrl = configStore.config.value.nostrURL
+        if (relayUrl == null) {
+            onResult(GlobalSearchResults())
+            return
+        }
+
+        val collector = GlobalSearchCollector()
+        val subId = "lsearch-${UUID.randomUUID().toString().take(8)}"
+
+        val noteFilter = buildMap<String, Any> {
+            put("kinds", listOf(1))
+            put("limit", 2000)
+        }
+        val profileFilter = buildMap<String, Any> {
+            put("kinds", listOf(0))
+            put("limit", 1000)
+        }
+
+        scope.launch(Dispatchers.IO) {
+            val client = WebSocketClient(url = relayUrl, scope = scope)
+            localSearchClientsLock.withLock { localSearchClients.add(client) }
+
+            scope.launch {
+                client.messages.collect { msg ->
+                    collector.ingest(msg, subId)
+                }
+            }
+
+            client.connect()
+            val filtersJson = "${buildFilterJson(noteFilter)},${buildFilterJson(profileFilter)}"
+            client.send("[\"REQ\",\"$subId\",$filtersJson]")
+        }
+
+        // Local relay is on-device and fast; a short fixed window is enough
+        // (mirrors globalSearch's EOSE-less timeout approach).
+        scope.launch {
+            delay(LOCAL_SEARCH_TIMEOUT_MS)
+            val raw = collector.snapshot()
+            cancelLocalRelaySearch()
+
+            val results = GlobalSearchResults(
+                notes = raw.notes.filter { it.content.lowercase().contains(lower) },
+                profiles = raw.profiles.filter { profile ->
+                    val name = profile.displayName ?: profile.name ?: ""
+                    name.lowercase().contains(lower) ||
+                        profile.pubkey.lowercase().contains(lower) ||
+                        (profile.about?.lowercase()?.contains(lower) == true)
+                },
+            )
+
+            val now = System.currentTimeMillis()
+            for (profile in results.profiles) {
+                val current = _profiles.value
+                if (!current.containsKey(profile.pubkey)) {
+                    _profiles.value = _profiles.value + (profile.pubkey to profile.copy(fetchedAt = now))
+                }
+            }
+
+            onResult(results)
+        }
+    }
+
+    fun cancelLocalRelaySearch() {
+        localSearchClientsLock.withLock {
+            localSearchClients.forEach { it.disconnect() }
+            localSearchClients.clear()
         }
     }
 
