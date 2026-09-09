@@ -481,43 +481,42 @@ class NostrService: ObservableObject {
 
     // MARK: - Local Relay Search
 
-    private var localSearchClients: [WebSocketClient] = []
-    private var localSearchCancellables = Set<AnyCancellable>()
+    private var localSearchSession: LocalRelaySearchSession?
 
-    /// Searches the local relay's full stored dataset, not just whatever the
-    /// feed subscription has already loaded into memory. The relay's LMDB/Badger
-    /// backends no-op any filter with `search` set (they just close the channel),
-    /// so this sends a broad kind 0/1 REQ with no `search` field and filters
-    /// client-side, mirroring `globalSearch` otherwise.
+    /// Searches everything the embedded relay has stored, not just whatever the
+    /// feed subscription has already loaded into memory.
+    ///
+    /// Three things this has to get right:
+    ///
+    /// 1. **Every route.** haven serves several stores off one port and they
+    ///    hold different things: `/` is the outbox and only ever accepts events
+    ///    the owner signed (`MustBeWhitelistedToPost`), the follows' notes live
+    ///    on `/feed`, and notes that tag the owner live on `/inbox`. Searching
+    ///    `/` alone means searching your own posts.
+    /// 2. **Paging.** The LMDB backend honours a limit only up to 1500 and
+    ///    quietly drops anything larger to 375 — see `LocalRelaySearchPlan`. A
+    ///    single REQ cannot cover the store, so each route/kind is paged with an
+    ///    `until` cursor until it runs dry.
+    /// 3. **Finishing on EOSE.** The relay is on-box and answers in
+    ///    milliseconds; a fixed timer would make every search take that long.
+    ///    The timeout below is a fallback for a socket that never replies.
+    ///
+    /// The relay's backends no-op any filter with `search` set, so matching is
+    /// done client-side; profiles already in the in-memory cache are matched too,
+    /// because no local store holds anyone else's kind 0.
     func localRelaySearch(query: String, relayURL: URL, completion: @escaping (GlobalSearchResults) -> Void) {
         cancelLocalRelaySearch()
 
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lower = trimmed.lowercased()
-        guard trimmed.count >= 2 else {
+        guard let matcher = LocalSearchMatcher(query: query) else {
             completion(GlobalSearchResults())
             return
         }
 
-        let collector = GlobalSearchCollector()
-        let subId = "lsearch-\(UUID().uuidString.prefix(8))"
-        var didFinish = false
+        let base = relayURL.absoluteString
+        let routes = [base, base + "/feed", base + "/inbox"].compactMap { URL(string: $0) }
 
-        let finish: () -> Void = { [weak self] in
+        let session = LocalRelaySearchSession(matcher: matcher, routes: routes) { [weak self] results in
             guard let self = self else { return }
-            if didFinish { return }
-            didFinish = true
-            let raw = collector.snapshot()
-            self.cancelLocalRelaySearch()
-
-            var results = GlobalSearchResults()
-            results.notes = raw.notes.filter { $0.content.lowercased().contains(lower) }
-            results.profiles = raw.profiles.filter { profile in
-                profile.bestName.lowercased().contains(lower) ||
-                profile.pubkey.lowercased().contains(lower) ||
-                (profile.about?.lowercased().contains(lower) ?? false)
-            }
-
             DispatchQueue.main.async {
                 for profile in results.profiles where self.profiles[profile.pubkey] == nil {
                     self.profiles[profile.pubkey] = profile
@@ -525,45 +524,15 @@ class NostrService: ObservableObject {
                 completion(results)
             }
         }
-
-        let client = WebSocketClient()
-        client.isTemporary = true
-
-        client.messageSubject
-            .receive(on: processingQueue)
-            .sink { message in collector.ingest(message: message, subId: subId) }
-            .store(in: &localSearchCancellables)
-
-        client.$connectionState
-            .receive(on: DispatchQueue.main)
-            .sink { state in
-                if state == .connected {
-                    let notesFilter: [String: Any] = ["kinds": [1], "limit": 2000]
-                    let profileFilter: [String: Any] = ["kinds": [0], "limit": 1000]
-                    let req = ["REQ", subId, notesFilter, profileFilter] as [Any]
-                    if let data = try? JSONSerialization.data(withJSONObject: req),
-                       let str = String(data: data, encoding: .utf8) {
-                        client.send(text: str)
-                    }
-                }
-            }
-            .store(in: &localSearchCancellables)
-
-        client.connect(url: relayURL)
-        localSearchClients.append(client)
-
-        // Local relay is on-box and fast; a short fixed window is enough
-        // (mirrors globalSearch's EOSE-less timeout approach).
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            finish()
-        }
+        localSearchSession = session
+        session.addCachedProfiles(profiles)
+        session.start()
     }
 
     /// Tears down any in-flight local relay search connections.
     func cancelLocalRelaySearch() {
-        for client in localSearchClients { client.disconnect() }
-        localSearchClients.removeAll()
-        localSearchCancellables.removeAll()
+        localSearchSession?.cancel()
+        localSearchSession = nil
     }
 
     /// Registers a temporary client in `temporaryClients` and arranges
@@ -2482,3 +2451,217 @@ class NostrService: ObservableObject {
     }
 }
 
+// MARK: - Local Relay Search Session
+
+/// Walks every local relay route to exhaustion for one query.
+///
+/// One socket per route, two paged subscriptions per socket (kind 1 notes and
+/// kind 0 profiles). A page finishes on its own EOSE, and the whole search
+/// finishes as soon as the last subscription is done — the timeout is only
+/// there for a socket that never answers.
+final class LocalRelaySearchSession {
+    /// Fallback for a route that never connects or never EOSEs. Not the normal
+    /// completion path: on-box LMDB answers a page in milliseconds.
+    static let timeout: TimeInterval = 6.0
+
+    private struct Stream {
+        let routeIndex: Int
+        let kind: Int
+        var page: Int
+    }
+
+    private let queue = DispatchQueue(label: "com.haven.local-relay-search")
+    private let collector: LocalRelaySearchCollector
+    private let routes: [URL]
+    private let onFinish: (GlobalSearchResults) -> Void
+
+    private var clients: [WebSocketClient] = []
+    private var cancellables = Set<AnyCancellable>()
+    private var streams: [String: Stream] = [:]
+    /// In-flight subscriptions per route. A route with no entry has not opened
+    /// its streams yet — which is not the same as being finished, and treating
+    /// the two alike would end the search as soon as the FIRST route drained.
+    private var activeByRoute: [Int: Int] = [:]
+    private var doneRoutes = Set<Int>()
+    private var didFinish = false
+    private var didStart = false
+
+    init(matcher: LocalSearchMatcher,
+         routes: [URL],
+         onFinish: @escaping (GlobalSearchResults) -> Void) {
+        self.collector = LocalRelaySearchCollector(matcher: matcher)
+        self.routes = routes
+        self.onFinish = onFinish
+    }
+
+    /// Folds in profiles the app already holds; see the collector's note on why
+    /// the relay cannot answer a username search on its own.
+    func addCachedProfiles(_ cached: [String: FeedProfile]) {
+        collector.addCachedProfiles(cached)
+    }
+
+    func start() {
+        queue.async { [weak self] in
+            guard let self = self, !self.didStart else { return }
+            self.didStart = true
+
+            guard !self.routes.isEmpty else {
+                self.finish()
+                return
+            }
+
+            for (index, url) in self.routes.enumerated() {
+                let client = WebSocketClient()
+                client.isTemporary = true
+                self.clients.append(client)
+
+                client.messageSubject
+                    .receive(on: self.queue)
+                    .sink { [weak self] message in self?.handle(message: message) }
+                    .store(in: &self.cancellables)
+
+                client.$connectionState
+                    .receive(on: self.queue)
+                    .sink { [weak self] state in
+                        guard let self = self else { return }
+                        switch state {
+                        case .connected:
+                            self.openStreams(routeIndex: index)
+                        case .error:
+                            // A route that cannot be reached must not hold the
+                            // whole search open until the timeout.
+                            self.failStreams(routeIndex: index)
+                        case .disconnected:
+                            // `connectionState` publishes `.disconnected` as its
+                            // initial value, before `connect(url:)` is even
+                            // called — only a drop AFTER the streams opened is
+                            // a failure.
+                            if self.activeByRoute[index] != nil {
+                                self.failStreams(routeIndex: index)
+                            }
+                        case .connecting:
+                            break
+                        }
+                    }
+                    .store(in: &self.cancellables)
+
+                client.connect(url: url)
+            }
+        }
+
+        queue.asyncAfter(deadline: .now() + Self.timeout) { [weak self] in
+            self?.finish()
+        }
+    }
+
+    func cancel() {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            self.didFinish = true
+            self.teardown()
+        }
+    }
+
+    // MARK: Private
+
+    /// Opens one paged subscription per kind on a route that just connected.
+    private func openStreams(routeIndex: Int) {
+        guard !didFinish, !doneRoutes.contains(routeIndex) else { return }
+        // Reconnects deliver `.connected` more than once; only open a route's
+        // streams the first time.
+        guard activeByRoute[routeIndex] == nil else { return }
+        let kinds = [1, 0]
+        activeByRoute[routeIndex] = kinds.count
+        for kind in kinds {
+            send(stream: Stream(routeIndex: routeIndex, kind: kind, page: 1), until: nil)
+        }
+    }
+
+    private func send(stream: Stream, until: Int64?) {
+        guard routes.indices.contains(stream.routeIndex),
+              clients.indices.contains(stream.routeIndex) else { return }
+        let subId = "lsearch-\(UUID().uuidString.prefix(8))"
+        streams[subId] = stream
+
+        var filter: [String: Any] = [
+            "kinds": [stream.kind],
+            "limit": LocalRelaySearchPlan.pageLimit
+        ]
+        if let until = until { filter["until"] = until }
+
+        let req = ["REQ", subId, filter] as [Any]
+        if let data = try? JSONSerialization.data(withJSONObject: req),
+           let str = String(data: data, encoding: .utf8) {
+            clients[stream.routeIndex].send(text: str)
+        }
+    }
+
+    private func handle(message: String) {
+        guard !didFinish else { return }
+        switch collector.ingest(message: message) {
+        case .ignored, .event:
+            return
+        case .eose(let subId):
+            guard let stream = streams.removeValue(forKey: subId) else { return }
+            close(subId: subId, routeIndex: stream.routeIndex)
+
+            let stats = collector.takeStats(for: subId)
+            switch LocalRelaySearchPlan.step(received: stats.received,
+                                             newIds: stats.newIds,
+                                             oldestCreatedAt: stats.oldestCreatedAt,
+                                             pagesFetched: stream.page) {
+            case .done:
+                let remaining = (activeByRoute[stream.routeIndex] ?? 1) - 1
+                activeByRoute[stream.routeIndex] = remaining
+                if remaining <= 0 { markDone(routeIndex: stream.routeIndex) }
+            case .next(let until):
+                var next = stream
+                next.page += 1
+                send(stream: next, until: until)
+            }
+        }
+    }
+
+    private func close(subId: String, routeIndex: Int) {
+        guard clients.indices.contains(routeIndex) else { return }
+        let msg = ["CLOSE", subId] as [Any]
+        if let data = try? JSONSerialization.data(withJSONObject: msg),
+           let str = String(data: data, encoding: .utf8) {
+            clients[routeIndex].send(text: str)
+        }
+    }
+
+    /// A route's socket died: drop its in-flight streams so the remaining
+    /// routes can still complete the search.
+    private func failStreams(routeIndex: Int) {
+        guard !didFinish, !doneRoutes.contains(routeIndex) else { return }
+        for (subId, stream) in streams where stream.routeIndex == routeIndex {
+            streams.removeValue(forKey: subId)
+        }
+        activeByRoute[routeIndex] = 0
+        markDone(routeIndex: routeIndex)
+    }
+
+    /// A route has nothing left in flight. The search ends only when EVERY
+    /// route is done — a fast route draining first must not cut off a slower
+    /// one that has not even opened its subscriptions yet.
+    private func markDone(routeIndex: Int) {
+        doneRoutes.insert(routeIndex)
+        if doneRoutes.count >= routes.count { finish() }
+    }
+
+    private func finish() {
+        guard !didFinish else { return }
+        didFinish = true
+        let results = collector.snapshot()
+        teardown()
+        onFinish(results)
+    }
+
+    private func teardown() {
+        for client in clients { client.disconnect() }
+        clients.removeAll()
+        cancellables.removeAll()
+        streams.removeAll()
+    }
+}
