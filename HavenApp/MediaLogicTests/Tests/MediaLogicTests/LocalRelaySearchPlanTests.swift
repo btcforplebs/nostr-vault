@@ -97,4 +97,32 @@ final class LocalRelaySearchPlanTests: XCTestCase {
         XCTAssertTrue(matcher.matchesProfile(displayName: nil, name: nil, about: nil, nip05: nil,
                                              pubkey: "61bf790b2094afb03495c9e136acf615be0fccc2cb95b5acfb5f6ccefe18b062"))
     }
+
+    // MARK: - A note matches on its author, not only its text
+
+    func testNoteMatchesWhenItsAuthorProfileMatched() {
+        let matcher = LocalSearchMatcher(query: "field")!
+        let author = "aa11"
+        // Nothing in the text; the author's profile is what matched.
+        XCTAssertTrue(matcher.matchesNote(content: "gm everyone",
+                                          authorPubkey: author,
+                                          matchedAuthors: [author]))
+    }
+
+    func testNoteFromAnUnmatchedAuthorStillNeedsMatchingText() {
+        let matcher = LocalSearchMatcher(query: "field")!
+        XCTAssertFalse(matcher.matchesNote(content: "gm everyone",
+                                           authorPubkey: "bb22",
+                                           matchedAuthors: ["aa11"]))
+        XCTAssertTrue(matcher.matchesNote(content: "out in the FIELD today",
+                                          authorPubkey: "bb22",
+                                          matchedAuthors: ["aa11"]))
+    }
+
+    func testNoMatchedAuthorsBehavesLikePlainTextMatching() {
+        let matcher = LocalSearchMatcher(query: "field")!
+        XCTAssertFalse(matcher.matchesNote(content: "gm everyone",
+                                           authorPubkey: "aa11",
+                                           matchedAuthors: []))
+    }
 }

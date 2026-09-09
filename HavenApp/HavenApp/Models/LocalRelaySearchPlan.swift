@@ -76,6 +76,14 @@ struct LocalSearchMatcher {
         content.lowercased().contains(needle)
     }
 
+    /// The whole rule for keeping a note: its text matches, or its author's
+    /// profile matched the query. Searching a person's name is meant to find
+    /// what that person wrote, not just their profile card. One definition,
+    /// used by the relay walk and by the in-memory fallback.
+    func matchesNote(content: String, authorPubkey: String, matchedAuthors: Set<String>) -> Bool {
+        matchesNote(content: content) || matchedAuthors.contains(authorPubkey)
+    }
+
     func matchesProfile(displayName: String?,
                         name: String?,
                         about: String?,

@@ -503,7 +503,9 @@ class NostrService: ObservableObject {
     ///
     /// The relay's backends no-op any filter with `search` set, so matching is
     /// done client-side; profiles already in the in-memory cache are matched too,
-    /// because no local store holds anyone else's kind 0.
+    /// because no local store holds anyone else's kind 0. A note matches on its
+    /// text OR on its author's profile, so searching a person's name finds what
+    /// they wrote and not just their profile card.
     func localRelaySearch(query: String, relayURL: URL, completion: @escaping (GlobalSearchResults) -> Void) {
         cancelLocalRelaySearch()
 
@@ -2564,17 +2566,20 @@ final class LocalRelaySearchSession {
 
     // MARK: Private
 
-    /// Opens one paged subscription per kind on a route that just connected.
+    /// Kinds are walked in this order, one after the other, not at the same
+    /// time: a note matches if its author's profile matched, so the profiles
+    /// have to be known before the notes are read. The extra round trip costs
+    /// milliseconds against an on-box relay.
+    private static let kindOrder = [0, 1]
+
+    /// Opens the first paged subscription on a route that just connected.
     private func openStreams(routeIndex: Int) {
         guard !didFinish, !doneRoutes.contains(routeIndex) else { return }
         // Reconnects deliver `.connected` more than once; only open a route's
         // streams the first time.
         guard activeByRoute[routeIndex] == nil else { return }
-        let kinds = [1, 0]
-        activeByRoute[routeIndex] = kinds.count
-        for kind in kinds {
-            send(stream: Stream(routeIndex: routeIndex, kind: kind, page: 1), until: nil)
-        }
+        activeByRoute[routeIndex] = 1
+        send(stream: Stream(routeIndex: routeIndex, kind: Self.kindOrder[0], page: 1), until: nil)
     }
 
     private func send(stream: Stream, until: Int64?) {
@@ -2611,9 +2616,18 @@ final class LocalRelaySearchSession {
                                              oldestCreatedAt: stats.oldestCreatedAt,
                                              pagesFetched: stream.page) {
             case .done:
-                let remaining = (activeByRoute[stream.routeIndex] ?? 1) - 1
-                activeByRoute[stream.routeIndex] = remaining
-                if remaining <= 0 { markDone(routeIndex: stream.routeIndex) }
+                // This kind is exhausted on this route: move on to the next
+                // kind, and only when there is none is the route finished.
+                if let index = Self.kindOrder.firstIndex(of: stream.kind),
+                   index + 1 < Self.kindOrder.count {
+                    send(stream: Stream(routeIndex: stream.routeIndex,
+                                        kind: Self.kindOrder[index + 1],
+                                        page: 1),
+                         until: nil)
+                } else {
+                    activeByRoute[stream.routeIndex] = 0
+                    markDone(routeIndex: stream.routeIndex)
+                }
             case .next(let until):
                 var next = stream
                 next.page += 1

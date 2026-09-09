@@ -78,6 +78,19 @@ struct SearchView: View {
         var isEmpty: Bool {
             users.isEmpty && notes.isEmpty && links.isEmpty && hashtags.isEmpty
         }
+
+        /// Whether the section the user is currently looking at is empty. The
+        /// results as a whole can be non-empty while the selected tab has
+        /// nothing in it, and a blank screen in that case reads as a bug.
+        func isEmpty(for filter: ResultTypeFilter) -> Bool {
+            switch filter {
+            case .all: return isEmpty
+            case .users: return users.isEmpty
+            case .notes: return notes.isEmpty
+            case .hashtags: return hashtags.isEmpty
+            case .links: return links.isEmpty
+            }
+        }
     }
 
     struct SearchLink {
@@ -709,11 +722,39 @@ struct SearchView: View {
                         .padding(.horizontal, 16)
                     }
                 }
+
+                if searchResults.isEmpty(for: resultTypeFilter) {
+                    emptyFilterState
+                }
             }
             .padding(.vertical, 16)
             .tabBarBottomPadding()
         }
         .scrollDirectionTracking(feedService: feedService)
+    }
+
+    /// Shown when the query matched something, but not in the tab that is open.
+    @ViewBuilder
+    private var emptyFilterState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: resultTypeFilter.icon)
+                .font(.appSystem(size: 26, weight: .thin))
+                .foregroundColor(.secondary.opacity(0.5))
+
+            Text("No \(resultTypeFilter.label.lowercased()) matched \u{201C}\(searchQuery.trimmingCharacters(in: .whitespacesAndNewlines))\u{201D}")
+                .font(.appSystem(size: 13, weight: .semibold))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+            if !searchResults.isEmpty {
+                Text("Other tabs have results.")
+                    .font(.appSystem(size: 12))
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .padding(.horizontal, 24)
     }
 
     @ViewBuilder
@@ -1020,19 +1061,32 @@ struct SearchView: View {
         let localProfiles = nostrService.profiles
         let localNotes = feedService.notes
 
+        // Same matching rules as the relay walk, so the fallback cannot drift
+        // away from the real path.
+        guard let matcher = LocalSearchMatcher(query: trimmedQuery) else {
+            searchResults = .empty
+            isSearching = false
+            return
+        }
+
         DispatchQueue.global(qos: .userInitiated).async {
             var results = SearchResults()
 
             for (pubkey, profile) in localProfiles {
-                if profile.bestName.lowercased().contains(trimmedQuery) ||
-                   pubkey.lowercased().contains(trimmedQuery) ||
-                   (profile.about?.lowercased().contains(trimmedQuery) ?? false) {
+                if matcher.matchesProfile(displayName: profile.displayName,
+                                          name: profile.name,
+                                          about: profile.about,
+                                          nip05: profile.nip05,
+                                          pubkey: pubkey) {
                     results.users[pubkey] = profile
                 }
             }
 
+            let matchedAuthors = Set(results.users.keys)
             let relevantNotes = localNotes.filter { note in
-                note.content.lowercased().contains(trimmedQuery)
+                matcher.matchesNote(content: note.content,
+                                    authorPubkey: note.pubkey,
+                                    matchedAuthors: matchedAuthors)
             }
             results.notes = relevantNotes.prefix(20).map { $0 }
 

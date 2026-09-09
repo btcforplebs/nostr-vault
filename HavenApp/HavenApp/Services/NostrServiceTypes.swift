@@ -116,6 +116,10 @@ final class LocalRelaySearchCollector {
     private let matcher: LocalSearchMatcher
     private var notes: [String: FeedNote] = [:]
     private var profiles: [String: FeedProfile] = [:]
+    /// Pubkeys whose profile matched the query. Searching a person's name is
+    /// meant to find that person's notes, not only their profile card, so a
+    /// note matches on either its text or its author.
+    private var matchedAuthors = Set<String>()
     private var seenIds = Set<String>()
     private var stats: [String: PageStats] = [:]
 
@@ -159,7 +163,9 @@ final class LocalRelaySearchCollector {
         guard isNew else { return .event(subId: subId) }
 
         if kind == 1 {
-            if matcher.matchesNote(content: content) {
+            if matcher.matchesNote(content: content,
+                                   authorPubkey: pubkey,
+                                   matchedAuthors: matchedAuthors) {
                 notes[id] = FeedNote(
                     id: id,
                     pubkey: pubkey,
@@ -189,6 +195,7 @@ final class LocalRelaySearchCollector {
                                       nip05: profile.nip05,
                                       pubkey: pubkey) {
                 profiles[pubkey] = profile
+                matchedAuthors.insert(pubkey)
             }
         }
 
@@ -219,6 +226,7 @@ final class LocalRelaySearchCollector {
                                       nip05: profile.nip05,
                                       pubkey: pubkey) {
                 profiles[pubkey] = profile
+                matchedAuthors.insert(pubkey)
             }
         }
     }
