@@ -1005,9 +1005,7 @@ struct SearchView: View {
                 }
                 results.hashtags = Array(foundHashtags).sorted()
 
-                let urls = self.extractURLs(from: globalResults.notes)
-                results.links = urls.filter { $0.url.lowercased().contains(trimmedQuery) ||
-                                              $0.title.lowercased().contains(trimmedQuery) }
+                results.links = self.extractURLs(from: globalResults.notes)
 
                 self.searchResults = results
                 self.isSearching = false
@@ -1046,9 +1044,10 @@ struct SearchView: View {
             }
             results.hashtags = Array(foundHashtags).sorted()
 
-            let urls = self.extractURLs(from: localResults.notes)
-            results.links = urls.filter { $0.url.lowercased().contains(trimmedQuery) ||
-                                          $0.title.lowercased().contains(trimmedQuery) }
+            // Links are what the matching notes link to, so a note that matches
+            // on its text contributes its links even when the query is nowhere
+            // in the URL (Logen, 2026-09-09).
+            results.links = self.extractURLs(from: localResults.notes)
 
             self.searchResults = results
             self.isSearching = false
@@ -1082,20 +1081,9 @@ struct SearchView: View {
                 }
             }
 
-            let matchedAuthors = Set(results.users.keys)
             let relevantNotes = localNotes
-                .filter { note in
-                    matcher.matchesNote(content: note.content,
-                                        authorPubkey: note.pubkey,
-                                        matchedAuthors: matchedAuthors)
-                }
-                .sorted {
-                    LocalSearchRanking.isOrderedBefore(
-                        .init(textMatched: matcher.matchesNote(content: $0.content),
-                              createdAt: $0.createdAt),
-                        .init(textMatched: matcher.matchesNote(content: $1.content),
-                              createdAt: $1.createdAt))
-                }
+                .filter { matcher.matchesNote(content: $0.content) }
+                .sorted { $0.createdAt > $1.createdAt }
             results.notes = relevantNotes.prefix(20).map { $0 }
 
             var foundHashtags = Set<String>()
@@ -1109,9 +1097,7 @@ struct SearchView: View {
             }
             results.hashtags = Array(foundHashtags).sorted()
 
-            let urls = extractURLs(from: relevantNotes)
-            results.links = urls.filter { $0.url.lowercased().contains(trimmedQuery) ||
-                                          $0.title.lowercased().contains(trimmedQuery) }
+            results.links = extractURLs(from: relevantNotes)
 
             DispatchQueue.main.async {
                 self.searchResults = results
@@ -1130,8 +1116,12 @@ struct SearchView: View {
         }
     }
 
+    /// Links found in the notes that matched. The list is keyed by URL in the
+    /// UI, so the same URL is kept once — two notes sharing a link used to be
+    /// two rows with the same SwiftUI identity.
     private func extractURLs(from notes: [FeedNote]) -> [SearchLink] {
         var links: [SearchLink] = []
+        var seen = Set<String>()
         let urlPattern = "https?://[^\\s]+"
 
         guard let regex = try? NSRegularExpression(pattern: urlPattern) else { return [] }
@@ -1141,6 +1131,7 @@ struct SearchView: View {
             for match in matches {
                 guard let range = Range(match.range, in: note.content) else { continue }
                 let url = String(note.content[range])
+                guard seen.insert(url).inserted else { continue }
                 links.append(SearchLink(url: url, title: url.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: ""), noteId: note.id))
             }
         }

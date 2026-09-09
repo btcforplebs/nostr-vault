@@ -98,63 +98,22 @@ final class LocalRelaySearchPlanTests: XCTestCase {
                                              pubkey: "61bf790b2094afb03495c9e136acf615be0fccc2cb95b5acfb5f6ccefe18b062"))
     }
 
-    // MARK: - A note matches on its author, not only its text
+    // MARK: - A note matches on its text, and only its text
 
-    func testNoteMatchesWhenItsAuthorProfileMatched() {
+    /// Logen, 2026-09-09: searching a person's name finds the person, not
+    /// everything they ever wrote. The Notes tab means "notes containing this
+    /// word", and hashtags and links are derived from those notes.
+    func testNoteMatchesOnItsOwnTextOnly() {
         let matcher = LocalSearchMatcher(query: "field")!
-        let author = "aa11"
-        // Nothing in the text; the author's profile is what matched.
-        XCTAssertTrue(matcher.matchesNote(content: "gm everyone",
-                                          authorPubkey: author,
-                                          matchedAuthors: [author]))
+        XCTAssertTrue(matcher.matchesNote(content: "out in the FIELD today"))
+        XCTAssertFalse(matcher.matchesNote(content: "gm everyone"))
     }
 
-    func testNoteFromAnUnmatchedAuthorStillNeedsMatchingText() {
+    /// Pins the removal: the matcher takes content and nothing else, so no
+    /// caller can reintroduce an author rule by passing a set of pubkeys.
+    func testMatchingANoteTakesNoAuthorInformation() {
         let matcher = LocalSearchMatcher(query: "field")!
-        XCTAssertFalse(matcher.matchesNote(content: "gm everyone",
-                                           authorPubkey: "bb22",
-                                           matchedAuthors: ["aa11"]))
-        XCTAssertTrue(matcher.matchesNote(content: "out in the FIELD today",
-                                          authorPubkey: "bb22",
-                                          matchedAuthors: ["aa11"]))
-    }
-
-    func testNoMatchedAuthorsBehavesLikePlainTextMatching() {
-        let matcher = LocalSearchMatcher(query: "field")!
-        XCTAssertFalse(matcher.matchesNote(content: "gm everyone",
-                                           authorPubkey: "aa11",
-                                           matchedAuthors: []))
-    }
-
-    // MARK: - Ordering
-
-    func testTextMatchesComeBeforeAuthorMatchesEvenWhenOlder() {
-        let old = Date(timeIntervalSince1970: 1_000)
-        let recent = Date(timeIntervalSince1970: 2_000)
-        let text = LocalSearchRanking.Entry(textMatched: true, createdAt: old)
-        let author = LocalSearchRanking.Entry(textMatched: false, createdAt: recent)
-        XCTAssertTrue(LocalSearchRanking.isOrderedBefore(text, author))
-        XCTAssertFalse(LocalSearchRanking.isOrderedBefore(author, text))
-    }
-
-    func testWithinTheSameKindOfMatchTheNewestComesFirst() {
-        let older = LocalSearchRanking.Entry(textMatched: true, createdAt: Date(timeIntervalSince1970: 1_000))
-        let newer = LocalSearchRanking.Entry(textMatched: true, createdAt: Date(timeIntervalSince1970: 2_000))
-        XCTAssertTrue(LocalSearchRanking.isOrderedBefore(newer, older))
-        XCTAssertFalse(LocalSearchRanking.isOrderedBefore(older, newer))
-    }
-
-    /// A capped list is the whole reason the order matters: one prolific
-    /// matched author must not push every text match off the end.
-    func testAProlificMatchedAuthorCannotEvictTextMatchesFromACappedList() {
-        var entries: [LocalSearchRanking.Entry] = (0..<50).map {
-            LocalSearchRanking.Entry(textMatched: false,
-                                     createdAt: Date(timeIntervalSince1970: TimeInterval(9_000 + $0)))
-        }
-        entries.append(LocalSearchRanking.Entry(textMatched: true,
-                                                createdAt: Date(timeIntervalSince1970: 1)))
-        let top = entries.sorted(by: LocalSearchRanking.isOrderedBefore).prefix(20)
-        XCTAssertEqual(top.filter { $0.textMatched }.count, 1)
-        XCTAssertTrue(top.first!.textMatched)
+        let rule: (String) -> Bool = matcher.matchesNote(content:)
+        XCTAssertFalse(rule("gm everyone"))
     }
 }

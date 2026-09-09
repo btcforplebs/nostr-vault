@@ -72,16 +72,12 @@ struct LocalSearchMatcher {
         self.needle = trimmed.lowercased()
     }
 
+    /// A note matches on its own text and nothing else. Searching a person's
+    /// name finds that person under Users; it deliberately does not sweep in
+    /// everything they wrote (Logen, 2026-09-09). Hashtags and links are
+    /// derived from the notes this keeps.
     func matchesNote(content: String) -> Bool {
         content.lowercased().contains(needle)
-    }
-
-    /// The whole rule for keeping a note: its text matches, or its author's
-    /// profile matched the query. Searching a person's name is meant to find
-    /// what that person wrote, not just their profile card. One definition,
-    /// used by the relay walk and by the in-memory fallback.
-    func matchesNote(content: String, authorPubkey: String, matchedAuthors: Set<String>) -> Bool {
-        matchesNote(content: content) || matchedAuthors.contains(authorPubkey)
     }
 
     func matchesProfile(displayName: String?,
@@ -93,24 +89,5 @@ struct LocalSearchMatcher {
             if let field, field.lowercased().contains(needle) { return true }
         }
         return pubkey.lowercased().contains(needle)
-    }
-}
-
-/// Ordering for relay-mode note results.
-///
-/// A note is kept when its text matches OR when its author's profile matched
-/// (see `LocalSearchMatcher.matchesNote(content:authorPubkey:matchedAuthors:)`).
-/// The list the UI shows is capped, so without a rule a prolific matched author
-/// could push every text match off the end — searching a word would stop
-/// showing the notes containing that word. Text matches come first.
-enum LocalSearchRanking {
-    struct Entry {
-        let textMatched: Bool
-        let createdAt: Date
-    }
-
-    static func isOrderedBefore(_ lhs: Entry, _ rhs: Entry) -> Bool {
-        if lhs.textMatched != rhs.textMatched { return lhs.textMatched }
-        return lhs.createdAt > rhs.createdAt
     }
 }
