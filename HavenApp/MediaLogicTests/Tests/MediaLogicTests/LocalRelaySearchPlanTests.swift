@@ -125,4 +125,36 @@ final class LocalRelaySearchPlanTests: XCTestCase {
                                            authorPubkey: "aa11",
                                            matchedAuthors: []))
     }
+
+    // MARK: - Ordering
+
+    func testTextMatchesComeBeforeAuthorMatchesEvenWhenOlder() {
+        let old = Date(timeIntervalSince1970: 1_000)
+        let recent = Date(timeIntervalSince1970: 2_000)
+        let text = LocalSearchRanking.Entry(textMatched: true, createdAt: old)
+        let author = LocalSearchRanking.Entry(textMatched: false, createdAt: recent)
+        XCTAssertTrue(LocalSearchRanking.isOrderedBefore(text, author))
+        XCTAssertFalse(LocalSearchRanking.isOrderedBefore(author, text))
+    }
+
+    func testWithinTheSameKindOfMatchTheNewestComesFirst() {
+        let older = LocalSearchRanking.Entry(textMatched: true, createdAt: Date(timeIntervalSince1970: 1_000))
+        let newer = LocalSearchRanking.Entry(textMatched: true, createdAt: Date(timeIntervalSince1970: 2_000))
+        XCTAssertTrue(LocalSearchRanking.isOrderedBefore(newer, older))
+        XCTAssertFalse(LocalSearchRanking.isOrderedBefore(older, newer))
+    }
+
+    /// A capped list is the whole reason the order matters: one prolific
+    /// matched author must not push every text match off the end.
+    func testAProlificMatchedAuthorCannotEvictTextMatchesFromACappedList() {
+        var entries: [LocalSearchRanking.Entry] = (0..<50).map {
+            LocalSearchRanking.Entry(textMatched: false,
+                                     createdAt: Date(timeIntervalSince1970: TimeInterval(9_000 + $0)))
+        }
+        entries.append(LocalSearchRanking.Entry(textMatched: true,
+                                                createdAt: Date(timeIntervalSince1970: 1)))
+        let top = entries.sorted(by: LocalSearchRanking.isOrderedBefore).prefix(20)
+        XCTAssertEqual(top.filter { $0.textMatched }.count, 1)
+        XCTAssertTrue(top.first!.textMatched)
+    }
 }

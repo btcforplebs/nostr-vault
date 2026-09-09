@@ -95,3 +95,22 @@ struct LocalSearchMatcher {
         return pubkey.lowercased().contains(needle)
     }
 }
+
+/// Ordering for relay-mode note results.
+///
+/// A note is kept when its text matches OR when its author's profile matched
+/// (see `LocalSearchMatcher.matchesNote(content:authorPubkey:matchedAuthors:)`).
+/// The list the UI shows is capped, so without a rule a prolific matched author
+/// could push every text match off the end — searching a word would stop
+/// showing the notes containing that word. Text matches come first.
+enum LocalSearchRanking {
+    struct Entry {
+        let textMatched: Bool
+        let createdAt: Date
+    }
+
+    static func isOrderedBefore(_ lhs: Entry, _ rhs: Entry) -> Bool {
+        if lhs.textMatched != rhs.textMatched { return lhs.textMatched }
+        return lhs.createdAt > rhs.createdAt
+    }
+}

@@ -120,6 +120,9 @@ final class LocalRelaySearchCollector {
     /// meant to find that person's notes, not only their profile card, so a
     /// note matches on either its text or its author.
     private var matchedAuthors = Set<String>()
+    /// Ids of notes kept because their own text matched, as opposed to notes
+    /// kept only because their author matched. Drives the result order.
+    private var textMatchedIds = Set<String>()
     private var seenIds = Set<String>()
     private var stats: [String: PageStats] = [:]
 
@@ -166,6 +169,7 @@ final class LocalRelaySearchCollector {
             if matcher.matchesNote(content: content,
                                    authorPubkey: pubkey,
                                    matchedAuthors: matchedAuthors) {
+                if matcher.matchesNote(content: content) { textMatchedIds.insert(id) }
                 notes[id] = FeedNote(
                     id: id,
                     pubkey: pubkey,
@@ -235,7 +239,12 @@ final class LocalRelaySearchCollector {
         lock.lock()
         defer { lock.unlock() }
         var results = GlobalSearchResults()
-        results.notes = notes.values.sorted { $0.createdAt > $1.createdAt }
+        let textMatched = textMatchedIds
+        results.notes = notes.values.sorted {
+            LocalSearchRanking.isOrderedBefore(
+                .init(textMatched: textMatched.contains($0.id), createdAt: $0.createdAt),
+                .init(textMatched: textMatched.contains($1.id), createdAt: $1.createdAt))
+        }
         results.profiles = Array(profiles.values)
         return results
     }

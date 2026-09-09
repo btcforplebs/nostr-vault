@@ -1083,11 +1083,19 @@ struct SearchView: View {
             }
 
             let matchedAuthors = Set(results.users.keys)
-            let relevantNotes = localNotes.filter { note in
-                matcher.matchesNote(content: note.content,
-                                    authorPubkey: note.pubkey,
-                                    matchedAuthors: matchedAuthors)
-            }
+            let relevantNotes = localNotes
+                .filter { note in
+                    matcher.matchesNote(content: note.content,
+                                        authorPubkey: note.pubkey,
+                                        matchedAuthors: matchedAuthors)
+                }
+                .sorted {
+                    LocalSearchRanking.isOrderedBefore(
+                        .init(textMatched: matcher.matchesNote(content: $0.content),
+                              createdAt: $0.createdAt),
+                        .init(textMatched: matcher.matchesNote(content: $1.content),
+                              createdAt: $1.createdAt))
+                }
             results.notes = relevantNotes.prefix(20).map { $0 }
 
             var foundHashtags = Set<String>()
