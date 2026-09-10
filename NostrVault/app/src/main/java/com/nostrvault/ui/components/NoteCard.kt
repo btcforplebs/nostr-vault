@@ -417,6 +417,7 @@ fun NoteCard(
             // reposts, not the repost wrapper event.
             EngagementBar(
                 noteId = note.effectiveEventId,
+                stats = stats,
                 isLiked = isLiked,
                 isZapped = isZapped,
                 isReposted = isReposted,
@@ -437,13 +438,18 @@ fun NoteCard(
 
 /**
  * Action button row. Mirrors the iOS feed note layout: capsule-background
- * icon buttons, left-aligned with fixed spacing, icon-only (no counts), with a
- * spring scale-up on active states.
+ * icon buttons, left-aligned with fixed spacing, with a spring scale-up on
+ * active states.
  * Order: Reply → Repost → Quote → Like → Zap → Share → Broadcast.
+ *
+ * Repost, Like and Zap carry their count when there is one. Reply does not:
+ * [NoteStats] has no reply count, and inventing one from the loaded thread would
+ * be wrong for any note whose replies are not in the cache.
  */
 @Composable
 private fun EngagementBar(
     noteId: String,
+    stats: NoteStats?,
     isLiked: Boolean,
     isZapped: Boolean,
     isReposted: Boolean = false,
@@ -477,6 +483,7 @@ private fun EngagementBar(
             isActive = isReposted,
             activeColor = RepostGreen,
             contentDescription = if (isReposted) "Reposted" else "Repost",
+            count = engagementCountLabel(stats?.repostCount ?: 0),
             onClick = { onRepost?.invoke(noteId) },
         )
 
@@ -498,6 +505,7 @@ private fun EngagementBar(
                 isActive = isLiked,
                 activeColor = LikeRed,
                 contentDescription = if (isLiked) "Unlike" else "Like",
+                count = engagementCountLabel(stats?.reactionCount ?: 0),
                 onClick = { onLike?.invoke(noteId) },
                 onLongClick = if (onLongPressLike != null) {
                     { onLongPressLike.invoke(noteId) }
@@ -511,6 +519,7 @@ private fun EngagementBar(
             isActive = isZapped,
             activeColor = ZapOrange,
             contentDescription = if (isZapped) "Zapped" else "Zap",
+            count = zapCountLabel(stats?.zapCount ?: 0, stats?.zapAmountSats ?: 0L),
             onClick = { onZap?.invoke(noteId) },
         )
 
@@ -547,6 +556,7 @@ internal fun EngagementButton(
     contentDescription: String?,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    count: String? = null,
 ) {
     val tint = if (isActive) activeColor else SecondaryText
     val background = if (isActive) {
@@ -596,14 +606,21 @@ internal fun EngagementButton(
         Modifier.clickable(onClick = tapAndPulse)
     }
 
-    Box(
-        contentAlignment = Alignment.Center,
+    // With a count the button becomes a capsule wide enough for the number; with
+    // none it stays the 32dp circle it has always been. Height is fixed at 32dp
+    // either way so a row of mixed buttons does not step up and down as counts
+    // arrive from backfill.
+    Row(
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .scale(scale)
-            .size(32.dp)
+            .height(32.dp)
+            .then(if (count == null) Modifier.width(32.dp) else Modifier.widthIn(min = 32.dp))
             .clip(CircleShape)
             .background(background)
-            .then(clickModifier),
+            .then(clickModifier)
+            .then(if (count == null) Modifier else Modifier.padding(horizontal = 9.dp)),
     ) {
         Icon(
             imageVector = icon,
@@ -611,6 +628,16 @@ internal fun EngagementButton(
             tint = tint,
             modifier = Modifier.size(16.dp),
         )
+        if (count != null) {
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = count,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = tint,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -1238,11 +1265,3 @@ internal fun formatTimestamp(epochSecs: Long): String {
     }
 }
 
-internal fun formatCount(count: Int): String {
-    return when {
-        count < 1000 -> count.toString()
-        count < 10_000 -> "%.1fk".format(count / 1000.0)
-        count < 1_000_000 -> "${count / 1000}k"
-        else -> "%.1fM".format(count / 1_000_000.0)
-    }
-}
