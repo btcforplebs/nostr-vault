@@ -166,6 +166,11 @@ class WebSocketClient(
                 Log.w(TAG, "WebSocket failure ($url): ${t.message}")
                 lastError = t.message
                 _connectionState.value = ConnectionState.DISCONNECTED
+                // 429 = rate-limited by the relay; retrying immediately makes it worse.
+                // Switch directly to slow-retry mode so we back off for 2 minutes.
+                if (response?.code == 429) {
+                    reconnectAttempts = MAX_RECONNECT_ATTEMPTS
+                }
                 scheduleReconnect()
             }
             })

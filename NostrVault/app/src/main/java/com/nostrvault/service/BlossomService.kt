@@ -471,14 +471,15 @@ class BlossomService @Inject constructor(
     fun deleteFromLocal(sha256: String): Boolean {
         val config = configStore.config.value
         val dir = config.relayDataDir?.let { File(it, config.blossomPath) } ?: return false
+        // Bare-hash file (how the relay stores blobs) is the common case.
         val exact = File(dir, sha256)
         if (exact.exists()) return exact.delete()
 
-        // Try with extensions
-        val extensions = listOf("jpg", "jpeg", "png", "gif", "webp", "mp4", "mov", "webm")
-        for (ext in extensions) {
-            val file = File(dir, "$sha256.$ext")
-            if (file.exists()) return file.delete()
+        // Otherwise delete any `<hash>.<ext>` variant, regardless of extension
+        // (covers audio/documents, not just images/video).
+        val matches = dir.listFiles { f -> f.isFile && f.nameWithoutExtension == sha256 }
+        if (!matches.isNullOrEmpty()) {
+            return matches.all { it.delete() }
         }
         return false
     }

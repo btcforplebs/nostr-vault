@@ -40,15 +40,20 @@ object FeedFilterEngine {
             // Spam filter
             if (FeedNote.isNoiseOrSpam(note.content, note.tags)) return@filter false
 
+            // For reposts, membership is judged by the reposter (the follow who
+            // boosted it), not the original author -- otherwise a repost of
+            // someone you don't follow is silently dropped from the feed.
+            val authorForMembership = note.repostedBy ?: note.pubkey
+
             when (mode) {
-                FeedMode.FOLLOWING -> note.pubkey in followedPubkeys
-                FeedMode.DISCOVERY -> note.pubkey !in followedPubkeys && note.pubkey in wotPubkeys
+                FeedMode.FOLLOWING -> authorForMembership in followedPubkeys
+                FeedMode.DISCOVERY -> authorForMembership !in followedPubkeys && authorForMembership in wotPubkeys
                 FeedMode.GLOBAL -> true
                 FeedMode.POPULAR -> {
                     when (popularFilter) {
                         PopularFilter.ALL -> true
-                        PopularFilter.FOLLOWS -> note.pubkey in followedPubkeys
-                        PopularFilter.NON_FOLLOWS -> note.pubkey !in followedPubkeys
+                        PopularFilter.FOLLOWS -> authorForMembership in followedPubkeys
+                        PopularFilter.NON_FOLLOWS -> authorForMembership !in followedPubkeys
                     }
                 }
                 FeedMode.MEDIA -> note.mediaURLs.isNotEmpty()

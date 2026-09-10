@@ -414,10 +414,15 @@ class RelayForegroundService : Service() {
             // Fix file-based env vars: Go uses os.ReadFile with the
             // bare filename, but Android's CWD is NOT the relay data dir.
             // Override with absolute paths so the Go relay can find them.
-            fun ensureRelayFile(envKey: String, fileName: String, defaultContent: List<String>) {
+            fun ensureRelayFile(
+                envKey: String,
+                fileName: String,
+                defaultContent: List<String>,
+                overwrite: Boolean = false,
+            ) {
                 if (fileName.isNotEmpty()) {
                     val file = File(relayDataDir, fileName)
-                    if (!file.exists()) {
+                    if (overwrite || !file.exists()) {
                         val json = "[" + defaultContent.joinToString(",") { "\"$it\"" } + "]"
                         file.writeText(json)
                     }
@@ -426,7 +431,11 @@ class RelayForegroundService : Service() {
             }
             ensureRelayFile("IMPORT_SEED_RELAYS_FILE", config.importSeedRelaysFile, config.importSeedRelays)
             ensureRelayFile("BLASTR_RELAYS_FILE", config.blastrRelaysFile, config.blastrRelays)
-            ensureRelayFile("DM_RELAYS_FILE", "relays_dm.json", emptyList())
+            // Overwrite: existing installs have a stale empty relays_dm.json from
+            // when DM relays were hardcoded empty. Config is the source of truth
+            // (no file-editing UI), so rewrite it each boot to surface tagged
+            // notes from DM relays (e.g. nos.lol) in the inbox.
+            ensureRelayFile("DM_RELAYS_FILE", "relays_dm.json", config.dmRelays, overwrite = true)
             if (config.whitelistedNpubsFile.isNotEmpty()) {
                 HavenBridge.setEnv("WHITELISTED_NPUBS_FILE", File(relayDataDir, config.whitelistedNpubsFile).absolutePath)
             }

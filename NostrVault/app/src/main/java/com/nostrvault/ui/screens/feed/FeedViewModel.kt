@@ -11,6 +11,7 @@ import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ScrollPosition
+import com.nostrvault.service.ZapSendService
 import com.nostrvault.ui.notification.NotificationManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -29,7 +30,12 @@ class FeedViewModel @Inject constructor(
     private val nostrService: NostrService,
     private val configStore: ConfigStore,
     private val notificationManager: NotificationManager,
+    private val zapSendService: ZapSendService,
 ) : ViewModel() {
+
+    // Zap result feedback for the UI (toast)
+    private val _zapMessage = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val zapMessage: SharedFlow<String> = _zapMessage
 
     // ── Feed state ───────────────────────────────────────────────
 
@@ -182,7 +188,17 @@ class FeedViewModel @Inject constructor(
 
     fun zapNote(noteId: String, amount: Int = 21) {
         viewModelScope.launch {
-            feedService.zapNote(noteId, amount = amount.toLong())
+            val note = feedService.findNote(noteId)
+            if (note == null) {
+                _zapMessage.emit("Note not found")
+                return@launch
+            }
+            // Real NIP-57 zap; effective id redirects kind-6 reposts to the
+            // reposted event. ZapSendService bumps local stats on success.
+            zapSendService.zapNote(note.effectiveEventId, note.pubkey, amount).fold(
+                onSuccess = { _zapMessage.emit("Zapped ⚡$amount sats") },
+                onFailure = { e -> _zapMessage.emit(e.message ?: "Zap failed") },
+            )
         }
     }
 
@@ -226,6 +242,10 @@ class FeedViewModel @Inject constructor(
 
     fun fetchMissingParentNote(parentEventId: String) {
         feedService.fetchMissingNote(parentEventId)
+    }
+
+    fun fetchMissingParentNotes(parentEventIds: List<String>) {
+        feedService.fetchMissingNotesBatch(parentEventIds)
     }
 
     // ── Helpers ──────────────────────────────────────────────────

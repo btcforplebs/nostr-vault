@@ -120,6 +120,29 @@ data class FeedNote(
     /** Instance-level noise check delegating to companion. */
     fun isNoiseOrSpam(): Boolean = Companion.isNoiseOrSpam(content, tags)
 
+    /**
+     * NIP-10 thread root id: an explicit "root"-marked e-tag, else the first
+     * e-tag, else this note's own id (a top-level note is its own root). This
+     * is the symmetric reader for the root tag ComposeNoteScreen writes, and
+     * mirrors iOS NoteDetailView.threadRootId. Used to fetch the whole thread
+     * subtree when a mid-thread reply is opened.
+     */
+    val threadRootId: String
+        get() {
+            val eTags = tags.filter { it.size >= 2 && it[0] == "e" }
+            eTags.firstOrNull { it.size >= 4 && it[3] == "root" }?.let { return it[1] }
+            return eTags.firstOrNull()?.get(1) ?: effectiveEventId
+        }
+
+    /**
+     * The event id engagement and replies actually target: for a kind-6
+     * repost this is the reposted (inner) event, never the wrapper —
+     * replies/zaps/reactions tag the original note, not the repost.
+     * Mirrors iOS NoteDetailView's kind-6 redirect.
+     */
+    val effectiveEventId: String
+        get() = if (kind == 6) repostedEventId ?: id else id
+
     override fun equals(other: Any?): Boolean = other is FeedNote && id == other.id
     override fun hashCode(): Int = id.hashCode()
 

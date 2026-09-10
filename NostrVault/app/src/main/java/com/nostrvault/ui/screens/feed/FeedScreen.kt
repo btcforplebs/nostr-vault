@@ -1,6 +1,7 @@
 package com.nostrvault.ui.screens.feed
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -82,9 +83,27 @@ fun FeedScreen(
         expandedNoteId = null
     }
 
+    // Batch-fetch all missing parent notes whenever the visible notes list changes.
+    // One REQ with all IDs instead of one REQ per item.
+    LaunchedEffect(notes) {
+        val missingIds = notes.mapNotNull { note ->
+            note.parentEventId?.takeIf { viewModel.parentNoteFor(it) == null }
+        }.distinct()
+        if (missingIds.isNotEmpty()) {
+            viewModel.fetchMissingParentNotes(missingIds)
+        }
+    }
+
     // Zap sheet state
     var zapNoteId by remember { mutableStateOf<String?>(null) }
     val zapSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // Zap result feedback
+    LaunchedEffect(Unit) {
+        viewModel.zapMessage.collect { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // More menu / delete confirmation state
     var deleteNoteId by remember { mutableStateOf<String?>(null) }
@@ -150,12 +169,40 @@ fun FeedScreen(
                     delay(150)
                     // Re-check — user may have scrolled away during debounce
                     if (isAtTop) {
+                        // The reveal effect below performs the scroll once the
+                        // prepend has actually landed in the list — scrolling
+                        // here (even after a fixed delay) races composition and
+                        // strands the new post above the viewport.
                         viewModel.applyPendingNotes()
-                        // Keyed LazyColumn keeps the old first item in view
-                        // after a prepend — snap back to show the new notes.
-                        listState.scrollToItem(0)
                     }
                 }
+            }
+    }
+
+    // iOS-parity reveal. The keyed LazyColumn anchors the previous top item
+    // whenever notes are prepended, which strands the new notes above the
+    // viewport (only their bottom edge peeks out behind the translucent
+    // toolbar) — SwiftUI's ScrollView doesn't anchor, so iOS reveals new
+    // posts naturally. Watching the first note id is the only reliable
+    // signal that a prepend has actually composed; fixed delays race the
+    // filter-recompute debounce and the frame clock. When the first id
+    // changes while the user is (or just was) at the top, scroll to the
+    // absolute top so the new post lands fully in view below the toolbar.
+    // Also covers replies, which insert directly and bypass pendingNotes.
+    LaunchedEffect(Unit) {
+        var prevFirstId: String? = null
+        var wasAtTop = true
+        snapshotFlow { notes.firstOrNull()?.id to isAtTop }
+            .collect { (firstId, atTop) ->
+                // Prepend = first id changed but the old first note is still
+                // in the list (a refresh/reload replaces it entirely).
+                val prepended = firstId != null && prevFirstId != null &&
+                    firstId != prevFirstId && notes.any { it.id == prevFirstId }
+                if (prepended && (wasAtTop || atTop)) {
+                    listState.animateScrollToItem(0)
+                }
+                prevFirstId = firstId
+                wasAtTop = atTop
             }
     }
 
@@ -261,17 +308,7 @@ fun FeedScreen(
                                 note.replyToPubkey?.let { viewModel.profileFor(it) }
                             }
 
-                            // Fetch parent note if this is a reply and parent isn't cached
-                            // Move outside of LaunchedEffect for better performance
                             val parentEventId = note.parentEventId
-                            if (parentEventId != null) {
-                                LaunchedEffect(note.id, parentEventId) {
-                                    if (viewModel.parentNoteFor(parentEventId) == null) {
-                                        viewModel.fetchMissingParentNote(parentEventId)
-                                    }
-                                }
-                            }
-
                             val parentNote = parentEventId?.let { viewModel.parentNoteFor(it) }
                             val isParentNext = parentEventId?.let { viewModel.isParentNext(note.id) } ?: false
 
@@ -292,6 +329,7 @@ fun FeedScreen(
                                 onRepost = viewModel::repostNote,
                                 onZap = { id -> zapNoteId = id },
                                 onReply = onReply ?: { _ -> onCompose() },
+                                onQuote = onQuote,
                                 onShare = { id ->
                                     val shareNote = notes.find { it.id == id }
                                     val shareText = shareNote?.content ?: "nostr:${id}"
@@ -301,7 +339,10 @@ fun FeedScreen(
                                     }
                                     context.startActivity(Intent.createChooser(intent, "Share Note"))
                                 },
-                                onMore = { id -> moreMenuNoteId = id },
+                                onBroadcast = { id -> broadcastNoteId = id },
+                                onMore = if (viewModel.isOwnNote(note.pubkey)) {
+                                    { id -> moreMenuNoteId = id }
+                                } else null,
                                 onLongPressLike = { id -> emojiPickerNoteId = id },
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             )
@@ -334,7 +375,10 @@ fun FeedScreen(
                     count = pendingCount,
                     onClick = {
                         viewModel.applyPendingNotes()
-                        scope.launch { listState.scrollToItem(0) } // Instant scroll for better performance
+                        // Scroll toward the top right away; if the animation
+                        // outruns the prepend, the reveal effect snaps the
+                        // last bit once the new first note composes.
+                        scope.launch { listState.animateScrollToItem(0) }
                     },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -367,44 +411,6 @@ fun FeedScreen(
             title = { Text("Actions") },
             text = {
                 Column {
-                    // Quote
-                    if (onQuote != null) {
-                        TextButton(
-                            onClick = {
-                                moreMenuNoteId?.let { onQuote(it) }
-                                moreMenuNoteId = null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Icon(NostrVaultIcons.Quote, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Quote Post")
-                            }
-                        }
-                    }
-
-                    // Broadcast
-                    TextButton(
-                        onClick = {
-                            broadcastNoteId = moreMenuNoteId
-                            moreMenuNoteId = null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(NostrVaultIcons.Send, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Broadcast")
-                        }
-                    }
-
                     // Delete (own notes only)
                     if (isOwn) {
                         TextButton(

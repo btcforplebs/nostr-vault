@@ -65,15 +65,13 @@ class MediaGalleryViewModel @Inject constructor(
     val mediaCacheService: MediaCacheService,
     private val blossomService: BlossomService,
     private val notificationManager: NotificationManager,
-    private val mediaUploadManager: MediaUploadManager,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
-    /** Upload state is owned by the app-scoped manager (uploads also come from the
-     *  system share sheet), so the gallery just reflects it. */
-    val isUploading = mediaUploadManager.isUploading
+    private val _isUploading = MutableStateFlow(false)
+    val isUploading = _isUploading.asStateFlow()
 
     private val _mediaItems = MutableStateFlow<List<BlossomMediaItem>>(emptyList())
     val mediaItems = _mediaItems.asStateFlow()
@@ -87,10 +85,6 @@ class MediaGalleryViewModel @Inject constructor(
 
     init {
         loadBlossomMedia()
-        // Refresh the grid when any upload finishes (gallery picker or share sheet).
-        viewModelScope.launch {
-            mediaUploadManager.uploadCompleted.collect { refresh() }
-        }
     }
 
     fun refresh() {
@@ -132,34 +126,6 @@ class MediaGalleryViewModel @Inject constructor(
                             }.awaitAll().filterNotNull().forEach { (blobs, source) ->
                                 mergeBlobs(items, blobs, source = source)
                             }
-                        }
-                    }
-
-                    // 4. Extract media from the owner's own notes (iOS parity).
-                    // Surfaces media referenced in notes that may not exist as a
-                    // local Blossom blob. Deduped against blossom blobs by hash.
-                    val ownerPk = nostrService.activeHexPubkey
-                    if (ownerPk.isNotEmpty()) {
-                        try {
-                            val notes = nostrService.fetchOwnerMediaNotes(ownerPk)
-                            for (note in notes) {
-                                for (url in note.mediaURLs) {
-                                    val key = noteMediaKey(url)
-                                    if (items.containsKey(key)) continue // blossom blob wins
-                                    items[key] = BlossomMediaItem(
-                                        sha256 = blossomHashOf(url) ?: "",
-                                        displayUrl = url,
-                                        localFile = null,
-                                        mimeType = mimeFromUrl(url),
-                                        size = null,
-                                        uploaded = note.createdAt.time / 1000,
-                                        lastModified = null,
-                                        isLocal = false,
-                                    )
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Owner note media extraction failed: ${e.message}")
                         }
                     }
 
@@ -249,24 +215,55 @@ class MediaGalleryViewModel @Inject constructor(
     }
 
     fun uploadMedia(uri: Uri, contentResolver: android.content.ContentResolver) {
-        // Delegate to the app-scoped manager: it owns temp-file streaming, SHA-256,
-        // Blossom upload/mirror, notifications, and serialization. The gallery
-        // refreshes via the uploadCompleted collector in init.
-        mediaUploadManager.upload(uri, contentResolver)
-    }
+        if (_isUploading.value) return
+        viewModelScope.launch {
+            _isUploading.value = true
+            val filename = uri.lastPathSegment ?: "media"
+            val uploadId = notificationManager.addUpload(filename)
+            // Stream the picked media to a temp file instead of readBytes() — a
+            // large video pulled fully into a ByteArray OOM-kills low-RAM devices
+            // before the upload even starts. The File-based upload path streams
+            // from disk (file.asRequestBody) end to end.
+            var tempFile: File? = null
+            try {
+                tempFile = withContext(Dispatchers.IO) {
+                    val f = File.createTempFile("upload_", null, mediaCacheService.cacheDirectory)
+                    val copied = contentResolver.openInputStream(uri)?.use { input ->
+                        f.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+                        true
+                    } ?: false
+                    if (copied) f else { f.delete(); null }
+                } ?: run {
+                    notificationManager.markUploadFailed(uploadId, "Could not read file")
+                    return@launch
+                }
 
-    private val _mirrorCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
-    val mirrorCounts: StateFlow<Map<String, Int>> = _mirrorCounts.asStateFlow()
+                val contentType = contentResolver.getType(uri) ?: "application/octet-stream"
+                val sha256 = withContext(Dispatchers.IO) {
+                    blossomService.computeSHA256(tempFile!!)
+                }
 
-    val totalMirrors: Int
-        get() = configStore.config.value.activeBlossomMirrors.size
+                notificationManager.updateUploadProgress(uploadId, 0.3f)
 
-    fun loadMirrorCount(sha256: String) {
-        if (_mirrorCounts.value.containsKey(sha256)) return
-        viewModelScope.launch(Dispatchers.IO) {
-            val status = blossomService.checkMirrorStatus(sha256)
-            val count = status.values.count { it }
-            _mirrorCounts.update { it + (sha256 to count) }
+                val resultUrl = withContext(Dispatchers.IO) {
+                    blossomService.uploadAndMirror(tempFile!!, sha256, contentType)
+                }
+
+                notificationManager.updateUploadProgress(uploadId, 1.0f)
+
+                if (resultUrl != null || blossomService.localBlossomURL() != null) {
+                    notificationManager.markUploadSuccess(uploadId)
+                    refresh()
+                } else {
+                    notificationManager.markUploadFailed(uploadId, "Upload failed")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Upload failed", e)
+                notificationManager.markUploadFailed(uploadId, e.message ?: "Upload failed")
+            } finally {
+                tempFile?.let { withContext(NonCancellable + Dispatchers.IO) { it.delete() } }
+                _isUploading.value = false
+            }
         }
     }
 
@@ -289,40 +286,17 @@ data class BlossomMediaItem(
     val uploaded: Long?,
     val lastModified: Long?,
     val isLocal: Boolean,
+    val noteId: String? = null,
 ) {
     val isVideo: Boolean get() = mimeType?.startsWith("video") == true
     val isImage: Boolean get() = mimeType?.startsWith("image") == true || mimeType == "image"
-
-    /** Unique, stable key for LazyGrid/LazyColumn. Note-derived items may lack a
-     *  real SHA256, so fall back to the display URL. */
-    val stableKey: String get() = sha256.ifEmpty { displayUrl }
+    val isAudio: Boolean get() = mimeType?.startsWith("audio") == true
 }
 
 data class MediaItem(val url: String, val noteId: String)
 
-private val BLOSSOM_HASH_IN_URL = Regex("([a-f0-9]{64})", RegexOption.IGNORE_CASE)
-
-/** Extract the trailing 64-hex Blossom hash from a URL, if present (lowercased). */
-private fun blossomHashOf(url: String): String? {
-    val lastSegment = url.substringBefore('?').substringBefore('#').substringAfterLast('/')
-    return BLOSSOM_HASH_IN_URL.find(lastSegment)?.value?.lowercase()
-}
-
-/** Dedup key for a note media URL: Blossom hash if present (collapses onto the
- *  stored blob), otherwise the URL itself. Mirrors iOS normalizedKey. */
-private fun noteMediaKey(url: String): String = blossomHashOf(url) ?: url
-
-/** Best-effort MIME from a URL's file extension. Null is allowed downstream
- *  (the gallery filter admits null-MIME items and Coil still renders them). */
-private fun mimeFromUrl(url: String): String? {
-    val ext = url.substringBefore('?').substringBefore('#').substringAfterLast('.', "").lowercase()
-    return when (ext) {
-        "jpg", "jpeg", "png", "webp", "bmp", "heic", "avif" -> "image/$ext"
-        "gif" -> "image/gif"
-        "mp4", "webm", "mov", "m4v", "avi", "mkv" -> "video/$ext"
-        else -> null
-    }
-}
+/** Scope for a pending destructive delete in MediaViewerScreen. */
+enum class DeleteScope { MIRRORS, EVERYWHERE }
 
 /** Media type filter matching iOS MediaTypeFilter. */
 enum class MediaTypeFilter { ALL, PHOTO, VIDEO, GIF, OTHER }
@@ -344,8 +318,6 @@ fun MediaGalleryScreen(
     val mediaItems by viewModel.mediaItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isUploading by viewModel.isUploading.collectAsState()
-    val mirrorCounts by viewModel.mirrorCounts.collectAsState()
-    val totalMirrors = viewModel.totalMirrors
     var activeFilter by remember { mutableStateOf(MediaTypeFilter.ALL) }
     var locationFilter by remember { mutableStateOf(MediaLocationFilter.ALL) }
     var layoutMode by remember { mutableStateOf(MediaLayoutMode.GRID) }
@@ -559,7 +531,7 @@ fun MediaGalleryScreen(
                 ) {
                     itemsIndexed(
                         items = filteredItems,
-                        key = { _, item -> item.stableKey },
+                        key = { _, item -> item.sha256 },
                     ) { index, item ->
                         MediaGridCell(
                             item = item,
@@ -590,11 +562,8 @@ fun MediaGalleryScreen(
                 ) {
                     itemsIndexed(
                         items = filteredItems,
-                        key = { _, item -> item.stableKey },
+                        key = { _, item -> item.sha256 },
                     ) { index, item ->
-                        if (item.isLocal) {
-                            LaunchedEffect(item.sha256) { viewModel.loadMirrorCount(item.sha256) }
-                        }
                         MediaListRow(
                             item = item,
                             index = index,
@@ -607,8 +576,6 @@ fun MediaGalleryScreen(
                             onDismissMenu = { contextMenuTarget = null },
                             mediaCacheService = mediaCacheService,
                             clipboardManager = clipboardManager,
-                            mirrorCount = if (item.isLocal) mirrorCounts[item.sha256] else null,
-                            totalMirrors = totalMirrors,
                         )
                     }
                 }
@@ -697,8 +664,6 @@ private fun MediaListRow(
     onDismissMenu: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
-    mirrorCount: Int? = null,
-    totalMirrors: Int = 0,
 ) {
     val context = LocalContext.current
     val colors = LocalNostrVaultColors.current
@@ -779,30 +744,6 @@ private fun MediaListRow(
                         contentDescription = "Local",
                         tint = Color(0xFF4CAF50),
                         modifier = Modifier.size(14.dp),
-                    )
-                }
-            }
-            // Mirror count badge (local items only, when mirrors are configured)
-            if (item.isLocal && totalMirrors > 0) {
-                Spacer(Modifier.height(3.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val badgeColor = when {
-                        mirrorCount == null -> TertiaryText
-                        mirrorCount == totalMirrors -> Color(0xFF4CAF50)
-                        mirrorCount > 0 -> Color(0xFFFF9800)
-                        else -> TertiaryText
-                    }
-                    Icon(
-                        imageVector = NostrVaultIcons.Cloud,
-                        contentDescription = null,
-                        tint = badgeColor,
-                        modifier = Modifier.size(12.dp),
-                    )
-                    Spacer(Modifier.width(3.dp))
-                    Text(
-                        text = if (mirrorCount == null) "…" else "$mirrorCount / $totalMirrors",
-                        color = badgeColor,
-                        fontSize = 11.sp,
                     )
                 }
             }

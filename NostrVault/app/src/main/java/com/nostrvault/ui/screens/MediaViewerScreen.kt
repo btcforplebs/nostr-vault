@@ -35,6 +35,7 @@ import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -85,6 +86,40 @@ class MediaViewerViewModel @Inject constructor(
         }
     }
 
+    /** Delete the blob from all external mirrors; the local copy is kept. */
+    fun deleteFromMirrors(item: BlossomMediaItem) {
+        if (item.sha256.isEmpty()) {
+            notificationManager.showError("No hash for this item")
+            return
+        }
+        viewModelScope.launch {
+            val count = withContext(Dispatchers.IO) { blossomService.deleteFromMirrors(item.sha256) }
+            notificationManager.showToast(
+                if (count > 0) "Deleted from $count mirror(s)" else "Not found on mirrors",
+            )
+            checkMirrors(item.sha256)
+        }
+    }
+
+    /** Delete everywhere (local + mirrors), then invoke [onDeleted] so the viewer can dismiss. */
+    fun deleteEverywhere(item: BlossomMediaItem, onDeleted: () -> Unit) {
+        if (item.sha256.isEmpty()) {
+            notificationManager.showError("No hash for this item")
+            return
+        }
+        viewModelScope.launch {
+            val (localOk, mirrorCount) = withContext(Dispatchers.IO) {
+                val local = async { blossomService.deleteFromLocal(item.sha256) }
+                val mirrors = async { blossomService.deleteFromMirrors(item.sha256) }
+                local.await() to mirrors.await()
+            }
+            notificationManager.showToast(
+                if (localOk || mirrorCount > 0) "Deleted everywhere" else "Nothing to delete",
+            )
+            onDeleted()
+        }
+    }
+
     fun saveToGallery(item: BlossomMediaItem) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -114,6 +149,7 @@ class MediaViewerViewModel @Inject constructor(
 fun MediaViewerScreen(
     initialIndex: Int,
     onBack: () -> Unit,
+    onNoteClick: (String) -> Unit = {},
     autoplayVideos: Boolean = true,
     viewModel: MediaViewerViewModel = hiltViewModel(),
 ) {
@@ -125,6 +161,8 @@ fun MediaViewerScreen(
     val mirrorStatus by viewModel.mirrorStatus.collectAsState()
     val isCheckingMirrors by viewModel.isCheckingMirrors.collectAsState()
     var showMirrorSheet by remember { mutableStateOf(false) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<DeleteScope?>(null) }
 
     if (items.isEmpty()) {
         LaunchedEffect(Unit) { onBack() }
@@ -187,9 +225,10 @@ fun MediaViewerScreen(
         ) { page ->
             val item = items[page]
 
-            if (item.isVideo) {
+            if (item.isVideo || item.isAudio) {
                 // Only create ExoPlayer for the currently visible page
-                // to keep memory usage at one instance (~10-15MB)
+                // to keep memory usage at one instance (~10-15MB). ExoPlayer
+                // plays audio-only blobs too (the surface just stays black).
                 if (page == pagerState.currentPage) {
                     val videoUri = item.localFile?.toUri()?.toString() ?: item.displayUrl
                     VideoPlayer(
@@ -271,23 +310,75 @@ fun MediaViewerScreen(
             )
         }
 
-        // Save button (fades during drag)
-        IconButton(
-            onClick = {
-                val currentItem = items.getOrNull(pagerState.currentPage)
-                currentItem?.let { viewModel.saveToGallery(it) }
-            },
+        // Save + overflow actions (fade during drag)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
                 .padding(8.dp)
                 .graphicsLayer { alpha = overlayAlpha },
         ) {
-            Icon(
-                imageVector = NostrVaultIcons.Import,
-                contentDescription = "Save to gallery",
-                tint = Color.White,
-            )
+            IconButton(
+                onClick = {
+                    items.getOrNull(pagerState.currentPage)?.let { viewModel.saveToGallery(it) }
+                },
+            ) {
+                Icon(
+                    imageVector = NostrVaultIcons.Import,
+                    contentDescription = "Save to gallery",
+                    tint = Color.White,
+                )
+            }
+            Box {
+                IconButton(onClick = { showOverflowMenu = true }) {
+                    Icon(
+                        imageVector = NostrVaultIcons.More,
+                        contentDescription = "More",
+                        tint = Color.White,
+                    )
+                }
+                val menuItem = items.getOrNull(pagerState.currentPage)
+                DropdownMenu(
+                    expanded = showOverflowMenu,
+                    onDismissRequest = { showOverflowMenu = false },
+                ) {
+                    if (menuItem?.noteId != null) {
+                        DropdownMenuItem(
+                            text = { Text("View Note") },
+                            leadingIcon = {
+                                Icon(NostrVaultIcons.Document, contentDescription = null, modifier = Modifier.size(20.dp))
+                            },
+                            onClick = {
+                                showOverflowMenu = false
+                                onNoteClick(menuItem.noteId)
+                            },
+                        )
+                    }
+                    if (menuItem != null && menuItem.sha256.isNotEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text("Delete from Mirrors", color = Color(0xFFE53935)) },
+                            leadingIcon = {
+                                Icon(NostrVaultIcons.Cloud, contentDescription = null, tint = Color(0xFFE53935), modifier = Modifier.size(20.dp))
+                            },
+                            onClick = {
+                                showOverflowMenu = false
+                                pendingDelete = DeleteScope.MIRRORS
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete Everywhere", color = Color(0xFFE53935)) },
+                            leadingIcon = {
+                                Icon(NostrVaultIcons.Delete, contentDescription = null, tint = Color(0xFFE53935), modifier = Modifier.size(20.dp))
+                            },
+                            onClick = {
+                                showOverflowMenu = false
+                                pendingDelete = DeleteScope.EVERYWHERE
+                            },
+                        )
+                    }
+                }
+            }
         }
 
         // Mirror status + page indicator at the bottom
@@ -353,6 +444,48 @@ fun MediaViewerScreen(
                 totalMirrors = total,
                 onDismiss = { showMirrorSheet = false },
                 onPushToMirrors = { viewModel.pushToMirrors(currentItem.sha256) },
+            )
+        }
+
+        // Confirm destructive deletes.
+        pendingDelete?.let { scope ->
+            if (currentItem == null) {
+                pendingDelete = null
+                return@let
+            }
+            val title: String
+            val body: String
+            val confirmLabel: String
+            when (scope) {
+                DeleteScope.MIRRORS -> {
+                    title = "Delete from mirrors?"
+                    body = "Removes this blob from all external Blossom mirrors. Your local copy is kept."
+                    confirmLabel = "Delete from mirrors"
+                }
+                DeleteScope.EVERYWHERE -> {
+                    title = "Delete everywhere?"
+                    body = "Permanently removes this blob from your local Blossom store and all external mirrors. This cannot be undone."
+                    confirmLabel = "Delete everywhere"
+                }
+            }
+            AlertDialog(
+                onDismissRequest = { pendingDelete = null },
+                title = { Text(title) },
+                text = { Text(body) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        when (scope) {
+                            DeleteScope.MIRRORS -> viewModel.deleteFromMirrors(currentItem)
+                            DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem) { onBack() }
+                        }
+                        pendingDelete = null
+                    }) {
+                        Text(confirmLabel, color = Color(0xFFE53935))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+                },
             )
         }
     }

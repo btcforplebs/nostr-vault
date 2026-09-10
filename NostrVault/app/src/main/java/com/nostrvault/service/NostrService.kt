@@ -1437,10 +1437,91 @@ class NostrService @Inject constructor(
     }
 
     /**
-     * Fetch kind:1 replies to a given note ID.
-     * Results are delivered via [onResult] callback.
+     * Fetch a whole thread for the note-detail view. Queries the entire subtree
+     * by NIP-10 thread [rootId] (so siblings and the wider thread appear when a
+     * mid-thread reply is opened, not just direct replies to the opened note),
+     * the [focusedId]'s own direct replies, and fetches the root plus any
+     * [ancestorIds] by id so missing parents are filled in from the network.
+     * Mirrors iOS NoteDetailView (fetchReplies by root + fetchParents by ids).
      */
-    fun fetchReplies(noteId: String, onResult: (List<FeedNote>) -> Unit) {
+    fun fetchThread(
+        rootId: String,
+        focusedId: String,
+        ancestorIds: List<String>,
+        onRawEvent: ((String, String) -> Unit)? = null,
+        onResult: (List<FeedNote>) -> Unit,
+    ) {
+        fun jsonArr(values: List<String>) =
+            values.distinct().joinToString(",") { "\"$it\"" }
+        // #e by root + focused note + all ancestors so legacy replies that only
+        // tag their direct parent (not the thread root) are still fetched.
+        val eIds = (listOf(rootId, focusedId) + ancestorIds).distinct()
+        val eFilter = """{"kinds":[1],"#e":[${jsonArr(eIds)}],"limit":200}"""
+        // Root note itself + ancestors are not replies, so fetch by id.
+        val idValues = (listOf(rootId) + ancestorIds).distinct()
+        val idFilter = """{"kinds":[1],"ids":[${jsonArr(idValues)}]}"""
+        queryDetailRelays(listOf(eFilter, idFilter), onRawEvent, onResult)
+    }
+
+    /**
+     * Fetch a single kind-1 note by id from the detail relay set. Used as a
+     * network fallback when the note-detail view is opened for a note that
+     * is not in the in-memory feed cache (mirrors iOS NoteDetailViewWrapper).
+     * [onResult] is invoked exactly once: with the note as soon as any relay
+     * returns it, or with null after all relays go quiet.
+     */
+    fun fetchNoteById(
+        id: String,
+        onRawEvent: ((String, String) -> Unit)? = null,
+        onResult: (FeedNote?) -> Unit,
+    ) {
+        val delivered = java.util.concurrent.atomic.AtomicBoolean(false)
+        queryDetailRelays(listOf("""{"kinds":[1],"ids":["$id"]}"""), onRawEvent) { notes ->
+            val match = notes.firstOrNull { it.id == id }
+            if (match != null && delivered.compareAndSet(false, true)) onResult(match)
+        }
+        scope.launch {
+            delay(TEMP_CLIENT_DISCONNECT_MS + 1000)
+            if (delivered.compareAndSet(false, true)) onResult(null)
+        }
+    }
+
+    /**
+     * Fetch replies that directly tag any of [noteIds]. Called when the
+     * thread view refocuses on a different note, to pull in sub-replies from
+     * clients that tag only their parent and not the thread root (mirrors
+     * iOS fetchRepliesForNote). Passing the focused note plus its known
+     * children resolves legacy reply chains one level deeper per refocus.
+     * [onResult] may fire once per relay EOSE with the cumulative set;
+     * callers must merge idempotently.
+     */
+    fun fetchRepliesFor(
+        noteIds: List<String>,
+        onRawEvent: ((String, String) -> Unit)? = null,
+        onResult: (List<FeedNote>) -> Unit,
+    ) {
+        if (noteIds.isEmpty()) { onResult(emptyList()); return }
+        val idArr = noteIds.distinct().joinToString(",") { "\"$it\"" }
+        queryDetailRelays(
+            listOf("""{"kinds":[1],"#e":[$idArr],"limit":150}"""),
+            onRawEvent,
+            onResult,
+        )
+    }
+
+    /**
+     * Shared one-shot query for the note-detail view: temporary clients to
+     * the detail relay set (local + inbox + feed/blastr, public fallback),
+     * collecting kind-1 events. [onEose] fires on every relay's EOSE with
+     * the cumulative sorted list, so callers must merge idempotently.
+     * [onRawEvent] receives each raw event JSON (id, json) for raw-event
+     * caching (broadcast needs the exact signed JSON).
+     */
+    private fun queryDetailRelays(
+        filters: List<String>,
+        onRawEvent: ((String, String) -> Unit)? = null,
+        onEose: (List<FeedNote>) -> Unit,
+    ) {
         val config = configStore.config.value
         val relayUrls = buildList {
             config.nostrURL?.let { add(it) }
@@ -1458,7 +1539,7 @@ class NostrService @Inject constructor(
                 add("wss://relay.primal.net")
             }
         }.distinct().take(8)
-        if (relayUrls.isEmpty()) { onResult(emptyList()); return }
+        if (relayUrls.isEmpty()) { onEose(emptyList()); return }
 
         val subId = "replies-${UUID.randomUUID().toString().take(8)}"
         val collected = java.util.concurrent.ConcurrentHashMap<String, FeedNote>()
@@ -1489,18 +1570,18 @@ class NostrService @Inject constructor(
 
                                     if (kind == 1) {
                                         collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
+                                        onRawEvent?.invoke(id, ev.toString())
                                     }
                                 }
                                 if (type == "EOSE" && sid == subId) {
-                                    onResult(collected.values.sortedBy { it.createdAt })
+                                    onEose(collected.values.sortedBy { it.createdAt })
                                 }
                             } catch (_: Exception) {}
                         }
                     }
 
                     client.connect()
-                    val filter = """{"kinds":[1],"#e":["$noteId"],"limit":150}"""
-                    client.send("[\"REQ\",\"$subId\",$filter]")
+                    client.send("[\"REQ\",\"$subId\",${filters.joinToString(",")}]")
 
                     delay(TEMP_CLIENT_DISCONNECT_MS)
                     client.disconnect()

@@ -134,10 +134,17 @@ class BlossomDashboardViewModel @Inject constructor(
                     return@launch
                 }
 
-                addLog("Found ${blobs.size} blobs, mirroring from ${mirrorUrls.size} mirrors", BlossomActivityLog.LogLevel.INFO)
-                _syncMessage.value = "Mirroring ${blobs.size} files..."
+                addLog("${blobs.size} blobs local — scanning ${mirrorUrls.size} mirrors...", BlossomActivityLog.LogLevel.INFO)
+                _syncMessage.value = "Scanning ${mirrorUrls.size} mirrors..."
 
-                blossomService.mirrorAllFromExternal()
+                blossomService.mirrorAllFromExternal(
+                    onProgress = { pct ->
+                        _syncMessage.value = "Mirroring... ${(pct * 100).toInt()}%"
+                    },
+                    onLogMessage = { msg ->
+                        addLog(msg, BlossomActivityLog.LogLevel.INFO)
+                    },
+                )
 
                 addLog("Pull complete", BlossomActivityLog.LogLevel.SUCCESS)
                 _syncMessage.value = "Pull complete"

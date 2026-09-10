@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Feed
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.LocalFlorist
+import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Groups
@@ -129,7 +130,7 @@ object NostrVaultIcons {
     val Edit: ImageVector = Icons.Filled.Edit              // pencil
     val Delete: ImageVector = Icons.Filled.Delete          // trash
     val Share: ImageVector = Icons.Filled.Share             // square.and.arrow.up
-    val Quote: ImageVector = Icons.Filled.Edit                // quote (pen icon)
+    val Quote: ImageVector = Icons.Filled.FormatQuote         // quote.closing (quotation marks)
     val Refresh: ImageVector = Icons.Filled.Refresh        // arrow.clockwise
     val Check: ImageVector = Icons.Filled.Check            // checkmark
     val Info: ImageVector = Icons.Filled.Info              // info.circle
