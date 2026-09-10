@@ -121,6 +121,14 @@ fun SettingsScreen(
             }
             item {
                 SettingsItem(
+                    icon = NostrVaultIcons.Domain,
+                    title = "Haven Relay",
+                    subtitle = "Sync notes from your Mac or cloud relay",
+                    onClick = { onNavigate(Screen.HavenRelaySettings) },
+                )
+            }
+            item {
+                SettingsItem(
                     icon = NostrVaultIcons.Feed,
                     title = "Feed Relays",
                     subtitle = "Configure external relay sources",

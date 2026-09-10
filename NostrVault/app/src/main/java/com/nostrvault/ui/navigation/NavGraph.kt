@@ -44,6 +44,7 @@ import com.nostrvault.ui.screens.settings.DMRelaySettingsScreen
 import com.nostrvault.ui.screens.settings.FollowingBackupScreen
 import com.nostrvault.ui.screens.settings.NotificationSettingsScreen
 import com.nostrvault.ui.screens.settings.PowSettingsScreen
+import com.nostrvault.ui.screens.settings.HavenRelaySettingsScreen
 import com.nostrvault.ui.screens.settings.RelayListEditorScreen
 import com.nostrvault.ui.screens.settings.SettingsScreen
 import kotlinx.coroutines.flow.StateFlow
@@ -435,6 +436,12 @@ fun NostrVaultNavHost(
 
             composable(Screen.NotificationSettings.route) {
                 NotificationSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Screen.HavenRelaySettings.route) {
+                HavenRelaySettingsScreen(
                     onBack = { navController.popBackStack() },
                 )
             }
