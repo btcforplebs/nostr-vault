@@ -451,7 +451,6 @@ private fun SingleMediaPreview(url: String, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(16f / 9f)
             .clip(RoundedCornerShape(8.dp))
             .background(TertiaryGroupedBg),
     ) {
@@ -462,8 +461,10 @@ private fun SingleMediaPreview(url: String, modifier: Modifier = Modifier) {
                 .crossfade(100)
                 .build(),
             contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 500.dp),
         )
         if (isVideoUrl(url)) {
             Icon(
@@ -486,7 +487,7 @@ private fun MediaCarousel(urls: List<String>, modifier: Modifier = Modifier) {
             state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(4f / 3f)
+                .heightIn(max = 400.dp)
                 .clip(RoundedCornerShape(8.dp)),
         ) { page ->
             val url = urls[page]
@@ -503,7 +504,7 @@ private fun MediaCarousel(urls: List<String>, modifier: Modifier = Modifier) {
                         .crossfade(100)
                         .build(),
                     contentDescription = null,
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (isVideoUrl(url)) {
