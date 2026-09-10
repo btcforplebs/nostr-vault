@@ -487,7 +487,7 @@ struct VaultView: View {
                             }
                             .padding(.horizontal, 20)
                             .padding(.vertical, 14)
-                            .background(Color.platformConsoleHeaderBackground)
+                            .background(Color.platformControlBackground)
 
                             Divider()
 

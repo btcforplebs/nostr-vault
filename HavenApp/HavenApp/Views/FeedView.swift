@@ -863,7 +863,7 @@ struct FeedView: View {
                 .tracking(0.5)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.platformControlBackground)
+        .background(Color.platformWindowBackground)
     }
 
     private var loadingExtendedNetworkView: some View {
@@ -889,7 +889,7 @@ struct FeedView: View {
                 .tracking(0.5)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.platformControlBackground)
+        .background(Color.platformWindowBackground)
     }
 
     // MARK: - Empty State
@@ -965,7 +965,7 @@ struct FeedView: View {
         }
         .padding(max(16, min(48, 24))) // Adaptive padding
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.platformControlBackground)
+        .background(Color.platformWindowBackground)
     }
 
     private var emptyDiscoveryStateView: some View {
@@ -1039,7 +1039,7 @@ struct FeedView: View {
         }
         .padding(max(16, min(48, 24))) // Adaptive padding
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.platformControlBackground)
+        .background(Color.platformWindowBackground)
     }
 
     // MARK: - Popular Feed States
@@ -1067,7 +1067,7 @@ struct FeedView: View {
                 .tracking(0.5)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.platformControlBackground)
+        .background(Color.platformWindowBackground)
     }
 
     private var emptyPopularStateView: some View {
@@ -1120,7 +1120,7 @@ struct FeedView: View {
         }
         .padding(max(16, min(48, 24)))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.platformControlBackground)
+        .background(Color.platformWindowBackground)
     }
 
     // MARK: - Engagement Stats Badge
@@ -1904,7 +1904,7 @@ struct FeedView: View {
                         .foregroundColor(.secondary)
                         .padding(.vertical, 12)
                         .frame(maxWidth: .infinity)
-                        .background(Color.platformTertiaryGroupedBackground)
+                        .background(Color.platformControlBackground)
                         .cornerRadius(10)
                         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.platformSeparator, lineWidth: 1))
                         .padding(.horizontal, 16)
