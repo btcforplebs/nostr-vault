@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -115,18 +114,34 @@ fun RelayStatusHeader(
                     // The single most useful thing on a screen named after the
                     // relay: where it actually is. Was nowhere on this screen.
                     if (relayAddress != null) {
-                        Text(
-                            text = relayAddress,
-                            color = SecondaryText,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
+                        // The row, not the glyph run, is the tap target: a 12sp
+                        // line is ~16dp tall, a third of the 48dp minimum.
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier
+                                .heightIn(min = 48.dp)
                                 .clickable {
                                     clipboard.setText(AnnotatedString(relayAddress))
                                     Toast.makeText(context, "Address copied", Toast.LENGTH_SHORT).show()
                                 }
                                 .semantics { contentDescription = "Relay address: $relayAddress. Tap to copy." },
-                        )
+                        ) {
+                            Text(
+                                text = relayAddress,
+                                color = SecondaryText,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                            // Without a glyph, tap-to-copy is undiscoverable —
+                            // the text is styled exactly like the label above it.
+                            Icon(
+                                NostrVaultIcons.Copy,
+                                contentDescription = null,
+                                tint = SecondaryText,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
                     }
                 }
 
