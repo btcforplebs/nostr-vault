@@ -306,6 +306,26 @@ class FeedViewModel @Inject constructor(
         return pubkey == nostrService.activeHexPubkey
     }
 
+    // ── Moderation ─────────────────────────────────────────────
+    //
+    // Same paths NoteDetailScreen already uses. Blocking writes the npub to
+    // `blockedNpubs`, publishes the mute list, and drops the author's notes from
+    // the in-memory feed — which is why the feed visibly loses them without a
+    // reload. Block and mute are one action in this app; the menu says "Block"
+    // once rather than offering two labels for the same event.
+
+    fun blockUser(pubkey: String) {
+        viewModelScope.launch { feedService.blockUser(pubkey) }
+    }
+
+    /** NIP-56 report. Also blocks the author, matching NoteDetail and iOS. */
+    fun reportNote(noteId: String, pubkey: String, reason: String, description: String = "") {
+        viewModelScope.launch {
+            nostrService.reportEvent(noteId, pubkey, reason, description.ifBlank { null })
+            feedService.blockUser(pubkey)
+        }
+    }
+
     // Exposed for BroadcastSheet which needs direct service access
     val feedServiceRef: FeedService get() = feedService
     val nostrServiceRef: NostrService get() = nostrService

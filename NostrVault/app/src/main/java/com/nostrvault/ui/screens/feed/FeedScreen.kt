@@ -32,7 +32,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -44,6 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedProfile
@@ -61,6 +64,7 @@ import com.nostrvault.ui.components.CompactNoteCard
 import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.NoteCard
+import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.SkeletonFeed
@@ -117,6 +121,7 @@ fun FeedScreen(
     val parentIsNext by viewModel.parentIsNextNote.collectAsState()
     val listState = rememberLazyListState()
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
 
     // Inline expansion state for compact mode (iOS parity: tap expands inline first)
@@ -169,6 +174,8 @@ fun FeedScreen(
     // More menu / delete confirmation state
     var deleteNoteId by remember { mutableStateOf<String?>(null) }
     var moreMenuNoteId by remember { mutableStateOf<String?>(null) }
+    var reportNoteId by remember { mutableStateOf<String?>(null) }
+    var blockNoteId by remember { mutableStateOf<String?>(null) }
 
     // Emoji picker state
     var emojiPickerNoteId by remember { mutableStateOf<String?>(null) }
@@ -520,9 +527,12 @@ fun FeedScreen(
                                     context.startActivity(Intent.createChooser(intent, "Share Note"))
                                 },
                                 onBroadcast = { id -> broadcastNoteId = id },
-                                onMore = if (viewModel.isOwnNote(note.pubkey)) {
-                                    { id -> moreMenuNoteId = id }
-                                } else null,
+                                // Every note gets an overflow menu. Gating this on
+                                // your own notes meant other people's notes had no
+                                // menu at all, so reporting and blocking were only
+                                // reachable two navigations deep — from the note
+                                // screen, which you have to open the content to see.
+                                onMore = { id -> moreMenuNoteId = id },
                                 onLongPressLike = { id -> emojiPickerNoteId = id },
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             )
@@ -591,31 +601,107 @@ fun FeedScreen(
             title = { Text("Actions") },
             text = {
                 Column {
-                    // Delete (own notes only)
                     if (isOwn) {
-                        TextButton(
+                        FeedActionRow(
+                            icon = NostrVaultIcons.Delete,
+                            label = "Delete Post",
+                            tint = ErrorRed,
                             onClick = {
                                 deleteNoteId = moreMenuNoteId
                                 moreMenuNoteId = null
                             },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Icon(NostrVaultIcons.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Delete Post", color = ErrorRed)
-                            }
-                        }
+                        )
+                    } else {
+                        FeedActionRow(
+                            icon = NostrVaultIcons.Alert,
+                            label = "Report",
+                            tint = ErrorRed,
+                            onClick = {
+                                reportNoteId = moreMenuNoteId
+                                moreMenuNoteId = null
+                            },
+                        )
+                        FeedActionRow(
+                            icon = NostrVaultIcons.Blocked,
+                            label = "Block",
+                            tint = ErrorRed,
+                            onClick = {
+                                blockNoteId = moreMenuNoteId
+                                moreMenuNoteId = null
+                            },
+                        )
+                    }
+                    // Copy link is offered for any note, yours included.
+                    if (targetNote != null) {
+                        FeedActionRow(
+                            icon = NostrVaultIcons.Share,
+                            label = "Copy link",
+                            tint = PrimaryText,
+                            onClick = {
+                                val nevent = HavenBridge.encodeNevent(
+                                    targetNote.effectiveEventId,
+                                    targetNote.pubkey,
+                                    targetNote.kind,
+                                ) ?: HavenBridge.hexToNote1(targetNote.effectiveEventId)
+                                ?: targetNote.effectiveEventId
+                                clipboard.setText(
+                                    AnnotatedString("https://mynostrspace.com/thread/$nevent"),
+                                )
+                                Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                                moreMenuNoteId = null
+                            },
+                        )
                     }
                 }
             },
-            confirmButton = {
+            // Cancel is the dismiss action, so it belongs in the dismiss slot.
+            // In `confirmButton` it took the emphasised position, which reads as
+            // "this is the thing to do" on a menu whose real items are
+            // destructive.
+            confirmButton = {},
+            dismissButton = {
                 TextButton(onClick = { moreMenuNoteId = null }) {
                     Text("Cancel")
                 }
+            },
+        )
+    }
+
+    // Report dialog (NIP-56 reason picker). Reporting also blocks the author,
+    // matching NoteDetailScreen and iOS.
+    val reportTarget = reportNoteId?.let { id -> notes.find { it.id == id || it.effectiveEventId == id } }
+    if (reportTarget != null) {
+        UGCReportDialog(
+            onReport = { reason, description ->
+                viewModel.reportNote(
+                    reportTarget.effectiveEventId,
+                    reportTarget.pubkey,
+                    reason,
+                    description,
+                )
+                reportNoteId = null
+            },
+            onDismiss = { reportNoteId = null },
+        )
+    }
+
+    // Block confirmation
+    val blockTarget = blockNoteId?.let { id -> notes.find { it.id == id || it.effectiveEventId == id } }
+    if (blockTarget != null) {
+        AlertDialog(
+            onDismissRequest = { blockNoteId = null },
+            title = { Text("Block User") },
+            text = { Text("Block this user? Their posts will be hidden from your feed.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.blockUser(blockTarget.pubkey)
+                        blockNoteId = null
+                    },
+                ) { Text("Block", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { blockNoteId = null }) { Text("Cancel") }
             },
         )
     }
@@ -1350,4 +1436,30 @@ private fun List<String>.resolveAgainst(
     val resolved = HashMap<String, FeedProfile>(size)
     for (pubkey in this) profiles[pubkey]?.let { resolved[pubkey] = it }
     return resolved
+}
+
+/**
+ * One row of the feed's Actions dialog.
+ *
+ * Extracted because the dialog now has four of these and they were being
+ * hand-assembled — icon, spacer, coloured label — which is exactly how the
+ * variants drift apart.
+ */
+@Composable
+private fun FeedActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+) {
+    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(label, color = tint)
+        }
+    }
 }
