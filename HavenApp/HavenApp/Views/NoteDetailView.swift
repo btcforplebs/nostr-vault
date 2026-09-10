@@ -796,7 +796,9 @@ struct NoteDetailView: View {
                 )
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                #if os(iOS)
                 .transition(.opacity.animation(Motion.media))
+                #endif
             }
             .frame(height: 400)
             .padding(.top, 4)

@@ -779,13 +779,14 @@ struct FeedView: View {
                     .opacity(max(0.1, 1.0 - (abs(galleryDragOffset.height) / 500.0)))
                     .ignoresSafeArea()
                 
-                MediaPagerView(items: gridMediaSnapshot.map { $0.id }, selection: $selectedGridMediaNoteId) { noteId in
+                MediaPagerView(items: gridMediaSnapshot.map { $0.id }, selection: $selectedGridMediaNoteId, enableKeyboardNavigation: true) { noteId in
                     if let note = gridMediaSnapshot.first(where: { $0.id == noteId }), let firstMediaURL = note.mediaURLs.first {
                         FeedMediaViewer(url: firstMediaURL, enableDragDismiss: false, onDismiss: { isShowingGridMediaViewer = false })
+                            #if os(iOS)
                             .transition(.opacity.animation(Motion.media))
+                            #endif
                     }
                 }
-                .animation(Motion.pick, value: selectedGridMediaNoteId)
                 .offset(y: galleryDragOffset.height)
                 .scaleEffect(max(0.8, 1.0 - (abs(galleryDragOffset.height) / 1000.0)))
                 .gesture(
@@ -2984,7 +2985,9 @@ struct FeedNoteRow: View {
                 )
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                #if os(iOS)
                 .transition(.opacity.animation(Motion.media))
+                #endif
             }
             .frame(height: 400)
             // Add a subtle border or background if desired to distinguish bounds
