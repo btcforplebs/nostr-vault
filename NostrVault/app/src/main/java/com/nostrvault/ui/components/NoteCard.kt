@@ -1,5 +1,8 @@
 package com.nostrvault.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -16,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -57,7 +61,9 @@ fun NoteCard(
     onRepost: ((String) -> Unit)? = null,
     onZap: ((String) -> Unit)? = null,
     onReply: ((String) -> Unit)? = null,
+    onQuote: ((String) -> Unit)? = null,
     onShare: ((String) -> Unit)? = null,
+    onBroadcast: ((String) -> Unit)? = null,
     onMore: ((String) -> Unit)? = null,
     onLongPressLike: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -305,14 +311,15 @@ fun NoteCard(
             // Engagement bar
             EngagementBar(
                 noteId = note.id,
-                stats = stats,
                 isLiked = isLiked,
                 isZapped = isZapped,
                 onReply = onReply,
                 onRepost = onRepost,
+                onQuote = onQuote,
                 onLike = onLike,
                 onZap = onZap,
                 onShare = onShare,
+                onBroadcast = onBroadcast,
                 onLongPressLike = onLongPressLike,
                 modifier = Modifier.padding(start = 50.dp),
             )
@@ -320,50 +327,67 @@ fun NoteCard(
     }
 }
 
+/**
+ * Action button row. Mirrors the iOS feed note layout: capsule-background
+ * icon buttons, left-aligned with fixed spacing, icon-only (no counts), with a
+ * spring scale-up on active states.
+ * Order: Reply → Repost → Quote → Like → Zap → Share → Broadcast.
+ */
 @Composable
 private fun EngagementBar(
     noteId: String,
-    stats: NoteStats?,
     isLiked: Boolean,
     isZapped: Boolean,
     onReply: ((String) -> Unit)?,
     onRepost: ((String) -> Unit)?,
+    onQuote: ((String) -> Unit)?,
     onLike: ((String) -> Unit)?,
     onZap: ((String) -> Unit)?,
     onShare: ((String) -> Unit)?,
+    onBroadcast: ((String) -> Unit)?,
     onLongPressLike: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val colors = LocalNostrVaultColors.current
-
     Row(
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.fillMaxWidth(),
     ) {
         // Reply
         EngagementButton(
             icon = NostrVaultIcons.Reply,
-            count = null,
             isActive = false,
-            activeColor = colors.primary,
+            activeColor = SecondaryText,
+            contentDescription = "Reply",
             onClick = { onReply?.invoke(noteId) },
         )
 
         // Repost
         EngagementButton(
             icon = NostrVaultIcons.Repost,
-            count = stats?.reposts?.takeIf { it > 0 },
             isActive = false,
             activeColor = RepostGreen,
+            contentDescription = "Repost",
             onClick = { onRepost?.invoke(noteId) },
         )
+
+        // Quote
+        if (onQuote != null) {
+            EngagementButton(
+                icon = NostrVaultIcons.Quote,
+                isActive = false,
+                activeColor = SecondaryText,
+                contentDescription = "Quote",
+                onClick = { onQuote.invoke(noteId) },
+            )
+        }
 
         // Like (with long-press for emoji picker)
         EngagementButton(
             icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
-            count = stats?.reactions?.takeIf { it > 0 },
             isActive = isLiked,
             activeColor = LikeRed,
+            contentDescription = if (isLiked) "Unlike" else "Like",
             onClick = { onLike?.invoke(noteId) },
             onLongClick = if (onLongPressLike != null) {
                 { onLongPressLike.invoke(noteId) }
@@ -373,20 +397,33 @@ private fun EngagementBar(
         // Zap
         EngagementButton(
             icon = NostrVaultIcons.Zap,
-            count = stats?.zaps?.takeIf { it > 0 },
             isActive = isZapped,
             activeColor = ZapOrange,
+            contentDescription = if (isZapped) "Zapped" else "Zap",
             onClick = { onZap?.invoke(noteId) },
         )
 
         // Share
         EngagementButton(
             icon = NostrVaultIcons.Share,
-            count = null,
             isActive = false,
-            activeColor = colors.primary,
+            activeColor = SecondaryText,
+            contentDescription = "Share",
             onClick = { onShare?.invoke(noteId) },
         )
+
+        // Broadcast
+        if (onBroadcast != null) {
+            EngagementButton(
+                icon = NostrVaultIcons.Relay,
+                isActive = false,
+                activeColor = SecondaryText,
+                contentDescription = "Broadcast",
+                onClick = { onBroadcast.invoke(noteId) },
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
     }
 }
 
@@ -394,34 +431,46 @@ private fun EngagementBar(
 @Composable
 private fun EngagementButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    count: Int?,
     isActive: Boolean,
     activeColor: androidx.compose.ui.graphics.Color,
+    contentDescription: String?,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = if (onLongClick != null) {
-            Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
-        } else {
-            Modifier.clickable(onClick = onClick)
-        },
+    val tint = if (isActive) activeColor else SecondaryText
+    val background = if (isActive) {
+        activeColor.copy(alpha = 0.18f)
+    } else {
+        SecondaryText.copy(alpha = 0.10f)
+    }
+    // Spring scale-up on active, mirroring the iOS .spring(response: 0.3, dampingFraction: 0.45)
+    val scale by animateFloatAsState(
+        targetValue = if (isActive) 1.2f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMediumLow),
+        label = "engagementScale",
+    )
+
+    val clickModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .scale(scale)
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(background)
+            .then(clickModifier),
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = null,
-            tint = if (isActive) activeColor else SecondaryText,
-            modifier = Modifier.size(18.dp),
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(16.dp),
         )
-        if (count != null) {
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = formatCount(count),
-                color = if (isActive) activeColor else SecondaryText,
-                fontSize = 13.sp,
-            )
-        }
     }
 }
 
@@ -590,32 +639,29 @@ private fun ParentNotePreview(
 
         // Right column: header + content + media
         Column(modifier = Modifier.weight(1f)) {
-            // Header: name + NIP-05 badge + timestamp
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 4.dp),
-            ) {
-                Text(
-                    text = parentProfile?.bestName ?: parentNote.pubkey.take(8) + "...",
-                    color = Color(0xFFD9D9D9), // iOS: rgb(0.85, 0.85, 0.85)
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-
-                if (!parentProfile?.nip05.isNullOrBlank()) {
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        imageVector = NostrVaultIcons.Verified,
-                        contentDescription = "Verified",
-                        tint = Color(0xFF33CC99),
-                        modifier = Modifier.size(12.dp),
+            // Header: name + NIP-05 badge, timestamp on line below
+            Column(modifier = Modifier.padding(top = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = parentProfile?.bestName ?: parentNote.pubkey.take(8) + "...",
+                        color = Color(0xFFD9D9D9), // iOS: rgb(0.85, 0.85, 0.85)
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
-                }
 
-                Spacer(Modifier.weight(1f))
+                    if (!parentProfile?.nip05.isNullOrBlank()) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = NostrVaultIcons.Verified,
+                            contentDescription = "Verified",
+                            tint = Color(0xFF33CC99),
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                }
 
                 Text(
                     text = formatTimestamp(parentNote.createdAt.time / 1000),
