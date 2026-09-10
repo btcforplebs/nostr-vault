@@ -1,5 +1,8 @@
 package com.nostrvault.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -16,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -24,12 +28,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.NoteStats
+import com.nostrvault.service.BlossomService
+import com.nostrvault.service.MediaCacheService
 import com.nostrvault.ui.theme.*
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 /**
  * Reusable note card used across Feed, Profile, Search, and NoteDetail screens.
@@ -57,7 +75,9 @@ fun NoteCard(
     onRepost: ((String) -> Unit)? = null,
     onZap: ((String) -> Unit)? = null,
     onReply: ((String) -> Unit)? = null,
+    onQuote: ((String) -> Unit)? = null,
     onShare: ((String) -> Unit)? = null,
+    onBroadcast: ((String) -> Unit)? = null,
     onMore: ((String) -> Unit)? = null,
     onLongPressLike: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -107,17 +127,25 @@ fun NoteCard(
             if (isFocused) 2.dp else if (isOled) 1.dp else 0.8.dp,
             if (isFocused) colors.primary else colors.primary.copy(alpha = if (isOled) 0.18f else 0.12f),
         ),
-        shadowElevation = if (isFocused) 4.dp else 0.dp,
+        shadowElevation = if (isFocused) 8.dp else 0.dp,
         modifier = modifier
             .fillMaxWidth()
             .then(connectorModifier)
             .clickable { onNoteClick(note.id) },
     ) {
+        // Subtle tint overlay matching iOS havenPurple.opacity(0.015) on focused notes
+        Box(
+            modifier = if (isFocused) {
+                Modifier
+                    .fillMaxWidth()
+                    .background(colors.primary.copy(alpha = 0.04f))
+            } else Modifier.fillMaxWidth(),
+        ) {
         Column(
             modifier = Modifier.padding(14.dp),
         ) {
             // Parent note preview (inside card, matching iOS)
-            val showParentPreview = note.isReply && !parentIsNext && note.parentEventId != null
+            val showParentPreview = showReplyContext && note.isReply && !parentIsNext && note.parentEventId != null
             if (showParentPreview) {
                 if (parentNote != null) {
                     ParentNotePreview(
@@ -305,65 +333,84 @@ fun NoteCard(
             // Engagement bar
             EngagementBar(
                 noteId = note.id,
-                stats = stats,
                 isLiked = isLiked,
                 isZapped = isZapped,
                 onReply = onReply,
                 onRepost = onRepost,
+                onQuote = onQuote,
                 onLike = onLike,
                 onZap = onZap,
                 onShare = onShare,
+                onBroadcast = onBroadcast,
                 onLongPressLike = onLongPressLike,
                 modifier = Modifier.padding(start = 50.dp),
             )
         }
+        } // Box (focused tint overlay)
     }
 }
 
+/**
+ * Action button row. Mirrors the iOS feed note layout: capsule-background
+ * icon buttons, left-aligned with fixed spacing, icon-only (no counts), with a
+ * spring scale-up on active states.
+ * Order: Reply → Repost → Quote → Like → Zap → Share → Broadcast.
+ */
 @Composable
 private fun EngagementBar(
     noteId: String,
-    stats: NoteStats?,
     isLiked: Boolean,
     isZapped: Boolean,
     onReply: ((String) -> Unit)?,
     onRepost: ((String) -> Unit)?,
+    onQuote: ((String) -> Unit)?,
     onLike: ((String) -> Unit)?,
     onZap: ((String) -> Unit)?,
     onShare: ((String) -> Unit)?,
+    onBroadcast: ((String) -> Unit)?,
     onLongPressLike: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val colors = LocalNostrVaultColors.current
-
     Row(
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.fillMaxWidth(),
     ) {
         // Reply
         EngagementButton(
             icon = NostrVaultIcons.Reply,
-            count = null,
             isActive = false,
-            activeColor = colors.primary,
+            activeColor = SecondaryText,
+            contentDescription = "Reply",
             onClick = { onReply?.invoke(noteId) },
         )
 
         // Repost
         EngagementButton(
             icon = NostrVaultIcons.Repost,
-            count = stats?.reposts?.takeIf { it > 0 },
             isActive = false,
             activeColor = RepostGreen,
+            contentDescription = "Repost",
             onClick = { onRepost?.invoke(noteId) },
         )
+
+        // Quote
+        if (onQuote != null) {
+            EngagementButton(
+                icon = NostrVaultIcons.Quote,
+                isActive = false,
+                activeColor = SecondaryText,
+                contentDescription = "Quote",
+                onClick = { onQuote.invoke(noteId) },
+            )
+        }
 
         // Like (with long-press for emoji picker)
         EngagementButton(
             icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
-            count = stats?.reactions?.takeIf { it > 0 },
             isActive = isLiked,
             activeColor = LikeRed,
+            contentDescription = if (isLiked) "Unlike" else "Like",
             onClick = { onLike?.invoke(noteId) },
             onLongClick = if (onLongPressLike != null) {
                 { onLongPressLike.invoke(noteId) }
@@ -373,55 +420,80 @@ private fun EngagementBar(
         // Zap
         EngagementButton(
             icon = NostrVaultIcons.Zap,
-            count = stats?.zaps?.takeIf { it > 0 },
             isActive = isZapped,
             activeColor = ZapOrange,
+            contentDescription = if (isZapped) "Zapped" else "Zap",
             onClick = { onZap?.invoke(noteId) },
         )
 
         // Share
         EngagementButton(
             icon = NostrVaultIcons.Share,
-            count = null,
             isActive = false,
-            activeColor = colors.primary,
+            activeColor = SecondaryText,
+            contentDescription = "Share",
             onClick = { onShare?.invoke(noteId) },
         )
+
+        // Broadcast
+        if (onBroadcast != null) {
+            EngagementButton(
+                icon = NostrVaultIcons.Relay,
+                isActive = false,
+                activeColor = SecondaryText,
+                contentDescription = "Broadcast",
+                onClick = { onBroadcast.invoke(noteId) },
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun EngagementButton(
+internal fun EngagementButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    count: Int?,
     isActive: Boolean,
     activeColor: androidx.compose.ui.graphics.Color,
+    contentDescription: String?,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = if (onLongClick != null) {
-            Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
-        } else {
-            Modifier.clickable(onClick = onClick)
-        },
+    val tint = if (isActive) activeColor else SecondaryText
+    val background = if (isActive) {
+        activeColor.copy(alpha = 0.18f)
+    } else {
+        SecondaryText.copy(alpha = 0.10f)
+    }
+    // Spring scale-up on active, mirroring the iOS .spring(response: 0.3, dampingFraction: 0.45)
+    val scale by animateFloatAsState(
+        targetValue = if (isActive) 1.2f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMediumLow),
+        label = "engagementScale",
+    )
+
+    val clickModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .scale(scale)
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(background)
+            .then(clickModifier),
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = null,
-            tint = if (isActive) activeColor else SecondaryText,
-            modifier = Modifier.size(18.dp),
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(16.dp),
         )
-        if (count != null) {
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = formatCount(count),
-                color = if (isActive) activeColor else SecondaryText,
-                fontSize = 13.sp,
-            )
-        }
     }
 }
 
@@ -437,15 +509,204 @@ fun MediaPreviewRow(
     urls: List<String>,
     modifier: Modifier = Modifier,
 ) {
+    var viewingUrl by remember { mutableStateOf<String?>(null) }
+
     if (urls.size == 1) {
-        SingleMediaPreview(url = urls.first(), modifier = modifier)
+        SingleMediaPreview(
+            url = urls.first(),
+            onMediaClick = { viewingUrl = it },
+            modifier = modifier,
+        )
     } else {
-        MediaCarousel(urls = urls, modifier = modifier)
+        MediaCarousel(
+            urls = urls,
+            onMediaClick = { viewingUrl = it },
+            modifier = modifier,
+        )
+    }
+
+    viewingUrl?.let { url ->
+        FullScreenMediaDialog(
+            url = url,
+            onDismiss = { viewingUrl = null },
+        )
     }
 }
 
 @Composable
-private fun SingleMediaPreview(url: String, modifier: Modifier = Modifier) {
+private fun FullScreenMediaDialog(
+    url: String,
+    onDismiss: () -> Unit,
+    viewModel: FeedMediaMirrorViewModel = hiltViewModel(),
+) {
+    val mirrorState by viewModel.state.collectAsState()
+
+    // Re-evaluate the starting state each time a new URL is opened in the viewer
+    // (the ViewModel is shared across the feed, so only one viewer is ever active).
+    LaunchedEffect(url) { viewModel.onOpen(url) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+        ) {
+            if (isVideoUrl(url)) {
+                VideoPlayer(uri = url)
+            } else {
+                ZoomableImage(
+                    model = url,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(8.dp)
+                    .size(40.dp)
+                    .background(Color.Black.copy(alpha = 0.4f), CircleShape),
+            ) {
+                Icon(
+                    imageVector = NostrVaultIcons.Dismiss,
+                    contentDescription = "Close",
+                    tint = Color.White,
+                )
+            }
+
+            if (viewModel.canMirror) {
+                MirrorToBlossomPill(
+                    state = mirrorState,
+                    onMirror = { viewModel.mirror(url) },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(8.dp),
+                )
+            }
+        }
+    }
+}
+
+/** Capsule button / status indicator that backs up the viewed media to the local Blossom store. */
+@Composable
+private fun MirrorToBlossomPill(
+    state: FeedMediaMirrorViewModel.MirrorState,
+    onMirror: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val bg = when (state) {
+        FeedMediaMirrorViewModel.MirrorState.Mirrored -> Color(0xFF33CC99).copy(alpha = 0.85f)
+        is FeedMediaMirrorViewModel.MirrorState.Failed -> Color(0xFFE53935).copy(alpha = 0.85f)
+        else -> Color.Black.copy(alpha = 0.6f)
+    }
+
+    // Tapping does nothing while in progress or already mirrored; Idle/Failed trigger a (re)mirror.
+    val clickable = state is FeedMediaMirrorViewModel.MirrorState.Idle ||
+        state is FeedMediaMirrorViewModel.MirrorState.Failed
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(CircleShape)
+            .background(bg)
+            .then(if (clickable) Modifier.clickable(onClick = onMirror) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        when (state) {
+            FeedMediaMirrorViewModel.MirrorState.Mirroring -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("Mirroring…", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+            FeedMediaMirrorViewModel.MirrorState.Mirrored -> {
+                Icon(NostrVaultIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Mirrored to Blossom", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+            is FeedMediaMirrorViewModel.MirrorState.Failed -> {
+                Icon(NostrVaultIcons.Dismiss, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Mirror failed — retry", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+            FeedMediaMirrorViewModel.MirrorState.Idle -> {
+                Icon(NostrVaultIcons.Backup, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Mirror to Blossom", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@HiltViewModel
+class FeedMediaMirrorViewModel @Inject constructor(
+    private val blossomService: BlossomService,
+    private val mediaCacheService: MediaCacheService,
+) : ViewModel() {
+
+    sealed interface MirrorState {
+        data object Idle : MirrorState
+        data object Mirroring : MirrorState
+        data object Mirrored : MirrorState
+        data class Failed(val message: String) : MirrorState
+    }
+
+    private val _state = MutableStateFlow<MirrorState>(MirrorState.Idle)
+    val state = _state.asStateFlow()
+
+    /** False when there's no local relay to back media up to — hides the button entirely. */
+    val canMirror: Boolean get() = blossomService.localBlossomURL() != null
+
+    /**
+     * Called when a media URL is opened in the viewer. If the URL is hash-based and
+     * the blob is already in the local Blossom store, start in the "Mirrored" state;
+     * otherwise offer the mirror action. Mirrors iOS FeedMediaViewer.updateMirrorStatus().
+     */
+    fun onOpen(url: String) {
+        val hash = extractSha256(url)
+        _state.value = if (hash != null && mediaCacheService.isInLocalBlossom(hash)) {
+            MirrorState.Mirrored
+        } else {
+            MirrorState.Idle
+        }
+    }
+
+    fun mirror(url: String) {
+        if (_state.value is MirrorState.Mirroring) return
+        viewModelScope.launch {
+            _state.value = MirrorState.Mirroring
+            val sha = withContext(Dispatchers.IO) { blossomService.mirrorUrlToLocal(url) }
+            _state.value = if (sha != null) MirrorState.Mirrored else MirrorState.Failed("Mirror failed")
+        }
+    }
+
+    /** Extract a 64-hex sha256 from a Blossom-style URL, or null. Mirrors iOS extractSHA256FromURL(). */
+    private fun extractSha256(url: String): String? {
+        val last = url.substringAfterLast('/').substringBefore('?').substringBefore('#')
+        val bare = last.substringBeforeLast('.')
+        if (bare.length == 64 && bare.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+            return bare.lowercase()
+        }
+        return Regex("[a-fA-F0-9]{64}").find(url)?.value?.lowercase()
+    }
+}
+
+@Composable
+private fun SingleMediaPreview(
+    url: String,
+    onMediaClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     Box(
         contentAlignment = Alignment.Center,
@@ -453,7 +714,8 @@ private fun SingleMediaPreview(url: String, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
             .clip(RoundedCornerShape(8.dp))
-            .background(TertiaryGroupedBg),
+            .background(TertiaryGroupedBg)
+            .clickable { onMediaClick(url) },
     ) {
         AsyncImage(
             model = ImageRequest.Builder(context)
@@ -477,7 +739,11 @@ private fun SingleMediaPreview(url: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun MediaCarousel(urls: List<String>, modifier: Modifier = Modifier) {
+private fun MediaCarousel(
+    urls: List<String>,
+    onMediaClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val pagerState = rememberPagerState(pageCount = { urls.size })
 
@@ -494,7 +760,8 @@ private fun MediaCarousel(urls: List<String>, modifier: Modifier = Modifier) {
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(TertiaryGroupedBg),
+                    .background(TertiaryGroupedBg)
+                    .clickable { onMediaClick(url) },
             ) {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
@@ -590,32 +857,29 @@ private fun ParentNotePreview(
 
         // Right column: header + content + media
         Column(modifier = Modifier.weight(1f)) {
-            // Header: name + NIP-05 badge + timestamp
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 4.dp),
-            ) {
-                Text(
-                    text = parentProfile?.bestName ?: parentNote.pubkey.take(8) + "...",
-                    color = Color(0xFFD9D9D9), // iOS: rgb(0.85, 0.85, 0.85)
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-
-                if (!parentProfile?.nip05.isNullOrBlank()) {
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        imageVector = NostrVaultIcons.Verified,
-                        contentDescription = "Verified",
-                        tint = Color(0xFF33CC99),
-                        modifier = Modifier.size(12.dp),
+            // Header: name + NIP-05 badge, timestamp on line below
+            Column(modifier = Modifier.padding(top = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = parentProfile?.bestName ?: parentNote.pubkey.take(8) + "...",
+                        color = Color(0xFFD9D9D9), // iOS: rgb(0.85, 0.85, 0.85)
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
-                }
 
-                Spacer(Modifier.weight(1f))
+                    if (!parentProfile?.nip05.isNullOrBlank()) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = NostrVaultIcons.Verified,
+                            contentDescription = "Verified",
+                            tint = Color(0xFF33CC99),
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                }
 
                 Text(
                     text = formatTimestamp(parentNote.createdAt.time / 1000),
