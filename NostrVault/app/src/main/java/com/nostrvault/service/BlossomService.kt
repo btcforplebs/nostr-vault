@@ -14,7 +14,6 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.security.cert.X509Certificate
-import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -39,16 +38,12 @@ class BlossomService @Inject constructor(
         private const val TAG = "BlossomService"
         private const val AUTH_KIND = 24242
         private const val MAX_UPLOAD_RETRIES = 3
-        private const val MIRROR_CONCURRENCY = 4
 
         /** Hard ceiling on any single downloaded blob held in memory. */
         private const val MAX_BLOB_BYTES = 50L * 1024 * 1024 // 50 MB
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
-    private val mirrorSemaphore = Semaphore(MIRROR_CONCURRENCY)
-
     private val localClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
@@ -340,49 +335,34 @@ class BlossomService @Inject constructor(
         onProgress: ((Float) -> Unit)? = null,
         onLogMessage: ((String) -> Unit)? = null,
     ) = withContext(Dispatchers.IO) {
-        val mirrors = configStore.config.value.activeBlossomMirrors
+        // Use only explicitly configured external mirrors, not activeBlossomMirrors.
+        // activeBlossomMirrors prepends the Haven relay (which is our own server);
+        // pulling from our own relay to itself doesn't make sense and causes timeouts.
+        val mirrors = configStore.config.value.blossomMirrors
         val ownerPubkey = nostrService.ownerHexPubkey
 
         val allHashes = mutableSetOf<String>()
 
-        // Fetch blob lists from each mirror
         for (mirror in mirrors) {
-            try {
-                val request = Request.Builder()
-                    .url("$mirror/list/$ownerPubkey")
-                    .get()
-                    .build()
-
-                val response = remoteClient.newCall(request).execute()
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: continue
-                    val blobs = json.decodeFromString<List<BlobDescriptor>>(body)
-                    blobs.mapNotNull { it.sha256 }.forEach { allHashes.add(it) }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Blob list fetch from $mirror failed: ${e.message}")
-            }
+            val blobs = fetchBlobList(mirror, ownerPubkey)
+            blobs.mapNotNull { it.sha256 }.forEach { allHashes.add(it) }
+            onLogMessage?.invoke("Listed ${blobs.size} blobs from $mirror")
         }
 
         // Filter to hashes not in local Blossom
         val missing = allHashes.filter { !mediaCacheService.isInLocalBlossom(it) }
-        onLogMessage?.invoke("Found ${missing.size} blobs to mirror")
+        onLogMessage?.invoke("Found ${missing.size} blobs to mirror (${allHashes.size} total on mirrors)")
 
-        var completed = 0
-        for (hash in missing) {
-            mirrorSemaphore.acquire()
-            launch {
-                try {
-                    val data = downloadFromMirrors(hash)
-                    if (data != null) {
-                        saveToLocalRelay(data, hash, "application/octet-stream")
-                    }
-                } finally {
-                    mirrorSemaphore.release()
-                    completed++
-                    onProgress?.invoke(completed.toFloat() / missing.size)
-                }
+        val total = missing.size
+        for ((index, hash) in missing.withIndex()) {
+            val data = downloadFromMirrors(hash)
+            if (data != null) {
+                saveToLocalRelay(data, hash, "application/octet-stream")
             }
+            val done = index + 1
+            onProgress?.invoke(done.toFloat() / total)
+            if (done % 10 == 0) onLogMessage?.invoke("Mirrored $done / $total")
+            delay(150) // pace requests so the relay isn't overwhelmed
         }
     }
 
@@ -471,6 +451,70 @@ class BlossomService @Inject constructor(
     }
 
     // ══════════════════════════════════════════════════════════════════
+    // Blob list
+    // ══════════════════════════════════════════════════════════════════
+
+    suspend fun fetchBlobList(serverUrl: String, pubkey: String): List<BlobDescriptor> =
+        withContext(Dispatchers.IO) {
+            try {
+                val authHeader = createListAuthHeader()
+                val clientBuilder = OkHttpClient.Builder()
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(15, TimeUnit.SECONDS)
+                if (isLocalhost(serverUrl)) clientBuilder.applyLocalhostTrust()
+                val client = clientBuilder.build()
+
+                val reqBuilder = Request.Builder()
+                    .url("$serverUrl/list/$pubkey")
+                    .get()
+                if (authHeader.isNotEmpty()) reqBuilder.addHeader("Authorization", "Nostr $authHeader")
+                val response = client.newCall(reqBuilder.build()).execute()
+
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "fetchBlobList $serverUrl returned HTTP ${response.code}")
+                    return@withContext emptyList()
+                }
+                val body = response.body?.string() ?: return@withContext emptyList()
+                json.decodeFromString<List<BlobDescriptor>>(body)
+            } catch (e: Exception) {
+                Log.w(TAG, "fetchBlobList $serverUrl failed: ${e.message}")
+                emptyList()
+            }
+        }
+
+    private fun createListAuthHeader(): String {
+        val expiration = (System.currentTimeMillis() / 1000) + 3600
+        val tags = listOf(
+            listOf("t", "list"),
+            listOf("expiration", expiration.toString()),
+        )
+        val event = nostrService.signEvent(
+            kind = AUTH_KIND,
+            content = "List blobs",
+            tags = tags,
+            forceOwner = true,
+        ) ?: return ""
+
+        return buildEventBase64(event)
+    }
+
+    private fun buildEventBase64(event: NostrEvent): String {
+        val eventJson = buildString {
+            val tagsJson = event.tags.joinToString(",") { tag ->
+                "[${tag.joinToString(",") { "\"$it\"" }}]"
+            }
+            append("{\"id\":\"${event.id}\",")
+            append("\"pubkey\":\"${event.pubkey}\",")
+            append("\"created_at\":${event.createdAt},")
+            append("\"kind\":${event.kind},")
+            append("\"tags\":[$tagsJson],")
+            append("\"content\":\"${event.content}\",")
+            append("\"sig\":\"${event.sig}\"}")
+        }
+        return Base64.encodeToString(eventJson.toByteArray(), Base64.NO_WRAP)
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     // Auth header generation
     // ══════════════════════════════════════════════════════════════════
 
@@ -497,20 +541,7 @@ class BlossomService @Inject constructor(
             forceOwner = true,
         ) ?: return ""
 
-        val eventJson = buildString {
-            val tagsJson = event.tags.joinToString(",") { tag ->
-                "[${tag.joinToString(",") { "\"$it\"" }}]"
-            }
-            append("{\"id\":\"${event.id}\",")
-            append("\"pubkey\":\"${event.pubkey}\",")
-            append("\"created_at\":${event.createdAt},")
-            append("\"kind\":${event.kind},")
-            append("\"tags\":[$tagsJson],")
-            append("\"content\":\"${event.content}\",")
-            append("\"sig\":\"${event.sig}\"}")
-        }
-
-        return Base64.encodeToString(eventJson.toByteArray(), Base64.NO_WRAP)
+        return buildEventBase64(event)
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -520,8 +551,9 @@ class BlossomService @Inject constructor(
     fun localBlossomURL(): String? {
         val config = configStore.config.value
         val port = config.relayPort ?: return null
-        // Android uses https://localhost:port (with self-signed cert trust)
-        return "https://localhost:$port"
+        // Android relay runs without TLS (HAVEN_ENABLE_TLS=0), use plain http.
+        // iOS/macOS use https because App Transport Security requires it there.
+        return "http://127.0.0.1:$port"
     }
 
     private fun isLocalhost(url: String): Boolean {
