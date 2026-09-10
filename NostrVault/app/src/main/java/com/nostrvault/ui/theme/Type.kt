@@ -7,7 +7,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * Port of Font.appSystem() scaling system from Theming.swift.
+ * The app's type ramp, a port of the semantic styles in Theming.swift.
+ *
+ * Unscaled, deliberately. The user's Text Size preference is applied once, by
+ * [NostrVaultTheme] overriding the ambient Density's `fontScale`, which reaches
+ * every `sp` in the tree including these. A `scale` parameter here would scale a
+ * second time.
+ *
+ * Installed as `MaterialTheme(typography = …)` but not yet read by call sites:
+ * `MaterialTheme.typography` appears nowhere in the `ui/` tree and ~560 places
+ * still pass `fontSize` literals. Migrating them onto these slots is real work
+ * and a visible restyle — several sizes in use (14, 10, 18) have no slot — so it
+ * is a separate task from making the setting work.
  *
  * Maps iOS semantic font styles to Material 3 Typography slots:
  *   displayLarge  = appLargeTitle (34sp)
@@ -22,68 +33,68 @@ import androidx.compose.ui.unit.sp
  *   bodySmall     = appCaption    (12sp)
  *   labelSmall    = appCaption2   (11sp)
  */
-fun nostrVaultTypography(scale: Float = 1.0f): Typography = Typography(
+fun nostrVaultTypography(): Typography = Typography(
     displayLarge = TextStyle(
-        fontSize = (34 * scale).sp,
+        fontSize = 34.sp,
         fontWeight = FontWeight.Normal,
-        lineHeight = (41 * scale).sp,
+        lineHeight = 41.sp,
     ),
     headlineLarge = TextStyle(
-        fontSize = (28 * scale).sp,
+        fontSize = 28.sp,
         fontWeight = FontWeight.Bold,
-        lineHeight = (34 * scale).sp,
+        lineHeight = 34.sp,
     ),
     headlineMedium = TextStyle(
-        fontSize = (22 * scale).sp,
+        fontSize = 22.sp,
         fontWeight = FontWeight.Bold,
-        lineHeight = (28 * scale).sp,
+        lineHeight = 28.sp,
     ),
     headlineSmall = TextStyle(
-        fontSize = (20 * scale).sp,
+        fontSize = 20.sp,
         fontWeight = FontWeight.Normal,
-        lineHeight = (25 * scale).sp,
+        lineHeight = 25.sp,
     ),
     titleLarge = TextStyle(
-        fontSize = (17 * scale).sp,
+        fontSize = 17.sp,
         fontWeight = FontWeight.SemiBold,
-        lineHeight = (22 * scale).sp,
+        lineHeight = 22.sp,
     ),
     titleMedium = TextStyle(
-        fontSize = (17 * scale).sp,
+        fontSize = 17.sp,
         fontWeight = FontWeight.Normal,
-        lineHeight = (22 * scale).sp,
+        lineHeight = 22.sp,
     ),
     titleSmall = TextStyle(
-        fontSize = (16 * scale).sp,
+        fontSize = 16.sp,
         fontWeight = FontWeight.Normal,
-        lineHeight = (21 * scale).sp,
+        lineHeight = 21.sp,
     ),
     bodyLarge = TextStyle(
-        fontSize = (15 * scale).sp,
+        fontSize = 15.sp,
         fontWeight = FontWeight.Normal,
-        lineHeight = (20 * scale).sp,
+        lineHeight = 20.sp,
     ),
     bodyMedium = TextStyle(
-        fontSize = (13 * scale).sp,
+        fontSize = 13.sp,
         fontWeight = FontWeight.Normal,
-        lineHeight = (18 * scale).sp,
+        lineHeight = 18.sp,
     ),
     bodySmall = TextStyle(
-        fontSize = (12 * scale).sp,
+        fontSize = 12.sp,
         fontWeight = FontWeight.Normal,
-        lineHeight = (16 * scale).sp,
+        lineHeight = 16.sp,
     ),
     labelSmall = TextStyle(
-        fontSize = (11 * scale).sp,
+        fontSize = 11.sp,
         fontWeight = FontWeight.Normal,
-        lineHeight = (13 * scale).sp,
+        lineHeight = 13.sp,
     ),
 )
 
 /** Monospace variant for stats, amounts, hex strings, and code blocks. */
-fun monoTextStyle(scale: Float = 1.0f): TextStyle = TextStyle(
+fun monoTextStyle(): TextStyle = TextStyle(
     fontFamily = FontFamily.Monospace,
-    fontSize = (14 * scale).sp,
+    fontSize = 14.sp,
     fontWeight = FontWeight.Normal,
-    lineHeight = (18 * scale).sp,
+    lineHeight = 18.sp,
 )
