@@ -22,10 +22,12 @@ struct ProfileUpdateSignal: Equatable {
     var pubkeys: Set<String> = []
 }
 
-/// Public NIP-50 search-capable relays queried for global search.
+/// Default public NIP-50 search-capable relays. Used as the fallback when the
+/// user has not configured their own search relays (`HavenConfig.searchRelays`).
 let nip50SearchRelays = [
     "wss://relay.nostr.band",
-    "wss://relay.noswhere.com"
+    "wss://relay.noswhere.com",
+    "wss://search.nos.today"
 ]
 
 // MARK: - Global Search Collector

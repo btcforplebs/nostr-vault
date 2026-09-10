@@ -38,10 +38,12 @@ data class ProfileUpdateSignal(
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Public NIP-50 search-capable relays. */
+/** Default public NIP-50 search-capable relays. Used as the fallback when the
+ *  user has not configured their own search relays (config.searchRelays). */
 val NIP50_SEARCH_RELAYS = listOf(
     "wss://relay.nostr.band",
     "wss://relay.noswhere.com",
+    "wss://search.nos.today",
 )
 
 // ---------------------------------------------------------------------------

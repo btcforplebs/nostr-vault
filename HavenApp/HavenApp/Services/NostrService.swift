@@ -388,30 +388,51 @@ class NostrService: ObservableObject {
 
     private var globalSearchClients: [WebSocketClient] = []
     private var globalSearchCancellables = Set<AnyCancellable>()
+    private var globalSearchStreamTimer: DispatchSourceTimer?
+    private let globalSearchTimeout: TimeInterval = 8.0
+    private let globalSearchStreamInterval: TimeInterval = 0.3
 
-    /// NIP-50 global search across public search relays. Connects to external
-    /// search-capable relays, sends a REQ with a `search` filter for notes
-    /// (kind 1) and profiles (kind 0), collects results until a timeout, then
-    /// returns parsed FeedNotes/FeedProfiles on the main thread. Any prior
-    /// in-flight global search is cancelled first.
+    /// Backward-compatible one-shot search: delivers the final result set once.
+    /// Used by the compose-mention profile lookup.
     func globalSearch(query: String, completion: @escaping (GlobalSearchResults) -> Void) {
+        globalSearch(query: query, onUpdate: nil) { results, _ in completion(results) }
+    }
+
+    /// NIP-50 global search across the user's configured search relays
+    /// (`HavenConfig.activeSearchRelays`, falling back to `nip50SearchRelays`).
+    ///
+    /// `onUpdate` (optional) receives an incremental snapshot as results stream
+    /// in, so the UI can render matches before the overall timeout instead of
+    /// waiting for one final dump. `onComplete` fires exactly once at the end with
+    /// the final snapshot and an `error` flag — `true` only when no relay could be
+    /// reached and nothing was collected, so the UI can show a "couldn't reach
+    /// search relays" state. Any prior in-flight global search is cancelled first.
+    func globalSearch(
+        query: String,
+        onUpdate: ((GlobalSearchResults) -> Void)?,
+        onComplete: @escaping (GlobalSearchResults, Bool) -> Void
+    ) {
         cancelGlobalSearch()
 
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {
-            completion(GlobalSearchResults())
+            onComplete(GlobalSearchResults(), false)
             return
         }
 
-        let relays = nip50SearchRelays.compactMap { URL(string: $0) }
+        let relayStrings = ConfigService.shared.config.activeSearchRelays
+        let relays = relayStrings.compactMap { URL(string: $0) }
         guard !relays.isEmpty else {
-            completion(GlobalSearchResults())
+            onComplete(GlobalSearchResults(), true)
             return
         }
 
         let collector = GlobalSearchCollector()
         let subId = "gsearch-\(UUID().uuidString.prefix(8))"
         var didFinish = false
+        // Updated only on the main queue (connectionState sink + finish), so no lock needed.
+        var anyConnected = false
+        var lastCount = -1
 
         let finish: () -> Void = { [weak self] in
             guard let self = self else { return }
@@ -419,13 +440,12 @@ class NostrService: ObservableObject {
             didFinish = true
             let results = collector.snapshot()
             self.cancelGlobalSearch()
-            DispatchQueue.main.async {
-                // Merge discovered profiles into the shared cache so avatars/names render.
-                for profile in results.profiles where self.profiles[profile.pubkey] == nil {
-                    self.profiles[profile.pubkey] = profile
-                }
-                completion(results)
+            // Merge discovered profiles into the shared cache so avatars/names render.
+            for profile in results.profiles where self.profiles[profile.pubkey] == nil {
+                self.profiles[profile.pubkey] = profile
             }
+            let error = !anyConnected && results.notes.isEmpty && results.profiles.isEmpty
+            onComplete(results, error)
         }
 
         for url in relays {
@@ -443,6 +463,7 @@ class NostrService: ObservableObject {
                 .receive(on: DispatchQueue.main)
                 .sink { state in
                     if state == .connected {
+                        anyConnected = true
                         let notesFilter: [String: Any] = ["kinds": [1], "search": trimmed, "limit": 30]
                         let profileFilter: [String: Any] = ["kinds": [0], "search": trimmed, "limit": 20]
                         let req = ["REQ", subId, notesFilter, profileFilter] as [Any]
@@ -458,14 +479,32 @@ class NostrService: ObservableObject {
             globalSearchClients.append(client)
         }
 
-        // Return whatever was collected after a fixed window.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+        // Stream incremental snapshots to the UI as results arrive.
+        if onUpdate != nil {
+            let timer = DispatchSource.makeTimerSource(queue: .main)
+            timer.schedule(deadline: .now() + globalSearchStreamInterval, repeating: globalSearchStreamInterval)
+            timer.setEventHandler {
+                let snap = collector.snapshot()
+                let count = snap.notes.count + snap.profiles.count
+                if count != lastCount {
+                    lastCount = count
+                    onUpdate?(snap)
+                }
+            }
+            timer.resume()
+            globalSearchStreamTimer = timer
+        }
+
+        // Return whatever was collected after the safety window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + globalSearchTimeout) {
             finish()
         }
     }
 
-    /// Tears down any in-flight global search connections.
+    /// Tears down any in-flight global search connections and streaming timer.
     func cancelGlobalSearch() {
+        globalSearchStreamTimer?.cancel()
+        globalSearchStreamTimer = nil
         for client in globalSearchClients { client.disconnect() }
         globalSearchClients.removeAll()
         globalSearchCancellables.removeAll()

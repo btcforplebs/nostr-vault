@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,10 +57,15 @@ enum class SearchResultFilter(val displayName: String) {
     LINKS("Links"),
 }
 
+/** Search scope. CACHED filters already-loaded content instantly (offline-capable);
+ *  NETWORK queries the configured NIP-50 search relays. */
 enum class SearchScope(val displayName: String) {
-    RELAY("Relay"),
-    GLOBAL("Global"),
+    CACHED("Cached"),
+    NETWORK("Network"),
 }
+
+/** High-level state of the active search, used to drive the results UI. */
+enum class SearchStatus { IDLE, SEARCHING, RESULTS, EMPTY, ERROR }
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
@@ -74,6 +80,11 @@ class SearchViewModel @Inject constructor(
         private const val MAX_SUGGESTED = 6
         private const val MAX_RECENT = 8
         private const val NOTE_FETCH_TIMEOUT_MS = 8_000L
+        private const val MAX_CACHED_PROFILES = 20
+        private const val MAX_CACHED_NOTES = 30
+        private const val MAX_LINKS = 30
+        private val HASHTAG_REGEX = Regex("#(\\w+)")
+        private val URL_REGEX = Regex("https?://\\S+")
     }
 
     sealed class DirectLookupResult {
@@ -87,13 +98,21 @@ class SearchViewModel @Inject constructor(
     private val _results = MutableStateFlow(GlobalSearchResults())
     val results = _results.asStateFlow()
 
-    private val _isSearching = MutableStateFlow(false)
-    val isSearching = _isSearching.asStateFlow()
+    // Derived from the current result notes (filtered by the query), so the
+    // Hashtags / Links filter pills show real content instead of being stubs.
+    private val _hashtags = MutableStateFlow<List<String>>(emptyList())
+    val hashtags = _hashtags.asStateFlow()
+
+    private val _links = MutableStateFlow<List<String>>(emptyList())
+    val links = _links.asStateFlow()
+
+    private val _status = MutableStateFlow(SearchStatus.IDLE)
+    val status = _status.asStateFlow()
 
     private val _resultFilter = MutableStateFlow(SearchResultFilter.ALL)
     val resultFilter = _resultFilter.asStateFlow()
 
-    private val _searchScope = MutableStateFlow(SearchScope.RELAY)
+    private val _searchScope = MutableStateFlow(SearchScope.NETWORK)
     val searchScope = _searchScope.asStateFlow()
 
     val profiles = nostrService.profiles
@@ -133,7 +152,7 @@ class SearchViewModel @Inject constructor(
                 val pending = _pendingNoteId.value ?: return@collect
                 if (cache.containsKey(pending)) {
                     _pendingNoteId.value = null
-                    _isSearching.value = false
+                    _status.value = SearchStatus.IDLE
                     _directLookup.tryEmit(DirectLookupResult.NavigateToNote(pending))
                 }
             }
@@ -145,7 +164,7 @@ class SearchViewModel @Inject constructor(
                 val pending = _pendingNoteId.value ?: return@collect
                 if (notes.any { it.id == pending }) {
                     _pendingNoteId.value = null
-                    _isSearching.value = false
+                    _status.value = SearchStatus.IDLE
                     _directLookup.tryEmit(DirectLookupResult.NavigateToNote(pending))
                 }
             }
@@ -171,7 +190,7 @@ class SearchViewModel @Inject constructor(
                     _directLookup.tryEmit(DirectLookupResult.NavigateToNote(eventId))
                 } else {
                     _pendingNoteId.value = eventId
-                    _isSearching.value = true
+                    _status.value = SearchStatus.SEARCHING
                     _results.value = GlobalSearchResults()
                     feedService.fetchMissingNote(eventId)
                     // Timeout for pending fetch
@@ -179,7 +198,7 @@ class SearchViewModel @Inject constructor(
                         delay(NOTE_FETCH_TIMEOUT_MS)
                         if (_pendingNoteId.value == eventId) {
                             _pendingNoteId.value = null
-                            _isSearching.value = false
+                            _status.value = SearchStatus.EMPTY
                         }
                     }
                 }
@@ -193,7 +212,9 @@ class SearchViewModel @Inject constructor(
             if (hexPubkey != null) {
                 val profile = profiles.value[hexPubkey] ?: FeedProfile(pubkey = hexPubkey)
                 _results.value = GlobalSearchResults(profiles = listOf(profile))
-                _isSearching.value = false
+                _hashtags.value = emptyList()
+                _links.value = emptyList()
+                _status.value = SearchStatus.RESULTS
                 return
             }
         }
@@ -206,7 +227,11 @@ class SearchViewModel @Inject constructor(
                 saveRecentSearch(text)
             }
         } else {
+            nostrService.cancelGlobalSearch()
             _results.value = GlobalSearchResults()
+            _hashtags.value = emptyList()
+            _links.value = emptyList()
+            _status.value = SearchStatus.IDLE
             refreshDiscovery(force = true)
         }
     }
@@ -216,15 +241,106 @@ class SearchViewModel @Inject constructor(
     }
 
     fun setSearchScope(scope: SearchScope) {
+        if (_searchScope.value == scope) return
         _searchScope.value = scope
+        // Re-run the active query under the new scope so the toggle takes effect.
+        val q = _query.value
+        if (q.trim().length >= 2) {
+            searchJob?.cancel()
+            searchJob = viewModelScope.launch { performSearch(q) }
+        }
+    }
+
+    /** Retry the current query (used by the Network error state's Retry button). */
+    fun retry() {
+        val q = _query.value
+        if (q.trim().length >= 2) {
+            searchJob?.cancel()
+            searchJob = viewModelScope.launch { performSearch(q) }
+        }
     }
 
     private fun performSearch(query: String) {
-        _isSearching.value = true
-        nostrService.globalSearch(query) { results ->
-            _results.value = results
-            _isSearching.value = false
+        when (_searchScope.value) {
+            SearchScope.CACHED -> performCachedSearch(query)
+            SearchScope.NETWORK -> performNetworkSearch(query)
         }
+    }
+
+    /** NIP-50 network search with streaming updates and an error/empty terminal state. */
+    private fun performNetworkSearch(query: String) {
+        _status.value = SearchStatus.SEARCHING
+        nostrService.globalSearch(
+            query,
+            onUpdate = { results ->
+                _results.value = results
+                recomputeDerived(results, query)
+                if (results.profiles.isNotEmpty() || results.notes.isNotEmpty()) {
+                    _status.value = SearchStatus.RESULTS
+                }
+            },
+        ) { results, error ->
+            _results.value = results
+            recomputeDerived(results, query)
+            _status.value = when {
+                error -> SearchStatus.ERROR
+                results.profiles.isEmpty() && results.notes.isEmpty() -> SearchStatus.EMPTY
+                else -> SearchStatus.RESULTS
+            }
+        }
+    }
+
+    /** Instant filter over already-loaded profiles + feed notes (offline-capable). */
+    private fun performCachedSearch(query: String) {
+        nostrService.cancelGlobalSearch()
+        _status.value = SearchStatus.SEARCHING
+        viewModelScope.launch(Dispatchers.Default) {
+            val lower = query.trim().lowercase()
+            val bare = lower.removePrefix("#")
+            val profileMatches = nostrService.profiles.value.values.filter { p ->
+                p.name?.contains(bare, ignoreCase = true) == true ||
+                    p.displayName?.contains(bare, ignoreCase = true) == true ||
+                    p.about?.contains(bare, ignoreCase = true) == true ||
+                    p.nip05?.contains(bare, ignoreCase = true) == true ||
+                    p.pubkey.contains(bare, ignoreCase = true)
+            }.take(MAX_CACHED_PROFILES)
+            val noteMatches = feedService.notes.value
+                .filter { it.content.contains(bare, ignoreCase = true) }
+                .sortedByDescending { it.createdAt }
+                .take(MAX_CACHED_NOTES)
+            val res = GlobalSearchResults(profiles = profileMatches, notes = noteMatches)
+            withContext(Dispatchers.Main) {
+                _results.value = res
+                recomputeDerived(res, query)
+                _status.value = if (res.profiles.isEmpty() && res.notes.isEmpty()) {
+                    SearchStatus.EMPTY
+                } else {
+                    SearchStatus.RESULTS
+                }
+            }
+        }
+    }
+
+    /** Extract hashtags and links from the current result notes, filtered by the query. */
+    private fun recomputeDerived(res: GlobalSearchResults, query: String) {
+        val bare = query.trim().lowercase().removePrefix("#")
+        val tags = LinkedHashSet<String>()
+        val foundLinks = LinkedHashSet<String>()
+        for (note in res.notes) {
+            for (t in note.tags) {
+                if (t.size >= 2 && t[0] == "t") {
+                    val h = t[1].lowercase()
+                    if (bare.isEmpty() || h.contains(bare)) tags.add(h)
+                }
+            }
+            HASHTAG_REGEX.findAll(note.content).forEach { m ->
+                val h = m.groupValues[1].lowercase()
+                if (bare.isEmpty() || h.contains(bare)) tags.add(h)
+            }
+            URL_REGEX.findAll(note.content).forEach { foundLinks.add(it.value) }
+        }
+        _hashtags.value = tags.sorted()
+        _links.value = foundLinks.toList().take(MAX_LINKS)
     }
 
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
@@ -323,7 +439,9 @@ fun SearchScreen(
 ) {
     val query by viewModel.query.collectAsState()
     val results by viewModel.results.collectAsState()
-    val isSearching by viewModel.isSearching.collectAsState()
+    val hashtags by viewModel.hashtags.collectAsState()
+    val links by viewModel.links.collectAsState()
+    val status by viewModel.status.collectAsState()
     val resultFilter by viewModel.resultFilter.collectAsState()
     val searchScope by viewModel.searchScope.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
@@ -405,8 +523,8 @@ fun SearchScreen(
                             ) {
                                 Icon(
                                     imageVector = when (scope) {
-                                        SearchScope.RELAY -> NostrVaultIcons.Relay
-                                        SearchScope.GLOBAL -> NostrVaultIcons.Globe
+                                        SearchScope.CACHED -> NostrVaultIcons.Relay
+                                        SearchScope.NETWORK -> NostrVaultIcons.Globe
                                     },
                                     contentDescription = scope.displayName,
                                     tint = if (isSelected) colors.primary else SecondaryText,
@@ -444,16 +562,7 @@ fun SearchScreen(
             }
         },
     ) { padding ->
-        if (isSearching) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            ) {
-                CircularProgressIndicator(color = colors.primary)
-            }
-        } else if (query.length < 2) {
+        if (query.length < 2) {
             // Empty state with discovery sections
             val hasDiscovery = recentSearches.isNotEmpty() ||
                 trendingHashtags.isNotEmpty() ||
@@ -575,7 +684,58 @@ fun SearchScreen(
                     }
                 }
             }
+        } else if (status == SearchStatus.SEARCHING) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            ) {
+                CircularProgressIndicator(color = colors.primary)
+            }
+        } else if (status == SearchStatus.ERROR) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(32.dp),
+                ) {
+                    Icon(
+                        imageVector = NostrVaultIcons.Globe,
+                        contentDescription = null,
+                        tint = TertiaryText,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "Couldn't reach search relays",
+                        color = SecondaryText,
+                        fontSize = 15.sp,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = { viewModel.retry() },
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
+                    ) {
+                        Text("Retry")
+                    }
+                }
+            }
         } else {
+            val showUsers = resultFilter == SearchResultFilter.ALL || resultFilter == SearchResultFilter.USERS
+            val showNotes = resultFilter == SearchResultFilter.ALL || resultFilter == SearchResultFilter.NOTES
+            val showHashtags = resultFilter == SearchResultFilter.ALL || resultFilter == SearchResultFilter.HASHTAGS
+            val showLinks = resultFilter == SearchResultFilter.ALL || resultFilter == SearchResultFilter.LINKS
+            val hasUsers = showUsers && results.profiles.isNotEmpty()
+            val hasNotes = showNotes && results.notes.isNotEmpty()
+            val hasHashtags = showHashtags && hashtags.isNotEmpty()
+            val hasLinks = showLinks && links.isNotEmpty()
+            val uriHandler = LocalUriHandler.current
+
             LazyColumn(
                 contentPadding = PaddingValues(
                     top = padding.calculateTopPadding(),
@@ -583,17 +743,9 @@ fun SearchScreen(
                 ),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                // Profiles section
-                if (results.profiles.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "People",
-                            color = SecondaryText,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        )
-                    }
+                // People section
+                if (hasUsers) {
+                    item { SearchSectionHeader("People") }
                     items(results.profiles.take(10), key = { it.pubkey }) { profile ->
                         SearchProfileRow(
                             profile = profile,
@@ -608,16 +760,8 @@ fun SearchScreen(
                 }
 
                 // Notes section
-                if (results.notes.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Notes",
-                            color = SecondaryText,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        )
-                    }
+                if (hasNotes) {
+                    item { SearchSectionHeader("Notes") }
                     items(results.notes, key = { it.id }) { note ->
                         val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotesCache) {
                             note.quotedEventIds.mapNotNull { qid ->
@@ -637,8 +781,37 @@ fun SearchScreen(
                     }
                 }
 
+                // Hashtags section
+                if (hasHashtags) {
+                    item { SearchSectionHeader("Hashtags") }
+                    item {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        ) {
+                            hashtags.forEach { tag ->
+                                TrendingHashtagChip(
+                                    tag = tag,
+                                    onClick = { viewModel.setQuery("#$tag") },
+                                    colors = colors,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+
+                // Links section
+                if (hasLinks) {
+                    item { SearchSectionHeader("Links") }
+                    items(links, key = { it }) { link ->
+                        SearchLinkRow(url = link, onClick = { uriHandler.openUri(link) })
+                    }
+                }
+
                 // No results
-                if (results.profiles.isEmpty() && results.notes.isEmpty()) {
+                if (!hasUsers && !hasNotes && !hasHashtags && !hasLinks) {
                     item {
                         Box(
                             contentAlignment = Alignment.Center,
@@ -652,6 +825,43 @@ fun SearchScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SearchSectionHeader(title: String) {
+    Text(
+        text = title,
+        color = SecondaryText,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun SearchLinkRow(url: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    ) {
+        Icon(
+            imageVector = NostrVaultIcons.LinkIcon,
+            contentDescription = null,
+            tint = SecondaryText,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = url,
+            color = PrimaryText.copy(alpha = 0.85f),
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

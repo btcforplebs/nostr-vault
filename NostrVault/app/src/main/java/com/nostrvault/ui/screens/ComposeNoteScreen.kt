@@ -337,11 +337,13 @@ class ComposeNoteViewModel @Inject constructor(
         if (query.length < 2) return
         mentionSearchJob = viewModelScope.launch {
             delay(350)
-            nostrService.globalSearch(query) {
-                if (currentMentionQuery == query) {
-                    filterMentionResults(query)
-                }
-            }
+            // Re-filter as profiles stream in (onUpdate) and once at completion, so
+            // newly-discovered @-mention candidates appear without waiting for the
+            // full search window. Discovered profiles are merged into the cache.
+            nostrService.globalSearch(
+                query,
+                onUpdate = { if (currentMentionQuery == query) filterMentionResults(query) },
+            ) { _, _ -> if (currentMentionQuery == query) filterMentionResults(query) }
         }
     }
 

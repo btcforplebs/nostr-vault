@@ -117,6 +117,10 @@ struct HavenConfig: Codable, Equatable {
     var blossomMirrors: [String] = []
     var autoMirrorMedia: Bool = false
 
+    // Search — user-configured NIP-50 search relays. Empty → built-in defaults
+    // (see `activeSearchRelays` / `nip50SearchRelays`).
+    var searchRelays: [String] = []
+
     // FIPS Blossom Publishing
     var fipsPublishEnabled: Bool = false
     var fipsAddressSource: String = "detected"  // "detected" | "owner" | "custom"
@@ -217,6 +221,7 @@ struct HavenConfig: Codable, Equatable {
         case inboxRelayName, inboxRelayDescription, inboxRelayIcon, inboxPullIntervalSeconds
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
         case blossomMirrors, autoMirrorMedia
+        case searchRelays
         case fipsPublishEnabled, fipsAddressSource, fipsCustomNpub
         case blastrRelaysFile, blastrRelays
         case feedRelays, dmRelays
@@ -327,6 +332,7 @@ struct HavenConfig: Codable, Equatable {
         importTaggedNotesFetchTimeoutSeconds = try container.decodeIfPresent(Int.self, forKey: .importTaggedNotesFetchTimeoutSeconds) ?? defaults.importTaggedNotesFetchTimeoutSeconds
 
         blossomMirrors = try container.decodeIfPresent([String].self, forKey: .blossomMirrors) ?? defaults.blossomMirrors
+        searchRelays = try container.decodeIfPresent([String].self, forKey: .searchRelays) ?? defaults.searchRelays
         autoMirrorMedia = try container.decodeIfPresent(Bool.self, forKey: .autoMirrorMedia) ?? defaults.autoMirrorMedia
 
         fipsPublishEnabled = try container.decodeIfPresent(Bool.self, forKey: .fipsPublishEnabled) ?? defaults.fipsPublishEnabled
@@ -501,6 +507,15 @@ struct HavenConfig: Codable, Equatable {
             }
         }
         return relays
+    }
+
+    /// Active NIP-50 search relays (user-configured, or the built-in defaults).
+    /// Blank entries are dropped so a stray empty row can't break the query.
+    var activeSearchRelays: [String] {
+        let cleaned = searchRelays
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return cleaned.isEmpty ? nip50SearchRelays : cleaned
     }
 
     /// Active import seed relays, including the Mac relay if configured.

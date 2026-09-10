@@ -121,6 +121,14 @@ fun SettingsScreen(
             }
             item {
                 SettingsItem(
+                    icon = NostrVaultIcons.Search,
+                    title = "Search Relays",
+                    subtitle = "NIP-50 relays for Network search",
+                    onClick = { onNavigate(Screen.SearchRelaysSettings) },
+                )
+            }
+            item {
+                SettingsItem(
                     icon = NostrVaultIcons.Blastr,
                     title = "Blastr",
                     subtitle = "Broadcast notes to public relays",

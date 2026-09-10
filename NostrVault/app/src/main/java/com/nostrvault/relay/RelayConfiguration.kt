@@ -371,6 +371,9 @@ data class HavenConfig(
 
     // Search
     val recentSearches: List<String> = emptyList(),
+    /** User-configured NIP-50 search relays. Empty → use the built-in defaults
+     *  (see [activeSearchRelays] / NIP50_SEARCH_RELAYS). */
+    val searchRelays: List<String> = emptyList(),
 ) {
     /** Computed local relay WebSocket URL.
      *  Always uses ws:// for localhost since the local relay runs without TLS.
@@ -455,6 +458,14 @@ data class HavenConfig(
                 relays.add(0, macWss)
             }
             return relays
+        }
+
+    /** Active NIP-50 search relays (user-configured, or the built-in defaults).
+     *  Blank entries are dropped so a stray empty row can't break the query. */
+    val activeSearchRelays: List<String>
+        get() {
+            val cleaned = searchRelays.map { it.trim() }.filter { it.isNotEmpty() }
+            return cleaned.ifEmpty { com.nostrvault.data.model.NIP50_SEARCH_RELAYS }
         }
 
     /** Active import seed relays, including the Haven relay if configured. */

@@ -484,11 +484,16 @@ struct ComposeView: View {
         mentionSearchTask = Task {
             try? await Task.sleep(nanoseconds: 350_000_000)
             guard !Task.isCancelled else { return }
-            nostrService.globalSearch(query: query) { _ in
-                // Completion runs on the main queue; re-filter if still editing this query.
-                if mentionQuery == query {
-                    filterMentionResults(query: query)
+            // Re-filter as profiles stream in (onUpdate) and once more at completion,
+            // so newly-discovered @-mention candidates appear without waiting for the
+            // full search window. Discovered profiles are merged into the cache.
+            nostrService.globalSearch(
+                query: query,
+                onUpdate: { _ in
+                    if mentionQuery == query { filterMentionResults(query: query) }
                 }
+            ) { _, _ in
+                if mentionQuery == query { filterMentionResults(query: query) }
             }
         }
     }

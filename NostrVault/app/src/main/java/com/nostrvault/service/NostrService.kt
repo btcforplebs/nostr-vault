@@ -70,7 +70,8 @@ class NostrService @Inject constructor(
         private const val MAX_RECONNECT_ATTEMPTS = 10
         private const val BASE_RECONNECT_DELAY_MS = 2_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
-        private const val SEARCH_TIMEOUT_MS = 4_000L
+        private const val SEARCH_TIMEOUT_MS = 8_000L
+        private const val SEARCH_STREAM_INTERVAL_MS = 300L
         private const val TEMP_CLIENT_DISCONNECT_MS = 3_000L
     }
 
@@ -190,7 +191,9 @@ class NostrService @Inject constructor(
     // ── Search ────────────────────────────────────────────────────────
 
     private val searchClients = mutableSetOf<WebSocketClient>()
+    private val searchCollectorJobs = mutableListOf<Job>()
     private val searchClientsLock = ReentrantLock()
+    private var searchStreamJob: Job? = null
 
     // ── Account switch ────────────────────────────────────────────────
 
@@ -1252,7 +1255,27 @@ class NostrService @Inject constructor(
     // Global search (NIP-50)
     // ══════════════════════════════════════════════════════════════════
 
+    /** Backward-compatible one-shot search: delivers the final result set once
+     *  the search completes. Used by mention autocomplete and the Relay-tab search. */
     fun globalSearch(query: String, onResult: (GlobalSearchResults) -> Unit) {
+        globalSearch(query, onUpdate = null) { results, _ -> onResult(results) }
+    }
+
+    /**
+     * NIP-50 global search across the user's configured search relays
+     * ([HavenConfig.activeSearchRelays], falling back to [NIP50_SEARCH_RELAYS]).
+     *
+     * [onUpdate] (optional) receives an incremental snapshot as results stream in,
+     * so the UI can render matches before the overall timeout instead of waiting
+     * for one final dump. [onComplete] fires exactly once at the end with the final
+     * snapshot and an `error` flag — `true` only when no relay could be reached and
+     * nothing was collected, so the UI can show a "couldn't reach search relays" state.
+     */
+    fun globalSearch(
+        query: String,
+        onUpdate: ((GlobalSearchResults) -> Unit)?,
+        onComplete: (results: GlobalSearchResults, error: Boolean) -> Unit,
+    ) {
         cancelGlobalSearch()
 
         val collector = GlobalSearchCollector()
@@ -1269,26 +1292,57 @@ class NostrService @Inject constructor(
             put("limit", 20)
         }
 
-        for (relayUrl in NIP50_SEARCH_RELAYS) {
+        val relays = configStore.config.value.activeSearchRelays
+        if (relays.isEmpty()) { onComplete(GlobalSearchResults(), true); return }
+
+        for (relayUrl in relays) {
             scope.launch(Dispatchers.IO) {
-                val client = WebSocketClient(url = relayUrl, scope = scope)
-                searchClientsLock.withLock { searchClients.add(client) }
-
-                scope.launch {
-                    client.messages.collect { msg ->
-                        collector.ingest(msg, subId)
+                try {
+                    val client = WebSocketClient(url = relayUrl, scope = scope)
+                    // Register the collector as a SharedFlow subscriber BEFORE we
+                    // connect/REQ. messages has replay=0, so any EVENT emitted before
+                    // subscription is silently dropped — the race that made search
+                    // return nothing. Mirrors fetchProfileNotes()'s ready-gate.
+                    val subscribed = CompletableDeferred<Unit>()
+                    val collectorJob = scope.launch {
+                        client.messages
+                            .onSubscription { subscribed.complete(Unit) }
+                            .collect { msg -> collector.ingest(msg, subId) }
                     }
-                }
+                    searchClientsLock.withLock {
+                        searchClients.add(client)
+                        searchCollectorJobs.add(collectorJob)
+                    }
+                    subscribed.await()
 
-                client.connect()
-                val filtersJson = "${buildFilterJson(noteFilter)},${buildFilterJson(profileFilter)}"
-                client.send("[\"REQ\",\"$subId\",$filtersJson]")
+                    client.connect()
+                    val filtersJson = "${buildFilterJson(noteFilter)},${buildFilterJson(profileFilter)}"
+                    client.send("[\"REQ\",\"$subId\",$filtersJson]")
+                } catch (_: Exception) {}
             }
         }
 
-        // Collect results after timeout
-        scope.launch {
-            delay(SEARCH_TIMEOUT_MS)
+        // Stream incremental snapshots until the safety timeout, then finish once.
+        // Connection state is polled here (rather than via a long-lived collector)
+        // so we can flag "couldn't reach any relay" without leaking a coroutine.
+        searchStreamJob = scope.launch {
+            var lastCount = -1
+            var anyConnected = false
+            val deadline = System.currentTimeMillis() + SEARCH_TIMEOUT_MS
+            while (isActive && System.currentTimeMillis() < deadline) {
+                delay(SEARCH_STREAM_INTERVAL_MS)
+                if (!anyConnected) {
+                    anyConnected = searchClientsLock.withLock {
+                        searchClients.any { it.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
+                    }
+                }
+                val snap = collector.snapshot()
+                val count = snap.notes.size + snap.profiles.size
+                if (count != lastCount) {
+                    lastCount = count
+                    onUpdate?.invoke(snap)
+                }
+            }
             val results = collector.snapshot()
 
             // Merge discovered profiles into cache
@@ -1300,16 +1354,25 @@ class NostrService @Inject constructor(
                 }
             }
 
-            cancelGlobalSearch()
-            onResult(results)
+            val error = !anyConnected && results.notes.isEmpty() && results.profiles.isEmpty()
+            tearDownSearchClients()
+            onComplete(results, error)
+        }
+    }
+
+    private fun tearDownSearchClients() {
+        searchClientsLock.withLock {
+            searchCollectorJobs.forEach { it.cancel() }
+            searchCollectorJobs.clear()
+            searchClients.forEach { it.disconnect() }
+            searchClients.clear()
         }
     }
 
     fun cancelGlobalSearch() {
-        searchClientsLock.withLock {
-            searchClients.forEach { it.disconnect() }
-            searchClients.clear()
-        }
+        searchStreamJob?.cancel()
+        searchStreamJob = null
+        tearDownSearchClients()
     }
 
     // ══════════════════════════════════════════════════════════════════

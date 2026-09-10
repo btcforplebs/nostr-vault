@@ -10,9 +10,10 @@ struct SearchView: View {
 
     @State private var searchQuery: String = ""
     @State private var resultTypeFilter: ResultTypeFilter = .all
-    @State private var searchMode: SearchMode = .relay
+    @State private var searchMode: SearchMode = .global
     @State private var searchResults: SearchResults = .empty
     @State private var isSearching = false
+    @State private var searchError = false
     @State private var searchDebounceTask: Task<Void, Never>?
     @State private var showingNoteDetail: FeedNote?
     @State private var showingProfile: String?
@@ -27,13 +28,16 @@ struct SearchView: View {
     @FocusState private var searchFieldFocused: Bool
     #endif
 
+    /// Search scope. `.relay` (labeled "Cached") filters already-loaded content
+    /// instantly (offline-capable); `.global` (labeled "Network") queries the
+    /// configured NIP-50 search relays.
     enum SearchMode: CaseIterable {
         case relay, global
 
         var label: String {
             switch self {
-            case .relay: return "Relay"
-            case .global: return "Global"
+            case .relay: return "Cached"
+            case .global: return "Network"
             }
         }
 
@@ -245,6 +249,10 @@ struct SearchView: View {
                     emptyState
                 } else if isSearching {
                     loadingState
+                } else if searchError {
+                    errorState
+                } else if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).count < 2 {
+                    shortQueryState
                 } else if searchResults.isEmpty {
                     noResultsState
                 } else {
@@ -600,6 +608,47 @@ struct SearchView: View {
     }
 
     @ViewBuilder
+    private var shortQueryState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "character.cursor.ibeam")
+                .font(.appSystem(size: 32, weight: .thin))
+                .foregroundColor(.secondary.opacity(0.5))
+
+            Text("Type at least 2 characters to search")
+                .font(.appSystem(size: 14, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    @ViewBuilder
+    private var errorState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "globe.badge.chevron.backward")
+                .font(.appSystem(size: 32, weight: .thin))
+                .foregroundColor(.secondary.opacity(0.5))
+
+            Text("Couldn't reach search relays")
+                .font(.appSystem(size: 14, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            Button(action: { rerunSearch() }) {
+                Text("Retry")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.havenPurple)
+                    .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    @ViewBuilder
     private var resultsContent: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -870,6 +919,8 @@ struct SearchView: View {
 
         pendingDirectNoteId = nil
 
+        searchError = false
+
         // Require at least 2 characters for general search
         let trimmedQuery = query.lowercased().trimmingCharacters(in: .whitespaces)
         guard trimmedQuery.count >= 2 else {
@@ -882,11 +933,8 @@ struct SearchView: View {
         if searchMode == .global {
             isSearching = true
             let requestedQuery = trimmed
-            nostrService.globalSearch(query: trimmed) { globalResults in
-                // Ignore stale completions (user changed query or switched mode).
-                guard self.searchMode == .global,
-                      self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery else { return }
-
+            // Builds a SearchResults from a streaming/final NIP-50 snapshot.
+            let buildResults: (GlobalSearchResults) -> SearchResults = { globalResults in
                 var results = SearchResults()
                 for profile in globalResults.profiles {
                     results.users[profile.pubkey] = profile
@@ -904,14 +952,32 @@ struct SearchView: View {
                 let urls = self.extractURLs(from: globalResults.notes)
                 results.links = urls.filter { $0.url.lowercased().contains(trimmedQuery) ||
                                               $0.title.lowercased().contains(trimmedQuery) }
-
-                self.searchResults = results
+                return results
+            }
+            // Stale-completion guard: ignore if the user changed query or mode.
+            let isCurrent: () -> Bool = {
+                self.searchMode == .global &&
+                self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery
+            }
+            nostrService.globalSearch(
+                query: trimmed,
+                onUpdate: { globalResults in
+                    guard isCurrent() else { return }
+                    let results = buildResults(globalResults)
+                    self.searchResults = results
+                    // Replace the spinner with results as soon as anything streams in.
+                    if !results.isEmpty { self.isSearching = false }
+                }
+            ) { globalResults, error in
+                guard isCurrent() else { return }
+                self.searchResults = buildResults(globalResults)
                 self.isSearching = false
+                self.searchError = error
             }
             return
         }
 
-        // Relay search: filter data served by the local relay.
+        // Cached search: instant filter over already-loaded profiles + notes.
         isSearching = true
 
         let localProfiles = nostrService.profiles

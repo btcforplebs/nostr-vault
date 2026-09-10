@@ -47,6 +47,7 @@ struct SettingsView: View {
         case blocked = "Blocked"
         case appearance = "Appearance"
         case feed = "Feed Relays"
+        case searchRelays = "Search Relays"
         case dm = "DM Relays"
         case pushNotifications = "Push Notifications"
         case importNotes = "Import"
@@ -81,6 +82,7 @@ struct SettingsView: View {
             case .blocked: return "person.crop.circle.badge.xmark"
             case .appearance: return "paintpalette"
             case .feed: return "newspaper"
+            case .searchRelays: return "magnifyingglass"
             case .dm: return "bubble.left.and.bubble.right"
             case .pushNotifications: return "bell.badge"
             case .importNotes: return "square.and.arrow.down"
@@ -228,7 +230,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     settingsSidebarSection("Profile", items: [.accounts, .blocked])
                     settingsSidebarSection("Appearance", items: [.appearance])
-                    settingsSidebarSection("Relay Configuration", items: [.macRelay, .feed, .blastr, .blossom, .importNotes, .backup, .followingBackup])
+                    settingsSidebarSection("Relay Configuration", items: [.macRelay, .feed, .searchRelays, .blastr, .blossom, .importNotes, .backup, .followingBackup])
                     settingsSidebarSection("System", items: [.pushNotifications, .wallet, .advanced, .logs])
                 }
                 .padding(.horizontal, 8)
@@ -382,6 +384,7 @@ struct SettingsView: View {
             
             Section("Relay Configuration") {
                 tabLink(.feed)
+                tabLink(.searchRelays)
                 tabLink(.blastr)
                 tabLink(.blossom)
                 tabLink(.importNotes)
@@ -488,6 +491,7 @@ struct SettingsView: View {
         case .blocked: return .red
         case .appearance: return .purple
         case .feed: return .pink
+        case .searchRelays: return .brown
         case .dm: return .mint
         case .pushNotifications: return .blue
         case .importNotes: return .orange
@@ -522,6 +526,7 @@ struct SettingsView: View {
             case .blocked: BlockedSettingsView()
             case .appearance: AppearanceSettingsView()
             case .feed: FeedSettingsView()
+            case .searchRelays: SearchRelaysSettingsView()
             case .dm: DMSettingsView()
             case .pushNotifications: PushNotificationSettingsView()
             case .importNotes: ImportSettingsView()
@@ -2406,6 +2411,26 @@ struct FeedSettingsView: View {
                 Text("Feed Relays")
             } footer: {
                 Text("The feed reads from multiple relays to build your timeline. Connect to relays your followers are actively using.")
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+}
+
+struct SearchRelaysSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+
+    var body: some View {
+        Form {
+            Section {
+                RelayListEditor(relays: $configService.config.searchRelays)
+            } header: {
+                Text("Search Relays")
+            } footer: {
+                Text("NIP-50 relays used for Network search. Leave empty to use the built-in defaults (relay.nostr.band, relay.noswhere.com, search.nos.today).")
             }
         }
         .groupedFormStyleCompat()

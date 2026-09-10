@@ -58,6 +58,7 @@ import com.nostrvault.ui.screens.settings.NotificationSettingsScreen
 import com.nostrvault.ui.screens.settings.PowSettingsScreen
 import com.nostrvault.ui.screens.settings.HavenRelaySettingsScreen
 import com.nostrvault.ui.screens.settings.RelayListEditorScreen
+import com.nostrvault.ui.screens.settings.SearchRelaysSettingsScreen
 import com.nostrvault.ui.screens.settings.SettingsScreen
 import kotlinx.coroutines.flow.StateFlow
 import java.net.URLDecoder
@@ -507,6 +508,12 @@ fun NostrVaultNavHost(
 
             composable(Screen.RelayListEditor.route) {
                 RelayListEditorScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Screen.SearchRelaysSettings.route) {
+                SearchRelaysSettingsScreen(
                     onBack = { navController.popBackStack() },
                 )
             }
