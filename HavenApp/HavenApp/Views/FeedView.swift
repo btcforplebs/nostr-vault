@@ -2124,7 +2124,7 @@ struct FeedNoteRow: View {
                     }
                 }
 
-                // Truncated content (2 lines max)
+                // Truncated content (3 lines max)
                 let contentToShow: String = {
                     if note.kind == 6 && note.content.isEmpty, let original = rowData.resolvedOriginal {
                         return original.content
@@ -2136,7 +2136,7 @@ struct FeedNoteRow: View {
                     Text(NostrContentFormatter.resolveMentionsPlainText(contentToShow))
                         .font(.appSystem(size: 14))
                         .foregroundColor(.white)
-                        .lineLimit(2)
+                        .lineLimit(3)
                         .lineSpacing(1)
                 }
 
@@ -2175,7 +2175,7 @@ struct FeedNoteRow: View {
                         url: firstMedia,
                         isThumbnail: true
                     )
-                    .frame(width: 60, height: 60)
+                    .frame(width: 80, height: 80)
                     .aspectRatio(1, contentMode: .fill)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
 

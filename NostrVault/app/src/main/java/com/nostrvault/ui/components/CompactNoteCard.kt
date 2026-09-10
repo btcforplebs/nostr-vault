@@ -115,7 +115,7 @@ fun CompactNoteCard(
                     )
                 }
 
-                // Body text (plain, 2 lines max). Memoize the regex-based mention
+                // Body text (plain, 3 lines max). Memoize the regex-based mention
                 // stripping so it doesn't re-run on every recomposition (e.g. each
                 // throttled profile-map update) while scrolling the compact feed.
                 if (note.content.isNotBlank()) {
@@ -127,7 +127,7 @@ fun CompactNoteCard(
                         text = plainText,
                         color = SecondaryText,
                         fontSize = 13.sp,
-                        maxLines = 2,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                         lineHeight = 17.sp,
                     )
@@ -141,13 +141,13 @@ fun CompactNoteCard(
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(note.mediaURLs.first())
-                        .size(96) // 48dp at 2x density
+                        .size(128) // 64dp at 2x density
                         .crossfade(false) // Disable crossfade for instant rendering
                         .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(64.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .background(TertiaryGroupedBg),
                 )
