@@ -1413,7 +1413,7 @@ private fun HeroNoteCard(
 
             // Media
             if (note.mediaURLs.isNotEmpty()) {
-                MediaPreviewRow(urls = note.mediaURLs)
+                MediaPreviewRow(urls = note.mediaURLs, tags = note.tags)
                 Spacer(Modifier.height(12.dp))
             }
 

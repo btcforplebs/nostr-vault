@@ -405,7 +405,7 @@ private fun ExpandedLayout(
 
         // Media previews (iOS lines 314-330)
         if (note.mediaURLs.isNotEmpty()) {
-            MediaPreviewRow(urls = note.mediaURLs)
+            MediaPreviewRow(urls = note.mediaURLs, tags = note.tags)
         }
 
         // Quoted events. This card already knew a quote existed — it suppressed
