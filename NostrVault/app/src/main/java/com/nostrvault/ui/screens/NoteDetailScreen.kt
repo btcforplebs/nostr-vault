@@ -203,6 +203,14 @@ class NoteDetailViewModel @Inject constructor(
     fun statsFor(noteId: String): NoteStats? = noteStats.value[noteId]
     fun isLiked(noteId: String): Boolean = likedEventIds.value.contains(noteId)
 
+    val quotedNotesCache: StateFlow<Map<String, FeedNote>> = feedService.quotedNotesCache
+
+    fun quotedNoteFor(eventId: String): FeedNote? = quotedNotesCache.value[eventId]
+
+    fun fetchMissingQuotedNote(quotedEventId: String) {
+        feedService.fetchMissingQuotedNote(quotedEventId)
+    }
+
     /** Get direct child replies for a given note ID. */
     fun childRepliesFor(parentId: String): List<FeedNote> =
         _allReplies.value.filter { it.parentEventId == parentId }
@@ -230,6 +238,7 @@ fun NoteDetailScreen(
     val expandedEngagement by viewModel.expandedEngagement.collectAsState()
     val perNoteEngagement by viewModel.perNoteEngagement.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
+    val quotedNotes by viewModel.quotedNotesCache.collectAsState()
     val colors = LocalNostrVaultColors.current
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -442,6 +451,15 @@ fun NoteDetailScreen(
                             onClick = { scrollToNote(parent.id) },
                         )
                     } else {
+                        if (parent.quotedEventIds.isNotEmpty()) {
+                            LaunchedEffect(parent.id) {
+                                parent.quotedEventIds.forEach { qid ->
+                                    if (viewModel.quotedNoteFor(qid) == null) {
+                                        viewModel.fetchMissingQuotedNote(qid)
+                                    }
+                                }
+                            }
+                        }
                         NoteCard(
                             note = parent,
                             profile = viewModel.profileFor(parent.pubkey),
@@ -449,6 +467,7 @@ fun NoteDetailScreen(
                             isLiked = viewModel.isLiked(parent.id),
                             isFocused = parent.id == focusedNoteId,
                             parentIsNext = true,
+                            quotedNotes = quotedNotes,
                             onNoteClick = { scrollToNote(parent.id) },
                             onProfileClick = onProfileClick,
                             onLike = viewModel::likeNote,
@@ -510,6 +529,7 @@ fun NoteDetailScreen(
                         expandedEngagement = expandedEngagement,
                         perNoteEngagement = perNoteEngagement,
                         profiles = profiles,
+                        quotedNotes = quotedNotes,
                         onProfileClick = onProfileClick,
                         onNoteClick = onNoteClick,
                         onFocus = { id -> scrollToNote(id) },
@@ -688,6 +708,7 @@ private fun ThreadedReplyNode(
     expandedEngagement: Boolean,
     perNoteEngagement: Map<String, EngagementDetails>,
     profiles: Map<String, FeedProfile>,
+    quotedNotes: Map<String, FeedNote> = emptyMap(),
     onProfileClick: (String) -> Unit,
     onNoteClick: (String) -> Unit,
     onFocus: (String) -> Unit,
@@ -724,6 +745,7 @@ private fun ThreadedReplyNode(
                             expandedEngagement = expandedEngagement,
                             perNoteEngagement = perNoteEngagement,
                             profiles = profiles,
+                            quotedNotes = quotedNotes,
                             onProfileClick = onProfileClick,
                             onNoteClick = onNoteClick,
                             onFocus = onFocus,
@@ -733,12 +755,22 @@ private fun ThreadedReplyNode(
                 }
             }
         } else {
+            if (reply.quotedEventIds.isNotEmpty()) {
+                LaunchedEffect(reply.id) {
+                    reply.quotedEventIds.forEach { qid ->
+                        if (viewModel.quotedNoteFor(qid) == null) {
+                            viewModel.fetchMissingQuotedNote(qid)
+                        }
+                    }
+                }
+            }
             NoteCard(
                 note = reply,
                 profile = viewModel.profileFor(reply.pubkey),
                 stats = viewModel.statsFor(reply.id),
                 isLiked = viewModel.isLiked(reply.id),
                 isFocused = isFocusedReply,
+                quotedNotes = quotedNotes,
                 onNoteClick = { onFocus(reply.id) },
                 onProfileClick = onProfileClick,
                 onLike = viewModel::likeNote,
@@ -836,6 +868,7 @@ private fun ThreadedReplyNode(
                                     expandedEngagement = expandedEngagement,
                                     perNoteEngagement = perNoteEngagement,
                                     profiles = profiles,
+                                    quotedNotes = quotedNotes,
                                     onProfileClick = onProfileClick,
                                     onNoteClick = onNoteClick,
                                     onFocus = onFocus,

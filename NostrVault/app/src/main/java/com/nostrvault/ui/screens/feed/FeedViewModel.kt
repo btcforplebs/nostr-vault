@@ -228,6 +228,16 @@ class FeedViewModel @Inject constructor(
         feedService.fetchMissingNote(parentEventId)
     }
 
+    // ── Quoted note cache ─────────────────────────────────────────
+
+    val quotedNotesCache: StateFlow<Map<String, FeedNote>> = feedService.quotedNotesCache
+
+    fun quotedNoteFor(eventId: String): FeedNote? = quotedNotesCache.value[eventId]
+
+    fun fetchMissingQuotedNote(quotedEventId: String) {
+        feedService.fetchMissingQuotedNote(quotedEventId)
+    }
+
     // ── Helpers ──────────────────────────────────────────────────
 
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]

@@ -70,6 +70,7 @@ fun FeedScreen(
     val pendingCount by viewModel.pendingNoteCount.collectAsState()
     val parentNotes by viewModel.parentNotesCache.collectAsState()
     val parentIsNext by viewModel.parentIsNextNote.collectAsState()
+    val quotedNotes by viewModel.quotedNotesCache.collectAsState()
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -272,6 +273,16 @@ fun FeedScreen(
                                 }
                             }
 
+                            if (note.quotedEventIds.isNotEmpty()) {
+                                LaunchedEffect(note.id) {
+                                    note.quotedEventIds.forEach { qid ->
+                                        if (viewModel.quotedNoteFor(qid) == null) {
+                                            viewModel.fetchMissingQuotedNote(qid)
+                                        }
+                                    }
+                                }
+                            }
+
                             val parentNote = parentEventId?.let { viewModel.parentNoteFor(it) }
                             val isParentNext = parentEventId?.let { viewModel.isParentNext(note.id) } ?: false
 
@@ -286,6 +297,7 @@ fun FeedScreen(
                                 replyToProfile = replyToProfile,
                                 parentNote = parentNote,
                                 parentIsNext = isParentNext,
+                                quotedNotes = quotedNotes,
                                 onNoteClick = onNoteClick,
                                 onProfileClick = onProfileClick,
                                 onLike = viewModel::likeNote,

@@ -100,6 +100,9 @@ class FeedService @Inject constructor(
     private val _parentNotesCache = MutableStateFlow<Map<String, FeedNote>>(emptyMap())
     val parentNotesCache: StateFlow<Map<String, FeedNote>> = _parentNotesCache.asStateFlow()
 
+    private val _quotedNotesCache = MutableStateFlow<Map<String, FeedNote>>(emptyMap())
+    val quotedNotesCache: StateFlow<Map<String, FeedNote>> = _quotedNotesCache.asStateFlow()
+
     private val _followedPubkeys = MutableStateFlow<List<String>>(emptyList())
     val followedPubkeys: StateFlow<List<String>> = _followedPubkeys.asStateFlow()
 
@@ -1333,6 +1336,70 @@ class FeedService @Inject constructor(
                                             updated = updated.filter { it.key in referencedIds }
                                         }
                                         _parentNotesCache.value = updated
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                })
+
+                client.send("[\"REQ\",\"$subId\",$filter]")
+            }
+
+            delay(NOTE_FETCH_TIMEOUT_MS)
+            collectors.forEach { it.cancel() }
+            tempClients.forEach { it.disconnect() }
+        }
+    }
+
+    fun fetchMissingQuotedNote(id: String) {
+        if (_quotedNotesCache.value.containsKey(id)) return
+
+        scope.launch(Dispatchers.IO) {
+            val config = configStore.config.value
+            val relayUrls = buildList {
+                config.nostrURL?.let { add(it) }
+                config.inboxRelays?.let { addAll(it.take(2)) }
+            }
+
+            val subId = "qfetch-${UUID.randomUUID().toString().take(8)}"
+            val filter = """{"ids":["$id"]}"""
+
+            val tempClients = mutableListOf<WebSocketClient>()
+            val collectors = mutableListOf<Job>()
+            for (relayUrl in relayUrls) {
+                val existingClient = feedClients[relayUrl]
+                val client: WebSocketClient
+                if (existingClient != null) {
+                    client = existingClient
+                } else {
+                    client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
+                    tempClients.add(client)
+                    client.connect()
+                }
+
+                collectors.add(scope.launch {
+                    client.messages.collect { msg ->
+                        try {
+                            val parsed = json.parseToJsonElement(msg).jsonArray
+                            if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
+                                val eventObj = parsed[2].jsonObject
+                                val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull
+                                if (eventId == id) {
+                                    val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
+                                    val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                    val tags = eventObj["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } } ?: emptyList()
+                                    val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return@collect
+                                    val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
+
+                                    val note = FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)
+                                    withContext(Dispatchers.Main.immediate) {
+                                        var updated = _quotedNotesCache.value + (id to note)
+                                        if (updated.size > 500) {
+                                            val referencedIds = _notes.value.flatMap { it.quotedEventIds }.toSet()
+                                            updated = updated.filter { it.key in referencedIds }
+                                        }
+                                        _quotedNotesCache.value = updated
                                     }
                                 }
                             }
