@@ -1943,21 +1943,6 @@ struct AdvancedSettingsView: View {
             }
             
             Section {
-                TextField("Push Server URL", text: $configService.config.pushServerURL)
-                    #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    #else
-                    .autocorrectionDisabled()
-                    #endif
-            } header: {
-                Text("Push Server")
-            } footer: {
-                Text("URL of the push notification server. Only change this if you self-host your own push server.")
-            }
-
-            Section {
                 Button(role: .destructive) {
                     showResetConfirmation = true
                 } label: {

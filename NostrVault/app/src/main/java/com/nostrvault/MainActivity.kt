@@ -1,11 +1,15 @@
 package com.nostrvault
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +23,8 @@ import com.nostrvault.service.AmberResultBridge
 import com.nostrvault.service.DMService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.MediaUploadManager
+import com.nostrvault.service.LocalNotificationService
+import com.nostrvault.service.NostrService
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.ui.navigation.NostrVaultNavHost
 import com.nostrvault.ui.notification.NotificationManager
@@ -34,10 +40,14 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var configStore: ConfigStore
     @Inject lateinit var dmService: DMService
     @Inject lateinit var feedService: FeedService
+    @Inject lateinit var nostrService: NostrService
     @Inject lateinit var logStore: LogStore
     @Inject lateinit var notificationManager: NotificationManager
     @Inject lateinit var pendingPostManager: PendingPostManager
     @Inject lateinit var mediaUploadManager: MediaUploadManager
+
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* result ignored */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,6 +56,10 @@ class MainActivity : FragmentActivity() {
         AmberResultBridge.initialize(this)
 
         enableEdgeToEdge()
+
+        // Ask for notification permission (Android 13+) so local notifications for
+        // inbound mentions/DMs/zaps can be shown. No-op on older versions.
+        requestNotificationPermissionIfNeeded()
 
         // Load persisted config so hasCompletedSetup reflects saved state
         configStore.reload()
@@ -74,6 +88,7 @@ class MainActivity : FragmentActivity() {
                         isSetupComplete = config.hasCompletedSetup,
                         configStore = configStore,
                         feedService = feedService,
+                        nostrService = nostrService,
                         logStore = logStore,
                         dmUnreadCount = dmService.totalUnreadCountFlow,
                         hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
@@ -89,6 +104,28 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleShareIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // App is on screen: suppress system notifications (the in-app dot covers it).
+        LocalNotificationService.appInForeground = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        LocalNotificationService.appInForeground = false
+    }
+
+    /** Request POST_NOTIFICATIONS on Android 13+ if not already granted. */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     /**

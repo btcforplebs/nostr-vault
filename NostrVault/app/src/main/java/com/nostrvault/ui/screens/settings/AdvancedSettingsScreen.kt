@@ -52,7 +52,6 @@ class AdvancedSettingsViewModel @Inject constructor(
     fun setWotMinFollowers(v: Int) = save { it.copy(chatRelayMinFollowers = v.coerceIn(0, 100)) }
     fun setWotRefresh(v: String) = save { it.copy(wotRefreshInterval = v) }
     fun setAutoStartRelay(v: Boolean) = save { it.copy(autoStartRelay = v) }
-    fun setPushServerURL(v: String) = save { it.copy(pushServerURL = v) }
 
     fun clearMediaCache() = mediaCacheService.clearCache()
 
@@ -154,24 +153,6 @@ fun AdvancedSettingsScreen(
                 },
                 modifier = Modifier.padding(top = 8.dp),
             ) { Text("Restart Relay") }
-
-            Spacer(Modifier.height(20.dp))
-
-            // ── Push Server ───────────────────────────────────────
-            SectionLabel("Push Server")
-            OutlinedTextField(
-                value = config.pushServerURL,
-                onValueChange = viewModel::setPushServerURL,
-                placeholder = { Text("https://push.example.com") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = PrimaryText,
-                    unfocusedTextColor = PrimaryText,
-                    cursorColor = colors.primary,
-                    focusedBorderColor = colors.primary,
-                ),
-            )
 
             Spacer(Modifier.height(28.dp))
 

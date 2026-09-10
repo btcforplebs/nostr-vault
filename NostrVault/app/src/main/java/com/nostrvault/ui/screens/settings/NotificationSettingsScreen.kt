@@ -19,7 +19,6 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.PushPrefs
 import com.nostrvault.service.NostrService
-import com.nostrvault.service.PushNotificationService
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,12 +28,10 @@ import javax.inject.Inject
 @HiltViewModel
 class NotificationSettingsViewModel @Inject constructor(
     private val configStore: ConfigStore,
-    private val pushService: PushNotificationService,
     private val nostrService: NostrService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
-    val registrationStatus = pushService.registrationStatus
 
     fun hexFor(npub: String): String = HavenBridge.decodeNpub(npub) ?: ""
     fun profileFor(npub: String): FeedProfile? = profiles.value[hexFor(npub)]
@@ -44,14 +41,12 @@ class NotificationSettingsViewModel @Inject constructor(
         if (hexes.isNotEmpty()) nostrService.fetchMissingProfiles(hexes)
     }
 
+    // Android raises notifications locally from the embedded relay (no push
+    // server). This just flips the master enable flag that LocalNotificationService
+    // checks before posting.
     fun toggleEnabled(on: Boolean) {
         configStore.update { it.copy(enablePushNotifications = on) }
-        if (on) pushService.registerIfReady() else pushService.unregister()
     }
-
-    fun setServerUrl(url: String) = configStore.update { it.copy(pushServerURL = url) }
-
-    fun registerNow() = pushService.registerIfReady()
 
     fun setPref(npub: String, transform: (PushPrefs) -> PushPrefs) {
         configStore.update { cfg ->
@@ -68,7 +63,6 @@ fun NotificationSettingsScreen(
 ) {
     val config by viewModel.config.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
-    val status by viewModel.registrationStatus.collectAsState()
     val colors = LocalNostrVaultColors.current
     val enabled = config.enablePushNotifications
     val accounts = config.allAccountNpubs()
@@ -115,53 +109,6 @@ fun NotificationSettingsScreen(
 
             Spacer(Modifier.height(24.dp))
 
-            // Push server URL
-            Text("Push Server URL", color = PrimaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(4.dp))
-            OutlinedTextField(
-                value = config.pushServerURL,
-                onValueChange = viewModel::setServerUrl,
-                placeholder = { Text("https://push.example.com", color = PlaceholderText) },
-                singleLine = true,
-                enabled = enabled,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = colors.primary,
-                    unfocusedBorderColor = TertiaryGroupedBg,
-                    disabledBorderColor = TertiaryGroupedBg,
-                    focusedTextColor = PrimaryText,
-                    unfocusedTextColor = PrimaryText,
-                    disabledTextColor = TertiaryText,
-                    cursorColor = colors.primary,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // Registration status
-            val statusText = when (status) {
-                PushNotificationService.RegistrationStatus.REGISTERED -> "Registered"
-                PushNotificationService.RegistrationStatus.REGISTERING -> "Registering..."
-                PushNotificationService.RegistrationStatus.FAILED -> "Registration failed"
-                PushNotificationService.RegistrationStatus.UNREGISTERED -> "Not registered"
-            }
-            val statusColor = when (status) {
-                PushNotificationService.RegistrationStatus.REGISTERED -> SuccessGreen
-                PushNotificationService.RegistrationStatus.FAILED -> ErrorRed
-                else -> TertiaryText
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Status: $statusText", color = statusColor, fontSize = 13.sp)
-                if (enabled && status != PushNotificationService.RegistrationStatus.REGISTERING) {
-                    Spacer(Modifier.width(12.dp))
-                    TextButton(onClick = viewModel::registerNow) {
-                        Text("Register Now", color = colors.primary, fontSize = 13.sp)
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(24.dp))
-
             // Per-account notification preferences
             accounts.forEach { npub ->
                 val isOwner = npub == config.ownerNpub
@@ -203,8 +150,8 @@ fun NotificationSettingsScreen(
             }
 
             Text(
-                text = "Push notifications require a compatible push server and Firebase Cloud Messaging. " +
-                    "The push server receives your pubkey and device token to deliver notifications.",
+                text = "Notifications are generated on-device by the relay running in the background — " +
+                    "no push server or external service is involved. Your events never leave your phone.",
                 color = TertiaryText,
                 fontSize = 12.sp,
             )

@@ -8,6 +8,7 @@ import (
 	"maps"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -433,8 +434,66 @@ func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbCh
 		default:
 			log.Println("📦 new event kind", ev.Kind, "event in your inbox")
 		}
+
+		// Emit a machine-parseable marker so clients can raise a local system
+		// notification for this newly-imported inbox/chat event. Self-filters by
+		// kind; the prose lines above are left intact for the relay-activity dot.
+		emitInboxNotify(ev.Event)
 		return
 	}
+}
+
+// emitInboxNotify prints a single machine-parseable marker line for a newly
+// imported inbox/chat event so clients (currently the Android app's LogStore)
+// can raise a local system notification without a remote push server. Format:
+//
+//	🔔NOTIFY|type=<t>|kind=<k>|author=<hex>|id=<hex>|preview=<text>
+//
+// `preview` is always the LAST field (it may contain spaces) and is empty for
+// encrypted/opaque kinds (DMs, gift wraps, zaps). Self-filters by kind: kinds
+// that should not notify (e.g. follow lists) produce no line.
+func emitInboxNotify(ev *nostr.Event) {
+	if ev == nil {
+		return
+	}
+	var typ, preview string
+	switch ev.Kind {
+	case nostr.KindTextNote:
+		typ = "mention"
+		for _, tag := range ev.Tags {
+			if len(tag) >= 1 && tag[0] == "e" {
+				typ = "reply" // an "e" tag means this note replies to another
+				break
+			}
+		}
+		preview = sanitizeNotifyPreview(ev.Content)
+	case nostr.KindReaction:
+		typ = "reaction"
+		preview = sanitizeNotifyPreview(ev.Content)
+	case nostr.KindRepost:
+		typ = "repost"
+	case nostr.KindZap:
+		typ = "zap"
+	case nostr.KindEncryptedDirectMessage:
+		typ = "dm"
+	case nostr.KindGiftWrap:
+		typ = "giftwrap"
+	default:
+		return // follow lists and anything else: no notification
+	}
+	log.Printf("🔔NOTIFY|type=%s|kind=%d|author=%s|id=%s|preview=%s", typ, ev.Kind, ev.PubKey, ev.ID, preview)
+}
+
+// sanitizeNotifyPreview collapses newlines and trims a content string to a short
+// single-line preview safe to embed in a NOTIFY marker line.
+func sanitizeNotifyPreview(s string) string {
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > 140 {
+		s = string(r[:140]) + "…"
+	}
+	return s
 }
 
 // processOwnerEvent stores an owner-authored event into the outbox DB if it is

@@ -40,6 +40,28 @@ import (
 // Import log bridge: lets the host app poll for Go log messages during import.
 var importLogLatest atomic.Value // stores string
 
+// Notification bridge: a non-lossy FIFO of "🔔NOTIFY|..." marker lines. The
+// import log above keeps only the LATEST message, so amid the relay's constant
+// logging an inbound-event marker is usually overwritten before the host polls.
+// Notifications must never be dropped, so they get their own bounded queue that
+// is drained line-by-line via GetNotifyLogC.
+const notifyMarker = "🔔NOTIFY|"
+const notifyQueueMax = 512
+
+var (
+	notifyQueueMu sync.Mutex
+	notifyQueue   []string
+)
+
+func pushNotify(msg string) {
+	notifyQueueMu.Lock()
+	defer notifyQueueMu.Unlock()
+	if len(notifyQueue) >= notifyQueueMax {
+		notifyQueue = notifyQueue[1:] // drop oldest to bound memory
+	}
+	notifyQueue = append(notifyQueue, msg)
+}
+
 // importLogWriter intercepts log.Println output and stores the latest message
 // so the host app (Android/iOS) can poll for progress updates.
 type importLogWriter struct {
@@ -49,7 +71,14 @@ type importLogWriter struct {
 func (w *importLogWriter) Write(p []byte) (n int, err error) {
 	msg := strings.TrimSpace(string(p))
 	if msg != "" {
-		importLogLatest.Store(msg)
+		// Route notification markers to the dedicated (non-lossy) queue and keep
+		// them out of the user-facing console log; everything else feeds the
+		// best-effort latest-message import log.
+		if strings.Contains(msg, notifyMarker) {
+			pushNotify(msg)
+		} else {
+			importLogLatest.Store(msg)
+		}
 	}
 	return w.original.Write(p)
 }
@@ -66,6 +95,18 @@ func GetImportLogC() *C.char {
 	}
 	// Consume on read so the same message isn't returned twice
 	importLogLatest.Store("")
+	return C.CString(msg)
+}
+
+//export GetNotifyLogC
+func GetNotifyLogC() *C.char {
+	notifyQueueMu.Lock()
+	defer notifyQueueMu.Unlock()
+	if len(notifyQueue) == 0 {
+		return nil
+	}
+	msg := notifyQueue[0]
+	notifyQueue = notifyQueue[1:]
 	return C.CString(msg)
 }
 
@@ -901,10 +942,11 @@ func FetchFeeEstimatesC() *C.char {
 	return C.CString(string(result))
 }
 
-//export SweepToAddressC
 // SweepToAddressC sweeps all UTXOs from the Nostr-derived taproot address to
 // destAddr. feeRateSatsPerVB is the desired fee rate (sat/vB).
 // Returns JSON: {"txid":"…","amount":…,"fee":…} or {"error":"…"}.
+//
+//export SweepToAddressC
 func SweepToAddressC(nsecHex *C.char, destAddr *C.char, feeRateSatsPerVB C.int) *C.char {
 	result, err := buildAndBroadcastSweep(
 		C.GoString(nsecHex),

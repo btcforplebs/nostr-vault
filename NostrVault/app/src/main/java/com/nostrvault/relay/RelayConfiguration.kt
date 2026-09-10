@@ -258,10 +258,10 @@ data class HavenConfig(
     val importSeedRelays: List<String> = listOf(
         "wss://relay.damus.io",
         "wss://relay.primal.net",
-        "wss://relay.snort.social",
-        "wss://nos.social",
+        "wss://nos.lol",
+        "wss://nostr.mom",
         "wss://relay.btcforplebs.com",
-        "wss://nostr.land",
+        "wss://nostr-pub.wellorder.net",
     ),
 
     // Backup
@@ -276,9 +276,12 @@ data class HavenConfig(
     // Blastr
     val blastrRelaysFile: String = "relays_blastr.json",
     val blastrRelays: List<String> = listOf(
-        "wss://nostr.mutinywallet.com",
         "wss://relay.damus.io",
+        "wss://relay.primal.net",
         "wss://nos.lol",
+        "wss://nostr.mom",
+        "wss://relay.btcforplebs.com",
+        "wss://nostr-pub.wellorder.net",
     ),
 
     // DM Relays — the Go relay merges these with importSeedRelays for the
@@ -297,13 +300,17 @@ data class HavenConfig(
         "wss://relay.damus.io",
         "wss://relay.primal.net",
         "wss://nos.lol",
+        "wss://nostr.mom",
         "wss://relay.btcforplebs.com",
+        "wss://nostr-pub.wellorder.net",
     ),
     val feedRelays: List<String>? = listOf(
         "wss://relay.damus.io",
         "wss://relay.primal.net",
         "wss://nos.lol",
+        "wss://nostr.mom",
         "wss://relay.btcforplebs.com",
+        "wss://nostr-pub.wellorder.net",
     ),
 
     // Haven Relay (wss:// URL to a remote Haven relay to sync missed notes)
@@ -414,7 +421,9 @@ data class HavenConfig(
             "wss://relay.damus.io",
             "wss://relay.primal.net",
             "wss://nos.lol",
+            "wss://nostr.mom",
             "wss://relay.btcforplebs.com",
+            "wss://nostr-pub.wellorder.net",
         )
 
     /** Active feed relays, including the Haven relay if configured. */
@@ -432,7 +441,14 @@ data class HavenConfig(
     val activeBlastrRelays: List<String>
         get() {
             val relays = blastrRelays.ifEmpty {
-                listOf("wss://nostr.mutinywallet.com", "wss://relay.damus.io", "wss://nos.lol")
+                listOf(
+                    "wss://relay.damus.io",
+                    "wss://relay.primal.net",
+                    "wss://nos.lol",
+                    "wss://nostr.mom",
+                    "wss://relay.btcforplebs.com",
+                    "wss://nostr-pub.wellorder.net",
+                )
             }.toMutableList()
             val macWss = macRelayWssURL
             if (macWss.isNotEmpty() && macWss !in relays) {

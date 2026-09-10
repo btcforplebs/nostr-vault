@@ -32,6 +32,15 @@ class LogStore @Inject constructor() {
 
     private var pollingJob: Job? = null
 
+    /**
+     * Optional sink for raw `🔔NOTIFY|...` marker lines, set by the relay
+     * foreground service so [com.nostrvault.service.LocalNotificationService] can
+     * raise local system notifications. Kept as a plain callback so this store
+     * stays dependency-free.
+     */
+    @Volatile
+    var notifySink: ((String) -> Unit)? = null
+
     fun addEntry(entry: RelayLogParser.LogEntry) {
         val current = _logs.value.toMutableList()
         current.add(entry)
@@ -60,8 +69,30 @@ class LogStore @Inject constructor() {
                         if (HavenBridge.isLoaded) HavenBridge.getImportLog() else null
                     }
                     if (!message.isNullOrBlank()) {
+                        // Light the red dot only for inbound events from OTHERS. The
+                        // relay logs these phrases exclusively in its inbox/chat import
+                        // handler; your own posts/blasts never produce them.
+                        if (message.contains("in your inbox") || message.contains("in your chat relay")) {
+                            RelayForegroundService.markInboxActivity()
+                        }
                         val entry = RelayLogParser.LogEntry.parse(message)
                         addEntry(entry)
+                    }
+
+                    // Drain the dedicated, non-lossy notification queue and forward
+                    // every marker to the local notifier. Unlike the import log above
+                    // (latest-message-only), this delivers every inbound event.
+                    val sink = notifySink
+                    if (sink != null && HavenBridge.isLoaded) {
+                        while (isActive) {
+                            val notifyLine = withContext(Dispatchers.IO) { HavenBridge.getNotifyLog() }
+                            if (notifyLine.isNullOrBlank()) break
+                            try {
+                                sink.invoke(notifyLine)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Notify dispatch error: ${e.message}")
+                            }
+                        }
                     }
                 } catch (e: Exception) {
                     // Don't crash the polling loop on transient errors

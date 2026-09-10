@@ -87,6 +87,7 @@ extern int NIP46PingC(void);
 extern char* NIP46GetPendingAuthURLC(void);
 extern char* ComputePopularNotesC(void);
 extern char* GetImportLogC(void);
+extern char* GetNotifyLogC(void);
 
 // Helper: Convert Go C.CString result to jstring (and free the C memory)
 static jstring goStringToJstring(JNIEnv *env, char *goStr) {
@@ -414,4 +415,9 @@ Java_com_nostrvault_relay_HavenBridge_computePopularNotes(JNIEnv *env, jobject t
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_getImportLog(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, GetImportLogC());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_getNotifyLog(JNIEnv *env, jobject thiz) {
+    return goStringToJstring(env, GetNotifyLogC());
 }

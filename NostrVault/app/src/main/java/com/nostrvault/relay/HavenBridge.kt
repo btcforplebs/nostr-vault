@@ -224,6 +224,13 @@ object HavenBridge {
      */
     external fun getImportLog(): String?
 
+    /**
+     * Poll the next "🔔NOTIFY|..." marker line from the dedicated, non-lossy
+     * notification queue. Returns one line per call (consumed on read), or null
+     * when the queue is empty. Drained by [LogStore] to raise local notifications.
+     */
+    external fun getNotifyLog(): String?
+
     // -----------------------------------------------------------------------
     // Bech32 encoding/decoding (pure Kotlin — no JNI needed)
     // -----------------------------------------------------------------------
@@ -397,6 +404,33 @@ object HavenBridge {
         val bytes = hexToByteArray(hexEventId) ?: return null
         if (bytes.size != 32) return null
         return bech32Encode("note", bytes)
+    }
+
+    /**
+     * Encode an event reference to an nevent1 bech32 string (NIP-19 TLV).
+     * Mirrors iOS FeedNote.nevent: type 0 (event id), type 2 (author pubkey),
+     * type 3 (kind, big-endian UInt32). No relay hints.
+     */
+    fun encodeNevent(hexEventId: String, hexPubkey: String, kind: Int): String? {
+        val idBytes = hexToByteArray(hexEventId) ?: return null
+        if (idBytes.size != 32) return null
+        val pubBytes = hexToByteArray(hexPubkey) ?: return null
+        if (pubBytes.size != 32) return null
+        val tlv = mutableListOf<Byte>()
+        fun appendTLV(type: Int, value: ByteArray) {
+            tlv.add(type.toByte())
+            tlv.add(value.size.toByte())
+            value.forEach { tlv.add(it) }
+        }
+        appendTLV(0, idBytes)
+        appendTLV(2, pubBytes)
+        appendTLV(3, byteArrayOf(
+            ((kind ushr 24) and 0xFF).toByte(),
+            ((kind ushr 16) and 0xFF).toByte(),
+            ((kind ushr 8) and 0xFF).toByte(),
+            (kind and 0xFF).toByte(),
+        ))
+        return bech32Encode("nevent", tlv.toByteArray())
     }
 
     /** Decode an nevent1 bech32 string. Returns the hex event ID (type 0 TLV). */
