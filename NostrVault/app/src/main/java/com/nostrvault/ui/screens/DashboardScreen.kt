@@ -245,6 +245,18 @@ class DashboardViewModel @Inject constructor(
     private var updateGeneration = 0
     private var maxDisplayedItems = 50
 
+    // Bounded settle for the Zaps view: guarantees the spinner gives up within
+    // ~6s and shows the empty state instead of "loading zaps" forever when the
+    // owner simply has no zaps yet. Armed on entering Zaps / changing its filter.
+    private var zapsSettleJob: Job? = null
+    private fun armZapsSettle() {
+        zapsSettleJob?.cancel()
+        zapsSettleJob = viewModelScope.launch {
+            delay(6000)
+            _zapsHasLoadedOnce.value = true
+        }
+    }
+
     init {
         loadStats()
 
@@ -946,6 +958,7 @@ class DashboardViewModel @Inject constructor(
         when (mode) {
             VaultViewMode.LIKES -> fetchMissingLikedNotes()
             VaultViewMode.ZAPS -> {
+                armZapsSettle()
                 fetchMoreZapReceipts()
                 fetchMissingZappedNotes()
             }
@@ -972,6 +985,7 @@ class DashboardViewModel @Inject constructor(
         _zapsFilter.value = filter
         maxDisplayedItems = 50
         _zapsHasLoadedOnce.value = false
+        armZapsSettle()
         scheduleUpdateDisplayData()
         if (filter == VaultZapsFilter.MY_ZAPS) fetchMissingZappedNotes()
     }
@@ -1529,6 +1543,13 @@ fun DashboardScreen(
 
     // Mode & filters
     val viewMode by viewModel.viewMode.collectAsState()
+    // In Zaps Only mode the Likes tab is hidden — route a stuck selection back to Notes.
+    val zapsOnly = LocalZapsOnlyMode.current
+    LaunchedEffect(zapsOnly, viewMode) {
+        if (zapsOnly && viewMode == VaultViewMode.LIKES) {
+            viewModel.setViewMode(VaultViewMode.NOTES)
+        }
+    }
     val contentFilter by viewModel.contentFilter.collectAsState()
     val likesFilter by viewModel.likesFilter.collectAsState()
     val zapsFilter by viewModel.zapsFilter.collectAsState()
@@ -1633,12 +1654,14 @@ fun DashboardScreen(
                         isSelected = viewMode == VaultViewMode.NOTES,
                         onClick = { viewModel.setViewMode(VaultViewMode.NOTES) },
                     )
-                    IconFilterButton(
-                        icon = NostrVaultIcons.HeartFilled,
-                        contentDescription = "Likes",
-                        isSelected = viewMode == VaultViewMode.LIKES,
-                        onClick = { viewModel.setViewMode(VaultViewMode.LIKES) },
-                    )
+                    if (!LocalZapsOnlyMode.current) {
+                        IconFilterButton(
+                            icon = NostrVaultIcons.HeartFilled,
+                            contentDescription = "Likes",
+                            isSelected = viewMode == VaultViewMode.LIKES,
+                            onClick = { viewModel.setViewMode(VaultViewMode.LIKES) },
+                        )
+                    }
                     IconFilterButton(
                         icon = NostrVaultIcons.Zap,
                         contentDescription = "Zaps",
@@ -2162,7 +2185,10 @@ private fun ZapsContent(
 ) {
     val colors = LocalNostrVaultColors.current
 
-    if (notes.isEmpty() && (isRefreshing || !hasLoadedOnce)) {
+    // Settle-driven loading: hasLoadedOnce is set either when zaps arrive or by a
+    // bounded ~6s settle (armZapsSettle), so the spinner never hangs forever when
+    // there are simply no zaps. Don't gate on isRefreshing here.
+    if (notes.isEmpty() && !hasLoadedOnce) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier

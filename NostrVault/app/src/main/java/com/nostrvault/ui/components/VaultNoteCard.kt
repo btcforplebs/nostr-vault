@@ -51,6 +51,8 @@ fun VaultNoteCard(
 ) {
     val isCompact = layoutMode == VaultNoteLayoutMode.COMPACT
     val colors = LocalNostrVaultColors.current
+    // Zaps Only mode strips reactions from the inline engagement bar entirely.
+    val effectiveReactors = if (LocalZapsOnlyMode.current) emptyList() else reactors
 
     // iOS: background is SecondaryGroupedBg + havenPurple.opacity(0.015)
     // border is havenPurple.opacity(0.15) at 0.5 (compact) or 0.12 at 0.8 (expanded)
@@ -73,7 +75,7 @@ fun VaultNoteCard(
                 note = note,
                 profile = profile,
                 profiles = profiles,
-                reactors = reactors,
+                reactors = effectiveReactors,
                 latestReactionDate = latestReactionDate,
                 reposterPubkeys = reposterPubkeys,
                 quoterPubkeys = quoterPubkeys,

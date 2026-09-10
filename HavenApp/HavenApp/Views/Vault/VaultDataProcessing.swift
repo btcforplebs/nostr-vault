@@ -45,8 +45,9 @@ extension VaultView {
             withAnimation(.easeInOut(duration: 0.3)) { hasNewNotes = true }
         }
 
-        // Likes: kind 7
-        if (counts[7] ?? 0) > (notificationBaseline[7] ?? 0) && viewMode != .likes {
+        // Likes: kind 7 — suppressed in Zaps Only mode (likes are hidden from the UI)
+        if !configService.config.zapsOnlyMode
+            && (counts[7] ?? 0) > (notificationBaseline[7] ?? 0) && viewMode != .likes {
             withAnimation(.easeInOut(duration: 0.3)) { hasNewLikes = true }
         }
 
@@ -108,25 +109,29 @@ extension VaultView {
     }
 
     func updateZapsSettleState() {
-        zapsSettleTask?.cancel()
-        let busy = nostrService.isFetching || relayManager.isBooting
-        if busy {
-            zapsInitialSettled = false
-            // Fallback: settle after 5s even if still fetching, so the
-            // spinner doesn't stay forever when a relay never sends EOSE.
-            zapsSettleTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                guard !Task.isCancelled else { return }
-                zapsInitialSettled = true
-            }
-            return
-        }
+        // Already settled, or a settle run is already in flight. Crucially we do
+        // NOT cancel/restart on every isFetching toggle — that churn is exactly
+        // what kept the spinner up forever (the fallback timer never fired).
+        if zapsInitialSettled || zapsSettleTask != nil { return }
         zapsSettleTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard !Task.isCancelled else { return }
-            if !(nostrService.isFetching || relayManager.isBooting) {
-                zapsInitialSettled = true
+            let step: UInt64 = 500_000_000        // 0.5s poll
+            let hardCap: UInt64 = 6_000_000_000   // settle within 6s no matter what
+            let quietTarget: UInt64 = 1_000_000_000 // …or as soon as fetching is quiet for 1s
+            var elapsed: UInt64 = 0
+            var quiet: UInt64 = 0
+            while elapsed < hardCap {
+                try? await Task.sleep(nanoseconds: step)
+                if Task.isCancelled { zapsSettleTask = nil; return }
+                elapsed += step
+                if nostrService.isFetching || relayManager.isBooting {
+                    quiet = 0
+                } else {
+                    quiet += step
+                    if quiet >= quietTarget { break }
+                }
             }
+            zapsInitialSettled = true
+            zapsSettleTask = nil
         }
     }
 

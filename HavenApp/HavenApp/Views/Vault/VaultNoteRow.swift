@@ -336,7 +336,8 @@ struct NoteRow: View {
             }
 
             // Compact inline engagement bar
-            let rxList = reactors ?? []
+            // In Zaps Only mode reactions are dropped from both the bar and its visibility check.
+            let rxList = configService.config.zapsOnlyMode ? [] : (reactors ?? [])
             let zpList = zappers ?? []
             let rpList = reposterPubkeys ?? []
             let qtList = quoterPubkeys ?? []
@@ -439,8 +440,8 @@ struct NoteRow: View {
             .padding(.top, 6)
 
         HStack(spacing: 14) {
-            // Reactions
-            if !uniqueReactors.isEmpty {
+            // Reactions — hidden entirely in Zaps Only mode
+            if !uniqueReactors.isEmpty && !configService.config.zapsOnlyMode {
                 Button {
                     showingReactors = true
                 } label: {

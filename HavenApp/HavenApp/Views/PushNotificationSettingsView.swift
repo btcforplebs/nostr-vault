@@ -72,7 +72,9 @@ struct AccountNotificationSection: View {
             Toggle("Replies", isOn: prefs.replies)
             Toggle("Direct Messages", isOn: prefs.dms)
             Toggle("Zaps", isOn: prefs.zaps)
-            Toggle("Reactions", isOn: prefs.reactions)
+            if !configService.config.zapsOnlyMode {
+                Toggle("Reactions", isOn: prefs.reactions)
+            }
             Toggle("Reposts", isOn: prefs.reposts)
         } header: {
             HStack(spacing: 8) {

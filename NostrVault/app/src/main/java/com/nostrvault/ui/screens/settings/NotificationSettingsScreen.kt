@@ -189,9 +189,11 @@ fun NotificationSettingsScreen(
                         NotificationToggle("Zaps", "When someone zaps your notes", prefs.zaps, enabled) {
                             viewModel.setPref(npub) { p -> p.copy(zaps = it) }
                         }
-                        Divider()
-                        NotificationToggle("Reactions", "Likes and reactions to your notes", prefs.reactions, enabled) {
-                            viewModel.setPref(npub) { p -> p.copy(reactions = it) }
+                        if (!config.zapsOnlyMode) {
+                            Divider()
+                            NotificationToggle("Reactions", "Likes and reactions to your notes", prefs.reactions, enabled) {
+                                viewModel.setPref(npub) { p -> p.copy(reactions = it) }
+                            }
                         }
                         Divider()
                         NotificationToggle("Reposts", "When someone reposts your notes", prefs.reposts, enabled) {

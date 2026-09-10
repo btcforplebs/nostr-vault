@@ -107,7 +107,8 @@ class PushNotificationService @Inject constructor(
                             replies = prefs.replies,
                             dms = prefs.dms,
                             zaps = prefs.zaps,
-                            reactions = prefs.reactions,
+                            // Zaps Only mode hard-disables reaction pushes regardless of the stored preference.
+                            reactions = if (config.zapsOnlyMode) false else prefs.reactions,
                             reposts = prefs.reposts,
                         )
                     )

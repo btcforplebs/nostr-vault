@@ -10,9 +10,11 @@ extension VaultView {
             IconFilterButton(icon: "doc.text", tooltip: "Notes", isSelected: viewMode == .notes, color: .havenPurple) {
                 withAnimation(.easeInOut(duration: 0.15)) { viewMode = .notes }
             }
-            IconFilterButton(icon: "heart.fill", tooltip: "Likes", isSelected: viewMode == .likes, color: .havenPurple) {
-                withAnimation(.easeInOut(duration: 0.15)) { viewMode = .likes }
-                fetchMissingLikedNotes()
+            if !configService.config.zapsOnlyMode {
+                IconFilterButton(icon: "heart.fill", tooltip: "Likes", isSelected: viewMode == .likes, color: .havenPurple) {
+                    withAnimation(.easeInOut(duration: 0.15)) { viewMode = .likes }
+                    fetchMissingLikedNotes()
+                }
             }
             IconFilterButton(icon: "bolt.fill", tooltip: "Zaps", isSelected: viewMode == .zaps, color: .havenPurple) {
                 withAnimation(.easeInOut(duration: 0.15)) { viewMode = .zaps }
@@ -145,7 +147,9 @@ extension VaultView {
     var modeView: some View {
         HStack(spacing: 4) {
             notesButton
-            likesButton
+            if !configService.config.zapsOnlyMode {
+                likesButton
+            }
             zapsButton
             #if os(iOS)
             // Add compact toggle on mobile

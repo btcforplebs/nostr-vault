@@ -1120,7 +1120,7 @@ private fun ThreadedReplyNode(
             if (expandedEngagement) {
                 val noteEngagement = perNoteEngagement[reply.id]
                 if (noteEngagement != null) {
-                    val reactionCount = noteEngagement.reactions.size
+                    val reactionCount = if (LocalZapsOnlyMode.current) 0 else noteEngagement.reactions.size
                     val zapCount = noteEngagement.zaps.size
                     val repostCount = noteEngagement.reposts.size
                     if (reactionCount > 0 || zapCount > 0 || repostCount > 0) {
@@ -1376,17 +1376,19 @@ private fun HeroNoteCard(
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
 
-            // Engagement stats row — only shown when at least one count is non-zero
+            // Engagement stats row — only shown when at least one count is non-zero.
+            // Reactions are dropped entirely in Zaps Only mode.
             val reactions = stats?.reactions ?: 0
             val reposts = stats?.reposts ?: 0
             val zaps = stats?.zaps ?: 0
-            if (reactions > 0 || reposts > 0 || zaps > 0) {
+            val showReactions = reactions > 0 && !LocalZapsOnlyMode.current
+            if (showReactions || reposts > 0 || zaps > 0) {
                 Spacer(Modifier.height(12.dp))
                 Row(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    if (reactions > 0) EngagementStat(count = reactions, label = "Likes", onClick = onReactionsClick)
+                    if (showReactions) EngagementStat(count = reactions, label = "Likes", onClick = onReactionsClick)
                     if (reposts > 0) EngagementStat(count = reposts, label = "Reposts", onClick = onRepostsClick)
                     if (zaps > 0) EngagementStat(count = zaps, label = "Zaps", onClick = onZapsClick)
                 }
@@ -1423,15 +1425,17 @@ private fun HeroNoteCard(
                     contentDescription = "Quote",
                     onClick = onQuote,
                 )
-                // Like with long-press for emoji picker
-                EngagementButton(
-                    icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
-                    isActive = isLiked,
-                    activeColor = LikeRed,
-                    contentDescription = if (isLiked) "Unlike" else "Like",
-                    onClick = onLike,
-                    onLongClick = onLongPressLike,
-                )
+                // Like with long-press for emoji picker — hidden in Zaps Only mode
+                if (!LocalZapsOnlyMode.current) {
+                    EngagementButton(
+                        icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
+                        isActive = isLiked,
+                        activeColor = LikeRed,
+                        contentDescription = if (isLiked) "Unlike" else "Like",
+                        onClick = onLike,
+                        onLongClick = onLongPressLike,
+                    )
+                }
                 EngagementButton(
                     icon = NostrVaultIcons.Zap,
                     isActive = false,

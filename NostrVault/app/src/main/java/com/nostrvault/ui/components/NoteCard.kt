@@ -405,17 +405,19 @@ private fun EngagementBar(
             )
         }
 
-        // Like (with long-press for emoji picker)
-        EngagementButton(
-            icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
-            isActive = isLiked,
-            activeColor = LikeRed,
-            contentDescription = if (isLiked) "Unlike" else "Like",
-            onClick = { onLike?.invoke(noteId) },
-            onLongClick = if (onLongPressLike != null) {
-                { onLongPressLike.invoke(noteId) }
-            } else null,
-        )
+        // Like (with long-press for emoji picker) — hidden entirely in Zaps Only mode
+        if (!LocalZapsOnlyMode.current) {
+            EngagementButton(
+                icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
+                isActive = isLiked,
+                activeColor = LikeRed,
+                contentDescription = if (isLiked) "Unlike" else "Like",
+                onClick = { onLike?.invoke(noteId) },
+                onLongClick = if (onLongPressLike != null) {
+                    { onLongPressLike.invoke(noteId) }
+                } else null,
+            )
+        }
 
         // Zap
         EngagementButton(

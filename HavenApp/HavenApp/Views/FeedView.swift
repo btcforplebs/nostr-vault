@@ -1748,9 +1748,9 @@ struct FeedNoteRow: View {
                 }
 
                 // Compact engagement stats
-                if rowData.stats.reactions > 0 || rowData.stats.reposts > 0 {
+                if (rowData.stats.reactions > 0 && !rowData.zapsOnlyMode) || rowData.stats.reposts > 0 {
                     HStack(spacing: 6) {
-                        if rowData.stats.reactions > 0 {
+                        if rowData.stats.reactions > 0 && !rowData.zapsOnlyMode {
                             HStack(spacing: 1) {
                                 Text("❤️").font(.appSystem(size: 9))
                                 Text("\(rowData.stats.reactions)")
@@ -2216,31 +2216,33 @@ struct FeedNoteRow: View {
             actionButton(icon: "quote.closing", action: { onQuote?() })
                 .accessibilityLabel("Quote")
 
-            actionButton(
-                icon: rowData.isLiked ? "heart.fill" : "heart",
-                color: rowData.isLiked ? .red : .secondary,
-                action: { toggleLike() }
-            )
-            .accessibilityLabel(rowData.isLiked ? "Unlike" : "Like")
-            .scaleEffect(rowData.isLiked ? 1.2 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.45), value: rowData.isLiked)
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.5)
-                    .onEnded { _ in
-                        #if os(iOS)
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                        #endif
-                        showingEmojiPicker = true
+            if !rowData.zapsOnlyMode {
+                actionButton(
+                    icon: rowData.isLiked ? "heart.fill" : "heart",
+                    color: rowData.isLiked ? .red : .secondary,
+                    action: { toggleLike() }
+                )
+                .accessibilityLabel(rowData.isLiked ? "Unlike" : "Like")
+                .scaleEffect(rowData.isLiked ? 1.2 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.45), value: rowData.isLiked)
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.5)
+                        .onEnded { _ in
+                            #if os(iOS)
+                            let generator = UIImpactFeedbackGenerator(style: .medium)
+                            generator.impactOccurred()
+                            #endif
+                            showingEmojiPicker = true
+                        }
+                )
+                .popover(isPresented: $showingEmojiPicker) {
+                    EmojiPickerView { emoji in
+                        actions.reactToNote(note, emoji)
                     }
-            )
-            .popover(isPresented: $showingEmojiPicker) {
-                EmojiPickerView { emoji in
-                    actions.reactToNote(note, emoji)
+                    #if os(iOS)
+                    .presentationDetents([.height(520)])
+                    #endif
                 }
-                #if os(iOS)
-                .presentationDetents([.height(520)])
-                #endif
             }
 
             if rowData.hasNWC {

@@ -65,7 +65,7 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            NostrVaultTheme {
+            NostrVaultTheme(zapsOnlyMode = config.zapsOnlyMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = WindowBackground,

@@ -338,6 +338,9 @@ data class HavenConfig(
     val noteDetailCompactView: Boolean = false,
     val noteDetailExpandedEngagement: Boolean = false,
     val defaultReactionEmoji: String = "+",
+    // When true, likes/reactions are removed from the UI entirely; zaps become the
+    // primary engagement + notification signal. Mirrors iOS HavenConfig.zapsOnlyMode.
+    val zapsOnlyMode: Boolean = false,
     val autoplayVideos: Boolean = true,
 
     // Performance

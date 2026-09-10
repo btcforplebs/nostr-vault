@@ -212,6 +212,7 @@ struct FeedNoteRowData: Equatable {
     let hasNWC: Bool
     let defaultZapAmount: Int
     let hasLightningAddress: Bool
+    let zapsOnlyMode: Bool
 
     let displayPubkey: String
     let displayProfile: FeedProfile?
@@ -259,6 +260,7 @@ struct FeedNoteRowData: Equatable {
             hasNWC: !ConfigService.shared.config.nwcURI.isEmpty,
             defaultZapAmount: ConfigService.shared.config.defaultZapAmount,
             hasLightningAddress: hasLightning,
+            zapsOnlyMode: ConfigService.shared.config.zapsOnlyMode,
             displayPubkey: displayPubkey,
             displayProfile: nostrService.profiles[displayPubkey],
             parentNote: parentNote,

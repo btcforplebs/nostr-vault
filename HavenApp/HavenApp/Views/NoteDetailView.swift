@@ -319,7 +319,7 @@ struct NoteDetailView: View {
             feedService: feedService,
             nostrService: nostrService
         )
-        let hasEngagement = !detailedReactions.isEmpty || !detailedZaps.isEmpty || !detailedReposts.isEmpty
+        let hasEngagement = (!detailedReactions.isEmpty && !configService.config.zapsOnlyMode) || !detailedZaps.isEmpty || !detailedReposts.isEmpty
 
         return Group {
             if isCompactView {
@@ -1222,6 +1222,7 @@ struct NoteDetailView: View {
     // MARK: - Per-Note Engagement Helpers
 
     private func groupedReactionsForNote(_ noteId: String) -> [(emoji: String, count: Int)] {
+        if configService.config.zapsOnlyMode { return [] }
         let reactions = perNoteReactions[noteId] ?? []
         var groups: [String: Int] = [:]
         for rx in reactions {
@@ -1475,6 +1476,7 @@ struct NoteDetailView: View {
     // MARK: - Rich Engagement Computations
 
     private var groupedReactions: [(emoji: String, count: Int, reactorPubkeys: [String])] {
+        if configService.config.zapsOnlyMode { return [] }
         var groups: [String: [String]] = [:]
         for rx in detailedReactions {
             let emoji = (rx.content == "+" || rx.content.isEmpty) ? "❤️" : rx.content
@@ -2101,6 +2103,7 @@ struct ThreadedReplyNode: View {
 
     // Per-note engagement helpers for this reply node
     private func groupedReactionsForReply(_ noteId: String) -> [(emoji: String, count: Int)] {
+        if configService.config.zapsOnlyMode { return [] }
         let reactions = perNoteReactions[noteId] ?? []
         var groups: [String: Int] = [:]
         for rx in reactions {

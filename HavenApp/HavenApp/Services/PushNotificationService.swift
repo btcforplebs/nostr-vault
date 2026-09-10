@@ -179,7 +179,8 @@ class PushNotificationService: ObservableObject {
                 "replies": preferences.replies,
                 "dms": preferences.dms,
                 "zaps": preferences.zaps,
-                "reactions": preferences.reactions,
+                // Zaps Only mode hard-disables reaction pushes regardless of the stored preference.
+                "reactions": config.zapsOnlyMode ? false : preferences.reactions,
                 "reposts": preferences.reposts
             ]
         ]

@@ -36,6 +36,13 @@ val LocalTextSizeScale = staticCompositionLocalOf { 1.0f }
 val LocalOledMode = staticCompositionLocalOf { false }
 
 /**
+ * CompositionLocal for Zaps Only mode preference.
+ * When true, likes/reactions are removed from the UI entirely and zaps
+ * become the primary engagement + notification signal.
+ */
+val LocalZapsOnlyMode = staticCompositionLocalOf { false }
+
+/**
  * Master theme composable for Nostr Vault.
  *
  * The app is permanently dark-themed (no light mode), matching iOS.
@@ -46,6 +53,7 @@ fun NostrVaultTheme(
     appTheme: AppTheme = AppTheme.DEFAULT,
     textSizeScale: Float = 1.0f,
     oledMode: Boolean = false,
+    zapsOnlyMode: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colors = appTheme.colors
@@ -81,6 +89,7 @@ fun NostrVaultTheme(
         LocalAppTheme provides appTheme,
         LocalTextSizeScale provides textSizeScale,
         LocalOledMode provides oledMode,
+        LocalZapsOnlyMode provides zapsOnlyMode,
     ) {
         MaterialTheme(
             colorScheme = materialColors,

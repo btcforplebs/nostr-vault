@@ -250,10 +250,13 @@ extension VaultView {
     // MARK: - Zaps List
 
     var zapsList: some View {
-        let isFetching = nostrService.isFetching || relayManager.isBooting
+        // Settle-driven loading: never gate the spinner on isFetching (which is
+        // ~always true here while the feed/relay fetches), or the Zaps view spins
+        // forever when there are no zaps yet. Show the spinner only until the
+        // initial settle completes (bounded ~6s, see updateZapsSettleState).
         let showLoading = displayZappedNotes.isEmpty
             && !zapsHasLoadedOnce
-            && (isFetching || !zapsInitialSettled)
+            && !zapsInitialSettled
         return Group {
             if showLoading {
                 VStack(spacing: 32) {

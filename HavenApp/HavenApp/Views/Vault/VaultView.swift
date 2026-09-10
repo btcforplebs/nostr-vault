@@ -257,6 +257,11 @@ struct VaultView: View {
             zapsInitialSettled = false
             updateZapsSettleState()
         }
+        .onChange(of: configService.config.zapsOnlyMode) { _, newValue in
+            if newValue && viewMode == .likes {
+                withAnimation(.easeInOut(duration: 0.15)) { viewMode = .notes }
+            }
+        }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             notesHasLoadedOnce = false
             likesHasLoadedOnce = false
@@ -286,7 +291,9 @@ struct VaultView: View {
             showingRelayDashboard = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in
-            withAnimation(.easeInOut(duration: 0.15)) { viewMode = .likes }
+            // In Zaps Only mode the Likes tab is hidden — route to Notes instead.
+            let target: ViewMode = configService.config.zapsOnlyMode ? .notes : .likes
+            withAnimation(.easeInOut(duration: 0.15)) { viewMode = target }
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in
             withAnimation(.easeInOut(duration: 0.15)) { viewMode = .notes }
@@ -666,6 +673,11 @@ struct VaultView: View {
             zapsInitialSettled = false
             updateZapsSettleState()
         }
+        .onChange(of: configService.config.zapsOnlyMode) { _, newValue in
+            if newValue && viewMode == .likes {
+                withAnimation(.easeInOut(duration: 0.15)) { viewMode = .notes }
+            }
+        }
         .onChange(of: configService.config.activeAccountNpub) { _, _ in
             notesHasLoadedOnce = false
             likesHasLoadedOnce = false
@@ -695,7 +707,8 @@ struct VaultView: View {
         }
         #if os(iOS)
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in
-            withAnimation(.easeInOut(duration: 0.15)) { viewMode = .likes }
+            let target: ViewMode = configService.config.zapsOnlyMode ? .notes : .likes
+            withAnimation(.easeInOut(duration: 0.15)) { viewMode = target }
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in
             withAnimation(.easeInOut(duration: 0.15)) { viewMode = .notes }

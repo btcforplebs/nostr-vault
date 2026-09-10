@@ -20,6 +20,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.service.PushNotificationService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +35,7 @@ import javax.inject.Inject
 @HiltViewModel
 class AppearanceViewModel @Inject constructor(
     private val configStore: ConfigStore,
+    private val pushService: PushNotificationService,
 ) : ViewModel() {
 
     private val _selectedTheme = MutableStateFlow(AppTheme.DEFAULT)
@@ -48,12 +50,16 @@ class AppearanceViewModel @Inject constructor(
     private val _defaultEmoji = MutableStateFlow("+")
     val defaultEmoji = _defaultEmoji.asStateFlow()
 
+    private val _zapsOnly = MutableStateFlow(false)
+    val zapsOnly = _zapsOnly.asStateFlow()
+
     init {
         val config = configStore.config.value
         _selectedTheme.value = AppTheme.fromKey(config.themeColor)
         _textScale.value = config.textSizeScale
         _oledMode.value = config.oledMode
         _defaultEmoji.value = config.defaultReactionEmoji
+        _zapsOnly.value = config.zapsOnlyMode
     }
 
     fun selectTheme(theme: AppTheme) {
@@ -83,6 +89,16 @@ class AppearanceViewModel @Inject constructor(
             configStore.update { it.copy(defaultReactionEmoji = emoji) }
         }
     }
+
+    fun toggleZapsOnly(enabled: Boolean) {
+        _zapsOnly.value = enabled
+        viewModelScope.launch {
+            configStore.update { it.copy(zapsOnlyMode = enabled) }
+            // Re-push notification preferences so the server applies/lifts the
+            // reaction-push override immediately (see PushNotificationService).
+            pushService.registerIfReady()
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,6 +111,7 @@ fun AppearanceSettingsScreen(
     val textScale by viewModel.textScale.collectAsState()
     val oledMode by viewModel.oledMode.collectAsState()
     val defaultEmoji by viewModel.defaultEmoji.collectAsState()
+    val zapsOnly by viewModel.zapsOnly.collectAsState()
 
     Scaffold(
         topBar = {
@@ -214,21 +231,52 @@ fun AppearanceSettingsScreen(
 
             Spacer(Modifier.height(32.dp))
 
-            // Default reaction emoji
-            Text(
-                text = "Default Reaction",
-                color = PrimaryText,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "Used for quick-react on notes",
-                color = SecondaryText,
-                fontSize = 13.sp,
-            )
-            Spacer(Modifier.height(12.dp))
+            // Zaps Only mode
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Zaps Only Mode",
+                        color = PrimaryText,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "Remove likes and reactions entirely. Zaps become the only way to engage and the primary source of relay notifications.",
+                        color = SecondaryText,
+                        fontSize = 13.sp,
+                    )
+                }
+                Switch(
+                    checked = zapsOnly,
+                    onCheckedChange = viewModel::toggleZapsOnly,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = PrimaryText,
+                        checkedTrackColor = LocalNostrVaultColors.current.primary,
+                    ),
+                )
+            }
 
-            val emojiOptions = listOf(
+            if (!zapsOnly) {
+                Spacer(Modifier.height(32.dp))
+
+                // Default reaction emoji
+                Text(
+                    text = "Default Reaction",
+                    color = PrimaryText,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Used for quick-react on notes",
+                    color = SecondaryText,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+
+                val emojiOptions = listOf(
                 "+" to "+",
                 "\u2764\uFE0F" to "\u2764\uFE0F",
                 "\uD83D\uDC4D" to "\uD83D\uDC4D",
@@ -270,6 +318,7 @@ fun AppearanceSettingsScreen(
                         )
                     }
                 }
+            }
             }
         }
     }
