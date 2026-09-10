@@ -228,6 +228,18 @@ class SearchViewModel @Inject constructor(
 
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
 
+    // ── Quoted note resolution (embedded nostr:note1/nevent1 previews) ──
+
+    val quotedNotesCache = feedService.parentNotesCache
+
+    fun quotedNoteFor(identifier: String): FeedNote? = feedService.quotedNoteFor(identifier)
+
+    fun fetchMissingQuotedNotes(identifiers: List<String>) =
+        feedService.fetchMissingQuotedNotes(identifiers)
+
+    fun fetchMissingQuotedProfiles(identifiers: List<String>) =
+        feedService.fetchMissingQuotedProfiles(identifiers)
+
     // ── Recent Searches ─────────────────────────────────────────────
 
     fun saveRecentSearch(query: String) {
@@ -316,7 +328,20 @@ fun SearchScreen(
     val recentSearches by viewModel.recentSearches.collectAsState()
     val trendingHashtags by viewModel.trendingHashtags.collectAsState()
     val suggestedProfiles by viewModel.suggestedProfiles.collectAsState()
+    val profiles by viewModel.profiles.collectAsState()
+    val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val colors = LocalNostrVaultColors.current
+
+    // Fetch embedded quoted notes (nostr:note1.../nevent1...) in search results
+    // plus their authors' profiles, so they resolve instead of spinning forever.
+    LaunchedEffect(results) {
+        val quotedIds = results.notes.flatMap { it.quotedEventIds }.distinct()
+        if (quotedIds.isNotEmpty()) viewModel.fetchMissingQuotedNotes(quotedIds)
+    }
+    LaunchedEffect(results, quotedNotesCache) {
+        val quotedIds = results.notes.flatMap { it.quotedEventIds }.distinct()
+        if (quotedIds.isNotEmpty()) viewModel.fetchMissingQuotedProfiles(quotedIds)
+    }
 
     // Handle direct bech32 lookup navigation
     LaunchedEffect(Unit) {
@@ -592,10 +617,17 @@ fun SearchScreen(
                         )
                     }
                     items(results.notes, key = { it.id }) { note ->
+                        val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotesCache) {
+                            note.quotedEventIds.mapNotNull { qid ->
+                                viewModel.quotedNoteFor(qid)?.let { qid to it }
+                            }.toMap()
+                        }
                         NoteCard(
                             note = note,
                             profile = viewModel.profileFor(note.pubkey),
                             stats = null,
+                            profiles = profiles,
+                            quotedNotes = quotedNotesMap,
                             onNoteClick = onNoteClick,
                             onProfileClick = onProfileClick,
                         )

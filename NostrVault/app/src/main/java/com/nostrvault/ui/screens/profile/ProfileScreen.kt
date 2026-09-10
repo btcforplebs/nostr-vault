@@ -36,6 +36,13 @@ fun ProfileScreen(
     onBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
+    // Initialize ViewModel with the pubkey parameter
+    LaunchedEffect(pubkey) {
+        if (viewModel.pubkey.isEmpty() || viewModel.pubkey != pubkey) {
+            viewModel.setPubkey(pubkey)
+        }
+    }
+
     val profile by viewModel.profile.collectAsState()
     val filteredNotes by viewModel.filteredNotes.collectAsState()
     val selectedSection by viewModel.selectedSection.collectAsState()
@@ -44,6 +51,19 @@ fun ProfileScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val followersCount by viewModel.followersCount.collectAsState()
     val followingCount by viewModel.followingCount.collectAsState()
+    val profiles by viewModel.profiles.collectAsState()
+    val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
+
+    // Fetch embedded quoted notes (nostr:note1.../nevent1...) for visible notes
+    // plus their authors' profiles, so they resolve instead of spinning forever.
+    LaunchedEffect(filteredNotes) {
+        val quotedIds = filteredNotes.flatMap { it.quotedEventIds }.distinct()
+        if (quotedIds.isNotEmpty()) viewModel.fetchMissingQuotedNotes(quotedIds)
+    }
+    LaunchedEffect(filteredNotes, quotedNotesCache) {
+        val quotedIds = filteredNotes.flatMap { it.quotedEventIds }.distinct()
+        if (quotedIds.isNotEmpty()) viewModel.fetchMissingQuotedProfiles(quotedIds)
+    }
     val colors = LocalNostrVaultColors.current
 
     GlassScaffold(
@@ -159,10 +179,17 @@ fun ProfileScreen(
                     items = filteredNotes,
                     key = { it.id },
                 ) { note ->
+                    val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotesCache) {
+                        note.quotedEventIds.mapNotNull { qid ->
+                            viewModel.quotedNoteFor(qid)?.let { qid to it }
+                        }.toMap()
+                    }
                     NoteCard(
                         note = note,
                         profile = viewModel.profileFor(note.pubkey),
                         stats = viewModel.statsFor(note.id),
+                        profiles = profiles,
+                        quotedNotes = quotedNotesMap,
                         isLiked = viewModel.isLiked(note.id),
                         onNoteClick = onNoteClick,
                         onProfileClick = onProfileClick,
@@ -259,7 +286,21 @@ private fun ProfileHeader(
         Spacer(Modifier.height(16.dp))
 
         // Action button
-        if (!isOwnProfile) {
+        if (isOwnProfile) {
+            Button(
+                onClick = onEditProfile,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.primary,
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth(0.6f),
+            ) {
+                Text(
+                    text = "Edit Profile",
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        } else {
             Button(
                 onClick = onFollow,
                 colors = ButtonDefaults.buttonColors(
