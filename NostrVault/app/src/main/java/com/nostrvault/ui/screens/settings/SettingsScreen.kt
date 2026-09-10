@@ -55,7 +55,6 @@ class SettingsViewModel @Inject constructor(
 fun SettingsScreen(
     onNavigate: (Screen) -> Unit,
     onBack: () -> Unit,
-    viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     Scaffold(
         topBar = {

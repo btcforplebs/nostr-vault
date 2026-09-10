@@ -31,7 +31,6 @@ fun NostrContentText(
     profiles: Map<String, FeedProfile>,
     mediaURLs: Set<String> = emptySet(),
     onProfileClick: (String) -> Unit = {},
-    onNoteClick: (String) -> Unit = {},
     onPlainTextClick: (() -> Unit)? = null,
     textColor: Color = PrimaryText,
     fontSize: TextUnit = 15.sp,

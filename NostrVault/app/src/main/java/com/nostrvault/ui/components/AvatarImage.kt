@@ -67,7 +67,6 @@ fun AvatarImage(
     size: Dp,
     modifier: Modifier = Modifier,
     displayName: String? = null,
-    onClick: (() -> Unit)? = null,
 ) {
     val gradient = remember(pubkey) { avatarGradient(pubkey) }
     val letter = remember(displayName, pubkey) {

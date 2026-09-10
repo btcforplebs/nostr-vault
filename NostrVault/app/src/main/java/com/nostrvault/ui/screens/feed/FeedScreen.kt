@@ -82,7 +82,6 @@ fun FeedScreen(
     onReply: ((String) -> Unit)? = null,
     onQuote: ((String) -> Unit)? = null,
     onNavigateToSettings: () -> Unit,
-    onNavigateToDashboard: () -> Unit,
     viewModel: FeedViewModel = hiltViewModel(),
 ) {
     val feedMode by viewModel.feedMode.collectAsState()

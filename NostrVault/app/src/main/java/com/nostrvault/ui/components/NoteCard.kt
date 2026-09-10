@@ -305,7 +305,6 @@ fun NoteCard(
                     fontSize = 17.sp,
                     lineHeight = 24.sp,
                     onProfileClick = onProfileClick,
-                    onNoteClick = onNoteClick,
                     onPlainTextClick = { onNoteClick(note.id) },
                     modifier = Modifier.padding(start = 50.dp),
                 )
