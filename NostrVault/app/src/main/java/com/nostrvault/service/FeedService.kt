@@ -1855,7 +1855,7 @@ class FeedService @Inject constructor(
         }
     }
 
-    fun fetchMissingNotesBatch(ids: List<String>) {
+    fun fetchMissingNotesBatch(ids: List<String>, extraRelays: List<String> = emptyList()) {
         val missing = ids.filter { !_parentNotesCache.value.containsKey(it) }.distinct()
         if (missing.isEmpty()) return
 
@@ -1864,6 +1864,8 @@ class FeedService @Inject constructor(
             val relayUrls = buildList {
                 config.nostrURL?.let { add(it) }
                 config.inboxRelays?.let { addAll(it) }
+                // Relay hints from the reference itself, when the caller had any.
+                addAll(extraRelays)
                 // Quoted/parent notes are often from external authors who publish
                 // to feed/blastr relays, not the local+inbox set. Match the live
                 // feed relay set (relay-set parity) so these actually resolve.
@@ -1949,16 +1951,51 @@ class FeedService @Inject constructor(
             null -> null
         }
 
-    /** Batch-fetch quoted events that aren't cached yet. */
-    fun fetchMissingQuotedNotes(identifiers: List<String>) {
+    /**
+     * Batch-fetch the events [notes] quote, carrying each reference's relay
+     * hints with it.
+     *
+     * Callers pass the notes rather than a list of ids so the ids and their
+     * hints cannot be gathered separately and drift apart — the same mistake
+     * that once had the parser emitting one kind of key and the fetcher
+     * expecting another.
+     */
+    fun fetchMissingQuotedNotes(notes: List<FeedNote>) {
+        val ids = notes.flatMap { it.quotedEventIds }.distinct()
+        if (ids.isEmpty()) return
+        val hints = mutableMapOf<String, MutableList<String>>()
+        for (note in notes) {
+            for ((key, urls) in note.quotedRelayHints) {
+                val bucket = hints.getOrPut(key) { mutableListOf() }
+                for (u in urls) if (u !in bucket) bucket.add(u)
+            }
+        }
+        fetchQuotedByKey(ids, hints)
+    }
+
+    /**
+     * Batch-fetch quoted events that aren't cached yet.
+     *
+     * [relayHints] are the NIP-19 hints the references carried, keyed the same
+     * way. A quoted event frequently is not on the reader's own relays — that
+     * is exactly why the author's client wrote a hint — so the hints widen the
+     * query. They never replace the user's relays: they come from a stranger's
+     * note and are only ever added to the set.
+     */
+    private fun fetchQuotedByKey(
+        identifiers: List<String>,
+        relayHints: Map<String, List<String>>,
+    ) {
         val keys = identifiers.distinct().mapNotNull { id -> QuoteRef.key(id)?.let { id to it } }
 
         val hexIds = keys.mapNotNull { (_, key) -> (key as? QuoteRef.Key.Event)?.hexId }
-        if (hexIds.isNotEmpty()) fetchMissingNotesBatch(hexIds)
+        if (hexIds.isNotEmpty()) {
+            fetchMissingNotesBatch(hexIds, keys.flatMap { relayHints[it.first].orEmpty() }.distinct())
+        }
 
         val coordinates = keys.mapNotNull { (raw, key) ->
-            (key as? QuoteRef.Key.Address)?.let { raw to it.coordinate }
-        }.filter { (raw, _) -> !_quotedAddressCache.value.containsKey(raw) }
+            (key as? QuoteRef.Key.Address)?.let { Triple(raw, it.coordinate, relayHints[raw].orEmpty()) }
+        }.filter { (raw, _, _) -> !_quotedAddressCache.value.containsKey(raw) }
         if (coordinates.isNotEmpty()) fetchQuotedAddressesBatch(coordinates)
     }
 
@@ -1971,7 +2008,7 @@ class FeedService @Inject constructor(
      * author's article too. The count here is the number of quoted articles on
      * screen, which is small.
      */
-    private fun fetchQuotedAddressesBatch(coordinates: List<Pair<String, QuoteRef.Coordinate>>) {
+    private fun fetchQuotedAddressesBatch(coordinates: List<Triple<String, QuoteRef.Coordinate, List<String>>>) {
         scope.launch(Dispatchers.IO) {
             val config = configStore.config.value
             val relayUrls = buildList {
@@ -1979,6 +2016,10 @@ class FeedService @Inject constructor(
                 config.inboxRelays?.let { addAll(it) }
                 addAll(config.activeFeedRelays)
                 addAll(config.activeBlastrRelays)
+                // The author's hint, added last: it widens the search for an
+                // article that lives outside this user's relay set, which is
+                // the only way that quote ever resolves.
+                coordinates.forEach { addAll(it.third) }
             }.distinct()
 
             val tempClients = mutableListOf<WebSocketClient>()
@@ -2029,7 +2070,7 @@ class FeedService @Inject constructor(
                     }
                 })
 
-                for ((_, coordinate) in coordinates) {
+                for ((_, coordinate, _) in coordinates) {
                     val subId = "qaddr-${UUID.randomUUID().toString().take(8)}"
                     val dTagJson = json.encodeToString(JsonPrimitive.serializer(), JsonPrimitive(coordinate.dTag))
                     val filter = """{"kinds":[${coordinate.kind}],"authors":["${coordinate.pubkey}"],"#d":[$dTagJson],"limit":1}"""
@@ -2043,8 +2084,12 @@ class FeedService @Inject constructor(
         }
     }
 
+    /** Fetch profiles for the authors of the events [notes] quote. */
+    fun fetchMissingQuotedProfiles(notes: List<FeedNote>) =
+        fetchQuoteAuthorProfiles(notes.flatMap { it.quotedEventIds }.distinct())
+
     /** Fetch profiles for the authors of resolved quoted notes that lack one. */
-    fun fetchMissingQuotedProfiles(identifiers: List<String>) {
+    private fun fetchQuoteAuthorProfiles(identifiers: List<String>) {
         val missingAuthors = identifiers
             .mapNotNull { quotedNoteFor(it)?.pubkey }
             .filter { nostrService.profiles.value[it] == null }

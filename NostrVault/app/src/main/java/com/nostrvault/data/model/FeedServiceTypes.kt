@@ -116,6 +116,11 @@ data class FeedNote(
     val mediaURLs: List<String>,
     val linkURLs: List<String>,
     val quotedEventIds: List<String>,
+    /**
+     * Relay hints the quote references carried, keyed like [quotedEventIds].
+     * Defaulted so a note decoded from an older cache still loads.
+     */
+    val quotedRelayHints: Map<String, List<String>> = emptyMap(),
     val repostedEventId: String?,
 ) {
     /** Instance-level noise check delegating to companion. */
@@ -229,6 +234,7 @@ data class FeedNote(
 
             val linkURLs = parseLinkURLs(resolvedContent, mediaURLs.toSet())
             val quotedEventIds = parseQuotedEventIds(resolvedContent)
+            val quotedRelayHints = QuoteRef.relayHints(resolvedContent, HavenQuoteDecoder)
 
             return FeedNote(
                 id = id,
@@ -244,6 +250,7 @@ data class FeedNote(
                 mediaURLs = mediaURLs,
                 linkURLs = linkURLs,
                 quotedEventIds = quotedEventIds,
+                quotedRelayHints = quotedRelayHints,
                 repostedEventId = outerRepostedEventId,
             )
         }

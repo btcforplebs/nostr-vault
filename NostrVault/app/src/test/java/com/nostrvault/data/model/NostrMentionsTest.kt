@@ -16,6 +16,11 @@ import org.junit.Test
  */
 class NostrMentionsTest {
 
+    private companion object {
+        /** A plausible-length bech32 body; the extractor rejects short lookalikes. */
+        const val NEVENT1 = "nevent1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce6mua7l"
+    }
+
     private val video = "https://logen.btcforplebs.com/40051f70189f48d34b72b975273cc4f0b6da4a60f577da3598f67232b38d4a48.mp4"
 
     @Test
@@ -49,8 +54,15 @@ class NostrMentionsTest {
 
     @Test
     fun `quote references are still stripped`() {
-        val text = NostrMentions.toPlainText("see nostr:nevent1abc for more", emptyMap())
+        val text = NostrMentions.toPlainText("see nostr:$NEVENT1 for more", emptyMap())
         assertEquals("see  for more", text)
+    }
+
+    @Test
+    fun `a bare reference with no nostr prefix is stripped too`() {
+        // A preview row draws no card, so leaving the raw bech32 in the text
+        // is the worst of both: unreadable and unexplained.
+        assertEquals("see  for more", NostrMentions.toPlainText("see $NEVENT1 for more", emptyMap()))
     }
 
     @Test

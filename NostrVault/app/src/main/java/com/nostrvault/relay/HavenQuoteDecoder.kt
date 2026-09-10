@@ -12,4 +12,7 @@ object HavenQuoteDecoder : QuoteRef.Decoder {
     override fun neventToHex(nevent1: String): String? = HavenBridge.decodeNevent(nevent1)
     override fun naddrToCoordinate(naddr1: String): QuoteRef.Coordinate? =
         HavenBridge.decodeNaddr(naddr1)
+
+    override fun relayHints(identifier: String): List<String> =
+        HavenBridge.relayHints(identifier)
 }

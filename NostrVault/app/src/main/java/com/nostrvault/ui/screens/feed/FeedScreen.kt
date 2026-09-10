@@ -143,17 +143,17 @@ fun FeedScreen(
     // Batch-fetch any embedded quoted notes (nostr:note1.../nevent1...) referenced
     // by the visible notes. Decoded to hex and fetched via the same path as parents.
     LaunchedEffect(notes) {
-        val quotedIds = notes.flatMap { it.quotedEventIds }.distinct()
-        if (quotedIds.isNotEmpty()) {
-            viewModel.fetchMissingQuotedNotes(quotedIds)
+        val quoting = notes.filter { it.quotedEventIds.isNotEmpty() }
+        if (quoting.isNotEmpty()) {
+            viewModel.fetchMissingQuotedNotes(quoting)
         }
     }
 
     // Once quoted notes resolve, fetch their authors' profiles if not already cached.
     LaunchedEffect(notes, parentNotes) {
-        val quotedIds = notes.flatMap { it.quotedEventIds }.distinct()
-        if (quotedIds.isNotEmpty()) {
-            viewModel.fetchMissingQuotedProfiles(quotedIds)
+        val quoting = notes.filter { it.quotedEventIds.isNotEmpty() }
+        if (quoting.isNotEmpty()) {
+            viewModel.fetchMissingQuotedProfiles(quoting)
         }
     }
 

@@ -16,9 +16,18 @@ package com.nostrvault.data.model
  */
 object QuoteRef {
 
-    /** `nostr:note1...` / `nostr:nevent1...` / `nostr:naddr1...` event references. */
+    /**
+     * `nostr:note1...` / `nostr:nevent1...` / `nostr:naddr1...` event references.
+     *
+     * The `nostr:` prefix is optional because clients in the wild post the bare
+     * bech32, and a bare `nevent1…` rendered as raw text looks broken here even
+     * though the note is fine. A preceding character must be whitespace or a
+     * delimiter so this cannot bite into the middle of a word or a URL path,
+     * and `bech32` alone is not enough to be sure — anything that fails to
+     * decode is dropped rather than shown, which is what [resolve] already does.
+     */
     val REGEX = Regex(
-        """nostr:(note1[a-z0-9]+|nevent1[a-z0-9]+|naddr1[a-z0-9]+)""",
+        """(?:nostr:)?(note1[a-z0-9]{20,}|nevent1[a-z0-9]{20,}|naddr1[a-z0-9]{20,})""",
         RegexOption.IGNORE_CASE,
     )
 
@@ -37,6 +46,12 @@ object QuoteRef {
         fun noteToHex(note1: String): String?
         fun neventToHex(nevent1: String): String?
         fun naddrToCoordinate(naddr1: String): Coordinate?
+
+        /**
+         * Relay hints (NIP-19 TLV type 1) the reference carries. Defaulted so a
+         * decoder that does not care about them stays a three-method interface.
+         */
+        fun relayHints(identifier: String): List<String> = emptyList()
     }
 
     /** What a lookup key names. */
@@ -78,6 +93,26 @@ object QuoteRef {
     /** The lookup keys for every quote reference in [content]. */
     fun resolvedIdentifiers(content: String, decoder: Decoder): List<String> =
         identifiers(content).mapNotNull { resolve(it, decoder) }.distinct()
+
+    /**
+     * Relay hints for each quote reference in [content], keyed by the same
+     * lookup key [resolvedIdentifiers] produces.
+     *
+     * The hint is the author telling us where the quoted event lives. Without
+     * it a quote of something outside the reader's own relay set can never
+     * resolve, however correct the rest of the pipeline is.
+     */
+    fun relayHints(content: String, decoder: Decoder): Map<String, List<String>> {
+        val out = mutableMapOf<String, MutableList<String>>()
+        for (identifier in identifiers(content)) {
+            val key = resolve(identifier, decoder) ?: continue
+            val hints = decoder.relayHints(identifier)
+            if (hints.isEmpty()) continue
+            val bucket = out.getOrPut(key) { mutableListOf() }
+            for (h in hints) if (h !in bucket) bucket.add(h)
+        }
+        return out
+    }
 
     /**
      * Reads a lookup key back. Returns null only for a string that is neither —

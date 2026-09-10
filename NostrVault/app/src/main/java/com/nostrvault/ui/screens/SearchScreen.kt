@@ -236,11 +236,11 @@ class SearchViewModel @Inject constructor(
 
     fun quotedNoteFor(identifier: String): FeedNote? = feedService.quotedNoteFor(identifier)
 
-    fun fetchMissingQuotedNotes(identifiers: List<String>) =
-        feedService.fetchMissingQuotedNotes(identifiers)
+    fun fetchMissingQuotedNotes(notes: List<FeedNote>) =
+        feedService.fetchMissingQuotedNotes(notes)
 
-    fun fetchMissingQuotedProfiles(identifiers: List<String>) =
-        feedService.fetchMissingQuotedProfiles(identifiers)
+    fun fetchMissingQuotedProfiles(notes: List<FeedNote>) =
+        feedService.fetchMissingQuotedProfiles(notes)
 
     // ── Recent Searches ─────────────────────────────────────────────
 
@@ -339,12 +339,12 @@ fun SearchScreen(
     // Fetch embedded quoted notes (nostr:note1.../nevent1...) in search results
     // plus their authors' profiles, so they resolve instead of spinning forever.
     LaunchedEffect(results) {
-        val quotedIds = results.notes.flatMap { it.quotedEventIds }.distinct()
-        if (quotedIds.isNotEmpty()) viewModel.fetchMissingQuotedNotes(quotedIds)
+        val quoting = results.notes.filter { it.quotedEventIds.isNotEmpty() }
+        if (quoting.isNotEmpty()) viewModel.fetchMissingQuotedNotes(quoting)
     }
     LaunchedEffect(results, quotedNotesCache) {
-        val quotedIds = results.notes.flatMap { it.quotedEventIds }.distinct()
-        if (quotedIds.isNotEmpty()) viewModel.fetchMissingQuotedProfiles(quotedIds)
+        val quoting = results.notes.filter { it.quotedEventIds.isNotEmpty() }
+        if (quoting.isNotEmpty()) viewModel.fetchMissingQuotedProfiles(quoting)
     }
 
     // Handle direct bech32 lookup navigation

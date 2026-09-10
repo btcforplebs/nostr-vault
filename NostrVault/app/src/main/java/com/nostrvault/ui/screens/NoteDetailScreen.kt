@@ -402,11 +402,11 @@ class NoteDetailViewModel @Inject constructor(
 
     fun quotedNoteFor(identifier: String): FeedNote? = feedService.quotedNoteFor(identifier)
 
-    fun fetchMissingQuotedNotes(identifiers: List<String>) =
-        feedService.fetchMissingQuotedNotes(identifiers)
+    fun fetchMissingQuotedNotes(notes: List<FeedNote>) =
+        feedService.fetchMissingQuotedNotes(notes)
 
-    fun fetchMissingQuotedProfiles(identifiers: List<String>) =
-        feedService.fetchMissingQuotedProfiles(identifiers)
+    fun fetchMissingQuotedProfiles(notes: List<FeedNote>) =
+        feedService.fetchMissingQuotedProfiles(notes)
 }
 
 // ── Screen ──────────────────────────────────────────────────────
@@ -448,21 +448,16 @@ fun NoteDetailScreen(
 
     // Fetch any embedded quoted notes (nostr:note1.../nevent1...) referenced by
     // the focal note, its ancestors, or replies, plus their authors' profiles.
-    LaunchedEffect(note, parentNotes, allReplies) {
-        val quotedIds = buildList {
-            note?.let { addAll(it.quotedEventIds) }
-            parentNotes.forEach { addAll(it.quotedEventIds) }
-            allReplies.forEach { addAll(it.quotedEventIds) }
-        }.distinct()
-        if (quotedIds.isNotEmpty()) viewModel.fetchMissingQuotedNotes(quotedIds)
+    val quotingNotes = buildList {
+        note?.let { add(it) }
+        addAll(parentNotes)
+        addAll(allReplies)
+    }.filter { it.quotedEventIds.isNotEmpty() }
+    LaunchedEffect(quotingNotes) {
+        if (quotingNotes.isNotEmpty()) viewModel.fetchMissingQuotedNotes(quotingNotes)
     }
-    LaunchedEffect(note, parentNotes, allReplies, quotedNotesCache) {
-        val quotedIds = buildList {
-            note?.let { addAll(it.quotedEventIds) }
-            parentNotes.forEach { addAll(it.quotedEventIds) }
-            allReplies.forEach { addAll(it.quotedEventIds) }
-        }.distinct()
-        if (quotedIds.isNotEmpty()) viewModel.fetchMissingQuotedProfiles(quotedIds)
+    LaunchedEffect(quotingNotes, quotedNotesCache) {
+        if (quotingNotes.isNotEmpty()) viewModel.fetchMissingQuotedProfiles(quotingNotes)
     }
 
     // Engagement sheet states

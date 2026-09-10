@@ -453,6 +453,47 @@ object HavenBridge {
     }
 
     /**
+     * The relay hints a `nevent1` or `naddr1` reference carries (NIP-19 TLV
+     * type 1).
+     *
+     * A quoted event often lives somewhere the reader does not subscribe to —
+     * that is precisely why the author's client wrote a hint into the
+     * reference. Ignoring it means a quote that is perfectly findable renders
+     * as "Loading quoted note..." forever.
+     *
+     * Hints are untrusted input from a stranger's note, so the caller uses them
+     * only to widen a query, never to replace the user's own relays.
+     */
+    fun relayHints(identifier: String): List<String> {
+        val (hrp, payload) = bech32Decode(identifier) ?: return emptyList()
+        if (hrp != "nevent" && hrp != "naddr") return emptyList()
+        val hints = mutableListOf<String>()
+        forEachTLV(payload) { type, value ->
+            if (type == 1) {
+                val url = String(value, Charsets.UTF_8)
+                if (url.startsWith("ws://") || url.startsWith("wss://")) hints.add(url)
+            }
+        }
+        return hints.distinct()
+    }
+
+    /**
+     * Walks a NIP-19 TLV payload. A truncated entry ends the walk rather than
+     * being read past: a malformed reference should yield nothing, not garbage.
+     */
+    private inline fun forEachTLV(payload: ByteArray, body: (Int, ByteArray) -> Unit) {
+        var i = 0
+        while (i + 2 <= payload.size) {
+            val type = payload[i].toInt() and 0xFF
+            val length = payload[i + 1].toInt() and 0xFF
+            i += 2
+            if (i + length > payload.size) break
+            body(type, payload.copyOfRange(i, i + length))
+            i += length
+        }
+    }
+
+    /**
      * Decode an naddr1 bech32 string to the address it names (NIP-19 TLV).
      *
      * TLV: type 0 = the "d" tag (UTF-8), 1 = relay hint, 2 = author pubkey
@@ -467,21 +508,12 @@ object HavenBridge {
         var dTag: String? = null
         var pubkey: String? = null
         var kind: Int? = null
-        var i = 0
-        while (i + 2 <= payload.size) {
-            val type = payload[i].toInt() and 0xFF
-            val length = payload[i + 1].toInt() and 0xFF
-            i += 2
-            // A truncated entry ends the walk rather than being read past: a
-            // malformed reference should yield nothing, not garbage.
-            if (i + length > payload.size) break
-            val value = payload.copyOfRange(i, i + length)
+        forEachTLV(payload) { type, value ->
             when {
                 type == 0 -> dTag = String(value, Charsets.UTF_8)
-                type == 2 && length == 32 -> pubkey = value.toHex()
-                type == 3 && length == 4 -> kind = value.fold(0) { acc, b -> (acc shl 8) or (b.toInt() and 0xFF) }
+                type == 2 && value.size == 32 -> pubkey = value.toHex()
+                type == 3 && value.size == 4 -> kind = value.fold(0) { acc, b -> (acc shl 8) or (b.toInt() and 0xFF) }
             }
-            i += length
         }
         val resolvedKind = kind ?: return null
         val resolvedPubkey = pubkey ?: return null

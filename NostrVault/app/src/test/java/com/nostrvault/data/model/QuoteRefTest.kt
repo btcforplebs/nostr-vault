@@ -12,6 +12,16 @@ import org.junit.Test
  */
 class QuoteRefTest {
 
+    private companion object {
+        // Realistic lengths: the extractor requires a plausible bech32 body so a
+        // bare word in prose cannot be mistaken for a reference.
+        const val CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+        const val NOTE1 = "note1$CHARSET$CHARSET"
+        const val NEVENT1 = "nevent1$CHARSET$CHARSET"
+        const val NADDR1 = "naddr1$CHARSET$CHARSET"
+        const val UNKNOWN = "note1" + "lllllllllllllllllllllllllllllll"
+    }
+
     private val eventHex = "a".repeat(64)
     private val otherHex = "b".repeat(64)
     private val authorHex = "c".repeat(64)
@@ -19,20 +29,20 @@ class QuoteRefTest {
     /** Decodes by prefix alone, so the tests need no bech32 and no native library. */
     private val decoder = object : QuoteRef.Decoder {
         override fun noteToHex(note1: String) =
-            if (note1 == "note1aaa") eventHex else null
+            if (note1 == NOTE1) eventHex else null
 
         override fun neventToHex(nevent1: String) =
-            if (nevent1 == "nevent1bbb") otherHex else null
+            if (nevent1 == NEVENT1) otherHex else null
 
         override fun naddrToCoordinate(naddr1: String) =
-            if (naddr1 == "naddr1ccc") QuoteRef.Coordinate(30023, authorHex, "my-post") else null
+            if (naddr1 == NADDR1) QuoteRef.Coordinate(30023, authorHex, "my-post") else null
     }
 
     // ── The regression: parser output must be fetcher input ──────────
 
     @Test
     fun `every key the parser produces is a key the fetcher can read`() {
-        val content = "look nostr:note1aaa and nostr:nevent1bbb and nostr:naddr1ccc"
+        val content = "look $NOTE1 and $NEVENT1 and $NADDR1"
 
         val keys = QuoteRef.resolvedIdentifiers(content, decoder)
 
@@ -58,7 +68,7 @@ class QuoteRefTest {
 
     @Test
     fun `a key that is neither is rejected`() {
-        assertNull(QuoteRef.key("nostr:note1aaa"))
+        assertNull(QuoteRef.key("$NOTE1"))
         assertNull(QuoteRef.key(""))
         assertNull(QuoteRef.key("zz" + "a".repeat(62)))
     }
@@ -69,7 +79,7 @@ class QuoteRefTest {
     fun `an naddr resolves to its coordinate`() {
         assertEquals(
             listOf("naddr:30023:$authorHex:my-post"),
-            QuoteRef.resolvedIdentifiers("read nostr:naddr1ccc", decoder),
+            QuoteRef.resolvedIdentifiers("read $NADDR1", decoder),
         )
     }
 
@@ -110,15 +120,15 @@ class QuoteRefTest {
 
     @Test
     fun `identifiers keep their order and drop repeats`() {
-        val content = "nostr:nevent1bbb then nostr:note1aaa then nostr:nevent1bbb again"
-        assertEquals(listOf("nevent1bbb", "note1aaa"), QuoteRef.identifiers(content))
+        val content = "$NEVENT1 then $NOTE1 then $NEVENT1 again"
+        assertEquals(listOf(NEVENT1, NOTE1), QuoteRef.identifiers(content))
     }
 
     @Test
     fun `a reference that will not decode is dropped, not passed through`() {
         // Passing the bech32 through is the original bug: it asked the relay
         // for an id that cannot exist.
-        assertEquals(emptyList<String>(), QuoteRef.resolvedIdentifiers("nostr:note1zzz", decoder))
+        assertEquals(emptyList<String>(), QuoteRef.resolvedIdentifiers("$UNKNOWN", decoder))
     }
 
     @Test
@@ -126,9 +136,66 @@ class QuoteRefTest {
         assertEquals(emptyList<String>(), QuoteRef.identifiers("hi nostr:npub1aaa and nostr:nprofile1bbb"))
     }
 
+    // ── Bare references (no "nostr:" prefix) ────────────────────────
+
+    @Test
+    fun `a bare reference with no nostr prefix is still a quote`() {
+        // Clients in the wild post these. Rendered as raw text they look like
+        // our bug, not theirs.
+        assertEquals(listOf(NEVENT1), QuoteRef.identifiers("look at this $NEVENT1"))
+    }
+
+    @Test
+    fun `a bare reference at the very start of a note is found`() {
+        assertEquals(listOf(NEVENT1), QuoteRef.identifiers(NEVENT1))
+    }
+
+    @Test
+    fun `a reference inside a url path is left alone`() {
+        // njump-style links are ordinary links; turning one into a card would
+        // swallow the URL the author meant to show.
+        assertEquals(emptyList<String>(), QuoteRef.identifiers("https://njump.me/$NEVENT1"))
+    }
+
+    @Test
+    fun `a reference glued to the end of a word is not a reference`() {
+        assertEquals(emptyList<String>(), QuoteRef.identifiers("xyz$NEVENT1"))
+    }
+
+    @Test
+    fun `a short lookalike is not a reference`() {
+        // "note1" followed by a couple of characters is prose, not bech32.
+        assertEquals(emptyList<String>(), QuoteRef.identifiers("note1a and nevent1b"))
+    }
+
+    @Test
+    fun `the nostr prefix is consumed, not captured`() {
+        assertEquals(listOf(NOTE1), QuoteRef.identifiers("nostr:$NOTE1"))
+    }
+
+    // ── Relay hints ─────────────────────────────────────────────────
+
+    @Test
+    fun `relay hints are keyed by the same lookup key`() {
+        val hinting = object : QuoteRef.Decoder by decoder {
+            override fun relayHints(identifier: String) =
+                if (identifier == NADDR1) listOf("wss://hint.example") else emptyList()
+        }
+        val hints = QuoteRef.relayHints("read $NADDR1", hinting)
+        assertEquals(
+            mapOf("naddr:30023:$authorHex:my-post" to listOf("wss://hint.example")),
+            hints,
+        )
+    }
+
+    @Test
+    fun `a reference with no hint contributes no entry`() {
+        assertEquals(emptyMap<String, List<String>>(), QuoteRef.relayHints("read $NADDR1", decoder))
+    }
+
     @Test
     fun `two references to the same event yield one key`() {
-        val content = "nostr:note1aaa and again nostr:note1aaa"
+        val content = "$NOTE1 and again $NOTE1"
         assertEquals(listOf(eventHex), QuoteRef.resolvedIdentifiers(content, decoder))
     }
 }

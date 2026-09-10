@@ -1753,17 +1753,13 @@ fun DashboardScreen(
     // Quoted events for the cards below. This tab never asked for them at all,
     // so a quote here was dropped twice over: never fetched, and never drawn.
     val quotedNotes by feedService.quotedNotes.collectAsState()
-    LaunchedEffect(displayNotes, displayLikedNotes, displayZappedNotes) {
-        val ids = (displayNotes + displayLikedNotes + displayZappedNotes)
-            .flatMap { it.quotedEventIds }
-            .distinct()
-        if (ids.isNotEmpty()) feedService.fetchMissingQuotedNotes(ids)
+    val quotingNotes = (displayNotes + displayLikedNotes + displayZappedNotes)
+        .filter { it.quotedEventIds.isNotEmpty() }
+    LaunchedEffect(quotingNotes) {
+        if (quotingNotes.isNotEmpty()) feedService.fetchMissingQuotedNotes(quotingNotes)
     }
-    LaunchedEffect(displayNotes, displayLikedNotes, displayZappedNotes, quotedNotes) {
-        val ids = (displayNotes + displayLikedNotes + displayZappedNotes)
-            .flatMap { it.quotedEventIds }
-            .distinct()
-        if (ids.isNotEmpty()) feedService.fetchMissingQuotedProfiles(ids)
+    LaunchedEffect(quotingNotes, quotedNotes) {
+        if (quotingNotes.isNotEmpty()) feedService.fetchMissingQuotedProfiles(quotingNotes)
     }
     val reactionMap by viewModel.reactionMap.collectAsState()
     val zapMap by viewModel.zapMap.collectAsState()
