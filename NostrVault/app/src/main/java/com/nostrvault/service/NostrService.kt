@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
+import kotlin.coroutines.resume
 import java.net.URL
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -54,6 +55,17 @@ class NostrService @Inject constructor(
         private const val PROFILE_SAVE_THROTTLE_MS = 5_000L
         private const val PROFILE_FLUSH_DELAY_MS = 100L
         private const val PROFILE_UPDATE_DEBOUNCE_MS = 100L
+        // A cached profile is "fresh" for this long before we'll re-fetch its metadata.
+        private const val PROFILE_TTL_MS = 7L * 24 * 60 * 60 * 1000 // 7 days
+        // After dispatching a metadata REQ, suppress re-fetching the same pubkey for this
+        // long. This negatively-caches pubkeys with no resolvable kind-0 (and dedupes
+        // in-flight fetches) so they don't re-trigger a 3-relay fetch on every note.
+        private const val PROFILE_RETRY_TTL_MS = 30L * 60 * 1000 // 30 min
+        // Soft cap on in-memory profiles; trimmed to TRIM_CACHED_PROFILES when exceeded.
+        private const val MAX_CACHED_PROFILES = 5_000
+        private const val TRIM_CACHED_PROFILES = 4_000
+        // Prune the fetch-attempt map once it grows past this.
+        private const val MAX_FETCH_ATTEMPTS = 10_000
         private const val FETCH_WATCHDOG_TIMEOUT_MS = 8_000L
         private const val MAX_RECONNECT_ATTEMPTS = 10
         private const val BASE_RECONNECT_DELAY_MS = 2_000L
@@ -156,6 +168,9 @@ class NostrService @Inject constructor(
 
     private val profileFetchQueue = mutableSetOf<String>()
     private val profileQueueLock = ReentrantLock()
+    // pubkey -> epoch millis of last dispatched metadata REQ (negative/in-flight cache).
+    // Guarded by profileQueueLock.
+    private val profileFetchAttempts = mutableMapOf<String, Long>()
     private var profileFlushJob: Job? = null
     private var profileSaveJob: Job? = null
     private var lastProfileSaveTime = 0L
@@ -499,7 +514,7 @@ class NostrService @Inject constructor(
         if (!markSeen(id)) return
 
         // Extract media URLs from content
-        val mediaItems = extractMediaURLs(content, pubkey, tags)
+        val mediaItems = extractMediaURLs(content, pubkey, tags, createdAt)
 
         val event = NostrEvent(
             id = id,
@@ -623,16 +638,43 @@ class NostrService @Inject constructor(
      * Queue pubkeys for batched profile metadata fetch.
      */
     fun fetchMissingProfiles(pubkeys: List<String>, force: Boolean = false) {
+        val now = System.currentTimeMillis()
         val currentProfiles = _profiles.value
-        val missing = pubkeys.filter { pk ->
-            force || !currentProfiles.containsKey(pk)
+        val missing = profileQueueLock.withLock {
+            pubkeys.filter { pk -> shouldFetchProfile(pk, currentProfiles[pk], now, force) }
+                .also { profileFetchQueue.addAll(it) }
         }
         if (missing.isEmpty()) return
 
-        profileQueueLock.withLock {
-            profileFetchQueue.addAll(missing)
-        }
         scheduleProfileFlush()
+    }
+
+    /**
+     * Decide whether a pubkey's metadata is worth (re-)fetching. Must be called while
+     * holding [profileQueueLock] (it reads [profileFetchAttempts]).
+     *
+     * Skips when: a fresh cached profile exists (within [PROFILE_TTL_MS]); a legacy cached
+     * profile with no timestamp exists (preserves prior behaviour, avoids a first-launch
+     * refetch storm); or a metadata REQ was dispatched recently (within
+     * [PROFILE_RETRY_TTL_MS]) — the latter negatively-caches unresolvable pubkeys and
+     * dedupes in-flight fetches. [force] bypasses freshness/retry but still skips nothing.
+     */
+    private fun shouldFetchProfile(
+        pubkey: String,
+        cached: FeedProfile?,
+        now: Long,
+        force: Boolean,
+    ): Boolean {
+        if (force) return true
+        if (cached != null) {
+            // Legacy entries (fetchedAt == null) are treated as fresh; stamped entries
+            // refresh once their TTL lapses.
+            val fresh = cached.fetchedAt?.let { now - it < PROFILE_TTL_MS } ?: true
+            if (fresh) return false
+        }
+        val lastAttempt = profileFetchAttempts[pubkey]
+        if (lastAttempt != null && now - lastAttempt < PROFILE_RETRY_TTL_MS) return false
+        return true
     }
 
     private fun scheduleProfileFlush() {
@@ -654,6 +696,18 @@ class NostrService @Inject constructor(
 
         val blastrRelays = configStore.config.value.activeBlastrRelays
         if (blastrRelays.isEmpty()) return
+
+        // Record the dispatch time so these pubkeys are negatively-cached for
+        // PROFILE_RETRY_TTL_MS even if no kind-0 comes back (no resolvable profile, or it
+        // arrives after the temp-client timeout). Prevents re-fetch churn on every note.
+        val now = System.currentTimeMillis()
+        profileQueueLock.withLock {
+            pubkeys.forEach { profileFetchAttempts[it] = now }
+            if (profileFetchAttempts.size > MAX_FETCH_ATTEMPTS) {
+                profileFetchAttempts.entries
+                    .removeAll { now - it.value >= PROFILE_RETRY_TTL_MS }
+            }
+        }
 
         val subId = "meta-${UUID.randomUUID().toString().take(8)}"
         val filter = buildMap<String, Any> {
@@ -693,12 +747,45 @@ class NostrService @Inject constructor(
     private fun parseAndCacheProfile(pubkey: String, content: String) {
         val existingProfile = _profiles.value[pubkey]
         val result = profileRepository.parseMetadataContent(content, pubkey, existingProfile) ?: return
-        val (profile, changed) = result
-        if (!changed && existingProfile != null) return
+        val (parsed, changed) = result
+        val now = System.currentTimeMillis()
+
+        if (!changed && existingProfile != null) {
+            // Content identical to cache — just reset the freshness TTL. Skip the duplicate
+            // relay responses that arrive in the same fetch burst (entry already stamped)
+            // to avoid redundant StateFlow emissions.
+            val lastStamp = existingProfile.fetchedAt
+            if (lastStamp != null && now - lastStamp < PROFILE_RETRY_TTL_MS) return
+            scope.launch(Dispatchers.Main.immediate) {
+                _profiles.value = _profiles.value + (pubkey to existingProfile.copy(fetchedAt = now))
+            }
+            return
+        }
+
+        val profile = parsed.copy(fetchedAt = now)
         scope.launch(Dispatchers.Main.immediate) {
-            _profiles.value = _profiles.value + (pubkey to profile)
+            _profiles.value = trimProfiles(_profiles.value + (pubkey to profile))
             noteProfileUpdated(pubkey)
             saveProfilesThrottled()
+        }
+    }
+
+    /**
+     * Keep the in-memory profile map bounded. When it exceeds [MAX_CACHED_PROFILES],
+     * retain the [TRIM_CACHED_PROFILES] freshest entries (by fetchedAt) plus the owner's
+     * own profile. Disk converges to the trimmed set on the next throttled save.
+     */
+    private fun trimProfiles(profiles: Map<String, FeedProfile>): Map<String, FeedProfile> {
+        if (profiles.size <= MAX_CACHED_PROFILES) return profiles
+        val kept = profiles.entries
+            .sortedByDescending { it.value.fetchedAt ?: 0L }
+            .take(TRIM_CACHED_PROFILES)
+            .associate { it.key to it.value }
+        val owner = ownerHexPubkey
+        return if (owner.isNotEmpty() && !kept.containsKey(owner) && profiles.containsKey(owner)) {
+            kept + (owner to profiles.getValue(owner))
+        } else {
+            kept
         }
     }
 
@@ -1188,10 +1275,11 @@ class NostrService @Inject constructor(
             val results = collector.snapshot()
 
             // Merge discovered profiles into cache
+            val now = System.currentTimeMillis()
             for (profile in results.profiles) {
                 val current = _profiles.value
                 if (!current.containsKey(profile.pubkey)) {
-                    _profiles.value = _profiles.value + (profile.pubkey to profile)
+                    _profiles.value = _profiles.value + (profile.pubkey to profile.copy(fetchedAt = now))
                 }
             }
 
@@ -1269,6 +1357,81 @@ class NostrService @Inject constructor(
                     client.disconnect()
                     tempClientsLock.withLock { temporaryClients.remove(client) }
                 } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /**
+     * Fetch the owner's media-bearing notes from the local relay (and inbox relays).
+     *
+     * Queries kinds 1 (text notes), 1063 (NIP-94 file metadata) and 30023
+     * (long-form) authored by [pubkey]. Returns [FeedNote]s with their
+     * media URLs already extracted (regex + imeta) by [FeedNote.fromEvent].
+     *
+     * Used by the media gallery to surface media referenced in the user's own
+     * notes that may not exist as a local Blossom blob — iOS parity.
+     */
+    suspend fun fetchOwnerMediaNotes(pubkey: String): List<FeedNote> = suspendCancellableCoroutine { cont ->
+        val config = configStore.config.value
+        val relayUrls = buildList {
+            config.nostrURL?.let { add(it) }
+            config.inboxRelays?.let { addAll(it) }
+        }.distinct().take(5)
+        if (relayUrls.isEmpty()) { cont.resume(emptyList()); return@suspendCancellableCoroutine }
+
+        val subId = "ownermedia-${UUID.randomUUID().toString().take(8)}"
+        val collected = java.util.concurrent.ConcurrentHashMap<String, FeedNote>()
+        val resumed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        fun finish() {
+            if (resumed.compareAndSet(false, true)) {
+                cont.resume(collected.values.sortedByDescending { it.createdAt })
+            }
+        }
+
+        for (relayUrl in relayUrls) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
+                    tempClientsLock.withLock { temporaryClients.add(client) }
+
+                    scope.launch {
+                        client.messages.collect { msg ->
+                            try {
+                                val parsed = json.parseToJsonElement(msg).jsonArray
+                                if (parsed.size < 2) return@collect
+                                val type = parsed[0].jsonPrimitive.contentOrNull ?: return@collect
+                                val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@collect
+                                if (sid != subId) return@collect
+                                if (type == "EVENT" && parsed.size >= 3) {
+                                    val ev = parsed[2].jsonObject
+                                    val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
+                                    val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
+                                    val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                    val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
+                                    val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
+                                    val tags: List<List<String>> = try {
+                                        ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
+                                    } catch (_: Exception) { emptyList() }
+                                    collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
+                                } else if (type == "EOSE") {
+                                    finish()
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+
+                    client.connect()
+                    val filter = """{"kinds":[1,1063,30023],"authors":["$pubkey"],"limit":500}"""
+                    client.send("[\"REQ\",\"$subId\",$filter]")
+
+                    delay(TEMP_CLIENT_DISCONNECT_MS)
+                    client.disconnect()
+                    tempClientsLock.withLock { temporaryClients.remove(client) }
+                    finish()
+                } catch (_: Exception) {
+                    finish()
+                }
             }
         }
     }
@@ -1458,7 +1621,7 @@ class NostrService @Inject constructor(
 
     fun injectEvent(event: NostrEvent) {
         if (!markSeen(event.id)) return
-        val mediaItems = extractMediaURLs(event.content, event.pubkey, event.tags)
+        val mediaItems = extractMediaURLs(event.content, event.pubkey, event.tags, event.createdAt)
         bufferLock.withLock {
             eventBuffer.add(event to mediaItems)
         }
@@ -1469,7 +1632,7 @@ class NostrService @Inject constructor(
     // Utilities
     // ══════════════════════════════════════════════════════════════════
 
-    fun extractMediaURLs(content: String, pubkey: String, tags: List<List<String>>): List<MediaItem> {
+    fun extractMediaURLs(content: String, pubkey: String, tags: List<List<String>>, createdAt: Long = 0L): List<MediaItem> {
         val urls = mutableListOf<MediaItem>()
         val urlRegex = Regex("""https?://\S+\.(jpg|jpeg|png|gif|webp|mp4|mov|webm|mp3|wav|ogg)""", RegexOption.IGNORE_CASE)
         for (match in urlRegex.findAll(content)) {
@@ -1486,6 +1649,7 @@ class NostrService @Inject constructor(
                     url = urlStr,
                     type = mediaType,
                     pubkey = pubkey,
+                    createdAt = createdAt,
                 )
             )
         }
@@ -1497,7 +1661,8 @@ class NostrService @Inject constructor(
                         url = tag[1],
                         type = MediaType.UNKNOWN,
                         pubkey = pubkey,
-                )
+                        createdAt = createdAt,
+                    )
                 )
             }
         }
@@ -1602,6 +1767,7 @@ class NostrService @Inject constructor(
 // Data types
 // ══════════════════════════════════════════════════════════════════
 
+@kotlinx.serialization.Serializable
 data class NostrEvent(
     val id: String,
     val pubkey: String,
@@ -1620,6 +1786,7 @@ data class MediaItem(
     val pubkey: String? = null,
     val tags: List<List<String>>? = null,
     val mimeType: String? = null,
+    val createdAt: Long = 0L,
 ) {
     val isAnimatedGIF: Boolean
         get() = url.lowercase().endsWith(".gif")

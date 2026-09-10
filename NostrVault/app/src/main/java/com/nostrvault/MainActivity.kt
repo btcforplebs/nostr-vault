@@ -1,5 +1,8 @@
 package com.nostrvault
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,6 +19,7 @@ import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.AmberResultBridge
 import com.nostrvault.service.DMService
 import com.nostrvault.service.FeedService
+import com.nostrvault.service.MediaUploadManager
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.ui.navigation.NostrVaultNavHost
 import com.nostrvault.ui.notification.NotificationManager
@@ -33,6 +37,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var logStore: LogStore
     @Inject lateinit var notificationManager: NotificationManager
     @Inject lateinit var pendingPostManager: PendingPostManager
+    @Inject lateinit var mediaUploadManager: MediaUploadManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,6 +49,9 @@ class MainActivity : ComponentActivity() {
 
         // Load persisted config so hasCompletedSetup reflects saved state
         configStore.reload()
+
+        // Handle media shared into the app via the system share sheet (ACTION_SEND)
+        handleShareIntent(intent)
 
         setContent {
             val config by configStore.config.collectAsState()
@@ -75,6 +83,59 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    /**
+     * Receive image/video shared from another app via the system share sheet and
+     * push it to Blossom. Supports single (ACTION_SEND) and multi (ACTION_SEND_MULTIPLE)
+     * shares. Uploads run in the app-scoped [MediaUploadManager] with notification
+     * feedback, serialized so external signers (Amber) aren't hit concurrently.
+     */
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
+
+        val type = intent.type ?: return
+        if (!type.startsWith("image/") && !type.startsWith("video/")) {
+            notificationManager.showError("Only images and videos can be uploaded")
+            return
+        }
+
+        if (!configStore.config.value.hasCompletedSetup) {
+            notificationManager.showError("Finish setup before uploading media")
+            return
+        }
+
+        val uris: List<Uri> = when (action) {
+            Intent.ACTION_SEND -> listOfNotNull(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                }
+            )
+            Intent.ACTION_SEND_MULTIPLE -> (
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION") intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                }
+            ) ?: emptyList()
+            else -> emptyList()
+        }
+
+        if (uris.isEmpty()) return
+        uris.forEach { mediaUploadManager.upload(it, contentResolver) }
+        notificationManager.showToast(
+            if (uris.size == 1) "Uploading to Blossom…" else "Uploading ${uris.size} files to Blossom…"
+        )
     }
 
     override fun onStop() {

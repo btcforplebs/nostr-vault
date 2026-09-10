@@ -76,14 +76,24 @@ class BlossomService @Inject constructor(
         contentType: String,
         onProgress: ((Float) -> Unit)? = null,
     ): String? = withContext(Dispatchers.IO) {
-        // 1. Save to local relay
-        saveToLocalRelay(data, sha256, contentType)
+        // Sign the BUD-02 auth event ONCE and reuse it for the local relay and
+        // every mirror. The event is server-agnostic (no "u" tag), so one
+        // signature is valid everywhere. This is required for external signers:
+        // Amber serializes signing through a single activity and fails on the
+        // concurrent requests that per-destination signing would produce.
+        val authHeader = createAuthHeader("upload", sha256)
+        if (authHeader.isEmpty()) {
+            Log.e(TAG, "Upload aborted: could not create Blossom auth event (signer unavailable)")
+            return@withContext null
+        }
 
-        // 2. Mirror to external servers
+        val localUrl = localBlossomURL()
+        val localOk = if (localUrl != null) saveToLocalRelay(data, sha256, contentType, authHeader) else false
+
         val mirrors = configStore.config.value.activeBlossomMirrors
-        if (mirrors.isEmpty()) return@withContext null
+        if (mirrors.isEmpty()) return@withContext if (localOk) "$localUrl/$sha256" else null
 
-        var firstExternalUrl: String? = null
+        val firstExternalUrl = java.util.concurrent.atomic.AtomicReference<String?>(null)
         val jobs = mirrors.map { mirrorUrl ->
             async {
                 try {
@@ -92,8 +102,9 @@ class BlossomService @Inject constructor(
                         serverUrl = mirrorUrl,
                         sha256 = sha256,
                         contentType = contentType,
+                        authHeader = authHeader,
                     )
-                    if (firstExternalUrl == null) firstExternalUrl = url
+                    firstExternalUrl.compareAndSet(null, url)
                     url
                 } catch (e: Exception) {
                     Log.w(TAG, "Mirror to $mirrorUrl failed: ${e.message}")
@@ -102,7 +113,7 @@ class BlossomService @Inject constructor(
             }
         }
         jobs.awaitAll()
-        firstExternalUrl
+        firstExternalUrl.get() ?: if (localOk) "$localUrl/$sha256" else null
     }
 
     suspend fun uploadAndMirror(
@@ -111,12 +122,20 @@ class BlossomService @Inject constructor(
         contentType: String,
         onProgress: ((Float) -> Unit)? = null,
     ): String? = withContext(Dispatchers.IO) {
-        saveToLocalRelay(fileURL, sha256, contentType)
+        // Sign the BUD-02 auth event ONCE and reuse it (see the ByteArray overload).
+        val authHeader = createAuthHeader("upload", sha256)
+        if (authHeader.isEmpty()) {
+            Log.e(TAG, "Upload aborted: could not create Blossom auth event (signer unavailable)")
+            return@withContext null
+        }
+
+        val localUrl = localBlossomURL()
+        val localOk = if (localUrl != null) saveToLocalRelay(fileURL, sha256, contentType, authHeader) else false
 
         val mirrors = configStore.config.value.activeBlossomMirrors
-        if (mirrors.isEmpty()) return@withContext null
+        if (mirrors.isEmpty()) return@withContext if (localOk) "$localUrl/$sha256" else null
 
-        var firstExternalUrl: String? = null
+        val firstExternalUrl = java.util.concurrent.atomic.AtomicReference<String?>(null)
         val jobs = mirrors.map { mirrorUrl ->
             async {
                 try {
@@ -125,8 +144,9 @@ class BlossomService @Inject constructor(
                         serverUrl = mirrorUrl,
                         sha256 = sha256,
                         contentType = contentType,
+                        authHeader = authHeader,
                     )
-                    if (firstExternalUrl == null) firstExternalUrl = url
+                    firstExternalUrl.compareAndSet(null, url)
                     url
                 } catch (e: Exception) {
                     Log.w(TAG, "Mirror to $mirrorUrl failed: ${e.message}")
@@ -135,21 +155,21 @@ class BlossomService @Inject constructor(
             }
         }
         jobs.awaitAll()
-        firstExternalUrl
+        firstExternalUrl.get() ?: if (localOk) "$localUrl/$sha256" else null
     }
 
     // ══════════════════════════════════════════════════════════════════
     // Local relay upload
     // ══════════════════════════════════════════════════════════════════
 
-    fun saveToLocalRelay(data: ByteArray, sha256: String, contentType: String): Boolean {
+    suspend fun saveToLocalRelay(data: ByteArray, sha256: String, contentType: String, authHeader: String? = null): Boolean {
         val url = localBlossomURL() ?: return false
         return try {
-            val authHeader = createAuthHeader("upload", sha256, "$url/upload")
+            val auth = authHeader ?: createAuthHeader("upload", sha256)
             val request = Request.Builder()
                 .url("$url/upload")
                 .put(data.toRequestBody(contentType.toMediaType()))
-                .addHeader("Authorization", "Nostr $authHeader")
+                .addHeader("Authorization", "Nostr $auth")
                 .addHeader("Content-Type", contentType)
                 .build()
 
@@ -161,14 +181,14 @@ class BlossomService @Inject constructor(
         }
     }
 
-    fun saveToLocalRelay(fileURL: File, sha256: String, contentType: String): Boolean {
+    suspend fun saveToLocalRelay(fileURL: File, sha256: String, contentType: String, authHeader: String? = null): Boolean {
         val url = localBlossomURL() ?: return false
         return try {
-            val authHeader = createAuthHeader("upload", sha256, "$url/upload")
+            val auth = authHeader ?: createAuthHeader("upload", sha256)
             val request = Request.Builder()
                 .url("$url/upload")
                 .put(fileURL.asRequestBody(contentType.toMediaType()))
-                .addHeader("Authorization", "Nostr $authHeader")
+                .addHeader("Authorization", "Nostr $auth")
                 .addHeader("Content-Type", contentType)
                 .build()
 
@@ -192,16 +212,19 @@ class BlossomService @Inject constructor(
         serverUrl: String,
         sha256: String,
         contentType: String,
+        authHeader: String? = null,
         onProgress: ((Float) -> Unit)? = null,
     ): String? = withContext(Dispatchers.IO) {
         val useLocal = isLocalhost(serverUrl)
         val client = if (useLocal) localClient else remoteClient
 
+        // Sign once (or reuse a caller-provided header). Signing per-retry would
+        // hammer an external signer (Amber) and can fail under concurrency.
+        val auth = authHeader ?: createAuthHeader("upload", sha256)
+
         var lastError: Exception? = null
         repeat(MAX_UPLOAD_RETRIES) { attempt ->
             try {
-                val authHeader = createAuthHeader("upload", sha256, "$serverUrl/upload")
-
                 val body = when (source) {
                     is UploadSource.Data -> source.data.toRequestBody(contentType.toMediaType())
                     is UploadSource.FileSource -> source.file.asRequestBody(contentType.toMediaType())
@@ -210,7 +233,7 @@ class BlossomService @Inject constructor(
                 val request = Request.Builder()
                     .url("$serverUrl/upload")
                     .put(body)
-                    .addHeader("Authorization", "Nostr $authHeader")
+                    .addHeader("Authorization", "Nostr $auth")
                     .addHeader("Content-Type", contentType)
                     .build()
 
@@ -219,7 +242,9 @@ class BlossomService @Inject constructor(
                     return@withContext "$serverUrl/$sha256"
                 }
 
-                lastError = IOException("Upload failed: ${response.code} ${response.message}")
+                val errorBody = response.body?.string()?.take(500) ?: ""
+                Log.w(TAG, "Mirror $serverUrl returned HTTP ${response.code}: $errorBody")
+                lastError = IOException("HTTP ${response.code}: $errorBody")
 
                 if (attempt < MAX_UPLOAD_RETRIES - 1) {
                     delay(1000L * (attempt + 1)) // Linear backoff
@@ -314,6 +339,14 @@ class BlossomService @Inject constructor(
             return@withContext
         }
 
+        // Sign once and reuse across all mirrors (external signers fail on
+        // concurrent signing requests).
+        val authHeader = createAuthHeader("upload", sha256)
+        if (authHeader.isEmpty()) {
+            Log.e(TAG, "Push aborted: could not create Blossom auth event (signer unavailable)")
+            return@withContext
+        }
+
         val mirrors = configStore.config.value.activeBlossomMirrors
         val jobs = mirrors.map { mirror ->
             async {
@@ -323,6 +356,7 @@ class BlossomService @Inject constructor(
                         serverUrl = mirror,
                         sha256 = sha256,
                         contentType = "application/octet-stream",
+                        authHeader = authHeader,
                     )
                 } catch (e: Exception) {
                     Log.w(TAG, "Push to mirror $mirror failed: ${e.message}")
@@ -477,12 +511,12 @@ class BlossomService @Inject constructor(
     /**
      * Create a Blossom auth header (kind 24242 signed event as base64).
      */
-    private fun createAuthHeader(
+    private suspend fun createAuthHeader(
         operation: String,
         sha256: String,
         uploadUrl: String? = null,
     ): String {
-        val expiration = (System.currentTimeMillis() / 1000) + 300 // 5 minutes
+        val expiration = (System.currentTimeMillis() / 1000) + 3600 // 1 hour (matches iOS)
         val tags = mutableListOf(
             listOf("t", operation),
             listOf("x", sha256),
@@ -490,12 +524,22 @@ class BlossomService @Inject constructor(
         )
         uploadUrl?.let { tags.add(listOf("u", it)) }
 
-        val event = nostrService.signEvent(
-            kind = AUTH_KIND,
-            content = "",
-            tags = tags,
-            forceOwner = true,
-        ) ?: return ""
+        // Use signEventAsync so external signers (Amber NIP-55, NIP-46) work.
+        // The synchronous signEvent only handles a locally-stored key and returns
+        // null under Amber (no on-device key) → empty auth header → servers reject
+        // with "missing auth event" / 401. signEventAsync routes to the active
+        // signing mode (amber/nip46/local).
+        val event = try {
+            nostrService.signEventAsync(
+                kind = AUTH_KIND,
+                content = "Blossom $operation ${sha256.take(8)}",
+                tags = tags,
+                forceOwner = true,
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Blossom auth signing failed ($operation): ${e.message}")
+            null
+        } ?: return ""
 
         val eventJson = buildString {
             val tagsJson = event.tags.joinToString(",") { tag ->
@@ -520,8 +564,8 @@ class BlossomService @Inject constructor(
     fun localBlossomURL(): String? {
         val config = configStore.config.value
         val port = config.relayPort ?: return null
-        // Android uses https://localhost:port (with self-signed cert trust)
-        return "https://localhost:$port"
+        // Android relay runs without TLS (HAVEN_ENABLE_TLS=0), so plain HTTP.
+        return "http://localhost:$port"
     }
 
     private fun isLocalhost(url: String): Boolean {

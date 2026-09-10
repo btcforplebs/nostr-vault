@@ -58,7 +58,14 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideEngagementTracker(): EngagementTracker = EngagementTracker
+    fun provideEngagementTracker(@ApplicationContext context: Context): EngagementTracker {
+        // Must initialize dataDir before any load/saveInteractionState call,
+        // mirroring provideCredentialStore above. Without this, FeedService's
+        // saveInteractionState() (e.g. from pauseFeed) crashes with an
+        // uninitialized-lateinit error.
+        EngagementTracker.init(context)
+        return EngagementTracker
+    }
 
     @Provides
     @Singleton

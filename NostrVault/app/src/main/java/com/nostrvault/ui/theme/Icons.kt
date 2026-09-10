@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -174,6 +175,7 @@ object NostrVaultIcons {
 
     // Blossom
     val Blossom: ImageVector = Icons.Filled.LocalFlorist          // camera.macro (flower)
+    val Cloud: ImageVector = Icons.Filled.Cloud                   // cloud.fill
     val Video: ImageVector = Icons.Filled.Videocam               // video.fill
 
     // Media actions
