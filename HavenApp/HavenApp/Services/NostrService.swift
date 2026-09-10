@@ -916,7 +916,18 @@ class NostrService: ObservableObject {
     /// Call whenever relay preferences change or during initial setup.
     @MainActor
     func publishDMRelayList(dmRelays: [String]) {
-        guard !dmRelays.isEmpty else {
+        // Defensively strip loopback/local relays: a kind 10050 is a public
+        // announcement of where others should deliver DMs to us, so a
+        // 127.0.0.1/localhost entry is unreachable and breaks inbound delivery.
+        var relays = dmRelays.filter { !DMService.isLoopbackRelay($0) }
+
+        // Never publish an empty list — fall back to sane public defaults so
+        // senders always have somewhere reachable to deliver replies.
+        if relays.isEmpty {
+            relays = HavenConfig.defaultDMRelays
+        }
+
+        guard !relays.isEmpty else {
             #if DEBUG
             print("NostrService: No DM relays configured, skipping Kind 10050 publish")
             #endif
@@ -924,7 +935,7 @@ class NostrService: ObservableObject {
         }
 
         // Build ["r", relay_url] tags for DM relays
-        let tags = dmRelays.map { ["r", $0] }
+        let tags = relays.map { ["r", $0] }
 
         Task {
             if let event = await signEventAsync(kind: 10050, content: "", tags: tags) {

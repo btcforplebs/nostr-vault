@@ -2,6 +2,7 @@ package com.nostrvault.service
 
 import android.app.Activity
 import android.content.Intent
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +42,7 @@ object AmberResultBridge {
 
             if (result.resultCode == Activity.RESULT_OK) {
                 val data = result.data
+                Log.w("AmberResultBridge", "DBG: OK extras keys=${data?.extras?.keySet()} result=${data?.getStringExtra("result")?.length} signature=${data?.getStringExtra("signature")?.length} event=${data?.getStringExtra("event")?.length}")
                 deferred.complete(
                     AmberResult(
                         resultCode = result.resultCode,

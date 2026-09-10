@@ -1210,7 +1210,23 @@ class NostrService @Inject constructor(
     }
 
     fun publishDMRelayList(dmRelays: List<String>) {
-        val tags = dmRelays.map { listOf("r", it) }
+        // A kind 10050 is a PUBLIC announcement of where others should deliver
+        // DMs to us. The embedded Haven relay lives on 127.0.0.1 and is never
+        // reachable by anyone else, so loopback URLs must be stripped — otherwise
+        // senders are told to deliver replies to an address they can't reach.
+        var relays = dmRelays.filter {
+            !it.contains("localhost") && !it.contains("127.0.0.1")
+        }
+        // Never publish an empty list — fall back to public defaults.
+        if (relays.isEmpty()) {
+            relays = listOf(
+                "wss://relay.damus.io",
+                "wss://relay.primal.net",
+                "wss://nos.lol",
+                "wss://relay.btcforplebs.com",
+            )
+        }
+        val tags = relays.map { listOf("r", it) }
         val event = signEvent(kind = 10050, content = "", tags = tags, forceOwner = true)
         event?.let { postEvent(it) }
     }

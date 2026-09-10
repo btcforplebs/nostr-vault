@@ -41,6 +41,10 @@ class AmberSignerService @Inject constructor(
      */
     private val signerLock = Mutex()
 
+    /** Set once we've asked Amber for background-signing permission this session.
+     *  AtomicBoolean so a concurrent decrypt burst fires only ONE request. */
+    private val backgroundPermissionRequested = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** Cached after first successful get_public_key call. */
     var cachedPubkey: String? = null
         private set
@@ -184,6 +188,29 @@ class AmberSignerService @Inject constructor(
     suspend fun nip44Decrypt(ciphertext: String, senderPubkey: String): String? =
         cryptoOp("nip44_decrypt", "NIP44_DECRYPT", ciphertext, senderPubkey)
 
+    /**
+     * Force a get_public_key Intent carrying the full permissions list so Amber
+     * registers background (ContentProvider) signing access for this app. After
+     * the user approves once, decrypt/sign content-resolver queries return
+     * results silently — no per-message approval dialog. Amber persists the grant
+     * across launches, so this only prompts until granted.
+     */
+    private suspend fun requestBackgroundPermission(): Boolean = signerLock.withLock {
+        val requestId = UUID.randomUUID().toString()
+        val intent = buildIntent("get_public_key", requestId).apply {
+            val permsJson = """[{"type":"sign_event"},{"type":"nip04_encrypt"},{"type":"nip04_decrypt"},{"type":"nip44_encrypt"},{"type":"nip44_decrypt"},{"type":"decrypt_zap_event"}]"""
+            putExtra("permissions", permsJson)
+        }
+        val result = withTimeoutOrNull(INTENT_TIMEOUT_MS) {
+            AmberResultBridge.launchAndAwait(intent, requestId)
+        }
+        val ok = result != null && !result.rejected &&
+            result.resultCode == android.app.Activity.RESULT_OK
+        if (ok) result.pubkey?.let { if (it.isNotEmpty()) cachedPubkey = it }
+        Log.w(TAG, "DBG: requestBackgroundPermission ok=$ok")
+        ok
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // Internal helpers
     // ══════════════════════════════════════════════════════════════════
@@ -194,26 +221,70 @@ class AmberSignerService @Inject constructor(
         payload: String,
         pubkey: String,
     ): String? {
-        val currentUser = cachedPubkey ?: return null
-
-        // Try content provider first
-        tryContentProvider(contentProviderType, payload, currentUser, pubkey)?.let { return it }
-
-        // Intent fallback
-        val requestId = UUID.randomUUID().toString()
-        val intent = buildIntent(intentType, requestId).apply {
-            data = Uri.parse("nostrsigner:$payload")
-            putExtra("current_user", currentUser)
-            putExtra("pubkey", pubkey)
+        // Self-heal like signEvent(): if the pubkey wasn't cached at init (config
+        // / bridge not ready), restore it now — otherwise every decrypt silently
+        // no-ops (no prompt, no content query) and DMs never decrypt.
+        if (cachedPubkey == null) restoreCachedPubkey()
+        val currentUser = cachedPubkey ?: run {
+            Log.w(TAG, "DBG: cryptoOp $intentType cachedPubkey NULL after restore → null")
+            return null
         }
 
-        val result = withTimeoutOrNull(INTENT_TIMEOUT_MS) {
-            AmberResultBridge.launchAndAwait(intent, requestId)
-        } ?: return null
+        // Try content provider first (silent, concurrency-safe).
+        tryContentProvider(contentProviderType, payload, currentUser, pubkey)?.let {
+            Log.w(TAG, "DBG: cryptoOp $intentType via ContentProvider OK len=${it.length}")
+            return it
+        }
 
-        return if (!result.rejected && result.resultCode == android.app.Activity.RESULT_OK) {
-            result.pubkey // NIP-55 returns crypto results in the "result" extra
-        } else null
+        // ContentProvider missed → Amber likely hasn't granted this app
+        // background-signing permission. Request it ONCE per session (one prompt),
+        // then retry the silent path so a backlog of DMs doesn't flood the signer
+        // with one approval dialog per message.
+        if (backgroundPermissionRequested.compareAndSet(false, true)) {
+            requestBackgroundPermission()
+            tryContentProvider(contentProviderType, payload, currentUser, pubkey)?.let {
+                Log.w(TAG, "DBG: cryptoOp $intentType via ContentProvider OK after grant len=${it.length}")
+                return it
+            }
+        }
+        Log.w(TAG, "DBG: cryptoOp $intentType ContentProvider miss → Intent fallback")
+
+        // Serialize the Intent fallback: AmberResultBridge has a single
+        // activeRequestId, so concurrent crypto Intents clobber each other and
+        // all-but-one get dropped (this is why a batch of DMs failed to decrypt).
+        return signerLock.withLock {
+            // A concurrent requestBackgroundPermission() may have just granted
+            // background access while we waited for the lock — prefer the silent
+            // path so a whole burst doesn't fall through to per-message prompts.
+            tryContentProvider(contentProviderType, payload, currentUser, pubkey)?.let {
+                Log.w(TAG, "DBG: cryptoOp $intentType via ContentProvider OK (post-lock) len=${it.length}")
+                return@withLock it
+            }
+
+            val requestId = UUID.randomUUID().toString()
+            val intent = buildIntent(intentType, requestId).apply {
+                data = Uri.parse("nostrsigner:$payload")
+                putExtra("current_user", currentUser)
+                putExtra("pubkey", pubkey)
+            }
+
+            val result = withTimeoutOrNull(INTENT_TIMEOUT_MS) {
+                AmberResultBridge.launchAndAwait(intent, requestId)
+            } ?: run {
+                Log.w(TAG, "DBG: cryptoOp $intentType Intent TIMEOUT/null")
+                return@withLock null
+            }
+
+            // NIP-55 returns encrypt/decrypt output in the "signature" extra
+            // (bridge → result.signature), NOT the "result" extra (→ pubkey).
+            // Reading result.pubkey was why decrypts returned null despite OK.
+            val output = result.signature ?: result.pubkey ?: result.event
+            Log.w(TAG, "DBG: cryptoOp $intentType Intent rejected=${result.rejected} code=${result.resultCode} sig=${result.signature?.length} res=${result.pubkey?.length} evt=${result.event?.length}")
+
+            if (!result.rejected && result.resultCode == android.app.Activity.RESULT_OK) {
+                output
+            } else null
+        }
     }
 
     private fun buildIntent(type: String, requestId: String): Intent {
@@ -230,24 +301,53 @@ class AmberSignerService @Inject constructor(
         payload: String? = null,
         currentUser: String? = null,
         pubkey: String? = null,
-    ): String? = try {
-        val uri = Uri.parse("content://$signerPackage.$method")
-        val selectionArgs = buildList {
-            add(payload ?: "")
-            add(pubkey ?: "")
-            add(currentUser ?: cachedPubkey ?: "")
-        }.toTypedArray()
+    ): String? {
+        return try {
+            val uri = Uri.parse("content://$signerPackage.$method")
+            val selectionArgs = buildList {
+                add(payload ?: "")
+                add(pubkey ?: "")
+                add(currentUser ?: cachedPubkey ?: "")
+            }.toTypedArray()
 
-        val cursor = context.contentResolver.query(uri, null, null, selectionArgs, null)
-        cursor?.use {
-            if (it.moveToFirst()) {
-                val idx = it.getColumnIndex("result")
-                if (idx >= 0) it.getString(idx) else null
-            } else null
+            val cursor = context.contentResolver.query(uri, null, null, selectionArgs, null)
+            if (cursor == null) {
+                // Null cursor = Amber hasn't granted this app background (content
+                // resolver) permission for this op. Fall back to the Intent path.
+                Log.w(TAG, "DBG: CP $method NULL cursor (permission not granted?)")
+                return null
+            }
+            cursor.use {
+                if (!it.moveToFirst()) {
+                    Log.w(TAG, "DBG: CP $method empty cursor")
+                    return null
+                }
+                Log.w(TAG, "DBG: CP $method columns=${it.columnNames.joinToString(",")}")
+                // Reject column means the user denied the op.
+                val rejIdx = it.getColumnIndex("rejected")
+                if (rejIdx >= 0 && it.getString(rejIdx) == "true") {
+                    Log.w(TAG, "DBG: CP $method rejected")
+                    return null
+                }
+                // Amber returns crypto output under varying column names across
+                // versions — accept whichever is present.
+                for (col in listOf("result", "signature", "event")) {
+                    val idx = it.getColumnIndex(col)
+                    if (idx >= 0) {
+                        val v = it.getString(idx)
+                        if (!v.isNullOrEmpty()) {
+                            Log.w(TAG, "DBG: CP $method OK via column=$col len=${v.length}")
+                            return v
+                        }
+                    }
+                }
+                Log.w(TAG, "DBG: CP $method no usable column")
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "DBG: CP $method exception: ${e.message}")
+            null
         }
-    } catch (e: Exception) {
-        Log.d(TAG, "ContentProvider $method not available: ${e.message}")
-        null
     }
 
     /** Content provider specifically for sign_event (returns "event" column). */

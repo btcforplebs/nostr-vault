@@ -79,6 +79,10 @@ class iOSAppDelegate: NSObject, UIApplicationDelegate, ObservableObject {
                 #endif
                 RelayProcessManager.shared.startRelay(config: ConfigService.shared.config)
             }
+
+            // Catch up on DMs that arrived while backgrounded and re-open the
+            // live external DM subscription (sockets are suspended in background).
+            DMService.shared.syncOnForeground()
         }
     }
 

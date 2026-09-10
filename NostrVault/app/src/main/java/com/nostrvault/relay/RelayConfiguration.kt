@@ -52,7 +52,11 @@ object RelayConfiguration {
 
         return mapOf(
             "OWNER_NPUB" to cleanNpub,
-            "RELAY_URL" to config.relayURL,
+            // Bare host[:port] — the Go relay builds its ServiceURL as
+            // "https://" + RELAY_URL + "/chat", so a scheme here produces a
+            // malformed "https://ws://127.0.0.1:3355/chat" that never matches the
+            // NIP-42 AUTH relay tag → "failed to authenticate" → no NIP-17 DMs.
+            "RELAY_URL" to config.relayURL.substringAfter("://").trimEnd('/'),
             "RELAY_PORT" to config.relayPort.toString(),
             "RELAY_BIND_ADDRESS" to relayBindAddress,
             "DB_ENGINE" to config.dbEngine,
@@ -345,6 +349,12 @@ data class HavenConfig(
     val noteDetailCompactView: Boolean = false,
     val noteDetailExpandedEngagement: Boolean = false,
     val defaultReactionEmoji: String = "+",
+    // When true, likes/reactions are removed from the UI entirely; zaps become the
+    // primary engagement + notification signal. Mirrors iOS HavenConfig.zapsOnlyMode.
+    val zapsOnlyMode: Boolean = false,
+    // When true, the bottom tab bar stays fully expanded and never shrinks/hides
+    // on scroll. Mirrors iOS HavenConfig.disableTabBarAnimation.
+    val disableTabBarAnimation: Boolean = false,
     val autoplayVideos: Boolean = true,
 
     // Performance

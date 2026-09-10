@@ -144,12 +144,14 @@ struct HavenConfig: Codable, Equatable {
     ]
 
     // NIP-17: DM Relays (kind 10050)
-    var dmRelays: [String] = [
+    /// Public, externally-reachable relays where others deliver DMs to us.
+    static let defaultDMRelays: [String] = [
         "wss://relay.damus.io",
         "wss://relay.primal.net",
         "wss://nos.lol",
         "wss://relay.btcforplebs.com"
     ]
+    var dmRelays: [String] = HavenConfig.defaultDMRelays
 
     // NIP-29: Group Relays
     var groupRelayURLs: [String] = []

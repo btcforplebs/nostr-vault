@@ -33,6 +33,8 @@ class DMService @Inject constructor(
     companion object {
         private const val TAG = "DMService"
         private const val EXTERNAL_FETCH_MAX_RELAYS = 15
+        private const val LIVE_EXTERNAL_MAX_RELAYS = 8
+        private const val PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
         private const val FIRE_AND_FORGET_FLUSH_MS = 300L
         private const val FIRE_AND_FORGET_TIMEOUT_MS = 3_000L
         private const val AUTH_TIMEOUT_MS = 5_000L
@@ -65,6 +67,9 @@ class DMService @Inject constructor(
     private var nip04Client: WebSocketClient? = null     // NIP-04 /inbox relay
     private var chatInjectionClient: WebSocketClient? = null
     private var inboxInjectionClient: WebSocketClient? = null
+    /** Persistent live subscriptions to the user's PUBLIC DM relays. */
+    private val liveExternalClients = mutableListOf<WebSocketClient>()
+    private var periodicSyncJob: Job? = null
 
     private val seenGiftWrapIds = ConcurrentHashMap.newKeySet<String>()
     private val injectedDmIds = ConcurrentHashMap.newKeySet<String>()
@@ -90,16 +95,32 @@ class DMService @Inject constructor(
         loadCachedConversations()
         connectToLocalChatRelay(generation)
         connectToLocalNip04Relay(generation)
+        // Persistent subscriptions to our public DM relays so inbound replies
+        // arrive in real-time (the local sockets only see DMs already in the DB).
+        connectToExternalDMRelays(generation)
+        startPeriodicSync()
     }
 
     fun syncOnForeground() {
+        // Live sockets may have been suspended/dropped while backgrounded.
+        if (liveExternalClients.isEmpty()) {
+            connectToExternalDMRelays(switchGeneration)
+        } else {
+            liveExternalClients.forEach { it.resetReconnect() }
+        }
         fetchFromExternalRelays()
     }
 
     fun refresh() {
-        _conversations.value = emptyList()
-        seenGiftWrapIds.clear()
-        startListening()
+        // Do NOT tear down + reconnect the local /chat socket here: that re-runs
+        // NIP-42 AUTH (an Amber prompt) on every pull, and wiping conversations/
+        // seen-set forces re-decryption (more prompts). The local sockets are live
+        // subscriptions; a refresh just needs a network catch-up.
+        if (!hasStarted) {
+            startListening()
+        } else if (liveExternalClients.isEmpty()) {
+            connectToExternalDMRelays(switchGeneration)
+        }
         fetchFromExternalRelays()
     }
 
@@ -166,6 +187,7 @@ class DMService @Inject constructor(
     private fun subscribeToNip04(client: WebSocketClient) {
         val ownerHex = nostrService.activeHexPubkey
         val subId = "dm-nip04"
+        Log.w(TAG, "DBG: subscribeToNip04 ownerHex=${ownerHex.take(12)} amber=${isAmberMode()}")
 
         // Incoming NIP-04 DMs
         val inFilter = """{"kinds":[4],"#p":["$ownerHex"]}"""
@@ -186,8 +208,26 @@ class DMService @Inject constructor(
             if (parsed.isEmpty()) return
             val type = parsed[0].jsonPrimitive.contentOrNull ?: return
 
+            if (type != "EVENT") Log.w(TAG, "DBG: /chat recv type=$type")
             when (type) {
                 "AUTH" -> handleAuthChallenge(parsed, inboxClient)
+                "OK" -> {
+                    // Response to our NIP-42 AUTH event. The /chat relay requires
+                    // AUTH *before* it will accept a REQ, so the kind-1059
+                    // subscription must be sent here, once AUTH succeeds — NOT on
+                    // EOSE (an EOSE only ever arrives in response to a REQ, so the
+                    // old EOSE-gated subscribe never fired and no DMs loaded).
+                    // Re-sending on every successful OK is idempotent (same subId
+                    // replaces the subscription) and re-arms it after a reconnect.
+                    val success = parsed.getOrNull(2)?.jsonPrimitive?.booleanOrNull ?: false
+                    val reason = parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull
+                    Log.w(TAG, "DBG: /chat OK success=$success reason=$reason")
+                    if (success) {
+                        val ownerHex = nostrService.activeHexPubkey
+                        val filter = """{"kinds":[1059],"#p":["$ownerHex"]}"""
+                        inboxClient?.send("[\"REQ\",\"dm-nip17\",$filter]")
+                    }
+                }
                 "EVENT" -> {
                     if (parsed.size < 3) return
                     val eventObj = parsed[2].jsonObject
@@ -201,11 +241,8 @@ class DMService @Inject constructor(
                     }
                 }
                 "EOSE" -> {
-                    // Subscribe to kind 1059 after AUTH success
-                    val ownerHex = nostrService.activeHexPubkey
-                    val subId = "dm-nip17"
-                    val filter = """{"kinds":[1059],"#p":["$ownerHex"]}"""
-                    inboxClient?.send("[\"REQ\",\"$subId\",$filter]")
+                    // Stored gift wraps finished streaming; live events follow.
+                    _isLoading.value = false
                 }
             }
         } catch (e: Exception) {
@@ -224,6 +261,7 @@ class DMService @Inject constructor(
                     if (parsed.size < 3) return
                     val eventObj = parsed[2].jsonObject
                     val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return
+                    Log.w(TAG, "DBG: /inbox EVENT kind=$kind")
 
                     if (kind == 4) {
                         scope.launch {
@@ -231,6 +269,7 @@ class DMService @Inject constructor(
                         }
                     }
                 }
+                else -> Log.w(TAG, "DBG: /inbox recv type=$type")
             }
         } catch (e: Exception) {
             Log.w(TAG, "NIP-04 relay message parse error: ${e.message}")
@@ -239,13 +278,14 @@ class DMService @Inject constructor(
 
     private suspend fun handleIncomingGiftWrap(eventObj: JsonObject, generation: Int) {
         val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
-        if (!seenGiftWrapIds.add(eventId)) return
+        if (!seenGiftWrapIds.add(eventId)) { Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} skipped (already seen)"); return }
         if (switchGeneration != generation) return
 
         withContext(Dispatchers.IO) {
             try {
                 val giftWrapContent = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: return@withContext
                 val giftWrapPubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@withContext
+                Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} decrypting (amber=${isAmberMode()})")
 
                 val rumorJson = if (isAmberMode()) {
                     // Amber handles NIP-44 decryption of the gift wrap
@@ -253,7 +293,7 @@ class DMService @Inject constructor(
                 } else {
                     val recipientPrivkey = resolvePrivateKey() ?: return@withContext
                     NIP17Service.unwrapGiftWrappedDM(giftWrapContent, giftWrapPubkey, recipientPrivkey)
-                } ?: return@withContext
+                } ?: run { Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} decrypt returned NULL"); return@withContext }
 
                 // Parse the rumor JSON to extract sender, content, timestamp, tags
                 val rumorObj = json.parseToJsonElement(rumorJson).jsonObject
@@ -292,7 +332,7 @@ class DMService @Inject constructor(
 
     private suspend fun handleIncomingNIP04(eventObj: JsonObject, generation: Int) {
         val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
-        if (!seenGiftWrapIds.add(eventId)) return // Reuse dedup set
+        if (!seenGiftWrapIds.add(eventId)) { Log.w(TAG, "DBG: nip04 ${eventId.take(8)} skipped (already seen)"); return }
         if (switchGeneration != generation) return
 
         withContext(Dispatchers.IO) {
@@ -311,6 +351,7 @@ class DMService @Inject constructor(
                 } else {
                     pubkey
                 }
+                Log.w(TAG, "DBG: nip04 ${eventId.take(8)} fromMe=$isFromMe cp=${counterparty.take(12)} decrypting (amber=${isAmberMode()})")
 
                 // Decrypt (Amber or local key)
                 val plaintext = if (isAmberMode()) {
@@ -318,7 +359,8 @@ class DMService @Inject constructor(
                 } else {
                     val privkey = resolvePrivateKey() ?: return@withContext
                     NIP04Service.decrypt(content, counterparty, privkey)
-                } ?: return@withContext
+                } ?: run { Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypt returned NULL"); return@withContext }
+                Log.w(TAG, "DBG: nip04 ${eventId.take(8)} decrypted len=${plaintext.length}")
 
                 val message = DMMessage(
                     id = eventId,
@@ -344,10 +386,16 @@ class DMService @Inject constructor(
 
         if (existingIndex >= 0) {
             val conv = current[existingIndex]
-            // Check for optimistic message dedup
-            val isDuplicate = conv.messages.any { existing ->
-                existing.content == message.content &&
-                    existing.isFromMe == message.isFromMe &&
+            // Already have this exact event — nothing to do.
+            if (conv.messages.any { it.id == message.id }) return
+            // Optimistic-send dedup: a message WE sent echoes back from the relay
+            // with a real id; collapse it onto the optimistic copy. Gate on
+            // isFromMe — applying this to inbound messages dropped distinct DMs
+            // with identical short content (e.g. "ok"), so they were never cached
+            // and got re-decrypted (re-prompting Amber) on every refresh.
+            val isDuplicate = message.isFromMe && conv.messages.any { existing ->
+                existing.isFromMe &&
+                    existing.content == message.content &&
                     kotlin.math.abs(existing.timestamp - message.timestamp) < OPTIMISTIC_DEDUP_THRESHOLD_MS / 1000
             }
             if (isDuplicate) return
@@ -371,6 +419,7 @@ class DMService @Inject constructor(
         // Sort by most recent
         current.sortByDescending { it.lastMessage?.timestamp ?: 0L }
         _conversations.value = current
+        Log.w(TAG, "DBG: addMessageToConversation cp=${counterparty.take(12)} → convos=${current.size}")
         saveCachedConversations()
     }
 
@@ -546,7 +595,13 @@ class DMService @Inject constructor(
             val ownerHex = nostrService.activeHexPubkey
             val dmRelays = nostrService.dmRelayLists.value[ownerHex] ?: emptyList()
             val inboxRelays = nostrService.relayLists.value[ownerHex] ?: emptyList()
-            val allRelays = (dmRelays + inboxRelays)
+            // Fall back to configured DM relays + blastr so a fetch still happens
+            // when our own kind 10050/10002 isn't cached yet (e.g. a fresh setup
+            // or an account that never published a relay list) — otherwise
+            // pull-to-refresh queried zero relays and nothing ever loaded.
+            val configured = configStore.config.value.dmRelays
+            val blastr = configStore.config.value.activeBlastrRelays
+            val allRelays = (dmRelays + inboxRelays + configured + blastr)
                 .distinct()
                 .filter { !it.contains("localhost") && !it.contains("127.0.0.1") }
                 .take(EXTERNAL_FETCH_MAX_RELAYS)
@@ -618,6 +673,94 @@ class DMService @Inject constructor(
     }
 
     // ══════════════════════════════════════════════════════════════════
+    // Live external DM subscription (real-time inbound from public relays)
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * The PUBLIC relays to keep persistent DM subscriptions on: the relays we
+     * advertise in our kind 10050 (where senders deliver to us), plus our cached
+     * NIP-65 inbox relays and blastr relays as fallbacks. Loopback excluded.
+     */
+    private fun liveExternalRelaySet(ownerHex: String): List<String> {
+        val advertised = nostrService.dmRelayLists.value[ownerHex] ?: emptyList()
+        val inbox = nostrService.relayLists.value[ownerHex] ?: emptyList()
+        val configured = configStore.config.value.dmRelays
+        val blastr = configStore.config.value.activeBlastrRelays
+        return (advertised + configured + inbox + blastr)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.contains("localhost") && !it.contains("127.0.0.1") }
+            .distinct()
+            .take(LIVE_EXTERNAL_MAX_RELAYS)
+    }
+
+    /**
+     * Opens persistent subscriptions to our public DM relays for both NIP-17
+     * (kind 1059) and NIP-04 (kind 4) inbound DMs. The underlying WebSocketClient
+     * auto-reconnects with backoff; we (re)send the REQ filters on every CONNECTED.
+     */
+    private fun connectToExternalDMRelays(generation: Int) {
+        // Tear down any previous live subscriptions first.
+        liveExternalClients.forEach { it.disconnect() }
+        liveExternalClients.clear()
+
+        val ownerHex = nostrService.activeHexPubkey
+        if (ownerHex.isBlank()) return
+
+        val relays = liveExternalRelaySet(ownerHex)
+        if (relays.isEmpty()) return
+
+        // Bound the initial backlog to a week; live events stream after EOSE.
+        // Dedup (seenGiftWrapIds / injectedDmIds) absorbs overlap on reconnect.
+        val since = System.currentTimeMillis() / 1000 - (7 * 24 * 60 * 60)
+
+        Log.d(TAG, "Opening live DM subscriptions on ${relays.size} external relays")
+
+        for (relayUrl in relays) {
+            val client = WebSocketClient(url = relayUrl, scope = scope)
+            liveExternalClients.add(client)
+            val subId = "dm-live-${UUID.randomUUID().toString().take(8)}"
+
+            // (Re)subscribe on every (re)connect so the filters survive drops.
+            scope.launch {
+                client.connectionState.collect { state ->
+                    if (switchGeneration != generation) return@collect
+                    if (state == WebSocketClient.ConnectionState.CONNECTED) {
+                        client.send("[\"REQ\",\"$subId-17\",{\"kinds\":[1059],\"#p\":[\"$ownerHex\"],\"since\":$since}]")
+                        client.send("[\"REQ\",\"$subId-04in\",{\"kinds\":[4],\"#p\":[\"$ownerHex\"],\"since\":$since}]")
+                        client.send("[\"REQ\",\"$subId-04out\",{\"kinds\":[4],\"authors\":[\"$ownerHex\"],\"since\":$since}]")
+                    }
+                }
+            }
+
+            scope.launch {
+                client.messages.collect { msg ->
+                    if (switchGeneration != generation) return@collect
+                    launch(Dispatchers.Default) {
+                        handleExternalDmMessage(msg, generation)
+                    }
+                }
+            }
+
+            client.connect()
+        }
+    }
+
+    /**
+     * Periodic catch-up safety net. Runs on the scope's default dispatcher
+     * (Main.immediate) so all access to liveExternalClients stays single-threaded;
+     * fetchFromExternalRelays() offloads its own heavy work to Dispatchers.IO.
+     */
+    private fun startPeriodicSync() {
+        periodicSyncJob?.cancel()
+        periodicSyncJob = scope.launch {
+            while (isActive) {
+                delay(PERIODIC_SYNC_INTERVAL_MS)
+                syncOnForeground()
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     // ViewModel convenience methods
     // ══════════════════════════════════════════════════════════════════
 
@@ -668,21 +811,37 @@ class DMService @Inject constructor(
         if (parsed.size < 2) return
         val challenge = parsed[1].jsonPrimitive.contentOrNull ?: return
         val config = configStore.config.value
-        val relayUrl = config.nostrURL?.let { "$it/chat" } ?: return
+        // The NIP-42 relay tag must match the chat relay's ServiceURL, which the
+        // Go relay sets to "https://" + RELAY_URL + "/chat" → khatru NormalizeURL
+        // turns https→wss. We connect over ws:// (local, no TLS), but the AUTH
+        // tag must use the wss scheme + bare host or the relay rejects it.
+        val host = (config.nostrURL ?: return).substringAfter("://").trimEnd('/')
+        val relayUrl = "wss://$host/chat"
 
         scope.launch(Dispatchers.IO) {
             val tags = listOf(
                 listOf("relay", relayUrl),
                 listOf("challenge", challenge),
             )
-            val authEvent = nostrService.signEvent(
-                kind = 22242,
-                content = "",
-                tags = tags,
-                forceOwner = true,
-            ) ?: return@launch
+            // Use signEventAsync, NOT the sync signEvent: the sync variant resolves
+            // a LOCAL secret key (null under Amber/NIP-46), so /chat AUTH silently
+            // failed and no kind-1059 subscription was ever sent — locking all
+            // NIP-17 (gift-wrapped) DMs out of the local relay. signEventAsync
+            // routes kind-22242 through Amber/NIP-46.
+            val authEvent = try {
+                nostrService.signEventAsync(
+                    kind = 22242,
+                    content = "",
+                    tags = tags,
+                    forceOwner = true,
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "DBG: /chat AUTH sign failed: ${e.message}")
+                null
+            } ?: return@launch
 
             val eventJson = serializeEvent(authEvent)
+            Log.w(TAG, "DBG: /chat AUTH event=$eventJson")
             client?.send("[\"AUTH\",$eventJson]")
         }
     }
@@ -695,12 +854,13 @@ class DMService @Inject constructor(
         scope.launch(Dispatchers.IO) {
             try {
                 val key = currentCacheKey()
-                val dir = configStore.config.value.appSupportDir ?: return@launch
+                val dir = configStore.config.value.appSupportDir ?: run { Log.w(TAG, "DBG: loadCache appSupportDir NULL"); return@launch }
                 val file = File(dir, "dm_cache_$key.json")
-                if (!file.exists()) return@launch
+                if (!file.exists()) { Log.w(TAG, "DBG: loadCache no file key=$key"); return@launch }
 
                 val content = file.readText()
                 val convos = json.decodeFromString<List<DMConversation>>(content)
+                Log.w(TAG, "DBG: loadCache key=$key convos=${convos.size} msgs=${convos.sumOf { it.messages.size }}")
 
                 // Seed dedup set
                 for (conv in convos) {

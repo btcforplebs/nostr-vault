@@ -69,6 +69,15 @@ class DMService: ObservableObject {
     private var inboxClient: WebSocketClient?       // /chat (NIP-17 gift wraps)
     private var nip04Client: WebSocketClient?        // /inbox (NIP-04 legacy DMs)
     private var externalClients: [WebSocketClient] = [] // temporary external relay clients
+    /// Persistent (long-lived) subscriptions to the user's PUBLIC DM relays.
+    /// The local /chat and /inbox sockets only surface DMs already in the local
+    /// DB; senders publish replies to our advertised public relays, so we must
+    /// listen there directly for real-time inbound delivery.
+    private var liveExternalClients: [WebSocketClient] = []
+    /// Guards against scheduling duplicate reconnects for the same live client.
+    private var liveExternalReconnectScheduled = Set<ObjectIdentifier>()
+    /// Periodic foreground catch-up timer (safety net if a live socket drops).
+    private var periodicSyncTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     /// Subscriptions tied to the current chat/NIP-04 clients.
     /// Cancelled on reconnect to prevent stale clients from firing events.
@@ -130,6 +139,8 @@ class DMService: ObservableObject {
                     self.inboxClient = nil
                     self.nip04Client?.disconnect()
                     self.nip04Client = nil
+                    self.stopExternalDMSubscription()
+                    self.stopPeriodicSync()
                 }
             }
             .store(in: &cancellables)
@@ -188,6 +199,14 @@ class DMService: ObservableObject {
 
         // Also connect to /inbox for NIP-04 (kind 4) legacy DMs
         startNIP04Listening()
+
+        // Open persistent subscriptions to our public DM relays so inbound
+        // replies arrive in real-time (the local sockets only see DMs already
+        // in the local DB).
+        startExternalDMSubscription()
+
+        // Drive periodic catch-up as a safety net for any silently dropped socket.
+        startPeriodicSync()
     }
 
     private func startNIP04Listening() {
@@ -462,8 +481,13 @@ class DMService: ObservableObject {
         saveConversations()
     }
 
-    /// Called on app foreground. Fetches external DMs if enough time has elapsed.
+    /// Called on app foreground and on a periodic timer. Revives the live
+    /// external subscription if it dropped, then does a throttled catch-up fetch.
     func syncOnForeground() {
+        // Live sockets are suspended while backgrounded — re-open them.
+        if liveExternalClients.isEmpty {
+            startExternalDMSubscription()
+        }
         let now = Int64(Date().timeIntervalSince1970)
         let lastFetch = lastExternalFetchTimestamp
         // Don't refetch if we just did it recently (within 5 minutes)
@@ -476,6 +500,171 @@ class DMService: ObservableObject {
         reconnectInbox()
         // Also fetch from external relays
         fetchFromExternalRelays()
+    }
+
+    // MARK: - Live External DM Subscription
+
+    /// True if the relay URL points at the loopback/local relay, which is never
+    /// reachable by other people and so must not be used for external delivery.
+    static func isLoopbackRelay(_ url: String) -> Bool {
+        let l = url.lowercased()
+        return l.contains("127.0.0.1") || l.contains("localhost") || l.contains("://[::1]")
+    }
+
+    /// Builds the set of PUBLIC relays to keep persistent DM subscriptions on:
+    /// the relays we advertise in our kind 10050 (where senders deliver to us),
+    /// plus blastr relays as a broad fallback. Loopback relays are excluded.
+    private func liveExternalRelaySet() -> [String] {
+        var candidates: [String] = []
+
+        // Relays advertised in our own kind 10050 — the canonical inbox set.
+        if let ownDMRelays = NostrService.shared.dmRelayLists[loadedAccountPubkey] {
+            candidates.append(contentsOf: ownDMRelays)
+        }
+        // The configured DM relays (the source of that advertisement).
+        candidates.append(contentsOf: ConfigService.shared.config.dmRelays)
+        // Blastr relays as a broad fallback.
+        candidates.append(contentsOf: ConfigService.shared.config.activeBlastrRelays)
+
+        var seen = Set<String>()
+        var result: [String] = []
+        for relay in candidates {
+            let trimmed = relay.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  !Self.isLoopbackRelay(trimmed),
+                  !seen.contains(trimmed) else { continue }
+            seen.insert(trimmed)
+            result.append(trimmed)
+        }
+        // Cap the number of persistent sockets we hold open.
+        return Array(result.prefix(8))
+    }
+
+    /// Opens persistent subscriptions to our public DM relays for both NIP-17
+    /// (kind 1059) and NIP-04 (kind 4) inbound DMs. Safe to call repeatedly; it
+    /// rebuilds from scratch each time.
+    func startExternalDMSubscription() {
+        let ownPubkey = loadedAccountPubkey
+        guard !ownPubkey.isEmpty else { return }
+
+        stopExternalDMSubscription()
+
+        let relays = liveExternalRelaySet()
+        guard !relays.isEmpty else { return }
+
+        let generation = self.switchGeneration
+        print("🌐📡 Opening live DM subscriptions on \(relays.count) external relays")
+
+        for urlStr in relays {
+            guard let url = URL(string: urlStr) else { continue }
+            connectLiveExternalRelay(url: url, ownPubkey: ownPubkey, generation: generation)
+        }
+    }
+
+    /// Tears down all persistent external DM subscriptions.
+    func stopExternalDMSubscription() {
+        for client in liveExternalClients {
+            client.disconnect()
+        }
+        liveExternalClients.removeAll()
+        liveExternalReconnectScheduled.removeAll()
+    }
+
+    private func connectLiveExternalRelay(url: URL, ownPubkey: String, generation: UInt64) {
+        let client = WebSocketClient()
+        // Long-lived listener — NOT temporary, no teardown timer.
+        liveExternalClients.append(client)
+
+        client.messageSubject
+            .receive(on: processingQueue)
+            .sink { [weak self] message in
+                guard let self = self else { return }
+                DispatchQueue.main.async {
+                    guard self.switchGeneration == generation else { return }
+                    self.processExternalMessage(message, forAccount: ownPubkey)
+                }
+            }
+            .store(in: &cancellables)
+
+        client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak client] state in
+                guard let self = self, let client = client else { return }
+                // Account switched — abandon this listener.
+                guard self.switchGeneration == generation else {
+                    client.disconnect()
+                    return
+                }
+                switch state {
+                case .connected:
+                    self.sendLiveExternalSubscription(to: client, ownPubkey: ownPubkey)
+                case .error:
+                    // Real drop (ping/receive failure). Intentional disconnects
+                    // surface as .disconnected and are ignored so teardown and
+                    // connect()'s internal reset don't trigger reconnect loops.
+                    self.scheduleLiveExternalReconnect(client: client, url: url,
+                                                       ownPubkey: ownPubkey, generation: generation)
+                default:
+                    break
+                }
+            }
+            .store(in: &cancellables)
+
+        client.connect(url: url)
+    }
+
+    private func sendLiveExternalSubscription(to client: WebSocketClient, ownPubkey: String) {
+        // Bound the initial backlog to a week; live events stream after EOSE.
+        // Dedup (seenGiftWrapIds / injectedDmIds) absorbs overlap on reconnect.
+        let since = Int(Date().timeIntervalSince1970) - 7 * 24 * 3600
+
+        let filters: [(String, [String: Any])] = [
+            ("live-nip17", ["kinds": [1059], "#p": [ownPubkey], "since": since]),
+            ("live-nip04-in", ["kinds": [4], "#p": [ownPubkey], "since": since]),
+            ("live-nip04-out", ["kinds": [4], "authors": [ownPubkey], "since": since])
+        ]
+
+        for (subId, filter) in filters {
+            let req = ["REQ", "\(subId)-\(UUID().uuidString.prefix(6))", filter] as [Any]
+            if let data = try? JSONSerialization.data(withJSONObject: req),
+               let str = String(data: data, encoding: .utf8) {
+                client.send(text: str)
+            }
+        }
+    }
+
+    private func scheduleLiveExternalReconnect(client: WebSocketClient, url: URL,
+                                               ownPubkey: String, generation: UInt64) {
+        // Skip if this client was intentionally torn down (no longer tracked).
+        guard liveExternalClients.contains(where: { $0 === client }) else { return }
+        let id = ObjectIdentifier(client)
+        guard !liveExternalReconnectScheduled.contains(id) else { return }
+        liveExternalReconnectScheduled.insert(id)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self, weak client] in
+            guard let self = self, let client = client else { return }
+            self.liveExternalReconnectScheduled.remove(id)
+            guard self.switchGeneration == generation,
+                  self.liveExternalClients.contains(where: { $0 === client }) else { return }
+            print("🔄 Reconnecting live DM relay: \(url.absoluteString)")
+            // Reuse the same client (and its existing sinks) — connect() resets
+            // the socket internally, so no new subscriptions accumulate.
+            client.connect(url: url)
+        }
+    }
+
+    /// Starts the periodic foreground catch-up timer (idempotent).
+    private func startPeriodicSync() {
+        stopPeriodicSync()
+        let timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.syncOnForeground() }
+        }
+        periodicSyncTimer = timer
+    }
+
+    private func stopPeriodicSync() {
+        periodicSyncTimer?.invalidate()
+        periodicSyncTimer = nil
     }
 
     /// Fetch DMs from the user's known external relays (seed relays / blastr relays)
@@ -1073,6 +1262,9 @@ class DMService: ObservableObject {
             client.disconnect()
         }
         externalClients.removeAll()
+
+        // Tear down persistent external subscriptions for the previous account.
+        stopExternalDMSubscription()
 
         // Save current account's conversations
         saveConversations()

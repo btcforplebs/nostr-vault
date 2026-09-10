@@ -2437,7 +2437,7 @@ struct DMSettingsView: View {
             } header: {
                 Text("DM Relays")
             } footer: {
-                Text("NIP-17 encrypted DMs are sent to these relays. Your local Haven relay and Mac relay (if configured) are automatically added when publishing.")
+                Text("NIP-17 encrypted DMs are sent to these relays. These are also where other people deliver their replies to you, so they must be publicly reachable — your local Haven relay is intentionally not advertised. The Mac relay (if configured) is added when publishing.")
             }
 
             if showPublishSuccess {
@@ -2462,19 +2462,14 @@ struct DMSettingsView: View {
     }
 
     private func publishDMRelayList() {
+        // NOTE: Only advertise externally-reachable relays here. The embedded
+        // Haven relay lives on 127.0.0.1 and is NOT reachable by anyone else, so
+        // it must never appear in a public kind 10050 inbox list — doing so tells
+        // senders to deliver replies to a loopback address they can't reach,
+        // which is why inbound DMs were silently lost.
         var relays = configService.config.dmRelays
 
-        // Always include local relay
-        #if os(macOS)
-        let localRelay = "ws://127.0.0.1:\(configService.config.relayPort)"
-        #else
-        let localRelay = "wss://127.0.0.1:\(configService.config.relayPort)"
-        #endif
-        if !relays.contains(localRelay) {
-            relays.insert(localRelay, at: 0)
-        }
-
-        // Include Mac relay if configured
+        // Include Mac relay if configured (publicly reachable)
         if !configService.config.macRelayURL.isEmpty && !relays.contains(configService.config.macRelayURL) {
             relays.append(configService.config.macRelayURL)
         }
