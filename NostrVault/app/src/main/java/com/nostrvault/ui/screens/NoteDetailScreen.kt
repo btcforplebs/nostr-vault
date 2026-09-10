@@ -486,10 +486,13 @@ fun NoteDetailScreen(
         context.startActivity(Intent.createChooser(intent, "Share Note"))
     }
 
-    // Delete confirmation
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var showBlockDialog by remember { mutableStateOf(false) }
-    var showReportDialog by remember { mutableStateOf(false) }
+    // Moderation confirmations. These hold the note they were opened for rather
+    // than a flag, because the overflow menu is now on every note on this screen
+    // and not only on the focused one. Acting on the focused note still leaves
+    // the screen — there is nothing left to look at; acting on a reply does not.
+    var deleteTarget by remember { mutableStateOf<FeedNote?>(null) }
+    var blockTarget by remember { mutableStateOf<FeedNote?>(null) }
+    var reportTarget by remember { mutableStateOf<FeedNote?>(null) }
 
     // Zap result feedback
     LaunchedEffect(Unit) {
@@ -560,60 +563,60 @@ fun NoteDetailScreen(
     }
 
     // Delete confirmation dialog
-    if (showDeleteDialog && focusedNote != null) {
+    deleteTarget?.let { target ->
         AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
+            onDismissRequest = { deleteTarget = null },
             title = { Text("Delete Post", color = PrimaryText) },
             text = { Text("Request deletion of this post? Not all relays honor NIP-09 deletion requests.", color = SecondaryText) },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteNote(focusedNote!!.id)
-                        showDeleteDialog = false
-                        onBack()
+                        viewModel.deleteNote(target.id)
+                        deleteTarget = null
+                        if (target.id == focusedNote?.id) onBack()
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = LikeRed),
                 ) { Text("Delete") }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel", color = SecondaryText) }
+                TextButton(onClick = { deleteTarget = null }) { Text("Cancel", color = SecondaryText) }
             },
             containerColor = SecondaryGroupedBg,
         )
     }
 
     // Block confirmation dialog
-    if (showBlockDialog && focusedNote != null) {
+    blockTarget?.let { target ->
         AlertDialog(
-            onDismissRequest = { showBlockDialog = false },
+            onDismissRequest = { blockTarget = null },
             title = { Text("Block User", color = PrimaryText) },
             text = { Text("Block this user? Their posts will be hidden from your feed.", color = SecondaryText) },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.blockUser(focusedNote!!.pubkey)
-                        showBlockDialog = false
-                        onBack()
+                        viewModel.blockUser(target.pubkey)
+                        blockTarget = null
+                        if (target.id == focusedNote?.id) onBack()
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = LikeRed),
                 ) { Text("Block") }
             },
             dismissButton = {
-                TextButton(onClick = { showBlockDialog = false }) { Text("Cancel", color = SecondaryText) }
+                TextButton(onClick = { blockTarget = null }) { Text("Cancel", color = SecondaryText) }
             },
             containerColor = SecondaryGroupedBg,
         )
     }
 
     // Report content dialog (NIP-56 reason picker + auto-block)
-    if (showReportDialog && focusedNote != null) {
+    reportTarget?.let { target ->
         UGCReportDialog(
             onReport = { reason, description ->
-                viewModel.reportNote(focusedNote!!.effectiveEventId, focusedNote!!.pubkey, reason, description)
-                showReportDialog = false
-                onBack()
+                viewModel.reportNote(target.effectiveEventId, target.pubkey, reason, description)
+                reportTarget = null
+                if (target.id == focusedNote?.id) onBack()
             },
-            onDismiss = { showReportDialog = false },
+            onDismiss = { reportTarget = null },
         )
     }
 
@@ -750,6 +753,10 @@ fun NoteDetailScreen(
                                 onZap = { zapTargetNote = parent },
                                 onShare = { shareNote(parent) },
                                 onBroadcast = { broadcastTargetNote = parent },
+                                isOwnNote = viewModel.isOwnNote(parent.pubkey),
+                                onReport = { reportTarget = parent },
+                                onBlock = { blockTarget = parent },
+                                onDelete = { deleteTarget = parent },
                                 onLongPressLike = { emojiTargetNote = parent },
                             )
                         }
@@ -785,9 +792,9 @@ fun NoteDetailScreen(
                         onReply = { onReply(focusedNote!!.effectiveEventId) },
                         onFollow = { viewModel.followUser(focusedNote!!.pubkey) },
                         onUnfollow = { viewModel.unfollowUser(focusedNote!!.pubkey) },
-                        onBlock = { showBlockDialog = true },
-                        onDelete = { showDeleteDialog = true },
-                        onReport = { showReportDialog = true },
+                        onBlock = { blockTarget = focusedNote },
+                        onDelete = { deleteTarget = focusedNote },
+                        onReport = { reportTarget = focusedNote },
                         onReactionsClick = { showReactorsSheet = true },
                         onRepostsClick = { showRepostersSheet = true },
                         onZapsClick = { showZappersSheet = true },
@@ -847,6 +854,13 @@ fun NoteDetailScreen(
                         onZapNote = { zapTargetNote = it },
                         onShareNote = { shareNote(it) },
                         onBroadcastNote = { broadcastTargetNote = it },
+                        onModerateNote = { note, action ->
+                            when (action) {
+                                Moderation.REPORT -> reportTarget = note
+                                Moderation.BLOCK -> blockTarget = note
+                                Moderation.DELETE -> deleteTarget = note
+                            }
+                        },
                         onLongPressLikeNote = { emojiTargetNote = it },
                     )
                 }
@@ -1054,6 +1068,13 @@ private fun CompactParentRow(
 // Matches iOS ThreadedReplyNode: recursive tree rendering with depth-based
 // collapsing, compact/full modes, focus highlight, and thread connector lines.
 
+/**
+ * What a reply's overflow menu asked for. One parameter through the recursive
+ * reply tree instead of three, and the confirmation dialogs stay at screen
+ * level where they already are.
+ */
+internal enum class Moderation { REPORT, BLOCK, DELETE }
+
 private const val MAX_INDENT_DEPTH = 5
 private const val COLLAPSE_DEPTH = 3
 
@@ -1078,6 +1099,7 @@ private fun ThreadedReplyNode(
     onZapNote: (FeedNote) -> Unit,
     onShareNote: (FeedNote) -> Unit,
     onBroadcastNote: (FeedNote) -> Unit,
+    onModerateNote: (FeedNote, Moderation) -> Unit,
     onLongPressLikeNote: (FeedNote) -> Unit,
 ) {
     // Keyed on the reply list too: late-arriving replies (refocus fetch,
@@ -1131,6 +1153,7 @@ private fun ThreadedReplyNode(
                             onZapNote = onZapNote,
                             onShareNote = onShareNote,
                             onBroadcastNote = onBroadcastNote,
+                            onModerateNote = onModerateNote,
                             onLongPressLikeNote = onLongPressLikeNote,
                         )
                         Spacer(Modifier.height(6.dp))
@@ -1157,6 +1180,10 @@ private fun ThreadedReplyNode(
                 onZap = { onZapNote(reply) },
                 onShare = { onShareNote(reply) },
                 onBroadcast = { onBroadcastNote(reply) },
+                isOwnNote = viewModel.isOwnNote(reply.pubkey),
+                onReport = { onModerateNote(reply, Moderation.REPORT) },
+                onBlock = { onModerateNote(reply, Moderation.BLOCK) },
+                onDelete = { onModerateNote(reply, Moderation.DELETE) },
                 onLongPressLike = { onLongPressLikeNote(reply) },
             )
 
@@ -1261,6 +1288,7 @@ private fun ThreadedReplyNode(
                                     onZapNote = onZapNote,
                                     onShareNote = onShareNote,
                                     onBroadcastNote = onBroadcastNote,
+                                    onModerateNote = onModerateNote,
                                     onLongPressLikeNote = onLongPressLikeNote,
                                 )
                             }
@@ -1352,47 +1380,30 @@ private fun HeroNoteCard(
                     }
                 }
 
-                // More menu button
+                // More menu button. Same component as every other note's menu —
+                // this one carries Follow/Unfollow as well, because the focused
+                // note is the only place that offers them.
                 Box {
                     IconButton(onClick = { showMoreMenu = true }) {
                         Icon(NostrVaultIcons.More, "More", tint = SecondaryText)
                     }
-                    DropdownMenu(
+                    NoteActionsMenu(
                         expanded = showMoreMenu,
-                        onDismissRequest = { showMoreMenu = false },
-                    ) {
-                        if (isOwnNote) {
-                            DropdownMenuItem(
-                                text = { Text("Delete Post", color = LikeRed) },
-                                onClick = { showMoreMenu = false; onDelete() },
-                                leadingIcon = { Icon(NostrVaultIcons.Delete, null, tint = LikeRed) },
-                            )
-                        } else {
-                            if (isFollowing) {
-                                DropdownMenuItem(
-                                    text = { Text("Unfollow") },
-                                    onClick = { showMoreMenu = false; onUnfollow() },
-                                    leadingIcon = { Icon(NostrVaultIcons.Blocked, null, tint = ZapOrange) },
-                                )
+                        actions = buildList {
+                            if (isOwnNote) {
+                                add(NoteAction(NostrVaultIcons.Delete, "Delete Post", destructive = true, onClick = onDelete))
                             } else {
-                                DropdownMenuItem(
-                                    text = { Text("Follow") },
-                                    onClick = { showMoreMenu = false; onFollow() },
-                                    leadingIcon = { Icon(NostrVaultIcons.PersonAdd, null, tint = RepostGreen) },
-                                )
+                                if (isFollowing) {
+                                    add(NoteAction(NostrVaultIcons.Blocked, "Unfollow", onClick = onUnfollow))
+                                } else {
+                                    add(NoteAction(NostrVaultIcons.PersonAdd, "Follow", onClick = onFollow))
+                                }
+                                add(NoteAction(NostrVaultIcons.Blocked, "Block", destructive = true, onClick = onBlock))
+                                add(NoteAction(NostrVaultIcons.Alert, "Report", destructive = true, onClick = onReport))
                             }
-                            DropdownMenuItem(
-                                text = { Text("Block", color = LikeRed) },
-                                onClick = { showMoreMenu = false; onBlock() },
-                                leadingIcon = { Icon(NostrVaultIcons.Blocked, null, tint = LikeRed) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Report", color = LikeRed) },
-                                onClick = { showMoreMenu = false; onReport() },
-                                leadingIcon = { Icon(NostrVaultIcons.Alert, null, tint = LikeRed) },
-                            )
-                        }
-                    }
+                        },
+                        onDismiss = { showMoreMenu = false },
+                    )
                 }
             }
 
