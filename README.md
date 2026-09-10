@@ -59,15 +59,13 @@
 - **NIP-10/18/25 Compliance** — Proper reply threading with root/reply e-tag markers, quote post tags with relay hints, and reaction events with kind tags.
 
 ### Notifications
-- **Push Notifications (APNs)** — Native iOS push for DMs, mentions, zaps, and reactions with deep linking. Per-account granular toggles by event type.
-- **iOS Notification Service Extension** — Background push processing for reliable delivery when the app is not active.
+- **On-Device Notifications** — DMs, mentions, replies, zaps, reactions, and reposts, generated on-device from your own relay's event stream. No push server, no APNs, no third party. Per-account granular toggles by event type.
 - **Zap Notification Banner** — Animated floating status pills with real-time feedback (Zapping, Zapped, Failed).
 
 ### Infrastructure
 - **Advanced Access Control** — Multi-pubkey whitelisting, blacklisting, and per-account block lists synced to the Go relay.
 - **Web of Trust (WoT)** — Built-in WoT with configurable depth, minimum followers, refresh intervals, and 72-hour cache TTL.
 - **JSONL Backup/Restore** — Portable JSONL export/import with cloud backup support.
-- **Push Server** — Self-hosted APNs forwarding with multi-account registration, self-notification filtering, badge reset, and health monitoring.
 
 ## ⚙️ Divergence from Upstream
 

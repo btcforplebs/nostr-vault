@@ -217,14 +217,31 @@ class SearchViewModel @Inject constructor(
     }
 
     fun setSearchScope(scope: SearchScope) {
+        if (_searchScope.value == scope) return
         _searchScope.value = scope
+        nostrService.cancelGlobalSearch()
+        nostrService.cancelLocalRelaySearch()
+        searchJob?.cancel()
+        val trimmed = _query.value.trim()
+        if (trimmed.length >= 2) {
+            performSearch(_query.value)
+        } else {
+            _results.value = GlobalSearchResults()
+            _isSearching.value = false
+        }
     }
 
     private fun performSearch(query: String) {
         _isSearching.value = true
-        nostrService.globalSearch(query) { results ->
-            _results.value = results
-            _isSearching.value = false
+        when (_searchScope.value) {
+            SearchScope.RELAY -> nostrService.localRelaySearch(query) { results ->
+                _results.value = results
+                _isSearching.value = false
+            }
+            SearchScope.GLOBAL -> nostrService.globalSearch(query) { results ->
+                _results.value = results
+                _isSearching.value = false
+            }
         }
     }
 

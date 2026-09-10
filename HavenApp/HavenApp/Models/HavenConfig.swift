@@ -71,8 +71,7 @@ struct HavenConfig: Codable, Equatable {
     var nip46ClientSecretKey: String = "" // Client keypair hex secret (for NIP-44 channel encryption)
     var nip46ClientPubkey: String = "" // Client keypair hex pubkey
 
-    // Push Notifications
-    var pushServerURL: String = "https://push.nostrvault.app"
+    // Notifications (generated on-device; there is no push server)
     var enableRemotePushServer: Bool = false // Kept for migration only
     var enablePushNotifications: Bool = false
     var notificationPrefsPerAccount: [String: NotificationPreferences] = [:]
@@ -238,7 +237,7 @@ struct HavenConfig: Codable, Equatable {
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet, cashuMintURL
         case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, noteDetailCompactView, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
-        case pushServerURL, enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount
+        case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount
         case macRelayURL
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
@@ -322,7 +321,6 @@ struct HavenConfig: Codable, Equatable {
         nip46ClientSecretKey = try container.decodeIfPresent(String.self, forKey: .nip46ClientSecretKey) ?? defaults.nip46ClientSecretKey
         nip46ClientPubkey = try container.decodeIfPresent(String.self, forKey: .nip46ClientPubkey) ?? defaults.nip46ClientPubkey
 
-        pushServerURL = try container.decodeIfPresent(String.self, forKey: .pushServerURL) ?? defaults.pushServerURL
         enableRemotePushServer = try container.decodeIfPresent(Bool.self, forKey: .enableRemotePushServer) ?? defaults.enableRemotePushServer
 
         // Migrate: if enablePushNotifications was never saved, carry forward enableRemotePushServer

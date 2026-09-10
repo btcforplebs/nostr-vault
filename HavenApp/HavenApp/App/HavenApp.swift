@@ -147,11 +147,29 @@ struct MenuBarContent: View {
                         .opacity(isVisible ? 1 : 0)
                         .animation(.easeIn(duration: 0.3).delay(0.6), value: isVisible)
                     }
-                    .padding(40)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 32)
                     .onAppear {
                         isVisible = true
                     }
                 } else {
+                    // macOS gets the status panel; the full app lives in the
+                    // "viewer-window" scene. iOS still renders MenuBarView, which
+                    // is its real UI.
+                    #if os(macOS)
+                    MenuBarStatusView(configService: configService, relayManager: relayManager)
+                        .onAppear {
+                            if configService.config.hasCompletedSetup && relayManager.state == .idle {
+                                #if DEBUG
+                                print("Auto-starting relay on launch...")
+                                #endif
+                                relayManager.startRelay(config: configService.config)
+                            }
+                            if configService.config.hasCompletedSetup && configService.config.activeSigningMode() == "nip46" {
+                                NIP46Service.shared.connectFromConfig()
+                            }
+                        }
+                    #else
                     MenuBarView(configService: configService, relayManager: relayManager)
                         .onAppear {
                             // Auto-start relay if setup is done and we are idle
@@ -166,6 +184,7 @@ struct MenuBarContent: View {
                                 NIP46Service.shared.connectFromConfig()
                             }
                         }
+                    #endif
                 }
             }
             .disabled(relayManager.showProcessKillAlert)
@@ -223,17 +242,38 @@ struct MenuBarContent: View {
                         #endif
                     }
 
-
+                    // Retry existed only in MenuBarView's copy of this dialog.
+                    // Both dialogs used to render at once, and this one won the
+                    // z-order — so the recovery action was drawn underneath the
+                    // dialog that covered it. The surfaces no longer nest, so
+                    // each needs its own complete copy.
+                    Button(action: {
+                        relayManager.showProcessKillAlert = false
+                        relayManager.forceCleanAndRestart()
+                    }) {
+                        Text("Retry")
+                            .font(.appHeadline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                            .background(Color.orange)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(30)
-                .frame(width: 400)
+                .padding(24)
+                // Was a hard 400pt, which overflows the panel that hosts it.
+                .frame(maxWidth: .infinity)
                 .background(Color.black)
                 .cornerRadius(16)
+                .padding(12)
                 .transition(.scale.combined(with: .opacity))
             }
         }
         #if os(macOS)
-        .frame(width: 480, height: 640)
+        // The panel sizes to its content. The old hard 480x640 is what let
+        // window-sized content leak into a menu bar surface.
+        .frame(width: 340)
         #endif
     }
 }

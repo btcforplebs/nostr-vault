@@ -2070,7 +2070,27 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Paste the bunker:// connection string from your signer app (e.g. nsec.app, Amber)"
+            "value" : "Paste or scan the bunker:// connection string from your signer app (e.g. nsec.app, Amber)"
+          }
+        }
+      }
+    },
+    "setup.identity.bunkerScan.notBunker" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That QR code is not a bunker:// connection string"
+          }
+        }
+      }
+    },
+    "setup.identity.bunkerScan.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan your signer’s bunker code"
           }
         }
       }

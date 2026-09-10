@@ -59,38 +59,10 @@ class NIP46Service: ObservableObject {
     }
 
     static func parseBunkerURI(_ uri: String) throws -> BunkerInfo {
-        let trimmed = uri.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        var workingURI = trimmed
-        if trimmed.hasPrefix("bunker://") {
-            // standard format
-        } else if trimmed.hasPrefix("bunker:") {
-            let suffix = trimmed.dropFirst("bunker:".count)
-            workingURI = "bunker://\(suffix)"
-        } else {
+        guard let info = BunkerURI.parse(uri) else {
             throw NIP46Error.invalidBunkerURI
         }
-
-        guard let components = URLComponents(string: workingURI) else {
-            throw NIP46Error.invalidBunkerURI
-        }
-
-        let signerPubkey = components.host ?? components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard !signerPubkey.isEmpty,
-              signerPubkey.count == 64,
-              signerPubkey.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else {
-            throw NIP46Error.invalidBunkerURI
-        }
-
-        guard let queryItems = components.queryItems,
-              let relayString = queryItems.first(where: { $0.name == "relay" })?.value,
-              !relayString.isEmpty else {
-            throw NIP46Error.invalidBunkerURI
-        }
-
-        let secret = queryItems.first(where: { $0.name == "secret" })?.value ?? ""
-
-        return BunkerInfo(signerPubkey: signerPubkey, relayURL: relayString.trimmingCharacters(in: .whitespacesAndNewlines), secret: secret)
+        return BunkerInfo(signerPubkey: info.signerPubkey, relayURL: info.relayURL, secret: info.secret)
     }
 
     // MARK: - Connection Management

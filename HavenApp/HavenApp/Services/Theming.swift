@@ -52,7 +52,13 @@ extension Color {
     }
     
     // Colors are now primarily defined here to ensure project-wide availability
-    
+
+    /// The one "things are working" green in the app. Status dots, running-state
+    /// pills, and go-ahead buttons (Start Relay) all mean the same thing and
+    /// should read as the same color — not a system default in one place and a
+    /// custom mint somewhere else.
+    static var havenOnline: Color { Color(red: 0.2, green: 0.85, blue: 0.5) }
+
     static var controlBackgroundColor: Color {
         #if os(macOS)
         return Color(NSColor.controlBackgroundColor)

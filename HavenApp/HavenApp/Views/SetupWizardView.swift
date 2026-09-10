@@ -1,8 +1,4 @@
 import SwiftUI
-#if os(iOS)
-import AVFoundation
-import AudioToolbox
-#endif
 
 // MARK: - Design System
 
@@ -140,6 +136,8 @@ private struct WizardInputField: View {
     var placeholder: String = ""
     var isSecure: Bool = false
     var isDisabled: Bool = false
+    /// When set (iOS only), a QR scan button is shown inside the field.
+    var onScan: (() -> Void)? = nil
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -148,16 +146,36 @@ private struct WizardInputField: View {
                 .font(.system(size: 13))
                 .foregroundColor(WizardColors.textSecondary)
 
-            Group {
-                if isSecure {
-                    SecureField(placeholder, text: $text)
-                } else {
-                    TextField(placeholder, text: $text)
+            HStack(spacing: 8) {
+                Group {
+                    if isSecure {
+                        SecureField(placeholder, text: $text)
+                    } else {
+                        TextField(placeholder, text: $text)
+                    }
                 }
+                .textFieldStyle(.plain)
+                .font(.system(size: 15))
+                .foregroundColor(WizardColors.textPrimary)
+                .focused($isFocused)
+                .disabled(isDisabled)
+
+                #if os(iOS)
+                if let onScan {
+                    Button(action: onScan) {
+                        Image(systemName: "qrcode.viewfinder")
+                            .font(.system(size: 20))
+                            .foregroundColor(WizardColors.accentPrimary)
+                            .frame(width: 36, height: 36)
+                            .background(WizardColors.bgElevated)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isDisabled)
+                    .accessibilityLabel("Scan QR code")
+                }
+                #endif
             }
-            .textFieldStyle(.plain)
-            .font(.system(size: 15))
-            .foregroundColor(WizardColors.textPrimary)
             .padding(12)
             .background(WizardColors.bgCard)
             .cornerRadius(12)
@@ -165,8 +183,6 @@ private struct WizardInputField: View {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(isFocused ? WizardColors.borderActive : WizardColors.borderSubtle, lineWidth: isFocused ? 2 : 1)
             )
-            .focused($isFocused)
-            .disabled(isDisabled)
         }
     }
 }
@@ -1118,7 +1134,13 @@ private struct IdentityStepView: View {
     @State private var isResolvingNIP05 = false
     @State private var nip05Error: String?
     @State private var resolvedFromNIP05: String? = nil
-    @State private var showQRScanner = false
+    @State private var activeScanner: ScanTarget?
+
+    /// Which field a scanned QR code should fill.
+    private enum ScanTarget: String, Identifiable {
+        case identity, bunker
+        var id: String { rawValue }
+    }
 
     private var isNpubValid: Bool {
         guard !npub.isEmpty, npub.hasPrefix("npub") else { return false }
@@ -1226,7 +1248,7 @@ private struct IdentityStepView: View {
                             }
 
                         #if os(iOS)
-                        Button(action: { showQRScanner = true }) {
+                        Button(action: { activeScanner = .identity }) {
                             Image(systemName: "qrcode.viewfinder")
                                 .font(.system(size: 20))
                                 .foregroundColor(WizardColors.accentPrimary)
@@ -1392,7 +1414,13 @@ private struct IdentityStepView: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 } else {
                     VStack(spacing: 12) {
-                        WizardInputField(label: String(localized: "setup.identity.label.bunker"), text: $bunkerURI, placeholder: "bunker://...", isDisabled: bunkerConnected)
+                        WizardInputField(
+                            label: String(localized: "setup.identity.label.bunker"),
+                            text: $bunkerURI,
+                            placeholder: "bunker://...",
+                            isDisabled: bunkerConnected,
+                            onScan: { activeScanner = .bunker }
+                        )
 
                         Text(String(localized: "setup.identity.bunkerHint"))
                             .font(.system(size: 12))
@@ -1452,12 +1480,29 @@ private struct IdentityStepView: View {
         }
         .onAppear { appeared = true }
         #if os(iOS)
-        .sheet(isPresented: $showQRScanner) {
-            QRScannerView { scannedCode in
-                showQRScanner = false
-                // Strip nostr: prefix if present
-                let cleaned = scannedCode.hasPrefix("nostr:") ? String(scannedCode.dropFirst(6)) : scannedCode
-                identityInput = cleaned
+        .sheet(item: $activeScanner) { target in
+            switch target {
+            case .identity:
+                QRScannerView { scannedCode in
+                    activeScanner = nil
+                    // Strip nostr: prefix if present
+                    let cleaned = scannedCode.hasPrefix("nostr:") ? String(scannedCode.dropFirst(6)) : scannedCode
+                    identityInput = cleaned
+                }
+            case .bunker:
+                QRScannerView(
+                    title: String(localized: "setup.identity.bunkerScan.title"),
+                    validate: { code in
+                        BunkerURI.normalized(code) == nil
+                            ? String(localized: "setup.identity.bunkerScan.notBunker")
+                            : nil
+                    }
+                ) { scannedCode in
+                    activeScanner = nil
+                    guard let uri = BunkerURI.normalized(scannedCode) else { return }
+                    bunkerURI = uri
+                    bunkerError = nil
+                }
             }
         }
         #endif
@@ -1669,132 +1714,6 @@ private struct IdentityStepView: View {
         ConfigService.shared.config.nip46BunkerURI = ""
     }
 }
-
-// MARK: - QR Scanner (iOS only)
-
-#if os(iOS)
-private struct QRScannerView: UIViewControllerRepresentable {
-    let onCodeScanned: (String) -> Void
-
-    func makeUIViewController(context: Context) -> QRScannerViewController {
-        let controller = QRScannerViewController()
-        controller.onCodeScanned = onCodeScanned
-        return controller
-    }
-
-    func updateUIViewController(_ uiViewController: QRScannerViewController, context: Context) {}
-}
-
-private class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
-    var onCodeScanned: ((String) -> Void)?
-    private var captureSession: AVCaptureSession?
-    private var previewLayer: AVCaptureVideoPreviewLayer?
-    private var hasScanned = false
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .black
-        setupCamera()
-        setupOverlay()
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        previewLayer?.frame = view.bounds
-    }
-
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        captureSession?.stopRunning()
-    }
-
-    private func setupCamera() {
-        let session = AVCaptureSession()
-        guard let device = AVCaptureDevice.default(for: .video),
-              let input = try? AVCaptureDeviceInput(device: device) else {
-            showError("Camera not available")
-            return
-        }
-
-        if session.canAddInput(input) {
-            session.addInput(input)
-        }
-
-        let output = AVCaptureMetadataOutput()
-        if session.canAddOutput(output) {
-            session.addOutput(output)
-            output.setMetadataObjectsDelegate(self, queue: .main)
-            output.metadataObjectTypes = [.qr]
-        }
-
-        let preview = AVCaptureVideoPreviewLayer(session: session)
-        preview.videoGravity = .resizeAspectFill
-        preview.frame = view.bounds
-        view.layer.addSublayer(preview)
-        previewLayer = preview
-
-        captureSession = session
-        DispatchQueue.global(qos: .userInitiated).async {
-            session.startRunning()
-        }
-    }
-
-    private func setupOverlay() {
-        // Title label
-        let titleLabel = UILabel()
-        titleLabel.text = "Scan Nostr QR Code"
-        titleLabel.textColor = .white
-        titleLabel.font = .systemFont(ofSize: 18, weight: .semibold)
-        titleLabel.textAlignment = .center
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(titleLabel)
-
-        // Dismiss button
-        let dismissButton = UIButton(type: .system)
-        dismissButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
-        dismissButton.tintColor = .white
-        dismissButton.addTarget(self, action: #selector(dismissScanner), for: .touchUpInside)
-        dismissButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(dismissButton)
-
-        NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
-            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            dismissButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
-            dismissButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            dismissButton.widthAnchor.constraint(equalToConstant: 32),
-            dismissButton.heightAnchor.constraint(equalToConstant: 32),
-        ])
-    }
-
-    @objc private func dismissScanner() {
-        dismiss(animated: true)
-    }
-
-    private func showError(_ message: String) {
-        let label = UILabel()
-        label.text = message
-        label.textColor = .white
-        label.textAlignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-        ])
-    }
-
-    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
-        guard !hasScanned,
-              let object = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
-              let value = object.stringValue else { return }
-        hasScanned = true
-        captureSession?.stopRunning()
-        AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
-        onCodeScanned?(value)
-    }
-}
-#endif
 
 // MARK: - Step 3: Relay Configuration
 

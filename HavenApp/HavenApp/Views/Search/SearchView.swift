@@ -166,6 +166,7 @@ struct SearchView: View {
                                     pendingDirectNoteId = nil
                                     isSearching = false
                                     nostrService.cancelGlobalSearch()
+                                    nostrService.cancelLocalRelaySearch()
                                     refreshDiscovery(force: true)
                                     return
                                 }
@@ -182,6 +183,7 @@ struct SearchView: View {
                                 searchQuery = ""
                                 resultTypeFilter = .all
                                 nostrService.cancelGlobalSearch()
+                                nostrService.cancelLocalRelaySearch()
                                 #if os(iOS)
                                 searchFieldFocused = false
                                 #endif
@@ -819,6 +821,7 @@ struct SearchView: View {
     /// Re-run the current query, e.g. after switching between relay/global modes.
     private func rerunSearch() {
         nostrService.cancelGlobalSearch()
+        nostrService.cancelLocalRelaySearch()
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             searchResults = .empty
@@ -911,9 +914,49 @@ struct SearchView: View {
             return
         }
 
-        // Relay search: filter data served by the local relay.
+        // Relay search: query the local relay's full stored dataset directly,
+        // not just whatever the feed subscription has already loaded.
         isSearching = true
 
+        guard let relayURL = feedService.localRelayURL else {
+            // Relay not up yet (e.g. still booting) — fall back to whatever's
+            // already in memory rather than showing nothing.
+            performInMemoryRelaySearch(trimmedQuery: trimmedQuery)
+            return
+        }
+
+        let requestedQuery = trimmed
+        nostrService.localRelaySearch(query: trimmed, relayURL: relayURL) { localResults in
+            // Ignore stale completions (user changed query or switched mode).
+            guard self.searchMode == .relay,
+                  self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery else { return }
+
+            var results = SearchResults()
+            for profile in localResults.profiles {
+                results.users[profile.pubkey] = profile
+            }
+            results.notes = Array(localResults.notes.prefix(20))
+
+            var foundHashtags = Set<String>()
+            for note in localResults.notes {
+                for tag in self.extractHashtags(from: note.content) where tag.lowercased().contains(trimmedQuery) {
+                    foundHashtags.insert(tag)
+                }
+            }
+            results.hashtags = Array(foundHashtags).sorted()
+
+            let urls = self.extractURLs(from: localResults.notes)
+            results.links = urls.filter { $0.url.lowercased().contains(trimmedQuery) ||
+                                          $0.title.lowercased().contains(trimmedQuery) }
+
+            self.searchResults = results
+            self.isSearching = false
+        }
+    }
+
+    /// Fallback used only when the local relay isn't reachable yet: filters
+    /// whatever's already loaded into the live feed/profile cache.
+    private func performInMemoryRelaySearch(trimmedQuery: String) {
         let localProfiles = nostrService.profiles
         let localNotes = feedService.notes
 

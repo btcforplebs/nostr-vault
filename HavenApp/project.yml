@@ -60,7 +60,15 @@ targets:
         excludes:
           - "haven.dylib"
       - path: HavenApp/Views
+        excludes:
+          - "*.backup"
+          - "**/*.backup"
+          - "*.orig"
+          - "**/*.orig"
+          - "*.rej"
+          - "**/*.rej"
       - path: HavenApp/Localizable.xcstrings
+      - path: HavenApp/notification.mp3
       - path: Resources/Assets.xcassets
       - path: Resources/haven
       - path: Resources/templates
@@ -126,8 +134,16 @@ targets:
         excludes:
           - "haven.dylib"
       - path: HavenApp/Views
+        excludes:
+          - "*.backup"
+          - "**/*.backup"
+          - "*.orig"
+          - "**/*.orig"
+          - "*.rej"
+          - "**/*.rej"
       - path: HavenApp/Shared
       - path: HavenApp/Localizable.xcstrings
+      - path: HavenApp/notification.mp3
       - path: Resources/Assets.xcassets
       - path: Resources/haven
       - path: Resources/templates

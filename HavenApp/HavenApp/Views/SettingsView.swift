@@ -1125,6 +1125,9 @@ struct ConnectSignerSheetView: View {
     @State private var bunkerURI: String = ""
     @State private var isConnecting = false
     @State private var errorMessage: String? = nil
+    #if os(iOS)
+    @State private var showQRScanner = false
+    #endif
 
     var body: some View {
         #if os(macOS)
@@ -1175,13 +1178,23 @@ struct ConnectSignerSheetView: View {
         NavigationView {
             Form {
                 Section {
-                    TextField("bunker://...", text: $bunkerURI)
-                        .textContentType(.URL)
-                        .autocapitalization(.none)
+                    HStack(spacing: 8) {
+                        TextField("bunker://...", text: $bunkerURI)
+                            .textContentType(.URL)
+                            .autocapitalization(.none)
+
+                        Button(action: { showQRScanner = true }) {
+                            Image(systemName: "qrcode.viewfinder")
+                                .font(.appSystem(size: 20))
+                                .foregroundColor(Color.havenPurple)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Scan QR code")
+                    }
                 } header: {
                     Text("Bunker URI")
                 } footer: {
-                    Text("Paste the bunker:// connection string from your remote signer app.")
+                    Text("Paste or scan the bunker:// connection string from your remote signer app.")
                 }
 
                 if let error = errorMessage {
@@ -1210,6 +1223,21 @@ struct ConnectSignerSheetView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { performDismiss() }
+                }
+            }
+            .sheet(isPresented: $showQRScanner) {
+                QRScannerView(
+                    title: "Scan your signer’s bunker code",
+                    validate: { code in
+                        BunkerURI.normalized(code) == nil
+                            ? "That QR code is not a bunker:// connection string"
+                            : nil
+                    }
+                ) { scannedCode in
+                    showQRScanner = false
+                    guard let uri = BunkerURI.normalized(scannedCode) else { return }
+                    bunkerURI = uri
+                    errorMessage = nil
                 }
             }
         }

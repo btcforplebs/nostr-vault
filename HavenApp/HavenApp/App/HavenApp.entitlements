@@ -12,7 +12,5 @@
 	<true/>
 	<key>com.apple.security.device.camera</key>
 	<true/>
-	<key>aps-environment</key>
-	<string>development</string>
 </dict>
 </plist>

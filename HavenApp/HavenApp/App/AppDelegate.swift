@@ -8,6 +8,10 @@ class AppDelegate: NSObject, ObservableObject {
     #if os(macOS)
     // Keep a reference to the window prevent it from being deallocated immediately
     private var welcomeWindow: NSWindow?
+
+    // Focus observers are owned for the lifetime of the app, not of a window.
+    private var focusResignObserver: NSObjectProtocol?
+    private var focusActivateObserver: NSObjectProtocol?
     #endif
 
     @MainActor
@@ -17,6 +21,8 @@ class AppDelegate: NSObject, ObservableObject {
         signal(SIGPIPE, SIG_IGN)
 
         #if os(macOS)
+        startFocusLifecycleObservers()
+
         // Watch sleep/wake so automatic recovery doesn't restart the relay
         // over connections that are merely re-establishing after wake.
         SleepWakeMonitor.shared.start()
@@ -56,6 +62,56 @@ class AppDelegate: NSObject, ObservableObject {
     }
 
     #if os(macOS)
+    // MARK: - Focus lifecycle
+
+    /// Pause and resume background work when the app loses and regains focus.
+    ///
+    /// This used to live in `MenuBarView`, which was mounted both as the menu
+    /// bar dropdown and as the window. Splitting those two surfaces left
+    /// `MenuBarView` mounted only by the window scene — so an app launched to
+    /// the menu bar and never opened had no owner for any of it, and the feed,
+    /// the external relay sync, log parsing and profile fetching all kept
+    /// running while the user was in another application. That is the ordinary
+    /// case for a menu bar app, and it is precisely the case a view-scoped
+    /// observer cannot cover.
+    ///
+    /// The app delegate outlives every window, so the ownership belongs here.
+    private func startFocusLifecycleObservers() {
+        let center = NotificationCenter.default
+
+        focusResignObserver = center.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                // Pause the feed to reduce background CPU/memory from relay
+                // traffic and note accumulation.
+                FeedService.shared.pauseFeed()
+                // Stop external relay traffic and event injection — reduces log
+                // volume, CPU, and prevents pipe backpressure from Go stdout.
+                NetworkSyncService.shared.stop()
+                // Stop log parsing into UI entries, pause the profile-fetch
+                // timer, halt the LogStore publishing timer.
+                RelayProcessManager.shared.enterBackground()
+                NostrService.shared.enterBackground()
+            }
+        }
+
+        focusActivateObserver = center.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                FeedService.shared.resumeFeed()
+                NetworkSyncService.shared.start()
+                RelayProcessManager.shared.enterForeground()
+                NostrService.shared.enterForeground()
+            }
+        }
+    }
+
     @MainActor
     func applicationWillTerminate(_ notification: Notification) {
         #if DEBUG
