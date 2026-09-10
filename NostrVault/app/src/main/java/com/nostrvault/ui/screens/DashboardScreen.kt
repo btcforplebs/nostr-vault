@@ -447,6 +447,13 @@ class DashboardViewModel @Inject constructor(
             _connectionColor.value = "red"
             return
         }
+
+        // Pull-to-refresh: ask the embedded relay to fetch newly tagged events
+        // (replies, reactions, zaps, reposts, mentions, DMs) and the owner's own
+        // notes from external relays into the local DBs. Injected events then
+        // stream in over the local subscription opened just below. Non-blocking.
+        runCatching { com.nostrvault.relay.HavenBridge.requestRelaySync() }
+            .onFailure { Log.w(TAG, "requestRelaySync failed: ${it.message}") }
         // For local relay, always use plain ws:// to match the TLS-disabled
         // Go relay. Localhost is exempt from Android cleartext restrictions.
         val localUrl = "ws://127.0.0.1:${config.relayPort}"

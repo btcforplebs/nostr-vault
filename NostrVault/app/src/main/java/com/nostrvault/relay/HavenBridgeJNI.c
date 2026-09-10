@@ -55,6 +55,7 @@ static void ensureStderrToLogcat(void) {
 extern void SetHavenEnvC(const char* key, const char* value);
 extern void StartRelayC(int importMode);
 extern void StopRelayC(void);
+extern void RequestRelaySyncC(void);
 extern int BackupDatabaseC(const char* outputPath);
 extern int RestoreDatabaseC(const char* inputPath);
 extern int BackupToCloudC(void);
@@ -119,6 +120,11 @@ Java_com_nostrvault_relay_HavenBridge_startRelay(JNIEnv *env, jobject thiz, jboo
 JNIEXPORT void JNICALL
 Java_com_nostrvault_relay_HavenBridge_stopRelay(JNIEnv *env, jobject thiz) {
     StopRelayC();
+}
+
+JNIEXPORT void JNICALL
+Java_com_nostrvault_relay_HavenBridge_requestRelaySync(JNIEnv *env, jobject thiz) {
+    RequestRelaySyncC();
 }
 
 // ---- Database operations ----

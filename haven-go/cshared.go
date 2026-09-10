@@ -342,6 +342,13 @@ func StopRelayC() {
 	})
 }
 
+//export RequestRelaySyncC
+func RequestRelaySyncC() {
+	// Triggers an immediate inbox + owner catch-up pull in the running relay
+	// (used by the apps' pull-to-refresh). No-op-safe if the relay isn't up.
+	RequestRelaySync()
+}
+
 //export BackupDatabaseC
 func BackupDatabaseC(outputPath *C.char) (ret C.int) {
 	defer func() {

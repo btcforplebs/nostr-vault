@@ -71,6 +71,15 @@ object HavenBridge {
      */
     external fun stopRelay()
 
+    /**
+     * Trigger an immediate inbox + owner catch-up pull in the running relay,
+     * fetching newly tagged events (replies, reactions, zaps, reposts, mentions,
+     * DMs) and the owner's own notes from external relays into the local DBs.
+     * Non-blocking and safe to call when the relay is not running.
+     * Maps to Go: RequestRelaySyncC()
+     */
+    external fun requestRelaySync()
+
     // -----------------------------------------------------------------------
     // Database operations
     // -----------------------------------------------------------------------

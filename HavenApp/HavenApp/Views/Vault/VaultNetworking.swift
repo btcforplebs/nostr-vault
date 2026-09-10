@@ -25,6 +25,13 @@ extension VaultView {
     }
 
     func performRefresh() {
+        // Ask the embedded relay to fetch newly tagged events (replies, reactions,
+        // zaps, reposts, mentions, DMs) and the owner's own notes from external
+        // relays into the local DBs. Injected events stream in over the local
+        // /inbox subscription opened by fetchNotes below. Non-blocking; no-op-safe
+        // if the relay isn't running.
+        RequestRelaySyncC()
+
         nostrService.resetConnections()
         // Use the centralized nostrURL which handles local vs remote correctly
         var urls = [configService.config.nostrURL, configService.config.nostrURL + "/inbox"].compactMap { URL(string: $0) }

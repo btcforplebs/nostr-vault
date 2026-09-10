@@ -1282,7 +1282,19 @@ class NostrService @Inject constructor(
         val relayUrls = buildList {
             config.nostrURL?.let { add(it) }
             config.inboxRelays?.let { addAll(it) }
-        }.distinct().take(5)
+            // Replies from other users propagate to feed/blastr relays, not just
+            // the local + inbox relays. Mirror iOS (NoteDetailView) which queries
+            // external feed relays so strangers' replies are actually found.
+            addAll(config.activeFeedRelays)
+            addAll(config.activeBlastrRelays)
+            // Public fallback when no external relays are configured.
+            if (config.activeFeedRelays.isEmpty() &&
+                config.activeBlastrRelays.isEmpty() &&
+                config.inboxRelays.isNullOrEmpty()) {
+                add("wss://relay.damus.io")
+                add("wss://relay.primal.net")
+            }
+        }.distinct().take(8)
         if (relayUrls.isEmpty()) { onResult(emptyList()); return }
 
         val subId = "replies-${UUID.randomUUID().toString().take(8)}"
@@ -1324,7 +1336,7 @@ class NostrService @Inject constructor(
                     }
 
                     client.connect()
-                    val filter = """{"kinds":[1],"#e":["$noteId"],"limit":50}"""
+                    val filter = """{"kinds":[1],"#e":["$noteId"],"limit":150}"""
                     client.send("[\"REQ\",\"$subId\",$filter]")
 
                     delay(TEMP_CLIENT_DISCONNECT_MS)

@@ -8,6 +8,7 @@ import (
 	"maps"
 	"runtime/debug"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/fiatjaf/eventstore"
@@ -239,13 +240,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 
 	wdbInbox := eventstore.RelayWrapper{Store: inboxDB}
 	wdbChat := eventstore.RelayWrapper{Store: chatDB}
-	startTime := nostr.Timestamp(time.Now().Add(-time.Hour * 24).Unix())
-	filter := nostr.Filter{
-		Tags: nostr.TagMap{
-			"p": slices.Collect(maps.Keys(config.WhitelistedPubKeys)),
-		},
-		Since: &startTime,
-	}
+	wdbOutbox := eventstore.RelayWrapper{Store: outboxDB}
 
 	// Build deduplicated relay set: ImportSeedRelays + DmRelays
 	relaySet := make(map[string]struct{})
@@ -260,58 +255,221 @@ func subscribeInboxAndChat(ctx context.Context) {
 		relays = append(relays, r)
 	}
 
+	pTags := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
+
+	// Watermarks of the newest event we've stored, one for tagged/inbox events
+	// and one for the owner's own (outbox) events. Both the live subscription
+	// and the periodic/on-demand catch-up resume from here, so a dropped
+	// connection no longer loses events: on reconnect we backfill from the
+	// watermark instead of a fixed 24h window.
+	startTs := time.Now().Add(-24 * time.Hour).Unix()
+	var lastSeen atomic.Int64      // tagged / inbox events
+	var lastSeenOwner atomic.Int64 // owner-authored events
+	lastSeen.Store(startTs)
+	lastSeenOwner.Store(startTs)
+	advance := func(wm *atomic.Int64, ts nostr.Timestamp) {
+		for {
+			cur := wm.Load()
+			if int64(ts) <= cur {
+				return
+			}
+			if wm.CompareAndSwap(cur, int64(ts)) {
+				return
+			}
+		}
+	}
+
+	// inboxCatchup re-fetches tagged events (replies, reactions, zaps, reposts,
+	// mentions, gift-wrap DMs) published since the inbox watermark.
+	inboxCatchup := func() {
+		since := nostr.Timestamp(lastSeen.Load() - 60) // 60s overlap to avoid boundary misses
+		filter := nostr.Filter{
+			Tags:  nostr.TagMap{"p": pTags},
+			Since: &since,
+		}
+		log.Println("📢 inbox catch-up pull since", time.Unix(int64(since), 0).Format(time.RFC3339))
+		for ev := range pool.FetchMany(ctx, relays, filter) {
+			if ctx.Err() != nil {
+				return
+			}
+			processInboxEvent(ctx, ev, wdbInbox, wdbChat)
+			advance(&lastSeen, ev.CreatedAt)
+		}
+	}
+
+	// ownerCatchup re-fetches the owner's own events (notes, profile, follow
+	// list, reactions, reposts) published since the owner watermark — e.g. posts
+	// made from another client under the same key — into the outbox DB.
+	ownerCatchup := func() {
+		since := nostr.Timestamp(lastSeenOwner.Load() - 60)
+		filter := nostr.Filter{
+			Authors: pTags,
+			Since:   &since,
+		}
+		log.Println("📢 owner catch-up pull since", time.Unix(int64(since), 0).Format(time.RFC3339))
+		for ev := range pool.FetchMany(ctx, relays, filter) {
+			if ctx.Err() != nil {
+				return
+			}
+			processOwnerEvent(ctx, ev, wdbOutbox)
+			advance(&lastSeenOwner, ev.CreatedAt)
+		}
+	}
+
+	// Periodic + on-demand catch-up pull: re-fetch anything published since the
+	// watermarks so events missed while disconnected (or beyond the live window)
+	// are pulled in. Driven by INBOX_PULL_INTERVAL_SECONDS (previously loaded but
+	// never referenced) and by relaySyncCh (pull-to-refresh).
+	pullEvery := config.InboxPullIntervalSeconds
+	if pullEvery <= 0 {
+		pullEvery = 3600
+	}
+	runsafe.Go("subscribeInboxAndChat.catchup", func() {
+		ticker := time.NewTicker(time.Duration(pullEvery) * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			case <-relaySyncCh:
+				log.Println("📢 relay sync requested (pull-to-refresh)")
+			}
+			inboxCatchup()
+			ownerCatchup()
+		}
+	})
+
+	// Live subscription with reconnect. SubscribeMany's channel closes when the
+	// context is cancelled or all relays send CLOSED; the previous code treated
+	// that as terminal and never resubscribed. Now we reconnect (resuming from
+	// lastSeen) with capped exponential backoff until the context is cancelled.
 	log.Println("📢 subscribing to inbox on", len(relays), "relays (import + DM)")
+	backoff := time.Second
+	for ctx.Err() == nil {
+		since := nostr.Timestamp(lastSeen.Load())
+		filter := nostr.Filter{
+			Tags:  nostr.TagMap{"p": pTags},
+			Since: &since,
+		}
+		sawEvent := false
+		for ev := range pool.SubscribeMany(ctx, relays, filter) {
+			sawEvent = true
+			processInboxEvent(ctx, ev, wdbInbox, wdbChat)
+			advance(&lastSeen, ev.CreatedAt)
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if sawEvent {
+			backoff = time.Second // healthy connection delivered events; reset
+		}
+		log.Println("📢 inbox subscription closed, reconnecting in", backoff)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < 60*time.Second {
+			backoff *= 2
+		}
+	}
+}
 
-	for ev := range pool.SubscribeMany(ctx, relays, filter) {
-		if _, ok := config.BlacklistedPubKeys[ev.PubKey]; ok {
-			slog.Debug("🚫discarding imported note from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
+// processInboxEvent applies blacklist / Web-of-Trust / whitelist filtering to a
+// tagged event and stores it in the inbox (or chat) DB if it passes. Shared by
+// the live subscription and the periodic catch-up pull.
+func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbChat eventstore.RelayWrapper) {
+	relayURL := ""
+	if ev.Relay != nil {
+		relayURL = ev.Relay.URL
+	}
+	if _, ok := config.BlacklistedPubKeys[ev.PubKey]; ok {
+		slog.Debug("🚫discarding imported note from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
+		return
+	}
+	if !wot.GetInstance().Has(ctx, ev.PubKey) && ev.Kind != nostr.KindGiftWrap {
+		return
+	}
+	for tag := range ev.Tags.FindAll("p") {
+		if len(tag) < 2 {
 			continue
 		}
-		if !wot.GetInstance().Has(ctx, ev.PubKey) && ev.Kind != nostr.KindGiftWrap {
+		if _, ok := config.WhitelistedPubKeys[tag[1]]; !ok {
 			continue
 		}
-		for tag := range ev.Tags.FindAll("p") {
-			if len(tag) < 2 {
-				continue
-			}
-			if _, ok := config.WhitelistedPubKeys[tag[1]]; ok {
-				dbToPublish := wdbInbox
-				if ev.Kind == nostr.KindGiftWrap {
-					dbToPublish = wdbChat
-				}
-
-				slog.Debug("ℹ️ importing event", "kind", ev.Kind, "id", ev.ID, "relay", ev.Relay.URL)
-
-				if isDuplicate(ctx, dbToPublish, ev.Event) {
-					slog.Debug("ℹ️ skipping duplicate event", "id", ev.ID)
-					break // Avoid re-importing duplicates
-				}
-
-				if err := dbToPublish.Publish(ctx, *ev.Event); err != nil {
-					log.Println("🚫 error importing tagged note", ev.ID, ":", "from relay", ev.Relay.URL, ":", err)
-					break
-				}
-
-				switch ev.Kind {
-				case nostr.KindTextNote:
-					log.Println("📰 new note in your inbox")
-				case nostr.KindReaction:
-					log.Println(ev.Content, "new reaction in your inbox")
-				case nostr.KindZap:
-					log.Println("⚡️ new zap in your inbox")
-				case nostr.KindEncryptedDirectMessage:
-					log.Println("🔒✉️ new encrypted message in your inbox")
-				case nostr.KindGiftWrap:
-					log.Println("🎁🔒️✉️ new gift-wrapped message in your chat relay")
-				case nostr.KindRepost:
-					log.Println("🔁 new repost in your inbox")
-				case nostr.KindFollowList:
-					// do nothing
-				default:
-					log.Println("📦 new event kind", ev.Kind, "event in your inbox")
-				}
-			}
+		dbToPublish := wdbInbox
+		if ev.Kind == nostr.KindGiftWrap {
+			dbToPublish = wdbChat
 		}
+
+		slog.Debug("ℹ️ importing event", "kind", ev.Kind, "id", ev.ID, "relay", relayURL)
+
+		if isDuplicate(ctx, dbToPublish, ev.Event) {
+			slog.Debug("ℹ️ skipping duplicate event", "id", ev.ID)
+			return
+		}
+
+		if err := dbToPublish.Publish(ctx, *ev.Event); err != nil {
+			log.Println("🚫 error importing tagged note", ev.ID, ":", "from relay", relayURL, ":", err)
+			return
+		}
+
+		switch ev.Kind {
+		case nostr.KindTextNote:
+			log.Println("📰 new note in your inbox")
+		case nostr.KindReaction:
+			log.Println(ev.Content, "new reaction in your inbox")
+		case nostr.KindZap:
+			log.Println("⚡️ new zap in your inbox")
+		case nostr.KindEncryptedDirectMessage:
+			log.Println("🔒✉️ new encrypted message in your inbox")
+		case nostr.KindGiftWrap:
+			log.Println("🎁🔒️✉️ new gift-wrapped message in your chat relay")
+		case nostr.KindRepost:
+			log.Println("🔁 new repost in your inbox")
+		case nostr.KindFollowList:
+			// do nothing
+		default:
+			log.Println("📦 new event kind", ev.Kind, "event in your inbox")
+		}
+		return
+	}
+}
+
+// processOwnerEvent stores an owner-authored event into the outbox DB if it is
+// from a whitelisted key and not already present. Used by the owner catch-up
+// pull to surface notes the owner published from another client.
+func processOwnerEvent(ctx context.Context, ev nostr.RelayEvent, wdbOutbox eventstore.RelayWrapper) {
+	if _, ok := config.WhitelistedPubKeys[ev.PubKey]; !ok {
+		return // relay returned a non-owner event; ignore
+	}
+	if _, ok := config.BlacklistedPubKeys[ev.PubKey]; ok {
+		return
+	}
+	if isDuplicate(ctx, wdbOutbox, ev.Event) {
+		return
+	}
+	if err := wdbOutbox.Publish(ctx, *ev.Event); err != nil {
+		log.Println("🚫 error importing owner event", ev.ID, ":", err)
+		return
+	}
+	slog.Debug("📤 imported owner event", "kind", ev.Kind, "id", ev.ID)
+}
+
+// relaySyncCh signals the catch-up loop to pull immediately (e.g. from
+// pull-to-refresh). Buffered + coalesced so a request made while a pull is
+// already pending is not lost and does not stack up.
+var relaySyncCh = make(chan struct{}, 1)
+
+// RequestRelaySync triggers an immediate inbox + owner catch-up pull if the
+// relay is running. Non-blocking; coalesces with any already-pending request.
+// Safe to call when no relay is running (the signal is simply consumed by the
+// next catch-up goroutine, or dropped).
+func RequestRelaySync() {
+	select {
+	case relaySyncCh <- struct{}{}:
+	default:
 	}
 }
 
