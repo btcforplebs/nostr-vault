@@ -68,6 +68,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.Terminal
@@ -197,6 +198,7 @@ object NostrVaultIcons {
     val PlayCircle: ImageVector = Icons.Filled.PlayCircle        // play.circle.fill
     val PlayArrow: ImageVector = Icons.Filled.PlayArrow          // play.fill
     val PauseIcon: ImageVector = Icons.Filled.Pause              // pause.fill
+    val Stop: ImageVector = Icons.Filled.Stop                    // stop.fill
     val VolumeUp: ImageVector = Icons.AutoMirrored.Filled.VolumeUp   // speaker.wave.2.fill
     val VolumeOff: ImageVector = Icons.AutoMirrored.Filled.VolumeOff // speaker.slash.fill
     val PictureInPicture: ImageVector = Icons.Filled.PictureInPictureAlt // pip.enter

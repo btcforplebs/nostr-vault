@@ -2132,6 +2132,7 @@ fun DashboardScreen(
                 mediaSize = mediaSize,
                 isLoading = statsLoading,
                 relayStatus = currentRelayStatus,
+                relayAddress = currentConfig.nostrURL,
                 isLocked = currentIsLocked,
                 isPortConflict = currentIsPortConflict,
                 onRefresh = viewModel::loadStats,
@@ -2670,6 +2671,7 @@ private fun DashboardSheetContent(
     mediaSize: String,
     isLoading: Boolean,
     relayStatus: RelayForegroundService.RelayStatus,
+    relayAddress: String?,
     isLocked: Boolean,
     isPortConflict: Boolean,
     onRefresh: () -> Unit,
@@ -2775,6 +2777,7 @@ private fun DashboardSheetContent(
         // Relay status header
         com.nostrvault.ui.screens.dashboard.RelayStatusHeader(
             relayStatus = relayStatus,
+            relayAddress = relayAddress,
             isLocked = isLocked,
             isPortConflict = isPortConflict,
             onStartRelay = onStartRelay,
