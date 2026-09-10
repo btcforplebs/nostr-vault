@@ -394,48 +394,30 @@ struct VaultView: View {
                 Color.platformWindowBackground.ignoresSafeArea()
 
                 if geometry.size.width > 680 {
-                    let availableDashboardHeight = max(420, geometry.size.height - 300)
-                    let preferredDashboardHeight = max(620, geometry.size.height * 0.56)
-                    let dashboardHeight = min(preferredDashboardHeight, availableDashboardHeight)
-
                     VStack(spacing: 0) {
-                        DashboardView(isSidebar: false)
-                            .frame(height: dashboardHeight)
-                            .clipped()
-                            .environmentObject(relayManager)
-                            .environmentObject(configService)
-                            .environmentObject(nostrService)
-                            .environmentObject(StatsService.shared)
+                        desktopHeaderView
 
                         Divider()
-                            .background(Color.platformSeparator)
 
-                        VStack(spacing: 0) {
-                            desktopHeaderView
+                        ScrollView {
+                            listContent
 
-                            Divider()
-
-                            ScrollView {
-                                listContent
-
-                                if !displayNotes.isEmpty || !displayLikedNotes.isEmpty {
-                                    Color.clear
-                                        .frame(height: 1)
-                                        .padding(.bottom, 20)
-                                        .onAppear {
-                                            if !nostrService.isFetching && !displayNotes.isEmpty {
-                                                loadMore()
-                                            }
+                            if !displayNotes.isEmpty || !displayLikedNotes.isEmpty {
+                                Color.clear
+                                    .frame(height: 1)
+                                    .padding(.bottom, 20)
+                                    .onAppear {
+                                        if !nostrService.isFetching && !displayNotes.isEmpty {
+                                            loadMore()
                                         }
-                                        .id(nostrService.events.count)
-                                }
+                                    }
+                                    .id(nostrService.events.count)
                             }
-                            .refreshable {
-                                refreshAll()
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
-                        .clipped()
+                        .refreshable {
+                            refreshAll()
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
                     if showingRelayDashboard {
