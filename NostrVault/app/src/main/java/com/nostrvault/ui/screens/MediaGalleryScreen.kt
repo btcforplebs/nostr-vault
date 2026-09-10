@@ -286,12 +286,17 @@ data class BlossomMediaItem(
     val uploaded: Long?,
     val lastModified: Long?,
     val isLocal: Boolean,
+    val noteId: String? = null,
 ) {
     val isVideo: Boolean get() = mimeType?.startsWith("video") == true
     val isImage: Boolean get() = mimeType?.startsWith("image") == true || mimeType == "image"
+    val isAudio: Boolean get() = mimeType?.startsWith("audio") == true
 }
 
 data class MediaItem(val url: String, val noteId: String)
+
+/** Scope for a pending destructive delete in MediaViewerScreen. */
+enum class DeleteScope { MIRRORS, EVERYWHERE }
 
 /** Media type filter matching iOS MediaTypeFilter. */
 enum class MediaTypeFilter { ALL, PHOTO, VIDEO, GIF, OTHER }

@@ -1,14 +1,18 @@
 package com.nostrvault.ui.screens
 
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -265,7 +269,10 @@ class ComposeNoteViewModel @Inject constructor(
             val blossomDir = config.relayDataDir?.let { File(it, config.blossomPath) } ?: return@withContext emptyList()
             if (!blossomDir.exists()) return@withContext emptyList()
 
-            val baseURL = blossomService.localBlossomURL() ?: return@withContext emptyList()
+            val localBase = blossomService.localBlossomURL() ?: return@withContext emptyList()
+            // Prefer an external mirror so the inserted URL is publicly accessible in published notes
+            val externalBase = config.activeBlossomMirrors
+                .firstOrNull { url -> !url.contains("localhost") && !url.contains("127.0.0.1") }
             val items = mutableListOf<MediaItem>()
 
             blossomDir.listFiles()?.forEach { file ->
@@ -276,7 +283,6 @@ class ComposeNoteViewModel @Inject constructor(
                 val sha256 = file.nameWithoutExtension
                 if (sha256.length != 64 || !sha256.all { it in "0123456789abcdef" }) return@forEach
 
-                // Detect media type
                 val extension = file.extension.lowercase()
                 val mediaType = when (extension) {
                     "jpg", "jpeg", "png", "gif", "webp" -> MediaType.IMAGE
@@ -286,9 +292,12 @@ class ComposeNoteViewModel @Inject constructor(
                 }
 
                 if (mediaType != MediaType.UNKNOWN) {
+                    // Use external mirror URL (BUD-01: {server}/{sha256}) so links work in published notes;
+                    // fall back to local URL only when no mirrors are configured.
+                    val insertUrl = if (externalBase != null) "$externalBase/$sha256" else "$localBase/$filename"
                     items.add(
                         MediaItem(
-                            url = "$baseURL/$filename",
+                            url = insertUrl,
                             type = mediaType,
                             pubkey = nostrService.ownerHexPubkey,
                             tags = null,
@@ -833,7 +842,7 @@ private fun AttachmentGrid(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun BlossomMediaPickerSheet(
     onDismiss: () -> Unit,
@@ -914,7 +923,14 @@ private fun BlossomMediaPickerSheet(
                             modifier = Modifier
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .clickable { onSelect(item.url) }
+                                .combinedClickable(
+                                    onClick = { onSelect(item.url) },
+                                    onLongClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Blossom URL", item.url))
+                                        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
                         ) {
                             AsyncImage(
                                 model = item.url,
