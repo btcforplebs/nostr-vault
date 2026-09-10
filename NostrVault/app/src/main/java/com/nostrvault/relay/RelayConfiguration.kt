@@ -235,7 +235,7 @@ data class HavenConfig(
     val inboxRelayName: String = "Nostr Vault Inbox",
     val inboxRelayDescription: String = "Inbox relay",
     val inboxRelayIcon: String = "",
-    val inboxPullIntervalSeconds: Int = 300,
+    val inboxPullIntervalSeconds: Int = 60, // match iOS (was 300 = 5x slower catch-up)
 
     // Import
     val importStartDate: String = "2023-01-01",
@@ -264,6 +264,17 @@ data class HavenConfig(
         "wss://nostr.mutinywallet.com",
         "wss://relay.damus.io",
         "wss://nos.lol",
+    ),
+
+    // DM Relays — the Go relay merges these with importSeedRelays for the
+    // inbox tagged-event (#p = owner) subscription. Was hardcoded empty on
+    // Android, so tagged notes on relays not in importSeedRelays (e.g.
+    // nos.lol) never reached the inbox. Mirrors iOS HavenConfig.dmRelays.
+    val dmRelays: List<String> = listOf(
+        "wss://relay.damus.io",
+        "wss://relay.primal.net",
+        "wss://nos.lol",
+        "wss://relay.btcforplebs.com",
     ),
 
     // Relay URLs

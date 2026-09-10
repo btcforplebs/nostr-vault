@@ -551,6 +551,18 @@ class FeedService @Inject constructor(
             config.nostrURL?.let { add(it) }
             config.localInboxURL?.let { add(it) }
             config.inboxRelays?.let { addAll(it) }
+            // Follows publish to feed/blastr relays, not just the local + inbox
+            // set. Mirror iOS (externalRelayURLs) and the fetchReplies fix so
+            // follows who post elsewhere actually appear in the feed.
+            addAll(config.activeFeedRelays)
+            addAll(config.activeBlastrRelays)
+            if (config.activeFeedRelays.isEmpty() &&
+                config.activeBlastrRelays.isEmpty() &&
+                config.inboxRelays.isNullOrEmpty()) {
+                add("wss://relay.damus.io")
+                add("wss://relay.primal.net")
+                add("wss://nos.lol")
+            }
         }.distinct()
 
         // Disconnect stale clients that are no longer in the relay set,
@@ -681,7 +693,9 @@ class FeedService @Inject constructor(
             append("{\"kinds\":[1,6,30023]")
             when (_feedMode.value) {
                 FeedMode.FOLLOWING -> {
-                    val authors = _followedPubkeys.value.take(500)
+                    // Send the full follow list (iOS does not cap); capping at
+                    // 500 silently hid notes from any follows beyond that.
+                    val authors = _followedPubkeys.value
                     if (authors.isNotEmpty()) {
                         append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
                     }
@@ -1252,6 +1266,10 @@ class FeedService @Inject constructor(
         val relayUrls = buildList {
             config.nostrURL?.let { add(it) }
             config.inboxRelays?.let { addAll(it) }
+            // Match the live feed relay set so paginating older notes also
+            // reaches follows who publish to feed/blastr relays.
+            addAll(config.activeFeedRelays)
+            addAll(config.activeBlastrRelays)
         }.distinct()
 
         scope.launch(Dispatchers.IO) {
@@ -1280,7 +1298,8 @@ class FeedService @Inject constructor(
                     val filter = buildString {
                         append("{\"kinds\":[1,6,30023]")
                         if (_feedMode.value == FeedMode.FOLLOWING) {
-                            val authors = _followedPubkeys.value.take(500)
+                            // Full follow list (matches the live feed; iOS uncapped).
+                            val authors = _followedPubkeys.value
                             if (authors.isNotEmpty()) {
                                 append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
                             }

@@ -99,26 +99,24 @@ class NoteDetailViewModel @Inject constructor(
             _note.value = foundNote
 
             if (foundNote != null) {
-                // Load parent chain
-                val parents = mutableListOf<FeedNote>()
-                var currentParentId = foundNote.parentEventId
-                while (currentParentId != null) {
-                    val parent = feedService.findNote(currentParentId)
-                    if (parent != null) {
-                        parents.add(0, parent)
-                        currentParentId = parent.parentEventId
-                    } else {
-                        break
-                    }
-                }
-                _parentNotes.value = parents
+                // Initial ancestor chain from the in-memory cache.
+                _parentNotes.value = buildAncestorChain(foundNote, emptyList())
 
-                // Load replies
-                nostrService.fetchReplies(noteId) { replyNotes ->
-                    _allReplies.value = replyNotes.sortedBy { it.createdAt }
+                // Fetch the whole thread by NIP-10 root so a mid-thread reply
+                // opens with its siblings + ancestors (matching iOS), not just
+                // the opened note's direct replies. Ancestor e-tags (minus
+                // mentions) are fetched by id to fill any gaps in the chain.
+                val rootId = foundNote.threadRootId
+                val ancestorIds = foundNote.tags
+                    .filter { it.size >= 2 && it[0] == "e" && (it.size < 4 || it[3] != "mention") }
+                    .map { it[1] }
+                nostrService.fetchThread(rootId, noteId, ancestorIds) { threadNotes ->
+                    _allReplies.value = threadNotes.sortedBy { it.createdAt }
+                    // Rebuild the chain now that fetched notes may fill gaps.
+                    _parentNotes.value = buildAncestorChain(foundNote, threadNotes)
                 }
 
-                val pubkeys = (parents.map { it.pubkey } + foundNote.pubkey).distinct()
+                val pubkeys = (_parentNotes.value.map { it.pubkey } + foundNote.pubkey).distinct()
                 nostrService.fetchMissingProfiles(pubkeys)
 
                 // Fetch engagement details for hero note
@@ -127,6 +125,28 @@ class NoteDetailViewModel @Inject constructor(
 
             _isLoading.value = false
         }
+    }
+
+    /**
+     * Walk parentEventId upward, resolving each ancestor from the in-memory
+     * cache first, then from [extra] (e.g. notes just fetched from the
+     * network). Cycle-guarded; returns the chain oldest-first.
+     */
+    private fun buildAncestorChain(note: FeedNote, extra: List<FeedNote>): List<FeedNote> {
+        val lookup = extra.associateBy { it.id }
+        val chain = mutableListOf<FeedNote>()
+        val seen = HashSet<String>()
+        var currentId = note.parentEventId
+        while (currentId != null && seen.add(currentId)) {
+            val parent = feedService.findNote(currentId) ?: lookup[currentId]
+            if (parent != null) {
+                chain.add(0, parent)
+                currentId = parent.parentEventId
+            } else {
+                break
+            }
+        }
+        return chain
     }
 
     fun fetchEngagement(noteId: String) {
@@ -263,7 +283,7 @@ fun NoteDetailScreen(
             ?: note
     }
 
-    val dynamicParents = remember(focusedNoteId, parentNotes, note) {
+    val dynamicParents = remember(focusedNoteId, parentNotes, allReplies, note) {
         if (focusedNoteId == noteId) {
             parentNotes
         } else {

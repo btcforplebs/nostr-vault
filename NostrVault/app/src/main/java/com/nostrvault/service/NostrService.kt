@@ -1437,10 +1437,19 @@ class NostrService @Inject constructor(
     }
 
     /**
-     * Fetch kind:1 replies to a given note ID.
-     * Results are delivered via [onResult] callback.
+     * Fetch a whole thread for the note-detail view. Queries the entire subtree
+     * by NIP-10 thread [rootId] (so siblings and the wider thread appear when a
+     * mid-thread reply is opened, not just direct replies to the opened note),
+     * the [focusedId]'s own direct replies, and fetches the root plus any
+     * [ancestorIds] by id so missing parents are filled in from the network.
+     * Mirrors iOS NoteDetailView (fetchReplies by root + fetchParents by ids).
      */
-    fun fetchReplies(noteId: String, onResult: (List<FeedNote>) -> Unit) {
+    fun fetchThread(
+        rootId: String,
+        focusedId: String,
+        ancestorIds: List<String>,
+        onResult: (List<FeedNote>) -> Unit,
+    ) {
         val config = configStore.config.value
         val relayUrls = buildList {
             config.nostrURL?.let { add(it) }
@@ -1499,8 +1508,16 @@ class NostrService @Inject constructor(
                     }
 
                     client.connect()
-                    val filter = """{"kinds":[1],"#e":["$noteId"],"limit":150}"""
-                    client.send("[\"REQ\",\"$subId\",$filter]")
+                    // Quote each id for the JSON arrays.
+                    fun jsonArr(values: List<String>) =
+                        values.distinct().joinToString(",") { "\"$it\"" }
+                    // #e by root (whole subtree) + focused note (its direct replies).
+                    val eFilter =
+                        """{"kinds":[1],"#e":[${jsonArr(listOf(rootId, focusedId))}],"limit":150}"""
+                    // Root note itself + ancestors are not replies, so fetch by id.
+                    val idValues = (listOf(rootId) + ancestorIds).distinct()
+                    val idFilter = """{"kinds":[1],"ids":[${jsonArr(idValues)}]}"""
+                    client.send("[\"REQ\",\"$subId\",$eFilter,$idFilter]")
 
                     delay(TEMP_CLIENT_DISCONNECT_MS)
                     client.disconnect()
