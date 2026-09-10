@@ -779,16 +779,12 @@ struct FeedView: View {
                     .opacity(max(0.1, 1.0 - (abs(galleryDragOffset.height) / 500.0)))
                     .ignoresSafeArea()
                 
-                TabView(selection: $selectedGridMediaNoteId) {
-                    ForEach(gridMediaSnapshot) { note in
-                        if let firstMediaURL = note.mediaURLs.first {
-                            FeedMediaViewer(url: firstMediaURL, enableDragDismiss: false, onDismiss: { isShowingGridMediaViewer = false })
-                                .tag(note.id as String?)
-                                .transition(.opacity.animation(Motion.media))
-                        }
+                MediaPagerView(items: gridMediaSnapshot.map { $0.id }, selection: $selectedGridMediaNoteId) { noteId in
+                    if let note = gridMediaSnapshot.first(where: { $0.id == noteId }), let firstMediaURL = note.mediaURLs.first {
+                        FeedMediaViewer(url: firstMediaURL, enableDragDismiss: false, onDismiss: { isShowingGridMediaViewer = false })
+                            .transition(.opacity.animation(Motion.media))
                     }
                 }
-                .mediaTabViewStyleCompat()
                 .animation(Motion.pick, value: selectedGridMediaNoteId)
                 .offset(y: galleryDragOffset.height)
                 .scaleEffect(max(0.8, 1.0 - (abs(galleryDragOffset.height) / 1000.0)))
@@ -2979,20 +2975,17 @@ struct FeedNoteRow: View {
             .frame(maxWidth: .infinity)
         } else {
             // Multiple media — quick snappy fade carousel
-            TabView {
-                ForEach(urls, id: \.absoluteString) { url in
-                    FeedMediaView(
-                        url: url,
-                        onTap: { onMedia?(url, urls) },
-                        maxHeight: 400,
-                        isThumbnail: false
-                    )
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .transition(.opacity.animation(Motion.media))
-                }
+            MediaPagerView(items: urls) { url in
+                FeedMediaView(
+                    url: url,
+                    onTap: { onMedia?(url, urls) },
+                    maxHeight: 400,
+                    isThumbnail: false
+                )
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .transition(.opacity.animation(Motion.media))
             }
-            .mediaTabViewStyleCompat()
             .frame(height: 400)
             // Add a subtle border or background if desired to distinguish bounds
             // But FeedMediaView already has clipShape and overlay

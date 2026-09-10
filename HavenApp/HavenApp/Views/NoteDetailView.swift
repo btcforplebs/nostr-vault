@@ -787,20 +787,17 @@ struct NoteDetailView: View {
             .frame(maxWidth: .infinity)
             .padding(.top, 4)
         } else {
-            TabView {
-                ForEach(urls, id: \.absoluteString) { url in
-                    FeedMediaView(
-                        url: url,
-                        onTap: { showingMediaUrl = IdentifiableURL(url: url, allURLs: urls) },
-                        maxHeight: 400,
-                        isThumbnail: false
-                    )
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .transition(.opacity.animation(Motion.media))
-                }
+            MediaPagerView(items: urls) { url in
+                FeedMediaView(
+                    url: url,
+                    onTap: { showingMediaUrl = IdentifiableURL(url: url, allURLs: urls) },
+                    maxHeight: 400,
+                    isThumbnail: false
+                )
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .transition(.opacity.animation(Motion.media))
             }
-            .mediaTabViewStyleCompat()
             .frame(height: 400)
             .padding(.top, 4)
         }

@@ -1240,14 +1240,10 @@ struct ProfileView: View {
 
                 Spacer()
 
-                TabView(selection: $selectedMedia) {
-                    ForEach(displayMedia) { mediaItem in
-                        ViewerViewMediaItem(mediaItem: mediaItem)
-                            .tag(mediaItem as MediaItem?)
-                            .transition(.opacity.animation(Motion.media))
-                    }
+                MediaPagerView(items: displayMedia, selection: $selectedMedia) { mediaItem in
+                    ViewerViewMediaItem(mediaItem: mediaItem)
+                        .transition(.opacity.animation(Motion.media))
                 }
-                .mediaTabViewStyleCompat()
                 .animation(Motion.pick, value: selectedMedia?.id)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .offset(y: dragOffset.height)
