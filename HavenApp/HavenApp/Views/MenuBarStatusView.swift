@@ -336,11 +336,22 @@ struct MenuBarStatusView: View {
             )
             .id(activeHex)
             .overlay(
-                Circle().stroke(
-                    isOwner ? Color.havenPurple.opacity(0.4) : Color.havenPurple.opacity(0.8),
-                    lineWidth: isOwner ? 1.5 : 2
-                )
+                Circle().stroke(Color.havenPurple.opacity(0.4), lineWidth: 1.5)
             )
+            // Owner vs. non-owner used to be carried by hue alone (accent vs.
+            // system orange), which is two near-identical oranges under the
+            // default theme and nothing at all to a colorblind or low-vision
+            // reader. Now the accent is one colour everywhere and the
+            // exception is marked by shape, which survives every theme.
+            .overlay(alignment: .bottomTrailing) {
+                if !isOwner {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.appSystem(size: 10, weight: .semibold))
+                        .foregroundColor(.havenPurple)
+                        .background(Circle().fill(Color.platformWindowBackground))
+                        .offset(x: 2, y: 2)
+                }
+            }
 
             Text(accountName)
                 .font(.appSystem(size: 12, weight: .medium))
@@ -354,6 +365,12 @@ struct MenuBarStatusView: View {
             }
         }
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            isOwner
+                ? "Active account: \(accountName), relay owner"
+                : "Active account: \(accountName), not the relay owner"
+        )
     }
 
     // MARK: - Intents
