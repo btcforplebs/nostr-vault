@@ -18,6 +18,9 @@ sealed class Screen(val route: String) {
     data object NoteDetail : Screen("note/{noteId}") {
         fun createRoute(noteId: String) = "note/$noteId"
     }
+    data object UserProfile : Screen("user_profile/{pubkey}") {
+        fun createRoute(pubkey: String) = "user_profile/$pubkey"
+    }
     data object DMThread : Screen("dm_thread/{pubkey}") {
         fun createRoute(pubkey: String) = "dm_thread/$pubkey"
     }

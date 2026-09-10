@@ -125,7 +125,7 @@ fun NostrVaultNavHost(
                         navController.navigate(Screen.NoteDetail.createRoute(noteId))
                     },
                     onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
+                        navController.navigate(Screen.UserProfile.createRoute(pubkey))
                     },
                     onCompose = {
                         navController.navigate(Screen.ComposeNote.createRoute())
@@ -151,7 +151,7 @@ fun NostrVaultNavHost(
                         navController.navigate(Screen.NoteDetail.createRoute(noteId))
                     },
                     onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
+                        navController.navigate(Screen.UserProfile.createRoute(pubkey))
                     },
                 )
             }
@@ -189,7 +189,33 @@ fun NostrVaultNavHost(
                         navController.navigate(Screen.NoteDetail.createRoute(noteId))
                     },
                     onProfileClick = { pk ->
-                        navController.navigate(Screen.Profile.createRoute(pk))
+                        navController.navigate(Screen.UserProfile.createRoute(pk))
+                    },
+                    onEditProfile = {
+                        navController.navigate(Screen.ProfileEdit.route)
+                    },
+                    onNavigateToDMs = {
+                        navController.navigate(Screen.DMInbox.route)
+                    },
+                    onNavigateToSettings = {
+                        navController.navigate(Screen.Settings.route)
+                    },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(
+                route = Screen.UserProfile.route,
+                arguments = listOf(navArgument("pubkey") { type = NavType.StringType }),
+            ) { entry ->
+                val pubkey = entry.arguments?.getString("pubkey") ?: return@composable
+                ProfileScreen(
+                    pubkey = pubkey,
+                    onNoteClick = { noteId ->
+                        navController.navigate(Screen.NoteDetail.createRoute(noteId))
+                    },
+                    onProfileClick = { pk ->
+                        navController.navigate(Screen.UserProfile.createRoute(pk))
                     },
                     onEditProfile = {
                         navController.navigate(Screen.ProfileEdit.route)
@@ -213,7 +239,7 @@ fun NostrVaultNavHost(
                 NoteDetailScreen(
                     noteId = noteId,
                     onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
+                        navController.navigate(Screen.UserProfile.createRoute(pubkey))
                     },
                     onNoteClick = { id ->
                         navController.navigate(Screen.NoteDetail.createRoute(id))
@@ -236,7 +262,7 @@ fun NostrVaultNavHost(
                 DMThreadScreen(
                     counterpartyPubkey = pubkey,
                     onProfileClick = { pk ->
-                        navController.navigate(Screen.Profile.createRoute(pk))
+                        navController.navigate(Screen.UserProfile.createRoute(pk))
                     },
                     onBack = { navController.popBackStack() },
                 )
@@ -314,7 +340,7 @@ fun NostrVaultNavHost(
                         navController.navigate(Screen.GroupInfo.createRoute(groupId, encoded))
                     },
                     onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
+                        navController.navigate(Screen.UserProfile.createRoute(pubkey))
                     },
                     onBack = { navController.popBackStack() },
                 )
@@ -335,7 +361,7 @@ fun NostrVaultNavHost(
                     groupId = groupId,
                     relayUrl = relayUrl,
                     onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
+                        navController.navigate(Screen.UserProfile.createRoute(pubkey))
                     },
                     onBack = { navController.popBackStack() },
                 )
@@ -447,7 +473,7 @@ fun NostrVaultNavHost(
                         navController.navigate(Screen.NoteDetail.createRoute(noteId))
                     },
                     onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
+                        navController.navigate(Screen.UserProfile.createRoute(pubkey))
                     },
                     onCompose = {
                         navController.navigate(Screen.ComposeNote.createRoute())
@@ -484,6 +510,9 @@ fun NostrVaultNavHost(
                 MediaViewerScreen(
                     initialIndex = index,
                     onBack = { navController.popBackStack() },
+                    onNoteClick = { noteId ->
+                        navController.navigate(Screen.NoteDetail.createRoute(noteId))
+                    },
                     autoplayVideos = configStore.config.value.autoplayVideos,
                 )
             }
