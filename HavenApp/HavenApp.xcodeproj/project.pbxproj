@@ -256,6 +256,7 @@
 		9EBACE9543A3F1BC4C3C054D /* SwiftNIP46Handshake.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE2003F8C6D98618A746D1E7 /* SwiftNIP46Handshake.swift */; };
 		A2466D5E5282712286740FE2 /* DraftService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3800D9290BD369F4F26BC5C3 /* DraftService.swift */; };
 		A36D3F7A908A749F7B34206D /* LiveChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21B9BEF9DAADA51C5B8C4D3 /* LiveChat.swift */; };
+		A42CB5C975C2F3ADAE17DC9B /* MediaPagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */; };
 		A48F920B274A38D5BD818EBB /* SilentPaymentsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 34D407BB5082F01DD1EA2C1D /* SilentPaymentsKit */; };
 		A4CC418BB19F41A7C051EF00 /* EngagementTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EFA5F14E595113B47E8FC2 /* EngagementTracker.swift */; };
 		A5B06D91684942B06596203F /* QuickActionsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38F0A09BAA2ED410A3EAD8AB /* QuickActionsWidget.swift */; };
@@ -284,6 +285,7 @@
 		B2889A6B902C69E8612485A8 /* CustomZapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */; };
 		B2D799D053929F4DB6071E97 /* PowPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9953E9DA772C31A74141B335 /* PowPreferences.swift */; };
 		B3A065D965688DBC83174179 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC33568A91E5B5B737A03D1F /* FeedService.swift */; };
+		B65312DC3E3DC12BEA80B9DA /* MediaPagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */; };
 		B764BF0A8BA3B90BCBD9B52E /* Chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = D5F84F499115E83DCA24A989 /* Chime.mp3 */; };
 		B812DD60EB0D5F8D72E69A0C /* IconFilterButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E31B27EC2F18B0F61C3A10A /* IconFilterButton.swift */; };
 		B90CCC03D296B8EDD6E7AC90 /* FollowingBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81B813614AC332D9C184C78 /* FollowingBackupService.swift */; };
@@ -565,6 +567,7 @@
 		93ED6BB091A4EBC9250A7858 /* Theming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theming.swift; sourceTree = "<group>"; };
 		9410075B1BE7FC5BBAA601AD /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		95DDFCB3C82896EDE259BF03 /* NVWidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVWidgetBridge.swift; sourceTree = "<group>"; };
+		95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPagerView.swift; sourceTree = "<group>"; };
 		982E5846CE3EB2461F41A4FB /* VaultChangeHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultChangeHandlers.swift; sourceTree = "<group>"; };
 		9953E9DA772C31A74141B335 /* PowPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowPreferences.swift; sourceTree = "<group>"; };
 		998E2BF3A6A7EE811FD18ED7 /* RecipeFeedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeFeedViews.swift; sourceTree = "<group>"; };
@@ -705,6 +708,7 @@
 				70CE0E2EC47B06E218FF6548 /* LogsView.swift */,
 				B9C768286B9966515F364889 /* MediaGallery */,
 				1EA2FCD67EDBE04915305C51 /* MediaGalleryTypes.swift */,
+				95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */,
 				3479233DA13D1E79374B68FD /* MediaTabView.swift */,
 				7D08ABA7CDBFD26CF0423E33 /* MediaTypeDetector.swift */,
 				325A99A7D646C515AB620EE5 /* MenuBarStatusView.swift */,
@@ -1357,6 +1361,7 @@
 				5FDB457BFF6A6A03969C299B /* MediaGridItem.swift in Sources */,
 				2F1FD7253CE6BB1663ADC269 /* MediaItem.swift in Sources */,
 				E6B954A06F5DEC06F4C960AE /* MediaListItem.swift in Sources */,
+				A42CB5C975C2F3ADAE17DC9B /* MediaPagerView.swift in Sources */,
 				82226E9D704A71764A35BB7D /* MediaTabView.swift in Sources */,
 				1F0E85CA638E913E0179BA1D /* MediaTypeDetector.swift in Sources */,
 				7682D9DBB00E467214FB1150 /* MempoolAPIService.swift in Sources */,
@@ -1569,6 +1574,7 @@
 				11CA2627A013602A67310A7D /* MediaGridItem.swift in Sources */,
 				C8F9F8DCF05C8D05CBFD37F2 /* MediaItem.swift in Sources */,
 				9A441353279669903E59CBD0 /* MediaListItem.swift in Sources */,
+				B65312DC3E3DC12BEA80B9DA /* MediaPagerView.swift in Sources */,
 				68F697D47223F3BB082DC65B /* MediaTabView.swift in Sources */,
 				8C6C5418A73D68D54599A473 /* MediaTypeDetector.swift in Sources */,
 				F10135C9F1B704EF4CFDCDB7 /* MempoolAPIService.swift in Sources */,

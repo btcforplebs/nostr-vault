@@ -231,15 +231,12 @@ extension MediaGalleryView {
 
                 Spacer()
 
-                TabView(selection: $selectedMedia) {
-                    ForEach(displayMedia) { mediaItem in
-                        MediaItemRenderer(mediaItem: mediaItem)
-                            .tag(mediaItem as MediaItem?)
-                            .transition(.opacity.animation(Motion.media))
-                    }
+                MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true) { mediaItem in
+                    MediaItemRenderer(mediaItem: mediaItem)
+                        #if os(iOS)
+                        .transition(.opacity.animation(Motion.media))
+                        #endif
                 }
-                .mediaTabViewStyleCompat()
-                .animation(Motion.pick, value: selectedMedia?.id)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .offset(y: dragOffset.height)
                 .scaleEffect(max(0.8, 1.0 - (abs(dragOffset.height) / 1000.0)))

@@ -380,14 +380,13 @@ struct NoteRow: View {
                         FeedMediaView(url: urls[0], maxHeight: 300, portraitMaxHeight: 400, isThumbnail: false)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     } else {
-                        TabView {
-                            ForEach(urls, id: \.absoluteString) { url in
-                                FeedMediaView(url: url, maxHeight: 300, portraitMaxHeight: 400, isThumbnail: false)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .transition(.opacity.animation(Motion.media))
-                            }
+                        MediaPagerView(items: urls) { url in
+                            FeedMediaView(url: url, maxHeight: 300, portraitMaxHeight: 400, isThumbnail: false)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                #if os(iOS)
+                                .transition(.opacity.animation(Motion.media))
+                                #endif
                         }
-                        .mediaTabViewStyleCompat()
                         .frame(height: 300)
                     }
                 }
@@ -717,14 +716,13 @@ struct RepostedNoteView: View {
                     FeedMediaView(url: urls[0], maxHeight: 250, portraitMaxHeight: 350, isThumbnail: false)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 } else {
-                    TabView {
-                        ForEach(urls.prefix(4), id: \.absoluteString) { url in
-                            FeedMediaView(url: url, maxHeight: 250, portraitMaxHeight: 350, isThumbnail: false)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                                .transition(.opacity.animation(Motion.media))
-                        }
+                    MediaPagerView(items: Array(urls.prefix(4))) { url in
+                        FeedMediaView(url: url, maxHeight: 250, portraitMaxHeight: 350, isThumbnail: false)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            #if os(iOS)
+                            .transition(.opacity.animation(Motion.media))
+                            #endif
                     }
-                    .mediaTabViewStyleCompat()
                     .frame(height: 250)
                 }
             }
