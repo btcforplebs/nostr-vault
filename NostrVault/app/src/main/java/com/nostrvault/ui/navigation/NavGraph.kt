@@ -380,9 +380,18 @@ fun NostrVaultNavHost(
                 ComposeNoteScreen(
                     onPublished = { navController.popBackStack() },
                     onBack = { navController.popBackStack() },
-                    onResumeDraft = { draftId, replyToId, quoteToId ->
-                        // Replace the current composer with one bound to the chosen draft
-                        // (matches iOS, which loads the draft into the open composer).
+                    onOpenDrafts = { navController.navigate(Screen.Drafts.route) },
+                )
+            }
+
+            composable(Screen.Drafts.route) {
+                DraftsScreen(
+                    onResumeDraft = { draftId, _, replyToId, quoteToId ->
+                        // Replace the composer this was opened from, rather than
+                        // stacking a second one behind it (matches iOS, which loads
+                        // the draft into the open composer). Popping Drafts as well
+                        // means Back from the resumed draft leaves the composer
+                        // entirely instead of landing on the list again.
                         navController.navigate(
                             Screen.ComposeNote.createRoute(
                                 replyToNoteId = replyToId,
@@ -392,20 +401,6 @@ fun NostrVaultNavHost(
                         ) {
                             popUpTo(Screen.ComposeNote.route) { inclusive = true }
                         }
-                    },
-                )
-            }
-
-            composable(Screen.Drafts.route) {
-                DraftsScreen(
-                    onResumeDraft = { draftId, _, replyToId, quoteToId ->
-                        navController.navigate(
-                            Screen.ComposeNote.createRoute(
-                                replyToNoteId = replyToId,
-                                quoteToNoteId = quoteToId,
-                                draftId = draftId,
-                            )
-                        )
                     },
                     onBack = { navController.popBackStack() },
                 )

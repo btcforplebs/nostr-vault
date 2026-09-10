@@ -205,7 +205,6 @@ class ComposeNoteViewModel @Inject constructor(
     /** All saved drafts for the active account, backing the in-composer picker. */
     val drafts: StateFlow<List<Draft>> = draftService.drafts
 
-    fun deleteDraft(id: String) = draftService.deleteDraft(id)
 
     init {
         // Start waking sleeping mirror hosts (e.g. the Mac relay) now, so
@@ -880,7 +879,7 @@ fun ComposeNoteScreen(
     replyToNoteId: String? = null,
     onPublished: () -> Unit,
     onBack: () -> Unit,
-    onResumeDraft: (draftId: String, replyToId: String?, quoteToId: String?) -> Unit = { _, _, _ -> },
+    onOpenDrafts: () -> Unit = {},
     viewModel: ComposeNoteViewModel = hiltViewModel(),
 ) {
     val content by viewModel.content.collectAsState()
@@ -898,7 +897,6 @@ fun ComposeNoteScreen(
     val accounts by viewModel.accounts.collectAsState()
     val activeAccount by viewModel.activeAccount.collectAsState()
     var showAccountSwitcher by remember { mutableStateOf(false) }
-    var showDraftPicker by remember { mutableStateOf(false) }
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
 
@@ -951,7 +949,7 @@ fun ComposeNoteScreen(
                     // compose when drafts exist, not while editing an existing draft.
                     if (drafts.isNotEmpty() && !viewModel.isEditingExistingDraft) {
                         Surface(
-                            onClick = { showDraftPicker = true },
+                            onClick = onOpenDrafts,
                             shape = CircleShape,
                             color = colors.primary.copy(alpha = 0.12f),
                             contentColor = colors.primary,
@@ -1264,130 +1262,6 @@ fun ComposeNoteScreen(
             },
             onDismiss = { showAccountSwitcher = false },
         )
-    }
-
-    // In-composer draft picker (mirrors iOS DraftPickerView)
-    if (showDraftPicker) {
-        DraftPickerSheet(
-            drafts = drafts,
-            onSelect = { draft ->
-                showDraftPicker = false
-                onResumeDraft(draft.id, draft.replyToId, draft.quoteId)
-            },
-            onDelete = { draft -> viewModel.deleteDraft(draft.id) },
-            onDismiss = { showDraftPicker = false },
-        )
-    }
-}
-
-/** Bottom-sheet list of saved drafts shown from the composer; mirrors iOS DraftPickerView. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
-@Composable
-private fun DraftPickerSheet(
-    drafts: List<Draft>,
-    onSelect: (Draft) -> Unit,
-    onDelete: (Draft) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val colors = LocalNostrVaultColors.current
-    val dateFormatter = remember { SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()) }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = WindowBackground,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 16.dp),
-        ) {
-            Text(
-                text = "Drafts",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = PrimaryText,
-                modifier = Modifier.padding(bottom = 12.dp),
-            )
-
-            if (drafts.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(text = "No drafts", color = SecondaryText, fontSize = 14.sp)
-                }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.heightIn(max = 420.dp),
-                ) {
-                    items(items = drafts, key = { it.id }) { draft ->
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = SecondaryGroupedBg,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelect(draft) },
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    val typeLabel = when {
-                                        draft.isReply -> "Reply"
-                                        draft.isQuote -> "Quote"
-                                        else -> null
-                                    }
-                                    if (typeLabel != null) {
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = colors.primary.copy(alpha = 0.15f),
-                                        ) {
-                                            Text(
-                                                text = typeLabel,
-                                                color = colors.primary,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                            )
-                                        }
-                                    }
-                                    Spacer(Modifier.weight(1f))
-                                    Text(
-                                        text = dateFormatter.format(Date(draft.updatedAt)),
-                                        color = TertiaryText,
-                                        fontSize = 12.sp,
-                                    )
-                                    IconButton(
-                                        onClick = { onDelete(draft) },
-                                        modifier = Modifier.size(28.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Delete draft",
-                                            tint = ErrorRed,
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    text = draft.preview.ifEmpty { "(empty draft)" },
-                                    color = PrimaryText,
-                                    fontSize = 15.sp,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
