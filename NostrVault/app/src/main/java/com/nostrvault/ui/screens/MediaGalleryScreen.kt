@@ -296,9 +296,6 @@ data class MediaItem(val url: String, val noteId: String)
 /** Media type filter matching iOS MediaTypeFilter. */
 enum class MediaTypeFilter { ALL, PHOTO, VIDEO, GIF, OTHER }
 
-/** Media location/source filter matching iOS MediaLocationFilter. */
-enum class MediaLocationFilter { ALL, BLOSSOM, CACHED }
-
 /** Gallery layout mode. */
 enum class MediaLayoutMode { GRID, LIST }
 
@@ -314,7 +311,6 @@ fun MediaGalleryScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isUploading by viewModel.isUploading.collectAsState()
     var activeFilter by remember { mutableStateOf(MediaTypeFilter.ALL) }
-    var locationFilter by remember { mutableStateOf(MediaLocationFilter.ALL) }
     var layoutMode by remember { mutableStateOf(MediaLayoutMode.GRID) }
     var contextMenuTarget by remember { mutableStateOf<Int?>(null) }
     val colors = LocalNostrVaultColors.current
@@ -328,24 +324,16 @@ fun MediaGalleryScreen(
         uri?.let { viewModel.uploadMedia(it, context.contentResolver) }
     }
 
-    val filteredItems = remember(mediaItems, activeFilter, locationFilter) {
-        mediaItems
-            .filter { item ->
-                when (activeFilter) {
-                    MediaTypeFilter.ALL -> true
-                    MediaTypeFilter.PHOTO -> item.isImage
-                    MediaTypeFilter.VIDEO -> item.isVideo
-                    MediaTypeFilter.GIF -> item.mimeType?.contains("gif", ignoreCase = true) == true
-                    MediaTypeFilter.OTHER -> !item.isImage && !item.isVideo
-                }
+    val filteredItems = remember(mediaItems, activeFilter) {
+        mediaItems.filter { item ->
+            when (activeFilter) {
+                MediaTypeFilter.ALL -> true
+                MediaTypeFilter.PHOTO -> item.isImage
+                MediaTypeFilter.VIDEO -> item.isVideo
+                MediaTypeFilter.GIF -> item.mimeType?.contains("gif", ignoreCase = true) == true
+                MediaTypeFilter.OTHER -> !item.isImage && !item.isVideo
             }
-            .filter { item ->
-                when (locationFilter) {
-                    MediaLocationFilter.ALL -> true
-                    MediaLocationFilter.BLOSSOM -> item.isLocal
-                    MediaLocationFilter.CACHED -> mediaCacheService.isCached(item.displayUrl)
-                }
-            }
+        }
     }
 
     GlassScaffold(
@@ -394,32 +382,6 @@ fun MediaGalleryScreen(
                     }
 
                     Spacer(Modifier.weight(1f))
-
-                    // Source filter + layout toggle + upload
-                    GlassPill {
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Blossom,
-                            label = "Blossom",
-                            selected = locationFilter == MediaLocationFilter.BLOSSOM,
-                            accentColor = colors.primary,
-                            onClick = {
-                                locationFilter = if (locationFilter == MediaLocationFilter.BLOSSOM)
-                                    MediaLocationFilter.ALL else MediaLocationFilter.BLOSSOM
-                            },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Storage,
-                            label = "Cached",
-                            selected = locationFilter == MediaLocationFilter.CACHED,
-                            accentColor = colors.primary,
-                            onClick = {
-                                locationFilter = if (locationFilter == MediaLocationFilter.CACHED)
-                                    MediaLocationFilter.ALL else MediaLocationFilter.CACHED
-                            },
-                        )
-                    }
-
-                    Spacer(Modifier.width(6.dp))
 
                     GlassPill {
                         IconButton(
