@@ -96,7 +96,6 @@ fun NoteCard(
     onZap: ((String) -> Unit)? = null,
     onReply: ((String) -> Unit)? = null,
     onQuote: ((String) -> Unit)? = null,
-    onShare: ((String) -> Unit)? = null,
     onBroadcast: ((String) -> Unit)? = null,
     /**
      * Overflow-menu handlers. The menu is anchored to the card's own button, so
@@ -122,9 +121,15 @@ fun NoteCard(
     val menuContext = LocalContext.current
     val menuClipboard = LocalClipboardManager.current
     val moreActions = buildList {
+        // Share and Broadcast live here rather than in the action row: neither
+        // carries a count, both are secondary to Reply/Repost/Like/Zap, and the
+        // row does not have the width for seven buttons plus three counts on a
+        // 360dp phone. Share also sits next to Copy link, which is the same
+        // intent spelled twice when they are on different surfaces.
+        add(NoteAction(NostrVaultIcons.Share, "Share") { shareNote(menuContext, note) })
         add(
             NoteAction(
-                icon = NostrVaultIcons.Share,
+                icon = NostrVaultIcons.LinkIcon,
                 label = "Copy link",
                 onClick = {
                     val nevent = HavenBridge.encodeNevent(
@@ -138,6 +143,9 @@ fun NoteCard(
                 },
             ),
         )
+        onBroadcast?.let { broadcast ->
+            add(NoteAction(NostrVaultIcons.Relay, "Broadcast", onClick = { broadcast(note.effectiveEventId) }))
+        }
         if (isOwnNote) {
             onDelete?.let {
                 add(NoteAction(NostrVaultIcons.Delete, "Delete Post", destructive = true, onClick = it))
@@ -426,10 +434,7 @@ fun NoteCard(
                 onQuote = onQuote,
                 onLike = onLike,
                 onZap = onZap,
-                onShare = onShare,
-                onBroadcast = onBroadcast,
                 onLongPressLike = onLongPressLike,
-                modifier = Modifier.padding(start = 50.dp),
             )
         }
         } // Box (focused tint overlay)
@@ -440,14 +445,45 @@ fun NoteCard(
  * Action button row. Mirrors the iOS feed note layout: capsule-background
  * icon buttons, left-aligned with fixed spacing, with a spring scale-up on
  * active states.
- * Order: Reply → Repost → Quote → Like → Zap → Share → Broadcast.
+ * Order: Reply → Repost → Quote → Like → Zap.
  *
  * Repost, Like and Zap carry their count when there is one. Reply does not:
  * [NoteStats] has no reply count, and inventing one from the loaded thread would
  * be wrong for any note whose replies are not in the cache.
+ *
+ * **Five buttons, because seven plus three counts does not fit a phone.** A
+ * 360dp device leaves this row 312dp once the card's 10dp a side and the
+ * column's 14dp a side are paid for. Seven 32dp buttons at 12dp spacing are
+ * 296dp *icon-only* — already over once the old 50dp text indent was on it —
+ * and a count adds its glyphs plus a 3dp gap to three of them: 3×58 + 4×32 +
+ * 6×8 = 350dp. No arrangement fixes that; membership does. Share and Broadcast
+ * moved to the overflow menu (neither carries a count, both are secondary to
+ * Reply/Repost/Like/Zap, and Share sits next to Copy link where it belongs),
+ * leaving 3×58 + 2×32 = 238dp.
+ *
+ * **Every child is unweighted, deliberately.** An equal `weight(1f)` hands each
+ * cell the same width whether it needs 32dp or 58dp, and inside a counted cell
+ * the count is the last child measured — so the shortfall lands on it and it is
+ * clipped to a sliver of one glyph, silently, with a green build. Unweighted,
+ * a cell measures at what it needs, the slack stays at the end of the row, and
+ * a genuine overflow drops a whole button where you can see it.
+ *
+ * `spacedBy` rather than `SpaceBetween` for the same reason it is not weighted:
+ * nothing in this app caps the content width (no `widthIn`, no
+ * `WindowSizeClass`, no `sw600dp` resources, no `screenOrientation` lock), so a
+ * landscape phone is one ~800dp column and an elastic spread would put ~140dp
+ * of air between buttons. The child count is also runtime-variable — Quote is
+ * gated on its handler, Like disappears under Zaps Only — so the gaps would
+ * differ between two notes in the same scroll.
+ *
+ * Every button is gated on its own handler. Quote already was; the rest
+ * rendered at full opacity, took the tap and ran the pulse into
+ * `handler?.invoke(...)`. On a screen that passes no handlers — search
+ * results — that is a row of buttons animating a confirmation for an event
+ * nobody signed. One rule now: no handler, no affordance.
  */
 @Composable
-private fun EngagementBar(
+internal fun EngagementBar(
     noteId: String,
     stats: NoteStats?,
     isLiked: Boolean,
@@ -458,34 +494,36 @@ private fun EngagementBar(
     onQuote: ((String) -> Unit)?,
     onLike: ((String) -> Unit)?,
     onZap: ((String) -> Unit)?,
-    onShare: ((String) -> Unit)?,
-    onBroadcast: ((String) -> Unit)?,
     onLongPressLike: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.fillMaxWidth(),
     ) {
         // Reply
-        EngagementButton(
-            icon = NostrVaultIcons.Reply,
-            isActive = false,
-            activeColor = SecondaryText,
-            contentDescription = "Reply",
-            onClick = { onReply?.invoke(noteId) },
-        )
+        if (onReply != null) {
+            EngagementButton(
+                icon = NostrVaultIcons.Reply,
+                isActive = false,
+                activeColor = SecondaryText,
+                contentDescription = "Reply",
+                onClick = { onReply.invoke(noteId) },
+            )
+        }
 
         // Repost
-        EngagementButton(
-            icon = NostrVaultIcons.Repost,
-            isActive = isReposted,
-            activeColor = RepostGreen,
-            contentDescription = if (isReposted) "Reposted" else "Repost",
-            count = engagementCountLabel(stats?.repostCount ?: 0),
-            onClick = { onRepost?.invoke(noteId) },
-        )
+        if (onRepost != null) {
+            EngagementButton(
+                icon = NostrVaultIcons.Repost,
+                isActive = isReposted,
+                activeColor = RepostGreen,
+                contentDescription = if (isReposted) "Reposted" else "Repost",
+                count = engagementCountLabel(stats?.repostCount ?: 0),
+                onClick = { onRepost.invoke(noteId) },
+            )
+        }
 
         // Quote
         if (onQuote != null) {
@@ -499,14 +537,14 @@ private fun EngagementBar(
         }
 
         // Like (with long-press for emoji picker) — hidden entirely in Zaps Only mode
-        if (!LocalZapsOnlyMode.current) {
+        if (onLike != null && !LocalZapsOnlyMode.current) {
             EngagementButton(
                 icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
                 isActive = isLiked,
                 activeColor = LikeRed,
                 contentDescription = if (isLiked) "Unlike" else "Like",
                 count = engagementCountLabel(stats?.reactionCount ?: 0),
-                onClick = { onLike?.invoke(noteId) },
+                onClick = { onLike.invoke(noteId) },
                 onLongClick = if (onLongPressLike != null) {
                     { onLongPressLike.invoke(noteId) }
                 } else null,
@@ -514,35 +552,19 @@ private fun EngagementBar(
         }
 
         // Zap
-        EngagementButton(
-            icon = NostrVaultIcons.Zap,
-            isActive = isZapped,
-            activeColor = ZapOrange,
-            contentDescription = if (isZapped) "Zapped" else "Zap",
-            count = zapCountLabel(stats?.zapCount ?: 0, stats?.zapAmountSats ?: 0L),
-            onClick = { onZap?.invoke(noteId) },
-        )
-
-        // Share
-        EngagementButton(
-            icon = NostrVaultIcons.Share,
-            isActive = false,
-            activeColor = SecondaryText,
-            contentDescription = "Share",
-            onClick = { onShare?.invoke(noteId) },
-        )
-
-        // Broadcast
-        if (onBroadcast != null) {
+        if (onZap != null) {
             EngagementButton(
-                icon = NostrVaultIcons.Relay,
-                isActive = false,
-                activeColor = SecondaryText,
-                contentDescription = "Broadcast",
-                onClick = { onBroadcast.invoke(noteId) },
+                icon = NostrVaultIcons.Zap,
+                isActive = isZapped,
+                activeColor = ZapOrange,
+                contentDescription = if (isZapped) "Zapped" else "Zap",
+                count = zapCountLabel(stats?.zapCount ?: 0, stats?.zapAmountSats ?: 0L),
+                onClick = { onZap.invoke(noteId) },
             )
         }
 
+        // Slack stays here, at the end, rather than being spread between the
+        // buttons — see the arrangement note above.
         Spacer(Modifier.weight(1f))
     }
 }

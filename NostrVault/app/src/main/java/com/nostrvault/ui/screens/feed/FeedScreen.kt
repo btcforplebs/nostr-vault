@@ -1,6 +1,5 @@
 package com.nostrvault.ui.screens.feed
 
-import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -517,15 +516,6 @@ fun FeedScreen(
                                 onZap = { id -> zapNoteId = id },
                                 onReply = onReply ?: { _ -> onCompose() },
                                 onQuote = onQuote,
-                                onShare = { id ->
-                                    val shareNote = notes.find { it.id == id || it.effectiveEventId == id }
-                                    val shareText = shareNote?.content ?: "nostr:${id}"
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, shareText)
-                                    }
-                                    context.startActivity(Intent.createChooser(intent, "Share Note"))
-                                },
                                 onBroadcast = { id -> broadcastNoteId = id },
                                 // Every note gets an overflow menu. Gating this on
                                 // your own notes meant other people's notes had no
