@@ -15,12 +15,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.ui.components.DestructiveConfirmDialog
 import com.nostrvault.ui.screens.WalletCaption
 import com.nostrvault.ui.screens.WalletQr
 import com.nostrvault.ui.screens.WalletSectionLabel
 import com.nostrvault.ui.screens.WalletViewModel
 import com.nostrvault.ui.screens.walletFieldColors
 import com.nostrvault.ui.theme.*
+import com.nostrvault.util.Bolt11
+import com.nostrvault.util.Bolt11Amount
 
 /**
  * Lightning (NWC) tab: balance, receive (create invoice + QR) and send (pay bolt11).
@@ -48,6 +51,14 @@ fun WalletLightningTab(viewModel: WalletViewModel) {
     var receiveAmount by remember { mutableStateOf("") }
     var receiveDesc by remember { mutableStateOf("") }
     var sendInvoice by remember { mutableStateOf("") }
+    var showPayConfirm by remember { mutableStateOf(false) }
+
+    // Decoded on every edit, so the amount is on screen before the button is,
+    // not only inside the confirmation. A bolt11 string says nothing at a
+    // glance.
+    val pastedAmount = remember(sendInvoice) {
+        Bolt11.amount(sendInvoice.trim())
+    }
 
     Column(
         modifier = Modifier
@@ -130,9 +141,26 @@ fun WalletLightningTab(viewModel: WalletViewModel) {
             minLines = 2,
             colors = walletFieldColors(colors.primary),
         )
+        if (sendInvoice.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            when (pastedAmount) {
+                is Bolt11Amount.Sats -> Text(
+                    "Paying ${formatSats(pastedAmount.sats)} sats",
+                    color = colors.primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                )
+                Bolt11Amount.Unspecified -> Text(
+                    "This invoice names no amount — your wallet decides what to send, and may refuse it.",
+                    color = SecondaryText, fontSize = 12.sp,
+                )
+                Bolt11Amount.Unreadable -> Text(
+                    "Not an invoice this app can read. Check it before you pay.",
+                    color = SecondaryText, fontSize = 12.sp,
+                )
+            }
+        }
         Spacer(Modifier.height(12.dp))
         Button(
-            onClick = { viewModel.payInvoice(sendInvoice); sendInvoice = "" },
+            onClick = { showPayConfirm = true },
             enabled = !busy && sendInvoice.isNotBlank(),
             colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
             modifier = Modifier.fillMaxWidth(),
@@ -141,4 +169,28 @@ fun WalletLightningTab(viewModel: WalletViewModel) {
         WalletCaption("Payments use your connected NWC wallet.")
         Spacer(Modifier.height(32.dp))
     }
+
+    if (showPayConfirm) {
+        DestructiveConfirmDialog(
+            title = "Pay Invoice",
+            consequence = when (pastedAmount) {
+                is Bolt11Amount.Sats ->
+                    "This sends ${formatSats(pastedAmount.sats)} sats from your wallet. " +
+                        "Lightning payments cannot be reversed."
+                Bolt11Amount.Unspecified ->
+                    "This invoice names no amount, so your wallet decides what to send — " +
+                        "and it may refuse it outright. Lightning payments cannot be reversed."
+                Bolt11Amount.Unreadable ->
+                    "Nostr Vault cannot read this invoice, so it cannot tell you what it will " +
+                        "cost. Your wallet will pay whatever it says. Lightning payments cannot " +
+                        "be reversed."
+            },
+            confirmLabel = "Pay",
+            onConfirm = { viewModel.payInvoice(sendInvoice); sendInvoice = "" },
+            onDismiss = { showPayConfirm = false },
+        )
+    }
 }
+
+/** 21000 reads as 21,000 — the digit group is the point of showing it. */
+private fun formatSats(sats: Long): String = "%,d".format(sats)
