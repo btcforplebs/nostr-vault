@@ -295,6 +295,11 @@ class FeedService @Inject constructor(
         if (mode == _feedMode.value) return
         _feedMode.value = mode
 
+        // Pending notes are raw, unfiltered for the previous mode — drop them so
+        // the "New Posts" count doesn't carry over stale entries. Live subs for
+        // the new mode will repopulate.
+        _pendingNotes.value = emptyList()
+
         when (mode) {
             FeedMode.POPULAR -> loadPopularFeed()
             FeedMode.GLOBAL -> {
@@ -913,15 +918,37 @@ class FeedService @Inject constructor(
     }
 
     private fun deliverBackgroundBatch(batch: BackgroundAccumulator.Snapshot) {
-        // Apply notes
+        // Apply notes.
+        //
+        // iOS-parity auto-reveal: brand-new top-of-feed posts are NOT inserted
+        // directly (that would push the feed under the user's scroll, hiding the
+        // new note above the keyed LazyColumn's anchor). Instead they are staged
+        // as pendingNotes. FeedScreen auto-applies them (and snaps to top) when
+        // the user is already at the top with auto-load on, or surfaces the
+        // "New Posts" pill otherwise.
+        //
+        // Older notes (pagination) and replies always insert directly so they
+        // slot into place without a pill. During the initial load — or whenever
+        // the feed is empty — everything inserts directly so the feed populates
+        // instead of hiding behind a pill.
         if (batch.notes.isNotEmpty()) {
-            val currentNotes = _notes.value.toMutableList()
-            currentNotes.addAll(batch.notes)
-            currentNotes.sortByDescending { it.createdAt }
-            if (currentNotes.size > MAX_FEED_NOTES) {
-                _notes.value = currentNotes.take(MAX_FEED_NOTES)
+            if (isInitialLoad || _notes.value.isEmpty()) {
+                insertNotesDirect(batch.notes)
             } else {
-                _notes.value = currentNotes
+                // 60s clock-drift grace, matching iOS flushNoteBuffer.
+                val newestMillis = _notes.value.first().createdAt.time
+                val driftThreshold = newestMillis - 60_000L
+                val toPending = ArrayList<FeedNote>()
+                val toAdd = ArrayList<FeedNote>()
+                for (note in batch.notes) {
+                    if (note.createdAt.time > driftThreshold && !note.isReply) {
+                        toPending.add(note)
+                    } else {
+                        toAdd.add(note)
+                    }
+                }
+                if (toAdd.isNotEmpty()) insertNotesDirect(toAdd)
+                if (toPending.isNotEmpty()) stagePendingNotes(toPending)
             }
         }
 
@@ -953,6 +980,31 @@ class FeedService @Inject constructor(
         nostrService.fetchMissingProfiles(newPubkeys)
 
         recomputeFilteredNotes()
+    }
+
+    /** Insert notes directly into the visible feed, re-sorting newest-first and capping size. */
+    private fun insertNotesDirect(newNotes: List<FeedNote>) {
+        val currentNotes = _notes.value.toMutableList()
+        currentNotes.addAll(newNotes)
+        currentNotes.sortByDescending { it.createdAt }
+        _notes.value = if (currentNotes.size > MAX_FEED_NOTES) {
+            currentNotes.take(MAX_FEED_NOTES)
+        } else {
+            currentNotes
+        }
+    }
+
+    /**
+     * Stage brand-new top-of-feed notes as pending (the "New Posts" buffer).
+     * Deduplicated by id, sorted newest-first, capped at MAX_PENDING_NOTES.
+     */
+    private fun stagePendingNotes(newNotes: List<FeedNote>) {
+        val unique = LinkedHashMap<String, FeedNote>()
+        for (note in _pendingNotes.value) unique[note.id] = note
+        for (note in newNotes) unique.putIfAbsent(note.id, note)
+        var sorted = unique.values.sortedByDescending { it.createdAt }
+        if (sorted.size > MAX_PENDING_NOTES) sorted = sorted.take(MAX_PENDING_NOTES)
+        _pendingNotes.value = sorted
     }
 
     // ══════════════════════════════════════════════════════════════════
