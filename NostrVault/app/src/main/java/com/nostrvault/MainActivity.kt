@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            NostrVaultTheme {
+            NostrVaultTheme(textSizeScale = config.textSizeScale) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = WindowBackground,

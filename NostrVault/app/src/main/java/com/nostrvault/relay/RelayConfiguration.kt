@@ -301,7 +301,7 @@ data class HavenConfig(
 
     // Appearance
     val themeColor: String = "orange",
-    val textSizeScale: Float = 1.0f,
+    val textSizeScale: Float = 2.0f,
     val oledMode: Boolean = false,
     val useFeedCompactMode: Boolean = true,
     val feedCompactModes: Map<String, Boolean> = emptyMap(),

@@ -44,7 +44,7 @@ val LocalOledMode = staticCompositionLocalOf { false }
 @Composable
 fun NostrVaultTheme(
     appTheme: AppTheme = AppTheme.DEFAULT,
-    textSizeScale: Float = 1.0f,
+    textSizeScale: Float = 2.0f,
     oledMode: Boolean = false,
     content: @Composable () -> Unit,
 ) {

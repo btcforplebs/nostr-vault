@@ -39,7 +39,7 @@ class AppearanceViewModel @Inject constructor(
     private val _selectedTheme = MutableStateFlow(AppTheme.DEFAULT)
     val selectedTheme = _selectedTheme.asStateFlow()
 
-    private val _textScale = MutableStateFlow(1.0f)
+    private val _textScale = MutableStateFlow(2.0f)
     val textScale = _textScale.asStateFlow()
 
     private val _oledMode = MutableStateFlow(false)
@@ -162,7 +162,7 @@ fun AppearanceSettingsScreen(
                 Slider(
                     value = textScale,
                     onValueChange = viewModel::setTextScale,
-                    valueRange = 0.8f..1.6f,
+                    valueRange = 0.8f..2.4f,
                     steps = 7,
                     colors = SliderDefaults.colors(
                         thumbColor = LocalNostrVaultColors.current.primary,
