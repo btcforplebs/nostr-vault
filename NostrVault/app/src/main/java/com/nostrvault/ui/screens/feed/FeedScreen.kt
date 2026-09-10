@@ -65,6 +65,7 @@ import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.NoteCard
 import com.nostrvault.ui.components.UGCReportDialog
+import com.nostrvault.ui.components.threadLink
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.SkeletonFeed
@@ -644,9 +645,7 @@ fun FeedScreen(
                                     targetNote.kind,
                                 ) ?: HavenBridge.hexToNote1(targetNote.effectiveEventId)
                                 ?: targetNote.effectiveEventId
-                                clipboard.setText(
-                                    AnnotatedString("https://mynostrspace.com/thread/$nevent"),
-                                )
+                                clipboard.setText(AnnotatedString(threadLink(nevent)))
                                 Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
                                 moreMenuNoteId = null
                             },
