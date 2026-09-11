@@ -23,9 +23,7 @@ struct SearchView: View {
     @State private var cachedTrending: [String] = []
     @State private var cachedSuggested: [(String, FeedProfile)] = []
     @State private var lastDiscoveryRefresh: Date = .distantPast
-    #if os(iOS)
     @FocusState private var searchFieldFocused: Bool
-    #endif
 
     enum SearchMode: CaseIterable {
         case relay, global
@@ -153,10 +151,19 @@ struct SearchView: View {
                         TextField("Search users, notes, hashtags...", text: $searchQuery)
                             .textFieldStyle(.plain)
                             .font(.appSystem(size: 14))
-                            #if os(iOS)
                             .focused($searchFieldFocused)
+                            #if os(iOS)
                             .submitLabel(.search)
                             .onSubmit { searchFieldFocused = false }
+                            #else
+                            // Return searches immediately instead of waiting out the
+                            // 300ms debounce; Escape clears the field and the results.
+                            .onSubmit { searchNow() }
+                            .onKeyPress(.escape) {
+                                guard !searchQuery.isEmpty else { return .ignored }
+                                clearSearch()
+                                return .handled
+                            }
                             #endif
                             .onChange(of: searchQuery) { _, query in
                                 searchDebounceTask?.cancel()
@@ -179,9 +186,7 @@ struct SearchView: View {
 
                         if !searchQuery.isEmpty {
                             Button(action: {
-                                searchQuery = ""
-                                resultTypeFilter = .all
-                                nostrService.cancelGlobalSearch()
+                                clearSearch()
                                 #if os(iOS)
                                 searchFieldFocused = false
                                 #endif
@@ -358,6 +363,11 @@ struct SearchView: View {
             ProfileView(pubkey: profile.id, onDismiss: { showingProfile = nil })
                 .environmentObject(nostrService)
                 .environmentObject(configService)
+                #if os(macOS)
+                // Without a minimum, a macOS sheet takes its content's ideal size, which
+                // for a profile is small enough to be unusable.
+                .frame(minWidth: 520, minHeight: 560)
+                #endif
         }
         .sheet(item: $showingNoteDetail) { note in
             NavigationStack {
@@ -366,12 +376,20 @@ struct SearchView: View {
                         NoteDetailView(note: detailNote)
                     }
             }
+            #if os(macOS)
+            .frame(minWidth: 520, minHeight: 560)
+            #endif
         }
         .sheet(item: $showingMediaUrl) { media in
             FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { showingMediaUrl = nil })
         }
         .onAppear {
             refreshDiscovery(force: true)
+            #if os(macOS)
+            // No tap-to-focus convention on the desktop: the field a window opens
+            // on should already be taking keystrokes.
+            searchFieldFocused = true
+            #endif
         }
         .onReceive(feedService.$notes) { notes in
             // Throttled refresh of the empty-state discovery lists as the feed grows.
@@ -731,6 +749,10 @@ struct SearchView: View {
 
     @ViewBuilder
     private func hashtagRow(hashtag: String) -> some View {
+        Button(action: {
+            searchQuery = "#\(hashtag)"
+            searchNow()
+        }) {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("#\(hashtag)")
@@ -748,10 +770,16 @@ struct SearchView: View {
         .padding(.vertical, 8)
         .background(Color.secondary.opacity(0.05))
         .cornerRadius(8)
+        .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
     private func linkRow(link: SearchLink) -> some View {
+        // A link result looks tappable (purple title, boxed row) and was inert on both
+        // platforms. Rows whose URL doesn't parse stay inert rather than pretending.
+        conditionalLink(url: URL(string: link.url)) {
         VStack(alignment: .leading, spacing: 4) {
             Text(link.title)
                 .font(.appSystem(size: 13, weight: .semibold))
@@ -768,6 +796,18 @@ struct SearchView: View {
         .padding(.vertical, 8)
         .background(Color.secondary.opacity(0.05))
         .cornerRadius(8)
+        .contentShape(Rectangle())
+        }
+    }
+
+    @ViewBuilder
+    private func conditionalLink<Content: View>(url: URL?, @ViewBuilder content: () -> Content) -> some View {
+        if let url {
+            Link(destination: url) { content() }
+                .buttonStyle(.plain)
+        } else {
+            content()
+        }
     }
 
     private func decodeNostrNoteId(_ query: String) -> String? {
@@ -826,6 +866,26 @@ struct SearchView: View {
             return
         }
         performSearch(query: searchQuery)
+    }
+
+    /// Runs the search for whatever is in the field right now, cancelling the debounce
+    /// task so Return doesn't race a second search behind it.
+    private func searchNow() {
+        searchDebounceTask?.cancel()
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        performSearch(query: searchQuery)
+        saveRecentSearch(searchQuery)
+    }
+
+    private func clearSearch() {
+        searchDebounceTask?.cancel()
+        searchQuery = ""
+        resultTypeFilter = .all
+        searchResults = .empty
+        pendingDirectNoteId = nil
+        isSearching = false
+        nostrService.cancelGlobalSearch()
     }
 
     private func performSearch(query: String) {

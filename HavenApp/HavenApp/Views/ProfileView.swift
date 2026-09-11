@@ -260,11 +260,19 @@ struct ProfileView: View {
                         NoteDetailView(note: detailNote)
                     }
             }
+            #if os(macOS)
+            .frame(minWidth: 520, minHeight: 560)
+            #endif
         }
         .sheet(item: $showingProfileKey) { p in
             ProfileView(pubkey: p.id, onDismiss: { showingProfileKey = nil })
                 .environmentObject(nostrService)
                 .environmentObject(configService)
+                #if os(macOS)
+                // A macOS sheet with no minimum inherits its content's ideal size and can
+                // open too small to use.
+                .frame(minWidth: 520, minHeight: 560)
+                #endif
         }
         .sheet(item: $showingMediaUrl) { media in
             FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { showingMediaUrl = nil })
@@ -411,6 +419,18 @@ struct ProfileView: View {
         }
         #else
         .toolbar {
+            ToolbarItem(placement: .automatic) {
+                if isOwnProfile {
+                    // `.refreshable` on the scroll view is the profile's only refresh
+                    // path, and macOS has no pull-to-refresh to reach it.
+                    Button(action: { Task { await refreshProfile() } }) {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(.havenPurple)
+                    }
+                    .help("Refresh Profile")
+                    .keyboardShortcut("r", modifiers: .command)
+                }
+            }
             ToolbarItem(placement: .automatic) {
                 if isOwnerProfile {
                     Button(action: { showingLightning = true }) {

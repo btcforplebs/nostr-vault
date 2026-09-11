@@ -123,6 +123,17 @@ struct FollowingBackupSettingsView: View {
                         NavigationLink(destination: SnapshotDetailView(snapshot: snapshot, isActiveAccount: isViewingActiveAccount)) {
                             snapshotRow(snapshot)
                         }
+                        #if os(macOS)
+                        // `.onDelete` below is swipe-only, and macOS rows don't swipe:
+                        // right-click is the platform's delete affordance here.
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                backupService.deleteSnapshot(id: snapshot.id, forAccountKey: selectedSnapshotKey)
+                            } label: {
+                                Label("Delete Snapshot", systemImage: "trash")
+                            }
+                        }
+                        #endif
                     }
                     .onDelete { offsets in
                         deleteSnapshots(at: offsets)

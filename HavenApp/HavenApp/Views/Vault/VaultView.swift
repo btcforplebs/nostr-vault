@@ -566,6 +566,8 @@ struct VaultView: View {
 
                 Spacer()
 
+                refreshButton
+
                 if viewMode == .notes {
                     filterView
                 } else if viewMode == .likes {
@@ -586,6 +588,23 @@ struct VaultView: View {
         .background(Color.platformSecondaryGroupedBackground)
     }
 
+    // MARK: - Refresh
+
+    /// `.refreshable` is the vault's only refresh path and macOS has no pull-to-refresh,
+    /// so without this the list could only be refreshed by switching accounts or
+    /// restarting the relay.
+    @ViewBuilder
+    var refreshButton: some View {
+        IconFilterButton(
+            icon: "arrow.clockwise",
+            tooltip: "Refresh Vault",
+            isSelected: true,
+            color: .havenPurple,
+            action: { refreshAll(.incremental) }
+        )
+        .keyboardShortcut("r", modifiers: .command)
+    }
+
     // MARK: - Header View
 
     @ViewBuilder
@@ -597,6 +616,7 @@ struct VaultView: View {
                     HStack {
                         modeView
                         Spacer()
+                        refreshButton
                         searchToggleButton
                     }
                     if viewMode == .notes {
@@ -626,6 +646,7 @@ struct VaultView: View {
                         } else if viewMode == .zaps {
                             zapsFilterView
                         }
+                        refreshButton
                         searchToggleButton
                         compactToggleButton
                     }

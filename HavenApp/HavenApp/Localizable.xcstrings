@@ -605,6 +605,16 @@
         }
       }
     },
+    "dm.inbox.refresh" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh"
+          }
+        }
+      }
+    },
     "dm.inbox.title" : {
       "localizations" : {
         "en" : {

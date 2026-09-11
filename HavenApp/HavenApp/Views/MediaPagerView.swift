@@ -68,7 +68,15 @@ struct MediaPagerView<Item: Hashable, ItemContent: View>: View {
 
     var body: some View {
         pagerBody
+            #if os(iOS)
+            // iOS propagates a container value down onto the page content, which is a
+            // reasonable place for the position. macOS drops `value` on AXGroup/AXUnknown
+            // and propagates it onto every child element instead — verified with an
+            // AXUIElement probe, where both arrow buttons ended up announcing
+            // "Image 1 of 3" and no element carried the pager's own position. There the
+            // position lives in the dots' *label*; see `pageDots`.
             .accessibilityValue(items.isEmpty ? "" : "Image \((index ?? 0) + 1) of \(items.count)")
+            #endif
             .onAppear { syncIndexOnAppear() }
             .onChange(of: items) { _, newItems in reconcile(after: newItems) }
     }
@@ -191,7 +199,11 @@ private struct MacMediaPager<Item: Hashable, ItemContent: View>: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white)
+                // Dimming the whole control also dimmed the scrim, which took the
+                // disabled arrow to 1.6:1 over a bright image — and page 0 is the first
+                // frame a macOS user sees, so half the affordance was invisible in it.
+                // Only the glyph dims now; the scrim stays at full strength below.
+                .foregroundColor(.white.opacity(enabled ? 1 : 0.55))
                 .frame(width: 28, height: 28)
                 // 0.7 opacity black over a worst-case bright (L≈0.9) image composites to an
                 // effective background luminance of 0.9*(1-0.7) = 0.27; against a white
@@ -201,7 +213,6 @@ private struct MacMediaPager<Item: Hashable, ItemContent: View>: View {
                 .overlay(Circle().stroke(Color.borderHairline, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
-        .opacity(enabled ? 1 : 0.35)
         .disabled(!enabled)
         .animation(Motion.chrome, value: enabled)
         .accessibilityLabel(accessibilityLabel)
@@ -217,13 +228,17 @@ private struct MacMediaPager<Item: Hashable, ItemContent: View>: View {
                     // even when the fill alone would wash out over a bright photo.
                     .overlay(Circle().stroke(Color.white.opacity(isCurrent ? 0 : 0.9), lineWidth: 0.5))
                     .frame(width: isCurrent ? 6 : 5, height: isCurrent ? 6 : 5)
-                    .accessibilityHidden(true)
             }
         }
         .animation(Motion.pick, value: index)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(Capsule().fill(Color.black.opacity(0.7)))
+        // One element for the whole row, carrying the position as its label: a row of
+        // circles read one at a time is noise, and macOS AX drops `value` on a group, so
+        // the label is the only field that survives here.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Image \((index ?? 0) + 1) of \(items.count)")
     }
 }
 #endif

@@ -70,6 +70,12 @@ struct GroupChatView: View {
                         .textFieldStyle(.plain)
                         .lineLimit(1...5)
                         .font(.appSystem(size: 15))
+                        #if os(macOS)
+                        // Return sends. See the note in DMThreadView: plain Return is
+                        // free to take here because the field never inserted a newline
+                        // for it on macOS; Option + Return still does.
+                        .onSubmit { sendMessage() }
+                        #endif
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .background(Color.platformSecondaryGroupedBackground)

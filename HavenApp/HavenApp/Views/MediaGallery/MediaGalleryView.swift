@@ -381,6 +381,17 @@ struct MediaGalleryView: View {
 
                 Spacer()
 
+                // The gallery's only refresh was `.refreshable`, which macOS never
+                // surfaces — this is the pointer and ⌘R path to the same call.
+                IconFilterButton(
+                    icon: "arrow.clockwise",
+                    tooltip: "Refresh Media",
+                    isSelected: true,
+                    color: .havenPurple,
+                    action: { refreshAll() }
+                )
+                .keyboardShortcut("r", modifiers: .command)
+
                 sortMenu
 
                 desktopUploadMenu
