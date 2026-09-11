@@ -28,8 +28,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +44,8 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import android.widget.Toast
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.NoteStats
@@ -94,12 +98,59 @@ fun NoteCard(
     onQuote: ((String) -> Unit)? = null,
     onShare: ((String) -> Unit)? = null,
     onBroadcast: ((String) -> Unit)? = null,
-    onMore: ((String) -> Unit)? = null,
+    /**
+     * Overflow-menu handlers. The menu is anchored to the card's own button, so
+     * the card owns it rather than a screen-level dialog keyed by note id.
+     *
+     * Copy link needs nothing from the caller and is always offered, so every
+     * card has a menu — a search result gets one item, the feed gets three.
+     */
+    isOwnNote: Boolean = false,
+    onReport: (() -> Unit)? = null,
+    onBlock: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
     onLongPressLike: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
     val isOled = LocalOledMode.current
+
+    // Overflow menu. Built here rather than by each screen so that the item
+    // order and wording are one definition; which items exist is the caller's,
+    // because a search result and the feed genuinely differ.
+    var showMoreMenu by remember { mutableStateOf(false) }
+    val menuContext = LocalContext.current
+    val menuClipboard = LocalClipboardManager.current
+    val moreActions = buildList {
+        add(
+            NoteAction(
+                icon = NostrVaultIcons.Share,
+                label = "Copy link",
+                onClick = {
+                    val nevent = HavenBridge.encodeNevent(
+                        note.effectiveEventId,
+                        note.pubkey,
+                        note.kind,
+                    ) ?: HavenBridge.hexToNote1(note.effectiveEventId)
+                        ?: note.effectiveEventId
+                    menuClipboard.setText(AnnotatedString(threadLink(nevent)))
+                    Toast.makeText(menuContext, "Link copied", Toast.LENGTH_SHORT).show()
+                },
+            ),
+        )
+        if (isOwnNote) {
+            onDelete?.let {
+                add(NoteAction(NostrVaultIcons.Delete, "Delete Post", destructive = true, onClick = it))
+            }
+        } else {
+            onReport?.let {
+                add(NoteAction(NostrVaultIcons.Alert, "Report", destructive = true, onClick = it))
+            }
+            onBlock?.let {
+                add(NoteAction(NostrVaultIcons.Blocked, "Block", destructive = true, onClick = it))
+            }
+        }
+    }
     val connectorColor = colors.primary.copy(alpha = 0.3f)
 
     // Thread connector lines drawn behind the card
@@ -259,8 +310,8 @@ fun NoteCard(
                 }
 
                 // More menu
-                onMore?.let { handler ->
-                    IconButton(onClick = { handler(note.id) }) {
+                Box {
+                    IconButton(onClick = { showMoreMenu = true }) {
                         Icon(
                             imageVector = NostrVaultIcons.More,
                             contentDescription = "More",
@@ -268,6 +319,11 @@ fun NoteCard(
                             modifier = Modifier.size(18.dp),
                         )
                     }
+                    NoteActionsMenu(
+                        expanded = showMoreMenu,
+                        actions = moreActions,
+                        onDismiss = { showMoreMenu = false },
+                    )
                 }
             }
 

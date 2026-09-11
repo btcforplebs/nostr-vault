@@ -174,7 +174,6 @@ fun FeedScreen(
 
     // More menu / delete confirmation state
     var deleteNoteId by remember { mutableStateOf<String?>(null) }
-    var moreMenuNoteId by remember { mutableStateOf<String?>(null) }
     var reportNoteId by remember { mutableStateOf<String?>(null) }
     var blockNoteId by remember { mutableStateOf<String?>(null) }
 
@@ -533,7 +532,10 @@ fun FeedScreen(
                                 // menu at all, so reporting and blocking were only
                                 // reachable two navigations deep — from the note
                                 // screen, which you have to open the content to see.
-                                onMore = { id -> moreMenuNoteId = id },
+                                isOwnNote = viewModel.isOwnNote(note.pubkey),
+                                onReport = { reportNoteId = note.id },
+                                onBlock = { blockNoteId = note.id },
+                                onDelete = { deleteNoteId = note.id },
                                 onLongPressLike = { id -> emojiPickerNoteId = id },
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             )
@@ -588,80 +590,6 @@ fun FeedScreen(
             onZap = { amount ->
                 zapNoteId?.let { viewModel.zapNote(it, amount) }
                 zapNoteId = null
-            },
-        )
-    }
-
-    // More menu dropdown
-    if (moreMenuNoteId != null) {
-        val targetNote = notes.find { it.id == moreMenuNoteId || it.effectiveEventId == moreMenuNoteId }
-        val isOwn = targetNote != null && viewModel.isOwnNote(targetNote.pubkey)
-
-        AlertDialog(
-            onDismissRequest = { moreMenuNoteId = null },
-            title = { Text("Actions") },
-            text = {
-                Column {
-                    if (isOwn) {
-                        FeedActionRow(
-                            icon = NostrVaultIcons.Delete,
-                            label = "Delete Post",
-                            tint = ErrorRed,
-                            onClick = {
-                                deleteNoteId = moreMenuNoteId
-                                moreMenuNoteId = null
-                            },
-                        )
-                    } else {
-                        FeedActionRow(
-                            icon = NostrVaultIcons.Alert,
-                            label = "Report",
-                            tint = ErrorRed,
-                            onClick = {
-                                reportNoteId = moreMenuNoteId
-                                moreMenuNoteId = null
-                            },
-                        )
-                        FeedActionRow(
-                            icon = NostrVaultIcons.Blocked,
-                            label = "Block",
-                            tint = ErrorRed,
-                            onClick = {
-                                blockNoteId = moreMenuNoteId
-                                moreMenuNoteId = null
-                            },
-                        )
-                    }
-                    // Copy link is offered for any note, yours included.
-                    if (targetNote != null) {
-                        FeedActionRow(
-                            icon = NostrVaultIcons.Share,
-                            label = "Copy link",
-                            tint = PrimaryText,
-                            onClick = {
-                                val nevent = HavenBridge.encodeNevent(
-                                    targetNote.effectiveEventId,
-                                    targetNote.pubkey,
-                                    targetNote.kind,
-                                ) ?: HavenBridge.hexToNote1(targetNote.effectiveEventId)
-                                ?: targetNote.effectiveEventId
-                                clipboard.setText(AnnotatedString(threadLink(nevent)))
-                                Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
-                                moreMenuNoteId = null
-                            },
-                        )
-                    }
-                }
-            },
-            // Cancel is the dismiss action, so it belongs in the dismiss slot.
-            // In `confirmButton` it took the emphasised position, which reads as
-            // "this is the thing to do" on a menu whose real items are
-            // destructive.
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { moreMenuNoteId = null }) {
-                    Text("Cancel")
-                }
             },
         )
     }
@@ -1435,30 +1363,4 @@ private fun List<String>.resolveAgainst(
     val resolved = HashMap<String, FeedProfile>(size)
     for (pubkey in this) profiles[pubkey]?.let { resolved[pubkey] = it }
     return resolved
-}
-
-/**
- * One row of the feed's Actions dialog.
- *
- * Extracted because the dialog now has four of these and they were being
- * hand-assembled — icon, spacer, coloured label — which is exactly how the
- * variants drift apart.
- */
-@Composable
-private fun FeedActionRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    tint: androidx.compose.ui.graphics.Color,
-    onClick: () -> Unit,
-) {
-    TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(label, color = tint)
-        }
-    }
 }
