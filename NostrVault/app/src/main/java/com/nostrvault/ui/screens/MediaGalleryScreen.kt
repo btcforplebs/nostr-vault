@@ -361,6 +361,12 @@ fun MediaGalleryScreen(
         uri?.let { viewModel.uploadMedia(it, context.contentResolver) }
     }
 
+    // A blob carries no note reference; the sha256 is the only join. Resolved
+    // here rather than in the ViewModel because the gallery already holds the
+    // FeedService and this is a pure read of its cache.
+    val loadedNotes by feedService.notes.collectAsState()
+    val noteIdByHash = remember(loadedNotes) { noteIdsByBlobHash(loadedNotes) }
+
     val filteredItems = remember(mediaItems, activeFilter) {
         mediaItems
             .filter { item ->
@@ -550,6 +556,8 @@ fun MediaGalleryScreen(
                             item = item,
                             index = index,
                             contextMenuTarget = contextMenuTarget,
+                            noteId = noteIdByHash[item.sha256.lowercase()],
+                            onNoteClick = onNoteClick,
                             onTap = {
                                 MediaGalleryBridge.currentItems = filteredItems
                                 onMediaClick(index)
@@ -582,6 +590,8 @@ fun MediaGalleryScreen(
                             item = item,
                             index = index,
                             contextMenuTarget = contextMenuTarget,
+                            noteId = noteIdByHash[item.sha256.lowercase()],
+                            onNoteClick = onNoteClick,
                             onTap = {
                                 MediaGalleryBridge.currentItems = filteredItems
                                 onMediaClick(index)
@@ -605,6 +615,8 @@ private fun MediaGridCell(
     item: BlossomMediaItem,
     index: Int,
     contextMenuTarget: Int?,
+    noteId: String?,
+    onNoteClick: (String) -> Unit,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
     onDismissMenu: () -> Unit,
@@ -659,6 +671,8 @@ private fun MediaGridCell(
         MediaItemContextMenu(
             expanded = contextMenuTarget == index,
             item = item,
+            noteId = noteId,
+            onNoteClick = onNoteClick,
             onDismiss = onDismissMenu,
             mediaCacheService = mediaCacheService,
             clipboardManager = clipboardManager,
@@ -673,6 +687,8 @@ private fun MediaListRow(
     item: BlossomMediaItem,
     index: Int,
     contextMenuTarget: Int?,
+    noteId: String?,
+    onNoteClick: (String) -> Unit,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
     onDismissMenu: () -> Unit,
@@ -780,6 +796,8 @@ private fun MediaListRow(
         MediaItemContextMenu(
             expanded = contextMenuTarget == index,
             item = item,
+            noteId = noteId,
+            onNoteClick = onNoteClick,
             onDismiss = onDismissMenu,
             mediaCacheService = mediaCacheService,
             clipboardManager = clipboardManager,
@@ -792,6 +810,8 @@ private fun MediaListRow(
 private fun MediaItemContextMenu(
     expanded: Boolean,
     item: BlossomMediaItem,
+    noteId: String?,
+    onNoteClick: (String) -> Unit,
     onDismiss: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
@@ -802,6 +822,21 @@ private fun MediaItemContextMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
     ) {
+        // Only offered when a loaded note actually references this blob. An
+        // always-present item that does nothing for most files would be the same
+        // dead affordance in a different shape.
+        if (noteId != null) {
+            DropdownMenuItem(
+                text = { Text("Open Note") },
+                leadingIcon = {
+                    Icon(NostrVaultIcons.Articles, contentDescription = null, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    onNoteClick(noteId)
+                },
+            )
+        }
         DropdownMenuItem(
             text = { Text("Copy Link") },
             leadingIcon = {

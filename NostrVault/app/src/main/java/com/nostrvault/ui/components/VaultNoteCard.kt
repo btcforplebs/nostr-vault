@@ -397,7 +397,6 @@ private fun ExpandedLayout(
                 profiles = profiles,
                 mediaURLs = note.mediaURLs.toSet(),
                 onProfileClick = onProfileClick,
-                onNoteClick = onNoteClick,
                 onPlainTextClick = { onNoteClick(note.id) },
                 lineHeight = 20.sp,
             )

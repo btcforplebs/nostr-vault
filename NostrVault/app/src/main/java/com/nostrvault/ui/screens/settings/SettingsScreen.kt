@@ -17,13 +17,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.ViewModel
-import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.ui.navigation.Screen
 import com.nostrvault.ui.theme.*
-import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 
 /** App version string shown in the About section (mirrors iOS appVersion). */
 private val APP_VERSION = BuildConfig.VERSION_NAME
@@ -39,23 +34,11 @@ private const val PRIVACY_POLICY_URL = "https://nostrvault.app/privacy.html"
  * Main settings screen with grouped navigation items.
  * Port of SettingsView.swift iOS list layout (sections, order and labels mirror iOS).
  */
-@HiltViewModel
-class SettingsViewModel @Inject constructor(
-    private val configStore: ConfigStore,
-) : ViewModel() {
-    val config = configStore.config
-
-    fun togglePrefetchAvatars() {
-        configStore.update { it.copy(prefetchAvatars = !it.prefetchAvatars) }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onNavigate: (Screen) -> Unit,
     onBack: () -> Unit,
-    viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     Scaffold(
         topBar = {
