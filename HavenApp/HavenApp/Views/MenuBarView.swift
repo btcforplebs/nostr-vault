@@ -23,6 +23,12 @@ struct MenuBarView: View {
     @State private var showingAccountSwitcher = false
     #if os(macOS)
     @State private var showingCompose = false
+    /// macOS has no navigation stack around the feed and vault, so a
+    /// `NavigationLink(value:)` inside a note row has nothing to push onto and the
+    /// click is swallowed — quoted notes and parent previews did nothing at all.
+    /// Publishing a selection here gives every one of those rows the same single
+    /// path the iPad two-pane layout already uses, resolved to a sheet below.
+    @StateObject private var noteSelection = NoteDetailSelection()
     #endif
 
     @State private var activeHex: String = ConfigService.shared.activeAccountHexPubkey
@@ -872,10 +878,52 @@ struct MenuBarView: View {
             .padding(.top, 4)
         }
         #if os(macOS)
+        .environment(\.noteDetailSelection, noteSelection)
+        .sheet(isPresented: Binding(
+            get: { !noteSelection.isEmpty },
+            set: { if !$0 { noteSelection.clear() } }
+        )) {
+            Group {
+                if let note = noteSelection.note {
+                    NavigationStack {
+                        NoteDetailView(note: note)
+                            .toolbar {
+                                ToolbarItem(placement: .cancellationAction) {
+                                    Button("Done") { noteSelection.clear() }
+                                        .keyboardShortcut(.cancelAction)
+                                }
+                            }
+                    }
+                } else if let noteId = noteSelection.noteId {
+                    NoteDetailViewWrapper(noteId: noteId, onDismiss: { noteSelection.clear() })
+                }
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
+            .frame(minWidth: 560, minHeight: 620)
+        }
         .sheet(isPresented: $showingCompose) {
             ComposeView(onDismiss: { showingCompose = false })
                 .environmentObject(nostrService)
                 .environmentObject(configService)
+        }
+        // Notification taps: LocalNotificationService posts these on both platforms,
+        // but until now only iOS listened, so clicking a zap, reaction or repost
+        // notification on macOS did nothing at all.
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in
+            selectedTab = .notes
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in
+            selectedTab = .notes
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
+            selectedTab = .notes
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenMentions)) { notification in
+            selectedTab = .feed
+            if let eventId = notification.object as? String {
+                noteSelection.select(id: eventId)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
             // Clear the pending-compose flag before the tab guard, not after.

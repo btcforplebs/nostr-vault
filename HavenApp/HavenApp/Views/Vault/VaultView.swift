@@ -750,8 +750,10 @@ struct VaultView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openRelayDashboard)) { _ in
             showingRelayDashboard = true
         }
-        #if os(iOS)
+        // Not iOS-only: this is the macOS body, and gating these meant a notification
+        // tap that reached the Notes tab still showed whatever mode was last open.
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayLikes)) { _ in
+            // In Zaps Only mode the Likes tab is hidden — route to Notes instead.
             let target: ViewMode = configService.config.zapsOnlyMode ? .notes : .likes
             withAnimation(Motion.toggle) { viewMode = target }
         }
@@ -761,7 +763,6 @@ struct VaultView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             withAnimation(Motion.toggle) { viewMode = .zaps }
         }
-        #endif
         .sheet(item: Binding<IdentifiableString?>(
             get: { showingProfilePubkey.map { IdentifiableString(id: $0) } },
             set: { showingProfilePubkey = $0?.id }
