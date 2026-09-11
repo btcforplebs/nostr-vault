@@ -96,7 +96,7 @@ fun BroadcastSheet(
 
     val note1 = remember(note.id) { HavenBridge.hexToNote1(note.id) ?: note.id }
     val nevent = remember(note.id) { HavenBridge.encodeNevent(note.id, note.pubkey, note.kind) ?: note1 }
-    val shareLink = remember(nevent) { "https://mynostrspace.com/thread/$nevent" }
+    val shareLink = remember(nevent) { threadLink(nevent) }
 
     val blastrRelays = remember {
         configStore.config.value.activeBlastrRelays.ifEmpty { DEFAULT_BLASTR_RELAYS }
