@@ -198,11 +198,17 @@ fun NoteCard(
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = SecondaryGroupedBg.copy(alpha = 0.85f),
+        // Unfocused cards get a neutral hairline, not accent-at-18%. Every card in
+        // the feed carrying an orange outline spends the accent on structure,
+        // which is what the accent is for drawing the eye *away* from. Focus
+        // still gets the accent, at full strength, where it means something.
         border = BorderStroke(
             if (isFocused) 2.dp else if (isOled) 1.dp else 0.8.dp,
-            if (isFocused) colors.primary else colors.primary.copy(alpha = if (isOled) 0.18f else 0.12f),
+            if (isFocused) colors.primary else SeparatorColor.copy(alpha = if (isOled) 0.9f else 0.6f),
         ),
-        shadowElevation = if (isFocused) 8.dp else 0.dp,
+        // No shadow: 8dp of it is not legible on a near-black surface. The 2dp
+        // accent border above is what says "focused".
+        shadowElevation = 0.dp,
         modifier = modifier
             .fillMaxWidth()
             .then(connectorModifier)
@@ -413,6 +419,7 @@ fun NoteCard(
                 Spacer(Modifier.height(8.dp))
                 MediaPreviewRow(
                     urls = note.mediaURLs,
+                    tags = note.tags,
                     modifier = Modifier.padding(start = 50.dp),
                 )
             }
@@ -672,17 +679,21 @@ internal fun isVideoUrl(url: String): Boolean {
 @Composable
 fun MediaPreviewRow(
     urls: List<String>,
+    /** The note's tags, read for NIP-92 `imeta dim` so the box is right first time. */
+    tags: List<List<String>> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     if (urls.size == 1) {
         SingleMediaPreview(
             url = urls.first(),
+            tags = tags,
             onMediaClick = { FullScreenMediaRouter.open(urls, 0) },
             modifier = modifier,
         )
     } else {
         MediaCarousel(
             urls = urls,
+            tags = tags,
             onMediaClick = { index -> FullScreenMediaRouter.open(urls, index) },
             modifier = modifier,
         )
@@ -963,16 +974,15 @@ class FeedMediaMirrorViewModel @Inject constructor(
 @Composable
 private fun SingleMediaPreview(
     url: String,
+    tags: List<List<String>>,
     onMediaClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val isVideo = isVideoUrl(url)
 
-    // Size to the media's natural aspect ratio — the decoded image, or a
-    // video's first frame via Coil VideoFrameDecoder — capped at 400dp
-    // landscape / 600dp portrait. Matches iOS FeedMediaView (Fit, no crop).
-    // Before load, reserve a 200dp placeholder.
+    // Size to the media's natural aspect ratio — capped at 400dp landscape /
+    // 600dp portrait. Matches iOS FeedMediaView (Fit, no crop).
     val painter = rememberAsyncImagePainter(
         model = ImageRequest.Builder(context)
             .data(url)
@@ -980,10 +990,25 @@ private fun SingleMediaPreview(
             .crossfade(100)
             .build(),
     )
-    val ratio = (painter.state as? AsyncImagePainter.State.Success)?.let {
+    val decodedRatio = (painter.state as? AsyncImagePainter.State.Success)?.let {
         val size = painter.intrinsicSize
         if (size.width > 0f && size.height > 0f) size.width / size.height else null
     }
+
+    // What the author told us, or what an earlier decode taught us. With either,
+    // the box is right before the bytes arrive and nothing below this note moves.
+    val hintedRatio = remember(url, tags) { knownAspectRatio(tags, url) }
+
+    // Remember what we decode so this URL never shifts the feed again, however
+    // many times the LazyColumn recycles the row.
+    LaunchedEffect(url, decodedRatio) {
+        decodedRatio?.let { MediaAspectCache.put(url, it) }
+    }
+
+    // The hint wins while it exists, so the height does not change *again* when
+    // the decode lands and reports a ratio a rounded `dim` disagrees with by a
+    // pixel.
+    val ratio = hintedRatio ?: decodedRatio
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val cap = if (ratio != null && ratio < 1f) 600.dp else 400.dp
@@ -1018,18 +1043,30 @@ private fun SingleMediaPreview(
 @Composable
 private fun MediaCarousel(
     urls: List<String>,
+    tags: List<List<String>>,
     onMediaClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val pagerState = rememberPagerState(pageCount = { urls.size })
 
+    // A pager has one height for every page, so the ratio comes from the first
+    // image — the one you see before you swipe. Pages are drawn Fit inside it,
+    // which letterboxes the others rather than cropping them.
+    //
+    // This used to be a hard `aspectRatio(4f / 3f)` with `ContentScale.Crop`, so
+    // a portrait photo displayed whole when posted alone and was centre-cropped
+    // into a landscape box the moment a second image joined it. Faces and text
+    // went off the edges of the same file that rendered fine on its own.
+    val firstRatio = remember(urls, tags) { knownAspectRatio(tags, urls.first()) }
+    val pagerRatio = (firstRatio ?: (4f / 3f)).coerceIn(2f / 3f, 16f / 9f)
+
     Column(modifier = modifier) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(4f / 3f)
+                .aspectRatio(pagerRatio)
                 .clip(RoundedCornerShape(8.dp)),
         ) { page ->
             val url = urls[page]
@@ -1047,7 +1084,16 @@ private fun MediaCarousel(
                         .crossfade(100)
                         .build(),
                     contentDescription = null,
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
+                    onSuccess = { result ->
+                        val d = result.result.drawable
+                        if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
+                            MediaAspectCache.put(
+                                url,
+                                d.intrinsicWidth.toFloat() / d.intrinsicHeight.toFloat(),
+                            )
+                        }
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (isVideoUrl(url)) {
