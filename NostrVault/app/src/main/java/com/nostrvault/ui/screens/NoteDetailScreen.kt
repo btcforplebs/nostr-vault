@@ -1,6 +1,5 @@
 package com.nostrvault.ui.screens
 
-import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -22,7 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,6 +38,7 @@ import com.nostrvault.data.model.*
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.components.*
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -477,15 +479,6 @@ fun NoteDetailScreen(
     var broadcastTargetNote by remember { mutableStateOf<FeedNote?>(null) }
     val broadcastSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    fun shareNote(target: FeedNote) {
-        val shareText = target.content.ifBlank { "nostr:${target.effectiveEventId}" }
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, shareText)
-        }
-        context.startActivity(Intent.createChooser(intent, "Share Note"))
-    }
-
     // Moderation confirmations. These hold the note they were opened for rather
     // than a flag, because the overflow menu is now on every note on this screen
     // and not only on the focused one. Acting on the focused note still leaves
@@ -751,8 +744,7 @@ fun NoteDetailScreen(
                                 onQuote = onQuote,
                                 onReply = onReply,
                                 onZap = { zapTargetNote = parent },
-                                onShare = { shareNote(parent) },
-                                onBroadcast = { broadcastTargetNote = parent },
+                                                                onBroadcast = { broadcastTargetNote = parent },
                                 isOwnNote = viewModel.isOwnNote(parent.pubkey),
                                 onReport = { reportTarget = parent },
                                 onBlock = { blockTarget = parent },
@@ -799,7 +791,7 @@ fun NoteDetailScreen(
                         onRepostsClick = { showRepostersSheet = true },
                         onZapsClick = { showZappersSheet = true },
                         onZap = { zapTargetNote = focusedNote },
-                        onShare = { shareNote(focusedNote!!) },
+                        onShare = { shareNote(context, focusedNote!!) },
                         onBroadcast = { broadcastTargetNote = focusedNote },
                     )
                 }
@@ -852,7 +844,6 @@ fun NoteDetailScreen(
                         onReply = onReply,
                         onQuote = onQuote,
                         onZapNote = { zapTargetNote = it },
-                        onShareNote = { shareNote(it) },
                         onBroadcastNote = { broadcastTargetNote = it },
                         onModerateNote = { note, action ->
                             when (action) {
@@ -1097,7 +1088,6 @@ private fun ThreadedReplyNode(
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
     onZapNote: (FeedNote) -> Unit,
-    onShareNote: (FeedNote) -> Unit,
     onBroadcastNote: (FeedNote) -> Unit,
     onModerateNote: (FeedNote, Moderation) -> Unit,
     onLongPressLikeNote: (FeedNote) -> Unit,
@@ -1151,7 +1141,6 @@ private fun ThreadedReplyNode(
                             onReply = onReply,
                             onQuote = onQuote,
                             onZapNote = onZapNote,
-                            onShareNote = onShareNote,
                             onBroadcastNote = onBroadcastNote,
                             onModerateNote = onModerateNote,
                             onLongPressLikeNote = onLongPressLikeNote,
@@ -1178,8 +1167,7 @@ private fun ThreadedReplyNode(
                 onQuote = onQuote,
                 onReply = onReply,
                 onZap = { onZapNote(reply) },
-                onShare = { onShareNote(reply) },
-                onBroadcast = { onBroadcastNote(reply) },
+                                onBroadcast = { onBroadcastNote(reply) },
                 isOwnNote = viewModel.isOwnNote(reply.pubkey),
                 onReport = { onModerateNote(reply, Moderation.REPORT) },
                 onBlock = { onModerateNote(reply, Moderation.BLOCK) },
@@ -1286,7 +1274,6 @@ private fun ThreadedReplyNode(
                                     onReply = onReply,
                                     onQuote = onQuote,
                                     onZapNote = onZapNote,
-                                    onShareNote = onShareNote,
                                     onBroadcastNote = onBroadcastNote,
                                     onModerateNote = onModerateNote,
                                     onLongPressLikeNote = onLongPressLikeNote,
@@ -1338,6 +1325,8 @@ private fun HeroNoteCard(
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault()) }
     var showMoreMenu by remember { mutableStateOf(false) }
+    val heroContext = LocalContext.current
+    val heroClipboard = LocalClipboardManager.current
 
     Surface(
         color = SecondaryGroupedBg.copy(alpha = 0.85f),
@@ -1390,6 +1379,20 @@ private fun HeroNoteCard(
                     NoteActionsMenu(
                         expanded = showMoreMenu,
                         actions = buildList {
+                            add(NoteAction(NostrVaultIcons.Share, "Share", onClick = onShare))
+                            add(
+                                NoteAction(NostrVaultIcons.LinkIcon, "Copy link") {
+                                    val nevent = HavenBridge.encodeNevent(
+                                        note.effectiveEventId,
+                                        note.pubkey,
+                                        note.kind,
+                                    ) ?: HavenBridge.hexToNote1(note.effectiveEventId)
+                                        ?: note.effectiveEventId
+                                    heroClipboard.setText(AnnotatedString(threadLink(nevent)))
+                                    Toast.makeText(heroContext, "Link copied", Toast.LENGTH_SHORT).show()
+                                },
+                            )
+                            add(NoteAction(NostrVaultIcons.Relay, "Broadcast", onClick = onBroadcast))
                             if (isOwnNote) {
                                 add(NoteAction(NostrVaultIcons.Delete, "Delete Post", destructive = true, onClick = onDelete))
                             } else {
@@ -1479,67 +1482,27 @@ private fun HeroNoteCard(
 
             Spacer(Modifier.height(8.dp))
 
-            // Action buttons — identical layout to NoteCard EngagementBar
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                EngagementButton(
-                    icon = NostrVaultIcons.Reply,
-                    isActive = false,
-                    activeColor = SecondaryText,
-                    contentDescription = "Reply",
-                    onClick = onReply,
-                )
-                EngagementButton(
-                    icon = NostrVaultIcons.Repost,
-                    isActive = isReposted,
-                    activeColor = RepostGreen,
-                    contentDescription = if (isReposted) "Reposted" else "Repost",
-                    onClick = onRepost,
-                )
-                EngagementButton(
-                    icon = NostrVaultIcons.Quote,
-                    isActive = false,
-                    activeColor = SecondaryText,
-                    contentDescription = "Quote",
-                    onClick = onQuote,
-                )
-                // Like with long-press for emoji picker — hidden in Zaps Only mode
-                if (!LocalZapsOnlyMode.current) {
-                    EngagementButton(
-                        icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
-                        isActive = isLiked,
-                        activeColor = LikeRed,
-                        contentDescription = if (isLiked) "Unlike" else "Like",
-                        onClick = onLike,
-                        onLongClick = onLongPressLike,
-                    )
-                }
-                EngagementButton(
-                    icon = NostrVaultIcons.Zap,
-                    isActive = false,
-                    activeColor = ZapOrange,
-                    contentDescription = "Zap",
-                    onClick = onZap,
-                )
-                EngagementButton(
-                    icon = NostrVaultIcons.Share,
-                    isActive = false,
-                    activeColor = SecondaryText,
-                    contentDescription = "Share",
-                    onClick = onShare,
-                )
-                EngagementButton(
-                    icon = NostrVaultIcons.Relay,
-                    isActive = false,
-                    activeColor = SecondaryText,
-                    contentDescription = "Broadcast",
-                    onClick = onBroadcast,
-                )
-                Spacer(Modifier.weight(1f))
-            }
+            // Action buttons. The real `EngagementBar`, not a copy of it — this
+            // was a hand-duplicated seven-button row under a comment claiming it
+            // was identical, which is how it kept Share and Broadcast inline
+            // while every other note on this screen had moved them to the menu.
+            //
+            // `stats = null`: the numbers are already in the `EngagementStat`
+            // row above, and the focused note is the worst place to show them
+            // twice.
+            EngagementBar(
+                noteId = note.effectiveEventId,
+                stats = null,
+                isLiked = isLiked,
+                isZapped = false,
+                isReposted = isReposted,
+                onReply = { onReply() },
+                onRepost = { onRepost() },
+                onQuote = { onQuote() },
+                onLike = { onLike() },
+                onZap = { onZap() },
+                onLongPressLike = { onLongPressLike() },
+            )
         }
     }
 }

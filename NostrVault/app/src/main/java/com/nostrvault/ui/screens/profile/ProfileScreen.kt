@@ -306,14 +306,6 @@ fun ProfileScreen(
                         onReply = onReply,
                         onQuote = onQuote,
                         onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
-                        onShare = {
-                            val shareText = note.content.ifBlank { "nostr:${note.id}" }
-                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(android.content.Intent.EXTRA_TEXT, shareText)
-                            }
-                            context.startActivity(android.content.Intent.createChooser(intent, "Share Note"))
-                        },
                     )
                     HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                 }
