@@ -392,6 +392,18 @@ struct MediaGalleryView: View {
                 )
                 .keyboardShortcut("r", modifiers: .command)
 
+                // The Blossom dashboard's only entry points were the iOS-only floating
+                // button, so on macOS four screens of storage, mirror and sync state
+                // compiled, shipped, and could not be opened.
+                IconFilterButton(
+                    icon: "camera.macro",
+                    tooltip: "Blossom Dashboard",
+                    isSelected: true,
+                    color: .havenPurple,
+                    action: { showingBlossomMediaList = true }
+                )
+                .keyboardShortcut("b", modifiers: .command)
+
                 sortMenu
 
                 desktopUploadMenu
@@ -563,6 +575,11 @@ struct MediaGallerySheetsModifier: ViewModifier {
                 BlossomDashboardView()
                     .environmentObject(configService)
                     .environmentObject(nostrService)
+                    #if os(macOS)
+                    // Stats, mirrors, sync and the activity log need room; without a
+                    // minimum the sheet takes the content's ideal size.
+                    .frame(minWidth: 620, minHeight: 640)
+                    #endif
             }
             .fileImporter(
                 isPresented: $showingFileImporter,
