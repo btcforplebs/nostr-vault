@@ -113,6 +113,13 @@ struct DMThreadView: View {
                             .textFieldStyle(.plain)
                             .lineLimit(1...5)
                             .font(.appSystem(size: 15))
+                            #if os(macOS)
+                            // Return sends, the way every desktop chat client does.
+                            // Nothing is lost by taking the key: a vertical-axis
+                            // TextField on macOS ignores plain Return anyway — Option
+                            // + Return is what inserts a newline, and still does.
+                            .onSubmit { sendMessage() }
+                            #endif
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                             .background(Color.platformSecondaryGroupedBackground)
@@ -156,6 +163,16 @@ struct DMThreadView: View {
             .navigationTitle(counterpartyProfile?.bestName ?? "DM")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #else
+            // Presented as a sheet from the profile, where there is no title bar and no
+            // swipe-down: Escape or this button is the only way back out. Pushed from the
+            // inbox, the same dismiss pops the thread.
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "dm.inbox.close")) { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
+            }
             #endif
             .alert("Failed to Send", isPresented: Binding<Bool>(
                 get: { sendError != nil },

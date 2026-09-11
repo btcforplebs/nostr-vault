@@ -681,7 +681,11 @@ struct AccountsSettingsView: View {
             } header: {
                 Text("Accounts")
             } footer: {
+                #if os(iOS)
                 Text("Each account can hold both a local key and a remote signer. Tap to manage signing. Swipe to remove.")
+                #else
+                Text("Each account can hold both a local key and a remote signer. Click to manage signing, or to remove the account.")
+                #endif
             }
 
             Section {
@@ -1190,6 +1194,7 @@ struct ConnectSignerSheetView: View {
                 Button("Cancel") { performDismiss() }
                     .buttonStyle(.plain)
                     .foregroundColor(.secondary)
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
                 Text("Connect Remote Signer")
                     .font(.appHeadline)
@@ -1198,6 +1203,7 @@ struct ConnectSignerSheetView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Color.havenPurple)
                     .disabled(bunkerURI.isEmpty || isConnecting)
+                    .keyboardShortcut(.defaultAction)
             }
             .padding()
 
@@ -1366,6 +1372,7 @@ struct AddAccountSheetView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
+                .keyboardShortcut(.cancelAction)
                 
                 Spacer()
                 
@@ -1380,6 +1387,7 @@ struct AddAccountSheetView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color.havenPurple)
                 .disabled(addInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .keyboardShortcut(.defaultAction)
             }
             .padding()
             .background(Color.platformControlBackground.opacity(0.5))
@@ -1472,6 +1480,7 @@ struct ImportKeySheetView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
+                .keyboardShortcut(.cancelAction)
                 
                 Spacer()
                 
@@ -1486,6 +1495,7 @@ struct ImportKeySheetView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color.havenPurple)
                 .disabled(importNsec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || importPassword.isEmpty || importConfirm.isEmpty)
+                .keyboardShortcut(.defaultAction)
             }
             .padding()
             .background(Color.platformControlBackground.opacity(0.5))
@@ -1626,6 +1636,7 @@ struct RevealKeySheetView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
+                .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
@@ -1641,12 +1652,14 @@ struct RevealKeySheetView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Color.havenPurple)
                     .disabled(password.isEmpty)
+                    .keyboardShortcut(.defaultAction)
                 } else {
                     Button("Done") {
                         performDismiss()
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.havenPurple)
+                    .keyboardShortcut(.defaultAction)
                 }
             }
             .padding()

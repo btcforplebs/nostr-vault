@@ -97,30 +97,39 @@ public struct UGCReportingDialog: View {
     
     private var footer: some View {
         HStack(spacing: 16) {
-            Button("Cancel") {
-                performDismiss()
+            // Padding and background belong inside the label: applied to the Button they
+            // only decorate it, and the click target stays the width of the glyphs.
+            Button(action: { performDismiss() }) {
+                Text("Cancel")
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(8)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(Color.secondary.opacity(0.1))
-            .cornerRadius(8)
-            
+            .keyboardShortcut(.cancelAction)
+
             Button(action: performReport) {
-                if isReporting {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Text("Report & Block")
+                Group {
+                    if isReporting {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Report & Block")
+                    }
                 }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+                .background(Color.red.opacity(0.8))
+                .foregroundColor(.white)
+                .cornerRadius(8)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(isReporting)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 10)
-            .background(Color.red.opacity(0.8))
-            .foregroundColor(.white)
-            .cornerRadius(8)
+            // Deliberately not `.defaultAction`: Return firing an irreversible
+            // report-and-block is the wrong thing to make the easiest key to hit.
         }
         .padding()
         .background(Color.secondary.opacity(0.05))

@@ -97,9 +97,26 @@ struct DMInboxView: View {
             }
             #else
             .toolbar {
+                // The sheet has no title bar and macOS has no swipe-to-dismiss: without
+                // this the inbox could only be closed by quitting the window.
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "dm.inbox.close")) { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
                 ToolbarItem(placement: .automatic) {
                     HStack(spacing: 12) {
                         if selectedTab == .dms {
+                            // macOS has no pull-to-refresh, so `.refreshable` on the
+                            // conversation list was a refresh path with no pointer or
+                            // keyboard way to reach it.
+                            Button(action: { dmService.refresh() }) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.appSystem(size: 15, weight: .semibold))
+                                    .foregroundColor(.havenPurple)
+                            }
+                            .help(String(localized: "dm.inbox.refresh"))
+                            .keyboardShortcut("r", modifiers: .command)
+
                             Button(action: { dmService.markAllAsRead() }) {
                                 Image(systemName: "checkmark.circle")
                                     .font(.appSystem(size: 15, weight: .semibold))
