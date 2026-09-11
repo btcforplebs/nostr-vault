@@ -25,7 +25,10 @@ struct BlossomDashboardView: View {
     @State private var activityLogs: [BlossomActivityLog] = []
 
     var body: some View {
-        NavigationView {
+        // NavigationStack, not the deprecated NavigationView: on macOS the latter
+        // resolves to a split view, so the dashboard opened as an empty sidebar with
+        // its content pushed into a detail pane it never fills.
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
                     // Stats Section
