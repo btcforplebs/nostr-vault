@@ -210,9 +210,6 @@ fun NostrVaultNavHost(
                     onNavigateToSettings = {
                         navController.navigate(Screen.Settings.route)
                     },
-                    onNavigateToDashboard = {
-                        navController.navigate(Screen.Dashboard.route)
-                    },
                 )
             }
 
@@ -611,13 +608,6 @@ fun NostrVaultNavHost(
                     onProfileClick = { pubkey ->
                         navController.navigate(Screen.Profile.createRoute(pubkey))
                     },
-                    onCompose = {
-                        navController.navigate(Screen.ComposeNote.createRoute())
-                    },
-                    onReply = { noteId ->
-                        navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
-                    },
-                    onBack = { navController.popBackStack() },
                     logStore = logStore,
                     feedService = feedService,
                 )

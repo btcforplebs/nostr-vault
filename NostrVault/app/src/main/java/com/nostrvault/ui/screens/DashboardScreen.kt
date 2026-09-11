@@ -1713,9 +1713,6 @@ fun DashboardScreen(
     /** Where a quoted long-form post opens; the note screen shows Markdown source. */
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
-    onCompose: () -> Unit,
-    onReply: (String) -> Unit,
-    onBack: () -> Unit,
     logStore: com.nostrvault.relay.LogStore,
     feedService: com.nostrvault.service.FeedService,
     viewModel: DashboardViewModel = hiltViewModel(),
