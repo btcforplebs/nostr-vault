@@ -1694,6 +1694,16 @@
         }
       }
     },
+    "feed.note.longForm" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Article"
+          }
+        }
+      }
+    },
     "feed.share.message" : {
       "localizations" : {
         "en" : {
