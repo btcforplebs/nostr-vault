@@ -118,18 +118,12 @@ struct GroupBrowserView: View {
             .navigationTitle(String(localized: "group.browser.title"))
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "group.browser.close")) { dismiss() }
-                }
-            }
-            #else
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "group.browser.close")) { dismiss() }
-                }
-            }
             #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "group.browser.close")) { dismiss() }
+                }
+            }
         }
     }
 

@@ -321,7 +321,7 @@ struct MenuBarView: View {
                                     .environmentObject(configService)
                                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
                             case .relay:
-                                DashboardView()
+                                DashboardView(isSidebar: true)
                                     .environmentObject(relayManager)
                                     .environmentObject(configService)
                                     .environmentObject(nostrService)

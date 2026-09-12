@@ -170,22 +170,29 @@ struct SettingsView: View {
 
     private var settingsSidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header inside settings sidebar
-            HStack(spacing: 8) {
-                Image(systemName: "gearshape.fill")
-                    .font(.appSystem(size: 16, weight: .bold))
-                    .foregroundColor(.havenPurple)
-                Text("Settings")
-                    .font(.appSystem(size: 16, weight: .bold))
-                    .foregroundColor(.white)
-                Spacer()
+            // Header inside settings sidebar. Suppressed when embedded: the host
+            // window's own sidebar already has a row labelled "Settings" selected
+            // immediately to the left of this one, and the detail pane's header
+            // names the open tab, so this drew a third "Settings" in one window.
+            if !isEmbedded {
+                HStack(spacing: 8) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.appSystem(size: 16, weight: .bold))
+                        .foregroundColor(.havenPurple)
+                    Text("Settings")
+                        .font(.appSystem(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 20)
+
+                Divider()
+                    .background(Color.platformSeparator)
+                    .padding(.bottom, 12)
+            } else {
+                Color.clear.frame(height: 12)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 20)
-            
-            Divider()
-                .background(Color.platformSeparator)
-                .padding(.bottom, 12)
 
             #if os(macOS)
             if !configService.config.hasCompletedSetup {
@@ -228,8 +235,8 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     settingsSidebarSection("Profile", items: [.accounts, .blocked])
                     settingsSidebarSection("Appearance", items: [.appearance])
-                    settingsSidebarSection("Relay Configuration", items: [.macRelay, .feed, .blastr, .blossom, .importNotes, .backup, .followingBackup])
-                    settingsSidebarSection("System", items: [.pushNotifications, .wallet, .advanced, .logs])
+                    settingsSidebarSection("Relay Configuration", items: [.macRelay, .feed, .dm, .blastr, .blossom, .importNotes, .backup, .followingBackup])
+                    settingsSidebarSection("System", items: [.pushNotifications, .wallet, .proofOfWork, .advanced, .logs])
                 }
                 .padding(.horizontal, 8)
             }
@@ -276,9 +283,13 @@ struct SettingsView: View {
             .background(Color.black.opacity(0.15))
         }
         .frame(width: 220)
-        .background(Color(red: 0.1, green: 0.1, blue: 0.13))
+        // Embedded, this column sits directly against the host window's own 220pt
+        // sidebar, which paints this exact colour. Two identical slabs read as one
+        // 440pt band of chrome with a rule down the middle; on the window
+        // background it reads as the tab list of the pane it belongs to.
+        .background(isEmbedded ? Color.platformWindowBackground : Color(red: 0.1, green: 0.1, blue: 0.13))
     }
-    
+
     private func settingsSidebarSection(_ title: String, items: [SettingsTab]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title.uppercased())
@@ -382,6 +393,7 @@ struct SettingsView: View {
             
             Section("Relay Configuration") {
                 tabLink(.feed)
+                tabLink(.dm)
                 tabLink(.blastr)
                 tabLink(.blossom)
                 tabLink(.importNotes)
@@ -393,6 +405,7 @@ struct SettingsView: View {
             Section("System") {
                 tabLink(.pushNotifications)
                 tabLink(.wallet)
+                tabLink(.proofOfWork)
                 tabLink(.advanced)
                 tabLink(.logs)
             }
@@ -551,52 +564,6 @@ struct SettingsView: View {
         #endif
     }
     
-    private var footer: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                if isRestarting {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Button(action: restartRelay) {
-                        Text("Save & Restart Relay")
-                            .font(.appHeadline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(Color.havenPurple)
-                            .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled((!needsRestart && configService.config == relayManager.lastConfig) || !relayManager.isRunning)
-                }
-            }
-            .padding()
-            #if os(macOS)
-            .background(.ultraThinMaterial)
-            #endif
-            
-            Divider()
-            
-            // About Section for macOS
-            VStack(spacing: 4) {
-                Text("Nostr Vault v\(appVersion)")
-                    .font(.appCaption.bold())
-                Text("Abuse Reporting: npub1vxlh...g0nvx")
-                    .font(.appSystem(size: 9, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .onTapGesture {
-                        PlatformClipboard.copy("npub1vxlhjzeqjjhmqdy4e8sndt8kzklqlnxzew2mtt8mtakvalsckp3qa0gnvx")
-                    }
-                Link("Privacy Policy", destination: URL(string: "https://nostrvault.app/privacy.html")!)
-                    .font(.appSystem(size: 10))
-                    .foregroundColor(.havenPurple)
-                    .padding(.top, 2)
-            }
-            .padding(.bottom, 8)
-            .frame(maxWidth: .infinity)
-        }
-    }
 }
 
 struct RestartBanner: View {
@@ -880,7 +847,7 @@ struct AccountDetailView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 // Header
                 Section {
@@ -1239,7 +1206,7 @@ struct ConnectSignerSheetView: View {
         }
         .frame(width: 420)
         #else
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     HStack(spacing: 8) {
@@ -1425,7 +1392,7 @@ struct AddAccountSheetView: View {
         .background(Color.platformSecondaryGroupedBackground)
         .frame(width: 460, height: 210)
         #else
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Npub") {
                     TextEditor(text: $addInput)
@@ -1560,7 +1527,7 @@ struct ImportKeySheetView: View {
         .background(Color.platformSecondaryGroupedBackground)
         .frame(width: 480, height: 350)
         #else
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Private Key") {
                     TextEditor(text: $importNsec).font(.system(.body, design: .monospaced)).frame(minHeight: 80)
@@ -1683,7 +1650,7 @@ struct RevealKeySheetView: View {
         .background(Color.platformSecondaryGroupedBackground)
         .frame(width: 480, height: revealedNsec != nil ? 280 : 220)
         #else
-        NavigationView {
+        NavigationStack {
             Form {
                 if let nsec = revealedNsec {
                     Section("Private Key") {
@@ -2613,26 +2580,6 @@ struct BlastrSettingsView: View {
     }
 }
 
-private struct NewMirrorInputView: View {
-    @Binding var url: String
-    var onAdd: () -> Void
-    
-    var body: some View {
-        HStack {
-            TextField("https://example.com", text: $url)
-                #if os(iOS)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled(true)
-                #endif
-
-            Button(action: onAdd) {
-                Image(systemName: "plus.circle.fill")
-                    .foregroundColor(.havenOnline)
-            }
-            .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-    }
-}
 
 
 
