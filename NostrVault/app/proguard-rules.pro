@@ -2,6 +2,7 @@
 
 # Keep JNI bridge methods (called from native code)
 -keep class com.nostrvault.relay.HavenBridge { *; }
+-keep class com.nostrvault.fips.FipsBridge { *; }
 
 # Keep Kotlin serialization
 -keepattributes *Annotation*, InnerClasses

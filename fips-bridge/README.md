@@ -12,7 +12,19 @@ ios-probe/                a throwaway SwiftUI harness that links the static lib
 ```
 
 This is a separate Cargo workspace. Nothing in `HavenApp.xcodeproj` references
-it, so building the app neither builds nor needs it.
+it, so building the Mac or iOS app neither builds nor needs it.
+
+**Android does consume it**, through the same C ABI:
+`NostrVault/build_fips_android.sh` cross-compiles the cdylib into
+`app/src/main/jniLibs/`, `FipsBridgeJNI.c` wraps it, and Settings -> Mesh turns
+it on. The Rust artifact is gitignored and the CMake entry is conditional, so a
+checkout without it still builds and the app reports the mesh as unavailable —
+which also means a release can ship without the mesh if nobody runs the script.
+
+`armeabi-v7a` does not build at all: `nvpn-fips-core` 0.4.72 assigns a `u32` to
+`msg_namelen` (`upper/dns.rs:277`), which is `i32` on 32-bit Android. The app
+ships `arm64-v8a` only, so this costs nothing today, and `x86_64` builds fine
+for the emulator.
 
 ## The dependency pin, and why it keeps moving
 
@@ -61,7 +73,7 @@ A single-fragment 1200 needs an underlay of at least 1310. See
 so a probe that keys its verdict on "largest delivered >= 1200" passes with the
 1200 rung lost.
 
-**Two NAT'd nodes cannot peer on their own.** NAT-traversal offers ride an
+**Two NAT'd nodes cannot peer on their own — hence the seeds.** NAT-traversal offers ride an
 authenticated FIPS session; they are not Nostr events. With no shared reachable
 FIPS node, the offer never crosses — proved on 2026-09-03 between a home NAT and
 a phone hotspot, with both adverts present on the relays the whole time. Raw UDP
@@ -69,6 +81,20 @@ hole punching between the same two hosts worked, so the missing piece is
 signaling, not the NATs. nostr-vpn's own answer is two hard-coded public transit
 seeds (`DEFAULT_FIPS_BOOTSTRAP_PEERS`). Same-host smoke tests cannot exercise
 any of this.
+
+`endpoint.rs` now ships `PUBLIC_MESH_SEEDS`, the FIPS public test mesh, dialled
+as auto-connect peers by `EndpointOptions::with_identity` (and *not* by
+`ephemeral`, which the in-process probes use). They are the ones
+`jmcorgan/fips-initramfs` ships as its defaults, each with a hostname at
+priority 10 and a literal address at priority 20: the name survives the node
+moving, the address survives DNS being unavailable, and neither alone survives
+both.
+
+Reaching a seed is necessary and not sufficient. On 2026-09-08 the Android app
+connected to both (39 ms and 52 ms) from behind a home NAT, and that says
+nothing yet about whether two NAT'd nodes can reach *each other* through them —
+on 2026-09-03 nostr-vpn's own seeds were reachable too and the peering still
+failed. The hotspot gate is what decides it.
 
 ## Tests
 
