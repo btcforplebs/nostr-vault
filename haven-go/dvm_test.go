@@ -128,15 +128,15 @@ func TestScoreExcludingAuthor(t *testing.T) {
 	}
 }
 
-// An author plus four friends is not five independent people.
+// An author plus two friends is not three independent people.
 func TestScoreExcludingAuthorCanDropBelowFloor(t *testing.T) {
-	reactors := map[string]float64{"author": 1, "a": 1, "b": 1, "c": 1, "d": 1}
-	if len(reactors) < minDistinctReactors {
+	reactors := map[string]float64{"author": 1, "a": 1, "b": 1}
+	if len(reactors) < minTrustedReactors {
 		t.Fatalf("test setup: want a note that passes the raw floor")
 	}
 	_, distinct := scoreExcludingAuthor(reactors, "author")
-	if distinct >= minDistinctReactors {
-		t.Errorf("distinct = %d, want below the floor of %d", distinct, minDistinctReactors)
+	if distinct >= minTrustedReactors {
+		t.Errorf("distinct = %d, want below the floor of %d", distinct, minTrustedReactors)
 	}
 }
 

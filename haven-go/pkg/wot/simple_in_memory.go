@@ -66,6 +66,20 @@ func (wt *SimpleInMemory) WithFallbackSeeds(pubkeys []string) *SimpleInMemory {
 	return wt
 }
 
+// Size reports how many pubkeys the graph currently holds.
+//
+// Has() alone cannot tell "this pubkey is untrusted" apart from "the graph has
+// not been built yet" — both answer false. Anything that fails closed on an
+// untrusted key therefore needs to know whether there is a graph at all, or a
+// cold start looks exactly like a world full of strangers.
+func (wt *SimpleInMemory) Size() int {
+	m := wt.pubkeys.Load()
+	if m == nil {
+		return 0
+	}
+	return len(*m)
+}
+
 func (wt *SimpleInMemory) Has(_ context.Context, pubKey string) bool {
 	if wt.WotDepth == 0 {
 		return true

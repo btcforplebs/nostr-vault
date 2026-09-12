@@ -121,6 +121,7 @@ func main() {
 
 		runsafe.Go("subscribeInboxAndChat", func() { subscribeInboxAndChat(mainCtx) })
 		runsafe.Go("syncFeed", func() { syncFeed(mainCtx) })
+		runsafe.Go("ingestPopularEngagement", func() { ingestPopularEngagement(mainCtx) })
 		runsafe.Go("periodicCloudBackups", func() { startPeriodicCloudBackups(mainCtx) })
 		runsafe.Go("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(mainCtx, config.WotRefreshInterval) })
 	})

@@ -18,11 +18,24 @@ import (
 	"github.com/barrydeen/haven/pkg/wot"
 )
 
-// stubWot satisfies wot.Model with a fixed answer. A single concrete type is
-// required because wot's atomic.Value rejects inconsistently-typed stores.
-type stubWot struct{ allow bool }
+// stubWot satisfies wot.Model. A single concrete type is required because
+// wot's atomic.Value rejects inconsistently-typed stores — every test in this
+// package that installs a graph must use this one, which is why it carries
+// both shapes: `allow` answers true for everyone (the WOT_DEPTH=0
+// configuration), `members` is an actual graph.
+type stubWot struct {
+	allow   bool
+	members map[string]bool
+}
 
-func (s stubWot) Has(context.Context, string) bool { return s.allow }
+func (s stubWot) Has(_ context.Context, pubkey string) bool {
+	return s.allow || s.members[pubkey]
+}
+
+// Size lets a caller tell an empty graph from an untrusted pubkey; both make
+// Has return false. An allow-everyone stub reports 0 and is recognised by its
+// answers instead.
+func (s stubWot) Size() int { return len(s.members) }
 
 func hexid(c byte) string { return strings.Repeat(string(c), 64) }
 

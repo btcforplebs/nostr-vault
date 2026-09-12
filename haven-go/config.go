@@ -83,6 +83,8 @@ type Config struct {
 	FeedSyncWindowDays                   int                 `json:"feed_sync_window_days"`
 	FeedSyncRelays                       []string            `json:"feed_sync_relays"`
 	GoMemLimitMB                         int                 `json:"go_mem_limit_mb"`
+	PopularTallyEnabled                  bool                `json:"popular_tally_enabled"`
+	PopularTallyCachePath                string              `json:"popular_tally_cache_path"`
 }
 
 const relaySoftware = "https://github.com/barrydeen/haven"
@@ -153,6 +155,8 @@ func loadConfig() Config {
 		FeedSyncWindowDays:                   getEnvInt("FEED_SYNC_WINDOW_DAYS", 7),
 		FeedSyncRelays:                       getRelayListFromFile(getEnvString("FEED_SYNC_RELAYS_FILE", "")),
 		GoMemLimitMB:                         getEnvInt("GO_MEM_LIMIT_MB", defaultGoMemLimitMB()),
+		PopularTallyEnabled:                  getEnvBool("POPULAR_TALLY_ENABLED", true),
+		PopularTallyCachePath:                getEnvString("POPULAR_TALLY_CACHE_PATH", "popular_tally.json"),
 	}
 
 	// Relay owner is always whitelisted

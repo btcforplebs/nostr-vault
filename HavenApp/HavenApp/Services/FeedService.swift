@@ -384,7 +384,7 @@ class FeedService: ObservableObject {
     private func pollForCuratedGraph() {
         curatedGraphPollTimer?.invalidate()
         curatedGraphPollAttempts = 0
-        guard isGlobalLikeMode, !curatedGraphReady else { return }
+        guard needsCuratedGraph, !curatedGraphReady else { return }
 
         connectionStatus = curatedGraphPendingStatus
         curatedGraphPollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] timer in
@@ -397,7 +397,7 @@ class FeedService: ObservableObject {
                 // ~2 minutes. If the graph has not appeared by then the relay
                 // could not reach its seed relays, and retrying forever just
                 // burns battery behind a screen that is already honest.
-                guard self.isGlobalLikeMode, self.curatedGraphPollAttempts <= 40 else {
+                guard self.needsCuratedGraph, self.curatedGraphPollAttempts <= 40 else {
                     timer.invalidate()
                     self.curatedGraphPollTimer = nil
                     return
@@ -406,6 +406,14 @@ class FeedService: ObservableObject {
                 if self.curatedGraphReady {
                     timer.invalidate()
                     self.curatedGraphPollTimer = nil
+                    // Popular is computed by the relay, which withholds the
+                    // feed entirely until the same graph exists — re-filtering
+                    // an empty list would leave the user on "Building…"
+                    // forever, so ask for it again now that it can be built.
+                    if self.feedMode == .popular {
+                        self.loadPopularFeed()
+                        return
+                    }
                     self.recomputeFilteredNotes()
                     self.connectionStatus = self.filteredNotes.isEmpty ? "No notes found" : "Live"
                 }
@@ -418,12 +426,20 @@ class FeedService: ObservableObject {
     /// cannot vouch for.
     private func emptyFeedStatus() -> String {
         if !filteredNotes.isEmpty { return "Live" }
-        if isGlobalLikeMode && !curatedGraphReady { return curatedGraphPendingStatus }
+        if needsCuratedGraph && !curatedGraphReady { return curatedGraphPendingStatus }
         return "No notes found"
     }
 
     private var isGlobalLikeMode: Bool {
         feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+    }
+
+    /// Feeds that cannot be rendered without the trust graph. Global filters
+    /// against it here; Popular is scored against it inside the relay, which
+    /// withholds the feed rather than ranking whatever the largest bot pool
+    /// promoted. Both look identically broken — an empty list — without this.
+    private var needsCuratedGraph: Bool {
+        isGlobalLikeMode || feedMode == .popular
     }
 
 /// In-memory per-account feed snapshots keyed by `activeAccountNpub`
@@ -1024,6 +1040,13 @@ class FeedService: ObservableObject {
     /// Query the local Go DVM for popular notes. The Go backend fetches
     /// engagement data (reactions, reposts, zaps) from seed relays, scores
     /// notes by popularity, and returns the top results.
+    /// "No popular notes found" is wrong while the trust graph is still being
+    /// built: the relay is withholding the feed on purpose, and there is
+    /// something to wait for.
+    private func popularEmptyStatus() -> String {
+        curatedGraphReady ? "No popular notes found" : curatedGraphPendingStatus
+    }
+
     private func loadPopularFeed() {
         guard !isLoadingPopular else { return }
         isLoadingPopular = true
@@ -1091,7 +1114,10 @@ class FeedService: ObservableObject {
                 self.popularNoteScores = scores
                 self.isLoadingPopular = false
                 self.isLoadingFeed = false
-                self.connectionStatus = feedNotes.isEmpty ? "No popular notes found" : "Live"
+                self.connectionStatus = feedNotes.isEmpty ? self.popularEmptyStatus() : "Live"
+                if feedNotes.isEmpty && !self.curatedGraphReady {
+                    self.pollForCuratedGraph()
+                }
                 self.recomputeFilteredNotes()
             }
         }

@@ -247,6 +247,7 @@ func StartRelayC(importMode bool) {
 
 			cycle.spawn("subscribeInboxAndChat", func() { subscribeInboxAndChat(cycle.ctx) })
 			cycle.spawn("syncFeed", func() { syncFeed(cycle.ctx) })
+			cycle.spawn("ingestPopularEngagement", func() { ingestPopularEngagement(cycle.ctx) })
 			cycle.spawn("periodicCloudBackups", func() { startPeriodicCloudBackups(cycle.ctx) })
 			cycle.spawn("wot.PeriodicRefresh", func() { wot.PeriodicRefresh(cycle.ctx, config.WotRefreshInterval) })
 		})
