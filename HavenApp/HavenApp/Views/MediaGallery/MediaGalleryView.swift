@@ -151,10 +151,6 @@ struct MediaGalleryView: View {
                     trailingToolbarMenu
                 }
             }
-            #else
-            ToolbarItem(placement: .automatic) {
-                trailingToolbarInline
-            }
             #endif
         }
         .onAppear {
@@ -249,11 +245,11 @@ struct MediaGalleryView: View {
         }
         .animation(Motion.chrome, value: feedService.feedScrollingDown)
         #else
-        GeometryReader { geometry in
-            ZStack {
-                Color.platformWindowBackground.ignoresSafeArea()
-                compactViewContent(isNarrow: geometry.size.width < 500)
-            }
+        // The GeometryReader here existed only to compute an `isNarrow` flag the
+        // content never read.
+        ZStack {
+            Color.platformWindowBackground.ignoresSafeArea()
+            compactViewContent()
         }
         #endif
     }
@@ -313,7 +309,7 @@ struct MediaGalleryView: View {
     // MARK: - macOS Compact View
 
     @ViewBuilder
-    func compactViewContent(isNarrow: Bool) -> some View {
+    func compactViewContent() -> some View {
         VStack(spacing: 0) {
             desktopHeaderView
 
@@ -402,6 +398,11 @@ struct MediaGalleryView: View {
                     action: { showingBlossomMediaList = true }
                 )
                 .keyboardShortcut("b", modifiers: .command)
+
+                // Without this the toggle existed only in the iOS toolbar, so
+                // `mediaLayoutMode` was permanently `.grid` on macOS and the
+                // MediaListItem branch of the grid was unreachable here.
+                layoutToggleButton
 
                 sortMenu
 

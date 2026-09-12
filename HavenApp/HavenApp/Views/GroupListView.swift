@@ -6,7 +6,6 @@ struct GroupListView: View {
     @StateObject private var groupService = GroupService.shared
 
     @State private var showingBrowser = false
-    @State private var showingCreateGroup = false
 
     var body: some View {
         if groupService.conversations.isEmpty {
@@ -85,15 +84,9 @@ struct GroupListView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.platformWindowBackground.ignoresSafeArea())
-            .sheet(isPresented: $showingBrowser) {
-                GroupBrowserView()
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-            }
-            .sheet(isPresented: $showingCreateGroup) {
-                GroupCreateView()
-                    .environmentObject(configService)
-            }
+            // No browse or create sheet on this branch: the only button that
+            // sets `showingBrowser` lives in the empty state above, and the host
+            // (DMInboxView) owns both entry points once there are conversations.
         }
     }
 }

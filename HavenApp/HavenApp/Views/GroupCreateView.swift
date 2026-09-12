@@ -45,26 +45,16 @@ struct GroupCreateView: View {
             .navigationTitle(String(localized: "group.create.title"))
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "group.create.cancel")) { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "group.create.create")) { createGroup() }
-                        .disabled(name.isEmpty || selectedRelay.isEmpty || isCreating)
-                }
-            }
-            #else
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "group.create.cancel")) { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "group.create.create")) { createGroup() }
-                        .disabled(name.isEmpty || selectedRelay.isEmpty || isCreating)
-                }
-            }
             #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "group.create.cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "group.create.create")) { createGroup() }
+                        .disabled(name.isEmpty || selectedRelay.isEmpty || isCreating)
+                }
+            }
             .alert(String(localized: "group.create.failed"), isPresented: Binding<Bool>(
                 get: { createError != nil },
                 set: { if !$0 { createError = nil } }

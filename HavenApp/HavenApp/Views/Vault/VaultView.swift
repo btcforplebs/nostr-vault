@@ -187,11 +187,6 @@ struct VaultView: View {
                 }
                 .animation(Motion.toggle, value: viewMode)
             }
-            #else
-            ToolbarItem(placement: .automatic) {
-                trailingToolbarInline
-                    .animation(Motion.toggle, value: viewMode)
-            }
             #endif
         }
         // -- handlers from viewContentBase --

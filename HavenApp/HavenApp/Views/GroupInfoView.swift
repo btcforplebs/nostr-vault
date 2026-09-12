@@ -283,26 +283,16 @@ struct GroupEditView: View {
             .navigationTitle(String(localized: "group.edit.title"))
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "group.edit.cancel")) { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "group.edit.save")) { save() }
-                        .disabled(name.isEmpty || isSaving)
-                }
-            }
-            #else
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "group.edit.cancel")) { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "group.edit.save")) { save() }
-                        .disabled(name.isEmpty || isSaving)
-                }
-            }
             #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "group.edit.cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "group.edit.save")) { save() }
+                        .disabled(name.isEmpty || isSaving)
+                }
+            }
         }
     }
 
