@@ -55,3 +55,15 @@ HavenApp/HavenApp/Services/BUD-14.code-workspace
 dist/
 .release.env
 /HavenApp/MediaLogicTests/.build/
+
+# Compiled Go relay artifacts — rebuilt from haven-go/ by
+# HavenApp/HavenApp/App/build_haven.sh into HavenApp/build/, never committed.
+# (HavenApp/Resources/haven stays tracked: project.yml bundles it as a resource.)
+/libhaven.a
+/haven-go/libhaven.a
+/haven-go/haven.dylib
+/HavenApp/HavenApp/Services/haven.dylib
+*.so
+
+# Xcode per-user state
+xcuserdata/
