@@ -23,6 +23,10 @@ struct MenuBarView: View {
     @State private var showingAccountSwitcher = false
     #if os(macOS)
     @State private var showingCompose = false
+    /// The DM inbox is a sheet on this view, not on ProfileView, for the same
+    /// reason iOS presents it from ContentView: a notification route has to be
+    /// able to open it without depending on which tab happens to be mounted.
+    @State private var showingDMInbox = false
     /// macOS has no navigation stack around the feed and vault, so a
     /// `NavigationLink(value:)` inside a note row has nothing to push onto and the
     /// click is swallowed — quoted notes and parent previews did nothing at all.
@@ -907,6 +911,12 @@ struct MenuBarView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        .sheet(isPresented: $showingDMInbox) {
+            DMInboxView()
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+                .frame(minWidth: 480, minHeight: 500)
+        }
         // Notification taps: LocalNotificationService posts these on both platforms,
         // but until now only iOS listened, so clicking a zap, reaction or repost
         // notification on macOS did nothing at all.
@@ -924,6 +934,13 @@ struct MenuBarView: View {
             if let eventId = notification.object as? String {
                 noteSelection.select(id: eventId)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { _ in
+            // Matches iOS: the profile tab comes up behind the inbox, so
+            // dismissing the sheet leaves you somewhere related rather than on
+            // whatever tab you happened to be on when the message arrived.
+            selectedTab = .profile
+            showingDMInbox = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
             // Clear the pending-compose flag before the tab guard, not after.
@@ -944,11 +961,27 @@ struct MenuBarView: View {
             FloatingArrowController.shared.dismiss()
             DMService.shared.startListening()
             #if os(macOS)
+            MacWindow.isMainWindowMounted = true
+            MacWindow.openWindowAction = openWindow
             // The status panel asks for a composer by setting this before the
             // window exists; this is the first moment a receiver could hear it.
             if MacWindow.consumePendingCompose() {
                 showingCompose = true
             }
+            // A notification tapped while this window did not exist left its
+            // route here rather than posting it to nobody. Replayed as a post,
+            // not as direct state, so a tap takes the same path either way —
+            // one main-queue hop so this view's own receivers are subscribed.
+            if let route = MacWindow.consumePendingRoute() {
+                DispatchQueue.main.async {
+                    LocalNotificationService.navigate(type: route.type, id: route.id, npub: route.npub)
+                }
+            }
+            #endif
+        }
+        .onDisappear {
+            #if os(macOS)
+            MacWindow.isMainWindowMounted = false
             #endif
         }
         // Service pausing/resuming on focus change is owned by
