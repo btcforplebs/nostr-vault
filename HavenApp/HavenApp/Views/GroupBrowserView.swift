@@ -7,7 +7,8 @@ struct GroupBrowserView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var relayInput: String = ""
-    @State private var isConnecting = false
+
+    private var isConnecting: Bool { groupService.browseState == .loading }
 
     private var joinedGroupIds: Set<String> {
         Set(configService.config.joinedGroups.map {
@@ -80,19 +81,7 @@ struct GroupBrowserView: View {
 
                 // Group list
                 if groupService.availableGroups.isEmpty {
-                    GeometryReader { geometry in
-                        VStack(spacing: 16) {
-                            Spacer()
-                            Image(systemName: "antenna.radiowaves.left.and.right")
-                                .font(.appSystem(size: 40, weight: .light))
-                                .foregroundColor(.secondary.opacity(0.5))
-                            Text(String(localized: "group.browser.enterRelay"))
-                                .font(.appSystem(size: 14))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                    }
+                    browsePlaceholder
                 } else {
                     List {
                         ForEach(groupService.availableGroups) { info in
@@ -133,18 +122,80 @@ struct GroupBrowserView: View {
         }
     }
 
+    /// Shown whenever there are no rows — which covers four different situations,
+    /// and used to render as one "enter a relay" prompt for all of them.
+    @ViewBuilder
+    private var browsePlaceholder: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 16) {
+                Spacer()
+                switch groupService.browseState {
+                case .idle:
+                    placeholderBody(
+                        icon: "antenna.radiowaves.left.and.right",
+                        message: String(localized: "group.browser.enterRelay")
+                    )
+                case .loading:
+                    ProgressView()
+                        .controlSize(.large)
+                    Text(String(localized: "group.browser.loading"))
+                        .font(.appSystem(size: 14))
+                        .foregroundColor(.secondary)
+                case .loaded:
+                    placeholderBody(
+                        icon: "tray",
+                        message: String(localized: "group.browser.empty")
+                    )
+                case .failed(let message):
+                    // Icon carries the error colour; the message stays at full
+                    // contrast, since red 14pt body text on this surface does not
+                    // clear 4.5:1.
+                    VStack(spacing: 16) {
+                        placeholderBody(
+                            icon: "exclamationmark.triangle.fill",
+                            message: message,
+                            iconTint: .red,
+                            messageTint: .primary
+                        )
+                    }
+                    // Grouped here rather than on the whole placeholder: combining
+                    // the Retry button into the same element would take away its
+                    // button trait and its action.
+                    .accessibilityElement(children: .combine)
+                    Button(String(localized: "group.browser.retry"), action: browse)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.havenPurple)
+                        .disabled(relayInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                Spacer()
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+    }
+
+    @ViewBuilder
+    private func placeholderBody(
+        icon: String,
+        message: String,
+        iconTint: Color = .secondary.opacity(0.5),
+        messageTint: Color = .secondary
+    ) -> some View {
+        Image(systemName: icon)
+            .font(.appSystem(size: 40, weight: .light))
+            .foregroundColor(iconTint)
+        Text(message)
+            .font(.appSystem(size: 14))
+            .foregroundColor(messageTint)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 32)
+    }
+
     private func browse() {
         let url = relayInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !url.isEmpty else { return }
 
-        isConnecting = true
         groupService.availableGroups = []
         groupService.browseGroups(on: url)
-
-        // Clear connecting state after a delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            isConnecting = false
-        }
     }
 }
 

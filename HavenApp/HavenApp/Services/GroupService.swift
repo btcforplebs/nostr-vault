@@ -11,6 +11,18 @@ class GroupService: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var availableGroups: [GroupInfo] = []
 
+    /// Lifecycle of a relay browse. The browser needs to tell "still asking"
+    /// apart from "the relay answered with no groups" and "the relay never
+    /// answered" — an empty list means all three otherwise.
+    enum BrowseState: Equatable {
+        case idle
+        case loading
+        case loaded
+        case failed(String)
+    }
+
+    @Published var browseState: BrowseState = .idle
+
     var totalUnreadCount: Int {
         conversations.reduce(0) { $0 + $1.unreadCount }
     }
@@ -24,6 +36,12 @@ class GroupService: ObservableObject {
     private var groupUpdateSubject = PassthroughSubject<Void, Never>()
     private let processingQueue = DispatchQueue(label: "com.haven.group-processing", qos: .userInitiated)
     private var authenticatedRelays = Set<String>()
+    /// Relay the in-flight browse is addressed to, and a generation counter so a
+    /// late EOSE or timeout from a superseded browse cannot resolve the current one.
+    private var browsingRelay: String?
+    private var browseGeneration: UInt64 = 0
+    /// Generous enough to cover the 2s connect wait plus a slow relay's round trip.
+    private let browseTimeout: TimeInterval = 12
     private var loadedAccountPubkey: String = ""
     private var switchGeneration: UInt64 = 0
 
@@ -89,7 +107,14 @@ class GroupService: ObservableObject {
                             self.subscribeToJoinedGroups(on: urlStr)
                         }
                     }
-                case .disconnected, .error:
+                case .error:
+                    self.authenticatedRelays.remove(urlStr)
+                    // Only a socket-level error fails a browse. `.disconnected`
+                    // also fires on ordinary teardown, including our own.
+                    if urlStr == self.browsingRelay, self.browseState == .loading {
+                        self.browseState = .failed(String(localized: "group.browser.error.unreachable"))
+                    }
+                case .disconnected:
                     self.authenticatedRelays.remove(urlStr)
                 default:
                     break
@@ -169,6 +194,11 @@ class GroupService: ObservableObject {
     }
 
     func browseGroups(on relayURL: String) {
+        browsingRelay = relayURL
+        browseGeneration &+= 1
+        let generation = browseGeneration
+        browseState = .loading
+
         if relayClients[relayURL] == nil {
             connectToRelay(relayURL)
         }
@@ -195,6 +225,15 @@ class GroupService: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 attemptBrowse()
             }
+        }
+
+        // A relay that accepts the socket and never answers the REQ would leave
+        // the browser spinning forever, so fail the browse rather than hang.
+        DispatchQueue.main.asyncAfter(deadline: .now() + browseTimeout) { [weak self] in
+            guard let self = self,
+                  self.browseGeneration == generation,
+                  self.browseState == .loading else { return }
+            self.browseState = .failed(String(localized: "group.browser.error.noResponse"))
         }
     }
 
@@ -234,7 +273,15 @@ class GroupService: ObservableObject {
                     }
                 }
             case "EOSE":
-                DispatchQueue.main.async { self.isLoading = false }
+                let subId = json[safe: 1] as? String
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    if subId == "grp-browse",
+                       relayURL == self.browsingRelay,
+                       self.browseState == .loading {
+                        self.browseState = .loaded
+                    }
+                }
             default:
                 break
             }

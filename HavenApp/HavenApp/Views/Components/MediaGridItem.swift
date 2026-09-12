@@ -15,7 +15,6 @@ struct MediaGridItem: View {
     @State private var showingReportDialog = false
     @State private var isMirroringToLocal = false
     @State private var isPushingToMirrors = false
-    @State private var mirrorStatusMessage: String?
 
     var body: some View {
         Color.clear
@@ -184,7 +183,18 @@ struct MediaGridItem: View {
             let success = await service.downloadFromURL(url: item.url)
             await MainActor.run {
                 isMirroringToLocal = false
-                mirrorStatusMessage = success ? "Saved to local relay" : "Mirror failed"
+                if success {
+                    ActionToastManager.shared.show(
+                        icon: "internaldrive.fill",
+                        message: String(localized: "media.mirror.saved"),
+                        color: Color.havenVerified
+                    )
+                } else {
+                    ErrorNotificationManager.shared.show(
+                        String(localized: "media.mirror.failed"),
+                        icon: "exclamationmark.icloud.fill"
+                    )
+                }
                 if success {
                     onMirrorComplete?()
                 }
@@ -200,14 +210,29 @@ struct MediaGridItem: View {
             guard sha256.count == 64 && sha256.allSatisfy({ $0.isHexDigit }) else {
                 await MainActor.run {
                     isPushingToMirrors = false
-                    mirrorStatusMessage = "Could not extract hash"
+                    ErrorNotificationManager.shared.show(
+                        String(localized: "media.push.error.noHash"),
+                        icon: "exclamationmark.icloud.fill",
+                        style: .warning
+                    )
                 }
                 return
             }
             let success = await service.pushLocalToMirrors(sha256: sha256)
             await MainActor.run {
                 isPushingToMirrors = false
-                mirrorStatusMessage = success ? "Pushed to mirrors" : "Push to mirrors failed"
+                if success {
+                    ActionToastManager.shared.show(
+                        icon: "icloud.and.arrow.up.fill",
+                        message: String(localized: "media.push.succeeded"),
+                        color: Color.havenVerified
+                    )
+                } else {
+                    ErrorNotificationManager.shared.show(
+                        String(localized: "media.push.failed"),
+                        icon: "exclamationmark.icloud.fill"
+                    )
+                }
             }
         }
     }
