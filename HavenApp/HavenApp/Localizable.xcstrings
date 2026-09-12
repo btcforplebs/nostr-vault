@@ -73,6 +73,126 @@
         }
       }
     },
+    "group.browser.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This relay published no groups"
+          }
+        }
+      }
+    },
+    "group.browser.error.noResponse" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The relay did not answer. It may not host groups."
+          }
+        }
+      }
+    },
+    "group.browser.error.unreachable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not reach that relay"
+          }
+        }
+      }
+    },
+    "group.browser.loading" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asking the relay for its groups…"
+          }
+        }
+      }
+    },
+    "group.browser.retry" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again"
+          }
+        }
+      }
+    },
+    "media.mirror.failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not mirror to the local relay"
+          }
+        }
+      }
+    },
+    "media.mirror.saved" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved to local relay"
+          }
+        }
+      }
+    },
+    "media.paste.error.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clipboard is empty or contains unsupported content"
+          }
+        }
+      }
+    },
+    "media.paste.error.notAURL" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clipboard does not contain a valid URL or image"
+          }
+        }
+      }
+    },
+    "media.push.error.noHash" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file has no Blossom hash to push"
+          }
+        }
+      }
+    },
+    "media.push.failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not push to mirrors"
+          }
+        }
+      }
+    },
+    "media.push.succeeded" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pushed to mirrors"
+          }
+        }
+      }
+    },
     "group.chat.deleteMessage" : {
       "localizations" : {
         "en" : {

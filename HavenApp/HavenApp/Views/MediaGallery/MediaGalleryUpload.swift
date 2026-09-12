@@ -297,8 +297,6 @@ extension MediaGalleryView {
     func handlePasteFromClipboard() {
         // Set loading state immediately
         isPastingContent = true
-        pasteError = nil
-
         Task {
             let blossom = blossomService
             var success = false
@@ -343,7 +341,11 @@ extension MediaGalleryView {
                       url.scheme == "http" || url.scheme == "https" else {
                     await MainActor.run {
                         isPastingContent = false
-                        pasteError = "Clipboard does not contain a valid URL or image"
+                        ErrorNotificationManager.shared.show(
+                            String(localized: "media.paste.error.notAURL"),
+                            icon: "doc.on.clipboard",
+                            style: .warning
+                        )
                     }
                     return
                 }
@@ -363,7 +365,11 @@ extension MediaGalleryView {
                 // Clipboard is empty or unsupported content
                 await MainActor.run {
                     isPastingContent = false
-                    pasteError = "Clipboard is empty or contains unsupported content"
+                    ErrorNotificationManager.shared.show(
+                        String(localized: "media.paste.error.empty"),
+                        icon: "doc.on.clipboard",
+                        style: .warning
+                    )
                 }
                 return
             }

@@ -85,7 +85,6 @@ struct MediaGalleryView: View {
     @State var showingUploadOptions = false
     @State var photosPickerFilter: PHPickerFilter = .any(of: [.images, .videos])
     @State var isPastingContent = false
-    @State var pasteError: String?
     @State var activeUploadTasks: [Task<Void, Never>] = []
 
     #if os(iOS)
