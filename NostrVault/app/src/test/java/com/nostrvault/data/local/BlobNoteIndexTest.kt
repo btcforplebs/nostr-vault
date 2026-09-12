@@ -1,4 +1,4 @@
-package com.nostrvault.ui.screens
+package com.nostrvault.data.local
 
 import com.nostrvault.data.model.FeedNote
 import org.junit.Assert.assertEquals
@@ -25,7 +25,7 @@ private fun note(id: String, at: Long, media: List<String>) = FeedNote(
     repostedEventId = null,
 )
 
-class MediaNoteIndexTest {
+class BlobNoteIndexTest {
 
     @Test
     fun `pulls the sha256 out of a blossom url`() {
