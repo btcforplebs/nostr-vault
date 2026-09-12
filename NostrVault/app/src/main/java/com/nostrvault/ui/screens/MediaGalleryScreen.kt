@@ -361,11 +361,14 @@ fun MediaGalleryScreen(
         uri?.let { viewModel.uploadMedia(it, context.contentResolver) }
     }
 
-    // A blob carries no note reference; the sha256 is the only join. Resolved
-    // here rather than in the ViewModel because the gallery already holds the
-    // FeedService and this is a pure read of its cache.
-    val loadedNotes by feedService.notes.collectAsState()
-    val noteIdByHash = remember(loadedNotes) { noteIdsByBlobHash(loadedNotes) }
+    // A blob carries no note reference; the sha256 is the only join.
+    //
+    // Read from the persistent index rather than recomputed from the loaded
+    // feed. Computed from the feed, the same file offered "Open Note" or did
+    // not depending on how far the user had scrolled earlier in the session —
+    // a state they cannot see and cannot predict. The index keeps every mapping
+    // the feed has ever handed it, so the answer is a property of the blob.
+    val noteIdByHash by feedService.blobNoteIndex.collectAsState()
 
     val filteredItems = remember(mediaItems, activeFilter) {
         mediaItems

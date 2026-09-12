@@ -6,6 +6,7 @@ import coil.ImageLoader
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.local.BlobNoteIndexStore
 import com.nostrvault.data.local.EngagementTracker
 import com.nostrvault.data.model.*
 import com.nostrvault.data.remote.WebSocketClient
@@ -41,6 +42,7 @@ class FeedService @Inject constructor(
     private val nostrService: NostrService,
     private val feedFilterEngine: FeedFilterEngine,
     private val engagementTracker: EngagementTracker,
+    private val blobNoteIndexStore: BlobNoteIndexStore,
     private val contactManager: ContactManager,
     private val imageLoader: ImageLoader,
     private val notificationManager: NotificationManager,
@@ -100,9 +102,25 @@ class FeedService @Inject constructor(
     // lifecycle callback; persist at most once a minute while the feed changes.
     private var snapshotDirty = false
 
+    /**
+     * hash → note id for every blob this device has seen a note reference.
+     *
+     * Exposed here because the media gallery already holds this service, and
+     * because the thing that fills the index is the note stream this service
+     * owns. Reading it is what stops "Open Note" on a blob from depending on
+     * how far the feed happened to be scrolled — see [BlobNoteIndexStore].
+     */
+    val blobNoteIndex: StateFlow<Map<String, String>> = blobNoteIndexStore.index
+
     init {
         scope.launch {
             _notes.drop(1).collect { snapshotDirty = true }
+        }
+        // Every note that reaches the feed contributes its blob hashes to the
+        // persistent index. `record` skips note ids it has already folded in, so
+        // re-emissions of the same list cost a set lookup per note.
+        scope.launch {
+            _notes.collect { blobNoteIndexStore.record(it) }
         }
         scope.launch {
             while (isActive) {
