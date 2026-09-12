@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -503,8 +504,11 @@ internal fun EngagementBar(
     onLongPressLike: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    // No spacing here: each button carries its own 4dp a side inside its tap
+    // target, so the drawn gap is still 8dp and the pitch is still 40dp, with
+    // no dead strip between two targets. See [EngagementButton].
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.fillMaxWidth(),
     ) {
@@ -628,12 +632,54 @@ internal fun EngagementButton(
         onClick()
     }
 
+    // The tap target is the outer node, not the capsule. The capsule is 32dp and
+    // stays 32dp — this is the shape the row was measured around (see
+    // [EngagementBar]) — but Material's minimum touch target is 48dp and a
+    // 32dp one on a row of seven, with Zap and Repost one tap from a real
+    // consequence, is where mis-taps get expensive.
+    //
+    // Vertically that is free: 48dp of height costs the card 16dp and nothing
+    // else, so the target is a full 48dp tall.
+    //
+    // Horizontally it is not free, and 48dp wide does not fit. The row has
+    // 312dp on a 360dp phone; three counted capsules at their widest label
+    // ("999k", "9.9M" — `formatCount` never exceeds four glyphs) plus two
+    // 32dp circles plus the gaps is 282dp, and taking each circle to 48dp
+    // costs 32dp more than the 30dp left. So the target takes the *gap*
+    // instead: the 8dp between buttons moves inside the clickable node, 4dp a
+    // side, which leaves the drawn spacing at 8dp and the pitch at 40dp
+    // exactly as before while removing the dead strip between two targets.
+    // 40x48 contiguous, rather than 32x32 with 8dp of nothing around it.
+    //
+    // `indication` has to be stated because the clickable is now outside the
+    // clip: bounded, it would ripple the whole 40x48 rect instead of the
+    // capsule. An unbounded 20dp radius draws the same 40dp state layer
+    // Material's own `IconButton` uses.
+    val interactionSource = remember { MutableInteractionSource() }
+    val indication = ripple(bounded = false, radius = 20.dp)
     val clickModifier = if (onLongClick != null) {
-        Modifier.combinedClickable(onClick = tapAndPulse, onLongClick = onLongClick)
+        Modifier.combinedClickable(
+            interactionSource = interactionSource,
+            indication = indication,
+            onClick = tapAndPulse,
+            onLongClick = onLongClick,
+        )
     } else {
-        Modifier.clickable(onClick = tapAndPulse)
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = indication,
+            onClick = tapAndPulse,
+        )
     }
 
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .scale(scale)
+            .height(48.dp)
+            .then(clickModifier)
+            .padding(horizontal = 4.dp),
+    ) {
     // With a count the button becomes a capsule wide enough for the number; with
     // none it stays the 32dp circle it has always been. Height is fixed at 32dp
     // either way so a row of mixed buttons does not step up and down as counts
@@ -642,12 +688,10 @@ internal fun EngagementButton(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .scale(scale)
             .height(32.dp)
             .then(if (count == null) Modifier.width(32.dp) else Modifier.widthIn(min = 32.dp))
             .clip(CircleShape)
             .background(background)
-            .then(clickModifier)
             .then(if (count == null) Modifier else Modifier.padding(horizontal = 9.dp)),
     ) {
         Icon(
@@ -666,6 +710,7 @@ internal fun EngagementButton(
                 maxLines = 1,
             )
         }
+    }
     }
 }
 
