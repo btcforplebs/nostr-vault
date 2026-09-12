@@ -56,6 +56,13 @@ fun DraftsScreen(
     val selectedIds = remember { mutableStateListOf<String>() }
     var confirmingBulkDelete by remember { mutableStateOf(false) }
 
+    // Id of the draft a swipe is asking to delete, or null. Swiping is a
+    // deliberate gesture, but the thing it destroys is unrecoverable — the same
+    // sentence the bulk dialog already says — and the gesture is one drag away
+    // from the scroll it shares an axis with. So a swipe *asks*, using the same
+    // dialog and the same words as selecting one draft and hitting delete.
+    var confirmingSwipeDelete by remember { mutableStateOf<String?>(null) }
+
     fun exitSelection() {
         isSelecting = false
         selectedIds.clear()
@@ -68,6 +75,24 @@ fun DraftsScreen(
         val live = drafts.map { it.id }.toSet()
         selectedIds.retainAll { it in live }
         if (isSelecting && drafts.isEmpty()) exitSelection()
+    }
+
+    confirmingSwipeDelete?.let { draftId ->
+        AlertDialog(
+            onDismissRequest = { confirmingSwipeDelete = null },
+            title = { Text("Delete this draft?", fontWeight = FontWeight.Bold) },
+            text = { Text("Deleted drafts are removed from your relay and can't be recovered.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteDraft(draftId)
+                    confirmingSwipeDelete = null
+                }) { Text("Delete", color = ErrorRed, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingSwipeDelete = null }) { Text("Cancel") }
+            },
+            containerColor = WindowBackground,
+        )
     }
 
     if (confirmingBulkDelete) {
@@ -219,10 +244,14 @@ fun DraftsScreen(
 
                     val dismissState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { value ->
+                            // Never accept the dismiss: the row springs back and
+                            // the dialog decides. Accepting it here would animate
+                            // the draft away before the user has said yes, and
+                            // there is nothing to animate back if they say no.
                             if (value != SwipeToDismissBoxValue.Settled) {
-                                viewModel.deleteDraft(draft.id)
-                                true
-                            } else false
+                                confirmingSwipeDelete = draft.id
+                            }
+                            false
                         },
                     )
 
