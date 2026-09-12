@@ -102,7 +102,6 @@
 		38CA6F090B09B24A5CB3AFAC /* SupportedMediaFormats.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18859E95D1E981CB5491E8F /* SupportedMediaFormats.swift */; };
 		390E2CFB9580D897263B22D6 /* AnimatedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FBC15E9329FDE2D78ED1BD1 /* AnimatedImage.swift */; };
 		39D77023FAFDDDFE24D50B9A /* ProfilePicturePrefetchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68544CD2DF847509E3D23681 /* ProfilePicturePrefetchService.swift */; };
-		3A0326B9C78608A8E752D928 /* WalletView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F63205E460EB79FE63AF053 /* WalletView.swift */; };
 		3A184DDE1FFC7280C69F911D /* GroupCreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB855E7379DA2448EE2AAE1 /* GroupCreateView.swift */; };
 		3A895A7B25C2229F1B389A2D /* ActionButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4757A74E31DFBA866003FD73 /* ActionButton.swift */; };
 		3AC2416A002144BD55B37DE1 /* PushNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ED38A5B67740F711EB5C45 /* PushNotificationService.swift */; };
@@ -331,7 +330,6 @@
 		D1B024EAA1105FEC11699EC8 /* ErrorNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F4A9C4C8BD9711513C84185 /* ErrorNotificationBanner.swift */; };
 		D1D3E12AC752528895DC695F /* LiveChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BE879845BEF9A356B7CB5EB /* LiveChatService.swift */; };
 		D1FD56BEC02FCA184FCAECAA /* UGCReportingDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2181DC8AEE2B3F8376683F88 /* UGCReportingDialog.swift */; };
-		D20EC272280ECE651610D562 /* BlossomMediaListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432CF90E26FEFB48B713C9F9 /* BlossomMediaListView.swift */; };
 		D25C2A65954161799317E919 /* VaultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD60255398375B7A8772D93 /* VaultView.swift */; };
 		D345A3970B0C13CF6C96F080 /* PriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A89942B12FE776468EDB8C /* PriceService.swift */; };
 		D36B7F9AFD3674E39BF74C2C /* SatsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C91351C6982BF9F7DB5EAE92 /* SatsWidget.swift */; };
@@ -380,10 +378,8 @@
 		E4DC095F28C9D7FE3BBED27A /* ModeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA14EC3D2D24B98A94F93B56 /* ModeButton.swift */; };
 		E50C4B4F8787584FC7E29EA2 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 848045286D78E78658D43BE3 /* MenuBarView.swift */; };
 		E6B954A06F5DEC06F4C960AE /* MediaListItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C40BA5C7F1973E84E4C8AA9 /* MediaListItem.swift */; };
-		E81945B683DAEA15F89C91EA /* WalletView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F63205E460EB79FE63AF053 /* WalletView.swift */; };
 		EB507637E1020661C1CC0C16 /* LightningAnimationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C4DB7AE9CD6CD117019324D /* LightningAnimationView.swift */; };
 		EB757B8BCE5DE46338963484 /* QuotedNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0470608431CE649B6E55F7D /* QuotedNoteView.swift */; };
-		EB9306A10F9E946F899CE34F /* BlossomMediaListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 432CF90E26FEFB48B713C9F9 /* BlossomMediaListView.swift */; };
 		EC05976F014D8D0EA368495B /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CCBF9ECF9001937FA713A9 /* ShareSheet.swift */; };
 		EC69E7FB15A8D973C111A810 /* NVSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A385719722D447ECB47AA2D8 /* NVSharedStore.swift */; };
 		ED54837C471D65DD0BF8DC2F /* RecipeFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */; };
@@ -471,7 +467,6 @@
 		2B14053AFA5E916B43335BEE /* LNURLService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LNURLService.swift; sourceTree = "<group>"; };
 		2BEA112FAABC73A446279BB0 /* NVWidgetKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVWidgetKit.swift; sourceTree = "<group>"; };
 		2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlaybackService.swift; sourceTree = "<group>"; };
-		2F63205E460EB79FE63AF053 /* WalletView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletView.swift; sourceTree = "<group>"; };
 		2FE41D591439EC1513D51DAF /* VaultToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultToolbar.swift; sourceTree = "<group>"; };
 		3041B6BA67CC97B2AC442E6D /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
 		325A99A7D646C515AB620EE5 /* MenuBarStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarStatusView.swift; sourceTree = "<group>"; };
@@ -486,7 +481,6 @@
 		41A8E188B7B23F83A3EA49AA /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		41AFE9F84C0F2592990C1224 /* BlossomDashboardModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardModels.swift; sourceTree = "<group>"; };
 		42DB00CA3C4EA172D7C76C2A /* LongFormContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongFormContent.swift; sourceTree = "<group>"; };
-		432CF90E26FEFB48B713C9F9 /* BlossomMediaListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomMediaListView.swift; sourceTree = "<group>"; };
 		47192F4794DB3DF64A802E30 /* LiveFeedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFeedViews.swift; sourceTree = "<group>"; };
 		4757A74E31DFBA866003FD73 /* ActionButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionButton.swift; sourceTree = "<group>"; };
 		47E52CADA44AC55958A69E64 /* MessageComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageComposerView.swift; sourceTree = "<group>"; };
@@ -684,7 +678,6 @@
 				7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */,
 				89A56934F313BFA876DC49BA /* BitcoinSweepDisclaimerView.swift */,
 				B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */,
-				432CF90E26FEFB48B713C9F9 /* BlossomMediaListView.swift */,
 				0E04A276931F29CD944A3474 /* CachedAsyncImage.swift */,
 				D3CA6E7B0A2665BC086A47C3 /* Components */,
 				1F4167692AA94E7EC99B29BD /* ComposeView.swift */,
@@ -732,7 +725,6 @@
 				A3DD3ED79F874383BC2F54F2 /* VideoPlayerView.swift */,
 				E21346EC9370A887C801BCDB /* WalletCashuTab.swift */,
 				A5A055572DB0D3E388936721 /* WalletLightningTab.swift */,
-				2F63205E460EB79FE63AF053 /* WalletView.swift */,
 				34B22EE405098B9706D5B1D8 /* WelcomeWindowView.swift */,
 				D64CEB281CD04B4F50EE9E2E /* YarnGifPickerSheet.swift */,
 			);
@@ -1279,7 +1271,6 @@
 				88FB85A8406DE6D5CB0F0113 /* BlossomDashboardModels.swift in Sources */,
 				BDA2EED14D678BC16890F89F /* BlossomDashboardView.swift in Sources */,
 				E0A5461B68AE422C1589FC94 /* BlossomMediaCache.swift in Sources */,
-				D20EC272280ECE651610D562 /* BlossomMediaListView.swift in Sources */,
 				AB84ADE390F047D2226B293C /* BlossomService.swift in Sources */,
 				BC149F5EF1080D3A330334B6 /* Bolt11.swift in Sources */,
 				8669D5E967AF7E8F56DAB283 /* BunkerURI.swift in Sources */,
@@ -1446,7 +1437,6 @@
 				EF504DE874026A1BCD53E4AF /* VideoThumbnailView.swift in Sources */,
 				E314FEFD19BA6CE33B3AEB4D /* WalletCashuTab.swift in Sources */,
 				809D9E5FBBA6E9F84F5BE4C6 /* WalletLightningTab.swift in Sources */,
-				3A0326B9C78608A8E752D928 /* WalletView.swift in Sources */,
 				4F12CB28845F57A334AECA84 /* WebSocketClient.swift in Sources */,
 				F909E9664DAB54DA38575736 /* WelcomeWindowView.swift in Sources */,
 				F0BFD54432F04456E43C0186 /* YarnClipService.swift in Sources */,
@@ -1493,7 +1483,6 @@
 				DD787F5C4841934389DE2A38 /* BlossomDashboardModels.swift in Sources */,
 				DD81E21B30BB4122081806C1 /* BlossomDashboardView.swift in Sources */,
 				8FEB6F24A3984B98CCF81E56 /* BlossomMediaCache.swift in Sources */,
-				EB9306A10F9E946F899CE34F /* BlossomMediaListView.swift in Sources */,
 				A9175BE3300E9CE097E14F26 /* BlossomService.swift in Sources */,
 				8986B473114DB9BD028A9EAD /* Bolt11.swift in Sources */,
 				EDCA08DB3ED399583C55F594 /* BunkerURI.swift in Sources */,
@@ -1652,7 +1641,6 @@
 				552053CBD5AFD1A42B1058FF /* VideoThumbnailView.swift in Sources */,
 				5E9006D361591D97EAF4FD2D /* WalletCashuTab.swift in Sources */,
 				61911D56C6C501170C8E50C2 /* WalletLightningTab.swift in Sources */,
-				E81945B683DAEA15F89C91EA /* WalletView.swift in Sources */,
 				8ADB489FAB643EBB11BB577E /* WebSocketClient.swift in Sources */,
 				2A158B439B79BA956648F917 /* WelcomeWindowView.swift in Sources */,
 				BEFE3D99EBF476B6AAA764C1 /* YarnClipService.swift in Sources */,

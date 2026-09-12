@@ -188,46 +188,6 @@ extension MediaGalleryView {
         }
     }
 
-    // MARK: - Source / Location Filter
-
-    /// Source filter buttons: All, Blossom, Cache, Not Found.
-    var sourceFilterView: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                Image(systemName: "externaldrive")
-                    .font(.appSystem(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .padding(.trailing, 2)
-
-                FilterButton(
-                    title: "All",
-                    color: .havenPurple,
-                    isSelected: mediaLocationFilter == .all
-                ) { selectLocationFilter(.all) }
-
-                FilterButton(
-                    title: "Blossom",
-                    icon: "cloud",
-                    color: .havenPurple,
-                    isSelected: mediaLocationFilter == .blossom
-                ) { selectLocationFilter(.blossom) }
-
-                FilterButton(
-                    title: "Cache",
-                    icon: "internaldrive",
-                    color: .havenPurple,
-                    isSelected: mediaLocationFilter == .cache
-                ) { selectLocationFilter(.cache) }
-
-                FilterButton(
-                    title: "Not Found",
-                    icon: "exclamationmark.triangle",
-                    color: .orange,
-                    isSelected: mediaLocationFilter == .notFound
-                ) { selectLocationFilter(.notFound) }
-            }
-        }
-    }
 
     // MARK: - macOS Desktop Upload Menu
 
