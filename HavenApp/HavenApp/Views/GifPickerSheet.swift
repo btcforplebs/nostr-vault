@@ -35,9 +35,11 @@ struct GifPickerSheet: View {
     @FocusState private var searchFocused: Bool
     @Namespace private var sourcePill
 
-    // Top-aligned: a Tenor row holds cells of different heights, and centring
-    // them in the row leaves each one floating over a different gap.
-    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 8, alignment: .top)]
+    // Rough type metrics for the column-balancing estimate, scaled so the
+    // estimate tracks Dynamic Type the way the real caption does.
+    @ScaledMetric(relativeTo: .footnote) private var captionLineHeight: Double = 15
+    @ScaledMetric(relativeTo: .caption2) private var subcaptionLineHeight: Double = 13
+    @ScaledMetric(relativeTo: .footnote) private var captionBlockPadding: Double = 16
     /// Cells revealed per step. Deliberately smaller than either source's page
     /// -- getyarn returns 20, Tenor 50 -- because every revealed cell pulls its
     /// own preview GIF.
@@ -193,48 +195,99 @@ struct GifPickerSheet: View {
                     .frame(maxHeight: .infinity)
             }
         } else {
-            ScrollView {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-                    ForEach(state.items.prefix(state.revealed)) { item in
+            GeometryReader { geo in
+                ScrollView {
+                    masonry(availableWidth: Double(geo.size.width) - 32)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+
+                    if isSearching {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.havenPurple)
+                            .padding(.top, 16)
+                            .padding(.bottom, 12)
+                    } else if canShowMore {
+                        Button {
+                            showMore()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(source.moreLabel)
+                                Image(systemName: "chevron.down")
+                            }
+                            .font(.appSystem(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 9)
+                            .background(Color.havenPurple)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 16)
+                        .padding(.bottom, 12)
+                    }
+
+                    Text(source.attribution)
+                        .font(.appCaption2)
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 14)
+                }
+            }
+        }
+    }
+
+    /// Waterfall grid, not a `LazyVGrid`: cells differ in height -- a Tenor GIF
+    /// takes its own shape and a captioned clip carries a caption of its own
+    /// depth -- and a row-based grid sizes each row to its tallest cell, which
+    /// leaves a hole under every shorter one. Columns are filled shortest-first
+    /// so the cells tile instead.
+    ///
+    /// Building every revealed cell up front, rather than lazily, is affordable
+    /// because `revealStep` is what bounds the count: nothing is on screen that
+    /// the reader has not asked to see.
+    private func masonry(availableWidth: Double) -> some View {
+        let width = max(0, availableWidth)
+        let columnCount = GifGridLayout.columnCount(forWidth: width)
+        let columnWidth = GifGridLayout.columnWidth(forWidth: width, columns: columnCount)
+        let buckets = GifGridLayout.distribute(
+            Array(state.items.prefix(state.revealed)),
+            columns: columnCount
+        ) { estimatedHeight(for: $0, columnWidth: columnWidth) }
+
+        return HStack(alignment: .top, spacing: GifGridLayout.spacing) {
+            ForEach(Array(buckets.enumerated()), id: \.offset) { _, bucket in
+                VStack(spacing: GifGridLayout.spacing) {
+                    ForEach(bucket) { item in
                         GifResultCell(item: item, isSelecting: selectingID == item.id)
                             .onTapGesture { select(item) }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
-
-                if isSearching {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.havenPurple)
-                        .padding(.top, 16)
-                        .padding(.bottom, 12)
-                } else if canShowMore {
-                    Button {
-                        showMore()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(source.moreLabel)
-                            Image(systemName: "chevron.down")
-                        }
-                        .font(.appSystem(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .background(Color.havenPurple)
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 16)
-                    .padding(.bottom, 12)
-                }
-
-                Text(source.attribution)
-                    .font(.appCaption2)
-                    .foregroundColor(.secondary)
-                    .padding(.bottom, 14)
+                .frame(width: columnWidth)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// What a cell is likely to measure, used only to balance the columns.
+    /// SwiftUI still lays each cell out at whatever its content needs, so an
+    /// estimate a few points out costs an uneven column bottom and nothing more.
+    private func estimatedHeight(for item: GifItem, columnWidth: Double) -> Double {
+        let ratio = item.aspectRatio > 0.05 ? item.aspectRatio : 1
+        var height = columnWidth / ratio
+        if let caption = item.caption, !caption.isEmpty {
+            height += captionHeight(caption, subcaption: item.subcaption, width: columnWidth)
+        }
+        return height
+    }
+
+    private func captionHeight(_ caption: String, subcaption: String?, width: Double) -> Double {
+        // Deliberately rough: about 0.55em per character at 12pt, and never
+        // more than the two lines the label is clamped to.
+        let charsPerLine = max(8, width / (12 * 0.55))
+        let lines = min(2, max(1, (Double(caption.count) / charsPerLine).rounded(.up)))
+        var height = captionBlockPadding + lines * captionLineHeight
+        if let subcaption, !subcaption.isEmpty { height += subcaptionLineHeight }
+        return height
     }
 
     private var searchingPlaceholder: some View {
@@ -374,69 +427,52 @@ private struct GifResultCell: View {
     let item: GifItem
     let isSelecting: Bool
 
+    private var caption: String? {
+        guard let caption = item.caption, !caption.isEmpty else { return nil }
+        return caption
+    }
+
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            Color.platformTertiaryGroupedBackground
-            AnimatedImage(url: item.previewURL, contentMode: .fill, fallbackURL: item.stillURL)
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                Color.platformTertiaryGroupedBackground
+                AnimatedImage(url: item.previewURL, contentMode: .fill, fallbackURL: item.stillURL)
 
-            if let caption = item.caption, !caption.isEmpty {
-                // Ambient darkening across the lower half. Softened from 0.75
-                // because the caption carries its own scrim; stacking both at
-                // full strength turned the bottom of every cell into a black
-                // bar. Only drawn under a caption -- an uncaptioned Tenor GIF
-                // has nothing to keep legible and should be shown as it is.
-                LinearGradient(
-                    colors: [.clear, .clear, .black.opacity(0.35)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+                if isSelecting {
+                    Color.black.opacity(0.55)
+                    ProgressView().tint(.white)
+                }
+            }
+            // Each source has its own shape -- getyarn clips are 16:9, Tenor
+            // GIFs are anything -- so the art takes the item's ratio instead of
+            // cropping everything into one frame.
+            .aspectRatio(CGFloat(item.aspectRatio), contentMode: .fit)
+            .clipped()
 
+            // Under the art, not over it. A getyarn transcript is the reason to
+            // pick the clip, so it is content rather than an overlay: laid over
+            // the frame it competed with the art at two lines, needed a scrim to
+            // stay legible, and covered the part of the picture it was quoting.
+            if let caption {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(caption)
                         .font(.appSystem(size: 12, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                         .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let subcaption = item.subcaption, !subcaption.isEmpty {
                         Text(subcaption)
                             .font(.appSystem(size: 10, weight: .medium))
-                            .foregroundColor(.white.opacity(0.82))
+                            .foregroundColor(.secondary)
                             .lineLimit(1)
                     }
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // Scrim sized to the caption rather than to the cell. A
-                // fraction of the cell height cannot work here: the grid is
-                // adaptive, so a cell is 84-107pt tall while the caption is a
-                // fixed ~45pt, and on the short end the first line of the
-                // transcript lands above any proportional ramp. Anchoring to
-                // the caption keeps white-on-bright legible at every width.
-                .background(alignment: .bottom) {
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black.opacity(0), location: 0),
-                            .init(color: .black.opacity(0.70), location: 0.30),
-                            .init(color: .black.opacity(0.90), location: 1)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    // Grow upward so the ramp finishes before the text starts
-                    // instead of fading across the first line.
-                    .padding(.top, -18)
-                    .allowsHitTesting(false)
-                }
-            }
-
-            if isSelecting {
-                Color.black.opacity(0.55)
-                ProgressView().tint(.white)
             }
         }
-        // Each source has its own shape -- getyarn clips are 16:9, Tenor GIFs
-        // are anything -- so the cell takes the item's ratio instead of
-        // cropping everything into one frame.
-        .aspectRatio(CGFloat(item.aspectRatio), contentMode: .fit)
+        .background(Color.platformTertiaryGroupedBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
