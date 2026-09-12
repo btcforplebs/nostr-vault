@@ -31,6 +31,10 @@ import com.nostrvault.data.model.GlobalSearchResults
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.ZapSendService
+import com.nostrvault.data.model.NoteStats
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import com.nostrvault.ui.components.NoteCard
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -67,9 +71,12 @@ class SearchViewModel @Inject constructor(
     private val nostrService: NostrService,
     private val configStore: ConfigStore,
     private val feedService: FeedService,
+    private val zapSendService: ZapSendService,
 ) : ViewModel() {
 
     companion object {
+        /** Default zap amount (sats) — same figure the feed and profile use. */
+        const val DEFAULT_ZAP_SATS = 21
         private const val TRENDING_THROTTLE_MS = 5_000L
         private const val MAX_TRENDING = 8
         private const val MAX_SUGGESTED = 6
@@ -98,6 +105,57 @@ class SearchViewModel @Inject constructor(
     val searchScope = _searchScope.asStateFlow()
 
     val profiles = nostrService.profiles
+
+    // ── Engagement ────────────────────────────────────────────────────────
+    //
+    // A search result is a note. It was drawing a note's action row and
+    // publishing nothing, because this screen passed no handlers; the row now
+    // hides what it has no handler for, so without these it drew no row at
+    // all. Same services the feed and the profile timeline act through, so a
+    // like from search is the same event as a like from the feed, and the
+    // liked/reposted sets are the one shared source — a note liked here shows
+    // liked there without a round trip.
+    val likedEventIds = feedService.likedEventIds
+    val repostedEventIds = feedService.repostedEventIds
+    val noteStats = feedService.noteStats
+
+    /** Transient user-facing message (zap result). */
+    private val _toast = MutableStateFlow<String?>(null)
+    val toast = _toast.asStateFlow()
+
+    fun clearToast() { _toast.value = null }
+
+    fun likeNote(noteId: String) {
+        viewModelScope.launch { feedService.likeNote(noteId) }
+    }
+
+    fun repostNote(noteId: String) {
+        viewModelScope.launch { feedService.repostNote(noteId) }
+    }
+
+    fun zapNote(noteId: String, notePubkey: String) {
+        viewModelScope.launch {
+            val result = zapSendService.zapNote(noteId, notePubkey, DEFAULT_ZAP_SATS)
+            _toast.value = result.fold(
+                onSuccess = { "Zapped $DEFAULT_ZAP_SATS sats ⚡️" },
+                onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
+            )
+        }
+    }
+
+    /**
+     * Counts for a search result, when we have them.
+     *
+     * [FeedService.noteStats] is populated from the feed subscription, so this
+     * is non-null exactly when the result is also a note the feed has seen.
+     * Nothing here opens a second subscription to count reactions for results
+     * that are not — that is the same level [NoteDetailScreen] settles for, and
+     * a per-result engagement query on every keystroke's worth of results is
+     * not a trade this screen should make silently.
+     */
+    fun statsFor(noteId: String): NoteStats? = noteStats.value[noteId]
+    fun isLiked(noteId: String): Boolean = likedEventIds.value.contains(noteId)
+    fun isReposted(noteId: String): Boolean = repostedEventIds.value.contains(noteId)
 
     // Discovery state
     private val _recentSearches = MutableStateFlow<List<String>>(emptyList())
@@ -322,6 +380,8 @@ fun SearchScreen(
     /** Where a quoted long-form post opens; the note screen would show its Markdown source. */
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
+    onReply: (String) -> Unit,
+    onQuote: (String) -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val query by viewModel.query.collectAsState()
@@ -334,7 +394,20 @@ fun SearchScreen(
     val suggestedProfiles by viewModel.suggestedProfiles.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
+    val likedIds by viewModel.likedEventIds.collectAsState()
+    val repostedIds by viewModel.repostedEventIds.collectAsState()
+    val noteStats by viewModel.noteStats.collectAsState()
+    val toast by viewModel.toast.collectAsState()
     val colors = LocalNostrVaultColors.current
+    val context = LocalContext.current
+
+    // Zap feedback, the same way the profile timeline reports it.
+    LaunchedEffect(toast) {
+        toast?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearToast()
+        }
+    }
 
     // Fetch embedded quoted notes (nostr:note1.../nevent1...) in search results
     // plus their authors' profiles, so they resolve instead of spinning forever.
@@ -630,12 +703,24 @@ fun SearchScreen(
                         NoteCard(
                             note = note,
                             profile = viewModel.profileFor(note.pubkey),
-                            stats = null,
+                            // Keyed on `effectiveEventId`, the id the action row
+                            // acts on and the id `FeedService` files the like,
+                            // the repost and the optimistic count under. For a
+                            // kind-6 repost `note.id` is the wrapper, which is
+                            // not what anybody liked.
+                            stats = noteStats[note.effectiveEventId],
                             profiles = profiles,
                             quotedNotes = quotedNotesMap,
+                            isLiked = note.effectiveEventId in likedIds,
+                            isReposted = note.effectiveEventId in repostedIds,
                             onNoteClick = onNoteClick,
                             onArticleClick = onArticleClick,
                             onProfileClick = onProfileClick,
+                            onLike = viewModel::likeNote,
+                            onRepost = viewModel::repostNote,
+                            onReply = onReply,
+                            onQuote = onQuote,
+                            onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
                         )
                         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                     }

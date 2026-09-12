@@ -224,6 +224,12 @@ fun NostrVaultNavHost(
                     onProfileClick = { pubkey ->
                         navController.navigate(Screen.Profile.createRoute(pubkey))
                     },
+                    onReply = { noteId ->
+                        navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
+                    },
+                    onQuote = { noteId ->
+                        navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
+                    },
                 )
             }
 
