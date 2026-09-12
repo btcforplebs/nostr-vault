@@ -328,7 +328,7 @@ struct FeedDashboardSheet: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .background(Color(red: 0.12, green: 0.12, blue: 0.12).opacity(0.5))
+                        .background(Color.platformCardBackground)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 }

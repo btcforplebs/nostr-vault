@@ -66,7 +66,7 @@ struct FollowingBackupSettingsView: View {
                                     Image(systemName: "checkmark")
                                         .font(.appSubheadline)
                                         .fontWeight(.semibold)
-                                        .foregroundColor(.accentColor)
+                                        .foregroundColor(.havenPurple)
                                 }
                             }
                         }
@@ -432,7 +432,7 @@ struct Kind3EventDetailView: View {
                         }
                     }
                     .foregroundColor(.white)
-                    .listRowBackground(Color.accentColor)
+                    .listRowBackground(Color.havenPurple)
                 }
             }
 
@@ -571,7 +571,7 @@ struct SnapshotDetailView: View {
                         }
                     }
                     .foregroundColor(.white)
-                    .listRowBackground(Color.accentColor)
+                    .listRowBackground(Color.havenPurple)
                 }
             }
 

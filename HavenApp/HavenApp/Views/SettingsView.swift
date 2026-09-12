@@ -494,6 +494,10 @@ struct SettingsView: View {
         case .backup: return .indigo
         case .followingBackup: return .teal
         case .blastr: return .cyan
+        // Stays system green: this list is a categorical palette for the
+        // section icons (pink, mint, blue, indigo, teal…), not a status. Using
+        // `havenOnline` here would give one settings row the vocabulary of a
+        // health indicator.
         case .blossom: return .green
         case .macRelay: return .teal
         case .proofOfWork: return .purple
@@ -804,7 +808,7 @@ struct AccountsSettingsView: View {
                         Text("Remote Signer")
                         if isActive {
                             Circle()
-                                .fill(nip46Service.isConnected ? Color.green : Color.red)
+                                .fill(nip46Service.isConnected ? Color.havenOnline : Color.red)
                                 .frame(width: 5, height: 5)
                         }
                     } else if hasLocalKey {
@@ -826,7 +830,7 @@ struct AccountsSettingsView: View {
 
             if isActive {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(.havenOnline)
             }
 
             Image(systemName: "chevron.right")
@@ -934,8 +938,8 @@ struct AccountDetailView: View {
                                     .font(.appCaption)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(Color.green.opacity(0.2))
-                                    .foregroundColor(.green)
+                                    .background(Color.havenOnline.opacity(0.2))
+                                    .foregroundColor(.havenOnline)
                                     .cornerRadius(4)
                             }
                         }
@@ -973,7 +977,7 @@ struct AccountDetailView: View {
                             Spacer()
                             if isActive {
                                 Circle()
-                                    .fill(nip46Service.isConnected ? Color.green : Color.red)
+                                    .fill(nip46Service.isConnected ? Color.havenOnline : Color.red)
                                     .frame(width: 8, height: 8)
                                 Text(nip46Service.isConnected ? "Connected" : "Disconnected")
                                     .font(.appCaption)
@@ -1157,8 +1161,8 @@ struct AccountDetailView: View {
                             .font(.appSystem(size: 10, weight: .bold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.green.opacity(0.2))
-                            .foregroundColor(.green)
+                            .background(Color.havenOnline.opacity(0.2))
+                            .foregroundColor(.havenOnline)
                             .cornerRadius(4)
                     }
                 }
@@ -2245,7 +2249,7 @@ struct BackupSettingsView: View {
                 Section {
                     HStack {
                         Image(systemName: statusMessage.contains("failed") || statusMessage.contains("Error") ? "xmark.circle.fill" : "checkmark.circle.fill")
-                            .foregroundColor(statusMessage.contains("failed") || statusMessage.contains("Error") ? .red : .green)
+                            .foregroundColor(statusMessage.contains("failed") || statusMessage.contains("Error") ? .red : .havenOnline)
                         Text(statusMessage)
                             .font(.appCallout)
                             .foregroundColor(.secondary)
@@ -2539,7 +2543,7 @@ struct DMSettingsView: View {
                 Section {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(.havenOnline)
                         Text("DM relay preferences published to network")
                             .font(.appCaption)
                     }
@@ -2623,7 +2627,7 @@ private struct NewMirrorInputView: View {
 
             Button(action: onAdd) {
                 Image(systemName: "plus.circle.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(.havenOnline)
             }
             .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
@@ -3063,7 +3067,7 @@ struct MacRelayDomainSettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
+                                .foregroundColor(.havenOnline)
                                 .font(.appCaption)
                             Text("wss://\(configService.config.sanitizedRelayURL)")
                                 .font(.appSystem(size: 12, design: .monospaced))
@@ -3072,7 +3076,7 @@ struct MacRelayDomainSettingsView: View {
                         }
                         HStack(spacing: 8) {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
+                                .foregroundColor(.havenOnline)
                                 .font(.appCaption)
                             Text("https://\(configService.config.sanitizedRelayURL)")
                                 .font(.appSystem(size: 12, design: .monospaced))
@@ -3208,7 +3212,7 @@ struct MacRelaySettingsView: View {
                     // Always-on: Feed Relays
                     HStack(spacing: 12) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(.havenOnline)
                             .font(.appBody)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Feed Relays")
@@ -3224,7 +3228,7 @@ struct MacRelaySettingsView: View {
                     // Always-on: Import Relays
                     HStack(spacing: 12) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(.havenOnline)
                             .font(.appBody)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Import Relays")
@@ -3240,7 +3244,7 @@ struct MacRelaySettingsView: View {
                     // Always-on: Blastr Relays
                     HStack(spacing: 12) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(.havenOnline)
                             .font(.appBody)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Blastr Relays")
@@ -3256,7 +3260,7 @@ struct MacRelaySettingsView: View {
                     // Always-on: Blossom Mirror
                     HStack(spacing: 12) {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(.havenOnline)
                             .font(.appBody)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Blossom Mirror")
@@ -3286,7 +3290,7 @@ struct MacRelaySettingsView: View {
                     } else if !macSyncService.syncStatus.isEmpty {
                         HStack(spacing: 6) {
                             Image(systemName: macSyncService.notesSynced > 0 ? "checkmark.circle.fill" : "info.circle.fill")
-                                .foregroundColor(macSyncService.notesSynced > 0 ? .green : .blue)
+                                .foregroundColor(macSyncService.notesSynced > 0 ? .havenOnline : .blue)
                                 .font(.appCaption)
                             Text(macSyncService.syncStatus)
                                 .font(.appCaption)
@@ -3398,7 +3402,7 @@ struct BlossomSettingsView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "desktopcomputer")
                             .font(.appSystem(size: 18))
-                            .foregroundColor(.green)
+                            .foregroundColor(.havenOnline)
                             .frame(width: 24, height: 24)
                         
                         VStack(alignment: .leading, spacing: 2) {
@@ -3411,12 +3415,12 @@ struct BlossomSettingsView: View {
                                     .font(.appSystem(size: 9, weight: .bold))
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(Color.green.opacity(0.15))
-                                    .foregroundColor(.green)
+                                    .background(Color.havenOnline.opacity(0.15))
+                                    .foregroundColor(.havenOnline)
                                     .cornerRadius(4)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 4)
-                                            .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                                            .stroke(Color.havenOnline.opacity(0.3), lineWidth: 1)
                                     )
                             }
                             Text(macHttps)
@@ -3499,7 +3503,7 @@ struct BlossomSettingsView: View {
                     
                     Button(action: addMirror) {
                         Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(.havenOnline)
                             .font(.appTitle3)
                     }
                     .buttonStyle(.plain)
@@ -3663,7 +3667,7 @@ struct BlossomSettingsView: View {
             Section {
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(isVPNActive ? Color.green : Color.gray)
+                        .fill(isVPNActive ? Color.havenOnline : Color.gray)
                         .frame(width: 8, height: 8)
                     Text(isVPNActive ? "VPN active" : "No VPN detected")
                         .font(.appCaption)
@@ -3692,7 +3696,7 @@ struct BlossomSettingsView: View {
     #if os(macOS)
     private var fipsStatusColor: Color {
         switch fipsDetection.status {
-        case .running: return .green
+        case .running: return .havenOnline
         case .installed, .stale: return .yellow
         case .notInstalled: return .gray
         }

@@ -144,7 +144,7 @@ struct DashboardView: View {
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.green.opacity(0.12), lineWidth: 1)
+                .stroke(Color.havenOnline.opacity(0.12), lineWidth: 1)
         )
     }
 
@@ -164,7 +164,7 @@ struct DashboardView: View {
         HStack(spacing: 6) {
             Image(systemName: "terminal.fill")
                 .font(.appSystem(size: 10, weight: .bold))
-                .foregroundColor(.green)
+                .foregroundColor(.havenOnline)
 
             Text(title)
                 .font(.appSystem(size: 10, weight: .bold, design: .monospaced))
@@ -356,7 +356,7 @@ struct DashboardView: View {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: exportStatusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     .font(.appSystem(size: 11))
-                    .foregroundColor(exportStatusIsError ? .orange : .green)
+                    .foregroundColor(exportStatusIsError ? .orange : .havenOnline)
                 Text(exportStatusMessage)
                     .font(.appCaption)
                     .foregroundColor(exportStatusIsError ? .primary : .secondary)
@@ -431,19 +431,12 @@ struct DashboardView: View {
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.green.opacity(0.12), lineWidth: 1)
+                .stroke(Color.havenOnline.opacity(0.12), lineWidth: 1)
         )
         .padding(.horizontal)
     }
 
-    private func logLevelColor(_ level: String) -> Color {
-        switch level {
-        case "ERROR": return .red
-        case "WARN": return .orange
-        case "DEBUG": return .gray
-        default: return .green
-        }
-    }
+    private func logLevelColor(_ level: String) -> Color { .logLevel(level) }
 
     private func geometryHeight(for width: CGFloat) -> CGFloat {
         var height: CGFloat = 350
@@ -652,7 +645,7 @@ struct DashboardView: View {
                 if let prog = mirrorService.progress {
                     Text("\(prog.completed)/\(prog.total)")
                         .font(.appSystem(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundColor(.green)
+                        .foregroundColor(.havenOnline)
                 }
             }
 
@@ -660,12 +653,12 @@ struct DashboardView: View {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.green.opacity(0.1))
+                            .fill(Color.havenOnline.opacity(0.1))
 
                         RoundedRectangle(cornerRadius: 6)
                             .fill(
                                 LinearGradient(
-                                    gradient: Gradient(colors: [.green, .green.opacity(0.7)]),
+                                    gradient: Gradient(colors: [.havenOnline, .havenOnline.opacity(0.7)]),
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
@@ -710,7 +703,7 @@ struct DashboardView: View {
                     .cornerRadius(6)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.green.opacity(0.12), lineWidth: 0.5)
+                            .stroke(Color.havenOnline.opacity(0.12), lineWidth: 0.5)
                     )
                     .onChange(of: mirrorService.logEntries.count) { _, _ in
                         if let lastId = mirrorService.logEntries.last?.id {
@@ -732,7 +725,7 @@ struct DashboardView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
-                        .background(Color.green.opacity(0.8))
+                        .background(Color.havenOnline.opacity(0.8))
                         .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
@@ -744,26 +737,19 @@ struct DashboardView: View {
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                .stroke(Color.havenOnline.opacity(0.2), lineWidth: 1)
         )
         .padding(.horizontal)
     }
 
-    private func blossomLogColor(_ level: String) -> Color {
-        switch level {
-        case "ERROR": return .red
-        case "WARN": return .orange
-        case "DEBUG": return .gray
-        default: return .green
-        }
-    }
+    private func blossomLogColor(_ level: String) -> Color { .logLevel(level) }
 
     // MARK: - Status header
 
     private var statusColor: Color {
         if relayManager.isBooting { return .yellow }
         guard relayManager.isRunning else { return .red }
-        return relayManager.isWotSyncing ? .orange : .green
+        return relayManager.isWotSyncing ? .orange : .havenOnline
     }
 
     private var statusTitle: String {
@@ -866,7 +852,7 @@ struct DashboardView: View {
 
                         Image(systemName: didCopyAddress ? "checkmark" : "doc.on.doc")
                             .font(.appSystem(size: 9, weight: .semibold))
-                            .foregroundColor(didCopyAddress ? .green : .secondary.opacity(0.7))
+                            .foregroundColor(didCopyAddress ? .havenOnline : .secondary.opacity(0.7))
                     }
                 }
                 .buttonStyle(.plain)

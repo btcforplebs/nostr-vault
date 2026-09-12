@@ -103,7 +103,7 @@ struct BitcoinSweepDisclaimerView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.orange)
+                        .background(Color.havenPurple)
                         .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
@@ -164,7 +164,7 @@ struct BitcoinSweepDisclaimerView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.orange)
+                        .background(Color.havenPurple)
                         .cornerRadius(12)
                 }
                 .buttonStyle(.plain)

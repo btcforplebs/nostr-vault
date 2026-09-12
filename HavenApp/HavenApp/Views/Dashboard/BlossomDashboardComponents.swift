@@ -15,72 +15,40 @@ struct StatsSection: View {
         ]
 
         LazyVGrid(columns: columns, spacing: 12) {
-            UnifiedStatCard(
+            StatsCard(
                 title: "Total Files",
-                value: isLoading ? "..." : "\(stats.totalFiles)",
+                value: "\(stats.totalFiles)",
                 icon: "photo.on.rectangle",
-                color: .blue
+                color: .blue,
+                isLoading: isLoading
             )
 
-            UnifiedStatCard(
+            StatsCard(
                 title: "Storage Used",
-                value: isLoading ? "..." : stats.formattedSize,
+                value: stats.formattedSize,
                 icon: "internaldrive.fill",
-                color: .havenPurple
+                color: .havenPurple,
+                isLoading: isLoading
             )
 
-            UnifiedStatCard(
+            StatsCard(
                 title: "Active Mirrors",
-                value: isLoading ? "..." : "\(stats.mirrorCount)",
+                value: "\(stats.mirrorCount)",
                 icon: "server.rack",
-                color: .green
+                color: .green,
+                isLoading: isLoading
             )
 
-            UnifiedStatCard(
+            StatsCard(
                 title: "Backed Up",
-                value: isLoading ? "..." : "\(stats.backupPercentage)%",
+                value: "\(stats.backupPercentage)%",
                 icon: "checkmark.seal.fill",
-                color: stats.backupPercentage == 100 ? .green : .orange
+                // A finished backup is a healthy state, not a category, so it
+                // takes the status colour the rest of the app uses for it.
+                color: stats.backupPercentage == 100 ? .havenOnline : .orange,
+                isLoading: isLoading
             )
         }
-    }
-}
-
-// MARK: - Unified Stat Card
-
-struct UnifiedStatCard: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-    var action: (() -> Void)? = nil
-
-    var body: some View {
-        Button(action: { action?() }) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 24, weight: .medium))
-                    .foregroundColor(color)
-
-                Text(value)
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-
-                Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(Color.platformSecondaryGroupedBackground)
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(action == nil)
     }
 }
 
@@ -138,7 +106,7 @@ struct QuickActionsSection: View {
                         .tint(.havenPurple)
 
                     Text(syncMessage)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.appSystem(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 8)
@@ -168,12 +136,12 @@ struct UnifiedActionButton: View {
                         .controlSize(.small)
                 } else {
                     Image(systemName: icon)
-                        .font(.system(size: 20, weight: .medium))
+                        .font(.appSystem(size: 20, weight: .medium))
                         .foregroundColor(.havenPurple)
                 }
 
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.appSystem(size: 11, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -207,7 +175,7 @@ struct SectionHeader: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.appSystem(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(.secondary.opacity(0.8))
 
             Spacer()
@@ -216,10 +184,10 @@ struct SectionHeader: View {
                 Button(action: action) {
                     HStack(spacing: 4) {
                         Text(actionTitle)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.appSystem(size: 10, weight: .medium))
                             .foregroundColor(.havenPurple)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(.appSystem(size: 8, weight: .semibold))
                             .foregroundColor(.havenPurple.opacity(0.7))
                     }
                 }
