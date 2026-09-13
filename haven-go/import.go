@@ -765,6 +765,21 @@ func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbCh
 // can suddenly let days/weeks of previously-stuck backlog through, and firing
 // a live notification (red dot + sound) for each one reads as noise, not news.
 // A zero/negative NotifyMaxAgeHours disables the check entirely.
+// isNotifyableKind reports whether the host app wants notifications for this
+// event kind. An empty NotifyKinds set means the app expressed no preference
+// (or predates the setting) and every notifiable kind qualifies.
+//
+// This gate is what keeps the catch-up summary honest: the client can drop an
+// individual marker for a kind the user switched off, but "N more new items"
+// is a single number, so a kind counted here can never be filtered out later.
+func isNotifyableKind(kind int) bool {
+	if len(config.NotifyKinds) == 0 {
+		return true
+	}
+	_, ok := config.NotifyKinds[kind]
+	return ok
+}
+
 func isNotifyableAge(ev *nostr.Event) bool {
 	maxAge := time.Duration(config.NotifyMaxAgeHours) * time.Hour
 	return maxAge <= 0 || time.Since(ev.CreatedAt.Time()) <= maxAge
@@ -777,6 +792,9 @@ func isNotifyableAge(ev *nostr.Event) bool {
 // that should not notify (e.g. follow lists) produce no line.
 func emitInboxNotify(ev *nostr.Event, recipient string) {
 	if ev == nil {
+		return
+	}
+	if !isNotifyableKind(ev.Kind) {
 		return
 	}
 	var typ, preview string

@@ -85,6 +85,8 @@ class AppDelegate: NSObject, ObservableObject {
             queue: .main
         ) { _ in
             MainActor.assumeIsolated {
+                // The absence starts now — same bookkeeping as iOS.
+                NotificationActivityLog.recordForeground()
                 // Pause the feed to reduce background CPU/memory from relay
                 // traffic and note accumulation.
                 FeedService.shared.pauseFeed()
@@ -104,6 +106,8 @@ class AppDelegate: NSObject, ObservableObject {
             queue: .main
         ) { _ in
             MainActor.assumeIsolated {
+                // Ends any absence for the catch-up summary (NotificationPolicy).
+                NotificationActivityLog.recordForeground()
                 FeedService.shared.resumeFeed()
                 NetworkSyncService.shared.start()
                 RelayProcessManager.shared.enterForeground()

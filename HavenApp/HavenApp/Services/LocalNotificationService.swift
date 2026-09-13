@@ -58,16 +58,55 @@ final class LocalNotificationService {
         }
     }
 
-    /// Shows/posts a single "N new notifications" summary, reusing the existing
-    /// `summary` type's title/body/icon and foreground/background branching.
+    /// Posts a single "N new notifications" summary, reusing the existing
+    /// `summary` type's title/body/icon.
+    ///
+    /// This path does not go through handle(), so it has to apply the same gates
+    /// itself — it previously applied none of them, which meant the master
+    /// Notifications switch, the per-account preferences and the "not while the
+    /// app is open" rule all governed the relay's summary marker and none of
+    /// them governed this one.
     private func fireSummary(count: Int) {
+        guard ConfigService.shared.config.enablePushNotifications else { return }
+        guard anyAccountWantsNotifications else { return }
+
         let preview = count == 1 ? "1 new notification" : "\(count) new notifications"
         let id = "summary-\(Int(Date().timeIntervalSince1970))"
+
+        // Over an open app this is the in-app banner, as before: the events it
+        // counts were tallied instead of banner'd individually, so staying
+        // silent here would drop them entirely. Only the *system push* needs the
+        // absence rule, because that is the one that repeats on every wake.
         if appInForeground {
             showInAppBanner(id: id, type: "summary", name: nil, preview: preview, npub: "")
-        } else {
-            post(id: id, type: "summary", name: nil, preview: preview, npub: "")
+            return
         }
+        guard catchUpSummaryAllowed else { return }
+        NotificationActivityLog.recordCatchUpSummary()
+        post(id: id, type: "summary", name: nil, preview: preview, npub: "")
+    }
+
+    /// Whether a catch-up summary may fire right now: never over an open app,
+    /// and only once per genuine absence (NotificationPolicy.minimumAbsence).
+    private var catchUpSummaryAllowed: Bool {
+        guard !appInForeground else { return false }
+        return NotificationPolicy.shouldAnnounceAbsenceSummary(
+            now: Date(),
+            lastForegroundAt: NotificationActivityLog.lastForegroundAt,
+            lastAnnouncedAt: NotificationActivityLog.lastCatchUpSummaryAt
+        )
+    }
+
+    /// True when at least one account on this device wants any notification at
+    /// all. The batch summary is account-agnostic (it spans every whitelisted
+    /// account), so no single account's preferences can govern it.
+    private var anyAccountWantsNotifications: Bool {
+        let config = ConfigService.shared.config
+        var npubs = ConfigService.shared.allAccountNpubs
+        if npubs.isEmpty {
+            npubs = [config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub]
+        }
+        return npubs.contains { PushNotificationService.shared.preferencesForAccount($0).wantsAnything }
     }
 
     // MARK: - Entry point
@@ -133,12 +172,18 @@ final class LocalNotificationService {
             // The catch-up backlog count spans every type, so no per-type
             // preference governs it — but turning all of them off must still
             // silence it. It is also meaningless while the app is open: it
-            // announces activity you missed, and you missed nothing.
-            case "summary":        return prefs.wantsAnything && !appInForeground
+            // announces activity you missed, and you missed nothing. And the
+            // relay re-runs this round on every background wake, so it is only
+            // "while you were away" if you actually were — see catchUpSummaryAllowed.
+            case "summary":        return prefs.wantsAnything && catchUpSummaryAllowed
             default:               return false
             }
         }()
         guard allowed else { return }
+
+        // One summary per absence: record it as soon as it is cleared to fire,
+        // so the next background wake's round does not repeat it.
+        if type == "summary" { NotificationActivityLog.recordCatchUpSummary() }
 
         // During a MacRelaySyncService catch-up round, tally instead of firing
         // individually — endCatchUpBatch() turns this into one summary. The

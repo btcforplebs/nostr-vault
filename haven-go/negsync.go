@@ -118,6 +118,9 @@ func (n *batchNotifier) maybeNotify(ev *nostr.Event, recipient string) {
 	if !isNotifyableAge(ev) {
 		return // old backlog, not news
 	}
+	if !isNotifyableKind(ev.Kind) {
+		return // a kind the app has notifications switched off for
+	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.emitted < config.NotifyBatchLimit {
