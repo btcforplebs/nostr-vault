@@ -26,7 +26,6 @@ data class VaultSnapshot(
     val relay: RelayStats = RelayStats(),
     val feed: List<SnapshotNote> = emptyList(),
     val mentions: List<SnapshotNote> = emptyList(),
-    val cashuSats: Long = 0L,
     val unreadDMs: Int = 0,
 ) {
     @Serializable

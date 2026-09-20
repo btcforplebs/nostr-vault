@@ -160,40 +160,6 @@ private fun FeedContent(context: Context, snapshot: VaultSnapshot) {
     }
 }
 
-// ── Sats ───────────────────────────────────────────────────────────────
-
-/**
- * Cashu balance only. iOS's Sats widget has lightning and 24h-zap slots that
- * are hardcoded nil/0 with TODOs behind them; showing an invented zero is
- * worse than not showing the row, so this shows the one number that is real.
- */
-class SatsWidget : GlanceAppWidget() {
-    override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snapshot = WidgetSnapshotStore.read(context)
-        provideContent { GlanceTheme { SatsContent(context, snapshot) } }
-    }
-}
-
-class SatsReceiver : GlanceAppWidgetReceiver() {
-    override val glanceAppWidget: GlanceAppWidget = SatsWidget()
-}
-
-@Composable
-private fun SatsContent(context: Context, snapshot: VaultSnapshot) {
-    Column(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .background(WidgetTheme.Background)
-            .padding(12.dp)
-            .clickable(openApp(context, "wallet")),
-    ) {
-        Text("Ecash", style = WidgetTheme.Title)
-        Spacer(GlanceModifier.height(4.dp))
-        Text("${snapshot.cashuSats}", style = WidgetTheme.Value)
-        Text("sats", style = WidgetTheme.Caption)
-    }
-}
-
 // ── Shared ─────────────────────────────────────────────────────────────
 
 /**

@@ -185,7 +185,6 @@ object NostrVaultIcons {
     val At: ImageVector = Icons.Filled.AlternateEmail            // at (tagged filter)
 
     // Wallet
-    val EcashWallet: ImageVector = Icons.Filled.AccountBalanceWallet // banknote.fill
 
     // Blossom
     val Blossom: ImageVector = Icons.Filled.LocalFlorist          // camera.macro (flower)

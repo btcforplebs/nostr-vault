@@ -2658,37 +2658,6 @@ struct WalletSettingsView: View {
                 }
             }
 
-            // Cashu Ecash Mint
-            Section {
-                TextEditor(text: $configService.config.cashuMintURL)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 60)
-                    .padding(4)
-                    .background(Color.platformControlBackground)
-                    .cornerRadius(6)
-                    #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                    #endif
-                    .onChange(of: configService.config.cashuMintURL) { _, _ in
-                        configService.save()
-                    }
-            } header: {
-                Text("Cashu Mint URL")
-            } footer: {
-                Text("Enter a Cashu mint URL to enable the ecash wallet. Example: https://mint.minibits.cash/Bitcoin")
-            }
-
-            if !configService.config.cashuMintURL.isEmpty {
-                Section("Ecash Wallet") {
-                    HStack {
-                        Text("Balance")
-                        Spacer()
-                        Text("\(CashuService.shared.balanceSats) sats")
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
 
             // Bitcoin Taproot wallet derived from Nostr keypair (BIP-341)
             Section {

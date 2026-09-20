@@ -35,7 +35,6 @@
 
 ### Payments
 - **Lightning Wallet (NWC)** — Send and receive zaps via Nostr Wallet Connect with real-time balance, invoice generation with QR codes, and custom zap amounts/messages.
-- **Cashu Ecash Wallet** — Full NUT protocol ecash wallet with Blind Diffie-Hellman key exchange. Deposit/withdraw via Lightning (NUT-04/05), send/receive cashuA tokens (NUT-00/03), and relay-backed storage via NIP-60 with NIP-44 self-encryption for cross-device recovery.
 - **On-Chain Bitcoin** — Taproot (BIP-341) address derivation, UTXO sweeping with Schnorr signatures, and selectable fee rates via Mempool API.
 
 ### Feed & Content

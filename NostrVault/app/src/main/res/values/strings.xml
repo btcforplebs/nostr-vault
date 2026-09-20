@@ -41,5 +41,4 @@
     <string name="widget_pulse_description">Whether your vault is live, and how much it holds.</string>
     <string name="widget_actions_description">Post, search, messages and media in one tap.</string>
     <string name="widget_feed_description">The last few notes from people you follow.</string>
-    <string name="widget_sats_description">Your ecash balance.</string>
 </resources>

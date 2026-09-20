@@ -237,7 +237,6 @@ struct SetupWizardView: View {
 
     // Wallet state
     @State private var nwcURI = ""
-    @State private var cashuMintURL = ""
 
     // Error state
     @State private var setupError: String?
@@ -364,7 +363,6 @@ struct SetupWizardView: View {
         case 6:
             WalletSetupStep(
                 nwcURI: $nwcURI,
-                cashuMintURL: $cashuMintURL,
                 onContinue: {
                     if isIOSDevice {
                         goForward() // Go to notifications
@@ -499,7 +497,6 @@ struct SetupWizardView: View {
         }
         configService.config.macRelayURL = macRelayURL
         configService.config.nwcURI = nwcURI
-        configService.config.cashuMintURL = cashuMintURL
 
         if signingMode == "nip46" {
             configService.config.nip46BunkerURI = bunkerURI
@@ -617,7 +614,7 @@ private struct WelcomeStepView: View {
         ("doc.text.image", "Full Nostr Client", "Browse your feed, post notes, reply, repost, and discover content from the network."),
         ("lock.shield", "Private Messaging", "NIP-17 encrypted DMs that stay on your device. No third-party server reads your conversations."),
         ("photo.stack", "Blossom Media", "Host images and videos on your machine with Blossom. Mirror media from the network to your local storage."),
-        ("bolt.fill", "Lightning + Ecash", "Send and receive zaps over Lightning with NWC. Store ecash tokens with a built-in Cashu wallet.")
+        ("bolt.fill", "Lightning Zaps", "Send and receive zaps over Lightning by connecting your own wallet with Nostr Wallet Connect.")
     ]
 
     var body: some View {
@@ -2604,13 +2601,11 @@ private struct MirrorMediaStep: View {
 
 private struct WalletSetupStep: View {
     @Binding var nwcURI: String
-    @Binding var cashuMintURL: String
     let onContinue: () -> Void
     let onSkip: () -> Void
 
     @State private var appeared = false
     @State private var lightningExpanded = false
-    @State private var cashuExpanded = false
     @State private var nwcStatus: ConnectionStatus = .idle
 
     enum ConnectionStatus {
@@ -2698,46 +2693,6 @@ private struct WalletSetupStep: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(WizardColors.borderSubtle, lineWidth: 1))
             .opacity(appeared ? 1 : 0)
             .animation(WizardAnimations.springEnter.delay(0.3), value: appeared)
-
-            // Cashu Ecash section
-            VStack(spacing: 0) {
-                Button(action: { withAnimation(WizardAnimations.springEnter) { cashuExpanded.toggle() } }) {
-                    HStack {
-                        Image(systemName: "centsign.circle.fill")
-                            .font(.appSystem(size: 18))
-                            .foregroundColor(WizardColors.accentPrimary)
-                        Text(String(localized: "setup.wallet.cashu.title"))
-                            .font(.appSystem(size: 16, weight: .semibold))
-                            .foregroundColor(WizardColors.textPrimary)
-                        Spacer()
-                        Image(systemName: cashuExpanded ? "chevron.up" : "chevron.down")
-                            .font(.appSystem(size: 12))
-                            .foregroundColor(WizardColors.textMuted)
-                    }
-                    .padding(16)
-                }
-                .buttonStyle(.plain)
-
-                if cashuExpanded {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Divider().background(WizardColors.borderSubtle)
-
-                        WizardInputField(label: String(localized: "setup.wallet.cashu.label"), text: $cashuMintURL, placeholder: "https://mint.example.com")
-
-                        Text(String(localized: "setup.wallet.cashu.hint"))
-                            .font(.appSystem(size: 12))
-                            .foregroundColor(WizardColors.textMuted)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
-            .background(WizardColors.bgCard)
-            .cornerRadius(12)
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(WizardColors.borderSubtle, lineWidth: 1))
-            .opacity(appeared ? 1 : 0)
-            .animation(WizardAnimations.springEnter.delay(0.38), value: appeared)
 
             WizardPrimaryButton(title: String(localized: "setup.action.continue"), action: onContinue)
 

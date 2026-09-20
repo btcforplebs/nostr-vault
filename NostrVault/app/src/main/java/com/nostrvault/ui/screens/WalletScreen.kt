@@ -25,16 +25,11 @@ import com.journeyapps.barcodescanner.BarcodeEncoder
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
-import com.nostrvault.service.CashuMintInfo
-import com.nostrvault.service.CashuProof
-import com.nostrvault.service.CashuService
 import com.nostrvault.service.NWCService
 import com.nostrvault.service.NostrService
-import com.nostrvault.ui.screens.wallet.WalletCashuTab
 import com.nostrvault.ui.screens.wallet.WalletLightningTab
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,23 +37,15 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Wallet screen — Lightning (NWC) send/receive, Cashu ecash operations, and a
- * Settings tab (NWC URI, default zap, mint URL, Bitcoin taproot address).
- * Port of iOS WalletView (tabbed Lightning / Cashu).
+doc
  */
 @HiltViewModel
 class WalletViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nwcService: NWCService,
-    private val cashuService: CashuService,
     private val nostrService: NostrService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
-    val cashuBalance: StateFlow<ULong> = cashuService.balanceSats
-    val cashuProofs: StateFlow<List<CashuProof>> = cashuService.proofs
-    val cashuMintInfo: StateFlow<CashuMintInfo?> = cashuService.mintInfo
-    val cashuLoading: StateFlow<Boolean> = cashuService.isLoading
-
     private val _lightningBalance = MutableStateFlow<Long?>(null)
     val lightningBalance = _lightningBalance.asStateFlow()
 
@@ -79,29 +66,14 @@ class WalletViewModel @Inject constructor(
     private val _generatedInvoice = MutableStateFlow<String?>(null)
     val generatedInvoice = _generatedInvoice.asStateFlow()
 
-    // Cashu fund (mint) invoice awaiting payment
-    private val _fundInvoice = MutableStateFlow<String?>(null)
-    val fundInvoice = _fundInvoice.asStateFlow()
-
-    // Cashu send-token string for sharing
-    private val _sendToken = MutableStateFlow<String?>(null)
-    val sendToken = _sendToken.asStateFlow()
-
     init {
         refreshBalance()
         if (config.value.showBitcoinWallet) deriveAddress()
-        ensureMintConfigured()
-    }
-
-    /** Point CashuService at the saved mint (loads persisted proofs). Cheap + idempotent. */
-    fun ensureMintConfigured() {
-        config.value.cashuMintURL.takeIf { it.isNotBlank() }?.let { cashuService.configureMint(it) }
     }
 
     // ── Config setters (Settings tab) ─────────────────────────────
     fun setNwcUri(uri: String) = configStore.update { it.copy(nwcURI = uri.ifBlank { null }) }
     fun setDefaultZap(sats: Int) = configStore.update { it.copy(defaultZapAmount = sats.coerceAtLeast(1)) }
-    fun setCashuMint(url: String) = configStore.update { it.copy(cashuMintURL = url) }
 
     fun toggleBitcoin(on: Boolean) {
         configStore.update { it.copy(showBitcoinWallet = on) }
@@ -152,118 +124,9 @@ class WalletViewModel @Inject constructor(
         }
     }
 
-    // ── Cashu operations ──────────────────────────────────────────
-    /** Fund ecash from Lightning: request a mint quote, then poll until paid and mint. */
-    fun fundFromLightning(amountSats: Long) {
-        if (amountSats <= 0 || _busy.value) return
-        viewModelScope.launch {
-            _busy.value = true; _error.value = null; _message.value = null
-            try {
-                val quote = cashuService.requestMintQuote(amountSats.toULong())
-                cashuService.trackPendingQuote(quote, amountSats.toULong())
-                _fundInvoice.value = quote.request
-                // Poll for payment for up to ~2 minutes, then mint exactly once.
-                var minted = false
-                var attempts = 0
-                while (!minted && attempts < 40) {
-                    delay(3_000)
-                    val status = cashuService.checkMintQuote(quote.quote)
-                    if (status.paid == true || status.state == "PAID" || status.state == "ISSUED") {
-                        cashuService.mintTokens(quote.quote, amountSats.toULong())
-                        minted = true
-                    }
-                    attempts++
-                }
-                if (minted) {
-                    _fundInvoice.value = null
-                    _message.value = "Funded $amountSats sats"
-                } else {
-                    _message.value = "Invoice still unpaid — use 'Recover' once paid"
-                }
-            } catch (e: Exception) {
-                _error.value = e.message ?: "Funding failed"
-            } finally { _busy.value = false }
-        }
-    }
-
-    fun clearFundInvoice() { _fundInvoice.value = null }
-
-    /** Cash out ecash to a Lightning invoice (melt). */
-    fun cashOut(bolt11: String) {
-        val invoice = bolt11.trim()
-        if (invoice.isEmpty() || _busy.value) return
-        viewModelScope.launch {
-            _busy.value = true; _error.value = null; _message.value = null
-            try {
-                val quote = cashuService.requestMeltQuote(invoice)
-                val ok = cashuService.meltTokens(
-                    quoteId = quote.quote,
-                    amount = quote.amount.toULong(),
-                    feeReserve = quote.fee_reserve.toULong(),
-                )
-                _message.value = if (ok) "Paid ${quote.amount} sats" else "Cash-out failed"
-            } catch (e: Exception) {
-                _error.value = e.message ?: "Cash-out failed"
-            } finally { _busy.value = false }
-        }
-    }
-
-    fun createCashuToken(amountSats: Long, memo: String) {
-        if (amountSats <= 0 || _busy.value) return
-        viewModelScope.launch {
-            _busy.value = true; _error.value = null
-            try {
-                _sendToken.value = cashuService.createSendToken(amountSats.toULong(), memo.ifBlank { null })
-            } catch (e: Exception) {
-                _error.value = e.message ?: "Could not create token"
-            } finally { _busy.value = false }
-        }
-    }
-
-    fun clearSendToken() { _sendToken.value = null }
-
-    fun receiveCashuToken(token: String) {
-        val t = token.trim()
-        if (t.isEmpty() || _busy.value) return
-        viewModelScope.launch {
-            _busy.value = true; _error.value = null; _message.value = null
-            try {
-                cashuService.receiveToken(t)
-                _message.value = "Token redeemed"
-            } catch (e: Exception) {
-                _error.value = e.message ?: "Invalid token"
-            } finally { _busy.value = false }
-        }
-    }
-
-    fun restoreCashu() {
-        if (_busy.value) return
-        viewModelScope.launch {
-            _busy.value = true; _error.value = null; _message.value = null
-            try {
-                cashuService.restoreFromRelays()
-                _message.value = "Restored from relays"
-            } catch (e: Exception) {
-                _error.value = e.message ?: "Restore failed"
-            } finally { _busy.value = false }
-        }
-    }
-
-    fun recoverPending() {
-        if (_busy.value) return
-        viewModelScope.launch {
-            _busy.value = true; _error.value = null; _message.value = null
-            try {
-                cashuService.recoverPendingQuotes()
-                _message.value = "Checked pending payments"
-            } catch (e: Exception) {
-                _error.value = e.message ?: "Recovery failed"
-            } finally { _busy.value = false }
-        }
-    }
 }
 
-private enum class WalletTab(val label: String) { LIGHTNING("Lightning"), CASHU("Ecash"), SETTINGS("Settings") }
+private enum class WalletTab(val label: String) { LIGHTNING("Lightning"), SETTINGS("Settings") }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -320,7 +183,6 @@ fun WalletScreen(
 
             when (selectedTab) {
                 WalletTab.LIGHTNING -> WalletLightningTab(viewModel)
-                WalletTab.CASHU -> WalletCashuTab(viewModel)
                 WalletTab.SETTINGS -> WalletSettingsTab(viewModel, onSweep)
             }
         }
@@ -367,19 +229,6 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
 
         Spacer(Modifier.height(24.dp))
 
-        WalletSectionLabel("Cashu Mint")
-        OutlinedTextField(
-            value = config.cashuMintURL,
-            onValueChange = viewModel::setCashuMint,
-            placeholder = { Text("https://mint.example.com") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            colors = walletFieldColors(colors.primary),
-        )
-        WalletCaption("Set a mint to use the Ecash tab.")
-
-        Spacer(Modifier.height(24.dp))
-
         WalletSectionLabel("Bitcoin")
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
@@ -415,7 +264,7 @@ private fun WalletSettingsTab(viewModel: WalletViewModel, onSweep: () -> Unit) {
     }
 }
 
-// ── Shared wallet UI helpers (used by the Lightning/Cashu tab files) ──
+// ── Shared wallet UI helpers (used by the Lightning tab file) ──
 
 @Composable
 internal fun WalletQr(content: String) {

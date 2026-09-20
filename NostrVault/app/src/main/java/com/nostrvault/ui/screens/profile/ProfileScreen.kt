@@ -126,9 +126,6 @@ fun ProfileScreen(
                         IconButton(onClick = { /* lightning wallet */ }, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Zap, "Lightning", tint = colors.primary, modifier = Modifier.size(25.dp))
                         }
-                        IconButton(onClick = { /* ecash wallet */ }, modifier = Modifier.size(40.dp)) {
-                            Icon(NostrVaultIcons.EcashWallet, "Ecash", tint = colors.primary, modifier = Modifier.size(25.dp))
-                        }
                     } else {
                         IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Back, "Back", tint = PrimaryText, modifier = Modifier.size(25.dp))
