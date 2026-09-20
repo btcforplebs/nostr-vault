@@ -37,6 +37,7 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — every p
 *   **Local Video Stopped Playing After a Reinstall**: iOS moves the app's storage on every install, which left every local video pointing at a folder that no longer existed. Local playback now survives reinstalls.
 *   **Link Previews**: Two links to the same site no longer share one preview, and a preview card follows its own link.
 *   **macOS Windows and Notifications**: A tapped notification opens the note; the window stops throwing away your tab after a minute in another app; the composer survives a cold start; ⌘N works and there is a visible Post button again; the Blossom dashboard is reachable and opens properly.
+*   **The Menu Bar Panel's Avatar Could Blow Out the Dropdown (macOS)**: Your account picture could render at the wrong size, unclipped, pushing the panel's footer open and covering most of the dropdown.
 *   **Keyboard and Pointer**: Every control that only answered a swipe or a tap now answers a pointer and the keyboard too.
 *   **"While You Were Away"**: Only says that when you actually were.
 *   **Live Chat**: The composer no longer hides behind the tab bar, an invoice with no amount no longer reads as 1 BTC, and stream audio resumes after a notification sound interrupts it.
