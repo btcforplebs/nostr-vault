@@ -44,7 +44,7 @@ release_notes: ./RELEASE_NOTES.md
 images:
   - screenshots/01_blossom_dashboard.png
   - screenshots/02_media_gallery.png
-  - screenshots/03_feed.png
+  - screenshots/03_recipes.png
   - screenshots/04_relay_dashboard.png
   - screenshots/05_settings.png
 
