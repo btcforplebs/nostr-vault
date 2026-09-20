@@ -38,7 +38,7 @@ description: |
 
 website: https://nostrvault.app
 repository: https://github.com/btcforplebs/nostr-vault
-source_url: https://github.com/btcforplebs/nostr-vault/tree/v2.6.0-b14
+source_url: https://github.com/btcforplebs/nostr-vault/tree/v2.7.0-b15
 tags: [nostr, bitcoin, relay, blossom, lightning]
 release_notes: ./RELEASE_NOTES.md
 images:

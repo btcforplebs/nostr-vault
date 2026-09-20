@@ -105,8 +105,8 @@ targets:
         CODE_SIGN_STYLE: Automatic
         "CODE_SIGN_IDENTITY[sdk=macosx*]": "Apple Development"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
-        CURRENT_PROJECT_VERSION: "14"
-        MARKETING_VERSION: "2.6.0"
+        CURRENT_PROJECT_VERSION: "15"
+        MARKETING_VERSION: "2.7.0"
 
     preBuildScripts:
       - name: Build Go Library (macOS)
@@ -183,8 +183,8 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/build", "$(SRCROOT)/build/ios"]
         TARGETED_DEVICE_FAMILY: "1,2"
-        CURRENT_PROJECT_VERSION: "14"
-        MARKETING_VERSION: "2.6.0"
+        CURRENT_PROJECT_VERSION: "15"
+        MARKETING_VERSION: "2.7.0"
 
     preBuildScripts:
       - name: Build Go Library (iOS)
@@ -230,8 +230,8 @@ targets:
         GENERATE_INFOPLIST_FILE: false
         CODE_SIGN_ENTITLEMENTS: NostrVaultWidgets/NostrVaultWidgets.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        CURRENT_PROJECT_VERSION: "14"
-        MARKETING_VERSION: "2.6.0"
+        CURRENT_PROJECT_VERSION: "15"
+        MARKETING_VERSION: "2.7.0"
         SKIP_INSTALL: YES
 
 schemes:
