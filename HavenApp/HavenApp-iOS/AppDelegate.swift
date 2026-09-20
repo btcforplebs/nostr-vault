@@ -138,7 +138,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         }
 
         Task { @MainActor in
-            let countBefore = FeedService.shared.notes.count
             FeedService.shared.refresh()
 
             // Sync DMs from external relays
@@ -153,12 +152,44 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
             // Give it up to 25s to connect to relays and receive events
             try? await Task.sleep(nanoseconds: 25_000_000_000)
-            let newCount = FeedService.shared.notes.count - countBefore
-            if newCount > 0 {
-                PushNotificationService.showFeedNotification(newCount: newCount)
-            }
+            announceFeedActivityIfWanted()
             task.setTaskCompleted(success: true)
         }
+    }
+
+    /// Announces feed activity from a background wake — but only when the user
+    /// asked for it, and only once per genuine absence.
+    ///
+    /// This wake fires as often as iOS grants it. It used to notify on every
+    /// one, counting the growth of `FeedService.notes` over the 25-second window
+    /// above (which counts backfilled older notes as news) and checking no
+    /// preference at all — not even the master Notifications switch, which is
+    /// why turning notifications off never stopped it.
+    @MainActor
+    private static func announceFeedActivityIfWanted() {
+        let config = ConfigService.shared.config
+        let dates = FeedService.shared.notes.map(\.createdAt)
+
+        guard config.enablePushNotifications, config.enableFeedNotifications else { return }
+        guard NotificationPolicy.shouldAnnounceAbsenceSummary(
+            now: Date(),
+            lastForegroundAt: NotificationActivityLog.lastForegroundAt,
+            lastAnnouncedAt: NotificationActivityLog.lastFeedSummaryAt
+        ) else { return }
+
+        let newCount = NotificationPolicy.unannouncedFeedNoteCount(
+            createdAt: dates,
+            lastAnnouncedNoteAt: NotificationActivityLog.lastAnnouncedFeedNoteAt
+        )
+        guard newCount > 0 else { return }
+
+        // Watermark forward only when the user is actually told: a wake that
+        // stays silent must not consume the notes it stayed silent about.
+        // Foregrounding the app moves it too (SceneDelegate) — those notes were
+        // on screen.
+        NotificationActivityLog.recordFeedSummary()
+        if let newest = dates.max() { NotificationActivityLog.recordAnnouncedFeedNote(newest) }
+        PushNotificationService.showFeedNotification(newCount: newCount)
     }
 
     static func scheduleAppRefresh() {

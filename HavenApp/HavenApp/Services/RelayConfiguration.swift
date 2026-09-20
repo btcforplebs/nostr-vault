@@ -28,6 +28,32 @@ enum RelayConfiguration {
         }
     }
 
+    /// The union of every account's notification preferences, as event kinds
+    /// (see NotificationPolicy.notifyKinds). Read by the relay at start, so a
+    /// preference change reaches its catch-up summary on the next relay start;
+    /// individual notifications are filtered client-side and change immediately.
+    static func notifyKinds(config: HavenConfig) -> [Int] {
+        guard config.enablePushNotifications else { return [NotificationPolicy.silentKind] }
+        // An account with no stored entry uses NotificationPreferences()'s
+        // defaults everywhere else, so it has to count here too — otherwise a
+        // user who never opened the notification settings has no entries at all
+        // and this would report "notify for nothing".
+        var accounts: [String] = [config.ownerNpub]
+        accounts.append(contentsOf: config.whitelistedNpubs.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        })
+        let prefs = Set(accounts.filter { !$0.isEmpty }).map {
+            config.notificationPrefsPerAccount[$0] ?? NotificationPreferences()
+        }
+        return NotificationPolicy.notifyKinds(
+            mentionsOrReplies: prefs.contains { $0.mentions || $0.replies },
+            dms: prefs.contains { $0.dms },
+            zaps: prefs.contains { $0.zaps },
+            reactions: !config.zapsOnlyMode && prefs.contains { $0.reactions },
+            reposts: prefs.contains { $0.reposts }
+        )
+    }
+
     /// Build the full environment dictionary from a HavenConfig.
     /// `relayDataDir` is passed explicitly so this function has no
     /// dependency on ConfigService.shared.
@@ -118,6 +144,7 @@ enum RelayConfiguration {
             "INBOX_RELAY_DESCRIPTION": config.inboxRelayDescription,
             "INBOX_RELAY_ICON": config.inboxRelayIcon,
             "INBOX_PULL_INTERVAL_SECONDS": String(config.inboxPullIntervalSeconds),
+            "NOTIFY_KINDS": notifyKinds(config: config).map(String.init).joined(separator: ","),
             "INBOX_RELAY_EVENT_IP_LIMITER_TOKENS_PER_INTERVAL": "10",
             "INBOX_RELAY_EVENT_IP_LIMITER_INTERVAL": "1",
             "INBOX_RELAY_EVENT_IP_LIMITER_MAX_TOKENS": "20",

@@ -20,6 +20,15 @@ struct PushNotificationSettingsView: View {
             }
 
             if configService.config.enablePushNotifications {
+                Section {
+                    Toggle("New notes in your feed", isOn: $configService.config.enableFeedNotifications)
+                        .onChange(of: configService.config.enableFeedNotifications) { _, _ in
+                            configService.save()
+                        }
+                } footer: {
+                    Text("A single summary of what people you follow posted, and only after you have been away for a couple of hours. Everything else here is about notes addressed to you.")
+                }
+
                 NotificationSoundSection()
 
                 ForEach(configService.allAccountNpubs, id: \.self) { npub in

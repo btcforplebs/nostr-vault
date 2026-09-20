@@ -78,6 +78,12 @@ type Config struct {
 	SyncWindowDays                       int                 `json:"sync_window_days"`
 	TombstonePath                        string              `json:"tombstone_path"`
 	NotifyBatchLimit                     int                 `json:"notify_batch_limit"`
+	// Event kinds the host app wants notifications for, as a set. Empty means
+	// "no preference expressed" and every notifiable kind qualifies. Without
+	// this the relay counted kinds the user had switched off in the app into
+	// the catch-up summary: the client filters individual markers by kind, but
+	// a summary is one number and nothing can filter it after the fact.
+	NotifyKinds                          map[int]struct{}    `json:"notify_kinds"`
 	NotifyMaxAgeHours                    int                 `json:"notify_max_age_hours"`
 	FeedSyncEnabled                      bool                `json:"feed_sync_enabled"`
 	FeedSyncWindowDays                   int                 `json:"feed_sync_window_days"`
@@ -150,6 +156,7 @@ func loadConfig() Config {
 		SyncWindowDays:                       getEnvInt("SYNC_WINDOW_DAYS", 30),
 		TombstonePath:                        getEnvString("TOMBSTONE_PATH", "db/tombstones.jsonl"),
 		NotifyBatchLimit:                     getEnvInt("NOTIFY_BATCH_LIMIT", 5),
+		NotifyKinds:                          getKindSet("NOTIFY_KINDS"),
 		NotifyMaxAgeHours:                    getEnvInt("NOTIFY_MAX_AGE_HOURS", 24),
 		FeedSyncEnabled:                      getEnvBool("FEED_SYNC_ENABLED", true),
 		FeedSyncWindowDays:                   getEnvInt("FEED_SYNC_WINDOW_DAYS", 7),
@@ -316,6 +323,23 @@ func isBlacklisted(pubkey string) bool {
 // next event processed, no relay restart required.
 func UpdateBlacklist(pubkeys map[string]struct{}) {
 	blacklistOverride.Store(&pubkeys)
+}
+
+// getKindSet parses a comma-separated list of event kinds ("1,6,7,9735") into a
+// set. An unset/empty/unparseable-only value yields an empty set, which callers
+// read as "every kind" — a malformed list must not silence notifications.
+func getKindSet(key string) map[int]struct{} {
+	out := map[int]struct{}{}
+	for _, part := range strings.Split(os.Getenv(key), ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if k, err := strconv.Atoi(part); err == nil {
+			out[k] = struct{}{}
+		}
+	}
+	return out
 }
 
 func getEnv(key string) string {
