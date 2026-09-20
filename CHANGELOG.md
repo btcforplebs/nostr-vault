@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0 (15) — macOS / iOS / Android] - 2026-09-XX
+
+> **A new mark, and a surface to put it on.** The filing cabinet is gone: every platform now wears the lit arch in Sunset Orange, down to the Android notification silhouette and the icons in the relay's own web pages. Behind it, the app finally has a visual system — an elevation ramp where there was none, semantic colour tokens instead of hardcoded values, and one motion vocabulary that honours Reduce Motion everywhere. On top of that: home-screen widgets, a real two-column iPad layout, and three new feeds — Articles, Recipes and Live streams with chat and zaps. A biometric bypass that could reveal your signing key without authentication is fixed, and the Global feed no longer fails open to the raw firehose.
+
+### Security
+- **Biometric Key Reveal Could Be Bypassed (iOS)**: Revealing your private key called through to the reveal handler in the `else` branch when device-owner authentication was unavailable — no passcode or biometry enrolled, or any `LAContext` error — so the nsec was shown with no authentication at all. It now reveals only on a successful evaluation and fails closed otherwise.
+- **The Global Feed Failed Open**: The Web of Trust filter admitted everyone when the trust graph was empty, which is exactly the state a brand-new account is in — the raw firehose, measured at roughly two thirds spam. Global now admits only authors actually in the graph, and the graph is seeded (see below) so "empty" means "not built yet" rather than "this person has no friends". The Global media grid carried the same line and is fixed with it.
+- **New Accounts Were Sent to Popular First**: Popular ranks raw engagement from open relays and was the first screen a new user ever saw. They now land somewhere that reflects their own follows.
+- **Private Key File Permissions (FIPS)**: Closed the window between creating the nsec file and restricting it.
+
+### Added
+- **The Lit Arch**: A new app icon across macOS, iOS, iPadOS, the widget extension and Android — including a proper adaptive icon and a themed/monochrome layer, so the Android notification mark is the brand rather than a generic dot. The relay's web UI icons, the website and the docs logo now match.
+- **A Surface Ramp and Semantic Colour Tokens**: The app had no elevation system — cards, sheets and pages were assembled from hardcoded values, and on Android card-vs-page contrast was inverted. There is now one ramp, adopted on all three platforms, with duplicate hardcoded colours swept onto tokens.
+- **One Motion Vocabulary, With Reduce Motion**: Animations are named by role rather than duplicated per call site, and Reduce Motion is honoured everywhere, on Android too.
+- **Home-Screen Widgets (iOS/iPadOS)**: Vault Pulse, Feed Glance, Quick Actions, Sats, Mosaic and Lock Screen families, fed by a shared snapshot the app publishes, with taps routing into the right screen. Android gets home-screen widgets as well.
+- **A Real iPad Layout**: List and detail as actual columns for both feed and relay, with a divider you can drag to size them, instead of a phone layout stretched wide.
+- **Articles**: Long-form posts from your follows, drawn as articles rather than walls of raw text, with a reader — on iOS, macOS and Android.
+- **Recipes**: A feed of zapcooking / nostrcooking posts, live from relays, Following by default with Global behind the same warning the media grid uses.
+- **Live Streams (NIP-53)**: Only the streams actually running, with report and block, plus live chat and zapping while you watch — iOS and Android.
+- **A GIF Keyboard in the Composer**: Backed by getyarn.io on macOS and iOS, with its own visual identity and captions that stay legible over bright frames.
+- **Selectable Notification Sounds**.
+- **Scan a Signer's Bunker QR**: Connect a remote signer by camera instead of typing a bunker string, during setup as well — iOS and Android.
+- **A macOS Status Panel**: The menu bar item is now a status panel in its own right, separate from the main window.
+- **Media Tab, Organised**: Date sections, a sort menu, and filters that stop resetting themselves.
+- **Invoice Amounts Before You Pay**: The wallet shows what an invoice is worth first; Android also confirms before paying.
+- **Trust Graph Seeding**: An account that follows nobody now seeds its Web of Trust from the starter packs the app already ships, so the first launch has a graph rather than nothing. One list, two consumers — the follow step offers it and the trust graph is seeded from it.
+- **Route Taps From Outside the App (Android)**, and Groups is reachable.
+
+### Changed
+- **Popular Is Collected, Not Queried**: Engagement is gathered continuously instead of firing a burst of queries the moment you open the tab, and scoring counts distinct reactors rather than reaction events.
+- **One Definition of a Note's Overflow Menu (Android)**, instead of each screen growing its own.
+- **Blossom Signs Once Per Blob**: One upload authorisation per blob rather than per request.
+- **Android Avatar Prefetch**: Stopped asking for every follow in one breath.
+- **GIF Search on Submit**: Searches when you submit rather than on every keystroke, and reveals clips in steps.
+
+### Removed
+- **The Cashu Ecash Wallet**: Removed on all three platforms — the wallet, its mint setting, its step in the setup wizard and the Sats widget that displayed its balance. Ecash is a bearer instrument held at a mint you have to trust, and the mint this app shipped against was drained and shut down; rather than leave a feature carrying that risk, it is gone. Lightning and Nostr Wallet Connect are untouched. **If you hold ecash in a previous version, move it out before updating** — the wallet screen is the only place it can be spent from.
+- **The Push Infrastructure**: Notifications have been generated on-device from the embedded relay since 2.5, and nothing registered for remote push. The FastAPI/APNs forwarder, the orphaned notification service extension and the `aps-environment` entitlement are gone — scaffolding for a path no code took.
+- **Unreachable Screens**: Wired up or deleted, rather than left drawing nothing.
+
+### Fixed
+- **Quoted Notes Drew the Word "Quote"**: Quoted posts now render as cards wherever they appear — feed, focused note, relay tab, reposts of quote-posts — on iOS, macOS and Android, with quoted articles resolved too.
+- **Local Video Died After an iOS Reinstall**: iOS moves the data container on every install and carries `tmp/` with it, leaving playback symlinks pointing into dead containers; a dangling link reports "does not exist", so every attempt to recreate it failed and the fallback ladder ran dry. Local video now survives reinstalls and plays through hard links.
+- **Link Previews**: Two links from the same site no longer share one preview, and a card follows its own URL.
+- **Notification Taps and Window Behaviour (macOS)**: Tapped notifications, quoted notes and parent previews open the note; the window stops discarding your tab after a minute in another app; Compose survives a cold start; ⌘N and a visible Post entry point work again; the Blossom dashboard is reachable and no longer opens as a split view.
+- **Pointer and Keyboard Paths (macOS)**: Every swipe- or touch-only control has one.
+- **"While You Were Away" Meant It**: The catch-up summary only says that when you were actually away.
+- **Zap Amounts Read From the Invoice (Android)**: Receipts do not carry the amount; an amountless invoice also no longer reads as 1 BTC in live chat.
+- **Live Chat**: The composer no longer sits behind the tab bar or scrolls off screen, the app no longer crashes on the first real run of the live feed, chat is fetched from the relays that actually carry it, and stream audio resumes after a notification sound interrupts it.
+- **Blossom Uploads**: A transient preparation failure no longer abandons the upload, a failed signature is retried rather than failing the post, and the upload path's diagnostics go to the log file where someone can read them.
+- **Widgets**: Feed Glance loads avatars and shows posts rather than replies; Mosaic reads Blossom off disk instead of through the Media tab's cache, and its tiles fill their cell instead of blowing it open.
+- **Names and Avatars Stuck as Fallbacks (Android)**, and media links no longer print above their own thumbnail.
+- **Tap Targets and Actions (Android)**: 48dp-tall, gap-filling targets on the note action row; search results can be replied to, reposted, liked and zapped; you can report and block from the feed; the engagement counts the card was already being handed are shown; drafts confirm before a swipe deletes them and the Drafts screen is the drafts screen; the Text Size setting does something.
+- **Onboarding**: The unselected account checkbox is visible, malformed npubs are rejected before reaching a contact list, `starter_packs.json` ships so the Initial Follows step is not empty, and the launch screen stops claiming you follow nobody.
+- **51 Missing Groups String Keys**, and one string-catalogue key for all three Startup Error dialogs.
+- **Confirmation Before Irreversible Actions**, saying what is at stake.
+- **Failures That Set Dead State** are surfaced instead of leaving a screen silently empty, including a parent-note skeleton that never cleared.
+- **Concurrent Mac Relay Syncs** no longer stomp each other.
+- **Builds**: Go relay changes were silently missing from incremental builds; the notification sound is in both app targets and stays there; a fresh clone could not build the Android app at all; rebuilt Go binaries and Xcode user state are no longer tracked.
+
 ## [2.6.0 (14) — macOS / iOS / Android] - 2026-07-26
 
 > **Sync, Zap Integrity & Protocol Correctness**: Catch-up sync ran every 60 seconds and rebuilt everything from scratch each round — pegging the Mac relay at 100% CPU after about a day and firing a notification a minute. Zap totals were spoofable by anyone who could reach your relays, and are now validated. NIP-42 authentication was broken on the macOS and Android local relays, silently rejecting every gated read. The Android relay could not start *at all* on Android 10–13. Plus posting with media no longer fails on the first attempt, and the macOS app can finally be installed on a Mac other than the one that built it.
