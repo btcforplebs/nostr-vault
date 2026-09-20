@@ -10,6 +10,14 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .target(name: "MediaLogic", path: "Sources/MediaLogic"),
-        .testTarget(name: "MediaLogicTests", dependencies: ["MediaLogic"], path: "Tests/MediaLogicTests"),
+        .testTarget(
+            name: "MediaLogicTests",
+            dependencies: ["MediaLogic"],
+            path: "Tests/MediaLogicTests",
+            // A trimmed capture of a real tenor.com search page, so the parser
+            // is tested against bytes the site actually served rather than
+            // against our idea of them.
+            resources: [.copy("Fixtures")]
+        ),
     ]
 )
