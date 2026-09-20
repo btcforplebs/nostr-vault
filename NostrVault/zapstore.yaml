@@ -25,13 +25,12 @@ description: |
   - Remote signing via NIP-46 and Amber (NIP-55) — your key never enters the app
   - Multi-account with biometric protection and NIP-49 encrypted key storage
   - Lightning zaps with receipt validation, and an integrated NWC wallet
-  - Cashu ecash wallet with relay-backed backup (beta)
   - Picture-in-Picture video
   - Efficient relay sync using NIP-77 negentropy reconciliation
 
   SUPPORTED NIPS
 
-  01 basic protocol · 04 legacy encrypted DMs · 05 DNS identifiers · 09 event deletion · 10 threading · 11 relay information · 13 proof of work · 17 private DMs · 18 reposts · 19 bech32 entities · 29 relay-based groups · 40 expiration · 42 relay authentication · 44 versioned encryption · 46 remote signing · 47 wallet connect · 49 encrypted key storage · 50 search · 51 lists · 55 Android signer · 56 reporting · 57 zaps · 59 gift wrap · 60 Cashu wallet · 65 relay list metadata · 70 protected events · 77 negentropy sync · 92 media attachments · 94 file metadata
+  01 basic protocol · 04 legacy encrypted DMs · 05 DNS identifiers · 09 event deletion · 10 threading · 11 relay information · 13 proof of work · 17 private DMs · 18 reposts · 19 bech32 entities · 29 relay-based groups · 40 expiration · 42 relay authentication · 44 versioned encryption · 46 remote signing · 47 wallet connect · 49 encrypted key storage · 50 search · 51 lists · 55 Android signer · 56 reporting · 57 zaps · 59 gift wrap · 65 relay list metadata · 70 protected events · 77 negentropy sync · 92 media attachments · 94 file metadata
 
   Blossom: BUD-01, 02, 03, 04, 06, 14
 

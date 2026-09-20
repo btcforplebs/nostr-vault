@@ -329,8 +329,6 @@ data class HavenConfig(
     val nwcURI: String? = null,
     val defaultZapAmount: Int = 21, // sats
 
-    // Cashu Ecash
-    val cashuMintURL: String = "",
 
     // Bitcoin (BIP-341 taproot address derived from the Nostr keypair)
     val showBitcoinWallet: Boolean = false,

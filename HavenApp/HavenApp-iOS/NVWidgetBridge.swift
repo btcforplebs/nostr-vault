@@ -60,7 +60,6 @@ enum NVWidgetBridge {
             // most common way someone mentions you at all.
             mentions: recent.filter { mentions(me, $0) }.prefix(10).map { note($0, nostr: nostr) },
             wallet: .init(
-                cashuSats: Int(CashuService.shared.balanceSats),
                 lightningSats: nil,   // no published NWC balance to read yet
                 zapsReceived24h: 0,   // no published zap tally to read yet
                 btcPriceUSD: nil      // the app does not fetch a price

@@ -215,6 +215,31 @@ extension Data {
         map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Strict hex decode: the whole string or nothing.
+    ///
+    /// Moved here when the Cashu wallet was removed -- it lived at the bottom
+    /// of CashuService.swift and had one caller outside it, the iOS
+    /// AppDelegate's notification route. Deliberately not folded into
+    /// `init?(hex:)` above, which regex-matches hex pairs and so accepts a
+    /// malformed string by skipping the parts it cannot read; the notification
+    /// path wants a nil rather than a half-decoded pubkey.
+    init?(hexString: String) {
+        let hex = hexString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard hex.count % 2 == 0 else { return nil }
+
+        var data = Data(capacity: hex.count / 2)
+        var index = hex.startIndex
+
+        for _ in 0..<hex.count / 2 {
+            let nextIndex = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<nextIndex], radix: 16) else { return nil }
+            data.append(byte)
+            index = nextIndex
+        }
+
+        self = data
+    }
+
     init?(hex: String) {
         self.init(capacity: hex.count / 2)
         let regex = try! NSRegularExpression(pattern: "[0-9a-f]{2}", options: .caseInsensitive)

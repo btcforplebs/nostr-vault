@@ -59,9 +59,6 @@ struct HavenConfig: Codable, Equatable {
     // Bitcoin Taproot wallet (derived from Nostr keypair via BIP-341)
     var showBitcoinWallet: Bool = false
 
-    // Cashu Ecash Mint
-    var cashuMintURL: String = ""
-
     // NIP-46 Remote Signing
     var signingMode: String = "local" // "local" or "nip46"
     var nip46BunkerURI: String = "" // Full bunker:// URI for reconnection
@@ -235,7 +232,7 @@ struct HavenConfig: Codable, Equatable {
     
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
-        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet, cashuMintURL
+        case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
         case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, noteDetailCompactView, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName
@@ -300,7 +297,6 @@ struct HavenConfig: Codable, Equatable {
         autoLoadNewPosts = try container.decodeIfPresent(Bool.self, forKey: .autoLoadNewPosts) ?? defaults.autoLoadNewPosts
         showReposts = try container.decodeIfPresent(Bool.self, forKey: .showReposts) ?? defaults.showReposts
         showBitcoinWallet = try container.decodeIfPresent(Bool.self, forKey: .showBitcoinWallet) ?? defaults.showBitcoinWallet
-        cashuMintURL = try container.decodeIfPresent(String.self, forKey: .cashuMintURL) ?? defaults.cashuMintURL
         // Ignore any saved value: OLED is the only appearance, so an install
         // that had it switched off must not come back looking like the old theme.
         useOLED = true

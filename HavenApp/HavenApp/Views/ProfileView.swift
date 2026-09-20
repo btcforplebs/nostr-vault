@@ -52,7 +52,6 @@ struct ProfileView: View {
 
     // Wallet views
     @State private var showingLightning = false
-    @State private var showingCashu = false
 
     // Following / followers count
     @State private var followingCount: Int? = nil
@@ -301,26 +300,6 @@ struct ProfileView: View {
             .frame(minWidth: 500, minHeight: 550)
             #endif
         }
-        .sheet(isPresented: $showingCashu) {
-            NavigationStack {
-                WalletCashuTab()
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-                    .navigationTitle("Ecash")
-                    #if os(iOS)
-                    .navigationBarTitleDisplayMode(.inline)
-                    #endif
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") { showingCashu = false }
-                                .foregroundColor(.havenPurple)
-                        }
-                    }
-            }
-            #if os(macOS)
-            .frame(minWidth: 500, minHeight: 550)
-            #endif
-        }
         .sheet(isPresented: $showingCompose) {
             ComposeView(onDismiss: { showingCompose = false })
                 .environmentObject(nostrService)
@@ -344,12 +323,6 @@ struct ProfileView: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        Button(action: { showingCashu = true }) {
-                            Image(systemName: "banknote.fill")
-                                .font(.appSystem(size: 16, weight: .semibold))
-                                .foregroundColor(.havenPurple)
-                        }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -438,15 +411,6 @@ struct ProfileView: View {
                             .foregroundColor(.havenPurple)
                     }
                     .help("Lightning")
-                }
-            }
-            ToolbarItem(placement: .automatic) {
-                if isOwnProfile {
-                    Button(action: { showingCashu = true }) {
-                        Image(systemName: "banknote.fill")
-                            .foregroundColor(.havenPurple)
-                    }
-                    .help("Ecash")
                 }
             }
             ToolbarItem(placement: .automatic) {

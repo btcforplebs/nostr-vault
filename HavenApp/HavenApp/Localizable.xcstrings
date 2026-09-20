@@ -856,9 +856,6 @@
     "Active Signing Method" : {
 
     },
-    "Add a Cashu mint URL in Settings to enable the ecash wallet." : {
-
-    },
     "Add a Nostr Wallet Connect URI in Settings to enable Lightning payments." : {
 
     },
@@ -893,9 +890,6 @@
 
     },
     "App Icon" : {
-
-    },
-    "As long as your Haven relay is running and you have your nsec, your ecash is recoverable." : {
 
     },
     "Auto-Applied Blossom Servers" : {
@@ -983,18 +977,6 @@
 
     },
     "Cancel Import" : {
-
-    },
-    "Cashu ecash backed by your relay. Tokens are stored encrypted on your private relay for cross-device sync and recovery. Do not store large amounts." : {
-
-    },
-    "Cashu Ecash Wallet" : {
-
-    },
-    "Cashu is an open-source ecash protocol for Bitcoin. It lets you hold sats as digital bearer tokens — like digital cash — that are private, instant, and nearly free to transfer." : {
-
-    },
-    "Cashu Mint URL" : {
 
     },
     "Choose your app icon. Changes take effect immediately." : {
@@ -1261,9 +1243,6 @@
     "Do not send to an exchange." : {
 
     },
-    "DO NOT store significant amounts as ecash. Use this for small, everyday amounts you want to move quickly and privately." : {
-
-    },
     "Download your media from external Blossom mirrors to local storage" : {
 
     },
@@ -1271,18 +1250,6 @@
 
     },
     "Each account can hold both a local key and a remote signer. Tap to manage signing. Swipe to remove." : {
-
-    },
-    "ECASH BALANCE" : {
-
-    },
-    "Ecash is best suited for spending money — smaller amounts you plan to use — not long-term savings." : {
-
-    },
-    "Ecash requires trusting the mint. This is fundamentally different from self-custodial Bitcoin:" : {
-
-    },
-    "ECASH TOKENS" : {
 
     },
     "Edit" : {
@@ -1298,9 +1265,6 @@
 
     },
     "Engine" : {
-
-    },
-    "Enter a Cashu mint URL to enable the ecash wallet. Example: https://mint.minibits.cash/Bitcoin" : {
 
     },
     "Enter a domain to make your relay publicly accessible. Leave blank for local-only. Accepts any format (https://, wss://, or bare domain)." : {
@@ -1889,9 +1853,6 @@
     "Hashtags" : {
 
     },
-    "Haven manages your Nostr identity, relay, and payments in one place. Ecash completes a three-layer payment stack — each layer suited for different use cases:" : {
-
-    },
     "How It Works" : {
 
     },
@@ -2109,9 +2070,6 @@
     "No drafts" : {
 
     },
-    "No ecash tokens stored on relay." : {
-
-    },
     "No logs yet" : {
 
     },
@@ -2128,9 +2086,6 @@
 
     },
     "No media on Blossom" : {
-
-    },
-    "No Mint Connected" : {
 
     },
     "No notes found" : {
@@ -2253,9 +2208,6 @@
     "Paste your nostr+walletconnect:// URI here to enable sending Zaps directly from Nostr Vault." : {
 
     },
-    "Pay from Ecash" : {
-
-    },
     "Pay Invoice" : {
 
     },
@@ -2344,9 +2296,6 @@
 
     },
     "Recover Following List" : {
-
-    },
-    "Recovered %@ sats of ecash" : {
 
     },
     "Redeem" : {
@@ -3533,36 +3482,6 @@
         }
       }
     },
-    "setup.wallet.cashu.hint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tokens stored encrypted on your private relay"
-          }
-        }
-      }
-    },
-    "setup.wallet.cashu.label" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cashu Mint URL"
-          }
-        }
-      }
-    },
-    "setup.wallet.cashu.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cashu Ecash"
-          }
-        }
-      }
-    },
     "setup.wallet.lightning.connected" : {
       "localizations" : {
         "en" : {
@@ -3638,7 +3557,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connect a wallet to send zaps, or set up ecash. Both optional — configurable later in Settings."
+            "value" : "Connect a Lightning wallet to send zaps. Optional — configurable later in Settings."
           }
         }
       }
@@ -3648,7 +3567,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lightning + Ecash"
+            "value" : "Lightning"
           }
         }
       }
@@ -3784,9 +3703,6 @@
     "Text Size" : {
 
     },
-    "The Cashu protocol uses Blind Diffie-Hellman key exchange (BDHKE) so the mint signs your tokens without seeing them:" : {
-
-    },
     "The feed reads from multiple relays to build your timeline. Connect to relays your followers are actively using." : {
 
     },
@@ -3796,9 +3712,6 @@
     "The JSON file containing relays to broadcast notes to." : {
 
     },
-    "The Lightning Bridge lets you move sats between Lightning and Ecash in two taps. Fund ecash from Lightning for spending, cash out back to Lightning when you want." : {
-
-    },
     "The relay listens on all network interfaces (0.0.0.0). Default port is 3355." : {
 
     },
@@ -3806,9 +3719,6 @@
 
     },
     "This action cannot be undone. All your relay data will be lost and the app will quit." : {
-
-    },
-    "This Cashu implementation is experimental. Known limitations:" : {
 
     },
     "This may take a moment" : {
@@ -3958,9 +3868,6 @@
 
     },
     "YOU" : {
-
-    },
-    "Your ecash tokens are stored encrypted on your Haven private relay using NIP-60. Unlike other wallets that depend on third-party relays, your tokens live on infrastructure you control:" : {
 
     },
     "Your Mac relay is automatically included in all relay lists. Events sync continuously via standard Nostr subscriptions while the app is open, and via the catch-up sync below otherwise." : {

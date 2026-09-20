@@ -204,8 +204,6 @@ class SetupWizardViewModel @Inject constructor(
     private val _nwcInput = MutableStateFlow("")
     val nwcInput = _nwcInput.asStateFlow()
 
-    private val _cashuInput = MutableStateFlow("")
-    val cashuInput = _cashuInput.asStateFlow()
 
     // Starter Packs
     private val _starterPacks = MutableStateFlow<StarterPacksData?>(null)
@@ -237,7 +235,6 @@ class SetupWizardViewModel @Inject constructor(
     fun setImportStartDate(value: String) { _importStartDate.value = value }
     fun setBlossomURL(value: String) { _blossomURL.value = value }
     fun setNwcInput(value: String) { _nwcInput.value = value }
-    fun setCashuInput(value: String) { _cashuInput.value = value }
 
     // ── Navigation ───────────────────────────────────────────────
 
@@ -831,11 +828,7 @@ class SetupWizardViewModel @Inject constructor(
 
     fun advanceFromWallet() {
         val nwc = _nwcInput.value.trim().ifEmpty { null }
-        val cashu = _cashuInput.value.trim()
-        configStore.update { it.copy(
-            nwcURI = nwc,
-            cashuMintURL = cashu,
-        ) }
+        configStore.update { it.copy(nwcURI = nwc) }
         _step.value = WizardStep.COMPLETE
     }
 
@@ -1089,7 +1082,7 @@ private fun WelcomeStep(onContinue: () -> Unit) {
             "Full Nostr Client" to "Browse, post, reply, discover",
             "Private Messaging" to "NIP-17 encrypted DMs",
             "Blossom Media" to "Host images/videos on your device",
-            "Lightning + Ecash" to "Send/receive zaps with NWC and Cashu",
+            "Lightning Zaps" to "Send and receive zaps with your own wallet over NWC",
         )
         for ((title, desc) in features) {
             Row(
@@ -2178,7 +2171,6 @@ private fun MirrorMediaStep(viewModel: SetupWizardViewModel) {
 @Composable
 private fun WalletSetupStep(viewModel: SetupWizardViewModel) {
     val nwcInput by viewModel.nwcInput.collectAsState()
-    val cashuInput by viewModel.cashuInput.collectAsState()
     val focusManager = LocalFocusManager.current
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -2190,7 +2182,7 @@ private fun WalletSetupStep(viewModel: SetupWizardViewModel) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Connect a Lightning wallet and/or Cashu mint. Both are optional.",
+            text = "Connect a Lightning wallet to send and receive zaps. Optional.",
             color = SecondaryText,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
@@ -2230,39 +2222,9 @@ private fun WalletSetupStep(viewModel: SetupWizardViewModel) {
 
         Spacer(Modifier.height(16.dp))
 
-        // Cashu section
-        WizardCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = NostrVaultIcons.Wallet,
-                    contentDescription = null,
-                    tint = WizardAccent,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Cashu Ecash",
-                    color = PrimaryText,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = cashuInput,
-                onValueChange = viewModel::setCashuInput,
-                placeholder = { Text("https://mint.example.com", color = TertiaryText) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                colors = wizardTextFieldColors(),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
         Spacer(Modifier.height(32.dp))
 
-        if (nwcInput.isNotBlank() || cashuInput.isNotBlank()) {
+        if (nwcInput.isNotBlank()) {
             WizardPrimaryButton(text = "Save & Continue", onClick = viewModel::advanceFromWallet)
         } else {
             WizardSecondaryButton(text = "Skip", onClick = viewModel::skipWallet)

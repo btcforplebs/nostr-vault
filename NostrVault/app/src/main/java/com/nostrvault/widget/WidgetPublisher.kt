@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import androidx.glance.appwidget.updateAll
 import com.nostrvault.relay.RelayForegroundService
-import com.nostrvault.service.CashuService
 import com.nostrvault.service.DMService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
@@ -33,7 +32,6 @@ class WidgetPublisher @Inject constructor(
     @ApplicationContext private val context: Context,
     private val feedService: FeedService,
     private val dmService: DMService,
-    private val cashuService: CashuService,
     private val nostrService: NostrService,
 ) {
     companion object {
@@ -63,7 +61,6 @@ class WidgetPublisher @Inject constructor(
             runCatching {
                 VaultPulseWidget().updateAll(context)
                 FeedWidget().updateAll(context)
-                SatsWidget().updateAll(context)
             }.onFailure { Log.w(TAG, "widget redraw failed: ${it.message}") }
         }
     }
@@ -78,9 +75,8 @@ class WidgetPublisher @Inject constructor(
             combine(
                 feedService.notes,
                 dmService.totalUnreadCountFlow,
-                cashuService.balanceSats,
                 nostrService.profiles,
-            ) { notes, unread, sats, profiles ->
+            ) { notes, unread, profiles ->
                 VaultSnapshot(
                     feed = notes.take(FEED_ITEMS).map { note ->
                         VaultSnapshot.SnapshotNote(
@@ -96,7 +92,6 @@ class WidgetPublisher @Inject constructor(
                         )
                     },
                     unreadDMs = unread,
-                    cashuSats = sats.toLong(),
                 )
             }
                 .debounce(2_000)

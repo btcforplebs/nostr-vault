@@ -1174,7 +1174,7 @@ class NostrService @Inject constructor(
         return parseSignedEvent(signed)
     }
 
-    /** Expose owner secret key for NIP-44 self-encryption (e.g. Cashu wallet). */
+    /** Expose owner secret key for NIP-44 self-encryption. */
     fun resolveOwnerSecretKey(): String? = resolveSecretKey(forceOwner = true)
 
     private fun resolveSecretKey(forceOwner: Boolean): String? {

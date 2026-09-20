@@ -166,7 +166,7 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = NostrVaultIcons.Wallet,
                     title = "Wallet",
-                    subtitle = "NWC, Cashu and Bitcoin",
+                    subtitle = "NWC and Bitcoin",
                     onClick = { onNavigate(Screen.Wallet) },
                 )
             }

@@ -33,7 +33,7 @@ struct NVWidgetSnapshot: Codable, Equatable {
         relay: Relay(isRunning: false, eventCount: 0, storageBytes: 0, connectionCount: 0, uptimeSeconds: 0),
         feed: [],
         mentions: [],
-        wallet: Wallet(cashuSats: nil, lightningSats: nil, zapsReceived24h: 0, btcPriceUSD: nil),
+        wallet: Wallet(lightningSats: nil, zapsReceived24h: 0, btcPriceUSD: nil),
         media: [],
         unreadDMCount: 0
     )
@@ -59,17 +59,9 @@ struct NVWidgetSnapshot: Codable, Equatable {
     }
 
     struct Wallet: Codable, Equatable {
-        var cashuSats: Int?
         var lightningSats: Int?
         var zapsReceived24h: Int
         var btcPriceUSD: Double?
-
-        var totalSats: Int? {
-            switch (cashuSats, lightningSats) {
-            case (nil, nil): return nil
-            case let (c, l): return (c ?? 0) + (l ?? 0)
-            }
-        }
     }
 
     struct MediaTile: Codable, Equatable, Identifiable {
