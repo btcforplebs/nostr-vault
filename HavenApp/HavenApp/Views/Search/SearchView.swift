@@ -78,6 +78,19 @@ struct SearchView: View {
         var isEmpty: Bool {
             users.isEmpty && notes.isEmpty && links.isEmpty && hashtags.isEmpty
         }
+
+        /// Whether the section the user is currently looking at is empty. The
+        /// results as a whole can be non-empty while the selected tab has
+        /// nothing in it, and a blank screen in that case reads as a bug.
+        func isEmpty(for filter: ResultTypeFilter) -> Bool {
+            switch filter {
+            case .all: return isEmpty
+            case .users: return users.isEmpty
+            case .notes: return notes.isEmpty
+            case .hashtags: return hashtags.isEmpty
+            case .links: return links.isEmpty
+            }
+        }
     }
 
     struct SearchLink {
@@ -173,6 +186,7 @@ struct SearchView: View {
                                     pendingDirectNoteId = nil
                                     isSearching = false
                                     nostrService.cancelGlobalSearch()
+                                    nostrService.cancelLocalRelaySearch()
                                     refreshDiscovery(force: true)
                                     return
                                 }
@@ -708,11 +722,39 @@ struct SearchView: View {
                         .padding(.horizontal, 16)
                     }
                 }
+
+                if searchResults.isEmpty(for: resultTypeFilter) {
+                    emptyFilterState
+                }
             }
             .padding(.vertical, 16)
             .tabBarBottomPadding()
         }
         .scrollDirectionTracking(feedService: feedService)
+    }
+
+    /// Shown when the query matched something, but not in the tab that is open.
+    @ViewBuilder
+    private var emptyFilterState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: resultTypeFilter.icon)
+                .font(.appSystem(size: 26, weight: .thin))
+                .foregroundColor(.secondary.opacity(0.5))
+
+            Text("No \(resultTypeFilter.label.lowercased()) matched \u{201C}\(searchQuery.trimmingCharacters(in: .whitespacesAndNewlines))\u{201D}")
+                .font(.appSystem(size: 13, weight: .semibold))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+            if !searchResults.isEmpty {
+                Text("Other tabs have results.")
+                    .font(.appSystem(size: 12))
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .padding(.horizontal, 24)
     }
 
     @ViewBuilder
@@ -859,6 +901,7 @@ struct SearchView: View {
     /// Re-run the current query, e.g. after switching between relay/global modes.
     private func rerunSearch() {
         nostrService.cancelGlobalSearch()
+        nostrService.cancelLocalRelaySearch()
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             searchResults = .empty
@@ -886,6 +929,7 @@ struct SearchView: View {
         pendingDirectNoteId = nil
         isSearching = false
         nostrService.cancelGlobalSearch()
+        nostrService.cancelLocalRelaySearch()
     }
 
     private func performSearch(query: String) {
@@ -961,9 +1005,7 @@ struct SearchView: View {
                 }
                 results.hashtags = Array(foundHashtags).sorted()
 
-                let urls = self.extractURLs(from: globalResults.notes)
-                results.links = urls.filter { $0.url.lowercased().contains(trimmedQuery) ||
-                                              $0.title.lowercased().contains(trimmedQuery) }
+                results.links = self.extractURLs(from: globalResults.notes)
 
                 self.searchResults = results
                 self.isSearching = false
@@ -971,26 +1013,77 @@ struct SearchView: View {
             return
         }
 
-        // Relay search: filter data served by the local relay.
+        // Relay search: query the local relay's full stored dataset directly,
+        // not just whatever the feed subscription has already loaded.
         isSearching = true
 
+        guard let relayURL = feedService.localRelayURL else {
+            // Relay not up yet (e.g. still booting) — fall back to whatever's
+            // already in memory rather than showing nothing.
+            performInMemoryRelaySearch(trimmedQuery: trimmedQuery)
+            return
+        }
+
+        let requestedQuery = trimmed
+        nostrService.localRelaySearch(query: trimmed, relayURL: relayURL) { localResults in
+            // Ignore stale completions (user changed query or switched mode).
+            guard self.searchMode == .relay,
+                  self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery else { return }
+
+            var results = SearchResults()
+            for profile in localResults.profiles {
+                results.users[profile.pubkey] = profile
+            }
+            results.notes = Array(localResults.notes.prefix(20))
+
+            var foundHashtags = Set<String>()
+            for note in localResults.notes {
+                for tag in self.extractHashtags(from: note.content) where tag.lowercased().contains(trimmedQuery) {
+                    foundHashtags.insert(tag)
+                }
+            }
+            results.hashtags = Array(foundHashtags).sorted()
+
+            // Links are what the matching notes link to, so a note that matches
+            // on its text contributes its links even when the query is nowhere
+            // in the URL (Logen, 2026-09-09).
+            results.links = self.extractURLs(from: localResults.notes)
+
+            self.searchResults = results
+            self.isSearching = false
+        }
+    }
+
+    /// Fallback used only when the local relay isn't reachable yet: filters
+    /// whatever's already loaded into the live feed/profile cache.
+    private func performInMemoryRelaySearch(trimmedQuery: String) {
         let localProfiles = nostrService.profiles
         let localNotes = feedService.notes
+
+        // Same matching rules as the relay walk, so the fallback cannot drift
+        // away from the real path.
+        guard let matcher = LocalSearchMatcher(query: trimmedQuery) else {
+            searchResults = .empty
+            isSearching = false
+            return
+        }
 
         DispatchQueue.global(qos: .userInitiated).async {
             var results = SearchResults()
 
             for (pubkey, profile) in localProfiles {
-                if profile.bestName.lowercased().contains(trimmedQuery) ||
-                   pubkey.lowercased().contains(trimmedQuery) ||
-                   (profile.about?.lowercased().contains(trimmedQuery) ?? false) {
+                if matcher.matchesProfile(displayName: profile.displayName,
+                                          name: profile.name,
+                                          about: profile.about,
+                                          nip05: profile.nip05,
+                                          pubkey: pubkey) {
                     results.users[pubkey] = profile
                 }
             }
 
-            let relevantNotes = localNotes.filter { note in
-                note.content.lowercased().contains(trimmedQuery)
-            }
+            let relevantNotes = localNotes
+                .filter { matcher.matchesNote(content: $0.content) }
+                .sorted { $0.createdAt > $1.createdAt }
             results.notes = relevantNotes.prefix(20).map { $0 }
 
             var foundHashtags = Set<String>()
@@ -1004,9 +1097,7 @@ struct SearchView: View {
             }
             results.hashtags = Array(foundHashtags).sorted()
 
-            let urls = extractURLs(from: relevantNotes)
-            results.links = urls.filter { $0.url.lowercased().contains(trimmedQuery) ||
-                                          $0.title.lowercased().contains(trimmedQuery) }
+            results.links = extractURLs(from: relevantNotes)
 
             DispatchQueue.main.async {
                 self.searchResults = results
@@ -1025,8 +1116,12 @@ struct SearchView: View {
         }
     }
 
+    /// Links found in the notes that matched. The list is keyed by URL in the
+    /// UI, so the same URL is kept once — two notes sharing a link used to be
+    /// two rows with the same SwiftUI identity.
     private func extractURLs(from notes: [FeedNote]) -> [SearchLink] {
         var links: [SearchLink] = []
+        var seen = Set<String>()
         let urlPattern = "https?://[^\\s]+"
 
         guard let regex = try? NSRegularExpression(pattern: urlPattern) else { return [] }
@@ -1036,6 +1131,7 @@ struct SearchView: View {
             for match in matches {
                 guard let range = Range(match.range, in: note.content) else { continue }
                 let url = String(note.content[range])
+                guard seen.insert(url).inserted else { continue }
                 links.append(SearchLink(url: url, title: url.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: ""), noteId: note.id))
             }
         }
