@@ -1,29 +1,34 @@
-# NostrVault v2.6.0 (Build 14) Release Notes
+# NostrVault v3.0.0 (Build 15) Release Notes
 
-The headline fix is for Android 10, 11, 12 and 13: on those versions the relay never actually started. It failed silently and reported itself offline, with nothing to indicate why. This release also closes a hole that let anyone fake zap totals, stops private message send times leaking, repairs authentication on the local relay, and ends the sync loop that fired a notification every minute.
+A new look and a lot of new surface. The filing-cabinet icon is gone — the app now wears the lit arch in Sunset Orange, as a proper adaptive icon and as the silhouette you see in your notification shade. Behind it the app has a real visual system for the first time: one elevation ramp, named colours instead of hardcoded ones, and animations that honour Reduce Motion. This release also adds home-screen widgets, long-form Articles, a Recipes feed, and Live streams with chat and zapping. The Global feed no longer shows the raw firehose to brand-new accounts.
 
 ## Security
 
-*   **Zap Totals Could Be Faked**: A zap receipt is an ordinary Nostr event, and the app counted every one it saw without checking it. Anyone able to reach a relay your app queried could publish a receipt claiming any amount against any note or profile. Receipts are now validated against the recipient's Lightning provider. Validation fails open when that can't be determined, so legitimate zaps are never dropped.
-*   **Private Message Send Times Leaked**: Private messages were stamped with the true send time instead of the randomized timestamp the spec calls for, so anyone watching relays could tell exactly when you sent one. Now randomized, matching iOS.
+*   **The Global Feed Showed Everything to New Accounts**: The spam filter is built from your follow graph, and an empty graph — exactly what a new account has — let everybody through. Global now shows only accounts in your graph, and the graph is seeded from the app's own starter packs so a new account has one within seconds of first launch.
 
-## Improvements
+## New
 
-*   **Catch-Up Sync Slowed to a Sane Interval**: The default moves from every 60 seconds to every 15 minutes, with a hard minimum so an old saved setting can't bring the old behaviour back. This was also firing a notification a minute.
-*   **Default Relay List**: `relay.damus.io` was removed from the defaults after it began refusing sync queries and rate-limiting connections. Relays you configured yourself are untouched.
-*   **Matching Version Numbers**: macOS, iOS and Android now all report 2.6.0 (14), instead of three different version numbers for the same release.
+*   **A New App Icon**: The lit arch in Sunset Orange, as an adaptive icon, with a themed monochrome layer so notifications show the brand instead of a generic dot.
+*   **A Consistent Look**: One elevation ramp and one set of named colours behind every screen — card and page contrast used to be inverted — plus one animation vocabulary with Reduce Motion support.
+*   **Home-Screen Widgets**.
+*   **Articles**: Long-form posts from the people you follow, drawn as articles with a reader.
+*   **Recipes**: A feed of cooking posts from zapcooking and nostrcooking, live from relays.
+*   **Live Streams**: Only the streams actually running, with chat, zapping, report and block.
+*   **Scan a Signer's QR Code**: Connect a remote signer with the camera instead of typing a bunker string, including during setup.
+*   **Taps From Outside the App** open the right screen, and Groups is reachable.
 
 ## Bug Fixes
 
-*   **Relay Never Started on Android 10–13**: The background service asked the system for a service type that only exists on Android 14 and later. On Android 10 through 13 the system rejected that request, the error was caught and turned into a normal-looking "offline" state, and the relay simply never ran. If you are on one of those versions, this is the update that makes the app work at all. Android 14+ was unaffected.
-*   **Authentication Broken on the Local Relay**: The relay checked authentication against a secure address while Android serves the local relay unencrypted, so authentication always failed and every read requiring it was silently rejected.
-*   **Posting With Media Failed on the First Try**: Uploads nearly always failed once and worked on retry, because the default mirrors had gone dead and the Mac relay mirror was asleep until the failed attempt woke it. Mirrors are now warmed when the composer opens and the upload retries once. The app also no longer quietly embeds an unreachable local link in a note when every mirror fails — it reports the failure.
-*   **Replies Not Notifying Everyone in a Thread**: Replies only tagged the person you replied to, leaving everyone else in the conversation out.
-*   **Replies Vanishing From Their Own Threads**: In threads with seven or more participants, short replies tripped the mention-spam filter and disappeared — including your own.
-*   **Reposting Articles**: Long-form articles were reposted using the note-only event kind, producing something most clients ignore. Reposts were also missing the relay hint and original author tag.
-*   **Profile Notes Fetched From the Wrong Relays**: Loading someone's notes queried the relays they *read* from rather than the ones they publish to, so profiles could look emptier than they are.
-*   **Blocking Didn't Take Effect Until Restart**: Blocking hid content from view immediately, but the relay was never told, so it kept importing and notifying about that person all session.
-*   **Notifications for Old Backlog**: Catching up on old events could light the activity dot and fire notifications as if they were new.
-*   **Stale Values in Dashboard & Feed Settings**: The cache location, cache duration, feed relay list and autoplay toggle never refreshed, so those screens could show outdated settings after you changed them.
-*   **A Single Bad Setting Could Prevent Startup**: A malformed or blank value in the relay's configuration — twenty settings qualified, including the relay port — made the app quit during startup with no error and no crash report. Bad values now fall back to their default.
-*   **Release Build Was Broken**: The app had not compiled from a clean checkout since 2026-07-16, after a relay-list cleanup left an incomplete statement behind.
+*   **Quoted Posts**: A quoted post now draws as a card in the feed, on the focused note and on the relay tab, with quoted articles resolved.
+*   **Zap Amounts**: Read from the invoice, since receipts do not carry them — and an invoice with no amount no longer reads as 1 BTC in live chat.
+*   **Live Streams**: The live feed no longer crashes on its first real run, and the chat composer no longer sits behind the tab bar.
+*   **Tap Targets**: The note action row is a full 48dp tall with no dead gaps between buttons.
+*   **Search Results Can Be Acted On**: Reply, repost, like and zap from a result instead of buttons that draw nothing.
+*   **Report and Block From the Feed**.
+*   **Engagement Counts Are Shown**: The card was already being handed them.
+*   **Drafts**: A swipe asks before it deletes, and the Drafts screen is the drafts screen.
+*   **Text Size**: The setting does something now.
+*   **Names and Avatars** no longer stay as fallbacks in feed rows, and a media link stops printing above its own thumbnail.
+*   **Media Uploads**: A failed signature is retried instead of failing the post.
+*   **Paying an Invoice**: Confirms first, and shows the amount before you approve it.
+*   **A Fresh Clone Could Not Build the App At All**.

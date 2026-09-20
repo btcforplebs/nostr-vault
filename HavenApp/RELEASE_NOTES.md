@@ -1,33 +1,39 @@
-# Haven App v2.6.0 Build 14 (macOS / iOS) Release Notes
+# Nostr Vault v3.0.0 Build 15 (macOS / iOS) Release Notes
 
-This release fixes the sync loop that pegged the Mac relay at 100% CPU after about a day and fired a notification every minute, closes a hole that let anyone fake zap totals, repairs authentication on the local relay, and stops posts with media failing on the first attempt. The Mac app also uses noticeably less memory in the background and can finally be installed on a Mac other than the one that built it.
+A new look and a lot of new surface. The filing-cabinet icon is gone — every platform now wears the lit arch in Sunset Orange, and behind it the app has a real visual system for the first time: consistent elevation, semantic colours, and one set of animations that honours Reduce Motion. This release also brings home-screen widgets, a proper two-column iPad layout, and three new feeds: Articles, Recipes, and Live streams with chat and zaps. Two things that were quietly unsafe are fixed — revealing your private key could skip authentication entirely, and the Global feed showed the raw firehose to brand-new accounts.
 
 ## Security
 
-*   **Zap Totals Could Be Faked**: A zap receipt is an ordinary Nostr event, and the apps counted every one they saw without checking it. Anyone able to reach a relay your app queried could publish a receipt claiming any amount against any note or profile. Receipts are now validated against the recipient's Lightning provider — the pubkey that published the receipt must be the one that provider authorizes. Validation deliberately fails open when that can't be determined (no Lightning address, network error, or a provider that doesn't advertise one), so legitimate zaps are never dropped.
+*   **Revealing Your Private Key Could Skip Authentication**: If Face ID, Touch ID and a passcode were all unavailable — or the authentication system returned any error — the app revealed your key anyway instead of refusing. It now reveals only after authentication actually succeeds.
+*   **The Global Feed Showed Everything to New Accounts**: The spam filter is built from your follow graph, and an empty graph — exactly what a new account has — let everybody through. That firehose measured about two thirds spam. Global now shows only accounts in your graph, and the graph is seeded from the app's own starter packs so a new account has one within seconds of first launch.
 
-## Improvements
+## New
 
-*   **Catch-Up Sync Slowed to a Sane Interval**: The default moves from every 60 seconds to every 15 minutes, with a hard minimum so an old saved setting can't bring the old behaviour back.
-*   **Lower Background Memory (macOS)**: The relay returns memory to the system the moment the app goes to the background, instead of waiting for the next sync or import — on an idle relay that could be an hour away. About a quarter lower in steady state.
-*   **Installable on Other Macs**: Every previous macOS build was signed so that it only ran on the machine that built it; on any other Mac it was terminated at launch with no explanation and no crash report. Builds are now signed for distribution. A downloaded copy still needs its quarantine flag cleared once until notarization is set up.
-*   **Default Relay List**: `relay.damus.io` was removed from the defaults after it began refusing sync queries and rate-limiting connections. Relays you configured yourself are untouched.
-*   **Matching Version Numbers**: macOS, iOS and Android now all report 2.6.0 (14), instead of three different version numbers for the same release.
+*   **A New App Icon**: The lit arch in Sunset Orange, on the Mac, the iPhone, the iPad, the widgets, and the small icons in the relay's own web pages.
+*   **A Consistent Look**: Cards, sheets and pages were each assembled by hand from hardcoded values. There is now one elevation ramp and one set of named colours behind every screen, and one animation vocabulary that respects Reduce Motion.
+*   **Home-Screen Widgets**: Vault Pulse, Feed Glance, Quick Actions, Sats, Mosaic and Lock Screen sizes, all tappable straight into the right screen.
+*   **A Real iPad Layout**: List and detail as genuine columns for both the feed and the relay, with a divider you can drag — not a phone layout stretched wide.
+*   **Articles**: Long-form posts from the people you follow, drawn as articles with a reader, instead of a wall of raw text.
+*   **Recipes**: A feed of cooking posts from zapcooking and nostrcooking, live from relays.
+*   **Live Streams**: Only the streams actually running, with chat and zapping while you watch.
+*   **A GIF Keyboard**: In the composer, with captions that stay readable over bright frames.
+*   **Selectable Notification Sounds**.
+*   **Scan a Signer's QR Code**: Connect a remote signer with the camera instead of typing a bunker string.
+*   **A macOS Status Panel**: The menu bar item is now a panel of its own, separate from the main window.
+*   **A Tidier Media Tab**: Date sections, a sort menu, and filters that stop resetting themselves.
+*   **Invoice Amounts Up Front**: The wallet shows what an invoice is worth before you pay it.
 
 ## Bug Fixes
 
-*   **Mac Relay Hitting 100% CPU After a Day**: Catch-up sync rebuilt its entire comparison set for every relay on every 60-second round, re-downloaded backlog it had already rejected, and re-probed relays that always refuse. Once the databases grew enough that a round outlasted its own interval, rounds ran back-to-back indefinitely. Now built once per round and reused, with rejected events remembered and refusing relays cached.
-*   **A Notification Every Minute**: The same loop fired a fresh summary each round. On iOS, the "Catching up" summary was also triggered by ordinary background resyncs rather than only when returning after being away.
-*   **Posting With Media Failed on the First Try**: Uploads nearly always failed once and worked on retry, because the default mirrors had gone dead and the Mac relay mirror was asleep until the failed attempt woke it. Mirrors are now warmed when the composer opens and the upload retries once before failing.
-*   **Authentication Broken on the Local Relay (macOS)**: The relay checked authentication against a secure address while macOS serves the local relay unencrypted, so authentication always failed and every read requiring it was silently rejected.
-*   **Profile Notes Fetched From the Wrong Relays**: Loading someone's notes queried the relays they *read* from rather than the ones they publish to, so profiles could look emptier than they are.
-*   **Reposting Articles**: Long-form articles were reposted using the note-only event kind, producing something most clients ignore.
-*   **Replies Vanishing From Their Own Threads**: In threads with seven or more participants, short replies tripped the mention-spam filter and disappeared — including your own.
-*   **Blocking Didn't Take Effect Until Restart**: Blocking hid content from view immediately, but the relay was never told, so it kept importing and notifying about that person all session.
-*   **Notifications for Old Backlog**: Catching up on old events could light the activity dot and fire notifications as if they were new.
-*   **Multi-Account Corruption**: Routine background publishing briefly switched the active account internally, which every part of the app read as a real account switch and responded to by wiping loaded events.
-*   **Multi-Relay Signer Connections**: A `bunker://` link listing several relays kept only the first, leaving reconnects with no fallback.
-*   **Silent Video Failures**: When every source for a video failed, the feed showed a black rectangle instead of its thumbnail and offered no error or retry. Failures are now surfaced and "Try Again" works.
-*   **Stall When Playing Cached Video**: Integrity-checking a cached video read and hashed up to 64 MB on the main thread, which could visibly hitch scrolling.
-*   **Audio Interrupted During Picture-in-Picture**: Scrolling the feed while a video played full-screen or in PiP handed the audio session to the muted feed player.
-*   **A Single Bad Setting Could Prevent Startup**: A malformed or blank value in the relay's configuration — twenty settings qualified, including the relay port — made the app quit during startup with no error and no crash report. Bad values now fall back to their default.
+*   **Quoted Posts Said "Quote"**: A quoted post now draws as a card everywhere it appears, including reposts of quote-posts and quoted articles.
+*   **Local Video Stopped Playing After a Reinstall**: iOS moves the app's storage on every install, which left every local video pointing at a folder that no longer existed. Local playback now survives reinstalls.
+*   **Link Previews**: Two links to the same site no longer share one preview, and a preview card follows its own link.
+*   **macOS Windows and Notifications**: A tapped notification opens the note; the window stops throwing away your tab after a minute in another app; the composer survives a cold start; ⌘N works and there is a visible Post button again; the Blossom dashboard is reachable and opens properly.
+*   **Keyboard and Pointer**: Every control that only answered a swipe or a tap now answers a pointer and the keyboard too.
+*   **"While You Were Away"**: Only says that when you actually were.
+*   **Live Chat**: The composer no longer hides behind the tab bar, an invoice with no amount no longer reads as 1 BTC, and stream audio resumes after a notification sound interrupts it.
+*   **Media Uploads**: A momentary failure no longer abandons an upload or loses a post.
+*   **Widgets**: Feed Glance loads avatars and shows posts rather than replies; Mosaic tiles fill their cell instead of blowing it open.
+*   **Onboarding**: Invisible checkboxes, an empty Initial Follows step, and a launch screen claiming you follow nobody.
+*   **Confirmation Before Irreversible Actions**, with the consequence spelled out.
+*   **Silent Dead Ends**: Screens that failed quietly and sat empty now say what went wrong.
