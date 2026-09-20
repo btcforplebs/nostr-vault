@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <link rel="shortcut icon" href="/static/favicon.ico" />
   <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png" />
-  <meta name="apple-mobile-web-app-title" content="Haven" />
+  <meta name="apple-mobile-web-app-title" content="Nostr Vault" />
   <link rel="manifest" href="/static/site.webmanifest" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{.RelayName}}</title>
@@ -50,11 +50,11 @@
   <!-- Header -->
   <header class="border-b border-gray-800/60 bg-[#111114]/80 backdrop-blur-sm sticky top-0 z-10">
     <div class="max-w-2xl mx-auto px-4 py-5 text-center">
-      <h1 class="text-2xl font-bold text-purple-400 tracking-tight">{{.RelayName}}</h1>
+      <h1 class="text-2xl font-bold text-[#E67326] tracking-tight">{{.RelayName}}</h1>
       <p class="text-gray-400 text-sm mt-1.5 leading-relaxed">{{.RelayDescription}}</p>
       <div class="flex items-center justify-center gap-3 mt-3">
         <a href="#"
-          class="text-xs text-purple-300/70 hover:text-purple-300 font-mono transition-colors">
+          class="text-xs text-[#FA9447]/70 hover:text-[#FA9447] font-mono transition-colors">
           {{.RelayURL}}
         </a>
       </div>
@@ -64,8 +64,8 @@
           iOS TestFlight
         </a>
         <a href="https://github.com/btcforplebs/haven-mac/releases"
-          class="text-xs bg-purple-600/80 hover:bg-purple-600 text-white font-medium py-1.5 px-4 rounded-full transition-colors">
-          Get Haven for Mac
+          class="text-xs bg-[#E67326] hover:bg-[#B35214] text-[#111827] hover:text-white font-medium py-1.5 px-4 rounded-full transition-colors">
+          Get Nostr Vault for Mac
         </a>
       </div>
     </div>
@@ -82,11 +82,11 @@
           class="w-9 h-9 rounded-full object-cover ring-1 ring-gray-700/50 flex-shrink-0"
           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
           loading="lazy">
-        <div class="w-9 h-9 rounded-full bg-purple-500/20 items-center justify-center text-purple-300 text-sm font-medium flex-shrink-0 hidden">
+        <div class="w-9 h-9 rounded-full bg-[#E67326]/20 items-center justify-center text-[#FA9447] text-sm font-medium flex-shrink-0 hidden">
           {{slice .DisplayName 0 1}}
         </div>
         {{else}}
-        <div class="w-9 h-9 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-300 text-sm font-medium flex-shrink-0">
+        <div class="w-9 h-9 rounded-full bg-[#E67326]/20 flex items-center justify-center text-[#FA9447] text-sm font-medium flex-shrink-0">
           {{slice .DisplayName 0 1}}
         </div>
         {{end}}
@@ -143,13 +143,13 @@
     <p class="text-sm text-gray-500">
       Built with Love by
       <a href="https://bitvora.com" target="_blank"
-        class="text-purple-400/70 hover:text-purple-400 underline decoration-purple-400/20 transition-colors">Bitvora</a>
+        class="text-[#E67326]/70 hover:text-[#E67326] underline decoration-[#E67326]/20 transition-colors">Bitvora</a>
       &middot; Powered by
       <a href="https://khatru.nostr.technology/" target="_blank"
-        class="text-purple-400/70 hover:text-purple-400 underline decoration-purple-400/20 transition-colors">Khatru</a>
+        class="text-[#E67326]/70 hover:text-[#E67326] underline decoration-[#E67326]/20 transition-colors">Khatru</a>
       &middot;
       <a href="https://github.com/bitvora/haven" target="_blank"
-        class="text-purple-400/70 hover:text-purple-400 underline decoration-purple-400/20 transition-colors">GitHub</a>
+        class="text-[#E67326]/70 hover:text-[#E67326] underline decoration-[#E67326]/20 transition-colors">GitHub</a>
     </p>
   </footer>
 </body>
