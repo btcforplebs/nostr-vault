@@ -301,6 +301,12 @@ struct iPadSidebarView: View {
                 }
             }
         }
+        // The same tint the compact layout applies to its TabView. Without it
+        // the split view's sidebar falls back to the system accent -- and there
+        // is nothing app-wide to fall back to, since AccentColor.colorset is not
+        // named in Info.plist -- so every sidebar row drew in iOS blue while the
+        // rest of the app was Sunset Orange.
+        .tint(.havenPurple)
         .onAppear {
             if configService.config.hasCompletedSetup && relayManager.state == .idle {
                 relayManager.startRelay(config: configService.config)
