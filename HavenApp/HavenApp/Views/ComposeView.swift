@@ -321,7 +321,7 @@ struct ComposeView: View {
                 )
             }
             .sheet(isPresented: $showingGifPicker) {
-                YarnGifPickerSheet { clip in attachYarnClip(clip) }
+                GifPickerSheet { item in attachGif(item) }
             }
             .sheet(isPresented: $showingDraftPicker) {
                 DraftPickerView(
@@ -740,7 +740,7 @@ struct ComposeView: View {
             }
             .buttonStyle(.plain)
             .disabled(attachments.count >= 4 || isFetchingGif)
-            .help("Search GIFs from getyarn.io")
+            .help("Search GIFs from getyarn.io or Tenor")
 
             Spacer()
             
@@ -1049,13 +1049,21 @@ struct ComposeView: View {
         }
     }
     
-    /// Downloads a getyarn.io clip's GIF and adds it as an attachment.
-    private func attachYarnClip(_ clip: YarnClip) {
+    /// Downloads a picked GIF and adds it as an attachment. Each source
+    /// downloads through its own client so the size cap and the GIF-magic
+    /// check stay with the service that knows the host.
+    private func attachGif(_ item: GifItem) {
         guard attachments.count < 4, !isFetchingGif else { return }
         isFetchingGif = true
         Task {
             do {
-                let data = try await YarnClipService.downloadGIF(uuid: clip.uuid)
+                let data: Data
+                switch item.source {
+                case .yarn:
+                    data = try await YarnClipService.downloadGIF(uuid: item.sourceID)
+                case .tenor:
+                    data = try await TenorGifService.downloadGIF(url: item.attachURL)
+                }
                 await MainActor.run {
                     if attachments.count < 4 {
                         attachments.append(Attachment(data: data, fileURL: nil, type: .gif))
