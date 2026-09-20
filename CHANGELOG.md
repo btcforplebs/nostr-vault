@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0 (15) — macOS / iOS / Android] - 2026-09-XX
+## [2.7.0 (15) — macOS / iOS / Android] - 2026-09-XX
 
 > **A new mark, and a surface to put it on.** The filing cabinet is gone: every platform now wears the lit arch in Sunset Orange, down to the Android notification silhouette and the icons in the relay's own web pages. Behind it, the app finally has a visual system — an elevation ramp where there was none, semantic colour tokens instead of hardcoded values, and one motion vocabulary that honours Reduce Motion everywhere. On top of that: home-screen widgets, a real two-column iPad layout, and three new feeds — Articles, Recipes and Live streams with chat and zaps. A biometric bypass that could reveal your signing key without authentication is fixed, and the Global feed no longer fails open to the raw firehose.
 
@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **GIF Search on Submit**: Searches when you submit rather than on every keystroke, and reveals clips in steps.
 
 ### Removed
+- **The Cashu Ecash Wallet**: Removed on all three platforms — the wallet, its mint setting, its step in the setup wizard and the Sats widget that displayed its balance. Ecash is a bearer instrument held at a mint you have to trust, and the mint this app shipped against was drained and shut down; rather than leave a feature carrying that risk, it is gone. Lightning and Nostr Wallet Connect are untouched. **If you hold ecash in a previous version, move it out before updating** — the wallet screen is the only place it can be spent from.
 - **The Push Infrastructure**: Notifications have been generated on-device from the embedded relay since 2.5, and nothing registered for remote push. The FastAPI/APNs forwarder, the orphaned notification service extension and the `aps-environment` entitlement are gone — scaffolding for a path no code took.
 - **Unreachable Screens**: Wired up or deleted, rather than left drawing nothing.
 

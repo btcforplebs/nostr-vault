@@ -1,4 +1,4 @@
-# Nostr Vault v3.0.0 Build 15 (macOS / iOS) Release Notes
+# Nostr Vault v2.7.0 Build 15 (macOS / iOS) Release Notes
 
 A new look and a lot of new surface. The filing-cabinet icon is gone — every platform now wears the lit arch in Sunset Orange, and behind it the app has a real visual system for the first time: consistent elevation, semantic colours, and one set of animations that honours Reduce Motion. This release also brings home-screen widgets, a proper two-column iPad layout, and three new feeds: Articles, Recipes, and Live streams with chat and zaps. Two things that were quietly unsafe are fixed — revealing your private key could skip authentication entirely, and the Global feed showed the raw firehose to brand-new accounts.
 
@@ -22,6 +22,10 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — every p
 *   **A macOS Status Panel**: The menu bar item is now a panel of its own, separate from the main window.
 *   **A Tidier Media Tab**: Date sections, a sort menu, and filters that stop resetting themselves.
 *   **Invoice Amounts Up Front**: The wallet shows what an invoice is worth before you pay it.
+
+## Removed
+
+*   **The Ecash Wallet**: Ecash is cash held at a mint you have to trust, and the mint this app shipped against was drained and shut down. Rather than keep a feature carrying that risk, it is gone — along with its mint setting, its step in setup, and the Sats widget that showed its balance. Lightning and Nostr Wallet Connect are untouched. **If you are holding ecash in an older version, move it out before you update**; the wallet screen is the only place it can be spent from.
 
 ## Bug Fixes
 

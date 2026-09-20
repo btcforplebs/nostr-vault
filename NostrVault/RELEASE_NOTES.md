@@ -1,4 +1,4 @@
-# NostrVault v3.0.0 (Build 15) Release Notes
+# NostrVault v2.7.0 (Build 15) Release Notes
 
 A new look and a lot of new surface. The filing-cabinet icon is gone — the app now wears the lit arch in Sunset Orange, as a proper adaptive icon and as the silhouette you see in your notification shade. Behind it the app has a real visual system for the first time: one elevation ramp, named colours instead of hardcoded ones, and animations that honour Reduce Motion. This release also adds home-screen widgets, long-form Articles, a Recipes feed, and Live streams with chat and zapping. The Global feed no longer shows the raw firehose to brand-new accounts.
 
@@ -16,6 +16,10 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — the app
 *   **Live Streams**: Only the streams actually running, with chat, zapping, report and block.
 *   **Scan a Signer's QR Code**: Connect a remote signer with the camera instead of typing a bunker string, including during setup.
 *   **Taps From Outside the App** open the right screen, and Groups is reachable.
+
+## Removed
+
+*   **The Ecash Wallet**: Ecash is cash held at a mint you have to trust, and the mint this app shipped against was drained and shut down. Rather than keep a feature carrying that risk, it is gone — along with its mint setting, its step in setup, and the Sats widget that showed its balance. Lightning and Nostr Wallet Connect are untouched. **If you are holding ecash in an older version, move it out before you update**; the wallet screen is the only place it can be spent from.
 
 ## Bug Fixes
 
