@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 #if os(macOS)
 import AppKit
 #endif
@@ -22,6 +23,13 @@ class AppDelegate: NSObject, ObservableObject {
 
         #if os(macOS)
         startFocusLifecycleObservers()
+
+        // Without a delegate, a clicked notification only activates the app.
+        // LocalNotificationService posts the same notifications on both
+        // platforms, but only the iOS app delegate ever answered the tap, so on
+        // macOS every one of them — DM, mention, zap, reaction, repost — landed
+        // nowhere no matter what the receivers inside the window did.
+        UNUserNotificationCenter.current().delegate = self
 
         // Watch sleep/wake so automatic recovery doesn't restart the relay
         // over connections that are merely re-establishing after wake.
@@ -189,4 +197,74 @@ class AppDelegate: NSObject, ObservableObject {
 
 #if os(macOS)
 extension AppDelegate: NSApplicationDelegate {}
+
+// MARK: - Notification taps (macOS)
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    /// macOS suppresses notifications for the frontmost app unless the delegate
+    /// asks for them. LocalNotificationService only posts these when the app is
+    /// not foregrounded on iOS; on macOS `appInForeground` is never set, and the
+    /// in-app banner (RelayActivityBanner) is only hosted by the iOS view tree —
+    /// so this is the only way a message that arrives while the app is active is
+    /// visible at all.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        guard let type = userInfo["notif_type"] as? String,
+              let id = userInfo["notif_id"] as? String else {
+            completionHandler()
+            return
+        }
+        let npub = userInfo["notif_npub"] as? String
+        Task { @MainActor in
+            AppDelegate.deliverNotificationTap(type: type, id: id, npub: npub)
+        }
+        completionHandler()
+    }
+
+    /// Routes a tapped notification into the main window.
+    ///
+    /// Every receiver of the `.havenOpen*` routes lives in that window's view
+    /// tree, and a menu bar app is usually running with no window open — so
+    /// posting unconditionally is how a click does nothing. When the tree is
+    /// mounted the post reaches it; when it is not, the route is parked and the
+    /// window replays it as it mounts.
+    @MainActor
+    static func deliverNotificationTap(type: String, id: String, npub: String?) {
+        if MacWindow.isMainWindowMounted {
+            MacWindow.openMainFromAppKit()
+            LocalNotificationService.navigate(type: type, id: id, npub: npub)
+        } else {
+            MacWindow.pendingRoute = MacWindow.NotificationRoute(type: type, id: id, npub: npub)
+            MacWindow.openMainFromAppKit()
+            // Safety net for a stale `isMainWindowMounted == false`. That flag
+            // is view-tree bookkeeping kept by onAppear/onDisappear, so a
+            // window that is really on screen but recorded as gone would park a
+            // route nothing ever consumes — the exact silent failure this
+            // method exists to remove. Consuming is what makes the two paths
+            // safe together: whichever gets there first clears the route, so a
+            // tap cannot be handled twice. The mounted check is deliberately
+            // before the consume — if the window genuinely has not mounted yet,
+            // the route stays parked for `onAppear` instead of being dropped.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                MainActor.assumeIsolated {
+                    guard MacWindow.isMainWindowMounted,
+                          let route = MacWindow.consumePendingRoute() else { return }
+                    LocalNotificationService.navigate(type: route.type, id: route.id, npub: route.npub)
+                }
+            }
+        }
+    }
+}
 #endif

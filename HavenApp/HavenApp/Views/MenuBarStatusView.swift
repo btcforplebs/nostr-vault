@@ -64,6 +64,10 @@ struct MenuBarStatusView: View {
             // walked twice. Fine on a view you open on purpose; not fine on a panel
             // opened dozens of times a day against a full media archive.
             statusPulse = Motion.ambientPulse != nil
+            // The app delegate has no SwiftUI environment, so a notification
+            // tap cannot open the window scene by itself. This is the panel's
+            // own `openWindow`, captured while it is mounted.
+            MacWindow.openWindowAction = openWindow
         }
         .onChange(of: relayManager.isRunning) { _, running in
             statusPulse = running && Motion.ambientPulse != nil
@@ -416,6 +420,52 @@ enum MacWindow {
     static func consumePendingCompose() -> Bool {
         defer { pendingCompose = false }
         return pendingCompose
+    }
+
+    /// A tapped notification that still has to be routed inside the main window.
+    ///
+    /// Parked for the same reason `pendingCompose` is: every receiver of the
+    /// `.havenOpen*` routes lives in the main window's view tree, and a menu bar
+    /// app spends most of its life with no main window at all. Posting a route
+    /// to nobody is how a notification click ends up doing nothing.
+    struct NotificationRoute {
+        let type: String
+        let id: String
+        let npub: String?
+    }
+
+    @MainActor static var pendingRoute: NotificationRoute?
+
+    /// Reads and clears the pending notification route.
+    @MainActor
+    static func consumePendingRoute() -> NotificationRoute? {
+        defer { pendingRoute = nil }
+        return pendingRoute
+    }
+
+    /// True while the main window's view tree is installed — which is exactly
+    /// when the route receivers inside it can hear a post.
+    ///
+    /// Deliberately not `mainWindow() != nil`: an `NSWindow` can outlive the
+    /// SwiftUI view tree it was hosting, so asking AppKit whether the window
+    /// exists answers a different question than "is anyone listening".
+    @MainActor static var isMainWindowMounted = false
+
+    /// `openWindow` captured from a mounted view, so AppKit-side callers — a
+    /// notification tap arrives at the app delegate, which has no SwiftUI
+    /// environment — can still open the window scene.
+    @MainActor static var openWindowAction: OpenWindowAction?
+
+    /// Opens and fronts the main window from a context with no environment.
+    /// Falls back to fronting an existing window when no action was captured.
+    @MainActor
+    static func openMainFromAppKit() {
+        if let openWindowAction {
+            openMain(using: openWindowAction)
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+            mainWindow()?.makeKeyAndOrderFront(nil)
+        }
     }
 
     /// Opens and fronts the main window, then dismisses the menu bar panel.
