@@ -3192,6 +3192,7 @@ struct AvatarView: View {
                 .frame(width: size, height: size)
         }
         .frame(width: size, height: size)
+        .clipped()
         .onAppear { loadImage() }
         .onChange(of: url) { _, _ in
             image = nil

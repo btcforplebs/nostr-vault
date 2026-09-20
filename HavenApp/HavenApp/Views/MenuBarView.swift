@@ -109,10 +109,10 @@ struct MenuBarView: View {
                                 HStack(spacing: 12) {
                                     AvatarView(
                                         url: nostrService.profiles[activeHex]?.pictureURL,
-                                        pubkey: activeHex
+                                        pubkey: activeHex,
+                                        size: 32
                                     )
                                     .id(activeHex)
-                                    .frame(width: 32, height: 32)
                                     .overlay(
                                         Circle()
                                             .stroke(
@@ -627,10 +627,10 @@ struct MenuBarView: View {
                                 ZStack(alignment: .bottomTrailing) {
                                     AvatarView(
                                         url: nostrService.profiles[activeHex]?.pictureURL,
-                                        pubkey: activeHex
+                                        pubkey: activeHex,
+                                        size: 26
                                     )
                                     .id(activeHex)
-                                    .frame(width: 26, height: 26)
                                     .overlay(
                                         Circle()
                                             .stroke(
@@ -1173,8 +1173,7 @@ struct AccountSwitcherView: View {
             HStack(spacing: 10) {
                 // Avatar
                 ZStack(alignment: .bottomTrailing) {
-                    AvatarView(url: profile?.pictureURL, pubkey: hex)
-                        .frame(width: 34, height: 34)
+                    AvatarView(url: profile?.pictureURL, pubkey: hex, size: 34)
                         .overlay(
                             Circle()
                                 .stroke(
@@ -1257,8 +1256,7 @@ struct AccountSwitcherView: View {
         VStack(spacing: 0) {
             // Sheet header
             HStack {
-                AvatarView(url: profile?.pictureURL, pubkey: hex)
-                    .frame(width: 32, height: 32)
+                AvatarView(url: profile?.pictureURL, pubkey: hex, size: 32)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Import Key")
                         .font(.appHeadline)
