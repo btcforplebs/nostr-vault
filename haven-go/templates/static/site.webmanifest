@@ -1,21 +1,21 @@
 {
-  "name": "Haven",
-  "short_name": "Haven",
+  "name": "Nostr Vault",
+  "short_name": "Nostr Vault",
   "icons": [
     {
       "src": "/static/web-app-manifest-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any"
     },
     {
       "src": "/static/web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any"
     }
   ],
-  "theme_color": "#ffffff",
-  "background_color": "#ffffff",
+  "theme_color": "#E67326",
+  "background_color": "#111827",
   "display": "standalone"
 }
