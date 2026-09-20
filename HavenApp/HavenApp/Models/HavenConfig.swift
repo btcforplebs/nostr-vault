@@ -71,6 +71,10 @@ struct HavenConfig: Codable, Equatable {
     // Notifications (generated on-device; there is no push server)
     var enableRemotePushServer: Bool = false // Kept for migration only
     var enablePushNotifications: Bool = false
+    /// "N new notes in your feed" after a spell away. Off by default: it is a
+    /// summary of everyone you follow, not of anything addressed to you, and it
+    /// used to fire from every background wake with no way to turn it off.
+    var enableFeedNotifications: Bool = false
     var notificationPrefsPerAccount: [String: NotificationPreferences] = [:]
     var notificationSoundName: String = NotificationSound.defaultSound.rawValue
     
@@ -235,7 +239,7 @@ struct HavenConfig: Codable, Equatable {
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
         case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, noteDetailCompactView, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
-        case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName
+        case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications
         case macRelayURL
         case privateRelayName, privateRelayDescription, privateRelayIcon
         case chatRelayName, chatRelayDescription, chatRelayIcon, chatRelayWotDepth, chatRelayWotRefreshHours, wotRefreshInterval, chatRelayMinFollowers
@@ -319,6 +323,8 @@ struct HavenConfig: Codable, Equatable {
         nip46ClientPubkey = try container.decodeIfPresent(String.self, forKey: .nip46ClientPubkey) ?? defaults.nip46ClientPubkey
 
         enableRemotePushServer = try container.decodeIfPresent(Bool.self, forKey: .enableRemotePushServer) ?? defaults.enableRemotePushServer
+
+        enableFeedNotifications = try container.decodeIfPresent(Bool.self, forKey: .enableFeedNotifications) ?? defaults.enableFeedNotifications
 
         // Migrate: if enablePushNotifications was never saved, carry forward enableRemotePushServer
         if let newValue = try container.decodeIfPresent(Bool.self, forKey: .enablePushNotifications) {

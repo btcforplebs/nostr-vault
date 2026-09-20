@@ -471,3 +471,64 @@ func TestBatchNotifierSummaryOnlyWhenAway(t *testing.T) {
 		t.Fatalf("summary lost its count: %q", buf.String())
 	}
 }
+
+// A kind the app has switched off must not reach the summary either. The client
+// can drop an individual marker for a reaction; it cannot subtract reactions
+// from "N more new items", so the count has to exclude them at the source.
+func TestBatchNotifierHonoursNotifyKinds(t *testing.T) {
+	owner := hexid('0')
+	setupSyncConfig(owner)
+	config.NotifyKinds = map[int]struct{}{int(nostr.KindTextNote): {}}
+
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	now := nostr.Now()
+	event := func(id byte, kind int) *nostr.Event {
+		return &nostr.Event{ID: hexid(id), PubKey: hexid('1'), Kind: kind, CreatedAt: now}
+	}
+
+	n := &batchNotifier{}
+	for _, id := range []byte{'a', 'b', 'c', 'd', 'e'} {
+		n.maybeNotify(event(id, int(nostr.KindReaction)), owner)
+	}
+	if n.emitted != 0 || n.suppressed != 0 {
+		t.Fatalf("a disabled kind reached the notifier: emitted=%d suppressed=%d", n.emitted, n.suppressed)
+	}
+	n.flush(true)
+	if strings.Contains(buf.String(), "type=summary") {
+		t.Fatalf("summary emitted for disabled kinds only: %q", buf.String())
+	}
+
+	// The gate has to let the enabled kind through, or it is just an off switch.
+	buf.Reset()
+	n = &batchNotifier{}
+	for _, id := range []byte{'a', 'b', 'c', 'd', 'e'} {
+		n.maybeNotify(event(id, int(nostr.KindTextNote)), owner)
+	}
+	if n.emitted != 2 || n.suppressed != 3 {
+		t.Fatalf("enabled kind was blocked: emitted=%d suppressed=%d", n.emitted, n.suppressed)
+	}
+	n.flush(true)
+	if !strings.Contains(buf.String(), "type=summary") {
+		t.Fatalf("no summary for an enabled kind: %q", buf.String())
+	}
+}
+
+// An empty set means the host app expressed no preference (or predates the
+// setting) — every notifiable kind still qualifies.
+func TestNotifyKindsEmptyMeansEverything(t *testing.T) {
+	setupSyncConfig(hexid('0'))
+	config.NotifyKinds = nil
+	for _, kind := range []int{int(nostr.KindTextNote), int(nostr.KindReaction), int(nostr.KindZap)} {
+		if !isNotifyableKind(kind) {
+			t.Fatalf("kind %d blocked with no preference set", kind)
+		}
+	}
+	config.NotifyKinds = map[int]struct{}{0: {}}
+	if isNotifyableKind(int(nostr.KindTextNote)) {
+		t.Fatal("a set that lists only kind 0 must silence real kinds")
+	}
+}

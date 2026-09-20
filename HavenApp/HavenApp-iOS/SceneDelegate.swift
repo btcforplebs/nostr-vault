@@ -77,6 +77,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Show the in-app banner (not a system push) for relay activity while visible.
         LocalNotificationService.shared.appInForeground = true
 
+        // The user is here: this ends any absence, and the feed on screen counts
+        // as seen, so the next "N new notes in your feed" starts from here.
+        NotificationActivityLog.recordForeground()
+        if let newest = FeedService.shared.notes.map(\.createdAt).max() {
+            NotificationActivityLog.recordAnnouncedFeedNote(newest)
+        }
+
         // Clear app badge and reset server-side badge counter
         Task { @MainActor in
             PushNotificationService.shared.clearBadge()
@@ -86,6 +93,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneWillResignActive(_ scene: UIScene) {
         // Back to system push notifications once the app leaves the foreground.
         LocalNotificationService.shared.appInForeground = false
+
+        // The absence starts now — recorded on the way out as well as on the way
+        // in, so a long session doesn't read as a long absence.
+        NotificationActivityLog.recordForeground()
+        if let newest = FeedService.shared.notes.map(\.createdAt).max() {
+            NotificationActivityLog.recordAnnouncedFeedNote(newest)
+        }
 
         // Publish on the way out too: this is the state the user will see on
         // the Home Screen a second from now, and it is the last chance to
