@@ -23,6 +23,7 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — the app
 
 ## Bug Fixes
 
+*   **Search Read the Feed, Not Your Relay**: In relay mode, search looked through whatever the feed happened to have loaded instead of asking your own relay, so anything not currently in memory was invisible to it. It now queries the relay.
 *   **Quoted Posts**: A quoted post now draws as a card in the feed, on the focused note and on the relay tab, with quoted articles resolved.
 *   **Zap Amounts**: Read from the invoice, since receipts do not carry them — and an invoice with no amount no longer reads as 1 BTC in live chat.
 *   **Live Streams**: The live feed no longer crashes on its first real run, and the chat composer no longer sits behind the tab bar.

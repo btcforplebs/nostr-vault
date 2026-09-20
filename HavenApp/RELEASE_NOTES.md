@@ -16,7 +16,7 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — every p
 *   **Articles**: Long-form posts from the people you follow, drawn as articles with a reader, instead of a wall of raw text.
 *   **Recipes**: A feed of cooking posts from zapcooking and nostrcooking, live from relays.
 *   **Live Streams**: Only the streams actually running, with chat and zapping while you watch.
-*   **A GIF Keyboard**: In the composer, with captions that stay readable over bright frames.
+*   **A GIF Keyboard**: In the composer, backed by getyarn and Tenor, with captions that stay readable over bright frames and a layout that packs tall and wide GIFs without gaps.
 *   **Selectable Notification Sounds**.
 *   **Scan a Signer's QR Code**: Connect a remote signer with the camera instead of typing a bunker string.
 *   **A macOS Status Panel**: The menu bar item is now a panel of its own, separate from the main window.
@@ -29,6 +29,10 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — every p
 
 ## Bug Fixes
 
+*   **Too Many Notifications**: Your phone wakes the app in the background several times an hour, and each wake announced "N more new items while you were away" as though you had just come back. That summary now waits for a real absence — two hours out of the app — and says it once. "New notes in your feed" was a separate stream that obeyed no setting at all, not even the master notification switch; it is now its own switch in Settings › Notifications and it is **off**. And the "N more new items" count now leaves out the notification types you have switched off, which it could never do before, because a single number cannot be filtered after the fact.
+*   **Clicking a Notification Did Nothing (macOS)**: No notification of any kind responded to a click — not a DM, a mention, a zap, a reaction or a repost — because the Mac app never registered to receive them. It also meant a message arriving while Nostr Vault was the app you were looking at never appeared at all. Clicking one now opens what it is about, including from the menu bar with no window open.
+*   **Search Only Looked at Part of Your Relay**: It read whatever the feed happened to have loaded rather than asking your relay, and when it did ask, it asked one place and stopped at the first page. It now searches your whole relay, and finds a post by its author as well as its text.
+*   **The iPad Sidebar Was Blue**: Feed, Search, Profile, Media, Relay and Settings all drew in the iOS system colour instead of the app's own.
 *   **Quoted Posts Said "Quote"**: A quoted post now draws as a card everywhere it appears, including reposts of quote-posts and quoted articles.
 *   **Local Video Stopped Playing After a Reinstall**: iOS moves the app's storage on every install, which left every local video pointing at a folder that no longer existed. Local playback now survives reinstalls.
 *   **Link Previews**: Two links to the same site no longer share one preview, and a preview card follows its own link.
