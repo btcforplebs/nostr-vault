@@ -59,15 +59,6 @@ struct NoteDetailView: View {
             ?? note
     }
 
-    /// A bare repost has no body of its own, so replying to one has to answer
-    /// the note it carries. Both reply entry points resolve through here.
-    private func replyTarget(for note: FeedNote) -> FeedNote {
-        guard note.kind == 6,
-              let refId = note.repostedEventId,
-              let original = feedService.findNote(id: refId) else { return note }
-        return original
-    }
-
     private var dynamicParents: [FeedNote] {
         var ancestors: [FeedNote] = []
         var current = focusedNote
@@ -217,7 +208,7 @@ struct NoteDetailView: View {
                         // same target the focused card's own reply button uses.
                         // Pointing it at the entry note instead let the two
                         // buttons disagree once you tapped into a reply.
-                        composeContext = ComposeContext(replyTo: replyTarget(for: focusedNote), quoteTo: nil)
+                        composeContext = ComposeContext(replyTo: feedService.replyTarget(for: focusedNote), quoteTo: nil)
                     }
 
                     // Event info / re-broadcast
@@ -348,7 +339,7 @@ struct NoteDetailView: View {
                 profile: profile,
                 rowData: rowData,
                 onReply: {
-                    composeContext = ComposeContext(replyTo: replyTarget(for: focusedNote), quoteTo: nil)
+                    composeContext = ComposeContext(replyTo: feedService.replyTarget(for: focusedNote), quoteTo: nil)
                 },
                 onQuote: {
                     composeContext = ComposeContext(replyTo: nil, quoteTo: focusedNote)

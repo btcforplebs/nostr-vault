@@ -13,6 +13,15 @@ import SwiftUI
 /// over the timeline; the fold opens in place instead of pushing a new screen.
 struct FeedThreadCard: View {
     let thread: FeedThread<FeedNote>
+    /// Which note is open in place. Feed-wide, and owned by the feed, for two
+    /// reasons: opening a note has to close whatever the condensed layout
+    /// opened — it is one gesture, so it is one selection — and a card
+    /// scrolled out of a LazyVStack loses its own `@State`, which would
+    /// silently collapse an open note while you were away.
+    @Binding var openNoteId: String?
+    /// Whether this thread's fold is open. Held by the feed for the same
+    /// recycling reason.
+    @Binding var isExpanded: Bool
     let profileFor: (String) -> FeedProfile?
     /// Resolves the row data a full note needs. Required for the expanded row;
     /// without it a line has nothing to expand into and stays condensed.
@@ -27,8 +36,6 @@ struct FeedThreadCard: View {
     var onProfile: ((String) -> Void)? = nil
     var onMedia: ((URL, [URL]) -> Void)? = nil
 
-    @State private var isExpanded = false
-    @State private var openNoteId: String?
     @Environment(\.feedActions) private var actions
     @EnvironmentObject private var configService: ConfigService
 
