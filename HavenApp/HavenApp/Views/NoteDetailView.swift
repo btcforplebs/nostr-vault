@@ -412,138 +412,32 @@ struct NoteDetailView: View {
         .shadow(color: Color.havenPurple.opacity(0.35), radius: 8)
     }
 
+    /// The focused note in condensed mode: the same shared line every other
+    /// condensed surface uses, inside the hero card's own border.
     @ViewBuilder
     private func compactMainNoteLayout(profile: FeedProfile?, hasEngagement: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                // Avatar (32x32)
-                AvatarView(url: profile?.pictureURL, pubkey: focusedNote.pubkey)
-                    .frame(width: 32, height: 32)
-                    .onTapGesture {
-                        showingProfilePubkey = focusedNote.pubkey
-                    }
-
-                // Content (flexible)
-                VStack(alignment: .leading, spacing: 2) {
-                    // Header row
-                    HStack(spacing: 4) {
-                        Text(profile?.bestName ?? shortKey(focusedNote.pubkey))
-                            .font(.appSystem(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-
-                        if let nip05 = profile?.nip05, !nip05.isEmpty {
-                            Image(systemName: "checkmark.seal.fill")
-                                .font(.appSystem(size: 9))
-                                .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
-                        }
-
-                        Text("· \(relativeTime(focusedNote.createdAt))")
-                            .font(.appSystem(size: 11))
-                            .foregroundColor(.secondary)
-
-                        Spacer()
-
-                        // Reply/Repost indicators
-                        if focusedNote.isReply {
-                            Image(systemName: "arrowshape.turn.up.left.fill")
-                                .font(.appSystem(size: 10))
-                                .foregroundColor(Color.havenPurple.opacity(0.7))
-                        }
-                        if focusedNote.repostedBy != nil {
-                            Image(systemName: "arrow.2.squarepath")
-                                .font(.appSystem(size: 10))
-                                .foregroundColor(.green.opacity(0.7))
-                        }
-                    }
-
-                    // Truncated content (2 lines max)
-                    if !focusedNote.content.isEmpty {
-                        Text(focusedNote.content)
-                            .font(.appSystem(size: 14))
-                            .foregroundColor(.white)
-                            .lineLimit(2)
-                            .lineSpacing(1)
-                    }
-
-                    // Inline engagement stats
-                    if hasEngagement {
-                        HStack(spacing: 8) {
-                            // Reactions - compact
-                            if !groupedReactions.isEmpty {
-                                HStack(spacing: 2) {
-                                    ForEach(groupedReactions.prefix(3), id: \.emoji) { group in
-                                        HStack(spacing: 1) {
-                                            Text(group.emoji)
-                                                .font(.appSystem(size: 10))
-                                            Text("\(group.count)")
-                                                .font(.appSystem(size: 9, weight: .bold, design: .monospaced))
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Zaps - compact
-                            if !parsedZaps.isEmpty {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "bolt.fill")
-                                        .font(.appSystem(size: 9, weight: .bold))
-                                        .foregroundColor(.orange)
-                                    Text("\(parsedZaps.count)")
-                                        .font(.appSystem(size: 9, weight: .semibold, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            // Reposts - compact
-                            if !detailedReposts.isEmpty {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "arrow.2.squarepath")
-                                        .font(.appSystem(size: 9, weight: .bold))
-                                        .foregroundColor(.green)
-                                    Text("\(repostersMapped.count)")
-                                        .font(.appSystem(size: 9, weight: .semibold, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                        .padding(.top, 4)
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                // Media thumbnail (60x60)
-                if let firstMedia = focusedNote.mediaURLs.first {
-                    ZStack(alignment: .bottomTrailing) {
-                        FeedMediaView(
-                            url: firstMedia,
-                            isThumbnail: true
-                        )
-                        .frame(width: 60, height: 60)
-                        .aspectRatio(1, contentMode: .fill)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .onTapGesture {
-                            showingMediaUrl = IdentifiableURL(url: firstMedia, allURLs: focusedNote.mediaURLs)
-                        }
-
-                        // Multi-media badge
-                        if focusedNote.mediaURLs.count > 1 {
-                            Text("+\(focusedNote.mediaURLs.count - 1)")
-                                .font(.appSystem(size: 10, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color.black.opacity(0.7))
-                                .clipShape(Capsule())
-                                .padding(4)
-                        }
-                    }
+        CondensedNoteLine(
+            note: focusedNote,
+            profile: profile,
+            depth: 0,
+            style: .plain,
+            mediaURLs: focusedNote.mediaURLs,
+            engagement: hasEngagement
+                ? CondensedEngagement(
+                    reactions: groupedReactions.reduce(0) { $0 + $1.count },
+                    reposts: repostersMapped.count,
+                    zaps: parsedZaps.count,
+                    topEmoji: groupedReactions.first?.emoji
+                  )
+                : .none,
+            onProfile: { showingProfilePubkey = $0 },
+            onTap: {
+                withAnimation(Motion.panel) {
+                    isCompactView = false
                 }
             }
-            .padding(12)
-        }
+        )
+        .padding(6)
         .background(
             ZStack {
                 Color.platformSecondaryGroupedBackground
@@ -556,22 +450,51 @@ struct NoteDetailView: View {
                 .stroke(Color.havenPurple, lineWidth: 2.0)
         )
         .shadow(color: Color.havenPurple.opacity(0.35), radius: 8)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(Motion.panel) {
-                isCompactView = false
+    }
+
+    private func threadSection(proxy: ScrollViewProxy) -> some View {
+        Group {
+            if isCompactView {
+                compactThreadHistory(proxy: proxy)
+            } else {
+                fullThreadHistory(proxy: proxy)
             }
         }
     }
-    
-    private func threadSection(proxy: ScrollViewProxy) -> some View {
-        VStack(alignment: .leading, spacing: isCompactView ? 6 : 12) {
+
+    /// The ancestors of the focused note, condensed into one conversation card
+    /// that steps in one level per generation — the same shape the feed's
+    /// threaded mode uses.
+    private func compactThreadHistory(proxy: ScrollViewProxy) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(dynamicParents.enumerated()), id: \.element.id) { index, parent in
+                CondensedNoteLine(
+                    note: parent,
+                    profile: nostrService.profiles[parent.pubkey],
+                    depth: min(index, FeedThreadGrouping.maxDepth),
+                    style: .plain,
+                    isFocused: parent.id == focusedNoteId,
+                    mediaURLs: parent.mediaURLs,
+                    onProfile: { showingProfilePubkey = $0 },
+                    onTap: { selectAndScrollToNote(parent.id, proxy: proxy) }
+                )
+                .id(parent.id)
+            }
+
+            if isLoadingParents {
+                FeedNoteSkeletonRow()
+            }
+        }
+        .threadCard()
+        .padding(.horizontal, 16)
+    }
+
+    private func fullThreadHistory(proxy: ScrollViewProxy) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
             ForEach(dynamicParents) { parent in
                 let parentProfile = nostrService.profiles[parent.pubkey]
 
-                if isCompactView {
-                    compactParentNoteView(parent: parent, profile: parentProfile, proxy: proxy)
-                } else {
+                Group {
                     let rowData = FeedNoteRowData.resolve(
                         for: parent,
                         feedService: feedService,
@@ -641,72 +564,6 @@ struct NoteDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private func compactParentNoteView(parent: FeedNote, profile: FeedProfile?, proxy: ScrollViewProxy) -> some View {
-        let isOLED = ConfigService.shared.config.useOLED
-        let isFocusedParent = parent.id == focusedNoteId
-
-        HStack(alignment: .top, spacing: 8) {
-            // Avatar
-            AvatarView(url: profile?.pictureURL, pubkey: parent.pubkey)
-                .frame(width: 28, height: 28)
-                .onTapGesture {
-                    showingProfilePubkey = parent.pubkey
-                }
-
-            // Content
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(profile?.bestName ?? shortKey(parent.pubkey))
-                        .font(.appSystem(size: 12, weight: .semibold))
-                        .foregroundColor(.white.opacity(isOLED ? 0.85 : 0.9))
-                        .lineLimit(1)
-
-                    Text("\u{b7} \(relativeTime(parent.createdAt))")
-                        .font(.appSystem(size: 10))
-                        .foregroundColor(.secondary.opacity(0.7))
-
-                    Spacer()
-                }
-
-                if !parent.content.isEmpty {
-                    Text(parent.content)
-                        .font(.appSystem(size: 12))
-                        .foregroundColor(.white.opacity(isOLED ? 0.7 : 0.75))
-                        .lineLimit(1)
-                }
-            }
-        }
-        .id(parent.id)
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(
-                    isFocusedParent
-                        ? Color.havenPurple.opacity(isOLED ? 0.08 : 0.12)
-                        : Color.platformSecondaryGroupedBackground
-                )
-        )
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.havenPurple.opacity(0.015))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                    isFocusedParent
-                        ? Color.havenPurple.opacity(isOLED ? 0.6 : 0.4)
-                        : Color.havenPurple.opacity(isOLED ? 0.30 : 0.15),
-                    lineWidth: isFocusedParent ? 1.5 : (isOLED ? 1.0 : 0.5)
-                )
-        )
-        .padding(.horizontal, 16)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            selectAndScrollToNote(parent.id, proxy: proxy)
-        }
-    }
-
     private func repliesSection(proxy: ScrollViewProxy) -> some View {
         let currentReplies = dynamicReplies
         let pool = threadPool
@@ -741,6 +598,16 @@ struct NoteDetailView: View {
                     .padding(.bottom, 2)
                     .padding(.horizontal, 16)
 
+                repliesList(currentReplies, pool: pool, proxy: proxy)
+            }
+        }
+    }
+
+    /// The reply tree. In condensed mode the whole tree shares one card so it
+    /// reads as a conversation; in expanded mode each reply keeps its own.
+    @ViewBuilder
+    private func repliesList(_ currentReplies: [FeedNote], pool: [FeedNote], proxy: ScrollViewProxy) -> some View {
+        let nodes = VStack(alignment: .leading, spacing: isCompactView ? 2 : 12) {
                 ForEach(currentReplies) { reply in
                     ThreadedReplyNode(
                         reply: reply,
@@ -766,10 +633,17 @@ struct NoteDetailView: View {
                         perNoteReposts: perNoteReposts,
                         perNoteZaps: perNoteZaps
                     )
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, isCompactView ? 0 : 16)
                 }
-                .transition(.opacity)
-            }
+        }
+        .transition(.opacity)
+
+        if isCompactView {
+            nodes
+                .threadCard()
+                .padding(.horizontal, 16)
+        } else {
+            nodes
         }
     }
     
@@ -1474,24 +1348,6 @@ struct NoteDetailView: View {
     }
 
     
-    private func relativeTime(_ date: Date) -> String {
-        let diff = Date().timeIntervalSince(date)
-        switch diff {
-        case ..<60:         return "now"
-        case ..<3600:       return "\(Int(diff / 60))m"
-        case ..<86400:      return "\(Int(diff / 3600))h"
-        case ..<604800:     return "\(Int(diff / 86400))d"
-        default:
-            let fmt = DateFormatter()
-            fmt.dateFormat = "MMM d"
-            return fmt.string(from: date)
-        }
-    }
-
-    private func shortKey(_ key: String) -> String {
-        guard key.count >= 12 else { return key }
-        return "npub…" + String(key.suffix(6))
-    }
 
     // MARK: - Rich Engagement Computations
 
@@ -1824,7 +1680,7 @@ struct ThreadedReplyNode: View {
 
         let isCurrentFocused = reply.id == focusedNoteId
 
-        VStack(alignment: .leading, spacing: isCompactMode ? 6 : 8) {
+        VStack(alignment: .leading, spacing: isCompactMode ? 2 : 8) {
             if isCompactMode {
                 compactReplyView(isCurrentFocused: isCurrentFocused, childReplies: childReplies)
             } else {
@@ -1886,8 +1742,9 @@ struct ThreadedReplyNode: View {
                         }
                     }
                 } else {
-                    // Compact mode: show nested replies with visual depth indicators
-                    VStack(alignment: .leading, spacing: 6) {
+                    // Compact mode: the line's own rail and indent carry the
+                    // nesting, so children just stack.
+                    VStack(alignment: .leading, spacing: 2) {
                         ForEach(childReplies) { child in
                             ThreadedReplyNode(
                                 reply: child,
@@ -1970,155 +1827,38 @@ struct ThreadedReplyNode: View {
         }
     }
 
+    /// A condensed reply, drawn by the same component the feed's threaded mode
+    /// uses so the two surfaces stay identical.
     @ViewBuilder
     private func compactReplyView(isCurrentFocused: Bool, childReplies: [FeedNote]) -> some View {
-        let replyProfile = nostrService.profiles[reply.pubkey]
-        let indentMultiplier = min(depth - 1, 5) // Cap indentation at depth 5
-        let indentWidth: CGFloat = CGFloat(indentMultiplier) * 16
-        let isOLED = ConfigService.shared.config.useOLED
+        let zapInfo = zapTotalForReply(reply.id)
+        let reactions = groupedReactionsForReply(reply.id)
 
-        HStack(alignment: .top, spacing: 8) {
-            // Avatar
-            AvatarView(url: replyProfile?.pictureURL, pubkey: reply.pubkey)
-                .frame(width: 28, height: 28)
-                .onTapGesture {
-                    onProfile?(reply.pubkey)
-                }
-
-            // Content
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 5) {
-                    Text(replyProfile?.bestName ?? "npub\u{2026}" + String(reply.pubkey.suffix(6)))
-                        .font(.appSystem(size: 12, weight: .semibold))
-                        .foregroundColor(.white.opacity(isOLED ? 0.92 : 0.95))
-                        .lineLimit(1)
-
-                    if let nip05 = replyProfile?.nip05, !nip05.isEmpty {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.appSystem(size: 8))
-                            .foregroundColor(Color.havenPurple.opacity(0.8))
-                    }
-
-                    Text("\u{b7} \(relativeTime(reply.createdAt))")
-                        .font(.appSystem(size: 10))
-                        .foregroundColor(.secondary.opacity(isOLED ? 0.7 : 0.8))
-
-                    Spacer()
-
-                    // Reply count badge
-                    if !childReplies.isEmpty {
-                        HStack(spacing: 3) {
-                            Image(systemName: "text.bubble")
-                                .font(.appSystem(size: 9, weight: .medium))
-                            Text("\(childReplies.count)")
-                                .font(.appSystem(size: 9, weight: .semibold, design: .monospaced))
-                        }
-                        .foregroundColor(.secondary.opacity(isOLED ? 0.5 : 0.6))
-                    }
-                }
-
-                if !reply.content.isEmpty {
-                    Text(reply.content)
-                        .font(.appSystem(size: 12))
-                        .foregroundColor(.white.opacity(isOLED ? 0.8 : 0.85))
-                        .lineLimit(2)
-                        .lineSpacing(1.5)
-                        .padding(.top, 1)
-                }
-
-                // Compact engagement
-                if expandedEngagement {
-                    let reactions = groupedReactionsForReply(reply.id)
-                    let zapInfo = zapTotalForReply(reply.id)
-                    let repostCount = repostCountForReply(reply.id)
-
-                    if !reactions.isEmpty || zapInfo.count > 0 || repostCount > 0 {
-                        HStack(spacing: 6) {
-                            if !reactions.isEmpty {
-                                HStack(spacing: 2) {
-                                    Text(reactions.first?.emoji ?? "")
-                                        .font(.appSystem(size: 10))
-                                    Text("\(reactions.reduce(0) { $0 + $1.count })")
-                                        .font(.appSystem(size: 9, weight: .semibold, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            if zapInfo.count > 0 {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "bolt.fill")
-                                        .font(.appSystem(size: 8))
-                                        .foregroundColor(.orange)
-                                    Text("\(zapInfo.count)")
-                                        .font(.appSystem(size: 9, weight: .semibold, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            if repostCount > 0 {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "arrow.2.squarepath")
-                                        .font(.appSystem(size: 8))
-                                        .foregroundColor(.green)
-                                    Text("\(repostCount)")
-                                        .font(.appSystem(size: 9, weight: .semibold, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                        .padding(.top, 2)
-                    }
+        CondensedNoteLine(
+            note: reply,
+            profile: nostrService.profiles[reply.pubkey],
+            depth: min(depth, FeedThreadGrouping.maxDepth),
+            style: .plain,
+            isFocused: isCurrentFocused,
+            replyCount: childReplies.count,
+            mediaURLs: reply.mediaURLs,
+            engagement: expandedEngagement
+                ? CondensedEngagement(
+                    reactions: reactions.reduce(0) { $0 + $1.count },
+                    reposts: repostCountForReply(reply.id),
+                    zaps: zapInfo.count,
+                    topEmoji: reactions.first?.emoji
+                  )
+                : .none,
+            onProfile: { onProfile?($0) },
+            onTap: {
+                withAnimation(Motion.scrollJump) {
+                    focusedNoteId = reply.id
+                    proxy.scrollTo(reply.id, anchor: .center)
                 }
             }
-        }
+        )
         .id(reply.id)
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(
-                    isCurrentFocused
-                        ? Color.havenPurple.opacity(isOLED ? 0.08 : 0.12)
-                        : Color.platformSecondaryGroupedBackground
-                )
-        )
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.havenPurple.opacity(0.015))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                    isCurrentFocused
-                        ? Color.havenPurple.opacity(isOLED ? 0.6 : 0.4)
-                        : Color.havenPurple.opacity(isOLED ? 0.30 : 0.15),
-                    lineWidth: isCurrentFocused ? 1.5 : (isOLED ? 1.0 : 0.5)
-                )
-        )
-        .padding(.leading, indentWidth)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(Motion.scrollJump) {
-                focusedNoteId = reply.id
-                proxy.scrollTo(reply.id, anchor: .center)
-            }
-        }
-    }
-
-    private func depthIndicatorColor(for depth: Int) -> Color {
-        // Simplified to use consistent theme color throughout
-        return Color.havenPurple.opacity(0.6)
-    }
-
-    private func relativeTime(_ date: Date) -> String {
-        let diff = Date().timeIntervalSince(date)
-        switch diff {
-        case ..<60:         return "now"
-        case ..<3600:       return "\(Int(diff / 60))m"
-        case ..<86400:      return "\(Int(diff / 3600))h"
-        case ..<604800:     return "\(Int(diff / 86400))d"
-        default:
-            let fmt = DateFormatter()
-            fmt.dateFormat = "MMM d"
-            return fmt.string(from: date)
-        }
     }
 
     // Per-note engagement helpers for this reply node

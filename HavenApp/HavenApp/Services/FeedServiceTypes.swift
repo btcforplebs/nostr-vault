@@ -298,6 +298,15 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
     }
 }
 
+// MARK: - Thread grouping
+
+/// `FeedNote` already carries everything the thread grouper needs; this just
+/// names `pubkey` the way the protocol does, so the grouping logic can be unit
+/// tested against a plain fixture instead of a live note.
+extension FeedNote: ThreadGroupable {
+    var authorPubkey: String { pubkey }
+}
+
 // MARK: - BackgroundAccumulator
 
 /// Thread-safe buffer for events parsed off the main thread.

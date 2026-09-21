@@ -172,15 +172,17 @@ struct FeedView: View {
     /// Compact mode state: tracks which note is currently expanded (nil = all collapsed)
     @State private var expandedNoteId: String? = nil
 
+    /// Conversations built from `filteredNotes` for threaded mode. Rebuilt on
+    /// the same signals as the row-data cache and left empty in the other two
+    /// layouts so nothing is grouped that will never be drawn.
+    @State private var feedThreads: [FeedThread<FeedNote>] = []
+    @State private var threadRebuildWork: DispatchWorkItem?
+
     // MARK: - Helper Properties
 
-    /// Whether compact ("condensed") mode is enabled for the current feed, honoring
-    /// the per-feed user override and falling back to per-feed defaults: Following
-    /// defaults OFF, all other timeline feeds default ON.
-    private var compactModeEnabledForCurrentFeed: Bool {
-        if let stored = configService.config.feedCompactModes[feedService.feedMode.rawValue] {
-            return stored
-        }
+    /// This feed's built-in compact default: Following defaults OFF, all other
+    /// timeline feeds follow the legacy global preference.
+    private var defaultCompactForCurrentFeed: Bool {
         switch feedService.feedMode {
         case .following, .articles, .recipes, .live:
             return false
@@ -189,16 +191,76 @@ struct FeedView: View {
         }
     }
 
-    /// Toggle and persist compact mode for the current feed.
-    private func toggleCompactModeForCurrentFeed() {
-        configService.config.feedCompactModes[feedService.feedMode.rawValue] = !compactModeEnabledForCurrentFeed
-        configService.save()
-        expandedNoteId = nil
+    /// Only a timeline of notes has replies to gather, so grids and card lists
+    /// cycle between expanded and condensed without a threaded stop.
+    private var currentFeedSupportsThreading: Bool {
+        switch feedService.feedMode {
+        case .following, .discovery, .global, .popular:
+            return true
+        case .media, .articles, .recipes, .live:
+            return false
+        }
     }
 
-    /// Compact mode is active for all feeds except Media grid
+    /// The stored layout for the current feed, migrating anyone who had the
+    /// old per-feed compact boolean set.
+    private var layoutModeForCurrentFeed: FeedLayoutMode {
+        FeedLayoutMode.resolve(
+            storedLayout: configService.config.feedLayoutModes[feedService.feedMode.rawValue],
+            storedCompact: configService.config.feedCompactModes[feedService.feedMode.rawValue],
+            defaultCompact: defaultCompactForCurrentFeed
+        )
+        .clamped(supportsThreading: currentFeedSupportsThreading)
+    }
+
+    /// Advance the current feed one step around expanded -> condensed ->
+    /// threaded and persist it.
+    private func cycleLayoutModeForCurrentFeed() {
+        setLayoutModeForCurrentFeed(layoutModeForCurrentFeed.next(supportsThreading: currentFeedSupportsThreading))
+    }
+
+    /// Jump straight to a layout (used by the overflow menu, where every
+    /// choice is visible at once).
+    private func setLayoutModeForCurrentFeed(_ mode: FeedLayoutMode) {
+        let resolved = mode.clamped(supportsThreading: currentFeedSupportsThreading)
+        configService.config.feedLayoutModes[feedService.feedMode.rawValue] = resolved.rawValue
+        // Keep the legacy key in step so a downgrade still lands somewhere sane.
+        configService.config.feedCompactModes[feedService.feedMode.rawValue] = resolved.usesCondensedRows
+
+        // A threaded feed with replies filtered out would show nothing but
+        // roots, which is the layout the user just left. Turn replies on with
+        // it; the Replies filter still switches them back off.
+        var needsRefilter = false
+        if resolved == .threaded && !configService.config.showReplies {
+            configService.config.showReplies = true
+            needsRefilter = true
+        }
+
+        configService.save()
+        expandedNoteId = nil
+        if needsRefilter { feedService.recomputeFilteredNotes() }
+        rebuildThreadsIfNeeded(immediate: true)
+    }
+
+    /// Open the thread at a specific note. Threaded rows can't use
+    /// `NoteNavigationLink` — one link per line would make the whole card a
+    /// stack of links and swallow the fold button — so they route here instead.
+    private func openNoteDetail(_ note: FeedNote) {
+        if let noteDetailSelection {
+            noteDetailSelection.select(note)
+            return
+        }
+        #if os(iOS)
+        navigationPath.append(note)
+        #else
+        showingNoteId = note.id
+        #endif
+    }
+
+    /// Condensed rows are active — either of the two condensed layouts. Media
+    /// and article feeds are card/grid layouts with nothing to condense.
     private var isCompactModeActive: Bool {
-        guard compactModeEnabledForCurrentFeed else { return false }
+        guard layoutModeForCurrentFeed.usesCondensedRows else { return false }
         switch feedService.feedMode {
         case .following, .discovery, .global, .popular:
             return true
@@ -209,13 +271,23 @@ struct FeedView: View {
         }
     }
 
+    /// Whole conversations instead of loose rows.
+    private var isThreadedModeActive: Bool {
+        layoutModeForCurrentFeed == .threaded && currentFeedSupportsThreading
+    }
+
     // MARK: - Feed Trailing Toolbar (inline vs. compact menu)
 
     @ViewBuilder
     private var feedTrailingToolbarInline: some View {
         HStack(spacing: 4) {
-            IconFilterButton(icon: compactModeEnabledForCurrentFeed ? "rectangle.compress.vertical" : "rectangle.expand.vertical", tooltip: "Compact View", isSelected: compactModeEnabledForCurrentFeed, color: .havenPurple) {
-                toggleCompactModeForCurrentFeed()
+            IconFilterButton(
+                icon: layoutModeForCurrentFeed.symbolName,
+                tooltip: layoutModeForCurrentFeed.displayName,
+                isSelected: layoutModeForCurrentFeed != .expanded,
+                color: .havenPurple
+            ) {
+                cycleLayoutModeForCurrentFeed()
             }
 
             Divider()
@@ -278,13 +350,16 @@ struct FeedView: View {
     @ViewBuilder
     private var feedTrailingToolbarMenu: some View {
         Menu {
-            Button {
-                toggleCompactModeForCurrentFeed()
-            } label: {
-                Label(
-                    compactModeEnabledForCurrentFeed ? "Expanded View" : "Compact View",
-                    systemImage: compactModeEnabledForCurrentFeed ? "rectangle.expand.vertical" : "rectangle.compress.vertical"
-                )
+            // One entry per layout rather than a cycle — a menu can show where
+            // each choice leads, which a single cycling button cannot.
+            ForEach(FeedLayoutMode.allCases, id: \.self) { mode in
+                if mode != .threaded || currentFeedSupportsThreading {
+                    Button {
+                        setLayoutModeForCurrentFeed(mode)
+                    } label: {
+                        Label(mode.displayName, systemImage: layoutModeForCurrentFeed == mode ? "checkmark" : mode.symbolName)
+                    }
+                }
             }
 
             Divider()
@@ -602,21 +677,21 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help(configService.config.showReplies ? String(localized: "feed.help.hideReplies") : String(localized: "feed.help.showReplies"))
 
-                // Divider to separate compact toggle
+                // Divider to separate the layout cycle
                 Divider()
                     .frame(height: 20)
                     .padding(.horizontal, 8)
 
-                // Compact mode toggle
+                // Layout cycle: expanded -> condensed -> threaded
                 Button(action: {
-                    toggleCompactModeForCurrentFeed()
+                    cycleLayoutModeForCurrentFeed()
                 }) {
-                    Image(systemName: compactModeEnabledForCurrentFeed ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
+                    Image(systemName: layoutModeForCurrentFeed.symbolName)
                         .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(compactModeEnabledForCurrentFeed ? Color.havenPurple : .secondary)
+                        .foregroundColor(layoutModeForCurrentFeed == .expanded ? .secondary : Color.havenPurple)
                 }
                 .buttonStyle(.plain)
-                .help(compactModeEnabledForCurrentFeed ? "Compact view" : "Enable compact view")
+                .help("\(layoutModeForCurrentFeed.displayName) — click for \(layoutModeForCurrentFeed.nextDisplayName(supportsThreading: currentFeedSupportsThreading))")
             }
         }
         .padding(.horizontal, 16)
@@ -721,6 +796,7 @@ struct FeedView: View {
         .onAppear {
             feedService.markViewed()
             rebuildRowDataCache(immediate: true)
+            rebuildThreadsIfNeeded(immediate: true)
             // Resume if previously paused (e.g. view disappeared while in menu bar).
             if feedService.isPaused {
                 feedService.resumeFeed()
@@ -1173,6 +1249,33 @@ struct FeedView: View {
     /// This method is debounced to prevent expensive synchronous operations
     /// during active scrolling, especially when scrolling to the top triggers
     /// auto-loading of pending notes.
+    /// Regroup the feed into conversations. A no-op unless threaded mode is on,
+    /// and debounced like the row-data cache so a burst of arriving notes
+    /// doesn't regroup the timeline once per note.
+    private func rebuildThreadsIfNeeded(immediate: Bool = false) {
+        guard isThreadedModeActive else {
+            threadRebuildWork?.cancel()
+            if !feedThreads.isEmpty { feedThreads = [] }
+            return
+        }
+
+        threadRebuildWork?.cancel()
+        let work = DispatchWorkItem { [self] in
+            feedThreads = FeedThreadGrouping.build(notes: feedService.filteredNotes) { id in
+                // Ancestors the timeline never showed still live in the feed
+                // service's caches; pulling them in keeps a conversation whole.
+                feedService.findNote(id: id)
+            }
+        }
+        threadRebuildWork = work
+
+        if immediate {
+            work.perform()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+        }
+    }
+
     private func rebuildRowDataCache(immediate: Bool = false) {
         // Cancel any pending rebuild to avoid redundant work
         cacheRebuildWork?.cancel()
@@ -1611,6 +1714,17 @@ struct FeedView: View {
                             }
                         }
 
+                        if isThreadedModeActive {
+                            ForEach(feedThreads) { thread in
+                                FeedThreadCard(
+                                    thread: thread,
+                                    profileFor: { nostrService.profiles[$0] },
+                                    onSelect: { openNoteDetail($0) },
+                                    onProfile: { showingProfileKey = IdentifiableString(id: $0) }
+                                )
+                                .padding(.horizontal, 12)
+                            }
+                        } else {
                         ForEach(feedService.filteredNotes) { note in
                             let profile = nostrService.profiles[note.pubkey]
                             let rowData = rowDataCache[note.id] ?? FeedNoteRowData.resolve(
@@ -1647,6 +1761,7 @@ struct FeedView: View {
                                     }
                                 }
                             #endif
+                        }
                         }
 
                         // Infinite scroll sentinel — triggers loadMore when visible
@@ -1715,7 +1830,7 @@ struct FeedView: View {
                 .modifier(RowDataCacheObservers(
                     feedService: feedService,
                     nostrService: nostrService,
-                    onFiltered: { reconcileRowDataCache() },
+                    onFiltered: { reconcileRowDataCache(); rebuildThreadsIfNeeded() },
                     onLikes: { updateRowDataForLikes(old: $0, new: $1) },
                     onReposts: { updateRowDataForReposts(old: $0, new: $1) },
                     onZaps: { updateRowDataForZaps(old: $0, new: $1) },
@@ -1727,6 +1842,12 @@ struct FeedView: View {
                     feedService: feedService,
                     onReferencedNotes: { refreshRowsForReferencedNotes($0) }
                 ))
+                // Layout is stored per feed, so switching feeds can switch
+                // layout. Regroup immediately rather than waiting on the next
+                // filteredNotes change, which a cached feed may not produce.
+                .onChange(of: feedService.feedMode) { _, _ in
+                    rebuildThreadsIfNeeded(immediate: true)
+                }
 
                 // Floating "New Posts" indicator — shown when auto-load is off,
                 // or when auto-load is on but the user has scrolled down.
@@ -1790,6 +1911,7 @@ struct FeedView: View {
                 // Identity change flips isOwnNote on every row; rebuild fully so
                 // overlapping notes (global/popular feeds) reflect the new account.
                 rebuildRowDataCache()
+                rebuildThreadsIfNeeded()
                 withAnimation(Motion.scrollJump) {
                     proxy.scrollTo("top", anchor: .top)
                 }
@@ -2079,141 +2201,38 @@ struct FeedNoteRow: View {
 
     // MARK: - Compact Layout
 
+    /// The condensed row draws through the shared `CondensedNoteLine` so the
+    /// feed, a thread's ancestors and its replies cannot drift apart again.
     @ViewBuilder
     private var compactLayout: some View {
-        HStack(alignment: .top, spacing: 8) {
-            // Avatar (32x32)
-            AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: rowData.displayPubkey)
-                .frame(width: 32, height: 32)
-                .onTapGesture { onProfile?(rowData.displayPubkey) }
-
-            // Content (flexible)
-            VStack(alignment: .leading, spacing: 2) {
-                // Header row
-                HStack(spacing: 4) {
-                    Text(rowData.displayProfile?.bestName ?? shortKey(rowData.displayPubkey))
-                        .font(.appSystem(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-
-                    if let dp = rowData.displayProfile, let nip05 = dp.nip05, !nip05.isEmpty {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.appSystem(size: 9))
-                            .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
-                    }
-
-                    Text("· \(relativeTime(note.createdAt))")
-                        .font(.appSystem(size: 11))
-                        .foregroundColor(.secondary)
-
-                    Spacer()
-
-                    // Reply/Repost indicators
-                    if note.isReply {
-                        Image(systemName: "arrowshape.turn.up.left.fill")
-                            .font(.appSystem(size: 10))
-                            .foregroundColor(Color.havenPurple.opacity(0.7))
-                    }
-                    if note.repostedBy != nil {
-                        Image(systemName: "arrow.2.squarepath")
-                            .font(.appSystem(size: 10))
-                            .foregroundColor(.green.opacity(0.7))
-                    }
-                }
-
-                // Truncated content (3 lines max)
-                let contentToShow: String = {
-                    if note.kind == 6 && note.content.isEmpty, let original = rowData.resolvedOriginal {
-                        return original.content
-                    }
-                    // An article's three compact lines are worth far more spent
-                    // on its title than on the first three lines of markdown.
-                    if note.kind == 30023 { return note.longFormDisplayTitle }
-                    return note.content
-                }()
-
-                if !contentToShow.isEmpty {
-                    Text(NostrContentFormatter.resolveMentionsPlainText(contentToShow))
-                        .font(.appSystem(size: 14))
-                        .foregroundColor(.white)
-                        .lineLimit(3)
-                        .lineSpacing(1)
-                }
-
-                // Compact engagement stats
-                if (rowData.stats.reactions > 0 && !rowData.zapsOnlyMode) || rowData.stats.reposts > 0 {
-                    HStack(spacing: 6) {
-                        if rowData.stats.reactions > 0 && !rowData.zapsOnlyMode {
-                            HStack(spacing: 1) {
-                                Text("❤️").font(.appSystem(size: 9))
-                                Text("\(rowData.stats.reactions)")
-                                    .font(.appSystem(size: 8, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        if rowData.stats.reposts > 0 {
-                            HStack(spacing: 1) {
-                                Image(systemName: "arrow.2.squarepath")
-                                    .font(.appSystem(size: 7, weight: .bold))
-                                    .foregroundColor(.green)
-                                Text("\(rowData.stats.reposts)")
-                                    .font(.appSystem(size: 8, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                    .padding(.top, 2)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            // Media thumbnail (60x60)
-            if let firstMedia = note.mediaURLs.first ?? rowData.resolvedOriginal?.mediaURLs.first {
-                ZStack(alignment: .bottomTrailing) {
-                    FeedMediaView(
-                        url: firstMedia,
-                        isThumbnail: true
-                    )
-                    .frame(width: 80, height: 80)
-                    .aspectRatio(1, contentMode: .fill)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                    // Multi-media badge
-                    let totalMedia = note.mediaURLs.count + (rowData.resolvedOriginal?.mediaURLs.count ?? 0)
-                    if totalMedia > 1 {
-                        Text("+\(totalMedia - 1)")
-                            .font(.appSystem(size: 10, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.black.opacity(0.7))
-                            .clipShape(Capsule())
-                            .padding(4)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            ZStack {
-                Color.platformSecondaryGroupedBackground
-                Color.havenPurple.opacity(0.015)
-            }
+        let originalMedia = rowData.resolvedOriginal?.mediaURLs ?? []
+        CondensedNoteLine(
+            note: note,
+            profile: rowData.displayProfile,
+            displayPubkey: rowData.displayPubkey,
+            depth: 0,
+            style: .card,
+            contentOverride: compactContentOverride,
+            mediaURLs: note.mediaURLs + originalMedia,
+            engagement: CondensedEngagement(
+                reactions: rowData.zapsOnlyMode ? 0 : rowData.stats.reactions,
+                reposts: rowData.stats.reposts
+            ),
+            onProfile: { onProfile?($0) },
+            onTap: { onTapRow?() }
         )
-        .cornerRadius(10)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                    Color.havenPurple.opacity(ConfigService.shared.config.useOLED ? 0.30 : 0.15),
-                    lineWidth: ConfigService.shared.config.useOLED ? 1.0 : 0.5
-                )
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTapRow?()
+    }
+
+    /// What a condensed row shows instead of the raw note body: an article's
+    /// title, or the original note behind a bare repost.
+    private var compactContentOverride: String? {
+        if note.kind == 6 && note.content.isEmpty, let original = rowData.resolvedOriginal {
+            return original.content
         }
+        // An article's three compact lines are worth far more spent on its
+        // title than on the first three lines of markdown.
+        if note.kind == 30023 { return note.longFormDisplayTitle }
+        return nil
     }
 
     // MARK: - Full Layout

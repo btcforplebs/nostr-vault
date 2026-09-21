@@ -42,6 +42,10 @@ struct HavenConfig: Codable, Equatable {
     var textSizeScale: Double = 1.0
     var useFeedCompactMode: Bool = true // Legacy global default; per-feed overrides live in feedCompactModes
     var feedCompactModes: [String: Bool] = [:] // Per-feed compact-mode overrides, keyed by FeedMode.rawValue
+    /// Per-feed layout choice (expanded / condensed / threaded), keyed by
+    /// FeedMode.rawValue. Supersedes `feedCompactModes`, which is still read as
+    /// the fallback so an upgrade keeps whatever compact setting was in place.
+    var feedLayoutModes: [String: String] = [:]
     var noteDetailCompactView: Bool = false // Persisted compact mode for NoteDetailView
     var noteDetailExpandedEngagement: Bool = false // Persisted stats/engagement toggle for NoteDetailView
     var defaultReactionEmoji: String = "❤️" // Default emoji for quick reactions
@@ -237,7 +241,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, noteDetailCompactView, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation
+        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailCompactView, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications
         case macRelayURL
@@ -307,6 +311,7 @@ struct HavenConfig: Codable, Equatable {
         textSizeScale = try container.decodeIfPresent(Double.self, forKey: .textSizeScale) ?? defaults.textSizeScale
         useFeedCompactMode = try container.decodeIfPresent(Bool.self, forKey: .useFeedCompactMode) ?? defaults.useFeedCompactMode
         feedCompactModes = try container.decodeIfPresent([String: Bool].self, forKey: .feedCompactModes) ?? defaults.feedCompactModes
+        feedLayoutModes = try container.decodeIfPresent([String: String].self, forKey: .feedLayoutModes) ?? defaults.feedLayoutModes
         noteDetailCompactView = try container.decodeIfPresent(Bool.self, forKey: .noteDetailCompactView) ?? defaults.noteDetailCompactView
         noteDetailExpandedEngagement = try container.decodeIfPresent(Bool.self, forKey: .noteDetailExpandedEngagement) ?? defaults.noteDetailExpandedEngagement
         defaultReactionEmoji = try container.decodeIfPresent(String.self, forKey: .defaultReactionEmoji) ?? defaults.defaultReactionEmoji
