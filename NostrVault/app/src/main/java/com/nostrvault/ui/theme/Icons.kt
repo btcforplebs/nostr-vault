@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
@@ -158,6 +159,7 @@ object NostrVaultIcons {
     // View modes
     val CompactView: ImageVector = Icons.AutoMirrored.Filled.ViewList // rectangle.compress.vertical
     val ExpandedView: ImageVector = Icons.Filled.ViewAgenda           // rectangle.expand.vertical
+    val ThreadedView: ImageVector = Icons.AutoMirrored.Filled.FormatListBulleted // list.bullet.indent
 
     // Navigation (additional)
     val Relay: ImageVector = Icons.Filled.CellTower          // antenna.radiowaves.left.and.right
