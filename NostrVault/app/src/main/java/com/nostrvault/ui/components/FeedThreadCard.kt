@@ -145,12 +145,13 @@ fun FeedThreadCard(
             )
         }
 
-        // Always present, regardless of the fold: the fold only ever grows
-        // this card to the full conversation, it never leaves the timeline.
-        // This is the labelled way to do that — the second tap on an open
-        // note reaches the same place, but has no label of its own.
+        // Present only when there is a thread to open: FeedThreadGrouping
+        // gives every reply-less note its own one-line thread, which is most
+        // of a Global feed, and advertising "Open thread" there points at a
+        // conversation that does not exist. The second tap on an open note
+        // still reaches the thread screen for any note either way.
         val anchor = root ?: replies.firstOrNull()?.note
-        if (anchor != null) {
+        if (anchor != null && replies.isNotEmpty()) {
             OpenThreadRow(onClick = { onOpenThread(anchor) })
         }
     }
