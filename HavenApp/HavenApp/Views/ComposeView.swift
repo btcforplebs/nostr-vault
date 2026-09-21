@@ -3,6 +3,7 @@ import PhotosUI
 import UniformTypeIdentifiers
 import CryptoKit
 import AVFoundation
+import ImageIO
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -90,6 +91,11 @@ struct ComposeView: View {
     @State private var showingDiscardConfirm = false
     @StateObject private var draftService = DraftService.shared
 
+    // ALT-text editor: which attachment is being described, and the text being
+    // written for it. Nil target = sheet closed.
+    @State private var altEditorTarget: AltEditorTarget? = nil
+    @State private var altEditorText: String = ""
+
     // Draft-loaded reply/quote context (overrides init-provided values)
     @State private var draftReplyTo: FeedNote? = nil
     @State private var draftQuoteTo: FeedNote? = nil
@@ -122,6 +128,15 @@ struct ComposeView: View {
         var url: URL?
         var isUploaded: Bool = false
         var thumbnail: PlatformImage?
+        /// NIP-92 `alt` — what this media is, for anyone who cannot see it.
+        /// Published inside the attachment's `imeta` tag; empty means omitted.
+        var altText: String = ""
+    }
+
+    /// `sheet(item:)` needs an Identifiable; the attachment's own id is a bare
+    /// UUID, so it is wrapped rather than conformance being added to UUID.
+    struct AltEditorTarget: Identifiable {
+        let id: Attachment.ID
     }
     
     var body: some View {
@@ -322,6 +337,9 @@ struct ComposeView: View {
             }
             .sheet(isPresented: $showingGifPicker) {
                 GifPickerSheet { item in attachGif(item) }
+            }
+            .sheet(item: $altEditorTarget) { _ in
+                altEditorSheet
             }
             .sheet(isPresented: $showingDraftPicker) {
                 DraftPickerView(
@@ -688,40 +706,50 @@ struct ComposeView: View {
     }
     #endif
 
+    private var isAttachmentLimitReached: Bool { attachments.count >= Self.maxAttachments }
+
+    /// `PhotosPicker` has no "pick nothing" state, so this floors at 1; the
+    /// picker is disabled at the limit and `appendAttachment` is the backstop.
+    private var remainingAttachmentSlots: Int {
+        max(1, Self.maxAttachments - attachments.count)
+    }
+
     private var footer: some View {
         let purple = Color.havenPurple
         let title3 = Font.appTitle3
         return HStack(spacing: 12) {
-            PhotosPicker(selection: $selectedItems, maxSelectionCount: max(1, 4 - attachments.count), matching: .images) {
+            PhotosPicker(selection: $selectedItems, maxSelectionCount: remainingAttachmentSlots, matching: .images) {
                 Image(systemName: "photo.on.rectangle.angled")
                     .font(title3)
-                    .foregroundColor(purple)
+                    .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
                     .padding(10)
                     .background(purple.opacity(0.1))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            .disabled(isAttachmentLimitReached)
 
-            PhotosPicker(selection: $selectedItems, maxSelectionCount: max(1, 4 - attachments.count), matching: .videos) {
+            PhotosPicker(selection: $selectedItems, maxSelectionCount: remainingAttachmentSlots, matching: .videos) {
                 Image(systemName: "video.fill")
                     .font(title3)
-                    .foregroundColor(purple)
+                    .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
                     .padding(10)
                     .background(purple.opacity(0.1))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            .disabled(isAttachmentLimitReached)
 
             Button(action: handlePasteFromClipboard) {
                 Image(systemName: "wand.and.stars")
                     .font(.appTitle3)
-                    .foregroundColor(attachments.count >= 4 ? purple.opacity(0.3) : purple)
+                    .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
                     .padding(10)
                     .background(purple.opacity(0.1))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .disabled(attachments.count >= 4)
+            .disabled(isAttachmentLimitReached)
 
             Button(action: { showingGifPicker = true }) {
                 Group {
@@ -733,13 +761,13 @@ struct ComposeView: View {
                     }
                 }
                 .frame(width: 22, height: 22)
-                .foregroundColor(attachments.count >= 4 ? purple.opacity(0.3) : purple)
+                .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
                 .padding(8)
                 .background(purple.opacity(0.1))
                 .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .disabled(attachments.count >= 4 || isFetchingGif)
+            .disabled(isAttachmentLimitReached || isFetchingGif)
             .help("Search GIFs from getyarn.io or Tenor")
 
             Spacer()
@@ -878,12 +906,84 @@ struct ComposeView: View {
                                 .foregroundStyle(.white, .black.opacity(0.6))
                         }
                         .padding(4)
+                        .accessibilityLabel("Remove attachment")
                     }
+                    // Overlaid rather than stacked: a Button sized to the whole
+                    // thumbnail would sit on top of the remove button and
+                    // swallow its taps.
+                    .overlay(alignment: .bottomLeading) {
+                        altChip(for: attachment)
+                    }
+                    .accessibilityElement(children: .contain)
                 }
             }
             .padding()
         }
         .frame(height: 120)
+    }
+
+    /// The ALT affordance on a thumbnail: filled once the attachment has a
+    /// description, hollow while it has none, so an undescribed image is
+    /// visible as such at a glance rather than only after publishing.
+    private func altChip(for attachment: Attachment) -> some View {
+        let described = !attachment.altText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return Button {
+            altEditorText = attachment.altText
+            altEditorTarget = AltEditorTarget(id: attachment.id)
+        } label: {
+            Text("ALT")
+                .font(.appSystem(size: 10, weight: .bold))
+                .foregroundColor(described ? .white : .white.opacity(0.85))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule().fill(described ? Color.havenPurple : Color.black.opacity(0.55))
+                )
+                .overlay(
+                    Capsule().stroke(.white.opacity(described ? 0 : 0.7), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .padding(6)
+        .accessibilityLabel(described ? "Edit description" : "Add description")
+        .accessibilityValue(described ? attachment.altText : "No description")
+        .help(described ? attachment.altText : "Describe this media for screen readers")
+    }
+
+    /// Sheet for writing one attachment's NIP-92 `alt` text.
+    private var altEditorSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Describe this media")
+                .font(.appHeadline)
+            Text("Published as the image's ALT text. Screen readers read this instead of the picture.")
+                .font(.appSystem(size: 12, weight: .regular))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            TextEditor(text: $altEditorText)
+                .font(.appBody)
+                .frame(minHeight: 100)
+                .padding(6)
+                .background(Color.platformSecondaryGroupedBackground)
+                .cornerRadius(10)
+                .accessibilityLabel("Media description")
+
+            HStack {
+                Spacer()
+                Button("Cancel") { altEditorTarget = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    if let id = altEditorTarget?.id,
+                       let index = attachments.firstIndex(where: { $0.id == id }) {
+                        attachments[index].altText = altEditorText
+                    }
+                    altEditorTarget = nil
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 320, idealWidth: 380)
     }
     
     private func loadSelectedItems() {
@@ -911,7 +1011,7 @@ struct ComposeView: View {
                 let videoURL = video.url
                 let thumbnail = await self.generateVideoThumbnail(url: videoURL)
                 await MainActor.run {
-                    self.attachments.append(Attachment(
+                    self.appendAttachment(Attachment(
                         data: nil,
                         fileURL: videoURL,
                         type: derivedType,
@@ -930,7 +1030,7 @@ struct ComposeView: View {
                     let derivedType = UTType(filenameExtension: ext) ?? videoType
                     let thumbnail = await self.generateVideoThumbnail(url: dest)
                     await MainActor.run {
-                        self.attachments.append(Attachment(
+                        self.appendAttachment(Attachment(
                             data: nil,
                             fileURL: dest,
                             type: derivedType,
@@ -978,7 +1078,7 @@ struct ComposeView: View {
                         #endif
                     }
 
-                    self.attachments.append(Attachment(
+                    self.appendAttachment(Attachment(
                         data: finalData,
                         fileURL: nil,
                         type: finalType,
@@ -1014,6 +1114,58 @@ struct ComposeView: View {
             hasher.update(data: chunk)
         }
         return hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Pixel dimensions of encoded image bytes, read from the image's own
+    /// header rather than by decoding it — an `imeta dim` is worth one header
+    /// read, not a full decode of a 12-megapixel photo.
+    nonisolated static func pixelSize(ofImageData data: Data) -> CGSize? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = props[kCGImagePropertyPixelWidth] as? Int,
+              let height = props[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0
+        else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    /// Displayed dimensions of a video track: `naturalSize` is pre-rotation, so
+    /// a portrait clip shot on a phone reports landscape unless the track's
+    /// preferred transform is applied. Getting this backwards would reserve a
+    /// sideways box in every client that trusts our `dim`.
+    nonisolated static func pixelSize(ofVideoAt url: URL) async -> CGSize? {
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let naturalSize = try? await track.load(.naturalSize),
+              let transform = try? await track.load(.preferredTransform)
+        else { return nil }
+        let oriented = naturalSize.applying(transform)
+        let size = CGSize(width: abs(oriented.width), height: abs(oriented.height))
+        guard size.width > 0, size.height > 0 else { return nil }
+        return size
+    }
+
+    /// How many attachments one note carries. The editor's grid, the upload
+    /// progress copy and every reader's media layout assume a small number.
+    static let maxAttachments = 4
+
+    /// Adds an attachment unless the note is already full.
+    ///
+    /// The picker paths used to append unconditionally: `maxSelectionCount`
+    /// floors at 1, so a note already holding four could still take a fifth,
+    /// and nothing ever told the author there was a limit — they met it as
+    /// buttons that stopped responding.
+    @discardableResult
+    private func appendAttachment(_ attachment: Attachment) -> Bool {
+        guard attachments.count < Self.maxAttachments else {
+            if let fileURL = attachment.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+            error = "A note can carry \(Self.maxAttachments) attachments."
+            return false
+        }
+        attachments.append(attachment)
+        return true
     }
 
     private func cleanupAttachmentTempFiles() {
@@ -1053,7 +1205,7 @@ struct ComposeView: View {
     /// downloads through its own client so the size cap and the GIF-magic
     /// check stay with the service that knows the host.
     private func attachGif(_ item: GifItem) {
-        guard attachments.count < 4, !isFetchingGif else { return }
+        guard !isAttachmentLimitReached, !isFetchingGif else { return }
         isFetchingGif = true
         Task {
             do {
@@ -1065,9 +1217,7 @@ struct ComposeView: View {
                     data = try await TenorGifService.downloadGIF(url: item.attachURL)
                 }
                 await MainActor.run {
-                    if attachments.count < 4 {
-                        attachments.append(Attachment(data: data, fileURL: nil, type: .gif))
-                    }
+                    appendAttachment(Attachment(data: data, fileURL: nil, type: .gif))
                     isFetchingGif = false
                 }
             } catch {
@@ -1080,7 +1230,7 @@ struct ComposeView: View {
     }
 
     private func handlePasteFromClipboard() {
-        guard attachments.count < 4 else { return }
+        guard !isAttachmentLimitReached else { return }
 
         if PlatformClipboard.hasImage(), let imageData = PlatformClipboard.getImageData() {
             // Detect actual image format from data magic bytes
@@ -1099,7 +1249,7 @@ struct ComposeView: View {
             } else {
                 detectedType = .jpeg
             }
-            attachments.append(Attachment(
+            appendAttachment(Attachment(
                 data: imageData,
                 fileURL: nil,
                 type: detectedType
@@ -1147,7 +1297,7 @@ struct ComposeView: View {
                         let thumbnail = await generateVideoThumbnail(url: tempURL)
                         let derivedType = UTType(filenameExtension: resolvedExt) ?? .mpeg4Movie
                         await MainActor.run {
-                            attachments.append(Attachment(
+                            appendAttachment(Attachment(
                                 data: nil,
                                 fileURL: tempURL,
                                 type: derivedType,
@@ -1157,7 +1307,7 @@ struct ComposeView: View {
                     } else {
                         let derivedType = UTType(filenameExtension: resolvedExt) ?? .jpeg
                         await MainActor.run {
-                            attachments.append(Attachment(
+                            appendAttachment(Attachment(
                                 data: data,
                                 fileURL: nil,
                                 type: derivedType
@@ -1215,6 +1365,11 @@ struct ComposeView: View {
             var finalContent = convertMentionsToNostr(content)
             isUploading = true
 
+            // NIP-92 descriptors, filled in as each upload lands. Published as
+            // `imeta` tags so a reader can reserve the right box before the
+            // bytes arrive and can read out what the media is.
+            var mediaDescriptors: [NoteTagging.MediaDescriptor] = []
+
             // Upload all attachments and fail if any fail
             for i in attachments.indices {
                 uploadInfoProvider.setCurrentIndex(i + 1, type: attachments[i].type)
@@ -1224,6 +1379,9 @@ struct ComposeView: View {
                 }
 
                 let uploadedURL: URL?
+                var uploadedSHA256: String?
+                var pixelSize: CGSize?
+                var byteCount: Int?
                 if let fileURL = attachments[i].fileURL {
                     guard let sha256 = ComposeView.streamingSHA256(of: fileURL) else {
                         DispatchQueue.main.async {
@@ -1234,6 +1392,9 @@ struct ComposeView: View {
                         }
                         return
                     }
+                    uploadedSHA256 = sha256
+                    pixelSize = await ComposeView.pixelSize(ofVideoAt: fileURL)
+                    byteCount = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.size] as? Int
                     uploadedURL = await blossomService.uploadAndMirror(
                         fileURL: fileURL,
                         sha256: sha256,
@@ -1242,6 +1403,9 @@ struct ComposeView: View {
                     )
                 } else if let data = attachments[i].data {
                     let sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                    uploadedSHA256 = sha256
+                    pixelSize = ComposeView.pixelSize(ofImageData: data)
+                    byteCount = data.count
                     uploadedURL = await blossomService.uploadAndMirror(
                         data: data,
                         sha256: sha256,
@@ -1264,6 +1428,16 @@ struct ComposeView: View {
                 attachments[i].url = url
                 attachments[i].isUploaded = true
                 finalContent += "\n\(url.absoluteString)"
+
+                mediaDescriptors.append(NoteTagging.MediaDescriptor(
+                    url: url.absoluteString,
+                    mimeType: mimeType,
+                    sha256: uploadedSHA256,
+                    pixelWidth: pixelSize.map { Int($0.width.rounded()) },
+                    pixelHeight: pixelSize.map { Int($0.height.rounded()) },
+                    alt: attachments[i].altText,
+                    byteCount: byteCount
+                ))
             }
             isUploading = false
             uploadInfoProvider.reset()
@@ -1389,6 +1563,15 @@ struct ComposeView: View {
                     tags.append(["p", quoted.pubkey])
                 }
             }
+
+            // NIP-24 `t` tags. Without these a note typed with #bitcoin is
+            // invisible to hashtag feeds — including our own Search tab, which
+            // builds its trending list from `t` tags. Read from finalContent so
+            // a hashtag inside a `nostr:` reference or a media URL is excluded.
+            tags.append(contentsOf: NoteTagging.hashtagTags(in: finalContent))
+
+            // NIP-92 `imeta`, one per uploaded attachment, in content order.
+            tags.append(contentsOf: NoteTagging.imetaTags(for: mediaDescriptors))
 
             // 3. Mine PoW + Sign
             let isReply = effectiveReplyTo != nil

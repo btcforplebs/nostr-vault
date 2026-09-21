@@ -3,6 +3,8 @@ package com.nostrvault.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -33,6 +35,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
@@ -47,6 +51,7 @@ import coil.compose.AsyncImage
 import com.nostrvault.data.model.Draft
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.NoteTagging
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.BlobDescriptor
 import com.nostrvault.service.BlossomService
@@ -98,7 +103,31 @@ data class Attachment(
     var uploadedUrl: String? = null,
     var isUploading: Boolean = false,
     var uploadProgress: Float = 0f,
+    /**
+     * NIP-92 `alt` — what this media is, for anyone who cannot see it.
+     * Published inside the attachment's `imeta` tag; blank means omitted.
+     */
+    val altText: String = "",
 )
+
+/**
+ * How many attachments one note carries. The editor's row, the upload progress
+ * copy and every reader's media layout assume a small number.
+ */
+const val MAX_ATTACHMENTS = 4
+
+/**
+ * What to ask `PickMultipleVisualMedia` for when [attachmentCount] are already
+ * attached.
+ *
+ * The contract rejects `maxItems <= 1` at construction ("Max items must be
+ * higher than 1") and the composable rebuilds it on every recomposition, so
+ * handing it the literal number of free slots threw as soon as only one was
+ * left. Two is the floor; [ComposeNoteViewModel.addAttachments] discards
+ * anything over the real cap.
+ */
+internal fun pickerMaxItems(attachmentCount: Int): Int =
+    maxOf(2, MAX_ATTACHMENTS - attachmentCount)
 
 @HiltViewModel
 class ComposeNoteViewModel @Inject constructor(
@@ -428,15 +457,37 @@ class ComposeNoteViewModel @Inject constructor(
         return result
     }
 
+    /**
+     * Adds as many of [uris] as still fit.
+     *
+     * The old guard compared the *existing* count against the cap once per
+     * picked item, so it never saw the ones it had just accepted — picking four
+     * while three were attached produced seven. The picker's own `maxItems` is
+     * no help either: it has to be at least 2 or it throws, so the cap is
+     * enforced here, on the result.
+     */
     fun addAttachments(uris: List<Uri>) {
-        val newAttachments = uris.mapNotNull { uri ->
+        val room = MAX_ATTACHMENTS - _attachments.value.size
+        if (room <= 0) {
+            _error.value = "A note can carry $MAX_ATTACHMENTS attachments."
+            return
+        }
+        val newAttachments = uris.take(room).map { uri ->
             val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
             val isVideo = mimeType.startsWith("video/")
-            if (_attachments.value.size + 1 <= 4) {
-                Attachment(uri = uri, mimeType = mimeType, isVideo = isVideo)
-            } else null
+            Attachment(uri = uri, mimeType = mimeType, isVideo = isVideo)
+        }
+        if (uris.size > room) {
+            _error.value = "A note can carry $MAX_ATTACHMENTS attachments."
         }
         _attachments.value = _attachments.value + newAttachments
+    }
+
+    /** Stores the NIP-92 description the author wrote for one attachment. */
+    fun setAttachmentAlt(id: String, alt: String) {
+        _attachments.value = _attachments.value.map {
+            if (it.id == id) it.copy(altText = alt) else it
+        }
     }
 
     fun removeAttachment(id: String) {
@@ -642,20 +693,25 @@ class ComposeNoteViewModel @Inject constructor(
                 // 1. Upload attachments first
                 // Convert `@name` display tokens back to canonical `nostr:npub…` references.
                 var finalContent = convertMentionsToNostr(text)
+                // NIP-92 descriptors, filled in as each upload lands. Published
+                // as `imeta` tags so a reader can reserve the right box before
+                // the bytes arrive and can read out what the media is.
+                var mediaDescriptors: List<NoteTagging.MediaDescriptor> = emptyList()
                 if (_attachments.value.isNotEmpty()) {
                     _isUploading.value = true
-                    val uploadedUrls = uploadAttachments()
+                    val uploaded = uploadAttachments()
                     _isUploading.value = false
 
-                    if (uploadedUrls == null) {
+                    if (uploaded == null) {
                         _error.value = "Failed to upload media. Check your connection and try again."
                         _isPublishing.value = false
                         return@launch
                     }
+                    mediaDescriptors = uploaded
 
                     // Append media URLs to content
-                    uploadedUrls.forEach { url ->
-                        finalContent += "\n$url"
+                    uploaded.forEach { media ->
+                        finalContent += "\n${media.url}"
                     }
                 }
 
@@ -674,6 +730,16 @@ class ComposeNoteViewModel @Inject constructor(
 
                 // 2b. Add p-tags for inline @mentions (nostr:npub/nprofile refs).
                 tags.addAll(extractMentionPTags(finalContent, tags))
+
+                // 2c. NIP-24 `t` tags. Without these a note typed with #bitcoin
+                // is invisible to hashtag feeds — including our own search,
+                // which builds its trending list from `t` tags. Read from
+                // finalContent so a hashtag inside a `nostr:` reference or a
+                // media URL is excluded.
+                tags.addAll(NoteTagging.hashtagTags(finalContent))
+
+                // 2d. NIP-92 `imeta`, one per uploaded attachment, in content order.
+                tags.addAll(NoteTagging.imetaTags(mediaDescriptors))
 
                 // 3. Sign and publish
                 val event = nostrService.signEventAsync(kind = 1, content = finalContent, tags = tags)
@@ -716,8 +782,8 @@ class ComposeNoteViewModel @Inject constructor(
         }
     }
 
-    private suspend fun uploadAttachments(): List<String>? = withContext(Dispatchers.IO) {
-        val uploadedUrls = mutableListOf<String>()
+    private suspend fun uploadAttachments(): List<NoteTagging.MediaDescriptor>? = withContext(Dispatchers.IO) {
+        val uploaded = mutableListOf<NoteTagging.MediaDescriptor>()
 
         for ((index, attachment) in _attachments.value.withIndex()) {
             withContext(Dispatchers.Main) {
@@ -740,6 +806,10 @@ class ComposeNoteViewModel @Inject constructor(
                 // Compute SHA-256
                 val sha256 = blossomService.computeSHA256(tempFile)
 
+                // Measured from the file on disk, before it is deleted below.
+                val pixelSize = pixelSize(tempFile, attachment.isVideo)
+                val byteCount = tempFile.length()
+
                 // Upload with progress
                 val url = blossomService.uploadAndMirror(
                     fileURL = tempFile,
@@ -758,7 +828,17 @@ class ComposeNoteViewModel @Inject constructor(
                 tempFile.delete()
 
                 if (url != null) {
-                    uploadedUrls.add(url)
+                    uploaded.add(
+                        NoteTagging.MediaDescriptor(
+                            url = url,
+                            mimeType = attachment.mimeType,
+                            sha256 = sha256,
+                            pixelWidth = pixelSize?.first,
+                            pixelHeight = pixelSize?.second,
+                            alt = attachment.altText,
+                            byteCount = byteCount,
+                        )
+                    )
                 } else {
                     return@withContext null
                 }
@@ -772,7 +852,44 @@ class ComposeNoteViewModel @Inject constructor(
             _uploadMessage.value = null
         }
 
-        uploadedUrls
+        uploaded
+    }
+
+    /**
+     * Pixel dimensions of a local media file, as `width to height`.
+     *
+     * Images are measured from the header alone (`inJustDecodeBounds`) — an
+     * `imeta dim` is worth one header read, not a full decode of a 12-megapixel
+     * photo. Videos report the track's rotation separately from its width and
+     * height, so a portrait clip shot on a phone measures landscape unless the
+     * rotation is applied; getting that backwards would reserve a sideways box
+     * in every client that trusts our `dim`.
+     */
+    private fun pixelSize(file: File, isVideo: Boolean): Pair<Int, Int>? = try {
+        if (isVideo) {
+            // MediaMetadataRetriever only became AutoCloseable at API 29 and
+            // this app runs from 26, so it is released by hand.
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(file.absolutePath)
+                val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+                val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+                val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+                if (w == null || h == null || w <= 0 || h <= 0) null
+                else if (rotation == 90 || rotation == 270) h to w
+                else w to h
+            } finally {
+                retriever.release()
+            }
+        } else {
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+            if (options.outWidth > 0 && options.outHeight > 0) options.outWidth to options.outHeight else null
+        }
+    } catch (e: Exception) {
+        // A note without `dim` still publishes; it just makes readers measure.
+        Log.w("ComposeNote", "Could not measure media dimensions", e)
+        null
     }
 
     /**
@@ -892,6 +1009,8 @@ fun ComposeNoteScreen(
     val accounts by viewModel.accounts.collectAsState()
     val activeAccount by viewModel.activeAccount.collectAsState()
     var showAccountSwitcher by remember { mutableStateOf(false) }
+    // The attachment whose ALT text is being written; null = sheet closed.
+    var altEditorTarget by remember { mutableStateOf<Attachment?>(null) }
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
 
@@ -904,9 +1023,12 @@ fun ComposeNoteScreen(
         }
     }
 
+    val pickerMaxItems = pickerMaxItems(attachments.size)
+    val attachmentLimitReached = attachments.size >= MAX_ATTACHMENTS
+
     // Image picker launcher
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 4 - attachments.size)
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = pickerMaxItems)
     ) { uris ->
         if (uris.isNotEmpty()) {
             viewModel.addAttachments(uris)
@@ -915,7 +1037,7 @@ fun ComposeNoteScreen(
 
     // Video picker launcher
     val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 4 - attachments.size)
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = pickerMaxItems)
     ) { uris ->
         if (uris.isNotEmpty()) {
             viewModel.addAttachments(uris)
@@ -1069,6 +1191,7 @@ fun ComposeNoteScreen(
                 AttachmentGrid(
                     attachments = attachments,
                     onRemove = { viewModel.removeAttachment(it) },
+                    onEditAlt = { altEditorTarget = it },
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
             }
@@ -1172,7 +1295,7 @@ fun ComposeNoteScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape),
-                    enabled = attachments.size < 4
+                    enabled = !attachmentLimitReached
                 ) {
                     Icon(
                         imageVector = Icons.Default.Image,
@@ -1192,7 +1315,7 @@ fun ComposeNoteScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape),
-                    enabled = attachments.size < 4
+                    enabled = !attachmentLimitReached
                 ) {
                     Icon(
                         imageVector = Icons.Default.Videocam,
@@ -1208,7 +1331,7 @@ fun ComposeNoteScreen(
                     modifier = Modifier
                         .size(40.dp)
                         .background(colors.primary.copy(alpha = 0.1f), CircleShape),
-                    enabled = attachments.size < 4
+                    enabled = !attachmentLimitReached
                 ) {
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
@@ -1237,6 +1360,18 @@ fun ComposeNoteScreen(
             }
 
         }
+    }
+
+    // ALT-text sheet for one attachment
+    altEditorTarget?.let { target ->
+        AltTextSheet(
+            attachment = target,
+            onDismiss = { altEditorTarget = null },
+            onSave = { alt ->
+                viewModel.setAttachmentAlt(target.id, alt)
+                altEditorTarget = null
+            },
+        )
     }
 
     // Blossom media picker sheet
@@ -1319,6 +1454,7 @@ private fun MentionSuggestions(
 private fun AttachmentGrid(
     attachments: List<Attachment>,
     onRemove: (String) -> Unit,
+    onEditAlt: (Attachment) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -1374,6 +1510,84 @@ private fun AttachmentGrid(
                         modifier = Modifier.size(16.dp)
                     )
                 }
+
+                // ALT chip: filled once the attachment has a description,
+                // hollow while it has none, so an undescribed image is visible
+                // as such at a glance rather than only after publishing.
+                val described = attachment.altText.isNotBlank()
+                Text(
+                    text = "ALT",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (described) LocalNostrVaultColors.current.primary
+                            else Color.Black.copy(alpha = 0.55f)
+                        )
+                        .clickable { onEditAlt(attachment) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .semantics {
+                            contentDescription =
+                                if (described) "Edit description: ${attachment.altText}"
+                                else "Add a description for this media"
+                        }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Sheet for writing one attachment's NIP-92 `alt` text.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AltTextSheet(
+    attachment: Attachment,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var text by remember(attachment.id) { mutableStateOf(attachment.altText) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Describe this media",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = PrimaryText,
+            )
+            Text(
+                text = "Published as the image's ALT text. Screen readers read this instead of the picture.",
+                fontSize = 13.sp,
+                color = SecondaryText,
+            )
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 100.dp)
+                    .semantics { contentDescription = "Media description" },
+                placeholder = { Text("A cat asleep on a keyboard") },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(onClick = { onSave(text) }) { Text("Save") }
             }
         }
     }
