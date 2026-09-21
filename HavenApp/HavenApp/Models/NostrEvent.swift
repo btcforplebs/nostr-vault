@@ -84,8 +84,17 @@ struct NostrEvent: Codable, Identifiable {
         return eTags.last?[1]
     }
 
+    /// A kind 6 repost always carries an `e` tag pointing at what it repeats, and a
+    /// quote carries one marked "mention" (NIP-10) — neither is a reply. `parentEventId`
+    /// deliberately still resolves both, because thread building needs the edge; only
+    /// the reply *classification* excludes them. This matches `FeedNote.isReply` and
+    /// Android's `FeedServiceTypes.kt`, which have always drawn the line here.
     var isReply: Bool {
-        return parentEventId != nil
+        guard kind != 6 else { return false }
+        return tags.contains { tag in
+            guard tag.count >= 2, tag[0] == "e" else { return false }
+            return tag.count < 4 || tag[3] != "mention"
+        }
     }
 
     // MARK: - URL Extraction
