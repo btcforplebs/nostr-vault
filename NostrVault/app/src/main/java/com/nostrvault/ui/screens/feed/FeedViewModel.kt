@@ -5,11 +5,14 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.FeedLayoutMode
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.MediaFeedMode
 import com.nostrvault.data.model.NoteStats
+import com.nostrvault.data.model.FeedThread
+import com.nostrvault.data.model.FeedThreadGrouping
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.service.LiveFeedService
 import com.nostrvault.service.FeedService
@@ -164,34 +167,91 @@ class FeedViewModel @Inject constructor(
     // FeedFilterEngine.filterMediaNotes (media-bearing, blocked/WoT/throttle rules).
     val mediaNotes: StateFlow<List<FeedNote>> = feedService.filteredMediaNotes
 
-    // ── Compact mode ──────────────────────────────────────────────
+    // ── Feed layout mode (expanded / condensed / threaded) ──────────
 
-    private val _compactModeToggle = MutableStateFlow(0) // bump to trigger recomputation
+    private val _layoutModeToggle = MutableStateFlow(0) // bump to trigger recomputation
 
-    val compactModeEnabled: StateFlow<Boolean> = combine(
+    /**
+     * Threading only makes sense on a timeline of notes; a media grid or an
+     * article list has no replies to gather. Mirrors iOS
+     * `FeedView.currentFeedSupportsThreading`.
+     */
+    private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
+        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR -> true
+        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE -> false
+    }
+
+    private fun defaultCompact(mode: FeedMode): Boolean = when (mode) {
+        FeedMode.FOLLOWING -> false
+        FeedMode.MEDIA -> false
+        else -> configStore.config.value.useFeedCompactMode
+    }
+
+    /**
+     * The stored layout for the current feed, migrating anyone who had the
+     * old per-feed compact boolean set. Mirrors iOS
+     * `FeedView.layoutModeForCurrentFeed`.
+     */
+    val layoutMode: StateFlow<FeedLayoutMode> = combine(
         _feedMode,
-        _compactModeToggle,
+        _layoutModeToggle,
         configStore.config,
     ) { mode, _, config ->
-        val perFeedOverride = config.feedCompactModes[mode.name]
-        if (perFeedOverride != null) return@combine perFeedOverride
-        when (mode) {
-            FeedMode.FOLLOWING -> false
-            FeedMode.MEDIA -> false
-            else -> config.useFeedCompactMode
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        FeedLayoutMode.resolve(
+            storedLayout = config.feedLayoutModes[mode.name],
+            storedCompact = config.feedCompactModes[mode.name],
+            defaultCompact = defaultCompact(mode),
+        ).clamped(supportsThreading = feedSupportsThreading(mode))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FeedLayoutMode.EXPANDED)
 
-    fun toggleCompactMode() {
+    /** Condensed rows are active — either of the two condensed layouts. */
+    val compactModeEnabled: StateFlow<Boolean> = layoutMode
+        .map { it.usesCondensedRows }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** Whole conversations instead of loose rows. */
+    val threadedModeEnabled: StateFlow<Boolean> = layoutMode
+        .map { it == FeedLayoutMode.THREADED }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** Advance the current feed one step around expanded -> condensed -> threaded and persist it. */
+    fun cycleLayoutMode() {
         val mode = _feedMode.value
-        val current = compactModeEnabled.value
+        setLayoutMode(layoutMode.value.next(supportsThreading = feedSupportsThreading(mode)))
+    }
+
+    /** Jump straight to a layout (used by an overflow menu, where every choice is visible at once). */
+    fun setLayoutMode(mode: FeedLayoutMode) {
+        val feedMode = _feedMode.value
+        val resolved = mode.clamped(supportsThreading = feedSupportsThreading(feedMode))
         configStore.update { config ->
             config.copy(
-                feedCompactModes = config.feedCompactModes + (mode.name to !current)
+                feedLayoutModes = config.feedLayoutModes + (feedMode.name to resolved.storageKey),
+                // Keep the legacy key in step so a downgrade still lands somewhere sane.
+                feedCompactModes = config.feedCompactModes + (feedMode.name to resolved.usesCondensedRows),
             )
         }
-        _compactModeToggle.value++
+        // A threaded feed with replies filtered out would show nothing but
+        // roots, which is the layout the user just left. Turn replies on with
+        // it; the Replies filter still switches them back off.
+        if (resolved == FeedLayoutMode.THREADED && !feedService.showReplies.value) {
+            feedService.setShowReplies(true)
+        }
+        _layoutModeToggle.value++
     }
+
+    /**
+     * The current feed's notes grouped into conversations. Empty outside
+     * threaded mode. Mirrors iOS `FeedView.feedThreads`.
+     */
+    val feedThreads: StateFlow<List<FeedThread>> = combine(
+        filteredNotes,
+        threadedModeEnabled,
+    ) { notes, threaded ->
+        if (!threaded) emptyList() else FeedThreadGrouping.build(notes) { id -> feedService.findNote(id) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun fetchMissingNote(id: String) = feedService.fetchMissingNote(id)
 
     // ── Feed filter toggles (per-mode) ─────────────────────────
 

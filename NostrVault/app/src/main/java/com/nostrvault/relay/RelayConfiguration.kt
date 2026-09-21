@@ -340,7 +340,12 @@ data class HavenConfig(
     val oledMode: Boolean = true,
     val useFeedCompactMode: Boolean = true,
     val feedCompactModes: Map<String, Boolean> = emptyMap(),
-    val noteDetailCompactView: Boolean = false,
+    /**
+     * FeedLayoutMode.storageKey per feed. Supersedes [feedCompactModes], which
+     * is still read as the fallback so an upgrade keeps whatever compact
+     * setting was in place. Mirrors iOS HavenConfig.feedLayoutModes.
+     */
+    val feedLayoutModes: Map<String, String> = emptyMap(),
     val noteDetailExpandedEngagement: Boolean = false,
     val defaultReactionEmoji: String = "+",
     // When true, likes/reactions are removed from the UI entirely; zaps become the

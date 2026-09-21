@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.ArticleMeta
+import com.nostrvault.data.model.FeedLayoutMode
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
@@ -60,6 +61,7 @@ import com.nostrvault.ui.components.isVideoUrl
 import com.nostrvault.ui.components.BroadcastSheet
 import com.nostrvault.ui.components.EmojiPickerSheet
 import com.nostrvault.ui.components.CompactNoteCard
+import com.nostrvault.ui.components.FeedThreadCard
 import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.NoteCard
@@ -106,6 +108,9 @@ fun FeedScreen(
     // its own read below instead.
     val allProfiles = viewModel.profileState
     val isCompact by viewModel.compactModeEnabled.collectAsState()
+    val layoutMode by viewModel.layoutMode.collectAsState()
+    val isThreaded by viewModel.threadedModeEnabled.collectAsState()
+    val feedThreads by viewModel.feedThreads.collectAsState()
     val autoLoad by viewModel.autoLoadEnabled.collectAsState()
     val showReposts by viewModel.showReposts.collectAsState()
     val showReplies by viewModel.showReplies.collectAsState()
@@ -297,7 +302,7 @@ fun FeedScreen(
                 feedMode = feedMode,
                 connectionStatus = connectionStatus,
                 connectionColor = connectionColor,
-                isCompact = isCompact,
+                layoutMode = layoutMode,
                 autoLoad = autoLoad,
                 showReposts = showReposts,
                 showReplies = showReplies,
@@ -305,7 +310,7 @@ fun FeedScreen(
                 popularFilter = popularFilter,
                 showEngagementStats = showEngagementStats,
                 onModeChange = viewModel::setFeedMode,
-                onToggleCompact = viewModel::toggleCompactMode,
+                onCycleLayoutMode = viewModel::cycleLayoutMode,
                 onToggleAutoLoad = viewModel::toggleAutoLoad,
                 onToggleReposts = viewModel::toggleShowReposts,
                 onToggleReplies = viewModel::toggleShowReplies,
@@ -419,6 +424,39 @@ fun FeedScreen(
                     ),
                     modifier = Modifier.fillMaxSize(),
                 ) {
+                    if (isThreaded) {
+                        items(feedThreads, key = { it.rootId }) { thread ->
+                            FeedThreadCard(
+                                thread = thread,
+                                profileFor = { pubkey -> allProfiles[pubkey] },
+                                profiles = allProfiles,
+                                onProfileClick = onProfileClick,
+                                onOpenThread = { note -> onNoteClick(note.id) },
+                                onFetchMissingNote = viewModel::fetchMissingNote,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                expandedRow = { note, _ ->
+                                    FeedFullNoteRow(
+                                        note = note,
+                                        viewModel = viewModel,
+                                        allProfiles = allProfiles,
+                                        quotedNotes = quotedNotes,
+                                        repostedIds = repostedIds,
+                                        onNoteClick = onNoteClick,
+                                        onArticleClick = onArticleClick,
+                                        onProfileClick = onProfileClick,
+                                        onReply = onReply ?: { _ -> onCompose() },
+                                        onQuote = onQuote ?: {},
+                                        onZap = { id -> zapNoteId = id },
+                                        onBroadcast = { id -> broadcastNoteId = id },
+                                        onReport = { id -> reportNoteId = id },
+                                        onBlock = { id -> blockNoteId = id },
+                                        onDelete = { id -> deleteNoteId = id },
+                                        onLongPressLike = { id -> emojiPickerNoteId = id },
+                                    )
+                                },
+                            )
+                        }
+                    } else {
                     items(
                         items = notes,
                         key = { it.id },
@@ -463,72 +501,27 @@ fun FeedScreen(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                             )
                         } else {
-                            val parentEventId = note.parentEventId
-                            val parentNote = parentEventId?.let { viewModel.parentNoteFor(it) }
-                            val isParentNext = parentEventId?.let { viewModel.isParentNext(note.id) } ?: false
-
-                            // Resolve embedded quoted events, keyed by the same
-                            // lookup key NoteCard reads. Keyed on quotedNotes so
-                            // the map rebuilds when one arrives — including an
-                            // article, which lands in the by-coordinate cache.
-                            val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotes) {
-                                if (note.quotedEventIds.isEmpty()) {
-                                    emptyMap()
-                                } else {
-                                    note.quotedEventIds.mapNotNull { qid ->
-                                        viewModel.quotedNoteFor(qid)?.let { qid to it }
-                                    }.toMap()
-                                }
-                            }
-
-                            // See the compact branch: derivedStateOf keeps a metadata
-                            // batch from recomposing cards it did not touch. The parent and
-                            // quoted authors join the set once those notes resolve.
-                            val cardPubkeys = remember(headPubkeys, parentNote?.pubkey, quotedNotesMap) {
-                                (headPubkeys +
-                                    listOfNotNull(parentNote?.pubkey) +
-                                    quotedNotesMap.values.map { it.pubkey }).distinct()
-                            }
-                            val cardProfiles by remember(cardPubkeys) {
-                                derivedStateOf { cardPubkeys.resolveAgainst(allProfiles) }
-                            }
-
-                            NoteCard(
+                            FeedFullNoteRow(
                                 note = note,
-                                profile = cardProfiles[note.pubkey],
-                                stats = viewModel.statsFor(note.id),
-                                profiles = cardProfiles,
-                                quotedNotes = quotedNotesMap,
-                                isLiked = viewModel.isLiked(note.id),
-                                isZapped = viewModel.isZapped(note.id),
-                                isReposted = note.effectiveEventId in repostedIds,
-                                repostedByProfile = note.repostedBy?.let { cardProfiles[it] },
-                                replyToProfile = note.replyToPubkey?.let { cardProfiles[it] },
-                                parentNote = parentNote,
-                                parentIsNext = isParentNext,
-                                showReplyContext = true,
+                                viewModel = viewModel,
+                                allProfiles = allProfiles,
+                                quotedNotes = quotedNotes,
+                                repostedIds = repostedIds,
                                 onNoteClick = onNoteClick,
                                 onArticleClick = onArticleClick,
                                 onProfileClick = onProfileClick,
-                                onLike = viewModel::likeNote,
-                                onRepost = viewModel::repostNote,
-                                onZap = { id -> zapNoteId = id },
                                 onReply = onReply ?: { _ -> onCompose() },
-                                onQuote = onQuote,
+                                onQuote = onQuote ?: {},
+                                onZap = { id -> zapNoteId = id },
                                 onBroadcast = { id -> broadcastNoteId = id },
-                                // Every note gets an overflow menu. Gating this on
-                                // your own notes meant other people's notes had no
-                                // menu at all, so reporting and blocking were only
-                                // reachable two navigations deep — from the note
-                                // screen, which you have to open the content to see.
-                                isOwnNote = viewModel.isOwnNote(note.pubkey),
-                                onReport = { reportNoteId = note.id },
-                                onBlock = { blockNoteId = note.id },
-                                onDelete = { deleteNoteId = note.id },
+                                onReport = { id -> reportNoteId = id },
+                                onBlock = { id -> blockNoteId = id },
+                                onDelete = { id -> deleteNoteId = id },
                                 onLongPressLike = { id -> emojiPickerNoteId = id },
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             )
                         }
+                    }
                     }
 
                     if (isLoadingMore) {
@@ -982,6 +975,94 @@ private fun MediaGridCell(
     }
 }
 
+// ── Full note row ───────────────────────────────────────────────
+// The expanded-mode card, factored out so the flat feed and a tapped-open
+// line inside a FeedThreadCard render the exact same row (same profile
+// resolution, same callbacks) instead of drifting apart.
+
+@Composable
+private fun FeedFullNoteRow(
+    note: FeedNote,
+    viewModel: FeedViewModel,
+    allProfiles: Map<String, FeedProfile>,
+    quotedNotes: Map<String, FeedNote>,
+    repostedIds: Set<String>,
+    onNoteClick: (String) -> Unit,
+    onArticleClick: (String) -> Unit,
+    onProfileClick: (String) -> Unit,
+    onReply: (String) -> Unit,
+    onQuote: (String) -> Unit,
+    onZap: (String) -> Unit,
+    onBroadcast: (String) -> Unit,
+    onReport: (String) -> Unit,
+    onBlock: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onLongPressLike: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val headPubkeys = remember(note.id) {
+        buildList {
+            add(note.pubkey)
+            note.repostedBy?.let(::add)
+            note.replyToPubkey?.let(::add)
+            addAll(NostrMentions.mentionedPubkeys(note.content))
+        }.distinct()
+    }
+    val parentEventId = note.parentEventId
+    val parentNote = parentEventId?.let { viewModel.parentNoteFor(it) }
+    val isParentNext = parentEventId?.let { viewModel.isParentNext(note.id) } ?: false
+
+    val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotes) {
+        if (note.quotedEventIds.isEmpty()) {
+            emptyMap()
+        } else {
+            note.quotedEventIds.mapNotNull { qid -> viewModel.quotedNoteFor(qid)?.let { qid to it } }.toMap()
+        }
+    }
+
+    val cardPubkeys = remember(headPubkeys, parentNote?.pubkey, quotedNotesMap) {
+        (headPubkeys + listOfNotNull(parentNote?.pubkey) + quotedNotesMap.values.map { it.pubkey }).distinct()
+    }
+    val cardProfiles by remember(cardPubkeys) {
+        derivedStateOf { cardPubkeys.resolveAgainst(allProfiles) }
+    }
+
+    NoteCard(
+        note = note,
+        profile = cardProfiles[note.pubkey],
+        stats = viewModel.statsFor(note.id),
+        profiles = cardProfiles,
+        quotedNotes = quotedNotesMap,
+        isLiked = viewModel.isLiked(note.id),
+        isZapped = viewModel.isZapped(note.id),
+        isReposted = note.effectiveEventId in repostedIds,
+        repostedByProfile = note.repostedBy?.let { cardProfiles[it] },
+        replyToProfile = note.replyToPubkey?.let { cardProfiles[it] },
+        parentNote = parentNote,
+        parentIsNext = isParentNext,
+        showReplyContext = true,
+        onNoteClick = onNoteClick,
+        onArticleClick = onArticleClick,
+        onProfileClick = onProfileClick,
+        onLike = viewModel::likeNote,
+        onRepost = viewModel::repostNote,
+        onZap = onZap,
+        onReply = onReply,
+        onQuote = onQuote,
+        onBroadcast = onBroadcast,
+        // Every note gets an overflow menu. Gating this on your own notes
+        // meant other people's notes had no menu at all, so reporting and
+        // blocking were only reachable two navigations deep — from the note
+        // screen, which you have to open the content to see.
+        isOwnNote = viewModel.isOwnNote(note.pubkey),
+        onReport = { onReport(note.id) },
+        onBlock = { onBlock(note.id) },
+        onDelete = { onDelete(note.id) },
+        onLongPressLike = onLongPressLike,
+        modifier = modifier,
+    )
+}
+
 // ── Top bar ──────────────────────────────────────────────────────
 
 @Composable
@@ -989,7 +1070,7 @@ private fun FeedTopBar(
     feedMode: FeedMode,
     connectionStatus: String,
     connectionColor: String,
-    isCompact: Boolean,
+    layoutMode: FeedLayoutMode,
     autoLoad: Boolean,
     showReposts: Boolean,
     showReplies: Boolean,
@@ -997,7 +1078,7 @@ private fun FeedTopBar(
     popularFilter: PopularFilter,
     showEngagementStats: Boolean,
     onModeChange: (FeedMode) -> Unit,
-    onToggleCompact: () -> Unit,
+    onCycleLayoutMode: () -> Unit,
     onToggleAutoLoad: () -> Unit,
     onToggleReposts: () -> Unit,
     onToggleReplies: () -> Unit,
@@ -1092,12 +1173,17 @@ private fun FeedTopBar(
 
         // ── Trailing pill: compact toggle + mode-dependent filters
         GlassPill {
-            // Compact view toggle (always shown)
-            IconButton(onClick = onToggleCompact, modifier = Modifier.size(40.dp)) {
+            // Layout mode toggle: expanded -> condensed -> threaded -> expanded (always shown)
+            IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
+                val icon = when (layoutMode) {
+                    FeedLayoutMode.EXPANDED -> NostrVaultIcons.ExpandedView
+                    FeedLayoutMode.CONDENSED -> NostrVaultIcons.CompactView
+                    FeedLayoutMode.THREADED -> NostrVaultIcons.ThreadedView
+                }
                 Icon(
-                    imageVector = if (isCompact) NostrVaultIcons.CompactView else NostrVaultIcons.ExpandedView,
-                    contentDescription = if (isCompact) "Switch to expanded" else "Switch to compact",
-                    tint = if (isCompact) colors.primary else SecondaryText,
+                    imageVector = icon,
+                    contentDescription = layoutMode.displayName,
+                    tint = if (layoutMode != FeedLayoutMode.EXPANDED) colors.primary else SecondaryText,
                     modifier = Modifier.size(25.dp),
                 )
             }
