@@ -77,7 +77,14 @@ struct CondensedNoteLine: View {
             .accessibilityHidden(true)
     }
 
-    private var avatarSize: CGFloat { isRoot ? 32 : 26 }
+    private var avatarSize: CGFloat { CondensedNoteLine.avatarSize(forDepth: depth) }
+
+    /// One source for the avatar size so a line and the full row that
+    /// replaces it when tapped can match it exactly — opening a line adds an
+    /// action bar, not a size change.
+    static func avatarSize(forDepth depth: Int) -> CGFloat {
+        depth == 0 ? 32 : 26
+    }
     private var nameSize: CGFloat { isRoot ? 13 : 12 }
     private var bodySize: CGFloat { isRoot ? 14 : 13 }
     private var bodyLineLimit: Int { isRoot ? 3 : 2 }

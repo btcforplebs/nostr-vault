@@ -144,7 +144,12 @@ struct FeedThreadCard: View {
                 showParent: false,
                 layoutMode: .wide,
                 isFocused: note.id == focusedNoteId,
-                suppressCardStyling: true
+                suppressCardStyling: true,
+                // Match the condensed line's own avatar size at this depth so
+                // opening a line adds its action bar without the avatar
+                // jumping in size — the rail and indent already leave this
+                // row less width than a flat feed row gets.
+                avatarSize: CondensedNoteLine.avatarSize(forDepth: entry.depth)
             )
             .padding(.vertical, 4)
             .contentShape(Rectangle())

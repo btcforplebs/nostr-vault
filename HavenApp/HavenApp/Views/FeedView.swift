@@ -2203,6 +2203,11 @@ struct FeedNoteRow: View {
     var layoutMode: NoteLayoutMode = .sideBySide
     var isFocused: Bool = false
     var suppressCardStyling: Bool = false
+    /// Lets a caller shrink the avatar without touching anything else about
+    /// the full layout — used when this row opens in place inside a thread
+    /// card, where the rail and indent already eat into the width a plain
+    /// feed row gets for free.
+    var avatarSize: CGFloat = 40
 
     // Zero ObservableObject subscriptions — all data comes via rowData/actions
     @Environment(\.feedActions) private var actions
@@ -2311,7 +2316,7 @@ struct FeedNoteRow: View {
                     HStack(alignment: .top, spacing: 12) {
                         VStack(spacing: 0) {
                             AvatarView(url: rowData.parentProfile?.pictureURL, pubkey: parent.pubkey)
-                                .frame(width: 40, height: 40)
+                                .frame(width: avatarSize, height: avatarSize)
                                 .onTapGesture { toggleParentUserMenu() }
 
                             if showingParentUserMenu {
@@ -2450,7 +2455,7 @@ struct FeedNoteRow: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(spacing: 6) {
                         AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey)
-                            .frame(width: 40, height: 40)
+                            .frame(width: avatarSize, height: avatarSize)
                             .onTapGesture { toggleUserMenu() }
                         if showingUserMenu {
                             userMenuToolbar
@@ -2515,7 +2520,7 @@ struct FeedNoteRow: View {
                     }
 
                     AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey)
-                        .frame(width: 40, height: 40)
+                        .frame(width: avatarSize, height: avatarSize)
                         .onTapGesture { toggleUserMenu() }
 
                     if showingUserMenu {
