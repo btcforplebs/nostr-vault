@@ -68,11 +68,33 @@ struct ProfileView: View {
     @State private var isLoadingOlderNotes = false
     @State private var hasMoreNotes = true
 
+    // Paging bookkeeping. A "page" is one round of `older-` REQs sent to every
+    // connected relay under a single subscription id; it completes when they have
+    // all answered (EOSE or CLOSED), or when the fallback timer fires — whichever
+    // comes first. The token guards against a late timer finishing a newer page.
+    @State private var olderPageToken = 0
+    @State private var olderPageSubId: String? = nil
+    @State private var olderPageAnswers = 0
+    @State private var olderPageExpected = 0
+    @State private var olderPageCountBefore = 0
+    @State private var olderPageVisibleBefore = 0
+    @State private var olderPageSection: ProfileSection = .notes
+    @State private var quietOlderPages = 0
+    @State private var autoPagedInARow = 0
+
     // Tagged notes (notes by others that tag/mention/repost/quote this user)
     @State private var taggedNotes: [FeedNote] = []
     @State private var seenTaggedIds = Set<String>()
     @State private var isLoadingOlderTaggedNotes = false
     @State private var hasMoreTaggedNotes = true
+    @State private var olderTaggedToken = 0
+    @State private var olderTaggedSubId: String? = nil
+    @State private var olderTaggedAnswers = 0
+    @State private var olderTaggedExpected = 0
+    @State private var olderTaggedCountBefore = 0
+    @State private var olderTaggedVisibleBefore = 0
+    @State private var quietOlderTaggedPages = 0
+    @State private var autoPagedTaggedInARow = 0
 
     // Total counts from local relay (own profile)
     @State private var totalNoteCount: Int? = nil
@@ -125,6 +147,18 @@ struct ProfileView: View {
 
     private var defaultZapSats: Int {
         max(1, ConfigService.shared.config.defaultZapAmount / 1000)
+    }
+
+    // MARK: - Ordering
+
+    /// A TOTAL order: newest first, ties broken by id. Sorting on the timestamp
+    /// alone leaves same-second notes in arrival order, which reshuffles on every
+    /// event that lands, and makes `profileNotes.last` — the anchor every `until`
+    /// page is built on — an arbitrary member of the tie group. At a page boundary
+    /// that drops one note and re-requests another.
+    private static func newestFirst(_ a: FeedNote, _ b: FeedNote) -> Bool {
+        if a.createdAt != b.createdAt { return a.createdAt > b.createdAt }
+        return a.id > b.id
     }
 
     // MARK: - Filtered notes for tabs
@@ -1383,10 +1417,16 @@ struct ProfileView: View {
         isLoadingNotes = false
         isLoadingOlderNotes = false
         hasMoreNotes = true
+        olderPageSubId = nil
+        quietOlderPages = 0
+        autoPagedInARow = 0
         taggedNotes.removeAll()
         seenTaggedIds.removeAll()
         isLoadingOlderTaggedNotes = false
         hasMoreTaggedNotes = true
+        olderTaggedSubId = nil
+        quietOlderTaggedPages = 0
+        autoPagedTaggedInARow = 0
         followingCount = nil
         followsMe = false
         followersCount = nil
@@ -1453,7 +1493,7 @@ struct ProfileView: View {
                 profileNotes.append(note)
             }
         }
-        profileNotes.sort { $0.createdAt > $1.createdAt }
+        profileNotes.sort(by: Self.newestFirst)
 
         var relayURLs: [URL] = []
         if RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting {
@@ -1606,7 +1646,7 @@ struct ProfileView: View {
                 )
 
                 taggedNotes.append(note)
-                taggedNotes.sort { $0.createdAt > $1.createdAt }
+                taggedNotes.sort(by: Self.newestFirst)
 
                 // Fetch profile for the tagger
                 if nostrService.profiles[event.pubkey] == nil {
@@ -1638,7 +1678,7 @@ struct ProfileView: View {
             )
 
             profileNotes.append(note)
-            profileNotes.sort { $0.createdAt > $1.createdAt }
+            profileNotes.sort(by: Self.newestFirst)
 
             // Trigger fetch of the original note for empty-content reposts
             if event.kind == 6 && event.content.isEmpty,
@@ -1649,15 +1689,28 @@ struct ProfileView: View {
             if profile == nil {
                 nostrService.fetchMissingProfiles(for: [pubkey])
             }
-        } else if type == "EOSE" {
+        } else if type == "EOSE" || type == "CLOSED" {
+            // CLOSED counts the same as EOSE: the relay is saying it will send
+            // nothing more under this subscription. A refusal (sub cap, rate limit)
+            // reads identically to an exhausted history from here, and ignoring it
+            // left the page hanging on a relay that was never going to answer.
             let subId = (json.count >= 2 ? json[1] as? String : nil) ?? ""
             if subId.hasPrefix("older-tagged-") {
-                isLoadingOlderTaggedNotes = false
-            } else {
-                isLoadingNotes = false
-                if isLoadingOlderNotes {
-                    isLoadingOlderNotes = false
+                guard subId == olderTaggedSubId else { return }
+                olderTaggedAnswers += 1
+                if olderTaggedAnswers >= olderTaggedExpected {
+                    finishOlderTaggedPage(token: olderTaggedToken)
                 }
+            } else if subId.hasPrefix("older-") {
+                guard subId == olderPageSubId else { return }
+                olderPageAnswers += 1
+                if olderPageAnswers >= olderPageExpected {
+                    finishOlderPage(token: olderPageToken)
+                }
+            } else {
+                // The opening subscription is deliberately left open — it is also
+                // how new posts reach the profile while it is on screen.
+                isLoadingNotes = false
             }
         }
     }
@@ -1665,65 +1718,157 @@ struct ProfileView: View {
     private func loadOlderProfileNotes() {
         guard !isLoadingOlderNotes, hasMoreNotes else { return }
         guard let oldest = profileNotes.last else { return }
+        guard !profileClients.isEmpty else { return }
         isLoadingOlderNotes = true
 
-        let untilTimestamp = Int(oldest.createdAt.timeIntervalSince1970)
-        let countBefore = profileNotes.count
+        olderPageToken &+= 1
+        let token = olderPageToken
+        let subId = "older-\(UUID().uuidString.prefix(6))"
+        olderPageSubId = subId
+        olderPageAnswers = 0
+        olderPageExpected = profileClients.count
+        olderPageCountBefore = profileNotes.count
+        olderPageVisibleBefore = currentSectionNotes.count
+        olderPageSection = selectedSection
 
-        // Use the already-connected clients to request older notes
+        let filter: [String: Any] = [
+            "kinds": [1, 6, 30023],
+            "authors": [pubkey],
+            "until": Int(oldest.createdAt.timeIntervalSince1970),
+            "limit": 50
+        ]
+        // One subscription id for the whole page, so every relay's answer counts
+        // toward the same page and the CLOSE below releases all of them.
+        let req: [Any] = ["REQ", subId, filter]
+        guard let data = try? JSONSerialization.data(withJSONObject: req),
+              let str = String(data: data, encoding: .utf8) else {
+            isLoadingOlderNotes = false
+            return
+        }
         for client in profileClients {
-            let subId = "older-\(UUID().uuidString.prefix(6))"
-            let filter: [String: Any] = [
-                "kinds": [1, 6, 30023],
-                "authors": [pubkey],
-                "until": untilTimestamp,
-                "limit": 50
-            ]
-            let req: [Any] = ["REQ", subId, filter]
-            if let data = try? JSONSerialization.data(withJSONObject: req),
-               let str = String(data: data, encoding: .utf8) {
-                client.send(text: str)
-            }
+            client.send(text: str)
         }
 
-        // After a timeout, check if we got new notes — if not, we've exhausted the feed
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            if self.profileNotes.count == countBefore {
-                self.hasMoreNotes = false
-            }
-            self.isLoadingOlderNotes = false
+        // Fallback only. Normally the page finishes when every relay has answered.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            finishOlderPage(token: token)
+        }
+    }
+
+    private func finishOlderPage(token: Int) {
+        guard token == olderPageToken, isLoadingOlderNotes else { return }
+        isLoadingOlderNotes = false
+        if let subId = olderPageSubId {
+            closeProfileSubscription(subId)
+            olderPageSubId = nil
+        }
+
+        let grew = profileNotes.count > olderPageCountBefore
+        let visibleGrew = currentSectionNotes.count > olderPageVisibleBefore
+
+        if grew {
+            quietOlderPages = 0
+        } else {
+            // One quiet round is a slow relay far more often than an exhausted
+            // history. Only a second empty round in a row ends paging — the old
+            // code latched this off after a single 5s window and never reset it,
+            // so one slow relay killed paging for the life of the screen.
+            quietOlderPages += 1
+            if quietOlderPages >= 2 { hasMoreNotes = false }
+        }
+
+        // The scroll sentinel only fires again when the VISIBLE list grows. A page
+        // that was entirely replies adds nothing to the Notes tab, so paging would
+        // stop with history still left. Carry on ourselves — bounded, so one flick
+        // of the scroll cannot walk the whole archive.
+        guard hasMoreNotes,
+              !visibleGrew,
+              olderPageSection == selectedSection,
+              autoPagedInARow < 8 else {
+            autoPagedInARow = 0
+            return
+        }
+        autoPagedInARow += 1
+        loadOlderProfileNotes()
+    }
+
+    /// The paging subscriptions are one-shot, but nothing ever released them.
+    /// Every page leaked one on every relay, and relays that cap concurrent REQs
+    /// start refusing — which this screen then read as "no more notes".
+    private func closeProfileSubscription(_ subId: String) {
+        let msg: [Any] = ["CLOSE", subId]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg),
+              let str = String(data: data, encoding: .utf8) else { return }
+        for client in profileClients {
+            client.send(text: str)
         }
     }
 
     private func loadOlderTaggedNotes() {
         guard !isLoadingOlderTaggedNotes, hasMoreTaggedNotes else { return }
         guard let oldest = taggedNotes.last else { return }
+        guard !profileClients.isEmpty else { return }
         isLoadingOlderTaggedNotes = true
 
-        let untilTimestamp = Int(oldest.createdAt.timeIntervalSince1970)
-        let countBefore = taggedNotes.count
+        olderTaggedToken &+= 1
+        let token = olderTaggedToken
+        let subId = "older-tagged-\(UUID().uuidString.prefix(6))"
+        olderTaggedSubId = subId
+        olderTaggedAnswers = 0
+        olderTaggedExpected = profileClients.count
+        olderTaggedCountBefore = taggedNotes.count
+        olderTaggedVisibleBefore = taggedFilteredNotes.count
 
+        let filter: [String: Any] = [
+            "kinds": [1, 6, 30023],
+            "#p": [pubkey],
+            "until": Int(oldest.createdAt.timeIntervalSince1970),
+            "limit": 50
+        ]
+        let req: [Any] = ["REQ", subId, filter]
+        guard let data = try? JSONSerialization.data(withJSONObject: req),
+              let str = String(data: data, encoding: .utf8) else {
+            isLoadingOlderTaggedNotes = false
+            return
+        }
         for client in profileClients {
-            let subId = "older-tagged-\(UUID().uuidString.prefix(6))"
-            let filter: [String: Any] = [
-                "kinds": [1, 6, 30023],
-                "#p": [pubkey],
-                "until": untilTimestamp,
-                "limit": 50
-            ]
-            let req: [Any] = ["REQ", subId, filter]
-            if let data = try? JSONSerialization.data(withJSONObject: req),
-               let str = String(data: data, encoding: .utf8) {
-                client.send(text: str)
-            }
+            client.send(text: str)
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            if self.taggedNotes.count == countBefore {
-                self.hasMoreTaggedNotes = false
-            }
-            self.isLoadingOlderTaggedNotes = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            finishOlderTaggedPage(token: token)
         }
+    }
+
+    private func finishOlderTaggedPage(token: Int) {
+        guard token == olderTaggedToken, isLoadingOlderTaggedNotes else { return }
+        isLoadingOlderTaggedNotes = false
+        if let subId = olderTaggedSubId {
+            closeProfileSubscription(subId)
+            olderTaggedSubId = nil
+        }
+
+        let grew = taggedNotes.count > olderTaggedCountBefore
+        // Tagged hides the profile owner's own notes, so a page can grow the pool
+        // without adding a single visible row — same stall as the Notes tab.
+        let visibleGrew = taggedFilteredNotes.count > olderTaggedVisibleBefore
+
+        if grew {
+            quietOlderTaggedPages = 0
+        } else {
+            quietOlderTaggedPages += 1
+            if quietOlderTaggedPages >= 2 { hasMoreTaggedNotes = false }
+        }
+
+        guard hasMoreTaggedNotes,
+              !visibleGrew,
+              selectedSection == .tagged,
+              autoPagedTaggedInARow < 8 else {
+            autoPagedTaggedInARow = 0
+            return
+        }
+        autoPagedTaggedInARow += 1
+        loadOlderTaggedNotes()
     }
 
     private func disconnectClients() {
