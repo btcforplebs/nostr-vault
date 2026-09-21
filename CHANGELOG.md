@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Private Key File Permissions (FIPS)**: Closed the window between creating the nsec file and restricting it.
 
 ### Added
+- **A Threaded Feed (macOS / iOS)**: The feed's view control now cycles expanded -> condensed -> threaded instead of toggling two layouts. Threaded gathers a conversation — root note and every reply the feed is holding — into one card with an indented reply rail, folding past three replies so a long argument can't own the timeline. Tapping any line opens the thread at that note. It is stored per feed, so Following can stay expanded while Global runs threaded, and picking it turns the Replies filter on, because a threaded feed with replies hidden is just the layout you left.
 - **The Lit Arch**: A new app icon across macOS, iOS, iPadOS, the widget extension and Android — including a proper adaptive icon and a themed/monochrome layer, so the Android notification mark is the brand rather than a generic dot. The relay's web UI icons, the website and the docs logo now match.
 - **A Surface Ramp and Semantic Colour Tokens**: The app had no elevation system — cards, sheets and pages were assembled from hardcoded values, and on Android card-vs-page contrast was inverted. There is now one ramp, adopted on all three platforms, with duplicate hardcoded colours swept onto tokens.
 - **One Motion Vocabulary, With Reduce Motion**: Animations are named by role rather than duplicated per call site, and Reduce Motion is honoured everywhere, on Android too.
@@ -34,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Route Taps From Outside the App (Android)**, and Groups is reachable.
 
 ### Changed
+- **One Condensed Note Row**: The condensed look had been written four times — the feed's compact row, a thread's ancestors, its replies and its focused note — and the copies had drifted apart on avatar size, line limits and card chrome. They are now one `CondensedNoteLine` component, so the feed and the thread view finally read as the same app, and a condensed thread is one card of lines instead of a stack of boxes. Thread grouping is pure logic with unit tests behind it.
 - **Popular Is Collected, Not Queried**: Engagement is gathered continuously instead of firing a burst of queries the moment you open the tab, and scoring counts distinct reactors rather than reaction events.
 - **One Definition of a Note's Overflow Menu (Android)**, instead of each screen growing its own.
 - **Blossom Signs Once Per Blob**: One upload authorisation per blob rather than per request.
