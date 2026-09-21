@@ -1719,8 +1719,20 @@ struct FeedView: View {
                                 FeedThreadCard(
                                     thread: thread,
                                     profileFor: { nostrService.profiles[$0] },
-                                    onSelect: { openNoteDetail($0) },
-                                    onProfile: { showingProfileKey = IdentifiableString(id: $0) }
+                                    rowDataFor: { note in
+                                        rowDataCache[note.id] ?? FeedNoteRowData.resolve(
+                                            for: note,
+                                            feedService: feedService,
+                                            nostrService: nostrService
+                                        )
+                                    },
+                                    onOpen: { openNoteDetail($0) },
+                                    onReply: { composeContext = ComposeContext(replyTo: $0, quoteTo: nil) },
+                                    onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: $0) },
+                                    onProfile: { showingProfileKey = IdentifiableString(id: $0) },
+                                    onMedia: { url, urls in
+                                        showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
+                                    }
                                 )
                                 .padding(.horizontal, 12)
                             }

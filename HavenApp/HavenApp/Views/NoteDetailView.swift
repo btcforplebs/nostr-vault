@@ -42,9 +42,6 @@ struct NoteDetailView: View {
 
     @State private var focusedNoteId: String = ""
 
-    // Compact mode for entire thread (initialized from config in onAppear)
-    @State private var isCompactView = false
-
     private var threadRootId: String {
         let eTags = note.tags.filter { $0.count >= 2 && $0[0] == "e" }
         if let explicitRoot = eTags.first(where: { $0.count >= 4 && $0[3] == "root" }) {
@@ -60,6 +57,15 @@ struct NoteDetailView: View {
         return feedService.findNote(id: focusedNoteId)
             ?? parentNotes.first(where: { $0.id == focusedNoteId })
             ?? note
+    }
+
+    /// A bare repost has no body of its own, so replying to one has to answer
+    /// the note it carries. Both reply entry points resolve through here.
+    private func replyTarget(for note: FeedNote) -> FeedNote {
+        guard note.kind == 6,
+              let refId = note.repostedEventId,
+              let original = feedService.findNote(id: refId) else { return note }
+        return original
     }
 
     private var dynamicParents: [FeedNote] {
@@ -118,7 +124,7 @@ struct NoteDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     // Thread History (Parents) — only revealed once all parents are loaded
                     if !dynamicParents.isEmpty && !isLoadingParents {
-                        threadSection(proxy: proxy)
+                        threadHistory(proxy: proxy)
                             .transition(.opacity)
                     }
 
@@ -183,20 +189,6 @@ struct NoteDetailView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 8) {
-                    // Compact mode toggle
-                    IconFilterButton(
-                        icon: isCompactView ? "rectangle.compress.vertical" : "rectangle.expand.vertical",
-                        tooltip: "Compact View",
-                        isSelected: isCompactView,
-                        color: .havenPurple
-                    ) {
-                        withAnimation(Motion.panel) {
-                            isCompactView.toggle()
-                        }
-                        configService.config.noteDetailCompactView = isCompactView
-                        configService.save()
-                    }
-
                     // Stats toggle
                     IconFilterButton(
                         icon: expandedEngagement ? "chart.bar.fill" : "chart.bar",
@@ -221,14 +213,11 @@ struct NoteDetailView: View {
                         isSelected: false,
                         color: .havenPurple
                     ) {
-                        let replyTarget: FeedNote = {
-                            if note.kind == 6, let refId = note.repostedEventId,
-                               let original = feedService.findNote(id: refId) {
-                                return original
-                            }
-                            return note
-                        }()
-                        composeContext = ComposeContext(replyTo: replyTarget, quoteTo: nil)
+                        // The toolbar replies to whatever note is focused, the
+                        // same target the focused card's own reply button uses.
+                        // Pointing it at the entry note instead let the two
+                        // buttons disagree once you tapped into a reply.
+                        composeContext = ComposeContext(replyTo: replyTarget(for: focusedNote), quoteTo: nil)
                     }
 
                     // Event info / re-broadcast
@@ -257,7 +246,6 @@ struct NoteDetailView: View {
             .environmentObject(configService)
         }
         .onAppear {
-            isCompactView = configService.config.noteDetailCompactView
             expandedEngagement = configService.config.noteDetailExpandedEngagement
             if expandedEngagement {
                 fetchAllThreadEngagement()
@@ -298,7 +286,10 @@ struct NoteDetailView: View {
             FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { showingMediaUrl = nil })
         }
         .sheet(isPresented: $showingBroadcastSheet) {
-            EventBroadcastSheet(note: note)
+            // Broadcast follows focus for the same reason Reply does: the
+            // toolbar acts on the note you are looking at, not the one you
+            // happened to arrive on.
+            EventBroadcastSheet(note: focusedNote)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
@@ -340,42 +331,24 @@ struct NoteDetailView: View {
         )
         let hasEngagement = (!detailedReactions.isEmpty && !configService.config.zapsOnlyMode) || !detailedZaps.isEmpty || !detailedReposts.isEmpty
 
-        return Group {
-            if isCompactView {
-                compactMainNoteLayout(profile: profile, hasEngagement: hasEngagement)
-                    .transition(.asymmetric(
-                        insertion: AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)),
-                        removal: AnyTransition.opacity
-                    ))
-            } else {
-                fullMainNoteLayout(profile: profile, rowData: rowData, hasEngagement: hasEngagement)
-                    .transition(.asymmetric(
-                        insertion: AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)),
-                        removal: AnyTransition.opacity
-                    ))
-            }
-        }
-        .animation(Motion.panel, value: isCompactView)
-        .id(focusedNote.id)
-        .padding(.horizontal, 16)
+        return mainNoteLayout(profile: profile, rowData: rowData, hasEngagement: hasEngagement)
+            .transition(.asymmetric(
+                insertion: AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)),
+                removal: AnyTransition.opacity
+            ))
+            .id(focusedNote.id)
+            .padding(.horizontal, 16)
     }
 
     @ViewBuilder
-    private func fullMainNoteLayout(profile: FeedProfile?, rowData: FeedNoteRowData, hasEngagement: Bool) -> some View {
+    private func mainNoteLayout(profile: FeedProfile?, rowData: FeedNoteRowData, hasEngagement: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             FeedNoteRow(
                 note: focusedNote,
                 profile: profile,
                 rowData: rowData,
                 onReply: {
-                    let replyTarget: FeedNote = {
-                        if focusedNote.kind == 6, let refId = focusedNote.repostedEventId,
-                           let original = feedService.findNote(id: refId) {
-                            return original
-                        }
-                        return focusedNote
-                    }()
-                    composeContext = ComposeContext(replyTo: replyTarget, quoteTo: nil)
+                    composeContext = ComposeContext(replyTo: replyTarget(for: focusedNote), quoteTo: nil)
                 },
                 onQuote: {
                     composeContext = ComposeContext(replyTo: nil, quoteTo: focusedNote)
@@ -412,84 +385,7 @@ struct NoteDetailView: View {
         .shadow(color: Color.havenPurple.opacity(0.35), radius: 8)
     }
 
-    /// The focused note in condensed mode: the same shared line every other
-    /// condensed surface uses, inside the hero card's own border.
-    @ViewBuilder
-    private func compactMainNoteLayout(profile: FeedProfile?, hasEngagement: Bool) -> some View {
-        CondensedNoteLine(
-            note: focusedNote,
-            profile: profile,
-            depth: 0,
-            style: .plain,
-            mediaURLs: focusedNote.mediaURLs,
-            engagement: hasEngagement
-                ? CondensedEngagement(
-                    reactions: groupedReactions.reduce(0) { $0 + $1.count },
-                    reposts: repostersMapped.count,
-                    zaps: parsedZaps.count,
-                    topEmoji: groupedReactions.first?.emoji
-                  )
-                : .none,
-            onProfile: { showingProfilePubkey = $0 },
-            onTap: {
-                withAnimation(Motion.panel) {
-                    isCompactView = false
-                }
-            }
-        )
-        .padding(6)
-        .background(
-            ZStack {
-                Color.platformSecondaryGroupedBackground
-                Color.havenPurple.opacity(0.015)
-            }
-        )
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.havenPurple, lineWidth: 2.0)
-        )
-        .shadow(color: Color.havenPurple.opacity(0.35), radius: 8)
-    }
-
-    private func threadSection(proxy: ScrollViewProxy) -> some View {
-        Group {
-            if isCompactView {
-                compactThreadHistory(proxy: proxy)
-            } else {
-                fullThreadHistory(proxy: proxy)
-            }
-        }
-    }
-
-    /// The ancestors of the focused note, condensed into one conversation card
-    /// that steps in one level per generation — the same shape the feed's
-    /// threaded mode uses.
-    private func compactThreadHistory(proxy: ScrollViewProxy) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(dynamicParents.enumerated()), id: \.element.id) { index, parent in
-                CondensedNoteLine(
-                    note: parent,
-                    profile: nostrService.profiles[parent.pubkey],
-                    depth: min(index, FeedThreadGrouping.maxDepth),
-                    style: .plain,
-                    isFocused: parent.id == focusedNoteId,
-                    mediaURLs: parent.mediaURLs,
-                    onProfile: { showingProfilePubkey = $0 },
-                    onTap: { selectAndScrollToNote(parent.id, proxy: proxy) }
-                )
-                .id(parent.id)
-            }
-
-            if isLoadingParents {
-                FeedNoteSkeletonRow()
-            }
-        }
-        .threadCard()
-        .padding(.horizontal, 16)
-    }
-
-    private func fullThreadHistory(proxy: ScrollViewProxy) -> some View {
+    private func threadHistory(proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(dynamicParents) { parent in
                 let parentProfile = nostrService.profiles[parent.pubkey]
@@ -603,17 +499,15 @@ struct NoteDetailView: View {
         }
     }
 
-    /// The reply tree. In condensed mode the whole tree shares one card so it
-    /// reads as a conversation; in expanded mode each reply keeps its own.
-    @ViewBuilder
+    /// The reply tree. Every reply keeps its own card and its own action bar,
+    /// so replying is one tap from wherever you landed.
     private func repliesList(_ currentReplies: [FeedNote], pool: [FeedNote], proxy: ScrollViewProxy) -> some View {
-        let nodes = VStack(alignment: .leading, spacing: isCompactView ? 2 : 12) {
+        VStack(alignment: .leading, spacing: 12) {
                 ForEach(currentReplies) { reply in
                     ThreadedReplyNode(
                         reply: reply,
                         allNotes: pool,
                         depth: 1,
-                        isCompactMode: isCompactView,
                         onReply: { target in
                             composeContext = ComposeContext(replyTo: target, quoteTo: nil)
                         },
@@ -633,18 +527,10 @@ struct NoteDetailView: View {
                         perNoteReposts: perNoteReposts,
                         perNoteZaps: perNoteZaps
                     )
-                    .padding(.horizontal, isCompactView ? 0 : 16)
+                    .padding(.horizontal, 16)
                 }
         }
         .transition(.opacity)
-
-        if isCompactView {
-            nodes
-                .threadCard()
-                .padding(.horizontal, 16)
-        } else {
-            nodes
-        }
     }
     
     @ViewBuilder
@@ -1657,7 +1543,6 @@ struct ThreadedReplyNode: View {
     let reply: FeedNote
     let allNotes: [FeedNote]
     let depth: Int
-    var isCompactMode: Bool = false
     var onReply: ((FeedNote) -> Void)? = nil
     var onQuote: ((FeedNote) -> Void)? = nil
     var onProfile: ((String) -> Void)? = nil
@@ -1680,15 +1565,11 @@ struct ThreadedReplyNode: View {
 
         let isCurrentFocused = reply.id == focusedNoteId
 
-        VStack(alignment: .leading, spacing: isCompactMode ? 2 : 8) {
-            if isCompactMode {
-                compactReplyView(isCurrentFocused: isCurrentFocused, childReplies: childReplies)
-            } else {
-                fullReplyView(isCurrentFocused: isCurrentFocused)
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            replyView(isCurrentFocused: isCurrentFocused)
 
             if !childReplies.isEmpty {
-                if depth >= 3 && !isCompactMode {
+                if depth >= 3 {
                     // Prevent excessive indentation squishing on narrow mobile screens
                     Button {
                         withAnimation(Motion.scrollJump) {
@@ -1710,7 +1591,7 @@ struct ThreadedReplyNode: View {
                         .padding(.leading, 8)
                     }
                     .buttonStyle(.plain)
-                } else if !isCompactMode {
+                } else {
                     HStack(alignment: .top, spacing: 0) {
                         // Thread vertical connecting line
                         Rectangle()
@@ -1726,7 +1607,6 @@ struct ThreadedReplyNode: View {
                                     reply: child,
                                     allNotes: allNotes,
                                     depth: depth + 1,
-                                    isCompactMode: isCompactMode,
                                     onReply: onReply,
                                     onQuote: onQuote,
                                     onProfile: onProfile,
@@ -1741,36 +1621,13 @@ struct ThreadedReplyNode: View {
                             }
                         }
                     }
-                } else {
-                    // Compact mode: the line's own rail and indent carry the
-                    // nesting, so children just stack.
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(childReplies) { child in
-                            ThreadedReplyNode(
-                                reply: child,
-                                allNotes: allNotes,
-                                depth: depth + 1,
-                                isCompactMode: isCompactMode,
-                                onReply: onReply,
-                                onQuote: onQuote,
-                                onProfile: onProfile,
-                                onMedia: onMedia,
-                                focusedNoteId: $focusedNoteId,
-                                proxy: proxy,
-                                expandedEngagement: expandedEngagement,
-                                perNoteReactions: perNoteReactions,
-                                perNoteReposts: perNoteReposts,
-                                perNoteZaps: perNoteZaps
-                            )
-                        }
-                    }
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func fullReplyView(isCurrentFocused: Bool) -> some View {
+    private func replyView(isCurrentFocused: Bool) -> some View {
         let replyProfile = nostrService.profiles[reply.pubkey]
         let rowData = FeedNoteRowData.resolve(
             for: reply,
@@ -1825,40 +1682,6 @@ struct ThreadedReplyNode: View {
                 proxy.scrollTo(reply.id, anchor: .center)
             }
         }
-    }
-
-    /// A condensed reply, drawn by the same component the feed's threaded mode
-    /// uses so the two surfaces stay identical.
-    @ViewBuilder
-    private func compactReplyView(isCurrentFocused: Bool, childReplies: [FeedNote]) -> some View {
-        let zapInfo = zapTotalForReply(reply.id)
-        let reactions = groupedReactionsForReply(reply.id)
-
-        CondensedNoteLine(
-            note: reply,
-            profile: nostrService.profiles[reply.pubkey],
-            depth: min(depth, FeedThreadGrouping.maxDepth),
-            style: .plain,
-            isFocused: isCurrentFocused,
-            replyCount: childReplies.count,
-            mediaURLs: reply.mediaURLs,
-            engagement: expandedEngagement
-                ? CondensedEngagement(
-                    reactions: reactions.reduce(0) { $0 + $1.count },
-                    reposts: repostCountForReply(reply.id),
-                    zaps: zapInfo.count,
-                    topEmoji: reactions.first?.emoji
-                  )
-                : .none,
-            onProfile: { onProfile?($0) },
-            onTap: {
-                withAnimation(Motion.scrollJump) {
-                    focusedNoteId = reply.id
-                    proxy.scrollTo(reply.id, anchor: .center)
-                }
-            }
-        )
-        .id(reply.id)
     }
 
     // Per-note engagement helpers for this reply node
