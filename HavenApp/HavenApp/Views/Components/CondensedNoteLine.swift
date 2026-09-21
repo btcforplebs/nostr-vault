@@ -77,8 +77,7 @@ struct CondensedNoteLine: View {
             }
 
             HStack(alignment: .top, spacing: 8) {
-                AvatarView(url: profile?.pictureURL, pubkey: authorPubkey)
-                    .frame(width: avatarSize, height: avatarSize)
+                AvatarView(url: profile?.pictureURL, pubkey: authorPubkey, size: avatarSize)
                     .contentShape(Circle())
                     .onTapGesture { onProfile?(authorPubkey) }
                     .accessibilityLabel(Text("Profile of \(displayName)"))

@@ -236,8 +236,7 @@ struct GroupMessageBubbleView: View {
                 Spacer(minLength: 60)
             } else {
                 if let profile = senderProfile {
-                    AvatarView(url: profile.pictureURL, pubkey: message.senderPubkey)
-                        .frame(width: 28, height: 28)
+                    AvatarView(url: profile.pictureURL, pubkey: message.senderPubkey, size: 28)
                         .clipShape(Circle())
                         .padding(.trailing, 8)
                 } else {

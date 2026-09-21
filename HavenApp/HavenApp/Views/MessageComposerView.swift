@@ -52,8 +52,7 @@ struct MessageComposerView: View {
                 if let recipient = selectedRecipient ?? recipientPubkey {
                     let profile = nostrService.profiles[recipient]
                     HStack(spacing: 12) {
-                        AvatarView(url: profile?.pictureURL, pubkey: recipient)
-                            .frame(width: 32, height: 32)
+                        AvatarView(url: profile?.pictureURL, pubkey: recipient, size: 32)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(profile?.bestName ?? String(Array(recipient.prefix(8))))
@@ -101,8 +100,7 @@ struct MessageComposerView: View {
                                                 searchText = ""
                                             }) {
                                                 HStack(spacing: 12) {
-                                                    AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey)
-                                                        .frame(width: 32, height: 32)
+                                                    AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 32)
 
                                                     VStack(alignment: .leading, spacing: 2) {
                                                         Text(nostrService.profiles[pubkey]?.bestName ?? String(Array(pubkey.prefix(8))))

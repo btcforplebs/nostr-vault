@@ -558,8 +558,7 @@ struct ProfileView: View {
 
     private var headerBlock: some View {
         HStack(alignment: .top, spacing: 14) {
-            AvatarView(url: profile?.pictureURL, pubkey: pubkey)
-                .frame(width: 64, height: 64)
+            AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 64)
                 .overlay(
                     Circle().stroke(Color.havenPurple.opacity(0.35), lineWidth: 1.5)
                 )
@@ -2006,8 +2005,7 @@ struct ProfileEditView: View {
 
     private var previewBlock: some View {
         HStack(spacing: 14) {
-            AvatarView(url: URL(string: pictureURL), pubkey: existing.pubkey)
-                .frame(width: 56, height: 56)
+            AvatarView(url: URL(string: pictureURL), pubkey: existing.pubkey, size: 56)
                 .overlay(Circle().stroke(Color.havenPurple.opacity(0.35), lineWidth: 1.5))
 
             VStack(alignment: .leading, spacing: 3) {

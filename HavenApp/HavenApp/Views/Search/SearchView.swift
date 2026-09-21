@@ -505,8 +505,7 @@ struct SearchView: View {
                             ForEach(suggested, id: \.0) { pubkey, profile in
                                 Button(action: { showingProfile = pubkey }) {
                                     HStack(spacing: 10) {
-                                        AvatarView(url: profile.pictureURL, pubkey: pubkey)
-                                            .frame(width: 34, height: 34)
+                                        AvatarView(url: profile.pictureURL, pubkey: pubkey, size: 34)
                                         VStack(alignment: .leading, spacing: 1) {
                                             Text(profile.bestName)
                                                 .font(.appSystem(size: 13, weight: .medium))
@@ -761,8 +760,7 @@ struct SearchView: View {
     private func userRow(pubkey: String, profile: FeedProfile) -> some View {
         Button(action: { showingProfile = pubkey }) {
             HStack(spacing: 12) {
-                AvatarView(url: profile.pictureURL, pubkey: pubkey)
-                    .frame(width: 40, height: 40)
+                AvatarView(url: profile.pictureURL, pubkey: pubkey, size: 40)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(profile.bestName)

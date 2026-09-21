@@ -171,9 +171,9 @@ struct ComposeView: View {
                         HStack(alignment: .top, spacing: 12) {
                             AvatarView(
                                 url: nostrService.profiles[configService.activeAccountHexPubkey]?.pictureURL,
-                                pubkey: configService.activeAccountHexPubkey
+                                pubkey: configService.activeAccountHexPubkey,
+                                size: 36
                             )
-                            .frame(width: 36, height: 36)
                             .contextMenu {
                                 if configService.allAccountNpubs.count > 1 {
                                     ForEach(configService.allAccountNpubs, id: \.self) { npub in
@@ -804,8 +804,7 @@ struct ComposeView: View {
     private func replyHeader(parent: FeedNote) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 0) {
-                AvatarView(url: nostrService.profiles[parent.pubkey]?.pictureURL, pubkey: parent.pubkey)
-                    .frame(width: 32, height: 32)
+                AvatarView(url: nostrService.profiles[parent.pubkey]?.pictureURL, pubkey: parent.pubkey, size: 32)
                 
                 Rectangle()
                     .fill(Color.havenPurple.opacity(0.3))

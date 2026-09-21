@@ -2280,8 +2280,7 @@ struct FeedNoteRow: View {
                 NoteNavigationLink(note: parent) {
                     HStack(alignment: .top, spacing: 12) {
                         VStack(spacing: 0) {
-                            AvatarView(url: rowData.parentProfile?.pictureURL, pubkey: parent.pubkey)
-                                .frame(width: 40, height: 40)
+                            AvatarView(url: rowData.parentProfile?.pictureURL, pubkey: parent.pubkey, size: 40)
                                 .onTapGesture { toggleParentUserMenu() }
 
                             if showingParentUserMenu {
@@ -2419,8 +2418,7 @@ struct FeedNoteRow: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(spacing: 6) {
-                        AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey)
-                            .frame(width: 40, height: 40)
+                        AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey, size: 40)
                             .onTapGesture { toggleUserMenu() }
                         if showingUserMenu {
                             userMenuToolbar
@@ -2484,8 +2482,7 @@ struct FeedNoteRow: View {
                             .frame(width: 2, height: 10)
                     }
 
-                    AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey)
-                        .frame(width: 40, height: 40)
+                    AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey, size: 40)
                         .onTapGesture { toggleUserMenu() }
 
                     if showingUserMenu {

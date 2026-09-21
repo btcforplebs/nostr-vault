@@ -290,8 +290,7 @@ struct MacComposeView: View {
                     Text(String(localized: "dm.compose.to"))
                         .font(.appSystem(size: 12, weight: .semibold))
                         .foregroundColor(.secondary)
-                    AvatarView(url: nostrService.profiles[recipient]?.pictureURL, pubkey: recipient)
-                        .frame(width: 24, height: 24)
+                    AvatarView(url: nostrService.profiles[recipient]?.pictureURL, pubkey: recipient, size: 24)
                     Text(nostrService.profiles[recipient]?.bestName ?? String(recipient.prefix(8)) + "...")
                         .font(.appSystem(size: 13, weight: .medium))
                     Spacer()
@@ -317,8 +316,7 @@ struct MacComposeView: View {
                                 ForEach(searchResults, id: \.self) { pubkey in
                                     Button(action: { selectedRecipient = pubkey; searchText = "" }) {
                                         HStack(spacing: 10) {
-                                            AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey)
-                                                .frame(width: 28, height: 28)
+                                            AvatarView(url: nostrService.profiles[pubkey]?.pictureURL, pubkey: pubkey, size: 28)
                                             Text(nostrService.profiles[pubkey]?.bestName ?? String(pubkey.prefix(8)))
                                                 .font(.appSystem(size: 13))
                                                 .foregroundColor(.primary)
@@ -440,8 +438,7 @@ struct ConversationRow: View {
     var body: some View {
         HStack(spacing: 14) {
             ZStack(alignment: .topTrailing) {
-                AvatarView(url: counterpartyProfile?.pictureURL, pubkey: conversation.id)
-                    .frame(width: 52, height: 52)
+                AvatarView(url: counterpartyProfile?.pictureURL, pubkey: conversation.id, size: 52)
                     .clipShape(Circle())
 
                 if hasUnread {
