@@ -105,8 +105,7 @@ struct GroupConversationRow: View {
         HStack(spacing: 14) {
             ZStack(alignment: .topTrailing) {
                 if let url = conversation.info?.pictureURL {
-                    AvatarView(url: url, pubkey: conversation.identifier.groupId)
-                        .frame(width: 52, height: 52)
+                    AvatarView(url: url, pubkey: conversation.identifier.groupId, size: 52)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 } else {
                     RoundedRectangle(cornerRadius: 12)

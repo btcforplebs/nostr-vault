@@ -55,8 +55,7 @@ struct GroupInfoView: View {
                 Section {
                     VStack(spacing: 12) {
                         if let url = conversation?.info?.pictureURL {
-                            AvatarView(url: url, pubkey: identifier.groupId)
-                                .frame(width: 80, height: 80)
+                            AvatarView(url: url, pubkey: identifier.groupId, size: 80)
                                 .clipShape(RoundedRectangle(cornerRadius: 16))
                         } else {
                             RoundedRectangle(cornerRadius: 16)
@@ -114,9 +113,9 @@ struct GroupInfoView: View {
                             HStack(spacing: 12) {
                                 AvatarView(
                                     url: nostrService.profiles[member.pubkey]?.pictureURL,
-                                    pubkey: member.pubkey
+                                    pubkey: member.pubkey,
+                                    size: 36
                                 )
-                                .frame(width: 36, height: 36)
                                 .clipShape(Circle())
 
                                 VStack(alignment: .leading, spacing: 2) {

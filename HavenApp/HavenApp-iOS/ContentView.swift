@@ -175,10 +175,10 @@ struct iPadSidebarView: View {
                         HStack(spacing: 12) {
                             AvatarView(
                                 url: nostrService.profiles[activeHex]?.pictureURL,
-                                pubkey: activeHex
+                                pubkey: activeHex,
+                                size: 32
                             )
                             .id(activeHex)
-                            .frame(width: 32, height: 32)
                             .overlay(
                                 Circle()
                                     .stroke(
