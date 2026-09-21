@@ -73,6 +73,15 @@ struct FeedThreadCard: View {
             } else if isExpanded && replies.count > Self.collapsedReplyLimit {
                 collapseButton
             }
+
+            // Always present, regardless of the fold: the fold only ever grows
+            // this card to the full 3-plus-replies conversation, it never
+            // leaves the timeline. This is the labelled way to do that — the
+            // second tap on an open note reaches the same place, but has no
+            // label of its own.
+            if let anchor = threadAnchorNote {
+                openThreadRow(for: anchor)
+            }
         }
         .threadCard()
         .animation(Motion.panel, value: isExpanded)
@@ -207,6 +216,31 @@ struct FeedThreadCard: View {
         .buttonStyle(.plain)
         .padding(.leading, 22)
         .padding(.top, 2)
+    }
+
+    /// The note to open the full thread screen on — the root when it has
+    /// loaded, otherwise any reply, so the row works even while the root is
+    /// still in flight.
+    private var threadAnchorNote: FeedNote? {
+        thread.root ?? replies.first?.note
+    }
+
+    private func openThreadRow(for note: FeedNote) -> some View {
+        Button(action: { onOpen?(note) }) {
+            HStack(spacing: 6) {
+                Text("Open thread")
+                    .font(.appSystem(size: 12, weight: .bold, design: .rounded))
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.appSystem(size: 11, weight: .bold))
+            }
+            .foregroundColor(.secondary)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 22)
+        .disabled(onOpen == nil)
     }
 
     /// How many notes in this thread answer `id` directly.
