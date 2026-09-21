@@ -244,10 +244,36 @@ class FeedViewModel @Inject constructor(
      * The current feed's notes grouped into conversations. Empty outside
      * threaded mode. Mirrors iOS `FeedView.feedThreads`.
      */
+    /**
+     * Which of the ancestors this feed is missing have actually been fetched.
+     *
+     * The grouping is built from the note list plus whatever `findNote` could
+     * resolve *at that moment*, so a root that arrives afterwards changes
+     * nothing until the note list itself changes — which on a quiet feed left
+     * a thread card stuck on "Loading the start of this thread..." with the
+     * root already sitting in the cache. Regrouping on this, rather than on
+     * the whole cache, keeps quoted notes and repost originals (which arrive
+     * constantly and change no thread) from regrouping the timeline.
+     */
+    private val resolvedAncestorIds: Flow<Set<String>> = combine(
+        filteredNotes,
+        feedService.parentNotesCache,
+    ) { notes, cache ->
+        if (cache.isEmpty()) return@combine emptySet()
+        val gaps = buildSet {
+            for (note in notes) {
+                note.parentEventId?.let { add(it) }
+                add(note.threadRootId)
+            }
+        }
+        cache.keys.intersect(gaps)
+    }.distinctUntilChanged()
+
     val feedThreads: StateFlow<List<FeedThread>> = combine(
         filteredNotes,
         threadedModeEnabled,
-    ) { notes, threaded ->
+        resolvedAncestorIds,
+    ) { notes, threaded, _ ->
         if (!threaded) emptyList() else FeedThreadGrouping.build(notes) { id -> feedService.findNote(id) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

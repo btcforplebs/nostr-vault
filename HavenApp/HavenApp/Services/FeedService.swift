@@ -3263,7 +3263,13 @@ class FeedService: ObservableObject {
         parentNotesCache[id] = note
         noteReferencedNoteArrived(id)
         if parentNotesCache.count > 500 {
-            let referencedIds = Set(notes.compactMap { $0.parentEventId })
+            // Parent edges alone are not what the timeline asks for: a thread
+            // card fetches the *root*, which for anything deeper than a direct
+            // reply is no note's parent, and quotes and repost originals are
+            // cached here too. Trimming on parents only evicted them the moment
+            // the cache filled, and the card that had just fetched its root
+            // went back to "Loading the start of this thread...".
+            let referencedIds = ReferencedNoteRepair.referencedIds(in: notes)
             parentNotesCache = parentNotesCache.filter { referencedIds.contains($0.key) }
         }
         NostrService.shared.fetchMissingProfiles(for: [pubkey])

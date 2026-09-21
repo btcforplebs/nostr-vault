@@ -464,4 +464,10 @@ struct ReferencedNoteSignal: Equatable {
     var ids: Set<String> = []
 }
 
-extension FeedNote: ReferencedNoteRow {}
+extension FeedNote: ReferencedNoteRow {
+    /// NIP-10 root marker. nil for a root note and for a legacy reply that
+    /// carries no marked `e` tag — in both cases the parent edge is enough.
+    var threadRootEventId: String? {
+        tags.first { $0.count >= 4 && $0[0] == "e" && $0[3] == "root" }?[1]
+    }
+}

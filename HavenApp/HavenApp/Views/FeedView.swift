@@ -1434,6 +1434,26 @@ struct FeedView: View {
             notes: feedService.filteredNotes, arrivedIds: arrivedIds))
     }
 
+    /// A fetched ancestor changes the *shape* of the timeline, not just a row:
+    /// the thread grouping is built from `filteredNotes` plus whatever
+    /// `findNote` could resolve at the time, so a root that arrives afterwards
+    /// is invisible to it until something else touches the note list. That is
+    /// what left a thread card stuck on "Loading the start of this thread..."
+    /// on a quiet feed — the root had arrived, nobody regrouped.
+    ///
+    /// Only a note that fills a gap in the current grouping can change it, so
+    /// the rebuild is gated on that rather than run for every referenced note
+    /// (quotes and repost originals arrive constantly and change nothing here).
+    private func regroupIfGapFilled(_ arrivedIds: Set<String>) {
+        guard isThreadedModeActive, !arrivedIds.isEmpty else { return }
+        var gapIds = Set(feedThreads.lazy.filter { $0.root == nil }.map(\.rootId))
+        for note in feedService.filteredNotes {
+            if let parentId = note.parentEventId { gapIds.insert(parentId) }
+        }
+        guard !arrivedIds.isDisjoint(with: gapIds) else { return }
+        rebuildThreadsIfNeeded()
+    }
+
     /// noteStats changed — re-resolve rows whose stats actually differ.
     private func updateRowDataForNoteStats(old: [String: NoteStats], new: [String: NoteStats]) {
         var changed = Set<String>()
@@ -1870,7 +1890,10 @@ struct FeedView: View {
                 ))
                 .modifier(ReferencedNoteObserver(
                     feedService: feedService,
-                    onReferencedNotes: { refreshRowsForReferencedNotes($0) }
+                    onReferencedNotes: {
+                        refreshRowsForReferencedNotes($0)
+                        regroupIfGapFilled($0)
+                    }
                 ))
                 // Layout is stored per feed, so switching feeds can switch
                 // layout. Regroup immediately rather than waiting on the next
