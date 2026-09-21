@@ -744,8 +744,7 @@ struct AccountsSettingsView: View {
         let signingMode = configService.config.accountSigningModes[npub] ?? (hasBunker ? "nip46" : "local")
 
         return HStack(spacing: 12) {
-            AvatarView(url: profile?.pictureURL, pubkey: hex)
-                .frame(width: 38, height: 38)
+            AvatarView(url: profile?.pictureURL, pubkey: hex, size: 38)
                 .overlay(
                     Circle().stroke(
                         isActive ? (isOwner ? Color.havenPurple : Color.orange) : Color.clear,
@@ -1108,8 +1107,7 @@ struct AccountDetailView: View {
         let displayName = profile?.bestName ?? String(npub.prefix(12)) + "..."
 
         HStack(spacing: 12) {
-            AvatarView(url: profile?.pictureURL, pubkey: hex)
-                .frame(width: 48, height: 48)
+            AvatarView(url: profile?.pictureURL, pubkey: hex, size: 48)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -1844,8 +1842,7 @@ struct BlockedSettingsView: View {
                         let displayName = profile?.bestName ?? String(npub.prefix(12)) + "..."
 
                         HStack {
-                            AvatarView(url: profile?.pictureURL, pubkey: hex)
-                                .frame(width: 32, height: 32)
+                            AvatarView(url: profile?.pictureURL, pubkey: hex, size: 32)
                             VStack(alignment: .leading) {
                                 Text(displayName).fontWeight(.semibold)
                                 Text(npub).font(.appSystem(size: 10, design: .monospaced)).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
@@ -1869,8 +1866,7 @@ struct BlockedSettingsView: View {
                         let displayName = profile?.bestName ?? String(entry.npub.prefix(12)) + "..."
 
                         HStack {
-                            AvatarView(url: profile?.pictureURL, pubkey: hex)
-                                .frame(width: 32, height: 32)
+                            AvatarView(url: profile?.pictureURL, pubkey: hex, size: 32)
                             VStack(alignment: .leading) {
                                 Text(displayName).fontWeight(.semibold)
                                 Text("Max \(entry.maxPosts) post\(entry.maxPosts == 1 ? "" : "s") visible")

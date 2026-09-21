@@ -203,8 +203,7 @@ struct GroupBrowserRow: View {
     var body: some View {
         HStack(spacing: 14) {
             if let url = info.pictureURL {
-                AvatarView(url: url, pubkey: info.identifier.groupId)
-                    .frame(width: 48, height: 48)
+                AvatarView(url: url, pubkey: info.identifier.groupId, size: 48)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             } else {
                 RoundedRectangle(cornerRadius: 10)
