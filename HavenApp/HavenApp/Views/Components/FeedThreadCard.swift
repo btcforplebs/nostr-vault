@@ -74,12 +74,16 @@ struct FeedThreadCard: View {
                 collapseButton
             }
 
-            // Always present, regardless of the fold: the fold only ever grows
-            // this card to the full 3-plus-replies conversation, it never
-            // leaves the timeline. This is the labelled way to do that — the
-            // second tap on an open note reaches the same place, but has no
-            // label of its own.
-            if let anchor = threadAnchorNote {
+            // Present whatever the fold is doing: the fold only ever grows
+            // this card to the whole conversation, it never leaves the
+            // timeline. This is the labelled way to do that — the second tap
+            // on an open note reaches the same place but has no label.
+            //
+            // Only when there is a conversation to open. A reply-less note is
+            // its own one-line thread, and most of a Global feed is exactly
+            // that — a row reading "Open thread" under every one of them is
+            // noise, and it is not even true.
+            if !replies.isEmpty, let anchor = threadAnchorNote {
                 openThreadRow(for: anchor)
             }
         }
@@ -219,8 +223,8 @@ struct FeedThreadCard: View {
     }
 
     /// The note to open the full thread screen on — the root when it has
-    /// loaded, otherwise any reply, so the row works even while the root is
-    /// still in flight.
+    /// loaded, otherwise the first reply, so the row still works while the
+    /// root is in flight.
     private var threadAnchorNote: FeedNote? {
         thread.root ?? replies.first?.note
     }
