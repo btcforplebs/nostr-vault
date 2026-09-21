@@ -148,6 +148,25 @@ data class FeedNote(
     override fun hashCode(): Int = id.hashCode()
 
     companion object {
+        /**
+         * Every event id these notes can ask the referenced-note cache for:
+         * thread parents, thread roots, kind-6 originals and quoted notes.
+         *
+         * The cache is trimmed against this. Trimming on parent edges alone
+         * evicted the *root* of any thread deeper than a direct reply — no
+         * row's parent points at it — so a thread card that had just fetched
+         * its root lost it again and fell back to "Loading the start of this
+         * thread...". Mirrors iOS `ReferencedNoteRepair.referencedIds(in:)`.
+         */
+        fun referencedIds(notes: List<FeedNote>): Set<String> = buildSet {
+            for (note in notes) {
+                note.parentEventId?.let { add(it) }
+                note.repostedEventId?.let { add(it) }
+                add(note.threadRootId)
+                addAll(note.quotedEventIds)
+            }
+        }
+
         // Regex patterns (compiled once)
         private val MEDIA_REGEX = Regex(
             """https?://[^\s<>")\]]*\.(?:jpg|jpeg|png|gif|webp|svg|bmp|tiff|avif|mp4|mov|webm|avi|mkv|m4v|mp3|m4a|wav|ogg|aac|flac|opus)(?:[?#][^\s<>")\]]*[^\s<>")\].,;:!?'"])?""",

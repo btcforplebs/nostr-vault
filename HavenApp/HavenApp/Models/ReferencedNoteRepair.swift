@@ -8,6 +8,10 @@ protocol ReferencedNoteRow {
     var parentEventId: String? { get }
     var repostedEventId: String? { get }
     var quotedEventIds: [String] { get }
+    /// The NIP-10 thread root. Distinct from `parentEventId` for anything
+    /// deeper than a direct reply, and the thread card asks for it by id, so
+    /// it counts as referenced even when no row's parent points at it.
+    var threadRootEventId: String? { get }
 }
 
 /// Pure selection logic for `ReferencedNoteSignal`: given the notes currently
@@ -31,6 +35,21 @@ enum ReferencedNoteRepair {
             if note.quotedEventIds.contains(where: arrivedIds.contains) {
                 ids.insert(note.id)
             }
+        }
+        return ids
+    }
+
+    /// Every event id `notes` can ask the referenced-note cache for. The cache
+    /// is trimmed against this, so anything still reachable from the timeline
+    /// survives — an id left out here is fetched, cached, then evicted, and
+    /// the surface waiting on it falls back to its loading state forever.
+    static func referencedIds<T: ReferencedNoteRow>(in notes: [T]) -> Set<String> {
+        var ids = Set<String>()
+        for note in notes {
+            if let parentId = note.parentEventId { ids.insert(parentId) }
+            if let refId = note.repostedEventId { ids.insert(refId) }
+            if let rootId = note.threadRootEventId { ids.insert(rootId) }
+            ids.formUnion(note.quotedEventIds)
         }
         return ids
     }
