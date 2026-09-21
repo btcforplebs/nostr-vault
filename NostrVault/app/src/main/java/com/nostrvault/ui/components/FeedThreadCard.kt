@@ -10,10 +10,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +48,10 @@ fun FeedThreadCard(
     profileFor: (String) -> FeedProfile?,
     profiles: Map<String, FeedProfile> = emptyMap(),
     focusedNoteId: String? = null,
+    openNoteId: String? = null,
+    onOpenNoteChange: (String?) -> Unit = {},
+    isExpanded: Boolean = false,
+    onExpandedChange: (Boolean) -> Unit = {},
     onProfileClick: (String) -> Unit,
     onOpenThread: (FeedNote) -> Unit,
     onFetchMissingNote: (String) -> Unit = {},
@@ -60,8 +60,6 @@ fun FeedThreadCard(
 ) {
     val isOled = LocalOledMode.current
     val themeColor = LocalNostrVaultColors.current.primary
-    var isExpanded by remember(thread.rootId) { mutableStateOf(false) }
-    var openNoteId by remember(thread.rootId) { mutableStateOf<String?>(null) }
 
     val replies = thread.replies
     val visibleReplies = if (!isExpanded && replies.size > COLLAPSED_REPLY_LIMIT) {
@@ -81,12 +79,12 @@ fun FeedThreadCard(
 
     fun directReplyCount(id: String): Int = thread.entries.count { it.note.parentEventId == id }
 
+    // ThreadCardLine only wires onTap on the condensed branch, which only
+    // renders when this note is not the open one — so tapping always opens it;
+    // going to the thread happens from the second tap on the *open* row instead
+    // (wired into expandedRow's own onNoteClick by the caller).
     fun tapAction(note: FeedNote): () -> Unit = {
-        if (openNoteId == note.id) {
-            onOpenThread(note)
-        } else {
-            openNoteId = note.id
-        }
+        onOpenNoteChange(note.id)
     }
 
     Column(
@@ -136,14 +134,14 @@ fun FeedThreadCard(
                 icon = NostrVaultIcons.ChevronDown,
                 title = "Show $hiddenReplyCount more ${if (hiddenReplyCount == 1) "reply" else "replies"}",
                 themeColor = themeColor,
-                onClick = { isExpanded = true },
+                onClick = { onExpandedChange(true) },
             )
         } else if (isExpanded && replies.size > COLLAPSED_REPLY_LIMIT) {
             ThreadFoldButton(
                 icon = NostrVaultIcons.ChevronDown,
                 title = "Show fewer replies",
                 themeColor = themeColor,
-                onClick = { isExpanded = false },
+                onClick = { onExpandedChange(false) },
             )
         }
     }

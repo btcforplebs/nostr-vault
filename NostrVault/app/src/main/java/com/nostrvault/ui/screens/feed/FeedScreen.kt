@@ -128,11 +128,18 @@ fun FeedScreen(
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
 
-    // Inline expansion state for compact mode (iOS parity: tap expands inline first)
+    // Inline expansion state for compact mode (iOS parity: tap expands inline first).
+    // Threaded mode's cards share this same field rather than keeping their own —
+    // one selection across both condensed layouts, and it survives a card being
+    // recycled off-screen and back by a LazyColumn (per-card `remember` would not).
     var expandedNoteId by remember { mutableStateOf<String?>(null) }
 
-    // Reset expanded note when feed mode changes or compact mode is toggled off
-    LaunchedEffect(feedMode, isCompact) {
+    // Per-thread "show more replies" fold, hoisted for the same reason: a
+    // LazyColumn item's own `remember` is dropped when it scrolls out of view.
+    val threadFolds = remember { mutableStateMapOf<String, Boolean>() }
+
+    // Reset expanded note when feed mode or layout mode changes
+    LaunchedEffect(feedMode, isCompact, isThreaded) {
         expandedNoteId = null
     }
 
@@ -430,6 +437,10 @@ fun FeedScreen(
                                 thread = thread,
                                 profileFor = { pubkey -> allProfiles[pubkey] },
                                 profiles = allProfiles,
+                                openNoteId = expandedNoteId,
+                                onOpenNoteChange = { id -> expandedNoteId = id },
+                                isExpanded = threadFolds[thread.rootId] ?: false,
+                                onExpandedChange = { expanded -> threadFolds[thread.rootId] = expanded },
                                 onProfileClick = onProfileClick,
                                 onOpenThread = { note -> onNoteClick(note.id) },
                                 onFetchMissingNote = viewModel::fetchMissingNote,
