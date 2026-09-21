@@ -15,11 +15,11 @@ struct CondensedEngagement: Equatable {
 
 /// The single condensed representation of a note.
 ///
-/// Before this existed the app had three near-identical copies — one in the
-/// feed's compact row, one for a thread's ancestors, one for its replies — and
-/// they had drifted apart on avatar size, line limits and card chrome. Every
-/// condensed surface now draws through here, so a change to the condensed look
-/// happens once.
+/// Condensed is a property of the feed and nothing else: the feed's condensed
+/// and threaded layouts both draw through here, and the thread view is always
+/// expanded so a reply is one tap from wherever you landed. Keeping density on
+/// one axis is what stops the two surfaces from disagreeing about how dense
+/// "condensed" is.
 struct CondensedNoteLine: View {
     enum Style {
         /// Standalone row in the feed: its own bordered card.
@@ -37,7 +37,7 @@ struct CondensedNoteLine: View {
     /// 0 is a root or standalone note; each step indents under a thread rail.
     var depth: Int = 0
     var style: Style = .card
-    /// Draws the purple selection treatment — the focused note in a thread.
+    /// Draws the purple selection treatment — the focused note in a thread card.
     var isFocused: Bool = false
     /// Replies in this thread directly under this note.
     var replyCount: Int = 0
@@ -59,9 +59,32 @@ struct CondensedNoteLine: View {
 
     /// The root anchors the line; replies step in under it. Capped by the
     /// grouper so a deep argument can never indent content off-screen.
-    private var indentWidth: CGFloat { CGFloat(min(depth, FeedThreadGrouping.maxDepth)) * 14 }
+    private var indentWidth: CGFloat { CondensedNoteLine.indentWidth(forDepth: depth) }
 
-    private var avatarSize: CGFloat { isRoot ? 32 : 26 }
+    /// One source for the indent so a line and the full row that replaces it
+    /// when tapped sit on the same left edge.
+    static func indentWidth(forDepth depth: Int) -> CGFloat {
+        CGFloat(min(depth, FeedThreadGrouping.maxDepth)) * 14
+    }
+
+    /// The rail that ties a reply back to what it answers, drawn standalone so
+    /// an expanded row can keep the same thread line a condensed one has.
+    static func rail(isOLED: Bool) -> some View {
+        Rectangle()
+            .fill(Color.havenPurple.opacity(isOLED ? 0.35 : 0.22))
+            .frame(width: 1.5)
+            .padding(.trailing, 8)
+            .accessibilityHidden(true)
+    }
+
+    private var avatarSize: CGFloat { CondensedNoteLine.avatarSize(forDepth: depth) }
+
+    /// One source for the avatar size so a line and the full row that
+    /// replaces it when tapped can match it exactly — opening a line adds an
+    /// action bar, not a size change.
+    static func avatarSize(forDepth depth: Int) -> CGFloat {
+        depth == 0 ? 32 : 26
+    }
     private var nameSize: CGFloat { isRoot ? 13 : 12 }
     private var bodySize: CGFloat { isRoot ? 14 : 13 }
     private var bodyLineLimit: Int { isRoot ? 3 : 2 }
@@ -111,11 +134,7 @@ struct CondensedNoteLine: View {
 
     /// The vertical line that ties a reply back to what it answers.
     private var threadRail: some View {
-        Rectangle()
-            .fill(Color.havenPurple.opacity(isOLED ? 0.35 : 0.22))
-            .frame(width: 1.5)
-            .padding(.trailing, 8)
-            .accessibilityHidden(true)
+        CondensedNoteLine.rail(isOLED: isOLED)
     }
 
     private var headerRow: some View {
@@ -320,8 +339,7 @@ struct CondensedNoteLine: View {
 }
 
 /// The card a condensed conversation sits in — one surface for the whole
-/// thread, so replies read as a block instead of a stack of boxes. Shared by
-/// the feed's threaded mode and the thread view's condensed layout.
+/// thread, so replies read as a block instead of a stack of boxes.
 struct ThreadCardBackground: ViewModifier {
     var isOLED: Bool = ConfigService.shared.config.useOLED
 

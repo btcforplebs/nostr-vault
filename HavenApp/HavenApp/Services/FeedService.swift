@@ -1721,6 +1721,19 @@ class FeedService: ObservableObject {
         return noteIndex[id]
     }
 
+    /// The note a reply should actually answer. A bare kind-6 repost is a
+    /// wrapper with no body of its own, so replying to one has to address the
+    /// note it carries. Every reply entry point — the feed row, a thread card's
+    /// opened line, and both of the thread view's reply buttons — resolves
+    /// through here, because each one used to carry its own copy of this rule
+    /// and one of them was always missing it.
+    func replyTarget(for note: FeedNote) -> FeedNote {
+        guard note.kind == 6,
+              let refId = note.repostedEventId,
+              let original = findNote(id: refId) else { return note }
+        return original
+    }
+
     /// Finds a note matching an naddr coordinate ("naddr:<kind>:<pubkey>:<d-tag>").
     private func findNoteByNaddrCoordinate(_ coordinate: String) -> FeedNote? {
         let matcher = QuoteReference.matcher(for: coordinate)

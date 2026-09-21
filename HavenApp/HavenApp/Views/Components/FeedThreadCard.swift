@@ -3,19 +3,41 @@ import SwiftUI
 /// One conversation in the feed: a root note plus its replies, drawn as a
 /// single card of condensed lines rather than one card per note.
 ///
+/// A tap means exactly what it means in the feed's other condensed layout:
+/// the first tap opens that line in place into the full note with its action
+/// bar, a second tap on the open note goes to the thread. Replying is one tap
+/// from the timeline, and the gesture is the same one whichever condensed
+/// layout you are in.
+///
 /// Replies past `collapsedReplyLimit` stay folded so a long argument can't take
 /// over the timeline; the fold opens in place instead of pushing a new screen.
 struct FeedThreadCard: View {
     let thread: FeedThread<FeedNote>
+    /// Which note is open in place. Feed-wide, and owned by the feed, for two
+    /// reasons: opening a note has to close whatever the condensed layout
+    /// opened — it is one gesture, so it is one selection — and a card
+    /// scrolled out of a LazyVStack loses its own `@State`, which would
+    /// silently collapse an open note while you were away.
+    @Binding var openNoteId: String?
+    /// Whether this thread's fold is open. Held by the feed for the same
+    /// recycling reason.
+    @Binding var isExpanded: Bool
     let profileFor: (String) -> FeedProfile?
+    /// Resolves the row data a full note needs. Required for the expanded row;
+    /// without it a line has nothing to expand into and stays condensed.
+    var rowDataFor: ((FeedNote) -> FeedNoteRowData)? = nil
     var focusedNoteId: String? = nil
-    /// Opens the thread at a given note. nil makes the lines non-interactive,
-    /// which the enclosing navigation link relies on.
-    var onSelect: ((FeedNote) -> Void)? = nil
+    /// Opens the thread at a given note — the second tap, on an already-open
+    /// note. nil makes the lines non-interactive, which the enclosing
+    /// navigation link relies on.
+    var onOpen: ((FeedNote) -> Void)? = nil
+    var onReply: ((FeedNote) -> Void)? = nil
+    var onQuote: ((FeedNote) -> Void)? = nil
     var onProfile: ((String) -> Void)? = nil
+    var onMedia: ((URL, [URL]) -> Void)? = nil
 
-    @State private var isExpanded = false
     @Environment(\.feedActions) private var actions
+    @EnvironmentObject private var configService: ConfigService
 
     /// Three replies is enough to show a conversation is happening without
     /// letting one thread own the screen.
@@ -29,6 +51,10 @@ struct FeedThreadCard: View {
     }
 
     private var hiddenReplyCount: Int { replies.count - visibleReplies.count }
+
+    /// A line can only open in place if the caller can supply row data and the
+    /// card is interactive at all.
+    private var canOpenInPlace: Bool { rowDataFor != nil && onOpen != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -47,9 +73,23 @@ struct FeedThreadCard: View {
             } else if isExpanded && replies.count > Self.collapsedReplyLimit {
                 collapseButton
             }
+
+            // Present whatever the fold is doing: the fold only ever grows
+            // this card to the whole conversation, it never leaves the
+            // timeline. This is the labelled way to do that — the second tap
+            // on an open note reaches the same place but has no label.
+            //
+            // Only when there is a conversation to open. A reply-less note is
+            // its own one-line thread, and most of a Global feed is exactly
+            // that — a row reading "Open thread" under every one of them is
+            // noise, and it is not even true.
+            if !replies.isEmpty, let anchor = threadAnchorNote {
+                openThreadRow(for: anchor)
+            }
         }
         .threadCard()
         .animation(Motion.panel, value: isExpanded)
+        .animation(Motion.panel, value: openNoteId)
         .onAppear {
             // The feed can hold replies whose root it never loaded. Fetch it so
             // the conversation gets its opening line.
@@ -63,8 +103,16 @@ struct FeedThreadCard: View {
 
     @ViewBuilder
     private func line(for entry: FeedThreadEntry<FeedNote>, replyCount: Int) -> some View {
+        if openNoteId == entry.note.id, let rowDataFor {
+            openRow(for: entry, rowData: rowDataFor(entry.note))
+        } else {
+            condensedLine(for: entry, replyCount: replyCount)
+        }
+    }
+
+    private func condensedLine(for entry: FeedThreadEntry<FeedNote>, replyCount: Int) -> some View {
         let note = entry.note
-        CondensedNoteLine(
+        return CondensedNoteLine(
             note: note,
             profile: profileFor(note.pubkey),
             depth: entry.depth,
@@ -74,8 +122,54 @@ struct FeedThreadCard: View {
             contentOverride: note.kind == 30023 ? note.longFormDisplayTitle : nil,
             mediaURLs: note.mediaURLs,
             onProfile: onProfile,
-            onTap: onSelect.map { select in { select(note) } }
+            onTap: tapAction(for: note)
         )
+    }
+
+    /// The first tap opens a line in place; with no row data to expand into,
+    /// it falls back to opening the thread so the line is never a dead target.
+    private func tapAction(for note: FeedNote) -> (() -> Void)? {
+        guard let onOpen else { return nil }
+        guard canOpenInPlace else { return { onOpen(note) } }
+        return { openNoteId = note.id }
+    }
+
+    /// A line opened in place: the full note, its action bar, and the same
+    /// rail and indent the condensed line had, so nothing shifts sideways
+    /// under the tap. Tapping it again goes to the thread.
+    private func openRow(for entry: FeedThreadEntry<FeedNote>, rowData: FeedNoteRowData) -> some View {
+        let note = entry.note
+        return HStack(alignment: .top, spacing: 0) {
+            if entry.depth > 0 {
+                CondensedNoteLine.rail(isOLED: configService.config.useOLED)
+            }
+
+            FeedNoteRow(
+                note: note,
+                profile: profileFor(note.pubkey),
+                rowData: rowData,
+                onReply: { onReply?(note) },
+                onQuote: { onQuote?(note) },
+                onProfile: onProfile,
+                onMedia: onMedia,
+                // The rail already says what this answers, and the card owns
+                // the chrome — a second card inside it reads as a mistake.
+                showParent: false,
+                layoutMode: .wide,
+                isFocused: note.id == focusedNoteId,
+                suppressCardStyling: true,
+                // Match the condensed line's own avatar size at this depth so
+                // opening a line adds its action bar without the avatar
+                // jumping in size — the rail and indent already leave this
+                // row less width than a flat feed row gets.
+                avatarSize: CondensedNoteLine.avatarSize(forDepth: entry.depth)
+            )
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+            .onTapGesture { onOpen?(note) }
+        }
+        .padding(.leading, CondensedNoteLine.indentWidth(forDepth: entry.depth))
+        .transition(.opacity)
     }
 
     /// Stands in for a root the relay hasn't returned yet, so replies aren't
@@ -126,6 +220,31 @@ struct FeedThreadCard: View {
         .buttonStyle(.plain)
         .padding(.leading, 22)
         .padding(.top, 2)
+    }
+
+    /// The note to open the full thread screen on — the root when it has
+    /// loaded, otherwise the first reply, so the row still works while the
+    /// root is in flight.
+    private var threadAnchorNote: FeedNote? {
+        thread.root ?? replies.first?.note
+    }
+
+    private func openThreadRow(for note: FeedNote) -> some View {
+        Button(action: { onOpen?(note) }) {
+            HStack(spacing: 6) {
+                Text("Open thread")
+                    .font(.appSystem(size: 12, weight: .bold, design: .rounded))
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.appSystem(size: 11, weight: .bold))
+            }
+            .foregroundColor(.secondary)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 22)
+        .disabled(onOpen == nil)
     }
 
     /// How many notes in this thread answer `id` directly.

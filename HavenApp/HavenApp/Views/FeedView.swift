@@ -171,6 +171,10 @@ struct FeedView: View {
 
     /// Compact mode state: tracks which note is currently expanded (nil = all collapsed)
     @State private var expandedNoteId: String? = nil
+    /// Thread cards whose reply fold is open, by thread root id. Held here
+    /// rather than in the card because a LazyVStack discards the `@State` of
+    /// a card it scrolls off, which would refold a thread behind your back.
+    @State private var expandedThreadIds: Set<String> = []
 
     /// Conversations built from `filteredNotes` for threaded mode. Rebuilt on
     /// the same signals as the row-data cache and left empty in the other two
@@ -446,12 +450,7 @@ struct FeedView: View {
             profile: profile,
             rowData: rowData,
             onReply: {
-                if note.kind == 6, let refId = note.repostedEventId,
-                   let original = feedService.findNote(id: refId) {
-                    composeContext = ComposeContext(replyTo: original, quoteTo: nil)
-                } else {
-                    composeContext = ComposeContext(replyTo: note, quoteTo: nil)
-                }
+                composeContext = ComposeContext(replyTo: feedService.replyTarget(for: note), quoteTo: nil)
             },
             onQuote: {
                 composeContext = ComposeContext(replyTo: nil, quoteTo: note)
@@ -1718,9 +1717,40 @@ struct FeedView: View {
                             ForEach(feedThreads) { thread in
                                 FeedThreadCard(
                                     thread: thread,
+                                    // One open note across both condensed
+                                    // layouts: the same gesture, so the same
+                                    // selection.
+                                    openNoteId: $expandedNoteId,
+                                    isExpanded: Binding(
+                                        get: { expandedThreadIds.contains(thread.rootId) },
+                                        set: { isOpen in
+                                            if isOpen {
+                                                expandedThreadIds.insert(thread.rootId)
+                                            } else {
+                                                expandedThreadIds.remove(thread.rootId)
+                                            }
+                                        }
+                                    ),
                                     profileFor: { nostrService.profiles[$0] },
-                                    onSelect: { openNoteDetail($0) },
-                                    onProfile: { showingProfileKey = IdentifiableString(id: $0) }
+                                    rowDataFor: { note in
+                                        rowDataCache[note.id] ?? FeedNoteRowData.resolve(
+                                            for: note,
+                                            feedService: feedService,
+                                            nostrService: nostrService
+                                        )
+                                    },
+                                    onOpen: { openNoteDetail($0) },
+                                    onReply: {
+                                        composeContext = ComposeContext(
+                                            replyTo: feedService.replyTarget(for: $0),
+                                            quoteTo: nil
+                                        )
+                                    },
+                                    onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: $0) },
+                                    onProfile: { showingProfileKey = IdentifiableString(id: $0) },
+                                    onMedia: { url, urls in
+                                        showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
+                                    }
                                 )
                                 .padding(.horizontal, 12)
                             }
@@ -2173,6 +2203,11 @@ struct FeedNoteRow: View {
     var layoutMode: NoteLayoutMode = .sideBySide
     var isFocused: Bool = false
     var suppressCardStyling: Bool = false
+    /// Lets a caller shrink the avatar without touching anything else about
+    /// the full layout — used when this row opens in place inside a thread
+    /// card, where the rail and indent already eat into the width a plain
+    /// feed row gets for free.
+    var avatarSize: CGFloat = 40
 
     // Zero ObservableObject subscriptions — all data comes via rowData/actions
     @Environment(\.feedActions) private var actions
@@ -2280,7 +2315,7 @@ struct FeedNoteRow: View {
                 NoteNavigationLink(note: parent) {
                     HStack(alignment: .top, spacing: 12) {
                         VStack(spacing: 0) {
-                            AvatarView(url: rowData.parentProfile?.pictureURL, pubkey: parent.pubkey, size: 40)
+                            AvatarView(url: rowData.parentProfile?.pictureURL, pubkey: parent.pubkey, size: avatarSize)
                                 .onTapGesture { toggleParentUserMenu() }
 
                             if showingParentUserMenu {
@@ -2418,7 +2453,7 @@ struct FeedNoteRow: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(spacing: 6) {
-                        AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey, size: 40)
+                        AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey, size: avatarSize)
                             .onTapGesture { toggleUserMenu() }
                         if showingUserMenu {
                             userMenuToolbar
@@ -2482,7 +2517,7 @@ struct FeedNoteRow: View {
                             .frame(width: 2, height: 10)
                     }
 
-                    AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey, size: 40)
+                    AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey, size: avatarSize)
                         .onTapGesture { toggleUserMenu() }
 
                     if showingUserMenu {
