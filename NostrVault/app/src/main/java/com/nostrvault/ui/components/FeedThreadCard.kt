@@ -144,6 +144,36 @@ fun FeedThreadCard(
                 onClick = { onExpandedChange(false) },
             )
         }
+
+        // Always present, regardless of the fold: the fold only ever grows
+        // this card to the full conversation, it never leaves the timeline.
+        // This is the labelled way to do that — the second tap on an open
+        // note reaches the same place, but has no label of its own.
+        val anchor = root ?: replies.firstOrNull()?.note
+        if (anchor != null) {
+            OpenThreadRow(onClick = { onOpenThread(anchor) })
+        }
+    }
+}
+
+@Composable
+private fun OpenThreadRow(onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 22.dp, top = 2.dp)
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp, horizontal = 10.dp),
+    ) {
+        Text(text = "Open thread", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.weight(1f))
+        Icon(
+            NostrVaultIcons.Navigate,
+            contentDescription = null,
+            tint = SecondaryText,
+            modifier = Modifier.size(11.dp),
+        )
     }
 }
 
