@@ -73,6 +73,11 @@ class FeedService @Inject constructor(
         private const val SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000L // 7 days (matches iOS)
         private const val SNAPSHOT_MAX_NOTES = 200
         private const val EXTENDED_NETWORK_CACHE_MS = 60 * 60 * 1000L // 1 hour
+        // A tally missing a relay's answers is held briefly rather than for the
+        // full hour — see loadExtendedNetwork.
+        private const val PARTIAL_EXTENDED_NETWORK_CACHE_MS = 5 * 60 * 1000L // 5 minutes
+        // Follows per kind-3 REQ. Matches iOS fetchExtendedNetworkInParallel.
+        private const val EXTENDED_NETWORK_CHUNK = 200
         private const val MAX_SEEN_IDS = 10_000
         private const val RECOMPUTE_DEBOUNCE_MS = 50L
         private const val AVATAR_PREWARM_COUNT = 80 // Warm cache for ~4 screens of visible notes
@@ -345,6 +350,8 @@ class FeedService @Inject constructor(
 
     // Extended network caching
     private var lastExtendedNetworkLoadTime = 0L
+    /** True when the last extended-network tally ended on a relay timeout. */
+    private var extendedNetworkWasPartial = false
 
     // Guards loadMore() against re-entry from scroll-triggered re-fires
     private val isLoadingMore = AtomicBoolean(false)
@@ -768,40 +775,141 @@ class FeedService @Inject constructor(
     // Extended network (discovery mode)
     // ══════════════════════════════════════════════════════════════════
 
+    /**
+     * Builds the discovery feed's author set: the people your follows follow,
+     * ranked by how many of your follows follow them.
+     *
+     * This used to walk [NostrService.relayLists] — the kind-10002 relay lists
+     * the app happened to have cached, for DM partners and anyone scrolled past
+     * in Global — and give each of them a count of exactly 1. That is not the
+     * second hop of your follow graph, and with every count tied at 1 the
+     * ranking was arbitrary. [ContactManager.countMutualFollows], the real
+     * tally, was ported to Android and never called. This fetches the kind-3
+     * follow list of each person you follow, the way iOS
+     * `fetchExtendedNetworkInParallel` does, and counts those.
+     *
+     * Each follow's list is kept once, newest revision wins, so a follow whose
+     * kind-3 sits on three relays does not vote three times.
+     */
     private suspend fun loadExtendedNetwork() {
         _isLoadingExtendedNetwork.value = true
-        withContext(Dispatchers.IO) {
-            try {
-                val follows = _followedPubkeys.value
-                if (follows.isEmpty()) return@withContext
+        try {
+            val follows = _followedPubkeys.value
+            if (follows.isEmpty()) {
+                withContext(Dispatchers.Main.immediate) { _isLoadingExtendedNetwork.value = false }
+                return
+            }
 
-                // Build mutual counts from relay list data - pubkeys that appear
-                // across multiple followed users' relay lists are likely extended network
-                val mutualCounts = mutableMapOf<String, Int>()
-                val followSet = follows.toSet()
-                for ((pubkey, _) in nostrService.relayLists.value) {
-                    if (pubkey !in followSet) {
-                        mutualCounts[pubkey] = (mutualCounts[pubkey] ?: 0) + 1
+            val config = configStore.config.value
+            val relayUrls = buildList {
+                config.nostrURL?.let { add(it) }
+                config.inboxRelays?.let { addAll(it) }
+                addAll(config.activeFeedRelays)
+                addAll(config.activeBlastrRelays)
+            }.distinct()
+            if (relayUrls.isEmpty()) {
+                withContext(Dispatchers.Main.immediate) { _isLoadingExtendedNetwork.value = false }
+                return
+            }
+
+            // Newest kind-3 per followed pubkey: created_at to its p-tags.
+            val followLists = ConcurrentHashMap<String, Pair<Long, List<List<String>>>>()
+            val chunks = follows.chunked(EXTENDED_NETWORK_CHUNK)
+            var everyRelayAnswered = true
+
+            coroutineScope {
+                relayUrls.map { relayUrl ->
+                    async(Dispatchers.IO) {
+                        val client = WebSocketClient(
+                            url = relayUrl,
+                            scope = scope,
+                            trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"),
+                        )
+                        // This relay has answered when it has EOSE'd every chunk
+                        // it was asked for — not after the first one, which is
+                        // what iOS used to do and why more than one chunk of
+                        // follows lost most of its lists.
+                        val answered = CompletableDeferred<Unit>()
+                        var eoseSeen = 0
+                        val collector = scope.launch {
+                            client.messages.collect { msg ->
+                                try {
+                                    val parsed = json.parseToJsonElement(msg).jsonArray
+                                    when (parsed.getOrNull(0)?.jsonPrimitive?.contentOrNull) {
+                                        "EVENT" -> {
+                                            val eventObj = parsed.getOrNull(2)?.jsonObject ?: return@collect
+                                            if (eventObj["kind"]?.jsonPrimitive?.intOrNull != 3) return@collect
+                                            val author = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull
+                                                ?: return@collect
+                                            val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
+                                            val tags = eventObj["tags"]?.jsonArray?.map { tagArr ->
+                                                tagArr.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
+                                            } ?: emptyList()
+                                            followLists.merge(author, createdAt to tags) { old, new ->
+                                                if (new.first > old.first) new else old
+                                            }
+                                        }
+                                        "EOSE" -> {
+                                            eoseSeen++
+                                            if (eoseSeen >= chunks.size) answered.complete(Unit)
+                                        }
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                        try {
+                            client.connect()
+                            for ((index, chunk) in chunks.withIndex()) {
+                                val authors = chunk.joinToString(",") { "\"$it\"" }
+                                val subId = "ext-$index-${UUID.randomUUID().toString().take(4)}"
+                                client.send("[\"REQ\",\"$subId\",{\"kinds\":[3],\"authors\":[$authors]}]")
+                            }
+                            withTimeoutOrNull(EXTENDED_NETWORK_TIMEOUT_MS) { answered.await() } != null
+                        } finally {
+                            collector.cancel()
+                            client.disconnect()
+                        }
                     }
+                }.awaitAll().forEach { relayAnswered ->
+                    if (!relayAnswered) everyRelayAnswered = false
                 }
-                val extended = contactManager.rankExtendedNetwork(mutualCounts)
+            }
 
-                withContext(Dispatchers.Main.immediate) {
-                    _extendedNetworkPubkeys.value = extended
-                    _isLoadingExtendedNetwork.value = false
-                    lastExtendedNetworkLoadTime = System.currentTimeMillis()
+            val followSet = follows.toSet()
+            val mutualCounts = mutableMapOf<String, Int>()
+            for ((_, list) in followLists) {
+                for ((pk, count) in contactManager.countMutualFollows(list.second, followSet)) {
+                    mutualCounts[pk] = (mutualCounts[pk] ?: 0) + count
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Extended network load failed: ${e.message}")
-                withContext(Dispatchers.Main.immediate) {
-                    _isLoadingExtendedNetwork.value = false
-                }
+            }
+            val extended = contactManager.rankExtendedNetwork(mutualCounts)
+            Log.d(
+                TAG,
+                "Extended network: ${followLists.size}/${follows.size} follow lists, " +
+                    "${mutualCounts.size} candidates, complete=$everyRelayAnswered",
+            )
+
+            withContext(Dispatchers.Main.immediate) {
+                _extendedNetworkPubkeys.value = extended
+                _isLoadingExtendedNetwork.value = false
+                // A tally that ended on a relay timeout is missing follow
+                // lists. It is still used — better than an empty discovery
+                // feed — but it is re-asked for in five minutes instead of
+                // being frozen in place for the full hour. Mirrors iOS.
+                lastExtendedNetworkLoadTime = System.currentTimeMillis()
+                extendedNetworkWasPartial = !everyRelayAnswered
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Extended network load failed: ${e.message}")
+            withContext(Dispatchers.Main.immediate) {
+                _isLoadingExtendedNetwork.value = false
             }
         }
     }
 
     private fun needsExtendedNetworkRefresh(): Boolean {
-        return System.currentTimeMillis() - lastExtendedNetworkLoadTime > EXTENDED_NETWORK_CACHE_MS
+        val age = if (extendedNetworkWasPartial) PARTIAL_EXTENDED_NETWORK_CACHE_MS else EXTENDED_NETWORK_CACHE_MS
+        return System.currentTimeMillis() - lastExtendedNetworkLoadTime > age
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -809,6 +917,30 @@ class FeedService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     private fun subscribeToAllRelays() {
+        // An author-scoped mode with an empty author set must not subscribe:
+        // the filter builder simply omits the `authors` key, so the REQ goes
+        // out unrestricted and Discovery quietly becomes Global with no tell.
+        // iOS guards this; Android did not.
+        if (_feedMode.value == FeedMode.DISCOVERY && _extendedNetworkPubkeys.value.isEmpty()) {
+            _isLoadingFeed.value = false
+            val followsNobody = _followedPubkeys.value.isEmpty()
+            _connectionStatus.value = if (followsNobody) {
+                "Follow more people to build your discovery network"
+            } else {
+                "No follow lists came back from your relays"
+            }
+            // Nothing to follow yet is a normal state; relays that answered
+            // with nothing is a fault worth a red dot.
+            _connectionColor.value = if (followsNobody) "yellow" else "red"
+            return
+        }
+        if (_feedMode.value == FeedMode.FOLLOWING && _followedPubkeys.value.isEmpty()) {
+            _isLoadingFeed.value = false
+            _connectionStatus.value = "Follow someone on Nostr to see their posts here"
+            _connectionColor.value = "yellow"
+            return
+        }
+
         val config = configStore.config.value
         val relayUrls = buildList {
             config.nostrURL?.let { add(it) }

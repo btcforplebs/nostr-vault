@@ -102,6 +102,8 @@ fun FeedScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val connectionStatus by viewModel.connectionStatus.collectAsState()
+    val isLoadingExtendedNetwork by viewModel.isLoadingExtendedNetwork.collectAsState()
+    val followedPubkeys by viewModel.followedPubkeys.collectAsState()
     val connectionColor by viewModel.connectionColor.collectAsState()
     // Read straight off the ViewModel's snapshot map. Collecting it here would
     // subscribe the whole screen to every metadata batch; each feed row narrows
@@ -421,7 +423,25 @@ fun FeedScreen(
                 // Shimmer skeleton loading
                 SkeletonFeed(count = 5)
             } else if (notes.isEmpty()) {
-                EmptyFeedPlaceholder(feedMode, onRefresh = viewModel::refresh)
+                // "Analyzing your extended network..." is only true while it is
+                // actually analyzing. Once it has finished and come back with
+                // nobody, say which of the two things happened: you follow
+                // nobody (yours to fix), or the relays returned no follow lists
+                // (not yours). Telling someone with 400 follows to follow more
+                // people reads as the feature being broken by them.
+                EmptyFeedPlaceholder(
+                    feedMode,
+                    onRefresh = viewModel::refresh,
+                    subtitleOverride = if (feedMode == FeedMode.DISCOVERY && !isLoadingExtendedNetwork) {
+                        if (followedPubkeys.isEmpty()) {
+                            "Follow npubs on Nostr to build your extended network"
+                        } else {
+                            "No follow lists came back from your relays \u2014 try refreshing"
+                        }
+                    } else {
+                        null
+                    },
+                )
             } else {
                 LazyColumn(
                     state = listState,
@@ -1306,7 +1326,13 @@ private fun FeedTopBar(
 // iOS FeedView empty state: thin gradient icon, bold title, monospaced
 // subtitle, and a full-width gradient "Refresh Feed" button.
 @Composable
-private fun EmptyFeedPlaceholder(mode: FeedMode, onRefresh: (() -> Unit)? = null) {
+private fun EmptyFeedPlaceholder(
+    mode: FeedMode,
+    onRefresh: (() -> Unit)? = null,
+    /// Overrides the per-mode subtitle. Discovery uses it to say which of the
+    /// two reasons its feed is empty — see the call site in FeedScreen.
+    subtitleOverride: String? = null,
+) {
     val colors = LocalNostrVaultColors.current
     val gradient = Brush.linearGradient(listOf(colors.primary, colors.primaryLight))
     Box(
@@ -1350,7 +1376,7 @@ private fun EmptyFeedPlaceholder(mode: FeedMode, onRefresh: (() -> Unit)? = null
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                text = when (mode) {
+                text = subtitleOverride ?: when (mode) {
                     FeedMode.FOLLOWING -> "Follow npubs on Nostr to see their posts here"
                     FeedMode.DISCOVERY -> "Analyzing your extended network..."
                     FeedMode.GLOBAL -> "Waiting for notes from your feed relays"

@@ -126,11 +126,20 @@ enum ContactManager {
 
     /// Ranks pubkeys by mutual-follow count and returns the top results.
     /// Call after all kind-3 events have been accumulated.
+    ///
+    /// The order is total — ties break on the pubkey — because it is truncated.
+    /// Most of the second hop is followed by exactly one or two of your
+    /// follows, so `maxResults` almost always cuts through the middle of a
+    /// large tie group; ordering on the count alone let a dictionary's
+    /// per-process iteration order decide who was inside it, and the discovery
+    /// feed changed every time it was recomputed from identical data.
     static func rankExtendedNetwork(
         mutualCounts: [String: Int],
         maxResults: Int = 500
     ) -> [String] {
-        let sorted = mutualCounts.sorted { $0.value > $1.value }
+        let sorted = mutualCounts.sorted { lhs, rhs in
+            lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
+        }
         return Array(sorted.prefix(maxResults).map { $0.key })
     }
 }

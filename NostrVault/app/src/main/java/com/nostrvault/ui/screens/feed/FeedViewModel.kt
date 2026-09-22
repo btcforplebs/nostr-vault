@@ -94,6 +94,11 @@ class FeedViewModel @Inject constructor(
     val connectionStatus: StateFlow<String> = feedService.connectionStatus
     val connectionColor: StateFlow<String> = feedService.connectionColor
 
+    /// Discovery's empty state needs both of these to say *why* it is empty:
+    /// still building, nobody followed, or relays that returned nothing.
+    val isLoadingExtendedNetwork: StateFlow<Boolean> = feedService.isLoadingExtendedNetwork
+    val followedPubkeys: StateFlow<List<String>> = feedService.followedPubkeys
+
     // ── Scroll-condense state (bottom bar + FAB) ────────────────
     val feedScrollingDown: StateFlow<Boolean> = feedService.feedScrollingDown
 

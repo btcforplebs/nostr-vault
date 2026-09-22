@@ -1092,7 +1092,13 @@ struct FeedView: View {
                             .font(.appSystem(size: 22, weight: .bold, design: .default))
                             .tracking(0.2)
 
-                        Text(String(localized: "feed.empty.discovery.subtitle"))
+                        // Nobody followed is the user's to fix; a relay that
+                        // returned no follow lists is not, and telling someone
+                        // with 400 follows to follow more people reads as the
+                        // feature being broken by them.
+                        Text(String(localized: feedService.followedPubkeys.isEmpty
+                            ? "feed.empty.discovery.subtitle"
+                            : "feed.empty.discovery.subtitle.norelaydata"))
                             .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
                             .foregroundColor(.secondary)
                             .tracking(0.3)

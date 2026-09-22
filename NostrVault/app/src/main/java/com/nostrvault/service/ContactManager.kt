@@ -132,13 +132,19 @@ object ContactManager {
 
     /**
      * Rank pubkeys by mutual-follow count and return the top results.
+     *
+     * The order is total — ties break on the pubkey — because it is truncated.
+     * Most of the second hop is followed by exactly one or two of your follows,
+     * so [maxResults] almost always cuts through the middle of a large tie
+     * group, and ordering on the count alone let map iteration order decide who
+     * was inside it. Mirrors iOS `ContactManager.rankExtendedNetwork`.
      */
     fun rankExtendedNetwork(
         mutualCounts: Map<String, Int>,
         maxResults: Int = 500,
     ): List<String> =
         mutualCounts.entries
-            .sortedByDescending { it.value }
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
             .take(maxResults)
             .map { it.key }
 }
