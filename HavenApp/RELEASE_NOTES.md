@@ -13,6 +13,7 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — every p
 *   **A Consistent Look**: Cards, sheets and pages were each assembled by hand from hardcoded values. There is now one elevation ramp and one set of named colours behind every screen, and one animation vocabulary that respects Reduce Motion.
 *   **Home-Screen Widgets**: Vault Pulse, Feed Glance, Quick Actions, Sats, Mosaic and Lock Screen sizes, all tappable straight into the right screen.
 *   **A Real iPad Layout**: List and detail as genuine columns for both the feed and the relay, with a divider you can drag — not a phone layout stretched wide.
+*   **A Threaded Feed**: The feed's view button now cycles expanded, condensed and threaded. Threaded gathers a conversation into one card with its replies on a rail; tap a reply to open it in place with its action bar, tap again to go to the thread. Each feed remembers its own layout.
 *   **Articles**: Long-form posts from the people you follow, drawn as articles with a reader, instead of a wall of raw text.
 *   **Recipes**: A feed of cooking posts from zapcooking and nostrcooking, live from relays.
 *   **Live Streams**: Only the streams actually running, with chat and zapping while you watch.
@@ -29,6 +30,9 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — every p
 
 ## Bug Fixes
 
+*   **Threads Stuck on "Loading the Start of This Thread"**: The start of a thread usually arrived — the feed just never looked again. It does now, and it stops throwing away the notes it fetched.
+*   **Profiles Missed Older Notes and Showed Them Out of Order**: A profile now pages through someone's whole history, in order.
+*   **Discovery Picked People at Random at the Cut-Off**: Ties are broken consistently, a follow list seen on three relays counts once, and accounts that follow more than 200 people get their whole network counted.
 *   **Too Many Notifications**: Your phone wakes the app in the background several times an hour, and each wake announced "N more new items while you were away" as though you had just come back. That summary now waits for a real absence — two hours out of the app — and says it once. "New notes in your feed" was a separate stream that obeyed no setting at all, not even the master notification switch; it is now its own switch in Settings › Notifications and it is **off**. And the "N more new items" count now leaves out the notification types you have switched off, which it could never do before, because a single number cannot be filtered after the fact.
 *   **Clicking a Notification Did Nothing (macOS)**: No notification of any kind responded to a click — not a DM, a mention, a zap, a reaction or a repost — because the Mac app never registered to receive them. It also meant a message arriving while Nostr Vault was the app you were looking at never appeared at all. Clicking one now opens what it is about, including from the menu bar with no window open.
 *   **Search Only Looked at Part of Your Relay**: It read whatever the feed happened to have loaded rather than asking your relay, and when it did ask, it asked one place and stopped at the first page. It now searches your whole relay, and finds a post by its author as well as its text.

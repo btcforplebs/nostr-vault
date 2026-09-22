@@ -11,6 +11,7 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — the app
 *   **A New App Icon**: The lit arch in Sunset Orange, as an adaptive icon, with a themed monochrome layer so notifications show the brand instead of a generic dot.
 *   **A Consistent Look**: One elevation ramp and one set of named colours behind every screen — card and page contrast used to be inverted — plus one animation vocabulary with Reduce Motion support.
 *   **Home-Screen Widgets**.
+*   **A Threaded Feed**: The feed's view button now cycles expanded, condensed and threaded. Threaded gathers a conversation into one card with its replies on a rail; tap a reply to open it in place with its action bar, tap again to go to the thread. Each feed remembers its own layout.
 *   **Articles**: Long-form posts from the people you follow, drawn as articles with a reader.
 *   **Recipes**: A feed of cooking posts from zapcooking and nostrcooking, live from relays.
 *   **Live Streams**: Only the streams actually running, with chat, zapping, report and block.
@@ -23,6 +24,8 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — the app
 
 ## Bug Fixes
 
+*   **Threads Stuck on "Loading the Start of This Thread"**: The start of a thread usually arrived — the feed just never looked again. It does now, and it stops throwing away the notes it fetched.
+*   **Discovery Now Comes From the People You Follow**: It used to rank whoever the app happened to have seen, all tied, in arbitrary order. It now counts who your follows follow, the same way the Apple apps do.
 *   **Search Read the Feed, Not Your Relay**: In relay mode, search looked through whatever the feed happened to have loaded instead of asking your own relay, so anything not currently in memory was invisible to it. It now queries the relay.
 *   **Quoted Posts**: A quoted post now draws as a card in the feed, on the focused note and on the relay tab, with quoted articles resolved.
 *   **Zap Amounts**: Read from the invoice, since receipts do not carry them — and an invoice with no amount no longer reads as 1 BTC in live chat.
