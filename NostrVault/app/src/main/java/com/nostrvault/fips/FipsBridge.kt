@@ -49,9 +49,15 @@ object FipsBridge {
      * address peers use, so a fresh key each start makes you unfindable by
      * anyone who saw you before. Returns 0 on success, negative on failure,
      * and is idempotent — starting an already-running bridge returns 0.
+     *
+     * [usePublicSeeds] must be `false` in every app build today: a live seed
+     * can take the payload hop, and a relayed hop's usable ceiling (~1090
+     * bytes) cannot carry a QUIC handshake (1200-byte floor), so a peer
+     * reached only through a seed never completes a connection — see
+     * fips-bridge d37c3c5. Flip only once WS1c changes that.
      */
-    fun start(nsec: String): Int =
-        if (!isAvailable) ERR_UNAVAILABLE else nativeStart(nsec)
+    fun start(nsec: String, usePublicSeeds: Boolean = false): Int =
+        if (!isAvailable) ERR_UNAVAILABLE else nativeStart(nsec, if (usePublicSeeds) 1 else 0)
 
     /** A fresh network identity to persist. Null if the library is absent. */
     fun generateNsec(): String? =
@@ -87,7 +93,7 @@ object FipsBridge {
     /** Distinct from the Rust side's own negatives, which run -1..-99. */
     const val ERR_UNAVAILABLE = -100
 
-    private external fun nativeStart(nsec: String): Int
+    private external fun nativeStart(nsec: String, usePublicSeeds: Int): Int
     private external fun nativeGenerateNsec(): String?
     private external fun nativeStatusJSON(): String?
     private external fun nativeExport(localPort: Int): Int

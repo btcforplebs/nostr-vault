@@ -87,7 +87,9 @@ class FipsMeshManager @Inject constructor(
             return@withContext false
         }
 
-        val rc = FipsBridge.start(nsec)
+        // Direct-only until WS1c proves a seed can be held to discovery —
+        // see FipsBridge.start's usePublicSeeds doc.
+        val rc = FipsBridge.start(nsec, usePublicSeeds = false)
         if (rc == 0 && configStore.config.value.fipsShareRelay) offerRelay()
         if (rc != 0) {
             Log.w(TAG, "FipsBridgeStartWithIdentity failed: $rc")

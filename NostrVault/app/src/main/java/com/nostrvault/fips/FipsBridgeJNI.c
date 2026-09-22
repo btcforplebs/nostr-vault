@@ -19,6 +19,7 @@
 // Rust C-exported function declarations (fips-bridge-ffi/src/lib.rs).
 extern int   FipsBridgeStart(void);
 extern int   FipsBridgeStartWithIdentity(const char* nsec);
+extern int   FipsBridgeStartWithOptions(const char* nsec, int use_public_seeds);
 extern char* FipsBridgeGenerateNsec(void);
 extern char* FipsBridgeStatusJSON(void);
 extern int   FipsBridgeExport(unsigned short localPort);
@@ -38,12 +39,14 @@ static jstring rustStringToJstring(JNIEnv *env, char *rustStr) {
 #define REL_CSTR(env, jstr, cstr) do { if (jstr && cstr) (*env)->ReleaseStringUTFChars(env, jstr, cstr); } while(0)
 
 JNIEXPORT jint JNICALL
-Java_com_nostrvault_fips_FipsBridge_nativeStart(JNIEnv *env, jobject thiz, jstring nsec) {
+Java_com_nostrvault_fips_FipsBridge_nativeStart(JNIEnv *env, jobject thiz, jstring nsec, jint usePublicSeeds) {
     // A NULL nsec is a throwaway identity, which is what the probes use. The
     // app always passes one: an address a peer can find twice has to survive a
-    // restart.
+    // restart. usePublicSeeds is 0 in every app build today — the seeds can
+    // take the payload hop and a relayed hop's ceiling (~1090 bytes) cannot
+    // carry a QUIC handshake (1200-byte floor) — until WS1c changes that.
     const char *cNsec = GET_CSTR(env, nsec);
-    int rc = FipsBridgeStartWithIdentity(cNsec);
+    int rc = FipsBridgeStartWithOptions(cNsec, usePublicSeeds);
     REL_CSTR(env, nsec, cNsec);
     return rc;
 }
