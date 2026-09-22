@@ -144,6 +144,23 @@ impl EndpointOptions {
         self.bootstrap_peers = peers;
         self
     }
+
+    /// Dial the public transit seeds, or dial none, keeping the identity.
+    ///
+    /// The named form of `bootstrap_peers(public_mesh_peers())` /
+    /// `bootstrap_peers(Vec::new())`, and the only thing
+    /// `FipsBridgeStartWithOptions`'s `use_public_seeds` flag moves.
+    ///
+    /// `false` is what app builds ship on today. A live seed can take the
+    /// payload hop, and a relayed hop's usable payload ceiling is ~1090 bytes
+    /// against QUIC's 1200-byte floor, so the QUIC handshake cannot complete
+    /// through one — measured on two machines, see
+    /// `PLANS/NOSTR_VAULT_FIPS_TWO_HOST_GATE.md`. Off costs two-NAT peering;
+    /// on costs the data path whenever the seed wins the route.
+    pub fn public_mesh_seeds(self, enabled: bool) -> Self {
+        let peers = if enabled { public_mesh_peers() } else { Vec::new() };
+        self.bootstrap_peers(peers)
+    }
 }
 
 /// The endpoint config, built here rather than left to the builder's
@@ -264,6 +281,30 @@ mod tests {
             PUBLIC_MESH_SEEDS.len(),
             "a seed that is not auto-connect is never dialled"
         );
+    }
+
+    #[test]
+    fn seeds_off_keeps_the_identity_and_dials_nothing() {
+        // The sibling of the test above, with the opposite assertion, so
+        // `use_public_seeds = 0` has somewhere to fail. An app build ships
+        // this side until WS1c proves a seed can be held to discovery.
+        let options = EndpointOptions::with_identity("nsec-placeholder", "vault-test")
+            .public_mesh_seeds(false);
+        assert_eq!(options.nsec, "nsec-placeholder", "the identity is not thrown away");
+
+        let config = scoped(options);
+        assert!(config.peers.is_empty());
+        assert_eq!(config.auto_connect_peers().count(), 0);
+    }
+
+    #[test]
+    fn seeds_on_is_the_same_list_with_identity_kept() {
+        let config = scoped(
+            EndpointOptions::with_identity("nsec-placeholder", "vault-test")
+                .public_mesh_seeds(true),
+        );
+        assert_eq!(config.peers.len(), PUBLIC_MESH_SEEDS.len());
+        assert_eq!(config.auto_connect_peers().count(), PUBLIC_MESH_SEEDS.len());
     }
 
     #[test]

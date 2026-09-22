@@ -65,7 +65,7 @@ fn json_escape(value: &str) -> String {
 /// Returns 0 on success, negative on failure.
 #[no_mangle]
 pub extern "C" fn FipsBridgeStart() -> c_int {
-    start(None)
+    start(None, false)
 }
 
 /// Bind the embedded FIPS endpoint under a caller-supplied network identity.
@@ -79,16 +79,47 @@ pub extern "C" fn FipsBridgeStart() -> c_int {
 /// Returns 0 on success, negative on failure.
 #[no_mangle]
 pub extern "C" fn FipsBridgeStartWithIdentity(nsec: *const c_char) -> c_int {
-    let nsec = if nsec.is_null() {
-        None
-    } else {
-        match unsafe { CStr::from_ptr(nsec) }.to_str() {
-            Ok(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
-            Ok(_) => None,
-            Err(_) => return -3,
-        }
-    };
-    start(nsec)
+    match read_nsec(nsec) {
+        Ok(nsec) => start(nsec, true),
+        Err(code) => code,
+    }
+}
+
+/// As [`FipsBridgeStartWithIdentity`], but the caller chooses whether the
+/// public transit seeds are dialled. `use_public_seeds == 0` means direct only,
+/// with the identity kept.
+///
+/// Both other start exports are thin calls into this one, so there is still
+/// exactly one implementation underneath and their behaviour is unchanged:
+/// [`FipsBridgeStart`] is throwaway-identity, seeds off (what `ephemeral()`
+/// always did), [`FipsBridgeStartWithIdentity`] is seeds on.
+///
+/// App builds pass 0. A live seed can win the payload route, and a relayed hop
+/// cannot carry the 1200-byte packets QUIC's floor requires, so the handshake
+/// to another vault times out rather than running slowly. Passing 1 buys
+/// two-NAT traversal at that risk.
+///
+/// Returns 0 on success, negative on failure.
+#[no_mangle]
+pub extern "C" fn FipsBridgeStartWithOptions(nsec: *const c_char, use_public_seeds: c_int) -> c_int {
+    match read_nsec(nsec) {
+        Ok(nsec) => start(nsec, use_public_seeds != 0),
+        Err(code) => code,
+    }
+}
+
+/// A NUL-terminated nsec argument as an `Option<String>`: NULL, empty and
+/// whitespace all mean "generate a throwaway one". `Err` carries the status
+/// code to return, so a caller cannot forget to.
+fn read_nsec(nsec: *const c_char) -> Result<Option<String>, c_int> {
+    if nsec.is_null() {
+        return Ok(None);
+    }
+    match unsafe { CStr::from_ptr(nsec) }.to_str() {
+        Ok(s) if !s.trim().is_empty() => Ok(Some(s.trim().to_string())),
+        Ok(_) => Ok(None),
+        Err(_) => Err(-3),
+    }
 }
 
 /// Generate a network identity the caller can persist and hand back to
@@ -102,7 +133,7 @@ pub extern "C" fn FipsBridgeGenerateNsec() -> *mut c_char {
         .unwrap_or(std::ptr::null_mut())
 }
 
-fn start(nsec: Option<String>) -> c_int {
+fn start(nsec: Option<String>, use_public_seeds: bool) -> c_int {
     std::panic::catch_unwind(|| {
         let mut guard = slot().lock().unwrap();
         if guard.is_some() {
@@ -124,7 +155,8 @@ fn start(nsec: Option<String>) -> c_int {
         let options = match nsec {
             Some(nsec) => EndpointOptions::with_identity(nsec, SCOPE),
             None => EndpointOptions::ephemeral(SCOPE),
-        };
+        }
+        .public_mesh_seeds(use_public_seeds);
 
         let result = runtime.block_on(async {
             let endpoint = bind_endpoint(options).await?;
