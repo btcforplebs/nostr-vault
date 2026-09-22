@@ -62,6 +62,12 @@ class FeedService: ObservableObject {
     /// When the extended network was last computed. Used to skip re-fetching within 1 hour.
     private var extendedNetworkComputedAt: Date?
     private static let extendedNetworkCacheAge: TimeInterval = 3600 // 1 hour
+    /// True when the last tally finished on its timeout with a relay still
+    /// silent, so it is missing follow lists. Such a result is still used — it
+    /// beats an empty discovery feed — but it is only held briefly, rather than
+    /// freezing a partial network in place for the full hour.
+    private var extendedNetworkWasPartial = false
+    private static let partialExtendedNetworkCacheAge: TimeInterval = 300 // 5 minutes
     @Published var isLoadingContacts = false
     /// True once contact loading has completed at least once (success, empty, or timeout).
     /// Used to gate follow/unfollow so we don't publish before the kind-3 has had a chance to arrive,
@@ -1501,6 +1507,30 @@ class FeedService: ObservableObject {
             return
         }
 
+        // The authors this mode searches, decided before anything connects.
+        //
+        // An author-scoped mode with an empty author set must not fall through
+        // to an unrestricted filter: dropping the `authors` key turns "search
+        // your follows" into "search the whole relay" while the UI still says
+        // you are in Following or Discovery. No authors means no results.
+        //
+        // Articles is scoped to follows because `isFollowSetMode` counts it as
+        // a follow-set feed, which is what the timeline does too.
+        let searchAuthors: [String]?
+        switch feedMode {
+        case .following, .articles: searchAuthors = followedPubkeys
+        case .discovery: searchAuthors = extendedNetworkPubkeys
+        case .global, .popular, .media, .recipes, .live: searchAuthors = nil
+        }
+        if let searchAuthors, searchAuthors.isEmpty {
+            searchCancellable?.cancel()
+            searchClient?.disconnect()
+            searchClient = nil
+            searchResults = []
+            isSearching = false
+            return
+        }
+
         // Cancel any previous search subscription
         searchCancellable?.cancel()
         searchClient?.disconnect()
@@ -1515,17 +1545,8 @@ class FeedService: ObservableObject {
             "kinds": [1, 6, 30023],
             "limit": 2000
         ]
-        switch feedMode {
-        case .following, .articles:
-            if !followedPubkeys.isEmpty {
-                filter["authors"] = followedPubkeys
-            }
-        case .discovery:
-            if !extendedNetworkPubkeys.isEmpty {
-                filter["authors"] = extendedNetworkPubkeys
-            }
-        case .global, .popular, .media, .recipes, .live:
-            break // No author restriction — search everything
+        if let searchAuthors {
+            filter["authors"] = searchAuthors
         }
 
         let subId = "search-\(UUID().uuidString.prefix(8))"
@@ -2051,10 +2072,13 @@ class FeedService: ObservableObject {
         }
 
         // Reuse cached result if recent enough
+        let cacheAge = extendedNetworkWasPartial
+            ? Self.partialExtendedNetworkCacheAge
+            : Self.extendedNetworkCacheAge
         if !forceRefresh,
            !extendedNetworkPubkeys.isEmpty,
            let computedAt = extendedNetworkComputedAt,
-           Date().timeIntervalSince(computedAt) < Self.extendedNetworkCacheAge {
+           Date().timeIntervalSince(computedAt) < cacheAge {
             #if DEBUG
             print("FeedService: Reusing cached extended network (\(extendedNetworkPubkeys.count) pubkeys, age \(Int(Date().timeIntervalSince(computedAt)))s)")
             #endif
@@ -2065,48 +2089,95 @@ class FeedService: ObservableObject {
         isLoadingExtendedNetwork = true
         connectionStatus = "Analyzing network..."
 
+        // One completion, whichever path gets there first. The timer and the
+        // fetch each used to call it unconditionally, so a fetch that landed
+        // after the timeout started the feed subscription a second time.
+        var didComplete = false
+        let completeOnce: () -> Void = {
+            guard !didComplete else { return }
+            didComplete = true
+            completion()
+        }
+
         extendedNetworkTimeout?.invalidate()
         extendedNetworkTimeout = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self, self.isLoadingExtendedNetwork else { return }
                 self.isLoadingExtendedNetwork = false
-                completion()
+                completeOnce()
             }
         }
 
         let candidates: [URL] = ([localRelayURL] + externalRelayURLs).compactMap { $0 }
-        fetchExtendedNetworkInParallel(from: candidates, rootPubkeys: followedPubkeys) { [weak self] mutualCounts in
+        fetchExtendedNetworkInParallel(from: candidates, rootPubkeys: followedPubkeys) { [weak self] mutualCounts, everyRelayAnswered in
             guard let self = self else { return }
             self.extendedNetworkTimeout?.invalidate()
             self.extendedNetworkPubkeys = ContactManager.rankExtendedNetwork(mutualCounts: mutualCounts)
+            // Only a tally every relay finished is worth keeping for an hour;
+            // a partial one is used, but re-asked for in five minutes rather
+            // than frozen in the cache and on disk. (The flag does not survive
+            // a snapshot restore, which treats a restored network as complete.)
             self.extendedNetworkComputedAt = Date()
+            self.extendedNetworkWasPartial = !everyRelayAnswered
             self.isLoadingExtendedNetwork = false
-            completion()
+            completeOnce()
         }
     }
 
     /// Computes 2-hop mutual-follow counts rooted at `rootPubkeys` — fetches each
     /// root pubkey's own kind-3 follow list from `relays`, tallying how many roots
     /// follow each second-hop person (excluding the roots themselves).
-    private func fetchExtendedNetworkInParallel(from relays: [URL], rootPubkeys: [String], completion: @escaping ([String: Int]) -> Void) {
+    ///
+    /// Each root's follow list is kept once, newest revision wins, and the tally
+    /// is run at the end over that set. Counting each event as it arrived meant
+    /// a root whose kind-3 sat on three relays voted three times, and a stale
+    /// revision from a lagging relay voted alongside the current one — so being
+    /// well replicated outranked being widely followed.
+    ///
+    /// `completion`'s second value is whether every relay answered every chunk;
+    /// false means the result is a partial tally the caller should not cache.
+    private func fetchExtendedNetworkInParallel(
+        from relays: [URL],
+        rootPubkeys: [String],
+        completion: @escaping ([String: Int], Bool) -> Void
+    ) {
         guard !relays.isEmpty, !rootPubkeys.isEmpty else {
-            completion([:])
+            completion([:], false)
             return
         }
 
         var completed = false
         var eoseCount = 0
         var clients: [WebSocketClient] = []
-        var mutualCounts: [String: Int] = [:]
+        /// Newest kind-3 seen per root: created_at and its p-tags.
+        var followLists: [String: (createdAt: Int64, tags: [[String]])] = [:]
 
         // Exclude the roots themselves
         let excludeSet = Set(rootPubkeys)
 
-        let finish: () -> Void = {
+        // One REQ per chunk per relay, so a whole answer is every relay
+        // EOSE-ing every chunk. Counting one EOSE per relay ended the tally
+        // after the first chunk came back — with more than 200 follows that
+        // threw away most of the follow lists, and kept whatever the fastest
+        // relay had said.
+        let chunkSize = 200
+        let chunkCount = (rootPubkeys.count + chunkSize - 1) / chunkSize
+        let expectedEOSE = relays.count * chunkCount
+
+        let finish: (Bool) -> Void = { everyRelayAnswered in
             guard !completed else { return }
             completed = true
             clients.forEach { $0.disconnect() }
-            completion(mutualCounts)
+            var mutualCounts: [String: Int] = [:]
+            for (_, list) in followLists {
+                for (pk, count) in ContactManager.countMutualFollows(
+                    eventTags: list.tags,
+                    excludeSet: excludeSet
+                ) {
+                    mutualCounts[pk, default: 0] += count
+                }
+            }
+            completion(mutualCounts, everyRelayAnswered)
         }
 
         for url in relays {
@@ -2125,27 +2196,23 @@ class FeedService: ObservableObject {
                     if type == "EVENT", json.count >= 3,
                        let eventDict = json[2] as? [String: Any],
                        let kind = eventDict["kind"] as? Int, kind == 3,
+                       let author = eventDict["pubkey"] as? String,
+                       let createdAt = eventDict["created_at"] as? Int64,
                        let tags = eventDict["tags"] as? [[String]] {
 
-                        let localCounts = ContactManager.countMutualFollows(
-                            eventTags: tags,
-                            excludeSet: excludeSet
-                        )
-
                         DispatchQueue.main.async {
-                            for (pk, count) in localCounts {
-                                mutualCounts[pk, default: 0] += count
-                            }
+                            guard !completed else { return }
+                            // Same root from another relay, or an older
+                            // revision of its list: keep one, newest wins.
+                            if let existing = followLists[author], existing.createdAt >= createdAt { return }
+                            followLists[author] = (createdAt, tags)
                         }
 
                     } else if type == "EOSE" {
                         DispatchQueue.main.async {
                             eoseCount += 1
-                            // We wait for all EOSEs from active connections, but multiple REQs per connection might send multiple EOSEs.
-                            // To be safe, wait for relays.count * chunks EOSEs, or rely on timeout. Let's just rely on timeout + simple EOSE count for now.
-                            // Actually, let's just trigger finish if we reach some EOSE threshold.
-                            if eoseCount >= relays.count {
-                                finish()
+                            if eoseCount >= expectedEOSE {
+                                finish(true)
                             }
                         }
                     }
@@ -2160,7 +2227,7 @@ class FeedService: ObservableObject {
                     var current = 0
                     var chunkIndex = 0
                     while current < rootPubkeys.count {
-                        let end = min(current + 200, rootPubkeys.count)
+                        let end = min(current + chunkSize, rootPubkeys.count)
                         let chunk = Array(rootPubkeys[current..<end])
                         let filter: [String: Any] = ["kinds": [3], "authors": chunk]
                         let req = ["REQ", "ext-\(chunkIndex)-\(UUID().uuidString.prefix(4))", filter] as [Any]
@@ -2179,9 +2246,10 @@ class FeedService: ObservableObject {
 
         // Without this, a single relay that never connects or never sends EOSE
         // (a slow/offline relay, or one that just doesn't implement it) stalls
-        // this forever — finish() otherwise only fires once eoseCount reaches
-        // relays.count, which a bad relay can never contribute to.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { finish() }
+        // this forever — finish() otherwise only fires once every relay has
+        // answered every chunk, which a bad relay can never contribute to.
+        // Reaching here means the tally is partial, so it is not cacheable.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { finish(false) }
     }
 
 
@@ -2307,7 +2375,12 @@ class FeedService: ObservableObject {
             return
         }
         if feedMode == .discovery && extendedNetworkPubkeys.isEmpty {
-            connectionStatus = "Follow more people to build your discovery network"
+            // Two different states wore one message. Telling someone who
+            // follows 400 people to follow more people blames them for a relay
+            // that returned no follow lists.
+            connectionStatus = followedPubkeys.isEmpty
+                ? "Follow more people to build your discovery network"
+                : "No follow lists came back from your relays — pull to refresh"
             return
         }
 

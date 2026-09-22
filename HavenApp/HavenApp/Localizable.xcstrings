@@ -1418,6 +1418,16 @@
         }
       }
     },
+    "feed.empty.discovery.subtitle.norelaydata" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No follow lists came back from your relays \u2014 try refreshing"
+          }
+        }
+      }
+    },
     "feed.empty.discovery.title" : {
       "localizations" : {
         "en" : {
