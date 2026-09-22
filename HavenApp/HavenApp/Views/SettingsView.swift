@@ -55,6 +55,11 @@ struct SettingsView: View {
         case blastr = "Blastr"
         case blossom = "Blossom"
         case macRelay = "Mac Relay"
+        #if os(macOS)
+        // Provider side of the FIPS mesh. macOS only: the Rust bridge is linked
+        // into the Mac target alone, so an iOS build has nothing to call.
+        case mesh = "Mesh"
+        #endif
         case proofOfWork = "Proof of Work"
         case advanced = "Advanced"
         case wallet = "Wallet"
@@ -94,6 +99,9 @@ struct SettingsView: View {
                 #else
                 return "desktopcomputer"
                 #endif
+            #if os(macOS)
+            case .mesh: return "point.3.connected.trianglepath.dotted"
+            #endif
             case .proofOfWork: return "hammer.fill"
             case .advanced: return "gearshape.2"
             case .wallet: return "bitcoinsign.circle"
@@ -228,7 +236,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     settingsSidebarSection("Profile", items: [.accounts, .blocked])
                     settingsSidebarSection("Appearance", items: [.appearance])
-                    settingsSidebarSection("Relay Configuration", items: [.macRelay, .feed, .blastr, .blossom, .importNotes, .backup, .followingBackup])
+                    settingsSidebarSection("Relay Configuration", items: [.macRelay, .feed, .blastr, .blossom, .mesh, .importNotes, .backup, .followingBackup])
                     settingsSidebarSection("System", items: [.pushNotifications, .wallet, .advanced, .logs])
                 }
                 .padding(.horizontal, 8)
@@ -496,6 +504,9 @@ struct SettingsView: View {
         case .blastr: return .cyan
         case .blossom: return .green
         case .macRelay: return .teal
+        #if os(macOS)
+        case .mesh: return .indigo
+        #endif
         case .proofOfWork: return .purple
         case .advanced: return .gray
         case .wallet: return .orange
@@ -535,6 +546,9 @@ struct SettingsView: View {
                 #else
                 MacRelayDomainSettingsView()
                 #endif
+            #if os(macOS)
+            case .mesh: MeshSettingsView()
+            #endif
             case .proofOfWork: ProofOfWorkSettingsView()
             case .advanced: AdvancedSettingsView()
             case .wallet: WalletSettingsView()

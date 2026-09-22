@@ -40,6 +40,11 @@ class AppDelegate: NSObject, ObservableObject {
                 guard RelayProcessManager.shared.state == .idle else { return }
                 RelayProcessManager.shared.startRelay(config: ConfigService.shared.config)
 
+                // Offer the relay/Blossom port to the mesh, but only if the
+                // user turned it on. Deliberately after startRelay: exporting a
+                // port nothing is listening on would advertise a dead service.
+                FipsMeshService.shared.restoreIfEnabled(relayPort: ConfigService.shared.config.relayPort)
+
                 if ConfigService.shared.config.activeSigningMode() == "nip46" {
                     NIP46Service.shared.connectFromConfig()
                 }

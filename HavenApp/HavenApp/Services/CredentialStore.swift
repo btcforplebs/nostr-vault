@@ -52,6 +52,28 @@ enum CredentialStore {
         delete(account: accountId(forNpub: npub))
     }
 
+    // MARK: - FIPS mesh network identity
+
+    // Deliberately separate from any Nostr key: the mesh address should be
+    // rotatable without touching the social identity. Stored here rather than
+    // in HavenConfig because it is a secret, and because the file it would
+    // otherwise land in is synced and backed up.
+    private static let meshNsecAccount = "fips-mesh-nsec"
+
+    @discardableResult
+    static func storeMeshNsec(_ nsec: String) -> Bool {
+        store(nsec, account: meshNsecAccount)
+    }
+
+    static func getMeshNsec() -> String? {
+        get(account: meshNsecAccount)
+    }
+
+    @discardableResult
+    static func deleteMeshNsec() -> Bool {
+        delete(account: meshNsecAccount)
+    }
+
     // MARK: - Private helpers
 
     private static func store(_ password: String, account: String) -> Bool {

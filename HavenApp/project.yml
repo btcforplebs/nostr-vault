@@ -118,9 +118,22 @@ targets:
         # phase entirely once the .a exists, so every Go change was silently
         # missing from incremental builds.
         basedOnDependencyAnalysis: false
+      - name: Build FIPS Bridge (macOS)
+        script: |
+          "${PROJECT_DIR}/HavenApp/App/build_fips_macos.sh"
+        outputFiles:
+          - $(PROJECT_DIR)/build/libfips_bridge_ffi.a
+          - $(PROJECT_DIR)/build/fips_bridge.h
+        # Same reasoning as the Go phase above: the script hashes its own
+        # sources and exits in milliseconds when nothing changed, because Xcode
+        # would otherwise skip the phase forever once the archive exists.
+        basedOnDependencyAnalysis: false
 
     dependencies:
       - sdk: build/libhaven.a
+        embed: false
+        implicit: true
+      - sdk: build/libfips_bridge_ffi.a
         embed: false
         implicit: true
       - package: SilentPaymentsKit
