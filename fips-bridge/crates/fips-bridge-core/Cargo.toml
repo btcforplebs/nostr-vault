@@ -1,0 +1,18 @@
+[package]
+name = "fips-bridge-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+fips-endpoint.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+
+# rustls-ring, not aws-lc-rs: the latter needs cmake + a C toolchain per target
+# and is a known pain on aarch64-apple-ios-sim and the Android NDK.
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rcgen = "0.13"
+tracing = "0.1"

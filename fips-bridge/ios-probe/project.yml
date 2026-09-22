@@ -1,0 +1,49 @@
+name: FipsProbe
+options:
+  bundleIdPrefix: com.havenapp
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+targets:
+  FipsProbe:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: FIPS Probe
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Matches the main app: plain HTTP to the loopback proxy, no TLS and
+        # therefore no self-signed cert handling anywhere.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.havenapp.fipsprobe
+        DEVELOPMENT_TEAM: 525WQ48Y72
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "5.0"
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/FipsProbe-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/Sources
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/build
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -lfips_bridge_ffi
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+        TARGETED_DEVICE_FAMILY: "1,2"
+    preBuildScripts:
+      - script: "\"$SRCROOT/build_fips_ios.sh\"\n"
+        name: Build FIPS Rust Library
+        basedOnDependencyAnalysis: false

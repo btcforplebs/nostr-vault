@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+# Pinned exactly. The 0.4.x line publishes multiple times per day and the
+# 0.3 -> 0.4 boundary replaced the entire send/recv model, so an unpinned
+# range would be a live hazard. See fips-bridge/README.md.
+fips-endpoint = "=0.4.45"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "io-util"] }
+anyhow = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

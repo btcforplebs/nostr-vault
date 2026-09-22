@@ -1,0 +1,13 @@
+[package]
+name = "fips-bridge-probe"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+fips-bridge-core = { path = "../fips-bridge-core" }
+fips-endpoint.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+sha2 = "0.10"
