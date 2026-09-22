@@ -151,6 +151,14 @@ fun SettingsScreen(
                     onClick = { onNavigate(Screen.HavenRelaySettings) },
                 )
             }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.Domain,
+                    title = "Mesh",
+                    subtitle = "Broadcast this device's address on the FIPS mesh",
+                    onClick = { onNavigate(Screen.MeshSettings) },
+                )
+            }
 
             // ── SYSTEM ────────────────────────────────────────────
             item { SettingsSectionHeader("System") }

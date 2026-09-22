@@ -75,6 +75,7 @@ sealed class Screen(val route: String) {
     data object FollowingBackup : Screen("settings/following_backup")
     data object NotificationSettings : Screen("settings/notifications")
     data object HavenRelaySettings : Screen("settings/haven_relay")
+    data object MeshSettings : Screen("settings/mesh")
 
     // Dashboard
     data object Dashboard : Screen("dashboard")

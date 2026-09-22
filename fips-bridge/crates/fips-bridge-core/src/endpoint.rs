@@ -9,8 +9,71 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use fips_endpoint::{
-    Config, FipsEndpoint, Identity, NostrDiscoveryPolicy, TransportInstances, UdpConfig,
+    Config, ConnectPolicy, FipsEndpoint, Identity, NostrDiscoveryPolicy, PeerAddress, PeerConfig,
+    TransportInstances, UdpConfig,
 };
+
+/// The FIPS public test mesh: publicly reachable transit nodes that accept
+/// inbound peering from any npub.
+///
+/// Two NAT'd nodes cannot peer on their own — a NAT-traversal offer rides an
+/// authenticated FIPS session and is not a Nostr event, so with no shared
+/// reachable node the offer never crosses. This is the shared reachable node.
+///
+/// Taken from `jmcorgan/fips-initramfs` (`conf/fips.yaml.example`), which ships
+/// them as its defaults for the same reason. Both entries carry the hostname
+/// *and* the literal address: the name survives the node moving, the address
+/// survives DNS being unavailable, and neither alone survives both. Lower
+/// priority is tried first, so the name is preferred.
+///
+/// Measured 2026-09-08 from this laptop against our pinned 0.4.72 endpoint:
+/// `test-us02` reached an authenticated session (srtt 47 ms, 68 KB inbound over
+/// 76 s) while `test-us01` did not answer at all. That is exactly why there are
+/// two — and why a node whose only seed has moved has no signal as to why.
+///
+/// (alias, npub, hostname:port, address:port)
+pub const PUBLIC_MESH_SEEDS: &[(&str, &str, &str, &str)] = &[
+    (
+        "test-us01",
+        "npub1qmc3cvfz0yu2hx96nq3gp55zdan2qclealn7xshgr448d3nh6lks7zel98",
+        "test-us01.fips.network:2121",
+        "217.77.8.91:2121",
+    ),
+    (
+        "test-us02",
+        "npub10yffd020a4ag8zcy75f9pruq3rnghvvhd5hphl9s62zgp35s560qrksp9u",
+        "test-us02.fips.network:2121",
+        "23.182.128.74:2121",
+    ),
+];
+
+/// The alias for a seed's npub, if it is one of ours.
+///
+/// Lives here so the names in the UI and the addresses being dialled cannot
+/// drift apart: there is one seed table, and this reads it.
+pub fn seed_alias(npub: &str) -> Option<&'static str> {
+    PUBLIC_MESH_SEEDS
+        .iter()
+        .find(|(_, seed, _, _)| *seed == npub)
+        .map(|(alias, _, _, _)| *alias)
+}
+
+/// [`PUBLIC_MESH_SEEDS`] as auto-connect peers.
+pub fn public_mesh_peers() -> Vec<PeerConfig> {
+    PUBLIC_MESH_SEEDS
+        .iter()
+        .map(|(alias, npub, host, addr)| PeerConfig {
+            npub: (*npub).to_string(),
+            alias: Some((*alias).to_string()),
+            addresses: vec![
+                PeerAddress::with_priority("udp", *host, 10),
+                PeerAddress::with_priority("udp", *addr, 20),
+            ],
+            connect_policy: ConnectPolicy::AutoConnect,
+            ..PeerConfig::default()
+        })
+        .collect()
+}
 
 #[derive(Debug, Clone)]
 pub struct EndpointOptions {
@@ -22,6 +85,13 @@ pub struct EndpointOptions {
     /// Enable host-wide authenticated loopback composition. Useful for tests
     /// and for composing with another FIPS instance on the same machine.
     pub local_rendezvous: bool,
+    /// Publicly reachable transit nodes dialled on startup.
+    ///
+    /// Empty is a working configuration and a limited one: the endpoint still
+    /// binds, still advertises, and still reaches anything on the LAN or
+    /// anything directly reachable — it just cannot cross two NATs, because
+    /// there is nothing in the middle to carry the traversal offer.
+    pub bootstrap_peers: Vec<PeerConfig>,
 }
 
 impl EndpointOptions {
@@ -33,7 +103,11 @@ impl EndpointOptions {
     pub fn ephemeral(discovery_scope: impl Into<String>) -> Self {
         // Same-host composition stays on here: the in-process e2e probes
         // pair two endpoints inside one process and rely on it.
-        Self::with_identity(Self::generate_nsec(), discovery_scope).local_rendezvous(true)
+        Self::with_identity(Self::generate_nsec(), discovery_scope)
+            .local_rendezvous(true)
+            // The in-process probes pair two endpoints over loopback; dialling
+            // public transit would add traffic none of them measure.
+            .bootstrap_peers(Vec::new())
     }
 
     /// A stable identity supplied by the caller.
@@ -47,6 +121,7 @@ impl EndpointOptions {
             nsec: nsec.into(),
             discovery_scope: discovery_scope.into(),
             local_rendezvous: false,
+            bootstrap_peers: public_mesh_peers(),
         }
     }
 
@@ -60,6 +135,13 @@ impl EndpointOptions {
     /// why this is not the default.
     pub fn local_rendezvous(mut self, enabled: bool) -> Self {
         self.local_rendezvous = enabled;
+        self
+    }
+
+    /// Replace the transit nodes dialled on startup. Pass an empty vec to dial
+    /// none — see [`Self::bootstrap_peers`] for what that costs.
+    pub fn bootstrap_peers(mut self, peers: Vec<PeerConfig>) -> Self {
+        self.bootstrap_peers = peers;
         self
     }
 }
@@ -78,7 +160,10 @@ impl EndpointOptions {
 /// Supplying the config ourselves is what makes the flag real: the shortcut
 /// returns early once `transports` is non-empty, leaving the explicit config in
 /// control. The rest of this function reproduces that profile exactly, so the
-/// only behaviour that changes is the one field.
+/// only discovery behaviour that changes is the one field.
+///
+/// It also fills in `peers`, which the shortcut leaves empty. Those are transit
+/// nodes, not discovery: see [`EndpointOptions::bootstrap_peers`].
 fn endpoint_config(options: &EndpointOptions) -> Config {
     let scope = options.discovery_scope.as_str();
     let mut config = Config::new();
@@ -90,6 +175,7 @@ fn endpoint_config(options: &EndpointOptions) -> Config {
     config.node.discovery.nostr.app = scope.to_string();
     config.node.discovery.lan.scope = Some(scope.to_string());
     config.node.discovery.local.enabled = options.local_rendezvous;
+    config.peers = options.bootstrap_peers.clone();
     config.transports.udp = TransportInstances::Single(UdpConfig {
         bind_addr: Some("0.0.0.0:0".to_string()),
         advertise_on_nostr: Some(true),
@@ -162,6 +248,70 @@ mod tests {
         let mut normalised = off.clone();
         normalised.node.discovery.local.enabled = true;
         assert_eq!(format!("{normalised:?}"), format!("{on:?}"));
+    }
+
+    #[test]
+    fn an_app_endpoint_dials_the_public_transit_seeds() {
+        // Without these, two NAT'd nodes have nothing in the middle and the
+        // traversal offer never crosses. The failure is silent: both ends bind,
+        // both advertise, neither ever connects.
+        let config = scoped(EndpointOptions::with_identity("nsec-placeholder", "vault-test"));
+
+        assert_eq!(config.peers.len(), PUBLIC_MESH_SEEDS.len());
+        assert!(config.peers.iter().all(|p| p.is_auto_connect()));
+        assert_eq!(
+            config.auto_connect_peers().count(),
+            PUBLIC_MESH_SEEDS.len(),
+            "a seed that is not auto-connect is never dialled"
+        );
+    }
+
+    #[test]
+    fn the_hostname_is_tried_before_the_literal_address() {
+        // Lowest priority first. The name survives the node moving and the
+        // address survives DNS being unavailable; ordered the other way the
+        // stale literal wins every boot where DNS works.
+        for peer in public_mesh_peers() {
+            let ordered = peer.addresses_by_priority();
+            assert_eq!(ordered.len(), 2, "{:?} lost an address", peer.alias);
+            assert!(
+                ordered[0].addr.contains("fips.network"),
+                "expected the hostname first, got {}",
+                ordered[0].addr
+            );
+            assert!(
+                ordered[1].addr.split(':').next().unwrap().parse::<std::net::IpAddr>().is_ok(),
+                "expected a literal address second, got {}",
+                ordered[1].addr
+            );
+        }
+    }
+
+    #[test]
+    fn every_seed_npub_is_well_formed() {
+        // A hard-coded key with a typo in it does not fail loudly; it is a peer
+        // that never connects, which reads exactly like a seed being down.
+        for (alias, npub, host, addr) in PUBLIC_MESH_SEEDS {
+            assert!(fips_endpoint::decode_npub(npub).is_ok(), "{alias}: bad npub");
+            assert!(host.ends_with(":2121"), "{alias}: {host} has no port");
+            assert!(addr.ends_with(":2121"), "{alias}: {addr} has no port");
+        }
+    }
+
+    #[test]
+    fn a_seed_is_named_by_the_same_table_that_dials_it() {
+        for (alias, npub, _, _) in PUBLIC_MESH_SEEDS {
+            assert_eq!(seed_alias(npub), Some(*alias));
+        }
+        assert_eq!(seed_alias("npub1someoneelse"), None);
+    }
+
+    #[test]
+    fn the_in_process_probes_dial_nothing_public() {
+        // ephemeral() pairs two endpoints inside one process over loopback.
+        // Public transit would add traffic none of those probes measure.
+        let config = scoped(EndpointOptions::ephemeral("vault-test"));
+        assert!(config.peers.is_empty());
     }
 
     #[test]

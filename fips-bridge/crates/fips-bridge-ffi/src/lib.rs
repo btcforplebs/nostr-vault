@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use fips_bridge_core::proxy::{egress, Ingress};
-use fips_bridge_core::{bind_endpoint, EndpointOptions, FipsQuic};
-use fips_endpoint::PeerIdentity;
+use fips_bridge_core::{bind_endpoint, seed_alias, EndpointOptions, FipsQuic};
+use fips_endpoint::{FipsEndpoint, PeerIdentity};
 use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
 
@@ -23,7 +23,16 @@ const SCOPE: &str = "nostr-vault-fips";
 
 struct Bridge {
     runtime: Runtime,
+    endpoint: Arc<FipsEndpoint>,
     quic: Arc<FipsQuic>,
+    /// Ports handed to the mesh, reported back in the status snapshot.
+    ///
+    /// Tracked here rather than trusted from the host: the host's own flag says
+    /// what it asked for, and "what is actually reachable" is a different
+    /// question that only this side can answer. There is no un-export — the
+    /// egress task lives until the runtime is dropped — so a host that wants to
+    /// stop sharing stops the bridge.
+    exported: Vec<u16>,
     npub: String,
     address: String,
     started: Instant,
@@ -48,9 +57,52 @@ fn json_escape(value: &str) -> String {
 
 /// Bind the embedded FIPS endpoint and stand up QUIC over it.
 ///
+/// Uses a throwaway identity: a peer that knew this endpoint's npub cannot find
+/// it again after a restart. Kept for the probes, which pair two endpoints
+/// inside one process. An app that wants to be findable calls
+/// [`FipsBridgeStartWithIdentity`].
+///
 /// Returns 0 on success, negative on failure.
 #[no_mangle]
 pub extern "C" fn FipsBridgeStart() -> c_int {
+    start(None)
+}
+
+/// Bind the embedded FIPS endpoint under a caller-supplied network identity.
+///
+/// `nsec` is bech32 or hex; NULL or empty means "generate a throwaway one", so
+/// this is a strict superset of [`FipsBridgeStart`] and there is exactly one
+/// implementation underneath. This is the entry point an app uses: an address
+/// a peer can find twice has to survive a restart, and only the caller can
+/// persist it.
+///
+/// Returns 0 on success, negative on failure.
+#[no_mangle]
+pub extern "C" fn FipsBridgeStartWithIdentity(nsec: *const c_char) -> c_int {
+    let nsec = if nsec.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(nsec) }.to_str() {
+            Ok(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
+            Ok(_) => None,
+            Err(_) => return -3,
+        }
+    };
+    start(nsec)
+}
+
+/// Generate a network identity the caller can persist and hand back to
+/// [`FipsBridgeStartWithIdentity`]. Caller frees.
+///
+/// Deliberately separate from the user's Nostr identity: the mesh address
+/// should be rotatable without touching the social one.
+#[no_mangle]
+pub extern "C" fn FipsBridgeGenerateNsec() -> *mut c_char {
+    std::panic::catch_unwind(|| to_c_string(EndpointOptions::generate_nsec()))
+        .unwrap_or(std::ptr::null_mut())
+}
+
+fn start(nsec: Option<String>) -> c_int {
     std::panic::catch_unwind(|| {
         let mut guard = slot().lock().unwrap();
         if guard.is_some() {
@@ -69,19 +121,26 @@ pub extern "C" fn FipsBridgeStart() -> c_int {
             Err(_) => return -1,
         };
 
+        let options = match nsec {
+            Some(nsec) => EndpointOptions::with_identity(nsec, SCOPE),
+            None => EndpointOptions::ephemeral(SCOPE),
+        };
+
         let result = runtime.block_on(async {
-            let endpoint = bind_endpoint(EndpointOptions::ephemeral(SCOPE)).await?;
+            let endpoint = bind_endpoint(options).await?;
             let npub = endpoint.npub().to_string();
             let address = endpoint.address().to_ipv6().to_string();
-            let quic = Arc::new(FipsQuic::new(endpoint).await?);
-            Ok::<_, anyhow::Error>((quic, npub, address))
+            let quic = Arc::new(FipsQuic::new(endpoint.clone()).await?);
+            Ok::<_, anyhow::Error>((endpoint, quic, npub, address))
         });
 
         match result {
-            Ok((quic, npub, address)) => {
+            Ok((endpoint, quic, npub, address)) => {
                 *guard = Some(Bridge {
                     runtime,
+                    endpoint,
                     quic,
+                    exported: Vec::new(),
                     npub,
                     address,
                     started: Instant::now(),
@@ -99,6 +158,11 @@ pub extern "C" fn FipsBridgeStart() -> c_int {
 /// Polled rather than pushed: callbacks from Rust threads would need
 /// `@convention(c)` trampolines on Swift and `AttachCurrentThread` on Android.
 /// One serialize per second buys us neither.
+///
+/// The peer list is the whole diagnostic. A bound endpoint that has reached no
+/// transit node looks identical to a working one from the outside — it binds,
+/// it advertises, and it can never cross a second NAT — so "running" on its own
+/// is not a state anyone can act on.
 #[no_mangle]
 pub extern "C" fn FipsBridgeStatusJSON() -> *mut c_char {
     std::panic::catch_unwind(|| {
@@ -106,10 +170,17 @@ pub extern "C" fn FipsBridgeStatusJSON() -> *mut c_char {
         let json = match guard.as_ref() {
             None => r#"{"running":false}"#.to_string(),
             Some(bridge) => format!(
-                r#"{{"running":true,"npub":"{}","address":"{}","uptime_s":{}}}"#,
+                r#"{{"running":true,"npub":"{}","address":"{}","uptime_s":{},"exported":[{}],"peers":[{}]}}"#,
                 json_escape(&bridge.npub),
                 json_escape(&bridge.address),
-                bridge.started.elapsed().as_secs()
+                bridge.started.elapsed().as_secs(),
+                bridge
+                    .exported
+                    .iter()
+                    .map(|port| port.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                peers_json(bridge)
             ),
         };
         to_c_string(json)
@@ -117,14 +188,57 @@ pub extern "C" fn FipsBridgeStatusJSON() -> *mut c_char {
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// The peer array for [`FipsBridgeStatusJSON`].
+///
+/// An error here is reported as an empty list rather than as no bridge: the
+/// endpoint is demonstrably up, and turning a failed query into "stopped" would
+/// make the UI lie about the one thing it knows for certain.
+fn peers_json(bridge: &Bridge) -> String {
+    let endpoint = bridge.endpoint.clone();
+    let peers = bridge
+        .runtime
+        .block_on(async move { endpoint.peers().await })
+        .unwrap_or_default();
+
+    peers
+        .iter()
+        .map(|peer| {
+            format!(
+                r#"{{"npub":"{}","alias":{},"connected":{},"addr":{},"rtt_ms":{}}}"#,
+                json_escape(&peer.npub),
+                match seed_alias(&peer.npub) {
+                    Some(alias) => format!(r#""{alias}""#),
+                    None => "null".to_string(),
+                },
+                peer.connected,
+                match &peer.transport_addr {
+                    Some(addr) => format!(r#""{}""#, json_escape(addr)),
+                    None => "null".to_string(),
+                },
+                match peer.srtt_ms {
+                    Some(rtt) => rtt.to_string(),
+                    None => "null".to_string(),
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// Export a local TCP port to the mesh (provider role).
+///
+/// Idempotent: exporting a port twice would stand up a second accept loop on
+/// the same QUIC endpoint for no gain.
 #[no_mangle]
 pub extern "C" fn FipsBridgeExport(local_port: u16) -> c_int {
     std::panic::catch_unwind(|| {
-        let guard = slot().lock().unwrap();
-        let Some(bridge) = guard.as_ref() else {
+        let mut guard = slot().lock().unwrap();
+        let Some(bridge) = guard.as_mut() else {
             return -1;
         };
+        if bridge.exported.contains(&local_port) {
+            return 0;
+        }
         let quic = bridge.quic.clone();
         let target = match format!("127.0.0.1:{local_port}").parse() {
             Ok(addr) => addr,
@@ -133,6 +247,7 @@ pub extern "C" fn FipsBridgeExport(local_port: u16) -> c_int {
         bridge.runtime.spawn(async move {
             let _ = egress::serve(quic, target).await;
         });
+        bridge.exported.push(local_port);
         0
     })
     .unwrap_or(-99)
