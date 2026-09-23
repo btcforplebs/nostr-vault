@@ -30,6 +30,7 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — every p
 
 ## Bug Fixes
 
+*   **A Giant Profile Photo in the Menu Bar Panel (macOS)**: With more than one account signed in, the account menu at the bottom of the status panel drew your profile photo at full size, covering the panel. It is a small round avatar again.
 *   **Threads Stuck on "Loading the Start of This Thread"**: The start of a thread usually arrived — the feed just never looked again. It does now, and it stops throwing away the notes it fetched.
 *   **Profiles Missed Older Notes and Showed Them Out of Order**: A profile now pages through someone's whole history, in order.
 *   **Discovery Picked People at Random at the Cut-Off**: Ties are broken consistently, a follow list seen on three relays counts once, and accounts that follow more than 200 people get their whole network counted.

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.7.0 (15) — macOS / iOS / Android] - 2026-09-XX
+## [2.7.0 (15) — macOS / iOS / Android] - 2026-09-23
 
 > **A new mark, and a surface to put it on.** The filing cabinet is gone: every platform now wears the lit arch in Sunset Orange, down to the Android notification silhouette and the icons in the relay's own web pages. Behind it, the app finally has a visual system — an elevation ramp where there was none, semantic colour tokens instead of hardcoded values, and one motion vocabulary that honours Reduce Motion everywhere. On top of that: home-screen widgets, a real two-column iPad layout, and three new feeds — Articles, Recipes and Live streams with chat and zaps. A biometric bypass that could reveal your signing key without authentication is fixed, and the Global feed no longer fails open to the raw firehose.
 
@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unreachable Screens**: Wired up or deleted, rather than left drawing nothing.
 
 ### Fixed
+- **An Oversized Avatar Took Over the Status Panel (macOS)**: With more than one account, the status panel's account menu is a `Menu` styled `.borderlessButton`, which on macOS hands its label to an `NSPopUpButton` that keeps only the first image and text and drops every modifier on them. The avatar's frame and circle clip went with them, so the profile photo drew at its decoded pixel size and filled the panel; the ring and chevron were dropped too. The label now renders as SwiftUI (`.menuStyle(.button)` + `.buttonStyle(.plain)`) and is still NSMenu-backed, so it survives the panel resigning key. Single-account setups never hit this.
 - **Threads Stuck on "Loading the Start of This Thread"**: A threaded card fetched its missing root, but nothing regrouped the timeline when the root arrived, so on a quiet feed the card waited forever with the note sitting in the cache beside it. The referenced-note cache also evicted roots, repost originals and quotes as soon as it filled, because it kept only direct parents. Arriving notes that fill a gap now regroup the feed, and the cache keeps every id the timeline can ask for — iOS and Android.
 - **Discovery Was Not Built From the Follow Graph**: Android ranked whoever's relay list it happened to have cached, all tied at one, instead of the second hop of your follows; it now fetches your follows' follow lists the way iOS does. On both platforms the 500-entry cut landed inside tie groups and let map order decide who made the feed — ties now break on pubkey — and a follow list replicated on three relays no longer votes three times. iOS also stopped counting after the first 200-follow chunk.
 - **Profiles Dropped Older Notes and Shuffled the Rest (macOS / iOS)**: Paging stalled when a page was all replies, one quiet relay ended paging for good, notes sharing a timestamp were ordered arbitrarily so page boundaries skipped some, and paging subscriptions were never closed while `CLOSED` was ignored. A profile now pages through its whole history in a total order — newest first, ties by id.
