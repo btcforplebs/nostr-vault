@@ -292,6 +292,13 @@ struct MenuBarStatusView: View {
         if hasMultipleAccounts {
             // NSMenu-backed, so it renders outside the panel and is not torn down
             // when the panel resigns key. A `.popover` here would be.
+            //
+            // `.button` + `.plain`, not `.borderlessButton`: the borderless style
+            // hands the label to an NSPopUpButton, which keeps only the first
+            // Image and Text and drops every modifier on them. The avatar's
+            // frame and circle clip went with them, so the photo drew at its
+            // decoded pixel size and took over the panel. The button style
+            // renders the label as SwiftUI.
             Menu {
                 ForEach(configService.allAccountNpubs, id: \.self) { npub in
                     accountMenuItem(npub: npub)
@@ -299,7 +306,8 @@ struct MenuBarStatusView: View {
             } label: {
                 accountLabel
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
             .accessibilityLabel("Switch account")
