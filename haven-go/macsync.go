@@ -187,6 +187,14 @@ func (b *macBackfiller) runIfNeeded(ctx context.Context, force bool) {
 	if !force && prev.MacURL == base && prev.State == "done" {
 		return
 	}
+	// A copy that finished cleanly but left a few events the phone won't take
+	// (seen on real phones: one 600 KB, 7,000-entry follow list from a stranger)
+	// would otherwise re-run the whole copy on every launch. Retry those once a
+	// day; a copy that hit errors still retries on every launch.
+	if !force && prev.MacURL == base && prev.State == "incomplete" && prev.Error == "" &&
+		b.now().Sub(time.Unix(prev.FinishedAt, 0)) < 24*time.Hour {
+		return
+	}
 	st := b.run(ctx, base, inbox)
 	if ctx.Err() != nil {
 		return // relay stopping mid-copy: the heartbeat goes stale, retry next launch

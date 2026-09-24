@@ -295,3 +295,21 @@ func TestMacBackfillRejectsAreNotCountedAsCopied(t *testing.T) {
 		t.Fatalf("re-check status = %+v, want done with nothing copied", st)
 	}
 }
+
+func TestMacBackfillIncompleteRetriesDaily(t *testing.T) {
+	mac := newFakeMac(t, true, 0)
+	f := setupMacFixture(t, mac)
+	base, _ := macRelayURLs()
+	prev := macSyncStatus{MacURL: base, State: "incomplete", Missing: 1, FinishedAt: time.Now().Add(-time.Hour).Unix()}
+	saveMacSyncStatus(prev)
+	f.fill.runIfNeeded(context.Background(), false)
+	if st := loadMacSyncStatus(); st.StartedAt != 0 {
+		t.Fatalf("clean incomplete copy from an hour ago re-ran: %+v", st)
+	}
+	prev.FinishedAt = time.Now().Add(-25 * time.Hour).Unix()
+	saveMacSyncStatus(prev)
+	f.fill.runIfNeeded(context.Background(), false)
+	if st := loadMacSyncStatus(); st.State != "done" {
+		t.Fatalf("day-old incomplete copy did not re-run: %+v", st)
+	}
+}
