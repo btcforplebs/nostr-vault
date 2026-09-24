@@ -37,6 +37,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fiatjaf/eventstore"
@@ -152,9 +153,25 @@ func searchableQuery(db DBBackend) func(context.Context, nostr.Filter) (chan *no
 		if limit > searchMaxLimit {
 			limit = searchMaxLimit
 		}
+		ws := khatru.GetConnection(ctx)
+		if err := searchSlots.acquire(ws); err != nil {
+			// Only reached when another connection took the last slot
+			// between this filter's RejectFilter check and here; khatru
+			// turns the error into a NOTICE and the filter ends empty.
+			return nil, err
+		}
+		hold := searchTestHold
 		ch := make(chan *nostr.Event)
 		go func() {
+			defer searchSlots.release(ws)
 			defer close(ch)
+			if hold != nil {
+				select {
+				case <-hold:
+				case <-ctx.Done():
+					return
+				}
+			}
 			scanned, found, err := scanSearch(ctx, db, filter, limit, func(ev *nostr.Event) bool {
 				select {
 				case ch <- ev:
@@ -351,6 +368,100 @@ func searchNeedsAnchor(_ context.Context, f nostr.Filter) (bool, string) {
 	return true, "unsupported: a search filter must also name kinds, authors, ids, tags, since or until"
 }
 
+// Search concurrency. A scan with no match reads the whole store (up to
+// searchTimeBudget), and the routes that allow search without auth ("",
+// /inbox, /feed) are reachable by anyone who can reach the relay. Without a
+// bound, one REQ carrying 50 copies of a no-match search starts 50 full
+// scans. Two limits, both refusing rather than queueing:
+//
+//   - searchMaxPerConn scans at once per connection. khatru handles a REQ's
+//     filters in order and the scan's slot is taken before the next filter
+//     is checked, so a REQ with more search filters than this is refused
+//     whole (khatru CLOSEs the REQ and cancels the scans it had started).
+//     This is also the per-REQ cap. Nostr Vault sends one search filter per
+//     REQ (kind 0 and kind 1 separately), so 2 per connection in practice.
+//   - searchMaxGlobal scans at once across every route of this process.
+const (
+	searchMaxPerConn = 4
+	searchMaxGlobal  = 8
+)
+
+var searchSlots = newSearchLimiter(searchMaxGlobal, searchMaxPerConn)
+
+// searchTestHold, when non-nil, parks every scan (holding its slot) until
+// the channel is closed or the subscription ends. Tests only; nil in the app.
+var searchTestHold chan struct{}
+
+type searchLimiter struct {
+	mu      sync.Mutex
+	global  int
+	perConn int
+	active  int
+	byConn  map[*khatru.WebSocket]int
+}
+
+func newSearchLimiter(global, perConn int) *searchLimiter {
+	return &searchLimiter{global: global, perConn: perConn, byConn: map[*khatru.WebSocket]int{}}
+}
+
+var (
+	errSearchConnBusy  = errors.New("rate-limited: too many searches at once on this connection")
+	errSearchRelayBusy = errors.New("rate-limited: the relay is busy with other searches, try again shortly")
+)
+
+// full reports why a new scan for ws cannot start now, or nil.
+func (l *searchLimiter) full(ws *khatru.WebSocket) error {
+	if l.byConn[ws] >= l.perConn {
+		return errSearchConnBusy
+	}
+	if l.active >= l.global {
+		return errSearchRelayBusy
+	}
+	return nil
+}
+
+func (l *searchLimiter) check(ws *khatru.WebSocket) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.full(ws)
+}
+
+func (l *searchLimiter) acquire(ws *khatru.WebSocket) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.full(ws); err != nil {
+		return err
+	}
+	l.active++
+	l.byConn[ws]++
+	return nil
+}
+
+func (l *searchLimiter) release(ws *khatru.WebSocket) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.active--
+	if l.byConn[ws]--; l.byConn[ws] <= 0 {
+		delete(l.byConn, ws)
+	}
+}
+
+// searchCapacity is a RejectFilter hook that refuses a search filter, with
+// a CLOSED reason, when no scan slot is free for it. It only checks; the
+// slot is taken by searchableQuery, which khatru calls right after the
+// RejectFilter hooks pass, so a refused REQ never holds a slot. It must be
+// the last RejectFilter so the route's read policies answer first: an
+// unauthenticated /private search is told auth-required, not busy.
+func searchCapacity(ctx context.Context, f nostr.Filter) (bool, string) {
+	if f.Search == "" || eventstore.IsNegentropySession(ctx) {
+		return false, ""
+	}
+	if err := searchSlots.check(khatru.GetConnection(ctx)); err != nil {
+		return true, err.Error()
+	}
+	return false, ""
+}
+
 // enableSearch wires NIP-50 search into a route. It replaces the store's
 // QueryEvents/CountEvents registration, so call it instead of appending
 // db.QueryEvents and db.CountEvents, and after the route's read policies are
@@ -358,7 +469,7 @@ func searchNeedsAnchor(_ context.Context, f nostr.Filter) (bool, string) {
 // other, before the query, so /private and /chat stay auth-gated.
 func enableSearch(rl *khatru.Relay, db DBBackend) {
 	rl.OverwriteFilter = append(rl.OverwriteFilter, detachSearchListener)
-	rl.RejectFilter = append(rl.RejectFilter, searchNeedsAnchor)
+	rl.RejectFilter = append(rl.RejectFilter, searchNeedsAnchor, searchCapacity)
 	rl.QueryEvents = append(rl.QueryEvents, searchableQuery(db))
 	rl.CountEvents = append(rl.CountEvents, searchableCount(db))
 	if !slices.Contains(rl.Info.SupportedNIPs, any(50)) {

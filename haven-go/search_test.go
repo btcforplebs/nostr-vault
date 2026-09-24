@@ -366,55 +366,227 @@ func TestSearchRoutes(t *testing.T) {
 	})
 
 	t.Run("live events do not leak into a search subscription", func(t *testing.T) {
-		r := h.connect(t, "")
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		searchSub, err := r.Subscribe(ctx, nostr.Filters{{Kinds: []int{1}, Authors: []string{h.owner}, Search: "zebra"}})
-		if err != nil {
+		// One case per field detachSearchListener can poison, each filter
+		// carrying only that field so it is the branch taken. On /feed,
+		// which allows filters without kinds/authors and needs no auth.
+		now := time.Now().Unix()
+		live := &nostr.Event{Kind: 1, Content: "no stripes here", CreatedAt: nostr.Timestamp(now), Tags: nostr.Tags{{"t", "poisontest"}}}
+		if err := live.Sign(h.ownerSK); err != nil {
 			t.Fatal(err)
 		}
-		// Positive control on the same connection: a plain subscription
-		// with the same kinds/authors must receive the broadcast.
-		plainSub, err := r.Subscribe(ctx, nostr.Filters{{Kinds: []int{1}, Authors: []string{h.owner}, Limit: 1}})
-		if err != nil {
-			t.Fatal(err)
+		since := nostr.Timestamp(now - 3600)
+		until := nostr.Timestamp(now + 3600)
+		cases := []struct {
+			name string
+			f    nostr.Filter
+		}{
+			{"kinds", nostr.Filter{Kinds: []int{1}}},
+			{"authors", nostr.Filter{Authors: []string{h.owner}}},
+			{"ids", nostr.Filter{IDs: []string{live.ID}}},
+			{"tags", nostr.Filter{Tags: nostr.TagMap{"t": {"poisontest"}}}},
+			{"since", nostr.Filter{Since: &since}},
+			{"until", nostr.Filter{Until: &until}},
 		}
-		// Wait for both EOSEs, consuming stored events (the client blocks
-		// dispatch until they are read). The search sub must see none.
-		for _, s := range []*nostr.Subscription{searchSub, plainSub} {
-		wait:
-			for {
-				select {
-				case ev := <-s.Events:
-					if s == searchSub {
-						t.Fatalf("search sub got stored event %q", ev.Content)
-					}
-				case <-s.EndOfStoredEvents:
-					break wait
-				case reason := <-s.ClosedReason:
-					t.Fatalf("subscription %v closed: %s", s.Filters, reason)
-				case <-ctx.Done():
-					t.Fatalf("no EOSE for %v", s.Filters)
-				}
-			}
-		}
-		live := signedAt(t, h.ownerSK, 1, "no stripes here", time.Now().Unix())
-		outboxRelay.BroadcastEvent(live)
-
-		select {
-		case ev := <-plainSub.Events:
-			if ev == nil || ev.ID != live.ID {
-				t.Fatalf("control got unexpected %q", ev.Content)
-			}
-		case <-time.After(3 * time.Second):
-			t.Fatal("positive control: plain subscription never got the live event")
-		}
-		select {
-		case ev := <-searchSub.Events:
-			t.Fatalf("search subscription received a live event: %q", ev.Content)
-		case <-time.After(500 * time.Millisecond):
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				assertNoLiveLeak(t, h.connect(t, "/feed"), c.f, live)
+			})
 		}
 	})
+}
+
+// assertNoLiveLeak subscribes f plain and f+search on one connection,
+// broadcasts live on the feed relay, and requires the plain subscription
+// (positive control) to get it and the search subscription not to.
+func assertNoLiveLeak(t *testing.T, r *nostr.Relay, f nostr.Filter, live *nostr.Event) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	sf := f.Clone()
+	sf.Search = "zebra"
+	searchSub, err := r.Subscribe(ctx, nostr.Filters{sf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainSub, err := r.Subscribe(ctx, nostr.Filters{f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wait for both EOSEs, consuming stored events (the client blocks
+	// dispatch until they are read). The search sub must see none.
+	for _, s := range []*nostr.Subscription{searchSub, plainSub} {
+	wait:
+		for {
+			select {
+			case ev := <-s.Events:
+				if s == searchSub {
+					t.Fatalf("search sub got stored event %q", ev.Content)
+				}
+			case <-s.EndOfStoredEvents:
+				break wait
+			case reason := <-s.ClosedReason:
+				t.Fatalf("subscription %v closed: %s", s.Filters, reason)
+			case <-ctx.Done():
+				t.Fatalf("no EOSE for %v", s.Filters)
+			}
+		}
+	}
+	feedRelay.BroadcastEvent(live)
+
+	select {
+	case ev := <-plainSub.Events:
+		if ev == nil || ev.ID != live.ID {
+			t.Fatalf("control got unexpected %v", ev)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("positive control: plain subscription never got the live event")
+	}
+	select {
+	case ev := <-searchSub.Events:
+		t.Fatalf("search subscription received a live event: %q", ev.Content)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// waitSearchIdle waits for every scan slot to be returned.
+func waitSearchIdle(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		searchSlots.mu.Lock()
+		active, conns := searchSlots.active, len(searchSlots.byConn)
+		searchSlots.mu.Unlock()
+		if active == 0 && conns == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("scan slots leaked: active=%d connections=%d", active, conns)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestSearchConcurrencyCaps(t *testing.T) {
+	h := startHaven(t)
+	saveAll(t, outboxDB, signedAt(t, h.ownerSK, 1, "qzqzqz found", time.Now().Unix()-10))
+	noMatch := nostr.Filter{Kinds: []int{1}, Search: "nothingmatches"}
+	hit := nostr.Filter{Kinds: []int{1}, Search: "qzqzqz"}
+
+	t.Run("two search filters in one REQ are fine", func(t *testing.T) {
+		got, closed := reqMany(t, h.connect(t, ""), nostr.Filters{hit, {Kinds: []int{0}, Search: "qzqzqz"}})
+		if closed != "" || len(got) != 1 {
+			t.Fatalf("got %d events closed=%q", len(got), closed)
+		}
+		waitSearchIdle(t)
+	})
+
+	t.Run("REQ with more search filters than the per-connection cap is refused", func(t *testing.T) {
+		hold := make(chan struct{})
+		searchTestHold = hold
+		defer func() { searchTestHold = nil; close(hold) }()
+
+		var fs nostr.Filters
+		for i := 0; i < 50; i++ {
+			fs = append(fs, noMatch)
+		}
+		got, closed := reqMany(t, h.connect(t, ""), fs)
+		if len(got) != 0 || closed != errSearchConnBusy.Error() {
+			t.Fatalf("want CLOSED %q, got %d events closed=%q", errSearchConnBusy, len(got), closed)
+		}
+		// The scans started before the refusal are cancelled with the REQ
+		// and give their slots back, although the hold is still shut.
+		waitSearchIdle(t)
+	})
+
+	t.Run("relay-wide cap refuses, then frees up", func(t *testing.T) {
+		prev := searchSlots
+		searchSlots = newSearchLimiter(2, searchMaxPerConn)
+		hold := make(chan struct{})
+		searchTestHold = hold
+		defer func() { searchTestHold = nil; searchSlots = prev }()
+
+		// Two connections each park one scan: the relay is full.
+		parked := make(chan string, 2)
+		for i := 0; i < 2; i++ {
+			r := h.connect(t, "")
+			go func() {
+				got, closed := reqMany(t, r, nostr.Filters{hit})
+				parked <- fmt.Sprintf("%d:%s", len(got), closed)
+			}()
+		}
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			searchSlots.mu.Lock()
+			n := searchSlots.active
+			searchSlots.mu.Unlock()
+			if n == 2 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("parked scans never took their slots (active=%d)", n)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		// A third client — even with its own fresh connection — is refused.
+		third := h.connect(t, "")
+		got, closed := reqMany(t, third, nostr.Filters{hit})
+		if len(got) != 0 || closed != errSearchRelayBusy.Error() {
+			t.Fatalf("want CLOSED %q, got %d events closed=%q", errSearchRelayBusy, len(got), closed)
+		}
+		// Plain (non-search) filters are not limited.
+		if got, closed := reqMany(t, third, nostr.Filters{{Kinds: []int{1}}}); closed != "" || len(got) != 1 {
+			t.Fatalf("plain REQ while search is full: %d events closed=%q", len(got), closed)
+		}
+
+		// Release the parked scans; both finish with their result.
+		searchTestHold = nil
+		close(hold)
+		for i := 0; i < 2; i++ {
+			if res := <-parked; res != "1:" {
+				t.Fatalf("parked search ended %q, want 1 event and EOSE", res)
+			}
+		}
+		waitSearchIdle(t)
+		got, closed = reqMany(t, third, nostr.Filters{hit})
+		if closed != "" || len(got) != 1 {
+			t.Fatalf("after release: %d events closed=%q", len(got), closed)
+		}
+		waitSearchIdle(t)
+	})
+}
+
+// reqMany is req with several filters in one REQ.
+func reqMany(t *testing.T, r *nostr.Relay, fs nostr.Filters) ([]*nostr.Event, string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	sub, err := r.Subscribe(ctx, fs)
+	if err != nil {
+		t.Error(err)
+		return nil, "subscribe failed"
+	}
+	defer sub.Unsub()
+	var out []*nostr.Event
+	for {
+		select {
+		case ev := <-sub.Events:
+			out = append(out, ev)
+		case <-sub.EndOfStoredEvents:
+			for {
+				select {
+				case ev := <-sub.Events:
+					out = append(out, ev)
+				default:
+					return out, ""
+				}
+			}
+		case reason := <-sub.ClosedReason:
+			return out, reason
+		case <-ctx.Done():
+			return out, "timeout"
+		}
+	}
 }
 
 // TestScanSearchPaging walks a store bigger than one page, with a run of
