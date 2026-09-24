@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -51,6 +52,8 @@ import com.nostrvault.R
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.relay.RelayConfiguration
+import com.nostrvault.relay.normalizeExternalBlossomURL
+import com.nostrvault.relay.normalizeExternalRelayURL
 import com.nostrvault.service.AmberSignerService
 import com.nostrvault.service.NIP46Service
 import com.nostrvault.relay.AccountBunkerConfig
@@ -92,7 +95,7 @@ private val WizardGradient = Brush.horizontalGradient(
 // ── Enums ────────────────────────────────────────────────────────
 
 enum class WizardStep {
-    WELCOME, CHOOSE_PATH, NOSTR_INTRO, INITIAL_FOLLOWS, ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
+    WELCOME, CHOOSE_PATH, RELAY_CHOICE, NOSTR_INTRO, INITIAL_FOLLOWS, ACCOUNT, RELAYS, IMPORT_NOTES, MIRROR_MEDIA, WALLET, COMPLETE
 }
 
 enum class AccountMode { GENERATE, IMPORT, AMBER, REMOTE_SIGNER }
@@ -116,6 +119,16 @@ class SetupWizardViewModel @Inject constructor(
 
     private val _setupPath = MutableStateFlow(SetupPath.NONE)
     val setupPath = _setupPath.asStateFlow()
+
+    // Relay choice: the built-in relay, or a relay app already on the phone
+    private val _useExternalRelay = MutableStateFlow(false)
+    val useExternalRelay = _useExternalRelay.asStateFlow()
+
+    private val _externalRelayInput = MutableStateFlow("")
+    val externalRelayInput = _externalRelayInput.asStateFlow()
+
+    private val _externalBlossomInput = MutableStateFlow("")
+    val externalBlossomInput = _externalBlossomInput.asStateFlow()
 
     // Account
     private val _accountMode = MutableStateFlow(AccountMode.GENERATE)
@@ -223,6 +236,9 @@ class SetupWizardViewModel @Inject constructor(
     // ── Setters ──────────────────────────────────────────────────
 
     fun setSetupPath(path: SetupPath) { _setupPath.value = path }
+    fun setUseExternalRelay(value: Boolean) { _useExternalRelay.value = value }
+    fun setExternalRelayInput(value: String) { _externalRelayInput.value = value }
+    fun setExternalBlossomInput(value: String) { _externalBlossomInput.value = value }
     fun setAccountMode(mode: AccountMode) { _accountMode.value = mode }
     fun setNpubInput(value: String) { _npubInput.value = value; _error.value = null }
     fun setNsecInput(value: String) { _nsecInput.value = value; _error.value = null }
@@ -240,30 +256,47 @@ class SetupWizardViewModel @Inject constructor(
 
     /** Steps for full setup mode. */
     private val fullSteps = listOf(
-        WizardStep.WELCOME, WizardStep.CHOOSE_PATH, WizardStep.ACCOUNT,
+        WizardStep.WELCOME, WizardStep.CHOOSE_PATH, WizardStep.RELAY_CHOICE, WizardStep.ACCOUNT,
         WizardStep.RELAYS, WizardStep.IMPORT_NOTES, WizardStep.MIRROR_MEDIA,
         WizardStep.WALLET, WizardStep.COMPLETE,
     )
 
     /** Steps for browse mode. */
     private val browseSteps = listOf(
-        WizardStep.WELCOME, WizardStep.CHOOSE_PATH, WizardStep.ACCOUNT,
+        WizardStep.WELCOME, WizardStep.CHOOSE_PATH, WizardStep.RELAY_CHOICE, WizardStep.ACCOUNT,
         WizardStep.IMPORT_NOTES, WizardStep.COMPLETE,
     )
 
     /** Steps for "New to Nostr" mode. */
     private val newUserSteps = listOf(
-        WizardStep.WELCOME, WizardStep.CHOOSE_PATH,
+        WizardStep.WELCOME, WizardStep.CHOOSE_PATH, WizardStep.RELAY_CHOICE,
         WizardStep.NOSTR_INTRO, WizardStep.INITIAL_FOLLOWS, WizardStep.COMPLETE,
     )
 
-    /** Active step list based on current setup path. */
+    /**
+     * Active step list based on current setup path. Importing notes and
+     * syncing media both fill the built-in relay, so an external relay
+     * skips them and the built-in relay never runs during setup.
+     */
     val activeSteps: List<WizardStep>
-        get() = when (_setupPath.value) {
-            SetupPath.BROWSE -> browseSteps
-            SetupPath.NEW_TO_NOSTR -> newUserSteps
-            else -> fullSteps
+        get() {
+            val steps = when (_setupPath.value) {
+                SetupPath.BROWSE -> browseSteps
+                SetupPath.NEW_TO_NOSTR -> newUserSteps
+                else -> fullSteps
+            }
+            return if (_useExternalRelay.value) {
+                steps - WizardStep.IMPORT_NOTES - WizardStep.MIRROR_MEDIA
+            } else {
+                steps
+            }
         }
+
+    /** The step that follows [step] on the active path. */
+    private fun stepAfter(step: WizardStep): WizardStep {
+        val steps = activeSteps
+        return steps.getOrNull(steps.indexOf(step) + 1) ?: WizardStep.COMPLETE
+    }
 
     /** Current step index (0-based) within active step list. */
     val currentStepIndex: Int
@@ -277,11 +310,33 @@ class SetupWizardViewModel @Inject constructor(
 
     fun advanceFromWelcome() { _step.value = WizardStep.CHOOSE_PATH }
 
-    fun advanceFromChoosePath() {
-        _step.value = when (_setupPath.value) {
-            SetupPath.NEW_TO_NOSTR -> WizardStep.NOSTR_INTRO
-            else -> WizardStep.ACCOUNT
+    fun advanceFromChoosePath() { _step.value = WizardStep.RELAY_CHOICE }
+
+    fun advanceFromRelayChoice() {
+        val external = _useExternalRelay.value
+        val relayURL = _externalRelayInput.value.trim()
+        val blossomURL = _externalBlossomInput.value.trim()
+        if (external) {
+            if (normalizeExternalRelayURL(relayURL) == null) {
+                _error.value = "Enter the relay app's address on this phone, e.g. ws://127.0.0.1:4869"
+                return
+            }
+            if (blossomURL.isNotEmpty() && normalizeExternalBlossomURL(blossomURL) == null) {
+                _error.value = "Enter the Blossom address on this phone, e.g. http://127.0.0.1:port"
+                return
+            }
         }
+        _error.value = null
+        // Saved before setup completes, so MainActivity reads it the first
+        // time it would otherwise boot the built-in relay.
+        configStore.update {
+            if (external) {
+                it.copy(useExternalRelay = true, externalRelayURL = relayURL, externalBlossomURL = blossomURL)
+            } else {
+                it.copy(useExternalRelay = false)
+            }
+        }
+        _step.value = stepAfter(WizardStep.RELAY_CHOICE)
     }
 
     // ── Key Generation Helper ─────────────────────────────────────
@@ -438,7 +493,7 @@ class SetupWizardViewModel @Inject constructor(
                         setupMode = "browse",
                         signingMode = "browse",
                     ) }
-                    _step.value = WizardStep.IMPORT_NOTES
+                    _step.value = stepAfter(WizardStep.ACCOUNT)
                 } else {
                     // Full mode
                     when (_accountMode.value) {
@@ -543,7 +598,7 @@ class SetupWizardViewModel @Inject constructor(
                             configStore.setActiveAccount(signerPubkey)
                         }
                     }
-                    _step.value = WizardStep.RELAYS
+                    _step.value = stepAfter(WizardStep.ACCOUNT)
                 }
             } catch (e: Exception) {
                 _error.value = e.message ?: "Setup failed"
@@ -627,7 +682,7 @@ class SetupWizardViewModel @Inject constructor(
             feedRelays = _wizardRelays.value,
             macRelayURL = _macRelayInput.value.trim(),
         ) }
-        _step.value = WizardStep.IMPORT_NOTES
+        _step.value = stepAfter(WizardStep.RELAYS)
     }
 
     // ── Import ───────────────────────────────────────────────────
@@ -999,6 +1054,7 @@ fun SetupWizardScreen(
                         onContinue = viewModel::advanceFromWelcome,
                     )
                     WizardStep.CHOOSE_PATH -> ChoosePathStep(viewModel)
+                    WizardStep.RELAY_CHOICE -> RelayChoiceStep(viewModel)
                     WizardStep.NOSTR_INTRO -> NostrIntroStep(viewModel)
                     WizardStep.INITIAL_FOLLOWS -> InitialFollowsStep(viewModel)
                     WizardStep.ACCOUNT -> AccountStep(viewModel)
@@ -1164,6 +1220,99 @@ private fun ChoosePathStep(viewModel: SetupWizardViewModel) {
             text = "Continue",
             enabled = setupPath != SetupPath.NONE,
             onClick = viewModel::advanceFromChoosePath,
+        )
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Step: Relay Choice
+// ══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun RelayChoiceStep(viewModel: SetupWizardViewModel) {
+    val useExternal by viewModel.useExternalRelay.collectAsState()
+    val relayInput by viewModel.externalRelayInput.collectAsState()
+    val blossomInput by viewModel.externalBlossomInput.collectAsState()
+    val error by viewModel.error.collectAsState()
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "Where should your notes live?",
+            color = PrimaryText,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "You can change this later in Settings > Advanced.",
+            color = SecondaryText,
+            fontSize = 14.sp,
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        WizardOptionCard(
+            title = "Built-in Relay",
+            subtitle = "Recommended -- your own relay and media server inside this app",
+            selected = !useExternal,
+            onClick = { viewModel.setUseExternalRelay(false) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        WizardOptionCard(
+            title = "A Relay App on This Phone",
+            subtitle = "Keep the client and your relay in separate apps, e.g. Citrine. " +
+                "The built-in relay never starts.",
+            selected = useExternal,
+            onClick = { viewModel.setUseExternalRelay(true) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        if (useExternal) {
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = relayInput,
+                onValueChange = viewModel::setExternalRelayInput,
+                label = { Text("Relay URL") },
+                placeholder = { Text("ws://127.0.0.1:4869") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+                colors = wizardTextFieldColors(),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = blossomInput,
+                onValueChange = viewModel::setExternalBlossomInput,
+                label = { Text("Blossom URL (optional)") },
+                placeholder = { Text("http://127.0.0.1:port") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+                colors = wizardTextFieldColors(),
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Setup skips importing your notes and media, since those fill the " +
+                    "built-in relay. Notifications and the Popular feed need the built-in " +
+                    "relay and stay off.",
+                color = SecondaryText,
+                fontSize = 12.sp,
+            )
+        }
+
+        error?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(text = it, color = ErrorRed, fontSize = 13.sp)
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        WizardPrimaryButton(
+            text = "Continue",
+            onClick = viewModel::advanceFromRelayChoice,
         )
     }
 }

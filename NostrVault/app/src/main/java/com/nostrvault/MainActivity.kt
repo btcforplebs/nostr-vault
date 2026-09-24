@@ -99,7 +99,13 @@ class MainActivity : FragmentActivity() {
             // npub to import notes and cache media (no private key required).
             LaunchedEffect(config.hasCompletedSetup) {
                 if (config.hasCompletedSetup) {
-                    RelayForegroundService.start(this@MainActivity)
+                    // Changing the mode restarts the app (Advanced Settings),
+                    // so reading it once here is enough.
+                    if (config.useExternalRelay) {
+                        RelayForegroundService.useExternalRelay(this@MainActivity)
+                    } else {
+                        RelayForegroundService.start(this@MainActivity)
+                    }
 
                     // Heals accounts whose kind 10050 still advertises 127.0.0.1
                     // from an older build. 10050 is replaceable, so publishing a

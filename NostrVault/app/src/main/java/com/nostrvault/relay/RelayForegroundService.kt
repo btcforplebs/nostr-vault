@@ -167,7 +167,33 @@ class RelayForegroundService : Service() {
             _eventsStored.value = count
         }
 
+        /**
+         * True once the user's external relay has replaced the embedded one
+         * (Advanced > External Relay). Nothing may boot the embedded relay in
+         * this mode — not launch, not boot, not the Dashboard buttons.
+         */
+        @Volatile
+        var externalMode = false
+            private set
+
+        /** True from onCreate until onDestroy has finished closing the relay. */
+        @Volatile
+        var serviceAlive = false
+            private set
+
+        /**
+         * Hand every client to the external relay. There is nothing to boot,
+         * so the readiness gates the Feed and Vault wait on open immediately.
+         */
+        fun useExternalRelay(context: Context) {
+            externalMode = true
+            stop(context)
+            _relayStatus.value = RelayStatus.RUNNING
+            _readyForConnections.value = true
+        }
+
         fun start(context: Context) {
+            if (externalMode) return
             val intent = Intent(context, RelayForegroundService::class.java)
             context.startForegroundService(intent)
         }
@@ -214,6 +240,7 @@ class RelayForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        serviceAlive = true
         // Own the live log poller for the whole service lifetime so the relay-activity
         // red dot is detected continuously (not only while the Dashboard is on-screen).
         // The poll loop idles harmlessly until the Go relay is loaded.
@@ -265,7 +292,18 @@ class RelayForegroundService : Service() {
             )
         } catch (e: Exception) {
             Log.e(TAG, "startForeground failed: ${e.message}")
-            _relayStatus.value = RelayStatus.OFFLINE
+            if (!externalMode) _relayStatus.value = RelayStatus.OFFLINE
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        // A START_STICKY restart can arrive before MainActivity has read the
+        // config, so the service checks the mode itself. startForeground has
+        // already run above, which is what a startForegroundService caller
+        // requires before the service may stop.
+        if (externalMode || loadSavedConfig().useExternalRelay) {
+            Log.i(TAG, "External relay mode -- not starting the embedded relay")
+            externalMode = true
             stopSelf()
             return START_NOT_STICKY
         }
@@ -306,8 +344,11 @@ class RelayForegroundService : Service() {
         Log.i(TAG, "Relay service stopping")
         isShuttingDown = true
         lifecycleState = LifecycleState.STOPPING
-        _relayStatus.value = RelayStatus.OFFLINE
-        _readyForConnections.value = false
+        // In external mode these describe the external relay, which is still up.
+        if (!externalMode) {
+            _relayStatus.value = RelayStatus.OFFLINE
+            _readyForConnections.value = false
+        }
 
         // Block until the Go relay shuts down (or we time out).
         // We must NOT cancel serviceScope before the shutdown coroutine finishes,
@@ -336,7 +377,23 @@ class RelayForegroundService : Service() {
         // Release resources only after the Go side has stopped (or timed out)
         releaseWakeLock()
         serviceScope.cancel()
+        serviceAlive = false
         super.onDestroy()
+    }
+
+    /** Load saved config from disk (matches ConfigStore persistence path). */
+    private fun loadSavedConfig(): HavenConfig {
+        val configFile = File(filesDir, "nostrvault_config.json")
+        if (!configFile.exists()) {
+            Log.w(TAG, "No config file found, using defaults")
+            return HavenConfig()
+        }
+        return try {
+            jsonCodec.decodeFromString<HavenConfig>(configFile.readText())
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse config, using defaults: ${e.message}")
+            HavenConfig()
+        }
     }
 
     // ── Database lock clearing ─────────────────────────────────────
@@ -460,19 +517,7 @@ class RelayForegroundService : Service() {
             // Clear stale database locks before every start
             clearDatabaseLocks(relayDataDir)
 
-            // Load saved config from disk (matches ConfigStore persistence path)
-            val configFile = File(filesDir, "nostrvault_config.json")
-            val config = if (configFile.exists()) {
-                try {
-                    jsonCodec.decodeFromString<HavenConfig>(configFile.readText())
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to parse config, using defaults: ${e.message}")
-                    HavenConfig()
-                }
-            } else {
-                Log.w(TAG, "No config file found, using defaults")
-                HavenConfig()
-            }
+            val config = loadSavedConfig()
 
             currentRelayPort = config.relayPort
 

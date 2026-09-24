@@ -164,7 +164,7 @@ class DMService @Inject constructor(
 
     private fun connectToLocalChatRelay(generation: Int) {
         val config = configStore.config.value
-        val chatUrl = config.nostrURL?.let { "$it/chat" } ?: return
+        val chatUrl = config.localRelayURL("chat") ?: return
 
         inboxClient?.disconnect()
         val client = WebSocketClient(url = chatUrl, scope = scope, trustLocalhost = true)
@@ -173,7 +173,11 @@ class DMService @Inject constructor(
         scope.launch {
             client.connectionState.collect { state ->
                 if (state == WebSocketClient.ConnectionState.CONNECTED) {
-                    // NIP-42 AUTH will be needed — handled via AUTH message
+                    // NIP-42 AUTH will be needed — handled via AUTH message.
+                    // An external relay (e.g. Citrine) may never challenge,
+                    // so the AUTH-OK that normally sends the subscription
+                    // never comes; subscribe straight away there instead.
+                    if (config.useExternalRelay) sendChatNip17Req()
                 }
             }
         }
@@ -696,7 +700,7 @@ class DMService @Inject constructor(
 
                 // Publish to local /chat relay
                 val config = configStore.config.value
-                val chatUrl = config.nostrURL?.let { "$it/chat" }
+                val chatUrl = config.localRelayURL("chat")
                 chatUrl?.let {
                     inboxClient?.send("[\"EVENT\",$recipientEvent]")
                     inboxClient?.send("[\"EVENT\",$selfEvent]")
@@ -1017,7 +1021,7 @@ class DMService @Inject constructor(
         // haven-go/init.go's relayServiceURL), so config.nostrURL's own scheme is
         // already correct here — no need to force wss:// against the client's real
         // connection scheme like this used to.
-        val relayUrl = "${(config.nostrURL ?: return).trimEnd('/')}/chat"
+        val relayUrl = config.localRelayURL("chat") ?: return
 
         scope.launch(Dispatchers.IO) {
             val tags = listOf(
