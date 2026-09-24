@@ -141,6 +141,8 @@ struct FeedView: View {
     @State private var showingArticle: ArticleRoute?
     @StateObject private var recipeService = RecipeFeedService.shared
     @StateObject private var liveService = LiveFeedService.shared
+    @StateObject private var reelsService = ReelsFeedService.shared
+    @State private var showingGlobalReelsWarning = false
     @State private var showingGlobalLiveWarning = false
     @State private var playingStream: LiveStream?
     @State private var selectedGridMediaNoteId: String?
@@ -188,7 +190,7 @@ struct FeedView: View {
     /// timeline feeds follow the legacy global preference.
     private var defaultCompactForCurrentFeed: Bool {
         switch feedService.feedMode {
-        case .following, .articles, .recipes, .live:
+        case .following, .articles, .recipes, .live, .reels:
             return false
         case .discovery, .global, .popular, .media:
             return configService.config.useFeedCompactMode
@@ -201,7 +203,7 @@ struct FeedView: View {
         switch feedService.feedMode {
         case .following, .discovery, .global, .popular:
             return true
-        case .media, .articles, .recipes, .live:
+        case .media, .articles, .recipes, .live, .reels:
             return false
         }
     }
@@ -270,7 +272,7 @@ struct FeedView: View {
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
         // compact mode has nothing to condense.
-        case .media, .articles, .recipes, .live:
+        case .media, .articles, .recipes, .live, .reels:
             return false
         }
     }
@@ -285,20 +287,30 @@ struct FeedView: View {
     @ViewBuilder
     private var feedTrailingToolbarInline: some View {
         HStack(spacing: 4) {
-            IconFilterButton(
-                icon: layoutModeForCurrentFeed.symbolName,
-                tooltip: layoutModeForCurrentFeed.displayName,
-                isSelected: layoutModeForCurrentFeed != .expanded,
-                color: .havenPurple
-            ) {
-                cycleLayoutModeForCurrentFeed()
+            // Reels is one video per screen — there is no layout to switch.
+            if feedService.feedMode != .reels {
+                IconFilterButton(
+                    icon: layoutModeForCurrentFeed.symbolName,
+                    tooltip: layoutModeForCurrentFeed.displayName,
+                    isSelected: layoutModeForCurrentFeed != .expanded,
+                    color: .havenPurple
+                ) {
+                    cycleLayoutModeForCurrentFeed()
+                }
+
+                Divider()
+                    .frame(height: 20)
+                    .padding(.horizontal, 4)
             }
 
-            Divider()
-                .frame(height: 20)
-                .padding(.horizontal, 4)
-
-            if feedService.feedMode == .media {
+            if feedService.feedMode == .reels {
+                IconFilterButton(icon: reelsService.scope == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: reelsService.scope == .following, color: .havenPurple) {
+                    reelsService.setScope(.following)
+                }
+                IconFilterButton(icon: "globe", tooltip: "Global", isSelected: reelsService.scope == .global, color: .havenPurple) {
+                    showingGlobalReelsWarning = true
+                }
+            } else if feedService.feedMode == .media {
                 IconFilterButton(icon: feedService.mediaFeedMode == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: feedService.mediaFeedMode == .following, color: .havenPurple) {
                     feedService.mediaFeedMode = .following
                     feedService.refresh()
@@ -356,19 +368,28 @@ struct FeedView: View {
         Menu {
             // One entry per layout rather than a cycle — a menu can show where
             // each choice leads, which a single cycling button cannot.
-            ForEach(FeedLayoutMode.allCases, id: \.self) { mode in
-                if mode != .threaded || currentFeedSupportsThreading {
-                    Button {
-                        setLayoutModeForCurrentFeed(mode)
-                    } label: {
-                        Label(mode.displayName, systemImage: layoutModeForCurrentFeed == mode ? "checkmark" : mode.symbolName)
+            if feedService.feedMode != .reels {
+                ForEach(FeedLayoutMode.allCases, id: \.self) { mode in
+                    if mode != .threaded || currentFeedSupportsThreading {
+                        Button {
+                            setLayoutModeForCurrentFeed(mode)
+                        } label: {
+                            Label(mode.displayName, systemImage: layoutModeForCurrentFeed == mode ? "checkmark" : mode.symbolName)
+                        }
                     }
                 }
+
+                Divider()
             }
 
-            Divider()
-
-            if feedService.feedMode == .media {
+            if feedService.feedMode == .reels {
+                Button { reelsService.setScope(.following) } label: {
+                    Label("Following", systemImage: "person.2.fill")
+                }
+                Button { showingGlobalReelsWarning = true } label: {
+                    Label("Global", systemImage: "globe")
+                }
+            } else if feedService.feedMode == .media {
                 Button {
                     feedService.mediaFeedMode = .following
                     feedService.refresh()
@@ -562,7 +583,23 @@ struct FeedView: View {
 
             Spacer()
 
-            if feedService.feedMode == .media {
+            if feedService.feedMode == .reels {
+                Button(action: { reelsService.setScope(.following) }) {
+                    Image(systemName: reelsService.scope == .following ? "person.2.fill" : "person.2")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(reelsService.scope == .following ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Videos from people you follow")
+
+                Button(action: { showingGlobalReelsWarning = true }) {
+                    Image(systemName: "globe")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(reelsService.scope == .global ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Videos from everyone")
+            } else if feedService.feedMode == .media {
                 Button(action: {
                     feedService.mediaFeedMode = .following
                     feedService.refresh()
@@ -727,7 +764,9 @@ struct FeedView: View {
                 let showLoadingContacts = isFollowSetFeed && placeholder == .loading
                 let showEmptyState = isFollowSetFeed && placeholder == .empty
 
-                if showLoadingContacts {
+                if feedService.feedMode == .reels {
+                    reelsFeedView
+                } else if showLoadingContacts {
                     loadingContactsView
                 } else if feedService.feedMode == .discovery && feedService.isLoadingExtendedNetwork && feedService.notes.isEmpty {
                     loadingExtendedNetworkView
@@ -913,6 +952,14 @@ struct FeedView: View {
             })
             .environmentObject(nostrService)
             .environmentObject(configService)
+        }
+        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalReelsWarning) {
+            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
+                reelsService.setScope(.global)
+            }
+            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "feed.alert.sensitiveContent.message"))
         }
         .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalRecipeWarning) {
             Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
@@ -1639,6 +1686,20 @@ struct FeedView: View {
         return recipeService.loadFailed
             ? "Recipes come from other people's relays, so this one needs a connection."
             : "Nothing tagged zapcooking or nostrcooking came back."
+    }
+
+    /// Reels: full-screen vertical video pager, one video per swipe.
+    private var reelsFeedView: some View {
+        ReelsFeedView(
+            feedService: feedService,
+            onProfile: { showingProfileKey = IdentifiableString(id: $0) },
+            onReply: { composeContext = ComposeContext(replyTo: feedService.replyTarget(for: $0), quoteTo: nil) },
+            onOpenNote: { openNoteDetail($0) },
+            onLike: { feedActionsValue.likeNote($0) },
+            onShowGlobal: { showingGlobalReelsWarning = true },
+            isCovered: composeContext != nil || showingProfileKey != nil || showingNoteId != nil
+                || showingMediaUrl != nil || showingRelayStatus
+        )
     }
 
     /// Live streams: NIP-53 events that are running *and* carry a URL Apple's

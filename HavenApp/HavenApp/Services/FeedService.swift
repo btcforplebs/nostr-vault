@@ -1138,6 +1138,9 @@ class FeedService: ObservableObject {
         if feedMode == .live && mode != .live {
             LiveFeedService.shared.disconnect()
         }
+        if feedMode == .reels && mode != .reels {
+            ReelsFeedService.shared.disconnect()
+        }
         shouldScrollToTopOnLoad = true
         feedMode = mode
         notes.removeAll()
@@ -1170,6 +1173,10 @@ class FeedService: ObservableObject {
         if mode == .live {
             // Same reasoning as Recipes: LiveFeedService owns this one.
             LiveFeedService.shared.loadIfNeeded()
+        } else if mode == .reels {
+            // ReelsFeedService runs its own queries; the note pipeline would
+            // only stream a timeline nobody sees underneath the videos.
+            ReelsFeedService.shared.loadIfNeeded()
         } else if mode == .recipes {
             // Recipes are served by RecipeFeedService against external relays —
             // the note pipeline has nothing to subscribe to here, and starting
@@ -1206,7 +1213,9 @@ class FeedService: ObservableObject {
         disconnectFeedClients()
         cancellables.removeAll()
 
-        if feedMode == .popular {
+        if feedMode == .reels {
+            ReelsFeedService.shared.refresh()
+        } else if feedMode == .popular {
             loadPopularFeed()
         } else if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
             loadWotPubkeys()
@@ -1282,7 +1291,7 @@ class FeedService: ObservableObject {
         switch feedMode {
         case .following, .discovery, .articles: return true
         case .media: return mediaFeedMode == .following
-        case .global, .popular, .recipes, .live: return false
+        case .global, .popular, .recipes, .live, .reels: return false
         }
     }
 
@@ -1308,7 +1317,7 @@ class FeedService: ObservableObject {
         case .following, .articles: return followedPubkeys
         case .media: return mediaFeedMode == .following ? followedPubkeys : []
         case .discovery: return extendedNetworkPubkeys
-        case .global, .popular, .recipes, .live: return []
+        case .global, .popular, .recipes, .live, .reels: return []
         }
     }
 
@@ -1331,6 +1340,7 @@ class FeedService: ObservableObject {
 
         guard !isPaused else { return }
         guard feedMode != .popular else { return }   // popular has no relay subs
+        guard feedMode != .reels else { return }     // ReelsFeedService owns its own
 
         // Author-filtered mode with no follows yet → no valid primary sub. Don't
         // send a dead authors:[] REQ; instead self-heal by (re)fetching contacts
@@ -1520,7 +1530,7 @@ class FeedService: ObservableObject {
         switch feedMode {
         case .following, .articles: searchAuthors = followedPubkeys
         case .discovery: searchAuthors = extendedNetworkPubkeys
-        case .global, .popular, .media, .recipes, .live: searchAuthors = nil
+        case .global, .popular, .media, .recipes, .live, .reels: searchAuthors = nil
         }
         if let searchAuthors, searchAuthors.isEmpty {
             searchCancellable?.cancel()

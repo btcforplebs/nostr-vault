@@ -351,3 +351,19 @@ extension View {
     }
 }
 
+// MARK: - Floating tab bar
+
+private struct FloatingTabBarHeightKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    /// Height of the iPhone's floating bottom tab bar. It is laid over the tab
+    /// content rather than inset into it, so the content's safe area never
+    /// includes it — a full-bleed screen has to clear it by hand. Zero where
+    /// there is no bottom bar (the iPad sidebar, macOS).
+    var floatingTabBarHeight: CGFloat {
+        get { self[FloatingTabBarHeightKey.self] }
+        set { self[FloatingTabBarHeightKey.self] = newValue }
+    }
+}
