@@ -56,6 +56,7 @@ import com.nostrvault.ui.screens.settings.BlockedSettingsScreen
 import com.nostrvault.ui.screens.settings.BlossomSettingsScreen
 import com.nostrvault.ui.screens.settings.FollowingBackupScreen
 import com.nostrvault.ui.screens.settings.ImportSettingsScreen
+import com.nostrvault.ui.screens.settings.SearchRelaySettingsScreen
 import com.nostrvault.ui.screens.settings.NotificationSettingsScreen
 import com.nostrvault.ui.screens.settings.PowSettingsScreen
 import com.nostrvault.ui.screens.settings.HavenRelaySettingsScreen
@@ -544,6 +545,12 @@ fun NostrVaultNavHost(
 
             composable(Screen.ImportSettings.route) {
                 ImportSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Screen.SearchRelaySettings.route) {
+                SearchRelaySettingsScreen(
                     onBack = { navController.popBackStack() },
                 )
             }
