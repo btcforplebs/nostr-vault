@@ -1758,24 +1758,25 @@ class FeedService: ObservableObject {
     /// The note a quote should actually cite. Quoting a repost has to cite the
     /// note it carries — otherwise the `q` tag and `nostr:nevent` point at the
     /// kind-6 wrapper, and every client renders the quote as a repost card.
-    /// When the original isn't loaded, rebuild it from the repost: NIP-18
-    /// embeds the original event in `content`, which `FeedNote.init` has
-    /// already unpacked into this note's author, body and tags. A bare repost
-    /// with no embedded event still cites the right id and author (its `p` tag).
+    /// When the original isn't loaded, rebuild it from the repost. Only trust
+    /// the author/body/tags `FeedNote.init` unpacked if it really unpacked the
+    /// NIP-18 embedded event. `repostedBy` can't tell us (the feed sets it on
+    /// every kind 6) and `content` is already the inner body, but the tags can:
+    /// the repost's own tags always carry `["e", refId]` — that's where
+    /// `repostedEventId` comes from — and an event can never tag its own id.
+    /// Still holding that tag means nothing was unpacked and this note carries
+    /// the reposter's identity, so take the author from the repost's `p` tag.
     func quoteTarget(for note: FeedNote) -> FeedNote {
         guard note.kind == 6, let refId = note.repostedEventId else { return note }
         if let original = findNote(id: refId) { return original }
-        let author = note.content.isEmpty
-            ? (note.tags.first { $0.count >= 2 && $0[0] == "p" }?[1] ?? note.pubkey)
-            : note.pubkey
-        return FeedNote(
-            id: refId,
-            pubkey: author,
-            content: note.content,
-            createdAt: note.createdAt,
-            tags: note.content.isEmpty ? [] : note.tags,
-            kind: 1
-        )
+        let carriesOriginal = !note.tags.contains { $0.count >= 2 && $0[0] == "e" && $0[1] == refId }
+        guard !carriesOriginal else {
+            return FeedNote(id: refId, pubkey: note.pubkey, content: note.content,
+                            createdAt: note.createdAt, tags: note.tags, kind: 1)
+        }
+        let author = note.tags.first { $0.count >= 2 && $0[0] == "p" }?[1] ?? note.pubkey
+        return FeedNote(id: refId, pubkey: author, content: "",
+                        createdAt: note.createdAt, tags: [], kind: 1)
     }
 
     /// Finds a note matching an naddr coordinate ("naddr:<kind>:<pubkey>:<d-tag>").
