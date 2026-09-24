@@ -157,7 +157,11 @@ class ConfigService: ObservableObject {
         if let data = try? Data(contentsOf: importURL),
            let list = try? JSONDecoder().decode([String].self, from: data),
            !list.isEmpty {
-            config.importSeedRelays = list
+            // Older builds wrote the Mac relay into this file and read it back
+            // as one of the user's own seed relays. The relay adds the Mac
+            // itself now (MAC_RELAY_URL), so drop that leaked copy.
+            let mac = config.macRelayWssURL
+            config.importSeedRelays = mac.isEmpty ? list : list.filter { $0 != mac }
         }
         // If file doesn't exist or is empty, keep the defaults from HavenConfig
 
@@ -233,18 +237,7 @@ class ConfigService: ObservableObject {
             try? data.write(to: configURL) // Save main config again just in case
         }
         
-        if !config.importSeedRelays.isEmpty {
-            let importURL = relayDataDir.appendingPathComponent(config.importSeedRelaysFile)
-            if let data = try? encoder.encode(config.importSeedRelays) {
-                try? data.write(to: importURL)
-            }
-        } else {
-             // If empty, write empty array to clear previous contents
-             let importURL = relayDataDir.appendingPathComponent(config.importSeedRelaysFile)
-             if let data = try? encoder.encode([String]()) {
-                 try? data.write(to: importURL)
-             }
-        }
+        RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
         
         writeStarterPackSeeds(encoder: encoder)
 

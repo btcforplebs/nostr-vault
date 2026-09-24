@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Mac Relay Sync Folded Into the Relay (iOS)**: The separate Mac Relay Sync service is gone. The embedded relay now treats the Mac as one of its own relays: its outbox as a seed relay and its `/inbox` as an inbox relay, so posts, mentions and replies from the Mac arrive through the same live subscription and catch-up rounds as every other relay. The Mac's `/inbox` was never in that list before, and a settings save could drop the Mac out of it until the next relay start.
+- **Full History From the Mac, Checked**: The first time a Mac relay is set, the relay copies its entire history once (NIP-77 set reconciliation in 90-day slices, page-by-page for a Mac without NIP-77), repeats the comparison until nothing new turns up, and records how many events are still missing. Dashboard and Settings show the result, with a "Check sync with Mac" button that runs it again. Against a real Mac relay: 19,098 posts and 6,785 mentions in 32 seconds, 0 missing.
+
+### Removed
+- **Mac Relay `/private` and `/chat` Catch-Up**: With the Cashu wallet gone, drafts are the only thing kept in `/private`; drafts started on the Mac no longer appear on the phone. DMs still arrive from your DM relays.
+
 ## [2.7.0 (15) — macOS / iOS / Android] - 2026-09-23
 
 > **A new mark, and a surface to put it on.** The filing cabinet is gone: every platform now wears the lit arch in Sunset Orange, down to the Android notification silhouette and the icons in the relay's own web pages. Behind it, the app finally has a visual system — an elevation ramp where there was none, semantic colour tokens instead of hardcoded values, and one motion vocabulary that honours Reduce Motion everywhere. On top of that: home-screen widgets, a real two-column iPad layout, and three new feeds — Articles, Recipes and Live streams with chat and zaps. A biometric bypass that could reveal your signing key without authentication is fixed, and the Global feed no longer fails open to the raw firehose.

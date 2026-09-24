@@ -59,6 +59,7 @@ type Config struct {
 	ImportTaggedNotesFetchTimeoutSeconds int                 `json:"import_tagged_fetch_timeout_seconds"`
 	ImportSeedRelays                     []string            `json:"import_seed_relays"`
 	DmRelays                             []string            `json:"dm_relays"`
+	MacRelayURL                          string              `json:"mac_relay_url"`
 	BackupProvider                       string              `json:"backup_provider"`
 	BackupIntervalHours                  int                 `json:"backup_interval_hours"`
 	WotDepth                             int                 `json:"wot_depth"`
@@ -137,6 +138,7 @@ func loadConfig() Config {
 		ImportTaggedNotesFetchTimeoutSeconds: getEnvInt("IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS", 120),
 		ImportSeedRelays:                     getRelayListFromFile(getEnv("IMPORT_SEED_RELAYS_FILE")),
 		DmRelays:                             getRelayListFromFile(getEnvString("DM_RELAYS_FILE", "")),
+		MacRelayURL:                          getEnvString("MAC_RELAY_URL", ""),
 		BackupProvider:                       getEnvString("BACKUP_PROVIDER", "none"),
 		BackupIntervalHours:                  getEnvInt("BACKUP_INTERVAL_HOURS", 24),
 		WotDepth:                             getEnvInt("WOT_DEPTH", defaultWotDepth),

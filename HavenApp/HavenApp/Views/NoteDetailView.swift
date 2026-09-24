@@ -165,7 +165,10 @@ struct NoteDetailView: View {
         .background(Color.platformWindowBackground)
         .refreshable {
             #if os(iOS)
-            MacRelaySyncService.shared.syncIfConfigured()
+            // Pull replies that only reached the Mac relay into the local one.
+            if !RelayConfiguration.macRelayURL(config: ConfigService.shared.config).isEmpty {
+                RequestRelaySyncC()
+            }
             #endif
             fetchParents()
             fetchReplies()

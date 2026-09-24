@@ -28,6 +28,57 @@ enum RelayConfiguration {
         }
     }
 
+    /// Writes the import seed relay list the relay reads at start. This is the
+    /// only writer of that file: the user's own list, exactly as configured.
+    /// The Mac relay is deliberately not merged in here — the relay adds it
+    /// itself from MAC_RELAY_URL (outbox as a seed relay, /inbox as an inbox
+    /// relay). Writers that disagreed about including it used to make the Mac
+    /// drop out after a settings save, and a merged list read back by
+    /// ConfigService.loadRelayLists leaked the Mac into the user's own list.
+    static func writeImportSeedRelays(config: HavenConfig, under root: URL) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        if let data = try? encoder.encode(config.importSeedRelays) {
+            try? data.write(to: root.appendingPathComponent(config.importSeedRelaysFile))
+        }
+    }
+
+    /// The Mac relay URL handed to the relay, or "" when there is none. iOS
+    /// only: the Mac is the relay being pointed at, never a client of itself.
+    static func macRelayURL(config: HavenConfig) -> String {
+        #if os(iOS)
+        return config.macRelayWssURL
+        #else
+        return ""
+        #endif
+    }
+
+    /// Result of the relay's one-time full-history copy from the Mac relay and
+    /// its missing-events check, as written by haven-go (macsync.go) to
+    /// mac_sync_status.json. Every field is optional so a file from an older or
+    /// newer relay still decodes.
+    struct MacSyncStatus: Decodable {
+        var macURL: String?
+        var state: String?     // running | done | incomplete | failed
+        var method: String?    // negentropy | paged
+        var posts: Int?
+        var mentions: Int?
+        var missing: Int?      // -1: not measurable (paged fallback)
+        var error: String?
+        var startedAt: Int64?
+        var finishedAt: Int64?
+
+        enum CodingKeys: String, CodingKey {
+            case macURL = "mac_url", state, method, posts, mentions, missing, error
+            case startedAt = "started_at", finishedAt = "finished_at"
+        }
+    }
+
+    static func macSyncStatus(under root: URL) -> MacSyncStatus? {
+        guard let data = try? Data(contentsOf: root.appendingPathComponent("mac_sync_status.json")) else { return nil }
+        return try? JSONDecoder().decode(MacSyncStatus.self, from: data)
+    }
+
     /// The union of every account's notification preferences, as event kinds
     /// (see NotificationPolicy.notifyKinds). Read by the relay at start, so a
     /// preference change reaches its catch-up summary on the next relay start;
@@ -163,6 +214,9 @@ enum RelayConfiguration {
 
             // DM Relays
             "DM_RELAYS_FILE": "relays_dm.json",
+
+            // Mac relay: synced like any other relay, plus a one-time full-history copy
+            "MAC_RELAY_URL": macRelayURL(config: config),
 
             // Backup
             "BACKUP_PROVIDER": config.backupProvider,

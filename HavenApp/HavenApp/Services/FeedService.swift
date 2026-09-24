@@ -2458,10 +2458,6 @@ class FeedService: ObservableObject {
                 self.processingQueue.async { [weak self] in
                     self?.bgAccumulator.isInitialLoad = false
                 }
-                // Trigger Mac relay sync after feed timeout too
-                #if os(iOS)
-                MacRelaySyncService.shared.syncIfConfigured()
-                #endif
             }
         }
 
@@ -2567,9 +2563,6 @@ class FeedService: ObservableObject {
                             self.processingQueue.async { [weak self] in
                                 self?.bgAccumulator.isInitialLoad = false
                             }
-                            #if os(iOS)
-                            MacRelaySyncService.shared.syncIfConfigured()
-                            #endif
                         }
                     } else {
                         // Retry after delay
@@ -2881,10 +2874,6 @@ class FeedService: ObservableObject {
                     self.processingQueue.async { [weak self] in
                         self?.bgAccumulator.isInitialLoad = false
                     }
-                    // Trigger Mac relay sync after feed has finished initial load
-                    #if os(iOS)
-                    MacRelaySyncService.shared.syncIfConfigured()
-                    #endif
                 }
             }
             return

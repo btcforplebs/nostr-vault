@@ -246,10 +246,7 @@ class RelayProcessManager: ObservableObject {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         
-        let importRelaysURL = relayDataDir.appendingPathComponent(config.importSeedRelaysFile)
-        if let data = try? encoder.encode(config.activeImportSeedRelays) {
-            try? data.write(to: importRelaysURL)
-        }
+        RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
         
         let blastrRelaysURL = relayDataDir.appendingPathComponent(config.blastrRelaysFile)
         if let data = try? encoder.encode(config.activeBlastrRelays) {
@@ -618,7 +615,7 @@ class RelayProcessManager: ObservableObject {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         
-        if let data = try? encoder.encode(config.activeImportSeedRelays) { try? data.write(to: relayDataDir.appendingPathComponent(config.importSeedRelaysFile)) }
+        RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
         if let data = try? encoder.encode(config.activeBlastrRelays.isEmpty ? [] : config.activeBlastrRelays) { try? data.write(to: relayDataDir.appendingPathComponent(config.blastrRelaysFile)) }
         if let data = try? encoder.encode(config.dmRelays) { try? data.write(to: relayDataDir.appendingPathComponent("relays_dm.json")) }
         if let data = try? encoder.encode(config.whitelistedNpubs) { try? data.write(to: relayDataDir.appendingPathComponent("whitelisted_npubs.json")) }
@@ -985,9 +982,7 @@ class RelayProcessManager: ObservableObject {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
 
-        if let data = try? encoder.encode(config.activeImportSeedRelays) {
-            try? data.write(to: relayDataDir.appendingPathComponent(config.importSeedRelaysFile))
-        }
+        RelayConfiguration.writeImportSeedRelays(config: config, under: relayDataDir)
         if let data = try? encoder.encode(config.dmRelays) {
             try? data.write(to: relayDataDir.appendingPathComponent("relays_dm.json"))
         }

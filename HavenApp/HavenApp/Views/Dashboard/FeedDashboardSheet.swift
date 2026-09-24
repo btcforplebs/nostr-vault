@@ -268,69 +268,18 @@ struct FeedDashboardSheet: View {
 
     #if os(iOS)
     private var macRelaySyncSection: some View {
-        let macURL = configService.config.macRelayURL
-
-        return Group {
-            if !macURL.isEmpty {
+        Group {
+            if !configService.config.macRelayURL.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("MAC RELAY SYNC")
                         .font(.appSystem(size: 10, weight: .bold, design: .monospaced))
                         .foregroundColor(.secondary.opacity(0.8))
 
-                    VStack(spacing: 1) {
-                        // Status row
-                        SyncStatusRow(
-                            icon: "desktopcomputer",
-                            title: "Mac Relay",
-                            statusText: MacRelaySyncService.shared.isSyncing ? "Syncing..." : (MacRelaySyncService.shared.syncStatus.isEmpty ? "Idle" : MacRelaySyncService.shared.syncStatus),
-                            statusColor: MacRelaySyncService.shared.isSyncing ? Color.havenPurple : (MacRelaySyncService.shared.lastSyncDate != nil ? .green : .secondary),
-                            lastDate: MacRelaySyncService.shared.lastSyncDate,
-                            lastDateLabel: "Last sync"
-                        )
-
-                        // Action row
-                        HStack(spacing: 12) {
-                            Button {
-                                MacRelaySyncService.shared.forceSync()
-                            } label: {
-                                HStack(spacing: 6) {
-                                    if MacRelaySyncService.shared.isSyncing {
-                                        ProgressView().controlSize(.small).tint(.white)
-                                    } else {
-                                        Image(systemName: "arrow.clockwise")
-                                    }
-                                    Text("Sync Now")
-                                }
-                                .font(.appSystem(size: 12, weight: .bold))
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 16)
-                                .background(Color.havenPurple)
-                                .foregroundColor(.white)
-                                .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(MacRelaySyncService.shared.isSyncing)
-
-                            Button {
-                                MacRelaySyncService.shared.resetSync()
-                            } label: {
-                                Text("Reset")
-                                    .font(.appSystem(size: 12, weight: .medium))
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 16)
-                                    .background(Color.secondary.opacity(0.1))
-                                    .foregroundColor(.secondary)
-                                    .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
-
-                            Spacer()
-                        }
+                    MacRelaySyncStatusView()
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .background(Color.platformCardBackground)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
             }
         }
@@ -526,3 +475,122 @@ private struct SyncStatusRow: View {
         )
     }
 }
+
+#if os(iOS)
+/// State of the Mac relay copy. Syncing with the Mac is done by the embedded
+/// relay itself (the Mac is one of its relays); this shows the one-time
+/// full-history copy and its missing-events check, and re-runs them on demand.
+struct MacRelaySyncStatusView: View {
+    @EnvironmentObject var configService: ConfigService
+    @ObservedObject private var relayManager = RelayProcessManager.shared
+    @State private var status: RelayConfiguration.MacSyncStatus?
+    @State private var checkRequested = false
+
+    private var isForCurrentMac: Bool {
+        status?.macURL == RelayConfiguration.macRelayURL(config: configService.config)
+    }
+
+    private var isRunning: Bool {
+        isForCurrentMac && status?.state == "running"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                if isRunning || checkRequested {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: icon).foregroundColor(iconColor)
+                }
+                Text(headline)
+                    .font(.appSystem(size: 13, weight: .semibold))
+            }
+            if let detail {
+                Text(detail)
+                    .font(.appCaption)
+                    .foregroundColor(.secondary)
+            }
+            Button {
+                checkRequested = true
+                RequestMacSyncCheckC()
+            } label: {
+                Label("Check sync with Mac", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.appSystem(size: 12, weight: .bold))
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.havenPurple)
+            .disabled(isRunning || checkRequested || !relayManager.isRunning)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task {
+            // The copy runs inside the relay; poll its status file while visible.
+            while !Task.isCancelled {
+                let latest = RelayConfiguration.macSyncStatus(under: ConfigService.shared.relayDataDir)
+                if checkRequested, latest?.state == "running" || (latest?.startedAt ?? 0) > (status?.startedAt ?? 0) {
+                    checkRequested = false // the relay picked the request up
+                }
+                status = latest
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
+    private var icon: String {
+        guard isForCurrentMac, let state = status?.state else { return "clock" }
+        switch state {
+        case "done": return "checkmark.circle.fill"
+        case "incomplete": return "exclamationmark.triangle.fill"
+        case "failed": return "xmark.octagon.fill"
+        default: return "clock"
+        }
+    }
+
+    private var iconColor: Color {
+        guard isForCurrentMac else { return .secondary }
+        switch status?.state {
+        case "done": return .havenOnline
+        case "incomplete": return .orange
+        case "failed": return .red
+        default: return .secondary
+        }
+    }
+
+    private var headline: String {
+        if checkRequested { return "Checking with your Mac…" }
+        guard isForCurrentMac, let status, let state = status.state else {
+            return "Full copy from your Mac hasn't run yet"
+        }
+        switch state {
+        case "running": return "Copying your full history from the Mac…"
+        case "done":
+            return (status.missing ?? 0) < 0 ? "Copied (this Mac can't be checked)" : "Everything copied · 0 missing"
+        case "incomplete":
+            let missing = status.missing ?? 0
+            return missing > 0 ? "\(missing) still missing" : "Copy didn't finish"
+        case "failed": return "Couldn't copy from your Mac"
+        default: return state
+        }
+    }
+
+    private var detail: String? {
+        guard isForCurrentMac, let status else {
+            return "It starts on its own shortly after the relay starts. After that, new posts and mentions keep syncing on their own."
+        }
+        if status.state == "running" { return nil }
+        var parts: [String] = []
+        parts.append("\(status.posts ?? 0) posts and \(status.mentions ?? 0) mentions copied.")
+        if let finished = status.finishedAt {
+            let date = Date(timeIntervalSince1970: TimeInterval(finished))
+            parts.append("Checked \(date.formatted(date: .abbreviated, time: .shortened)).")
+        }
+        if status.state == "incomplete" || status.state == "failed" {
+            if let error = status.error, !error.isEmpty { parts.append(error) }
+            parts.append("It tries again next time the app starts.")
+        }
+        if (status.missing ?? 0) < 0 {
+            parts.append("Your Mac's relay is too old to compare lists, so it was copied page by page.")
+        }
+        return parts.joined(separator: " ")
+    }
+}
+#endif

@@ -261,6 +261,14 @@ func subscribeInboxAndChat(ctx context.Context) {
 	for _, r := range config.DmRelays {
 		relaySet[r] = struct{}{}
 	}
+	// The Mac relay's outbox is a seed relay (owner events, both directions)
+	// and its inbox is inbox-only, like a DM relay. Added here rather than
+	// trusted to the app's relay files so the Mac can't silently drop out.
+	macBase, macInbox := macRelayURLs()
+	if macBase != "" {
+		relaySet[macBase] = struct{}{}
+		relaySet[macInbox] = struct{}{}
+	}
 	relays := make([]string, 0, len(relaySet))
 	for r := range relaySet {
 		relays = append(relays, r)
@@ -379,7 +387,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 	}
 
 	isSeedRelay := func(url string) bool {
-		return slices.Contains(config.ImportSeedRelays, url)
+		return slices.Contains(config.ImportSeedRelays, url) || (macBase != "" && url == macBase)
 	}
 
 	// runCatchup reconciles each relay via NIP-77 when supported, collecting
@@ -527,6 +535,23 @@ func subscribeInboxAndChat(ctx context.Context) {
 		runCatchup(true)
 		lastRun = time.Now()
 
+		// One-time full-history copy from the Mac relay, after the first round
+		// so recent items land first. Runs on this goroutine so it never
+		// overlaps a catch-up round on the same stores.
+		macFill := &macBackfiller{
+			pTags:      pTags,
+			inboxNeg:   inboxStore,
+			outboxNeg:  outboxStore,
+			wdbInbox:   wdbInbox,
+			wdbChat:    wdbChat,
+			wdbOutbox:  wdbOutbox,
+			notifier:   notifier,
+			rejects:    rejects,
+			now:        time.Now,
+			negEnabled: config.NegentropySyncEnabled,
+		}
+		macFill.runIfNeeded(ctx, false)
+
 		// A round that runs longer than the tick interval leaves a tick
 		// pending, which would start the next round immediately — and once
 		// the DBs are big enough that every round overruns, the loop
@@ -560,6 +585,19 @@ func subscribeInboxAndChat(ctx context.Context) {
 				log.Println("📢 relay sync requested (pull-to-refresh)")
 				// The user is looking at the app right now.
 				announce = false
+			case <-catchUpCh:
+				// The app came back to the foreground or woke in the
+				// background: a return from absence, so it may announce.
+				if time.Since(lastRun) < minSyncGap {
+					slog.Debug("catch-up request throttled", "since_last", time.Since(lastRun))
+					continue
+				}
+				log.Println("📢 catch-up requested (app returned)")
+			case <-macCheckCh:
+				macFill.runIfNeeded(ctx, true)
+				lastRun = time.Now()
+				restartTicker()
+				continue
 			}
 			runCatchup(announce)
 			lastRun = time.Now()
@@ -878,6 +916,32 @@ func RequestRelaySync() {
 	}
 	select {
 	case feedSyncCh <- struct{}{}:
+	default:
+	}
+}
+
+// catchUpCh is relaySyncCh for a return from absence (app foregrounded, or a
+// background wake): the round may end in a "while you were away" summary.
+var catchUpCh = make(chan struct{}, 1)
+
+// RequestCatchUp triggers an announcing catch-up round. Non-blocking,
+// coalesced, and throttled like RequestRelaySync.
+func RequestCatchUp() {
+	select {
+	case catchUpCh <- struct{}{}:
+	default:
+	}
+}
+
+// macCheckCh asks the catch-up loop to re-run the Mac relay full-history copy
+// and its missing-events check.
+var macCheckCh = make(chan struct{}, 1)
+
+// RequestMacSyncCheck re-runs the Mac relay copy and check. Non-blocking,
+// coalesced; a no-op when no Mac relay is configured.
+func RequestMacSyncCheck() {
+	select {
+	case macCheckCh <- struct{}{}:
 	default:
 	}
 }

@@ -410,11 +410,11 @@ func initRelays(ctx context.Context) error {
 
 	chatRelay.StoreEvent = append(chatRelay.StoreEvent, chatDB.SaveEvent, func(ctx context.Context, event *nostr.Event) error {
 		slog.Info("event stored")
-		// Same gap as inboxRelay.StoreEvent above, for gift-wrapped DMs synced in
-		// via MacRelaySyncService's /chat injection — see the comment there.
+		// Same gap as inboxRelay.StoreEvent above, for gift-wrapped DMs a client
+		// publishes straight into /chat — see the comment there.
 		// logInboxImport gated on c.notify, same reasoning as inboxRelay above.
 		// Also gated on isNotifyableAge: this path has no age check at all
-		// otherwise, and MacRelaySyncService injection is exactly where a large
+		// otherwise, and a client's bulk injection is exactly where a large
 		// stuck backlog (e.g. one that only just started succeeding after an
 		// unrelated bug fix) would light up the dot for every old item.
 		if c := classifyInboxEvent(ctx, event); c.accept && c.notify && isNotifyableAge(event) {
@@ -607,8 +607,8 @@ func initRelays(ctx context.Context) error {
 		// khatru treats as a short-circuit and never calls this handler. So this is
 		// safe to notify from without re-checking for duplicates.
 		//
-		// This is the only path a direct client publish to /inbox takes — notably
-		// MacRelaySyncService's catch-up injection from a Mac relay, which bypasses
+		// This is the only path a direct client publish to /inbox takes — e.g. an
+		// app injecting events it fetched elsewhere, which bypasses
 		// the live-subscription/negentropy paths (processInboxEvent, inboxNegStore)
 		// entirely. Without this, events that only ever reach the phone this way
 		// were stored silently: no 🔔NOTIFY marker, no "in your inbox" line for the
@@ -618,7 +618,7 @@ func initRelays(ctx context.Context) error {
 		// events (e.g. replying to your own note) don't light up the red dot —
 		// they're still imported, just not "activity from someone else". Also
 		// gated on isNotifyableAge: this path had no age check at all otherwise,
-		// and MacRelaySyncService injection is exactly where a large stuck
+		// and a client's bulk injection is exactly where a large stuck
 		// backlog (e.g. one that only just started succeeding after an
 		// unrelated bug fix, such as the NIP-42 AUTH fix for /private and /chat)
 		// would light up the dot and play a sound for every old item, reading
