@@ -332,7 +332,8 @@ struct CondensedNoteLine: View {
         case ..<604800:     return "\(Int(diff / 86400))d"
         default:
             let fmt = DateFormatter()
-            fmt.dateFormat = "MMM d"
+            fmt.dateFormat = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
+                ? "MMM d" : "MMM d, yyyy"
             return fmt.string(from: date)
         }
     }
