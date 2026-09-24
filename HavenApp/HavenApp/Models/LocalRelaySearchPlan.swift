@@ -65,6 +65,10 @@ enum LocalRelaySearchPlan {
 /// app's in-memory cache, so the two cannot drift apart.
 struct LocalSearchMatcher {
     let needle: String
+    /// Set for Global search's own-store sources: every term must appear,
+    /// in any order. Relay mode leaves it nil and keeps its whole-phrase
+    /// substring match.
+    let allTerms: SearchTermMatcher?
 
     /// Fails for queries shorter than two characters: the relay-mode search is a
     /// substring scan, and a one-character needle matches nearly everything.
@@ -73,6 +77,15 @@ struct LocalSearchMatcher {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else { return nil }
         self.needle = trimmed.lowercased()
+        self.allTerms = nil
+    }
+
+    /// All-terms matching (case-insensitive) — what Global search uses to
+    /// verify hits from the phone's store and the Mac relay.
+    init?(allTermsOf query: String) {
+        guard let terms = SearchTermMatcher(query: query) else { return nil }
+        self.needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self.allTerms = terms
     }
 
     /// A note matches on its own text and nothing else. Searching a person's
@@ -80,7 +93,8 @@ struct LocalSearchMatcher {
     /// everything they wrote (Logen, 2026-09-09). Hashtags and links are
     /// derived from the notes this keeps.
     func matchesNote(content: String) -> Bool {
-        content.lowercased().contains(needle)
+        if let allTerms { return allTerms.matches(content) }
+        return content.lowercased().contains(needle)
     }
 
     func matchesProfile(displayName: String?,
@@ -88,6 +102,10 @@ struct LocalSearchMatcher {
                         about: String?,
                         nip05: String?,
                         pubkey: String) -> Bool {
+        if let allTerms {
+            return allTerms.matches(fields: [displayName, name, about, nip05])
+                || allTerms.matches(pubkey)
+        }
         for field in [displayName, name, about, nip05] {
             if let field, field.lowercased().contains(needle) { return true }
         }

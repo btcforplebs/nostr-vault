@@ -23,6 +23,11 @@ struct SearchView: View {
     @State private var cachedTrending: [String] = []
     @State private var cachedSuggested: [(String, FeedProfile)] = []
     @State private var lastDiscoveryRefresh: Date = .distantPast
+    /// Global search: one status per source, streamed with the results.
+    @State private var globalSources: [GlobalSearchSourceStatus] = []
+    @State private var globalFinished = true
+    /// A Global search was cut short by the view going away; rerun on return.
+    @State private var globalInterrupted = false
     @FocusState private var searchFieldFocused: Bool
 
     enum SearchMode: CaseIterable {
@@ -69,6 +74,9 @@ struct SearchView: View {
 
     struct SearchResults {
         var users: [String: FeedProfile] = [:]
+        /// Display order for `users` when it matters (Global search is ranked
+        /// own → follows → everyone). Empty: sorted by pubkey, as relay mode is.
+        var userOrder: [String] = []
         var notes: [FeedNote] = []
         var links: [SearchLink] = []
         var hashtags: [String] = []
@@ -77,6 +85,11 @@ struct SearchView: View {
 
         var isEmpty: Bool {
             users.isEmpty && notes.isEmpty && links.isEmpty && hashtags.isEmpty
+        }
+
+        var orderedUsers: [(key: String, value: FeedProfile)] {
+            guard !userOrder.isEmpty else { return users.sorted(by: { $0.key < $1.key }) }
+            return userOrder.compactMap { key in users[key].map { (key: key, value: $0) } }
         }
 
         /// Whether the section the user is currently looking at is empty. The
@@ -185,6 +198,8 @@ struct SearchView: View {
                                     searchResults = .empty
                                     pendingDirectNoteId = nil
                                     isSearching = false
+                                    globalSources = []
+                                    globalFinished = true
                                     nostrService.cancelGlobalSearch()
                                     nostrService.cancelLocalRelaySearch()
                                     refreshDiscovery(force: true)
@@ -262,6 +277,20 @@ struct SearchView: View {
                 // Results
                 if searchQuery.isEmpty {
                     emptyState
+                } else if searchMode == .global && !globalSources.isEmpty {
+                    // Global streams: the source strip stays up while results
+                    // arrive, and "no results" waits until every source is done.
+                    VStack(spacing: 0) {
+                        globalSourceStrip
+                        Divider()
+                        if !searchResults.isEmpty {
+                            resultsContent
+                        } else if globalFinished {
+                            noResultsState
+                        } else {
+                            loadingState
+                        }
+                    }
                 } else if isSearching {
                     loadingState
                 } else if searchResults.isEmpty {
@@ -399,11 +428,23 @@ struct SearchView: View {
         }
         .onAppear {
             refreshDiscovery(force: true)
+            if globalInterrupted {
+                globalInterrupted = false
+                if searchMode == .global { rerunSearch() }
+            }
             #if os(macOS)
             // No tap-to-focus convention on the desktop: the field a window opens
             // on should already be taking keystrokes.
             searchFieldFocused = true
             #endif
+        }
+        .onDisappear {
+            // Nothing is shown while the view is gone: stop the sockets, and
+            // pick the search up again if the view comes back.
+            if searchMode == .global && !globalFinished && !globalSources.isEmpty {
+                globalInterrupted = true
+            }
+            nostrService.cancelGlobalSearch()
         }
         .onReceive(feedService.$notes) { notes in
             // Throttled refresh of the empty-state discovery lists as the feed grows.
@@ -600,6 +641,70 @@ struct SearchView: View {
         }
     }
 
+    /// One chip per Global search source: searching / N found / no answer.
+    @ViewBuilder
+    private var globalSourceStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(globalSources) { source in
+                    globalSourceChip(source)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+    }
+
+    @ViewBuilder
+    private func globalSourceChip(_ source: GlobalSearchSourceStatus) -> some View {
+        let (text, color): (String, Color) = {
+            switch source.state {
+            case .searching: return (source.count > 0 ? "\(source.count) so far" : "searching", .secondary)
+            case .found(let n): return ("\(n) found", n > 0 ? .havenOnline : .secondary)
+            case .noAnswer(let reason): return ("no answer: \(reason)", .orange)
+            }
+        }()
+        let icon: String = {
+            switch source.role {
+            case .device:
+                #if os(macOS)
+                return "desktopcomputer"
+                #else
+                return "iphone"
+                #endif
+            case .mac: return "desktopcomputer"
+            case .relay: return "antenna.radiowaves.left.and.right"
+            }
+        }()
+        HStack(spacing: 5) {
+            if case .searching = source.state {
+                ProgressView()
+                    .controlSize(.mini)
+            } else {
+                Image(systemName: icon)
+                    .font(.appSystem(size: 10, weight: .semibold))
+                    .foregroundColor(color)
+            }
+            Text(source.label)
+                .font(.appSystem(size: 11, weight: .semibold))
+                .foregroundColor(.primary.opacity(0.85))
+            if let detail = source.detail {
+                Text(detail)
+                    .font(.appSystem(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            Text(text)
+                .font(.appSystem(size: 11))
+                .foregroundColor(color)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.secondary.opacity(0.1))
+        .cornerRadius(12)
+        .help("\(source.label): \(text)")
+    }
+
     @ViewBuilder
     private var loadingState: some View {
         VStack(spacing: 12) {
@@ -643,7 +748,7 @@ struct SearchView: View {
                             .padding(.horizontal, 16)
 
                         VStack(spacing: 8) {
-                            ForEach(searchResults.users.sorted(by: { $0.key < $1.key }), id: \.key) { pubkey, profile in
+                            ForEach(searchResults.orderedUsers, id: \.key) { pubkey, profile in
                                 userRow(pubkey: pubkey, profile: profile)
                             }
                         }
@@ -900,6 +1005,8 @@ struct SearchView: View {
     private func rerunSearch() {
         nostrService.cancelGlobalSearch()
         nostrService.cancelLocalRelaySearch()
+        globalSources = []
+        globalFinished = true
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             searchResults = .empty
@@ -926,12 +1033,18 @@ struct SearchView: View {
         searchResults = .empty
         pendingDirectNoteId = nil
         isSearching = false
+        globalSources = []
+        globalFinished = true
         nostrService.cancelGlobalSearch()
         nostrService.cancelLocalRelaySearch()
     }
 
     private func performSearch(query: String) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A new query supersedes whatever Global search was streaming.
+        nostrService.cancelGlobalSearch()
+        globalSources = []
+        globalFinished = true
         guard !trimmed.isEmpty else {
             searchResults = .empty
             pendingDirectNoteId = nil
@@ -980,32 +1093,40 @@ struct SearchView: View {
             return
         }
 
-        // Global (NIP-50) search across external relays.
+        // Global search: this device's store, the Mac relay and the NIP-50
+        // search relays at once, streamed as each answers.
         if searchMode == .global {
             isSearching = true
+            globalFinished = false
             let requestedQuery = trimmed
-            nostrService.globalSearch(query: trimmed) { globalResults in
-                // Ignore stale completions (user changed query or switched mode).
+            nostrService.startGlobalSearch(query: trimmed,
+                                           deviceRelay: feedService.localRelayURL,
+                                           follows: feedService.followedPubkeys) { snapshot in
+                // Ignore stale updates (user changed query or switched mode).
                 guard self.searchMode == .global,
                       self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == requestedQuery else { return }
 
                 var results = SearchResults()
-                for profile in globalResults.profiles {
+                for profile in snapshot.profiles {
                     results.users[profile.pubkey] = profile
                 }
-                results.notes = Array(globalResults.notes.prefix(30))
+                results.userOrder = snapshot.profiles.map(\.pubkey)
+                // Already ranked own → follows → everyone, newest first in each.
+                results.notes = Array(snapshot.notes.prefix(100))
 
                 var foundHashtags = Set<String>()
-                for note in globalResults.notes {
+                for note in snapshot.notes {
                     for tag in self.extractHashtags(from: note.content) where tag.lowercased().contains(trimmedQuery) {
                         foundHashtags.insert(tag)
                     }
                 }
                 results.hashtags = Array(foundHashtags).sorted()
 
-                results.links = self.extractURLs(from: globalResults.notes)
+                results.links = self.extractURLs(from: results.notes)
 
                 self.searchResults = results
+                self.globalSources = snapshot.sources
+                self.globalFinished = snapshot.isFinished
                 self.isSearching = false
             }
             return

@@ -50,6 +50,7 @@ struct SettingsView: View {
         case dm = "DM Relays"
         case pushNotifications = "Notifications"
         case importNotes = "Import"
+        case searchRelays = "Search Relays"
         case backup = "Backup"
         case followingBackup = "Following Backup"
         case blastr = "Blastr"
@@ -84,6 +85,7 @@ struct SettingsView: View {
             case .dm: return "bubble.left.and.bubble.right"
             case .pushNotifications: return "bell.badge"
             case .importNotes: return "square.and.arrow.down"
+            case .searchRelays: return "magnifyingglass"
             case .backup: return "externaldrive.fill"
             case .followingBackup: return "person.crop.circle.badge.clock"
             case .blastr: return "paperplane"
@@ -235,7 +237,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     settingsSidebarSection("Profile", items: [.accounts, .blocked])
                     settingsSidebarSection("Appearance", items: [.appearance])
-                    settingsSidebarSection("Relay Configuration", items: [.macRelay, .feed, .dm, .blastr, .blossom, .importNotes, .backup, .followingBackup])
+                    settingsSidebarSection("Relay Configuration", items: [.macRelay, .feed, .dm, .blastr, .blossom, .importNotes, .searchRelays, .backup, .followingBackup])
                     settingsSidebarSection("System", items: [.pushNotifications, .wallet, .proofOfWork, .advanced, .logs])
                 }
                 .padding(.horizontal, 8)
@@ -397,6 +399,7 @@ struct SettingsView: View {
                 tabLink(.blastr)
                 tabLink(.blossom)
                 tabLink(.importNotes)
+                tabLink(.searchRelays)
                 tabLink(.backup)
                 tabLink(.followingBackup)
                 tabLink(.macRelay)
@@ -504,6 +507,7 @@ struct SettingsView: View {
         case .dm: return .mint
         case .pushNotifications: return .blue
         case .importNotes: return .orange
+        case .searchRelays: return .indigo
         case .backup: return .indigo
         case .followingBackup: return .teal
         case .blastr: return .cyan
@@ -542,6 +546,7 @@ struct SettingsView: View {
             case .dm: DMSettingsView()
             case .pushNotifications: PushNotificationSettingsView()
             case .importNotes: ImportSettingsView()
+            case .searchRelays: SearchRelaysSettingsView()
             case .backup: BackupSettingsView()
             case .followingBackup: FollowingBackupSettingsView()
             case .blastr: BlastrSettingsView()
@@ -2082,6 +2087,49 @@ struct ImportSettingsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+    }
+}
+
+/// The NIP-50 relays Global search asks, per device (UserDefaults, not the
+/// relay config — the relay never reads this list).
+struct SearchRelaysSettingsView: View {
+    @State private var relays: [String] = SearchRelaySettings.relays
+    @State private var isDefault = SearchRelaySettings.isDefault
+
+    var body: some View {
+        Form {
+            Section {
+                RelayListEditor(relays: $relays)
+            } header: {
+                Text("Search Relays")
+            } footer: {
+                Text("Global search asks these NIP-50 relays along with this device's own store and your Mac relay. Notes and profiles are requested separately, so profile-only search relays work too. Saved on this device only.")
+            }
+
+            Section {
+                Button("Reset to Defaults") {
+                    SearchRelaySettings.resetToDefaults()
+                    isDefault = true
+                    relays = SearchRelaySettings.relays
+                }
+                .disabled(isDefault)
+            } footer: {
+                Text("Defaults: " + SearchRelayDefaults.relays
+                    .map { $0.replacingOccurrences(of: "wss://", with: "") }
+                    .joined(separator: ", "))
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .onChange(of: relays) { _, newValue in
+            // A reset has already cleared the stored list; writing the
+            // defaults back would pin them and stop future default changes.
+            if isDefault && newValue == SearchRelaySettings.relays { return }
+            SearchRelaySettings.relays = newValue
+            isDefault = false
+        }
     }
 }
 
