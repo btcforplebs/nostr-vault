@@ -717,88 +717,100 @@ struct ComposeView: View {
     private var footer: some View {
         let purple = Color.havenPurple
         let title3 = Font.appTitle3
-        return HStack(spacing: 12) {
-            PhotosPicker(selection: $selectedItems, maxSelectionCount: remainingAttachmentSlots, matching: .images) {
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(title3)
-                    .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
-                    .padding(10)
-                    .background(purple.opacity(0.1))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isAttachmentLimitReached)
-
-            PhotosPicker(selection: $selectedItems, maxSelectionCount: remainingAttachmentSlots, matching: .videos) {
-                Image(systemName: "video.fill")
-                    .font(title3)
-                    .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
-                    .padding(10)
-                    .background(purple.opacity(0.1))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isAttachmentLimitReached)
-
-            Button(action: handlePasteFromClipboard) {
-                Image(systemName: "wand.and.stars")
-                    .font(.appTitle3)
-                    .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
-                    .padding(10)
-                    .background(purple.opacity(0.1))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isAttachmentLimitReached)
-
-            Button(action: { showingGifPicker = true }) {
-                Group {
-                    if isFetchingGif {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text("GIF")
-                            .font(.appSystem(size: 12, weight: .bold))
-                    }
-                }
-                .frame(width: 22, height: 22)
-                .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
-                .padding(8)
-                .background(purple.opacity(0.1))
-                .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isAttachmentLimitReached || isFetchingGif)
-            .help("Search GIFs from getyarn.io or Tenor")
-
-            Spacer()
-            
+        return Group {
+            // Posting/uploading left the attachment buttons enabled in the
+            // layout, so the status text had to squeeze into whatever space
+            // five buttons and a collapsed Spacer left it -- on iPhone that
+            // was ~0, and the text landed pinned against the GIF button
+            // instead of reading cleanly. Swapping the whole row for a
+            // dedicated status row keeps it from crowding at all.
             if isUploading, let msg = uploadInfoProvider.uploadMessage {
-                Text(msg)
-                    .font(.appSystem(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .padding(.trailing, 8)
-                ProgressView().controlSize(.small).padding(.trailing, 8)
+                footerStatus(text: msg)
             } else if isPosting {
-                Text("Posting note...")
-                    .font(.appSystem(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .padding(.trailing, 8)
-                ProgressView().controlSize(.small).padding(.trailing, 8)
+                footerStatus(text: "Posting note...")
+            } else {
+                HStack(spacing: 12) {
+                    PhotosPicker(selection: $selectedItems, maxSelectionCount: remainingAttachmentSlots, matching: .images) {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(title3)
+                            .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
+                            .padding(10)
+                            .background(purple.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isAttachmentLimitReached)
+
+                    PhotosPicker(selection: $selectedItems, maxSelectionCount: remainingAttachmentSlots, matching: .videos) {
+                        Image(systemName: "video.fill")
+                            .font(title3)
+                            .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
+                            .padding(10)
+                            .background(purple.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isAttachmentLimitReached)
+
+                    Button(action: handlePasteFromClipboard) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.appTitle3)
+                            .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
+                            .padding(10)
+                            .background(purple.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isAttachmentLimitReached)
+
+                    Button(action: { showingGifPicker = true }) {
+                        Group {
+                            if isFetchingGif {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("GIF")
+                                    .font(.appSystem(size: 12, weight: .bold))
+                            }
+                        }
+                        .frame(width: 22, height: 22)
+                        .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
+                        .padding(8)
+                        .background(purple.opacity(0.1))
+                        .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isAttachmentLimitReached || isFetchingGif)
+                    .help("Search GIFs from getyarn.io or Tenor")
+
+                    Spacer()
+
+                    Button(action: { showBlossomPicker = true }) {
+                        Image(systemName: "camera.macro")
+                            .font(.appTitle3)
+                            .foregroundColor(purple)
+                            .padding(10)
+                            .background(purple.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            
-            Button(action: { showBlossomPicker = true }) {
-                Image(systemName: "camera.macro")
-                    .font(.appTitle3)
-                    .foregroundColor(purple)
-                    .padding(10)
-                    .background(purple.opacity(0.1))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
         }
         .padding()
         .background(Color.platformControlBackground)
         .onChange(of: selectedItems) { _, _ in loadSelectedItems() }
+    }
+
+    private func footerStatus(text: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(text)
+                .font(.appSystem(size: 13, weight: .medium))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+            Spacer()
+        }
+        .frame(minHeight: 44)
     }
     
     private func replyHeader(parent: FeedNote) -> some View {
