@@ -14,6 +14,13 @@ final class LocalRelaySearchPlanTests: XCTestCase {
         XCTAssertGreaterThan(LocalRelaySearchPlan.pageLimit, 0)
     }
 
+    /// Badger, which the iOS installs run, caps a REQ at 1000 and turns a
+    /// larger limit into 250. A page of 1500 came back as 250, looked short,
+    /// and ended the search after the newest 250 events.
+    func testPageLimitFitsUnderBadgersCap() {
+        XCTAssertLessThanOrEqual(LocalRelaySearchPlan.pageLimit, 1000)
+    }
+
     // MARK: Stepping
 
     func testShortPageEndsTheWalk() {

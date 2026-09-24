@@ -2,11 +2,15 @@ import Foundation
 
 /// Planning + matching rules for relay-mode search ("search my own relay").
 ///
-/// The embedded relay stores events in LMDB, and its backend caps every REQ.
-/// `MaxLimit` is left at the library default of 1500
-/// (`eventstore/lmdb/lib.go:46`), and a filter asking for MORE than that is not
-/// clamped down to 1500 — it falls through to `maxLimit / 4` = 375
-/// (`eventstore/lmdb/query.go:27-37`):
+/// The embedded relay's backend caps every REQ, and a filter asking for MORE
+/// than the cap is not clamped down to it — it falls through to `cap / 4`.
+/// The two backends have different caps:
+///
+/// - LMDB: `MaxLimit` 1500 (`eventstore/lmdb/lib.go:46`), so 2000 returns 375.
+/// - Badger (`DB_ENGINE=badger`, what the iOS installs actually run): `MaxLimit`
+///   1000 (`eventstore/badger/lib.go:63`), so the old page of 1500 returned
+///   250, which read as a short page and ended every search after the newest
+///   250 events of each kind.
 ///
 /// ```go
 /// limit = maxLimit / 4
@@ -15,18 +19,17 @@ import Foundation
 /// }
 /// ```
 ///
-/// So one REQ can never cover a store larger than 1500 events, asking for 2000
-/// silently returns 375, and omitting the limit returns 375 as well. Covering
-/// the whole store means paging with an `until` cursor, not a bigger number.
+/// So a page must fit under the smaller cap, and covering the whole store means
+/// paging with an `until` cursor, not a bigger number.
 enum LocalRelaySearchPlan {
-    /// Largest limit the LMDB backend honours verbatim.
-    static let relayMaxLimit = 1500
+    /// Largest limit every backend honours verbatim (Badger's 1000; LMDB's is 1500).
+    static let relayMaxLimit = 1000
 
     /// Events requested per page. Must stay <= `relayMaxLimit`.
     static let pageLimit = relayMaxLimit
 
-    /// Bounds one search: 20 pages x 1500 = 30,000 events per route and kind.
-    static let maxPages = 20
+    /// Bounds one search: 40 pages x 1000 = 40,000 events per route and kind.
+    static let maxPages = 40
 
     /// What to do once a page has been received in full (EOSE).
     enum Step: Equatable {
