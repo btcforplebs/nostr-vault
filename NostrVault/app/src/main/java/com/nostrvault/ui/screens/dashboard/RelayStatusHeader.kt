@@ -30,6 +30,7 @@ import com.nostrvault.ui.theme.*
 fun RelayStatusHeader(
     relayStatus: RelayStatus,
     relayAddress: String?,
+    isExternalRelay: Boolean,
     isLocked: Boolean,
     isPortConflict: Boolean,
     onStartRelay: () -> Unit,
@@ -49,7 +50,8 @@ fun RelayStatusHeader(
     }
 
     val statusText = when (relayStatus) {
-        RelayStatus.RUNNING -> "ONLINE"
+        // Another app's relay: its health is not something this app knows.
+        RelayStatus.RUNNING -> if (isExternalRelay) "EXTERNAL" else "ONLINE"
         RelayStatus.BOOTING -> "BOOTING..."
         RelayStatus.IMPORTING -> "IMPORTING..."
         RelayStatus.OFFLINE -> "OFFLINE"
@@ -145,8 +147,9 @@ fun RelayStatusHeader(
                     }
                 }
 
-                // Control button
-                when (relayStatus) {
+                // Control button. An external relay belongs to another app,
+                // so there is nothing here to start or stop.
+                if (!isExternalRelay) when (relayStatus) {
                     RelayStatus.OFFLINE -> {
                         Button(
                             onClick = onStartRelay,

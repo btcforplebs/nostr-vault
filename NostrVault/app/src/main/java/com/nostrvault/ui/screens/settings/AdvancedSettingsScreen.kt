@@ -22,7 +22,9 @@ import com.nostrvault.service.MediaCacheService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /** Cache TTL options: value (days) -> label. 0 = Never. */
@@ -54,6 +56,27 @@ class AdvancedSettingsViewModel @Inject constructor(
     fun setAutoStartRelay(v: Boolean) = save { it.copy(autoStartRelay = v) }
 
     fun clearMediaCache() = mediaCacheService.clearCache()
+
+    /**
+     * Persists the external-relay choice to disk before [onDone] restarts the
+     * app. The caller has asked the relay service to stop; exiting before its
+     * onDestroy has closed the databases would leave them uncleanly shut.
+     */
+    fun applyExternalRelay(enabled: Boolean, relayURL: String, blossomURL: String, onDone: () -> Unit) {
+        viewModelScope.launch {
+            withTimeoutOrNull(8_000) {
+                while (RelayForegroundService.serviceAlive) delay(100)
+            }
+            configStore.updateAsync {
+                if (enabled) {
+                    it.copy(useExternalRelay = true, externalRelayURL = relayURL, externalBlossomURL = blossomURL)
+                } else {
+                    it.copy(useExternalRelay = false)
+                }
+            }
+            onDone()
+        }
+    }
 
     fun factoryReset(onDone: () -> Unit) {
         viewModelScope.launch {
@@ -146,13 +169,24 @@ fun AdvancedSettingsScreen(
             // ── Diagnostics & Startup ─────────────────────────────
             SectionLabel("Diagnostics & Startup")
             ToggleRow("Auto-start Relay", config.autoStartRelay, viewModel::setAutoStartRelay)
-            OutlinedButton(
-                onClick = {
-                    RelayForegroundService.stop(context)
-                    RelayForegroundService.start(context)
-                },
-                modifier = Modifier.padding(top = 8.dp),
-            ) { Text("Restart Relay") }
+            if (!config.useExternalRelay) {
+                OutlinedButton(
+                    onClick = {
+                        RelayForegroundService.stop(context)
+                        RelayForegroundService.start(context)
+                    },
+                    modifier = Modifier.padding(top = 8.dp),
+                ) { Text("Restart Relay") }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // ── External Relay ────────────────────────────────────
+            SectionLabel("External Relay")
+            ExternalRelaySection(config) { enabled, relayURL, blossomURL ->
+                RelayForegroundService.stop(context)
+                viewModel.applyExternalRelay(enabled, relayURL, blossomURL) { relaunchApp(context) }
+            }
 
             Spacer(Modifier.height(28.dp))
 
@@ -178,15 +212,7 @@ fun AdvancedSettingsScreen(
                 TextButton(onClick = {
                     showResetDialog = false
                     RelayForegroundService.stop(context)
-                    viewModel.factoryReset {
-                        // Relaunch the app from its launcher entry point.
-                        val intent = context.packageManager
-                            .getLaunchIntentForPackage(context.packageName)
-                            ?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                                android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                        context.startActivity(intent)
-                        Runtime.getRuntime().exit(0)
-                    }
+                    viewModel.factoryReset { relaunchApp(context) }
                 }) { Text("Reset Everything", color = ErrorRed) }
             },
             dismissButton = {
@@ -194,6 +220,16 @@ fun AdvancedSettingsScreen(
             },
         )
     }
+}
+
+/** Relaunch the app from its launcher entry point in a fresh process. */
+private fun relaunchApp(context: android.content.Context) {
+    val intent = context.packageManager
+        .getLaunchIntentForPackage(context.packageName)
+        ?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+            android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+    context.startActivity(intent)
+    Runtime.getRuntime().exit(0)
 }
 
 @Composable

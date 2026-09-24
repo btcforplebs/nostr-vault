@@ -364,6 +364,14 @@ data class HavenConfig(
     val cacheTTLDays: Int = 7, // 0 = never evict
     val autoStartRelay: Boolean = true,
 
+    // External relay (Android only). Some users keep the client and their
+    // relay/Blossom server in separate apps for sandboxing (e.g. Citrine on
+    // the same phone). When on, the embedded relay never starts and every
+    // read, write and upload that targeted it goes to these URLs instead.
+    val useExternalRelay: Boolean = false,
+    val externalRelayURL: String = "",
+    val externalBlossomURL: String = "",
+
     // Notifications. These drive the on-device notifications the embedded
     // relay generates; there is no push server. The APNs forwarder that
     // pushServerURL used to point at was deleted in cd604a3 — it only ever
@@ -389,15 +397,35 @@ data class HavenConfig(
     val nostrURL: String?
         get() {
             if (ownerNpub.isEmpty()) return null
+            if (useExternalRelay) return normalizeExternalRelayURL(externalRelayURL)
             // Local relay runs without TLS; convert any persisted wss:// to ws://
             return relayURL
                 .replace("wss://127.0.0.1", "ws://127.0.0.1")
                 .replace("wss://localhost", "ws://localhost")
         }
 
+    /**
+     * One of the embedded relay's sub-relays (`inbox`, `chat`, `private`,
+     * `feed`). An external relay is a single endpoint with no such paths, so
+     * every sub-relay collapses onto its base URL.
+     */
+    fun localRelayURL(path: String): String? {
+        val base = nostrURL ?: return null
+        return if (useExternalRelay) base else "${base.trimEnd('/')}/$path"
+    }
+
     /** Computed local inbox relay URL. */
     val localInboxURL: String?
-        get() = nostrURL?.let { "$it/inbox" }
+        get() = localRelayURL("inbox")
+
+    /** Base URL of the Blossom server the app stores media on first. */
+    val localBlossomBaseURL: String?
+        get() = if (useExternalRelay) {
+            normalizeExternalBlossomURL(externalBlossomURL)
+        } else {
+            // Android relay runs without TLS (HAVEN_ENABLE_TLS=0), so plain HTTP.
+            "http://localhost:$relayPort"
+        }
 
     // ── Haven Relay Derived URLs ──────────────────────────────────
 
@@ -589,4 +617,31 @@ data class AccountBunkerConfig(
 ) {
     val isConfigured: Boolean
         get() = bunkerURI.isNotEmpty() || signerPubkey.isNotEmpty()
+}
+
+/**
+ * Normalizes a user-typed relay address: trims it, drops trailing slashes and
+ * adds `ws://` when no scheme was given. Returns null unless it is a
+ * websocket address on this phone — the feature is for a relay app running
+ * beside this one, and the clients that talk to it (and the cleartext
+ * allowance in network_security_config) only trust 127.0.0.1 and localhost.
+ */
+fun normalizeExternalRelayURL(raw: String): String? =
+    normalizeOnDeviceURL(raw, schemes = listOf("ws://", "wss://"))
+
+/** Same as [normalizeExternalRelayURL] for a Blossom server (`http(s)://`). */
+fun normalizeExternalBlossomURL(raw: String): String? =
+    normalizeOnDeviceURL(raw, schemes = listOf("http://", "https://"))
+
+private fun normalizeOnDeviceURL(raw: String, schemes: List<String>): String? {
+    var url = raw.trim().trimEnd('/')
+    if (url.isEmpty()) return null
+    val lower = url.lowercase()
+    if ("://" !in lower) {
+        url = schemes.first() + url
+    } else if (schemes.none { lower.startsWith(it) }) {
+        return null
+    }
+    val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return null
+    return if (host == "127.0.0.1" || host == "localhost") url else null
 }

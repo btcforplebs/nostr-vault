@@ -687,12 +687,8 @@ class BlossomService @Inject constructor(
     // Utilities
     // ══════════════════════════════════════════════════════════════════
 
-    fun localBlossomURL(): String? {
-        val config = configStore.config.value
-        val port = config.relayPort ?: return null
-        // Android relay runs without TLS (HAVEN_ENABLE_TLS=0), so plain HTTP.
-        return "http://localhost:$port"
-    }
+    /** Embedded relay's Blossom, or the external one when that mode is on (null if unset). */
+    fun localBlossomURL(): String? = configStore.config.value.localBlossomBaseURL
 
     private fun isLocalhost(url: String): Boolean {
         val lower = url.lowercase()

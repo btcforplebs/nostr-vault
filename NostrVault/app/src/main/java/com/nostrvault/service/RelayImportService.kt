@@ -32,6 +32,10 @@ import javax.inject.Singleton
  * Import flow: stop relay -> set env -> start in import mode -> poll progress -> restart relay
  * Export flow: call HavenBridge.backupDatabase() or zipDirectory() on IO dispatcher
  */
+/** Import writes into the built-in relay's database, which is off in external mode. */
+const val EXTERNAL_RELAY_IMPORT_MESSAGE =
+    "Import fills the built-in relay, which is off while you use an external relay."
+
 @Singleton
 class RelayImportService @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -75,6 +79,10 @@ class RelayImportService @Inject constructor(
      */
     fun importNotes() {
         if (_isImporting.value || _isExporting.value) return
+        if (configStore.config.value.useExternalRelay) {
+            _importStatusMessage.value = EXTERNAL_RELAY_IMPORT_MESSAGE
+            return
+        }
 
         importJob = scope.launch {
             _isImporting.value = true

@@ -34,7 +34,9 @@ class BootCompletedReceiver : BroadcastReceiver() {
             .configStore()
         // Fresh process on boot — load persisted config before reading the flag.
         configStore.reload()
-        val autoStartEnabled = configStore.config.value.autoStartRelay
+        val config = configStore.config.value
+        // An external relay replaces the embedded one; there is nothing to boot.
+        val autoStartEnabled = config.autoStartRelay && !config.useExternalRelay
 
         if (autoStartEnabled) {
             Log.i(TAG, "Boot completed -- starting relay service")

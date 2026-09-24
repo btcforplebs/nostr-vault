@@ -450,6 +450,10 @@ class DashboardViewModel @Inject constructor(
 
     fun importNotes(context: android.content.Context) {
         if (_isImporting.value) return
+        if (configStore.config.value.useExternalRelay) {
+            _importStatusMessage.value = com.nostrvault.service.EXTERNAL_RELAY_IMPORT_MESSAGE
+            return
+        }
         _isImporting.value = true
         _importProgress.value = 0f
         _importStatusMessage.value = "Preparing import..."
@@ -628,11 +632,12 @@ class DashboardViewModel @Inject constructor(
         val authors = buildAuthorSet()
         val ownerHex = nostrService.activeHexPubkey
         val config = configStore.config.value
-        val localUrl = "ws://127.0.0.1:${config.relayPort}"
+        val localUrl = config.nostrURL ?: return false
+        val inboxUrl = config.localInboxURL ?: return false
         val macWss = config.macRelayWssURL
 
         outboxClient?.let { sendVaultSubscription(it, "vault-outbox", authors, ownerHex, localUrl) }
-        inboxClient?.let { sendVaultSubscription(it, "vault-inbox", authors, ownerHex, "$localUrl/inbox") }
+        inboxClient?.let { sendVaultSubscription(it, "vault-inbox", authors, ownerHex, inboxUrl) }
         // Re-pull the Mac relay (source of truth) too so we converge on its data
         macOutboxClient?.takeIf { it.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
             ?.let { sendVaultSubscription(it, "vault-mac-outbox", authors, ownerHex, macWss) }
@@ -653,8 +658,8 @@ class DashboardViewModel @Inject constructor(
             _connectionColor.value = "red"
             return
         }
-        val localUrl = "ws://127.0.0.1:${config.relayPort}"
-        val inboxUrl = "$localUrl/inbox"
+        val localUrl = config.nostrURL ?: return
+        val inboxUrl = config.localInboxURL ?: return
         val ownerHex = nostrService.activeHexPubkey
         val authors = buildAuthorSet()
 
@@ -1042,7 +1047,8 @@ class DashboardViewModel @Inject constructor(
                 Log.w(TAG, "loadMore: No relay URL configured")
                 return
             }
-            val localUrl = "ws://127.0.0.1:${config.relayPort}"
+            val localUrl = config.nostrURL ?: return
+            val inboxUrl = config.localInboxURL ?: return
 
             // Build author set matching loadLocalRelayNotes
             val ownerHex = nostrService.activeHexPubkey
@@ -1070,7 +1076,7 @@ class DashboardViewModel @Inject constructor(
                 val (outboxRaw, _) = queryRelayEndpoint(localUrl, filters, "outbox-hist", LOAD_MORE_TIMEOUT_MS)
 
                 // Query inbox for older tagged notes
-                val (inboxRaw, _) = queryRelayEndpoint("$localUrl/inbox", filters, "inbox-hist", LOAD_MORE_TIMEOUT_MS)
+                val (inboxRaw, _) = queryRelayEndpoint(inboxUrl, filters, "inbox-hist", LOAD_MORE_TIMEOUT_MS)
 
                 allEventsMutex.withLock {
                     allEvents.addAll(outboxRaw)
@@ -1492,7 +1498,7 @@ class DashboardViewModel @Inject constructor(
         hasFetchedZapReceipts = true
 
         val localUrl = configStore.config.value.nostrURL ?: return
-        val urls = mutableListOf(localUrl, "$localUrl/inbox")
+        val urls = listOfNotNull(localUrl, configStore.config.value.localInboxURL).distinct()
         Log.d(TAG, "Fetching extended zap receipts history")
         nostrService.fetchZapReceipts(urls)
     }
@@ -2130,6 +2136,7 @@ fun DashboardScreen(
                 isLoading = statsLoading,
                 relayStatus = currentRelayStatus,
                 relayAddress = currentConfig.nostrURL,
+                isExternalRelay = currentConfig.useExternalRelay,
                 isLocked = currentIsLocked,
                 isPortConflict = currentIsPortConflict,
                 onRefresh = viewModel::loadStats,
@@ -2669,6 +2676,7 @@ private fun DashboardSheetContent(
     isLoading: Boolean,
     relayStatus: RelayForegroundService.RelayStatus,
     relayAddress: String?,
+    isExternalRelay: Boolean,
     isLocked: Boolean,
     isPortConflict: Boolean,
     onRefresh: () -> Unit,
@@ -2775,6 +2783,7 @@ private fun DashboardSheetContent(
         com.nostrvault.ui.screens.dashboard.RelayStatusHeader(
             relayStatus = relayStatus,
             relayAddress = relayAddress,
+            isExternalRelay = isExternalRelay,
             isLocked = isLocked,
             isPortConflict = isPortConflict,
             onStartRelay = onStartRelay,

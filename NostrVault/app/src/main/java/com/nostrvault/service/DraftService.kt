@@ -129,6 +129,9 @@ class DraftService @Inject constructor(
      */
     private fun trySyncDraft(draft: Draft) {
         if (!RelayForegroundService.readyForConnections.value) return
+        // Drafts are plaintext. The embedded /private relay is owner-only; an
+        // external relay may not be, so drafts stay queued on the device.
+        if (configStore.config.value.useExternalRelay) return
 
         scope.launch {
             try {
@@ -161,6 +164,7 @@ class DraftService @Inject constructor(
      */
     private fun tryDeleteFromRelay(draftId: String) {
         if (!RelayForegroundService.readyForConnections.value) return
+        if (configStore.config.value.useExternalRelay) return // see trySyncDraft
 
         scope.launch {
             try {
@@ -181,8 +185,9 @@ class DraftService @Inject constructor(
      * Post raw event JSON to the local /private relay endpoint.
      */
     private suspend fun postToPrivateRelay(eventJson: String) {
-        val baseUrl = configStore.config.value.nostrURL ?: return
-        val privateUrl = "$baseUrl/private"
+        val config = configStore.config.value
+        if (config.useExternalRelay) return // see trySyncDraft
+        val privateUrl = config.localRelayURL("private") ?: return
         try {
             val client = nostrService.connectToRelay(privateUrl, onMessage = {})
             client?.send("[\"EVENT\",$eventJson]")

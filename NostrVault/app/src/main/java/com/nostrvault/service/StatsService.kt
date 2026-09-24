@@ -114,7 +114,7 @@ class StatsService @Inject constructor(
             val relayUrls = buildList {
                 config.nostrURL?.let { add(it) }
                 config.localInboxURL?.let { add(it) }
-            }
+            }.distinct()
 
             if (relayUrls.isEmpty()) {
                 withContext(Dispatchers.Main.immediate) {
@@ -219,7 +219,7 @@ class StatsService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     suspend fun fetchBlobList(pubkey: String): List<BlobDescriptor> =
-        fetchBlobList(pubkey, configStore.config.value.nostrURL)
+        fetchBlobList(pubkey, configStore.config.value.localBlossomBaseURL)
 
     /**
      * List the blobs a server holds for [pubkey] via the Blossom `/list/<pubkey>`

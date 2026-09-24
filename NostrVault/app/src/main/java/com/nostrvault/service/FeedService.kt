@@ -948,7 +948,7 @@ class FeedService @Inject constructor(
             // Local feed cache: follows' recent notes kept in sync by the
             // embedded relay (negentropy against the feed relays). Serves the
             // feed window from disk instantly on cold start and pagination.
-            config.nostrURL?.let { add("$it/feed") }
+            config.localRelayURL("feed")?.let { add(it) }
             config.inboxRelays?.let { addAll(it) }
             // Follows publish to feed/blastr relays, not just the local + inbox
             // set. Mirror iOS (externalRelayURLs) and the fetchReplies fix so
@@ -1869,7 +1869,7 @@ class FeedService @Inject constructor(
             config.nostrURL?.let { add(it) }
             // Local feed cache first — pagination inside the sync window is
             // served from disk without hitting the network.
-            config.nostrURL?.let { add("$it/feed") }
+            config.localRelayURL("feed")?.let { add(it) }
             config.inboxRelays?.let { addAll(it) }
             // Match the live feed relay set so paginating older notes also
             // reaches follows who publish to feed/blastr relays.
@@ -2306,7 +2306,7 @@ class FeedService @Inject constructor(
                 config.nostrURL?.let { add(it) }
                 config.localInboxURL?.let { add(it) }
                 config.inboxRelays?.let { addAll(it.take(1)) }
-            }
+            }.distinct()
 
             val stats = NoteStats()
             val seenReactions = mutableSetOf<String>()
@@ -2376,7 +2376,7 @@ class FeedService @Inject constructor(
                 config.nostrURL?.let { add(it) }
                 config.localInboxURL?.let { add(it) }
                 config.inboxRelays?.let { addAll(it.take(1)) }
-            }
+            }.distinct()
 
             val seenIds = mutableSetOf<String>()
             val reactions = mutableListOf<ReactionDetail>()
@@ -2467,7 +2467,7 @@ class FeedService @Inject constructor(
                 config.nostrURL?.let { add(it) }
                 config.localInboxURL?.let { add(it) }
                 config.inboxRelays?.let { addAll(it.take(1)) }
-            }
+            }.distinct()
 
             val seenIds = mutableSetOf<String>()
             val noteIdSet = noteIds.toSet()
