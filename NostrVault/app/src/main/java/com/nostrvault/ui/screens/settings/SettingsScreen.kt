@@ -129,6 +129,14 @@ fun SettingsScreen(
             }
             item {
                 SettingsItem(
+                    icon = NostrVaultIcons.Search,
+                    title = "Search Relays",
+                    subtitle = "NIP-50 relays used by Global search",
+                    onClick = { onNavigate(Screen.SearchRelaySettings) },
+                )
+            }
+            item {
+                SettingsItem(
                     icon = NostrVaultIcons.Backup,
                     title = "Backup",
                     subtitle = "Export and import notes and media",

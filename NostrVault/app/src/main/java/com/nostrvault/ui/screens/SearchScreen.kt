@@ -28,6 +28,9 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.GlobalSearchResults
+import com.nostrvault.data.model.SearchSourceState
+import com.nostrvault.data.model.SearchSourceStatus
+import com.nostrvault.service.GlobalSearchSession
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
@@ -50,7 +53,9 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
- * NIP-50 global search screen with profiles and notes results.
+ * Search screen. Relay scope walks the phone's own store; Global fans out to
+ * the phone, the Mac relay and the NIP-50 search relays at once and streams
+ * results in as each source answers (see [GlobalSearchSession]).
  */
 
 enum class SearchResultFilter(val displayName: String) {
@@ -103,6 +108,15 @@ class SearchViewModel @Inject constructor(
 
     private val _searchScope = MutableStateFlow(SearchScope.RELAY)
     val searchScope = _searchScope.asStateFlow()
+
+    /** Per-source status for the running (or last) search: phone, Mac relay, each search relay. */
+    private val _sources = MutableStateFlow<List<SearchSourceState>>(emptyList())
+    val sources = _sources.asStateFlow()
+
+    private var session: GlobalSearchSession? = null
+    private var sessionJob: Job? = null
+    /** Authors whose profile has already been requested for this search. */
+    private val requestedAuthors = HashSet<String>()
 
     val profiles = nostrService.profiles
 
@@ -214,6 +228,7 @@ class SearchViewModel @Inject constructor(
     fun setQuery(text: String) {
         _query.value = text
         searchJob?.cancel()
+        stopSession()
 
         val trimmed = text.trim()
         val lower = trimmed.lowercase()
@@ -266,6 +281,7 @@ class SearchViewModel @Inject constructor(
             }
         } else {
             _results.value = GlobalSearchResults()
+            _isSearching.value = false
             refreshDiscovery(force = true)
         }
     }
@@ -277,9 +293,8 @@ class SearchViewModel @Inject constructor(
     fun setSearchScope(scope: SearchScope) {
         if (_searchScope.value == scope) return
         _searchScope.value = scope
-        nostrService.cancelGlobalSearch()
-        nostrService.cancelLocalRelaySearch()
         searchJob?.cancel()
+        stopSession()
         val trimmed = _query.value.trim()
         if (trimmed.length >= 2) {
             performSearch(_query.value)
@@ -289,18 +304,53 @@ class SearchViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Starts a session for [query] and streams its state into the screen.
+     * Relay = the phone's own store; Global = phone + Mac relay + search relays.
+     */
     private fun performSearch(query: String) {
+        stopSession()
+        val started = nostrService.startSearch(
+            query = query,
+            includeGlobal = _searchScope.value == SearchScope.GLOBAL,
+            follows = feedService.followedPubkeys.value.toSet(),
+        )
+        if (started == null) {
+            _results.value = GlobalSearchResults()
+            _isSearching.value = false
+            return
+        }
+        session = started
+        requestedAuthors.clear()
+        _results.value = GlobalSearchResults()
         _isSearching.value = true
-        when (_searchScope.value) {
-            SearchScope.RELAY -> nostrService.localRelaySearch(query) { results ->
-                _results.value = results
-                _isSearching.value = false
-            }
-            SearchScope.GLOBAL -> nostrService.globalSearch(query) { results ->
-                _results.value = results
-                _isSearching.value = false
+        sessionJob = viewModelScope.launch {
+            started.state.collect { state ->
+                _results.value = state.results
+                _sources.value = state.sources
+                _isSearching.value = state.isRunning
+                requestMissingAuthors(state.results.notes)
             }
         }
+    }
+
+    /** Note authors from outside the follow graph have no cached profile yet. */
+    private fun requestMissingAuthors(notes: List<FeedNote>) {
+        val fresh = notes.asSequence().map { it.pubkey }.filter { requestedAuthors.add(it) }.toList()
+        if (fresh.isNotEmpty()) nostrService.fetchMissingProfiles(fresh)
+    }
+
+    private fun stopSession() {
+        sessionJob?.cancel()
+        sessionJob = null
+        session?.cancel()
+        session = null
+        _sources.value = emptyList()
+    }
+
+    override fun onCleared() {
+        stopSession()
+        super.onCleared()
     }
 
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
@@ -406,6 +456,7 @@ fun SearchScreen(
     val isSearching by viewModel.isSearching.collectAsState()
     val resultFilter by viewModel.resultFilter.collectAsState()
     val searchScope by viewModel.searchScope.collectAsState()
+    val sources by viewModel.sources.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
     val trendingHashtags by viewModel.trendingHashtags.collectAsState()
     val suggestedProfiles by viewModel.suggestedProfiles.collectAsState()
@@ -537,16 +588,7 @@ fun SearchScreen(
             }
         },
     ) { padding ->
-        if (isSearching) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            ) {
-                CircularProgressIndicator(color = colors.primary)
-            }
-        } else if (query.length < 2) {
+        if (query.length < 2) {
             // Empty state with discovery sections
             val hasDiscovery = recentSearches.isNotEmpty() ||
                 trendingHashtags.isNotEmpty() ||
@@ -676,6 +718,27 @@ fun SearchScreen(
                 ),
                 modifier = Modifier.fillMaxSize(),
             ) {
+                // Per-source status: which sources are still searching, what
+                // each found, and why a silent one gave no answer.
+                if (sources.isNotEmpty()) {
+                    item(key = "search-sources") {
+                        SearchSourcesRow(sources = sources, colors = colors)
+                    }
+                }
+
+                if (isSearching && results.profiles.isEmpty() && results.notes.isEmpty()) {
+                    item(key = "search-spinner") {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                        ) {
+                            CircularProgressIndicator(color = colors.primary)
+                        }
+                    }
+                }
+
                 // Profiles section
                 if (results.profiles.isNotEmpty()) {
                     item {
@@ -744,7 +807,7 @@ fun SearchScreen(
                 }
 
                 // No results
-                if (results.profiles.isEmpty() && results.notes.isEmpty()) {
+                if (!isSearching && results.profiles.isEmpty() && results.notes.isEmpty()) {
                     item {
                         Box(
                             contentAlignment = Alignment.Center,
@@ -757,6 +820,73 @@ fun SearchScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SearchSourcesRow(
+    sources: List<SearchSourceState>,
+    colors: NostrVaultColorScheme,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        sources.forEach { source -> SearchSourceChip(source, colors) }
+    }
+}
+
+@Composable
+private fun SearchSourceChip(
+    source: SearchSourceState,
+    colors: NostrVaultColorScheme,
+) {
+    val status = source.status
+    val (text, tint) = when (status) {
+        is SearchSourceStatus.Searching ->
+            (if (source.count > 0) "${source.count} so far" else "searching") to SecondaryText
+        is SearchSourceStatus.Found ->
+            "${status.count} found" to (if (status.count > 0) colors.primary else SecondaryText)
+        is SearchSourceStatus.NoAnswer -> "no answer: ${status.reason}" to TertiaryText
+    }
+    val label = source.detail?.let { "${source.label} (${it})" } ?: source.label
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = SeparatorColor.copy(alpha = 0.12f),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+            if (status is SearchSourceStatus.Searching) {
+                CircularProgressIndicator(
+                    color = colors.primary,
+                    strokeWidth = 1.5.dp,
+                    modifier = Modifier.size(10.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                text = label,
+                color = PrimaryText.copy(alpha = 0.8f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = text,
+                color = tint,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 200.dp),
+            )
         }
     }
 }
