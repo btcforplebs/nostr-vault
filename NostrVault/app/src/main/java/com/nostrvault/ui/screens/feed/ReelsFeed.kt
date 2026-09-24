@@ -187,6 +187,17 @@ internal fun ReelsFeed(
                 if (settledPage >= reels.size - ReelCursors.NEAR_END) viewModel.loadMoreReels()
             }
 
+            // A load-more that no relay answered leaves the service idle, and
+            // nothing else asks again while the viewer stays put near the end.
+            // Retry on a slow timer until a page lands or history runs out
+            // (the service ignores the call once it has).
+            LaunchedEffect(shownId, isLoadingMore, reels.size) {
+                if (isLoadingMore || shownId == null) return@LaunchedEffect
+                if (settledPage < reels.size - ReelCursors.NEAR_END) return@LaunchedEffect
+                delay(5_000)
+                viewModel.loadMoreReels()
+            }
+
             VerticalPager(
                 state = pagerState,
                 beyondViewportPageCount = 1,
