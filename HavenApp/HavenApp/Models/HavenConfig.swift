@@ -410,15 +410,8 @@ struct HavenConfig: Codable, Equatable {
         publishRelayListPerAccount = try container.decodeIfPresent([String: Bool].self, forKey: .publishRelayListPerAccount) ?? defaults.publishRelayListPerAccount
 
         // Migration: move global NIP-46 config into per-account dict
-        if signingMode == "nip46" && accountBunkerConfigs.isEmpty && !ownerNpub.isEmpty {
-            accountBunkerConfigs[ownerNpub] = AccountBunkerConfig(
-                bunkerURI: nip46BunkerURI,
-                signerPubkey: nip46SignerPubkey,
-                relayURL: nip46RelayURL,
-                secret: nip46Secret,
-                clientSecretKey: nip46ClientSecretKey,
-                clientPubkey: nip46ClientPubkey
-            )
+        if accountBunkerConfigs.isEmpty {
+            adoptGlobalBunkerConfigForOwner()
         }
 
         backupProvider = try container.decodeIfPresent(String.self, forKey: .backupProvider) ?? defaults.backupProvider
@@ -432,6 +425,23 @@ struct HavenConfig: Codable, Equatable {
     }
 
     // MARK: - Per-Account Signing Mode
+
+    /// Copies the flat nip46* fields into the owner's per-account bunker config.
+    /// Setup writes only the flat fields, but activeSigningMode() reads only the
+    /// per-account dict — without this the first session after bunker setup
+    /// resolves to "local" and every post fails.
+    mutating func adoptGlobalBunkerConfigForOwner() {
+        guard signingMode == "nip46", !ownerNpub.isEmpty, accountBunkerConfigs[ownerNpub] == nil,
+              !nip46BunkerURI.isEmpty || !nip46SignerPubkey.isEmpty else { return }
+        accountBunkerConfigs[ownerNpub] = AccountBunkerConfig(
+            bunkerURI: nip46BunkerURI,
+            signerPubkey: nip46SignerPubkey,
+            relayURL: nip46RelayURL,
+            secret: nip46Secret,
+            clientSecretKey: nip46ClientSecretKey,
+            clientPubkey: nip46ClientPubkey
+        )
+    }
 
     /// Returns the signing mode for the currently active account.
     /// Respects explicit user preference in accountSigningModes if set,

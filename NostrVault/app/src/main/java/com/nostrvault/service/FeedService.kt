@@ -1682,11 +1682,11 @@ class FeedService @Inject constructor(
         ownContactListAccountKey = accountKey
         ownContactListCreatedAt = maxOf(ownContactListCreatedAt, System.currentTimeMillis() / 1000L)
         scope.launch(Dispatchers.IO) {
-            val event = nostrService.signEvent(
+            val event = runCatching { nostrService.signEventAsync(
                 kind = 3,
                 content = contactListContent,
                 tags = tags,
-            )
+            ) }.onFailure { Log.e(TAG, "contact list not signed: ${it.message}") }.getOrNull()
             event?.let {
                 // Record the published list's created_at + a durable backup so a
                 // later relay fetch returning an older copy can't clobber this edit.
@@ -2755,8 +2755,9 @@ class FeedService @Inject constructor(
 
         scope.launch(Dispatchers.IO) {
             val tags = listOf(listOf("e", noteId))
-            val event = nostrService.signEvent(kind = 7, content = reactionEmoji, tags = tags)
-            event?.let { nostrService.postEvent(it) }
+            val event = runCatching { nostrService.signEventAsync(kind = 7, content = reactionEmoji, tags = tags) }
+                .onFailure { Log.e(TAG, "like not signed: ${it.message}") }.getOrNull()
+            if (event != null) nostrService.postEvent(event) else unlikeNote(noteId)
         }
 
         val stats = _noteStats.value.toMutableMap()
@@ -2806,8 +2807,18 @@ class FeedService @Inject constructor(
                 originalPubkey?.let { add(listOf("p", it)) }
                 if (repostKind == 16) add(listOf("k", originalKind.toString()))
             }
-            val event = nostrService.signEvent(kind = repostKind, content = rawEvent, tags = tags)
-            event?.let { nostrService.postEvent(it) }
+            val event = runCatching { nostrService.signEventAsync(kind = repostKind, content = rawEvent, tags = tags) }
+                .onFailure { Log.e(TAG, "repost not signed: ${it.message}") }.getOrNull()
+            if (event != null) {
+                nostrService.postEvent(event)
+            } else {
+                // Nothing was published — undo the optimistic repost.
+                _repostedEventIds.value = _repostedEventIds.value - noteId
+                val stats = _noteStats.value.toMutableMap()
+                val st = stats[noteId] ?: NoteStats()
+                stats[noteId] = st.copy(repostCount = maxOf(0, st.repostCount - 1))
+                _noteStats.value = stats
+            }
         }
 
         val stats = _noteStats.value.toMutableMap()

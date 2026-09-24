@@ -773,12 +773,28 @@ class NostrService: ObservableObject {
     /// Async variant of signEvent that supports both local key and NIP-46 remote signing.
     /// When signingMode is "nip46", delegates to NIP46Service. Otherwise wraps the local signEvent().
     /// - Parameter signAsNpub: See signEvent(_:signAsNpub:) — signs as this account
-    ///   without touching config.activeAccountNpub. NIP-46 mode ignores it (falls back
-    ///   to whatever the active bunker connection is already signing for), since a
-    ///   background publish can't switch bunker connections without user interaction.
+    ///   without touching config.activeAccountNpub. A non-active account that signs
+    ///   with a bunker is refused (returns nil): the bunker connection belongs to the
+    ///   active account, and a background publish can't switch it.
     func signEventAsync(kind: Int, content: String, tags: [[String]] = [], password: String? = nil, forceOwner: Bool = false, signAsNpub: String? = nil) async -> NostrEvent? {
         let config = ConfigService.shared.config
         let mode = config.activeSigningMode()
+
+        // Signing as a non-active account: its own signing mode decides. A bunker
+        // connection belongs to the active account only, so a non-active bunker
+        // account cannot be signed for here — refuse rather than let the active
+        // account's bunker sign (and publish) an event meant for another identity.
+        let activeNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+        if let target = signAsNpub?.trimmingCharacters(in: .whitespacesAndNewlines), !target.isEmpty, target != activeNpub {
+            let targetUsesBunker = config.accountSigningModes[target] != "local"
+                && ConfigService.shared.hasBunkerConfig(forNpub: target)
+            if targetUsesBunker {
+                print("NostrService: signEventAsync refused — \(target.prefix(20)) signs with a bunker and is not the active account")
+                return nil
+            }
+            return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: forceOwner, signAsNpub: target)
+        }
+
         print("NostrService: signEventAsync mode=\(mode) activeNpub=\(config.activeAccountNpub.prefix(20)) ownerNpub=\(config.ownerNpub.prefix(20)) forceOwner=\(forceOwner)")
 
         if mode == "nip46" {

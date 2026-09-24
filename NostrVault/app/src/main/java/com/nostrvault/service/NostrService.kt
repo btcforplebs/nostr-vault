@@ -1046,40 +1046,26 @@ class NostrService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     /**
-     * Sign a Nostr event synchronously (for local key signing).
+     * Sign in the active signing mode (local key, NIP-46 bunker or Amber) and
+     * publish, off the caller's thread. Every event goes through signEventAsync:
+     * a separate local-only signer let reactions, reposts, lists and deletes skip
+     * the bunker — silently doing nothing for bunker-only accounts.
      */
-    fun signEvent(
+    fun signAndPost(
         kind: Int,
         content: String,
         tags: List<List<String>> = emptyList(),
-        password: String? = null,
         forceOwner: Boolean = false,
-    ): NostrEvent? {
-        val finalTags = EventPublisher.appendClientTag(tags, kind)
-        val secretKey = resolveSecretKey(forceOwner)
-        if (secretKey == null) {
-            Log.e(TAG, "signEvent: resolveSecretKey returned null (forceOwner=$forceOwner, signingMode=${configStore.config.value.activeSigningMode()}, hasOwnerHexKey=${configStore.config.value.ownerHexKey != null}, ownerNpub=${configStore.config.value.ownerNpub.take(12)})")
-            return null
+    ) {
+        scope.launch(Dispatchers.IO) {
+            val event = try {
+                signEventAsync(kind = kind, content = content, tags = tags, forceOwner = forceOwner)
+            } catch (e: Exception) {
+                Log.e(TAG, "signAndPost: kind $kind not signed: ${e.message}")
+                null
+            }
+            event?.let { postEvent(it) }
         }
-
-        val pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey
-        if (pubkey.isEmpty()) {
-            Log.e(TAG, "signEvent: pubkey is empty (forceOwner=$forceOwner, ownerHexPubkey=${ownerHexPubkey.take(8)}, ownerNpub=${configStore.config.value.ownerNpub.take(12)})")
-        }
-
-        val eventJson = EventPublisher.buildUnsignedEvent(
-            kind = kind,
-            content = content,
-            tags = finalTags,
-            pubkey = pubkey,
-        )
-
-        val signed = EventPublisher.signWithGoBackend(eventJson, secretKey)
-        if (signed == null) {
-            Log.e(TAG, "signEvent: signWithGoBackend returned null (kind=$kind, bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded})")
-            return null
-        }
-        return parseSignedEvent(signed)
     }
 
     /**
@@ -1103,11 +1089,12 @@ class NostrService @Inject constructor(
                     kind = kind,
                     content = content,
                     tags = finalTags,
-                    pubkey = activeHexPubkey,
+                    pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey,
                 )
+                ensureBunkerConnected()
                 val signed = NIP46Service.signEvent(eventJson)
                     ?: throw IllegalStateException("NIP-46 remote signer failed")
-                return@withContext parseSignedEvent(signed)
+                return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "NIP-46 signer")
             }
             "amber" -> {
                 val finalTags = EventPublisher.appendClientTag(tags, kind)
@@ -1115,11 +1102,11 @@ class NostrService @Inject constructor(
                     kind = kind,
                     content = content,
                     tags = finalTags,
-                    pubkey = activeHexPubkey,
+                    pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey,
                 )
                 val signed = amberSignerService.signEvent(eventJson)
                     ?: throw IllegalStateException("Amber signer failed")
-                return@withContext parseSignedEvent(signed)
+                return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "Amber")
             }
             else -> {
                 // Local signing
@@ -1300,20 +1287,41 @@ class NostrService @Inject constructor(
     // Specialized event publishing
     // ══════════════════════════════════════════════════════════════════
 
+    /**
+     * Which key signs a list "for [accountNpub]": the owner's (forceOwner) or the
+     * active account's. null means neither can — another, inactive account —
+     * and publishing must be skipped rather than overwrite a different
+     * identity's replaceable list with this one's.
+     */
+    private fun forceOwnerFor(accountNpub: String): Boolean? {
+        val cfg = configStore.config.value
+        return when (accountNpub) {
+            "", cfg.ownerNpub -> true
+            cfg.activeOrOwnerNpub() -> false
+            else -> null
+        }
+    }
+
     fun publishMuteList(accountNpub: String, blockedNpubs: List<String>) {
+        val forceOwner = forceOwnerFor(accountNpub) ?: run {
+            Log.w(TAG, "publishMuteList: ${accountNpub.take(12)} is not the owner or active account; not published")
+            return
+        }
         val tags = blockedNpubs.mapNotNull { npub ->
             npubToHex(npub)?.let { listOf("p", it) }
         }
-        val event = signEvent(kind = 10000, content = "", tags = tags, forceOwner = true)
-        event?.let { postEvent(it) }
+        signAndPost(kind = 10000, content = "", tags = tags, forceOwner = forceOwner)
     }
 
     fun publishRelayList(accountNpub: String) {
+        val forceOwner = forceOwnerFor(accountNpub) ?: run {
+            Log.w(TAG, "publishRelayList: ${accountNpub.take(12)} is not the owner or active account; not published")
+            return
+        }
         val config = configStore.config.value
         val relays = config.inboxRelays ?: return
         val tags = relays.map { listOf("r", it) }
-        val event = signEvent(kind = 10002, content = "", tags = tags, forceOwner = true)
-        event?.let { postEvent(it) }
+        signAndPost(kind = 10002, content = "", tags = tags, forceOwner = forceOwner)
     }
 
     /**
@@ -1344,22 +1352,19 @@ class NostrService @Inject constructor(
             )
         }
         val tags = relays.map { listOf("r", it) }
-        val event = signEvent(kind = 10050, content = "", tags = tags, forceOwner = true)
-        event?.let { postEvent(it) }
+        signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true)
     }
 
     fun publishServerList() {
         val mirrors = configStore.config.value.activeBlossomMirrors
         if (mirrors.isEmpty()) return
         val tags = mirrors.map { listOf("server", it) }
-        val event = signEvent(kind = 10063, content = "", tags = tags, forceOwner = true)
-        event?.let { postEvent(it) }
+        signAndPost(kind = 10063, content = "", tags = tags, forceOwner = true)
     }
 
     fun deleteNote(noteId: String) {
         val tags = listOf(listOf("e", noteId))
-        val event = signEvent(kind = 5, content = "", tags = tags)
-        event?.let { postEvent(it) }
+        signAndPost(kind = 5, content = "", tags = tags)
     }
 
     fun reportEvent(eventId: String, pubkey: String, reason: String, description: String? = null) {
@@ -1368,8 +1373,7 @@ class NostrService @Inject constructor(
             listOf("p", pubkey),
             listOf("reason", reason),
         )
-        val event = signEvent(kind = 1984, content = description ?: "", tags = tags)
-        event?.let { postEvent(it) }
+        signAndPost(kind = 1984, content = description ?: "", tags = tags)
     }
 
     fun reportUser(pubkey: String, reason: String, description: String? = null) {
@@ -1377,8 +1381,7 @@ class NostrService @Inject constructor(
             listOf("p", pubkey),
             listOf("reason", reason),
         )
-        val event = signEvent(kind = 1984, content = description ?: "", tags = tags)
-        event?.let { postEvent(it) }
+        signAndPost(kind = 1984, content = description ?: "", tags = tags)
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -2209,21 +2212,48 @@ class NostrService @Inject constructor(
         return "{$entries}"
     }
 
-    private fun serializeEvent(event: NostrEvent): String {
-        val tagsJson = event.tags.joinToString(",") { tag ->
-            "[${tag.joinToString(",") { "\"$it\"" }}]"
+    private fun serializeEvent(event: NostrEvent): String = EventPublisher.serializeSignedEvent(event)
+
+    /**
+     * The Go bunker session only exists in this process: after a restart nothing
+     * reconnected it until the user switched accounts, so every signature failed.
+     * Reconnect with the active account's stored bunker config, and refuse a
+     * signer that answers for a different account.
+     */
+    private suspend fun ensureBunkerConnected() {
+        if (NIP46Service.isConnected.value) return
+        val cfg = configStore.config.value
+        val bunker = cfg.bunkerConfig(cfg.activeOrOwnerNpub())
+            ?: throw IllegalStateException("No bunker configured for this account")
+        val pubkey = NIP46Service.connectForAccount(bunker)
+            ?: throw IllegalStateException("Could not reach the bunker")
+        if (pubkey != activeHexPubkey) {
+            NIP46Service.disconnect()
+            throw IllegalStateException("This bunker signs as ${pubkey.take(8)}…, not this account")
         }
-        return buildString {
-            append("{")
-            append("\"id\":\"${event.id}\",")
-            append("\"pubkey\":\"${event.pubkey}\",")
-            append("\"created_at\":${event.createdAt},")
-            append("\"kind\":${event.kind},")
-            append("\"tags\":[$tagsJson],")
-            append("\"content\":\"${event.content.replace("\"", "\\\"").replace("\n", "\\n")}\",")
-            append("\"sig\":\"${event.sig}\"")
-            append("}")
+    }
+
+    /**
+     * An external signer's answer is only accepted if it is the event we asked
+     * for, under the pubkey we asked for. A valid signature proves nothing about
+     * identity: a signer paired to another account signs happily as that account.
+     */
+    private fun requireSignedAsRequested(requestJson: String, signed: NostrEvent?, signer: String): NostrEvent {
+        if (signed == null) throw IllegalStateException("$signer returned an unreadable event")
+        val req = this.json.parseToJsonElement(requestJson).jsonObject
+        val wantPubkey = req["pubkey"]?.jsonPrimitive?.contentOrNull
+        val wantTags = req["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } }
+        if (signed.pubkey != wantPubkey) {
+            throw IllegalStateException("$signer signed as ${signed.pubkey.take(8)}…, not this account (${wantPubkey?.take(8)}…)")
         }
+        if (signed.kind != req["kind"]?.jsonPrimitive?.intOrNull ||
+            signed.createdAt != req["created_at"]?.jsonPrimitive?.longOrNull ||
+            signed.content != req["content"]?.jsonPrimitive?.contentOrNull ||
+            signed.tags != wantTags
+        ) {
+            throw IllegalStateException("$signer changed the event it was asked to sign")
+        }
+        return signed
     }
 
     private fun parseSignedEvent(json: String): NostrEvent? {

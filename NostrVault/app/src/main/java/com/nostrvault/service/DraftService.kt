@@ -143,7 +143,7 @@ class DraftService @Inject constructor(
                     draft.quotePubkey?.let { add(listOf("qp", it)) }
                 }
 
-                val event = nostrService.signEvent(
+                val event = nostrService.signEventAsync(
                     kind = 31234,
                     content = draft.content,
                     tags = tags,
@@ -171,7 +171,7 @@ class DraftService @Inject constructor(
                 val tags = listOf(
                     listOf("a", "31234:${configStore.activeAccountHexPubkey.value}:$draftId"),
                 )
-                val event = nostrService.signEvent(kind = 5, content = "", tags = tags)
+                val event = nostrService.signEventAsync(kind = 5, content = "", tags = tags)
                 if (event != null) {
                     postToPrivateRelay(serializeEvent(event))
                 }
@@ -225,20 +225,5 @@ class DraftService @Inject constructor(
     /**
      * Serialize a NostrEvent to JSON string for WebSocket transmission.
      */
-    private fun serializeEvent(event: NostrEvent): String {
-        val tagsJson = event.tags.joinToString(",") { tag ->
-            "[${tag.joinToString(",") { "\"$it\"" }}]"
-        }
-        return buildString {
-            append("{")
-            append("\"id\":\"${event.id}\",")
-            append("\"pubkey\":\"${event.pubkey}\",")
-            append("\"created_at\":${event.createdAt},")
-            append("\"kind\":${event.kind},")
-            append("\"tags\":[$tagsJson],")
-            append("\"content\":\"${event.content.replace("\"", "\\\"").replace("\n", "\\n")}\",")
-            append("\"sig\":\"${event.sig}\"")
-            append("}")
-        }
-    }
+    private fun serializeEvent(event: NostrEvent): String = EventPublisher.serializeSignedEvent(event)
 }
