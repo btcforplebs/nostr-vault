@@ -69,6 +69,8 @@ object FeedFilterEngine {
                 FeedMode.RECIPES -> note.kind == LONG_FORM_KIND && RecipeTopics.matches(note.tags)
                 // Live streams are not notes; LiveFeedService supplies them.
                 FeedMode.LIVE -> false
+                // Reels are served by ReelsFeedService, not the note list.
+                FeedMode.REELS -> false
             }
         }
 

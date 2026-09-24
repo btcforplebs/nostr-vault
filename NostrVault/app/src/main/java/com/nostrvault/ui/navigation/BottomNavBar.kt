@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +40,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.components.AvatarImage
@@ -57,6 +60,20 @@ import com.nostrvault.ui.theme.ZapOrange
  * Profile tab shows user avatar with a colored ring and supports
  * long-press to trigger account switching.
  */
+
+/**
+ * How much of the screen's bottom edge the floating nav bar covers, including
+ * the system navigation inset under it; zero while the bar is hidden.
+ *
+ * The bar is laid over the tab content rather than beside it, so its height
+ * never reaches a screen's insets or Scaffold padding. Lists get away with a
+ * fixed bottom content padding; a full-bleed screen whose controls sit at the
+ * bottom edge (Reels) needs the real number. Measured by [NostrVaultNavHost].
+ * Mirrors iOS `floatingTabBarHeight`.
+ */
+object FloatingNavBarInset {
+    val height: MutableState<Dp> = mutableStateOf(0.dp)
+}
 
 data class BottomNavItem(
     val screen: Screen,

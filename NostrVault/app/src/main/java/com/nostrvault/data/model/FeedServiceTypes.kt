@@ -420,6 +420,14 @@ enum class FeedMode(val displayName: String) {
     MEDIA("Media"),
 
     /**
+     * Full-screen vertical video, one per page. Like [LIVE], not a view of the
+     * note list: ReelsFeedService runs its own queries (NIP-71 video events and
+     * kind-1 notes carrying a video), and the note subscription idles while
+     * this mode is showing.
+     */
+    REELS("Reels"),
+
+    /**
      * Long-form articles (kind 30023). The events were already arriving — the
      * feed subscription has asked for kind 30023 all along and the dashboard
      * counts them — so this mode is a lens on what the relay already holds,

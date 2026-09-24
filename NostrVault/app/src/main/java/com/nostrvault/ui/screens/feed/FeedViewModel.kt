@@ -14,7 +14,10 @@ import com.nostrvault.data.model.NoteStats
 import com.nostrvault.data.model.FeedThread
 import com.nostrvault.data.model.FeedThreadGrouping
 import com.nostrvault.data.model.PopularFilter
+import com.nostrvault.data.model.Reel
+import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.service.LiveFeedService
+import com.nostrvault.service.ReelsFeedService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ScrollPosition
@@ -43,6 +46,7 @@ class FeedViewModel @Inject constructor(
     private val notificationManager: NotificationManager,
     private val zapSendService: ZapSendService,
     private val liveFeedService: LiveFeedService,
+    private val reelsFeedService: ReelsFeedService,
 ) : ViewModel() {
 
     private companion object {
@@ -62,6 +66,36 @@ class FeedViewModel @Inject constructor(
     fun refreshLive() = liveFeedService.refresh()
 
     fun liveStream(address: String) = liveFeedService.streams.value.firstOrNull { it.address == address }
+
+    // ── Reels ────────────────────────────────────────────────────
+    //
+    // Like Live, Reels has its own service and its own relay queries; the note
+    // subscription idles while it is showing (see FeedService.switchMode).
+
+    val reels: StateFlow<List<Reel>> = reelsFeedService.reels
+    val reelsLoading: StateFlow<Boolean> = reelsFeedService.isLoading
+    val reelsLoadingMore: StateFlow<Boolean> = reelsFeedService.isLoadingMore
+    val reelsLoadFailed: StateFlow<Boolean> = reelsFeedService.loadFailed
+    val reelsFollowSetIsEmpty: StateFlow<Boolean> = reelsFeedService.followSetIsEmpty
+    val reelsScope: StateFlow<ReelsScope> = reelsFeedService.reelsScope
+    val reelsMuted: StateFlow<Boolean> = reelsFeedService.isMuted
+    val isLoadingContacts: StateFlow<Boolean> = feedService.isLoadingContacts
+
+    fun loadReelsIfNeeded() = reelsFeedService.loadIfNeeded()
+    fun refreshReels() = reelsFeedService.refresh()
+    fun loadMoreReels() = reelsFeedService.loadMore()
+    fun didShowReel(id: String) = reelsFeedService.didShow(id)
+    fun pruneBlockedReels() = reelsFeedService.pruneBlocked()
+    fun setReelsScope(scope: ReelsScope) = reelsFeedService.setScope(scope)
+    fun setReelsMuted(muted: Boolean) = reelsFeedService.setMuted(muted)
+    fun fetchMissingProfiles(pubkeys: List<String>) = nostrService.fetchMissingProfiles(pubkeys)
+
+    /**
+     * Reels are not in the feed's note list, so the compose and thread screens
+     * (which resolve their target through FeedService.findNote) would not find
+     * one. Registering it first is what NoteDetail and Profile already do.
+     */
+    fun cacheNote(note: FeedNote) = feedService.cacheNote(note)
 
     // Zap result feedback for the UI (toast)
     private val _zapMessage = MutableSharedFlow<String>(extraBufferCapacity = 4)
@@ -183,7 +217,7 @@ class FeedViewModel @Inject constructor(
      */
     private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
         FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR -> true
-        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE -> false
+        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.REELS -> false
     }
 
     private fun defaultCompact(mode: FeedMode): Boolean = when (mode) {
@@ -318,7 +352,19 @@ class FeedViewModel @Inject constructor(
     // ── Actions ──────────────────────────────────────────────────
 
     fun setFeedMode(mode: FeedMode) {
+        val previous = _feedMode.value
         _feedMode.value = mode
+        if (previous == FeedMode.REELS && mode != FeedMode.REELS) {
+            // A page still in flight has no one left to show it to.
+            reelsFeedService.disconnect()
+        }
+        if (mode == FeedMode.REELS) {
+            // No list scrolls in Reels, so nothing would ever un-condense a
+            // bottom bar condensed by the last feed; the page chrome is laid
+            // out against the full bar.
+            feedService.setFeedScrollingDown(false)
+            reelsFeedService.loadIfNeeded()
+        }
         if (mode == FeedMode.LIVE) {
             // Nothing to switch on the note subscription — Live has its own.
             liveFeedService.refresh()
@@ -335,6 +381,10 @@ class FeedViewModel @Inject constructor(
         // DMs, and notifications. Non-blocking, coalesced in Go, safe when the
         // relay isn't running.
         runCatching { com.nostrvault.relay.HavenBridge.requestRelaySync() }
+        if (_feedMode.value == FeedMode.REELS) {
+            reelsFeedService.refresh()
+            return
+        }
         viewModelScope.launch {
             _isRefreshing.value = true
             feedService.refresh()

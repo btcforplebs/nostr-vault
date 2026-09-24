@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
@@ -677,7 +679,17 @@ fun NostrVaultNavHost(
                 else -> { { navController.navigate(Screen.ComposeNote.createRoute()) } }
             }
 
-            Box(modifier = Modifier.align(Alignment.BottomCenter)) {
+            val density = LocalDensity.current
+            DisposableEffect(Unit) {
+                onDispose { FloatingNavBarInset.height.value = 0.dp }
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .onSizeChanged { size ->
+                        FloatingNavBarInset.height.value = with(density) { size.height.toDp() }
+                    },
+            ) {
                 BottomNavBar(
                     currentRoute = currentRoute,
                     activeAccountPubkey = activeHex,

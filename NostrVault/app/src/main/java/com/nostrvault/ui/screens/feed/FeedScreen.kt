@@ -53,6 +53,7 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
+import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.ui.screens.LiveStreamScreen
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.FullScreenMediaRouter
@@ -200,6 +201,11 @@ fun FeedScreen(
     // Feed config sheet state
     var showFeedConfig by remember { mutableStateOf(false) }
 
+    // Reels' Global scope is unmoderated video from the whole network; it sits
+    // behind a warning (iOS parity: the same one Media's Global uses there).
+    var showGlobalReelsWarning by remember { mutableStateOf(false) }
+    val reelsScope by viewModel.reelsScope.collectAsState()
+
     // Trigger load-more when near bottom
     val shouldLoadMore by remember {
         derivedStateOf {
@@ -297,6 +303,10 @@ fun FeedScreen(
     // Handle tab re-selection: scroll to top or refresh if already at top
     LaunchedEffect(Unit) {
         viewModel.scrollToTopRequest.collect {
+            // Reels has no list to scroll, and the untouched list below it
+            // always reads as "at top" — a reselect must not wipe the viewer's
+            // place by refreshing.
+            if (viewModel.feedMode.value == FeedMode.REELS) return@collect
             if (isAtTop) {
                 viewModel.refresh()
             } else {
@@ -306,6 +316,9 @@ fun FeedScreen(
     }
 
     GlassScaffold(
+        // Reels draw edge to edge in black; a window-coloured band fading out
+        // behind the toolbar would sit over the top of every video.
+        containerColor = if (feedMode == FeedMode.REELS) Color.Black else WindowBackground,
         toolbar = {
             FeedTopBar(
                 feedMode = feedMode,
@@ -318,6 +331,9 @@ fun FeedScreen(
                 mediaFollowingOnly = mediaFollowingOnly,
                 popularFilter = popularFilter,
                 showEngagementStats = showEngagementStats,
+                reelsGlobal = reelsScope == ReelsScope.GLOBAL,
+                onReelsFollowing = { viewModel.setReelsScope(ReelsScope.FOLLOWING) },
+                onReelsGlobal = { showGlobalReelsWarning = true },
                 onModeChange = viewModel::setFeedMode,
                 onCycleLayoutMode = viewModel::cycleLayoutMode,
                 onToggleAutoLoad = viewModel::toggleAutoLoad,
@@ -336,7 +352,8 @@ fun FeedScreen(
             // The FAB hides and shows with the scroll, so it is chrome.
             val fabSpring = Motion.chrome<Float>()
             AnimatedVisibility(
-                visible = !scrollingDown,
+                // Reels has its own reply button, and the rail sits where the FAB would.
+                visible = !scrollingDown && feedMode != FeedMode.REELS,
                 enter = scaleIn(animationSpec = fabSpring, initialScale = 0.5f) + fadeIn(fabSpring),
                 exit = scaleOut(animationSpec = fabSpring, targetScale = 0.5f) + fadeOut(fabSpring),
             ) {
@@ -391,7 +408,26 @@ fun FeedScreen(
             onRefresh = viewModel::refresh,
             modifier = Modifier.fillMaxSize(),
         ) {
-            if (feedMode == FeedMode.LIVE) {
+            if (feedMode == FeedMode.REELS) {
+                ReelsFeed(
+                    viewModel = viewModel,
+                    profiles = allProfiles,
+                    topInset = padding.calculateTopPadding(),
+                    isCovered = showGlobalReelsWarning || showFeedConfig,
+                    onProfile = onProfileClick,
+                    // Reels are not in the feed's note list; register the note
+                    // so the compose and thread screens can resolve it by id.
+                    onReply = { note ->
+                        viewModel.cacheNote(note)
+                        onReply?.invoke(note.id) ?: onCompose()
+                    },
+                    onOpenNote = { note ->
+                        viewModel.cacheNote(note)
+                        onNoteClick(note.id)
+                    },
+                    onShowGlobal = { showGlobalReelsWarning = true },
+                )
+            } else if (feedMode == FeedMode.LIVE) {
                 LiveGrid(
                     streams = liveStreams,
                     profiles = allProfiles,
@@ -576,7 +612,7 @@ fun FeedScreen(
 
             // Floating "New Posts" pill
             // Remove AnimatedVisibility for better performance
-            if (pendingCount > 0 && (!autoLoad || !isAtTop)) {
+            if (pendingCount > 0 && (!autoLoad || !isAtTop) && feedMode != FeedMode.REELS) {
                 NewPostsPill(
                     count = pendingCount,
                     onClick = {
@@ -593,6 +629,30 @@ fun FeedScreen(
                 )
             }
         }
+    }
+
+    if (showGlobalReelsWarning) {
+        AlertDialog(
+            onDismissRequest = { showGlobalReelsWarning = false },
+            title = { Text("Sensitive Content Warning") },
+            text = {
+                Text(
+                    "The global media feed shows unmoderated content shared across the entire " +
+                        "Nostr network. This may include sensitive, explicit, or NSFW media.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.setReelsScope(ReelsScope.GLOBAL)
+                        showGlobalReelsWarning = false
+                    },
+                ) { Text("Proceed", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGlobalReelsWarning = false }) { Text("Cancel") }
+            },
+        )
     }
 
     // Custom zap sheet
@@ -1108,6 +1168,9 @@ private fun FeedTopBar(
     mediaFollowingOnly: Boolean,
     popularFilter: PopularFilter,
     showEngagementStats: Boolean,
+    reelsGlobal: Boolean,
+    onReelsFollowing: () -> Unit,
+    onReelsGlobal: () -> Unit,
     onModeChange: (FeedMode) -> Unit,
     onCycleLayoutMode: () -> Unit,
     onToggleAutoLoad: () -> Unit,
@@ -1204,8 +1267,9 @@ private fun FeedTopBar(
 
         // ── Trailing pill: compact toggle + mode-dependent filters
         GlassPill {
-            // Layout mode toggle: expanded -> condensed -> threaded -> expanded (always shown)
-            IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
+            // Layout mode toggle: expanded -> condensed -> threaded -> expanded.
+            // Reels is one video per screen — there is no layout to switch.
+            if (feedMode != FeedMode.REELS) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
                 val icon = when (layoutMode) {
                     FeedLayoutMode.EXPANDED -> NostrVaultIcons.ExpandedView
                     FeedLayoutMode.CONDENSED -> NostrVaultIcons.CompactView
@@ -1224,6 +1288,25 @@ private fun FeedTopBar(
             // long-form list is short enough not to need them.
             when (feedMode) {
                 FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE -> Unit
+                FeedMode.REELS -> {
+                    // Following, or everyone behind the sensitive-content warning.
+                    IconButton(onClick = onReelsFollowing, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            imageVector = if (!reelsGlobal) NostrVaultIcons.People else NostrVaultIcons.PeopleOutline,
+                            contentDescription = "Videos from people you follow",
+                            tint = if (!reelsGlobal) colors.primary else SecondaryText,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    IconButton(onClick = onReelsGlobal, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            imageVector = if (reelsGlobal) NostrVaultIcons.Globe else NostrVaultIcons.GlobeOutline,
+                            contentDescription = "Videos from everyone",
+                            tint = if (reelsGlobal) colors.primary else SecondaryText,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
                 FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL -> {
                     // Auto-load posts
                     IconButton(onClick = onToggleAutoLoad, modifier = Modifier.size(32.dp)) {
@@ -1352,6 +1435,7 @@ private fun EmptyFeedPlaceholder(
                     FeedMode.ARTICLES -> NostrVaultIcons.Articles
                     FeedMode.RECIPES -> NostrVaultIcons.Recipes
                     FeedMode.LIVE -> NostrVaultIcons.Live
+                    FeedMode.REELS -> NostrVaultIcons.Reels
                 },
                 contentDescription = null,
                 tint = colors.primaryLight,
@@ -1368,6 +1452,7 @@ private fun EmptyFeedPlaceholder(
                     FeedMode.ARTICLES -> "No Articles Yet"
                     FeedMode.RECIPES -> "No Recipes Yet"
                     FeedMode.LIVE -> "Nothing Live"
+                    FeedMode.REELS -> "No Videos Yet"
                 },
                 color = PrimaryText,
                 fontSize = 22.sp,
@@ -1385,6 +1470,7 @@ private fun EmptyFeedPlaceholder(
                     FeedMode.ARTICLES -> "Long-form posts in your vault show up here"
                     FeedMode.RECIPES -> "Recipes from zap.cooking show up here"
                     FeedMode.LIVE -> "Streams that are running right now show up here"
+                    FeedMode.REELS -> "Videos from your feed show up here"
                 },
                 color = SecondaryText,
                 fontSize = 13.sp,

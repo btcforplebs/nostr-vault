@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AlternateEmail
@@ -138,6 +139,7 @@ object NostrVaultIcons {
     val Articles: ImageVector = Icons.Filled.Article       // doc.text
     val Recipes: ImageVector = Icons.Filled.Restaurant     // fork.knife
     val Live: ImageVector = Icons.Filled.Videocam          // video.fill
+    val Reels: ImageVector = Icons.Filled.VideoLibrary     // play.rectangle.on.rectangle
     val More: ImageVector = Icons.Filled.MoreVert          // ellipsis
     val Edit: ImageVector = Icons.Filled.Edit              // pencil
     val Delete: ImageVector = Icons.Filled.Delete          // trash
