@@ -1101,7 +1101,7 @@ struct ProfileView: View {
                             }
                         },
                         onQuote: {
-                            composeContext = ComposeContext(replyTo: nil, quoteTo: note)
+                            composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: note))
                         },
                         onProfile: { pubkey in
                             showingProfileKey = IdentifiableString(id: pubkey)

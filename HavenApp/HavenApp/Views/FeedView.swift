@@ -453,7 +453,7 @@ struct FeedView: View {
                 composeContext = ComposeContext(replyTo: feedService.replyTarget(for: note), quoteTo: nil)
             },
             onQuote: {
-                composeContext = ComposeContext(replyTo: nil, quoteTo: note)
+                composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: note))
             },
             onProfile: { pubkey in
                 showingProfileKey = IdentifiableString(id: pubkey)
@@ -1772,7 +1772,7 @@ struct FeedView: View {
                                             quoteTo: nil
                                         )
                                     },
-                                    onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: $0) },
+                                    onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: $0)) },
                                     onProfile: { showingProfileKey = IdentifiableString(id: $0) },
                                     onMedia: { url, urls in
                                         showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)

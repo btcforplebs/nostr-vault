@@ -342,7 +342,7 @@ struct NoteDetailView: View {
                     composeContext = ComposeContext(replyTo: feedService.replyTarget(for: focusedNote), quoteTo: nil)
                 },
                 onQuote: {
-                    composeContext = ComposeContext(replyTo: nil, quoteTo: focusedNote)
+                    composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: focusedNote))
                 },
                 onProfile: { pubkey in
                     showingProfilePubkey = pubkey
@@ -404,7 +404,7 @@ struct NoteDetailView: View {
                                 composeContext = ComposeContext(replyTo: parent, quoteTo: nil)
                             },
                             onQuote: {
-                                composeContext = ComposeContext(replyTo: nil, quoteTo: parent)
+                                composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: parent))
                             },
                             onProfile: { pubkey in
                                 showingProfilePubkey = pubkey
@@ -503,7 +503,7 @@ struct NoteDetailView: View {
                             composeContext = ComposeContext(replyTo: target, quoteTo: nil)
                         },
                         onQuote: { target in
-                            composeContext = ComposeContext(replyTo: nil, quoteTo: target)
+                            composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: target))
                         },
                         onProfile: { pubkey in
                             showingProfilePubkey = pubkey

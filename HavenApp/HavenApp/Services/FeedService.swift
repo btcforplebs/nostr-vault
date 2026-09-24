@@ -1755,6 +1755,29 @@ class FeedService: ObservableObject {
         return original
     }
 
+    /// The note a quote should actually cite. Quoting a repost has to cite the
+    /// note it carries — otherwise the `q` tag and `nostr:nevent` point at the
+    /// kind-6 wrapper, and every client renders the quote as a repost card.
+    /// When the original isn't loaded, rebuild it from the repost: NIP-18
+    /// embeds the original event in `content`, which `FeedNote.init` has
+    /// already unpacked into this note's author, body and tags. A bare repost
+    /// with no embedded event still cites the right id and author (its `p` tag).
+    func quoteTarget(for note: FeedNote) -> FeedNote {
+        guard note.kind == 6, let refId = note.repostedEventId else { return note }
+        if let original = findNote(id: refId) { return original }
+        let author = note.content.isEmpty
+            ? (note.tags.first { $0.count >= 2 && $0[0] == "p" }?[1] ?? note.pubkey)
+            : note.pubkey
+        return FeedNote(
+            id: refId,
+            pubkey: author,
+            content: note.content,
+            createdAt: note.createdAt,
+            tags: note.content.isEmpty ? [] : note.tags,
+            kind: 1
+        )
+    }
+
     /// Finds a note matching an naddr coordinate ("naddr:<kind>:<pubkey>:<d-tag>").
     private func findNoteByNaddrCoordinate(_ coordinate: String) -> FeedNote? {
         let matcher = QuoteReference.matcher(for: coordinate)
