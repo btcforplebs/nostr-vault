@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -238,6 +239,11 @@ func (b *macBackfiller) copyTarget(ctx context.Context, t macTarget) (copied, le
 			// Mac relay the first pass did not even list some events that the
 			// second pass then found and stored.
 			if acc.stored.Load() == 0 {
+				if unresolved > 0 {
+					// IDs the Mac listed but never served can't be named here;
+					// only ones it sent that we couldn't place.
+					log.Printf("🖥️ %s: %d unresolved; sent but not placed: %v", t.name, unresolved, acc.unresolved)
+				}
 				return copied, unresolved, nil
 			}
 		}
@@ -281,6 +287,9 @@ type accountingStore struct {
 	nostr.RelayStore
 	stored    atomic.Int64
 	accounted atomic.Int64
+
+	mu         sync.Mutex
+	unresolved []string // first few IDs the Mac sent that could not be placed, for the log
 }
 
 func (s *accountingStore) Publish(ctx context.Context, ev nostr.Event) error {
@@ -293,6 +302,12 @@ func (s *accountingStore) Publish(ctx context.Context, ev nostr.Event) error {
 		s.stored.Add(1)
 	case s.superseded(ctx, &ev):
 		s.accounted.Add(1)
+	default:
+		s.mu.Lock()
+		if len(s.unresolved) < 10 {
+			s.unresolved = append(s.unresolved, fmt.Sprintf("%s kind=%d at=%d err=%v", ev.ID, ev.Kind, ev.CreatedAt, err))
+		}
+		s.mu.Unlock()
 	}
 	return err
 }
