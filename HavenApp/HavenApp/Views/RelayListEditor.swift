@@ -2,6 +2,10 @@ import SwiftUI
 
 struct RelayListEditor: View {
     @Binding var relays: [String]
+    /// What two entries are compared by when adding. Default: the exact
+    /// string. A list saved in normalized form passes its own key so a row
+    /// that would be dropped on save is never shown.
+    var duplicateKey: (String) -> String = { $0 }
     @State private var newRelay = ""
     
     var body: some View {
@@ -102,8 +106,9 @@ struct RelayListEditor: View {
             if !trimmed.hasPrefix("wss://") && !trimmed.hasPrefix("ws://") {
                 trimmed = "wss://" + trimmed
             }
-            
-            if !relays.contains(trimmed) {
+
+            let key = duplicateKey(trimmed)
+            if !relays.contains(where: { duplicateKey($0) == key }) {
                 relays.append(trimmed)
                 newRelay = ""
             }

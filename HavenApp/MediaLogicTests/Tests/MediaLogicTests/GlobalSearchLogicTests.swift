@@ -21,6 +21,16 @@ final class GlobalSearchLogicTests: XCTestCase {
         XCTAssertEqual(SearchRelayDefaults.effective(stored: []), [])
     }
 
+    /// The settings editor compares by this key, so what it shows is what
+    /// `normalized` keeps.
+    func testKeyFoldsCaseAndTrailingSlash() {
+        XCTAssertEqual(SearchRelayDefaults.key(" WSS://Nostr.Wine/ "), SearchRelayDefaults.key("wss://nostr.wine"))
+        let shown = ["wss://nostr.wine"]
+        let added = "wss://nostr.wine/"
+        XCTAssertTrue(shown.contains { SearchRelayDefaults.key($0) == SearchRelayDefaults.key(added) })
+        XCTAssertEqual(SearchRelayDefaults.normalized(shown + [added]), shown)
+    }
+
     func testNormalizedDropsBlanksAndDuplicates() {
         let out = SearchRelayDefaults.normalized([" wss://a.example ", "", "WSS://A.example/", "wss://b.example"])
         XCTAssertEqual(out, ["wss://a.example", "wss://b.example"])
@@ -39,6 +49,27 @@ final class GlobalSearchLogicTests: XCTestCase {
         let m = try XCTUnwrap(SearchTermMatcher(query: "jane doe"))
         XCTAssertTrue(m.matches(fields: ["jane", nil, "doe@example.com"]))
         XCTAssertFalse(m.matches(fields: ["jane", nil, nil]))
+    }
+
+    /// Each term may sit in a different field (Android's rule), including the pubkey.
+    func testProfileTermsPerFieldIncludingPubkey() throws {
+        let m = try XCTUnwrap(LocalSearchMatcher(allTermsOf: "jane 61bf79"))
+        XCTAssertTrue(m.matchesProfile(displayName: "Jane", name: nil, about: nil, nip05: nil,
+                                       pubkey: "61bf790b2094"))
+        XCTAssertFalse(m.matchesProfile(displayName: "Jane", name: nil, about: nil, nip05: nil,
+                                        pubkey: "ffff"))
+    }
+
+    /// The server matches title/summary/subject tags; the on-device check must
+    /// not throw those hits away.
+    func testNoteHeadlineTagsCountInAllTermsMode() throws {
+        let tags = [["title", "Bitcoin Beach recap"], ["t", "ignored"], ["summary", "sunset"]]
+        let terms = try XCTUnwrap(LocalSearchMatcher(allTermsOf: "beach sunset"))
+        XCTAssertTrue(terms.matchesNote(content: "long body with neither word", tags: tags))
+        XCTAssertFalse(terms.matchesNote(content: "body", tags: [["t", "beach"], ["t", "sunset"]]))
+        // Relay mode ignores tags, as before.
+        let phrase = try XCTUnwrap(LocalSearchMatcher(query: "beach recap"))
+        XCTAssertFalse(phrase.matchesNote(content: "body", tags: tags))
     }
 
     func testTooShortQueryHasNoMatcher() {
@@ -177,15 +208,31 @@ final class GlobalSearchLogicTests: XCTestCase {
 
     // MARK: Merge
 
-    func testMergeDedupesByIdAndPubkeyFirstWins() {
+    func testMergeDedupesNotesById() {
         var m = GlobalSearchMerge<String, String>()
         XCTAssertTrue(m.add(note: "a-from-wine", id: "a"))
         XCTAssertFalse(m.add(note: "a-from-nos", id: "a"))
-        XCTAssertTrue(m.add(profile: "p1", pubkey: "k1"))
-        XCTAssertTrue(m.add(profile: "p2", pubkey: "k2"))
-        XCTAssertFalse(m.add(profile: "p1-again", pubkey: "k1"))
         XCTAssertEqual(m.notes["a"], "a-from-wine")
+    }
+
+    /// Same rule as Android: the newest kind 0 wins, whichever source it came
+    /// from; the pubkey keeps its first-arrival slot.
+    func testMergeKeepsNewestProfileInFirstArrivalSlot() {
+        var m = GlobalSearchMerge<String, String>()
+        XCTAssertTrue(m.add(profile: "k1-old", pubkey: "k1", createdAt: 100))
+        XCTAssertTrue(m.add(profile: "k2", pubkey: "k2", createdAt: 50))
+        XCTAssertTrue(m.add(profile: "k1-new", pubkey: "k1", createdAt: 200))
+        XCTAssertFalse(m.add(profile: "k1-older", pubkey: "k1", createdAt: 150))
+        XCTAssertFalse(m.add(profile: "k1-tie", pubkey: "k1", createdAt: 200))
+        XCTAssertEqual(m.profiles["k1"], "k1-new")
         XCTAssertEqual(m.profileOrder, ["k1", "k2"])
-        XCTAssertEqual(m.profiles["k1"], "p1")
+    }
+
+    /// A cached profile (createdAt 0) is replaced by any real event.
+    func testCachedProfileIsReplacedByAnEvent() {
+        var m = GlobalSearchMerge<String, String>()
+        m.add(profile: "cached", pubkey: "k", createdAt: 0)
+        XCTAssertTrue(m.add(profile: "event", pubkey: "k", createdAt: 1))
+        XCTAssertEqual(m.profiles["k"], "event")
     }
 }

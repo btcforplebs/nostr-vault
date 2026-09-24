@@ -405,17 +405,20 @@ class NostrService: ObservableObject {
     ///
     /// - Parameter deviceRelay: the embedded relay's URL, or nil if it is not
     ///   running. On macOS this IS the Mac relay, so the Mac is not asked twice.
+    /// - Returns: the running session (nil for a query too short to run), so
+    ///   the caller can stop it when it goes away.
+    @discardableResult
     func startGlobalSearch(query: String,
                            deviceRelay: URL?,
                            follows: [String],
-                           onUpdate: @escaping (GlobalSearchSnapshot) -> Void) {
+                           onUpdate: @escaping (GlobalSearchSnapshot) -> Void) -> GlobalSearchSession? {
         cancelGlobalSearch()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {
             var done = GlobalSearchSnapshot()
             done.isFinished = true
             onUpdate(done)
-            return
+            return nil
         }
 
         var request = GlobalSearchSession.Request(
@@ -442,6 +445,7 @@ class NostrService: ObservableObject {
         }
         globalSearchSession = session
         session.start()
+        return session
     }
 
     /// NIP-50 lookup against the search relays only. Used by @-mention lookup:
@@ -2469,6 +2473,9 @@ final class LocalRelaySearchSession {
         let routeIndex: Int
         let kind: Int
         var page: Int
+        /// The cursor this page was asked with, so a full page stuck on one
+        /// second can be stepped past (see `LocalRelaySearchPlan.step`).
+        var until: Int64? = nil
     }
 
     /// How a finished session went, for Global search's per-source status.
@@ -2608,6 +2615,8 @@ final class LocalRelaySearchSession {
         guard routes.indices.contains(stream.routeIndex),
               clients.indices.contains(stream.routeIndex) else { return }
         let subId = "lsearch-\(UUID().uuidString.prefix(8))"
+        var stream = stream
+        stream.until = until
         streams[subId] = stream
 
         var filter: [String: Any] = [
@@ -2638,7 +2647,8 @@ final class LocalRelaySearchSession {
             switch LocalRelaySearchPlan.step(received: stats.received,
                                              newIds: stats.newIds,
                                              oldestCreatedAt: stats.oldestCreatedAt,
-                                             pagesFetched: stream.page) {
+                                             pagesFetched: stream.page,
+                                             until: stream.until) {
             case .done:
                 // This kind is exhausted on this route: move on to the next
                 // kind, and only when there is none is the route finished.

@@ -26,8 +26,10 @@ struct SearchView: View {
     /// Global search: one status per source, streamed with the results.
     @State private var globalSources: [GlobalSearchSourceStatus] = []
     @State private var globalFinished = true
-    /// A Global search was cut short by the view going away; rerun on return.
-    @State private var globalInterrupted = false
+    /// Cancels Global search when this view is really gone. Not `onDisappear`:
+    /// that also fires when a result is opened on top, and the search (and the
+    /// results already shown) must survive the round trip.
+    @StateObject private var globalSearchLifetime = GlobalSearchLifetime()
     @FocusState private var searchFieldFocused: Bool
 
     enum SearchMode: CaseIterable {
@@ -428,23 +430,11 @@ struct SearchView: View {
         }
         .onAppear {
             refreshDiscovery(force: true)
-            if globalInterrupted {
-                globalInterrupted = false
-                if searchMode == .global { rerunSearch() }
-            }
             #if os(macOS)
             // No tap-to-focus convention on the desktop: the field a window opens
             // on should already be taking keystrokes.
             searchFieldFocused = true
             #endif
-        }
-        .onDisappear {
-            // Nothing is shown while the view is gone: stop the sockets, and
-            // pick the search up again if the view comes back.
-            if searchMode == .global && !globalFinished && !globalSources.isEmpty {
-                globalInterrupted = true
-            }
-            nostrService.cancelGlobalSearch()
         }
         .onReceive(feedService.$notes) { notes in
             // Throttled refresh of the empty-state discovery lists as the feed grows.
@@ -1099,7 +1089,7 @@ struct SearchView: View {
             isSearching = true
             globalFinished = false
             let requestedQuery = trimmed
-            nostrService.startGlobalSearch(query: trimmed,
+            globalSearchLifetime.session = nostrService.startGlobalSearch(query: trimmed,
                                            deviceRelay: feedService.localRelayURL,
                                            follows: feedService.followedPubkeys) { snapshot in
                 // Ignore stale updates (user changed query or switched mode).
@@ -1259,3 +1249,19 @@ struct SearchView: View {
     }
 }
 
+/// Owned by `SearchView` as a `@StateObject`, so it is released only when the
+/// view leaves the hierarchy for good — then the Global search it started is
+/// stopped. A push or sheet on top keeps it alive.
+/// It cancels its own session, not whatever `NostrService` holds, so a new
+/// SearchView's search is never stopped by an old one going away.
+final class GlobalSearchLifetime: ObservableObject {
+    /// Weak: `NostrService` owns the session, and the session's update
+    /// closure captures this view — a strong reference here would be a cycle
+    /// that keeps this object (and so the search) alive past the view.
+    /// Not @Published: setting it must not re-render the view.
+    weak var session: GlobalSearchSession?
+
+    deinit {
+        session?.cancel()
+    }
+}
