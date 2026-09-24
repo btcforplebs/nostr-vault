@@ -341,9 +341,9 @@ func initRelays(ctx context.Context) error {
 		slog.Info("event stored")
 		return nil
 	})
-	privateRelay.QueryEvents = append(privateRelay.QueryEvents, privateDB.QueryEvents)
+	// Queries (plain and NIP-50 search) and counts; see search.go.
+	enableSearch(privateRelay, privateDB)
 	privateRelay.DeleteEvent = append(privateRelay.DeleteEvent, privateDB.DeleteEvent)
-	privateRelay.CountEvents = append(privateRelay.CountEvents, privateDB.CountEvents)
 	privateRelay.ReplaceEvent = append(privateRelay.ReplaceEvent, privateDB.ReplaceEvent)
 
 	mux := privateRelay.Router()
@@ -423,9 +423,9 @@ func initRelays(ctx context.Context) error {
 		}
 		return nil
 	})
-	chatRelay.QueryEvents = append(chatRelay.QueryEvents, chatDB.QueryEvents)
+	// Queries (plain and NIP-50 search) and counts; see search.go.
+	enableSearch(chatRelay, chatDB)
 	chatRelay.DeleteEvent = append(chatRelay.DeleteEvent, chatDB.DeleteEvent)
-	chatRelay.CountEvents = append(chatRelay.CountEvents, chatDB.CountEvents)
 	chatRelay.ReplaceEvent = append(chatRelay.ReplaceEvent, chatDB.ReplaceEvent)
 
 	mux = chatRelay.Router()
@@ -491,9 +491,9 @@ func initRelays(ctx context.Context) error {
 		runsafe.Go("blast", func() { blast(ctx, event) })
 		return nil
 	})
-	outboxRelay.QueryEvents = append(outboxRelay.QueryEvents, outboxDB.QueryEvents)
+	// Queries (plain and NIP-50 search) and counts; see search.go.
+	enableSearch(outboxRelay, outboxDB)
 	outboxRelay.DeleteEvent = append(outboxRelay.DeleteEvent, outboxDB.DeleteEvent)
-	outboxRelay.CountEvents = append(outboxRelay.CountEvents, outboxDB.CountEvents)
 	outboxRelay.ReplaceEvent = append(outboxRelay.ReplaceEvent, outboxDB.ReplaceEvent)
 
 	mux = outboxRelay.Router()
@@ -629,9 +629,9 @@ func initRelays(ctx context.Context) error {
 		}
 		return nil
 	})
-	inboxRelay.QueryEvents = append(inboxRelay.QueryEvents, inboxDB.QueryEvents)
+	// Queries (plain and NIP-50 search) and counts; see search.go.
+	enableSearch(inboxRelay, inboxDB)
 	inboxRelay.DeleteEvent = append(inboxRelay.DeleteEvent, inboxDB.DeleteEvent)
-	inboxRelay.CountEvents = append(inboxRelay.CountEvents, inboxDB.CountEvents)
 	inboxRelay.ReplaceEvent = append(inboxRelay.ReplaceEvent, inboxDB.ReplaceEvent)
 
 	mux = inboxRelay.Router()
@@ -689,9 +689,9 @@ func initRelays(ctx context.Context) error {
 	)
 
 	feedRelay.StoreEvent = append(feedRelay.StoreEvent, feedDB.SaveEvent)
-	feedRelay.QueryEvents = append(feedRelay.QueryEvents, feedDB.QueryEvents)
+	// Queries (plain and NIP-50 search) and counts; see search.go.
+	enableSearch(feedRelay, feedDB)
 	feedRelay.DeleteEvent = append(feedRelay.DeleteEvent, feedDB.DeleteEvent)
-	feedRelay.CountEvents = append(feedRelay.CountEvents, feedDB.CountEvents)
 	feedRelay.ReplaceEvent = append(feedRelay.ReplaceEvent, feedDB.ReplaceEvent)
 
 	feedRelay.Router().HandleFunc("GET /feed", func(w http.ResponseWriter, r *http.Request) {
