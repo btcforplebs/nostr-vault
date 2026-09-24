@@ -370,7 +370,7 @@ class ComposeNoteViewModel @Inject constructor(
         if (query.length < 2) return
         mentionSearchJob = viewModelScope.launch {
             delay(350)
-            nostrService.globalSearch(query) {
+            nostrService.globalSearch(query, NostrService.SearchCaller.MENTION) {
                 if (currentMentionQuery == query) {
                     filterMentionResults(query)
                 }

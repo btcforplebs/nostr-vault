@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -97,11 +98,8 @@ class GlobalSearchSession(
         const val PHONE_SOURCE_ID = "phone"
         const val MAC_SOURCE_ID = "mac"
 
-        private fun isLocalHost(url: String): Boolean {
-            val host = url.substringAfter("://").substringBefore('/').substringBefore(':')
-            return host == "127.0.0.1" || host == "localhost" ||
-                host.startsWith("192.168.") || host.startsWith("10.")
-        }
+        private fun isLocalHost(url: String): Boolean =
+            SearchRelayUrls.isLocalNetworkHost(url.substringAfter("://").substringBefore('/').substringBefore(':'))
 
         private fun httpClientFor(url: String): OkHttpClient =
             if (isLocalHost(url)) WebSocketClient.sharedLocalhostClient else WebSocketClient.sharedClient
@@ -128,6 +126,10 @@ class GlobalSearchSession(
     private val subCounter = AtomicInteger(0)
     @Volatile private var cancelled = false
 
+    /** The final results, once the session has finished (null before, or if cancelled first). */
+    @Volatile var finishedResults: GlobalSearchResults? = null
+        private set
+
     private val _state = MutableStateFlow(GlobalSearchState(sources = sources.toList(), isRunning = true))
     val state: StateFlow<GlobalSearchState> = _state.asStateFlow()
 
@@ -137,7 +139,7 @@ class GlobalSearchSession(
         if (plan.phoneRelayUrl != null) addCachedProfiles()
 
         val workers = sources.map { src -> scope.launch { runSource(src) } }
-        scope.launch {
+        val publisher = scope.launch {
             while (isActive) {
                 delay(PUBLISH_INTERVAL_MS)
                 if (dirty.getAndSet(false)) publish(running = true)
@@ -145,8 +147,13 @@ class GlobalSearchSession(
         }
         scope.launch {
             workers.joinAll()
+            // The publisher must be gone before the final publish, or a tick
+            // landing after it re-publishes isRunning = true and it sticks.
+            publisher.cancelAndJoin()
+            dirty.set(false)
             if (cancelled) return@launch
             val results = publish(running = false)
+            finishedResults = results
             try { onFinished(results) } catch (e: Exception) { Log.w(TAG, "onFinished: ${e.message}") }
             scope.cancel()
         }
@@ -308,7 +315,7 @@ class GlobalSearchSession(
         }
     }
 
-    private class PageStream(val kind: Int, val page: Int) {
+    private class PageStream(val kind: Int, val page: Int, val until: Long?) {
         var received = 0
         var newIds = 0
         var oldest: Long? = null
@@ -326,7 +333,7 @@ class GlobalSearchSession(
 
             fun sendPage(kind: Int, page: Int, until: Long?) {
                 val sid = newSubId("gp$kind")
-                streams[sid] = PageStream(kind, page)
+                streams[sid] = PageStream(kind, page, until)
                 val filter = buildJsonObject {
                     put("kinds", JsonArray(listOf(JsonPrimitive(kind))))
                     put("limit", LocalRelaySearchPlan.PAGE_LIMIT)
@@ -361,6 +368,7 @@ class GlobalSearchSession(
                                 newIds = stream.newIds,
                                 oldestCreatedAt = stream.oldest,
                                 pagesFetched = stream.page,
+                                requestedUntil = stream.until,
                             )
                             if (step is LocalRelaySearchPlan.Step.Next) {
                                 sendPage(stream.kind, stream.page + 1, step.until)
@@ -407,7 +415,7 @@ class GlobalSearchSession(
     private fun accept(sourceId: String, ev: SearchWireMessage.Event, verify: Boolean) {
         when (ev.kind) {
             1 -> {
-                if (verify && !matcher.matchesNote(ev.content)) return
+                if (verify && !matcher.matchesNote(ev.content, ev.tags)) return
                 val note = FeedNote.fromEvent(ev.id, ev.pubkey, ev.content, ev.tags, ev.createdAt, ev.kind)
                 synchronized(lock) {
                     accumulator.addNote(note)
@@ -418,7 +426,7 @@ class GlobalSearchSession(
             }
             0 -> {
                 val profile = parseProfileMetadata(ev.pubkey, ev.content) ?: return
-                if (verify && !matcher.matchesProfile(profile)) return
+                if (verify && !matcher.matchesProfileContent(ev.content, ev.pubkey)) return
                 synchronized(lock) {
                     accumulator.addProfile(profile, ev.createdAt)
                     sourceKeys.getOrPut(sourceId) { HashSet() }.add("p:${ev.pubkey}")
