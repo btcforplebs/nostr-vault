@@ -83,12 +83,13 @@ final class GlobalSearchSession {
     /// Most notes one update carries; the ranked tail is dropped.
     static let maxNotes = 200
 
+    // Same values as Android's GlobalSearchSession.kt.
     static let serviceNoteLimit = 50
-    static let serviceProfileLimit = 20
+    static let serviceProfileLimit = 30
     /// Own-store NIP-50 limits. Must stay <= 1000 (Badger's cap, see
     /// `LocalRelaySearchPlan`).
     static let macNoteLimit = 300
-    static let macProfileLimit = 50
+    static let macProfileLimit = 100
 
     #if os(macOS)
     static let deviceLabel = "This Mac"
@@ -219,7 +220,10 @@ final class GlobalSearchSession {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 5
         config.timeoutIntervalForResource = 6
-        let session = URLSession(configuration: config)
+        // Same trust rule as WebSocketClient: a Mac on the LAN often serves a
+        // self-signed cert, and a probe that rejects it would push a relay
+        // that can search into the slow paged walk.
+        let session = URLSession(configuration: config, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
         let task = session.dataTask(with: req) { [weak self] data, response, _ in
             session.finishTasksAndInvalidate()
             guard let self = self else { return }
@@ -321,7 +325,8 @@ final class GlobalSearchSession {
             sourceHits[sourceId, default: []].insert(note.id)
         }
         for profile in results.profiles {
-            merge.add(profile: profile, pubkey: profile.pubkey)
+            merge.add(profile: profile, pubkey: profile.pubkey,
+                      createdAt: results.profileCreatedAt[profile.pubkey] ?? 0)
             sourceHits[sourceId, default: []].insert("p:" + profile.pubkey)
         }
         progress[sourceId]?.setResults(sourceHits[sourceId]?.count ?? 0)
@@ -423,7 +428,7 @@ final class GlobalSearchSession {
 
         var counted = false
         if kind == 1 {
-            if matcher.map({ $0.matchesNote(content: content) }) ?? true {
+            if matcher.map({ $0.matchesNote(content: content, tags: tags) }) ?? true {
                 let note = FeedNote(id: id, pubkey: pubkey, content: content,
                                     createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
                                     tags: tags, kind: kind)
@@ -436,7 +441,7 @@ final class GlobalSearchSession {
                                   about: profile.about, nip05: profile.nip05, pubkey: pubkey)
             } ?? true
             if matches {
-                merge.add(profile: profile, pubkey: pubkey)
+                merge.add(profile: profile, pubkey: pubkey, createdAt: createdAt)
                 counted = sourceHits[sub.sourceId, default: []].insert("p:" + pubkey).inserted
             }
         }
@@ -450,7 +455,7 @@ final class GlobalSearchSession {
             with: content.data(using: .utf8) ?? Data()) as? [String: Any] else { return nil }
         var profile = FeedProfile(pubkey: pubkey)
         profile.name = metadata["name"] as? String
-        profile.displayName = metadata["display_name"] as? String
+        profile.displayName = (metadata["display_name"] as? String) ?? (metadata["displayName"] as? String)
         profile.pictureURL = (metadata["picture"] as? String).flatMap { URL(string: $0) }
         profile.nip05 = metadata["nip05"] as? String
         profile.about = metadata["about"] as? String

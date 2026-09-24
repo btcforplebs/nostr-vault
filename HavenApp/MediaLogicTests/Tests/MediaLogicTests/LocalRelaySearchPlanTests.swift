@@ -57,6 +57,38 @@ final class LocalRelaySearchPlanTests: XCTestCase {
         XCTAssertEqual(step, .done)
     }
 
+    /// More than a page of events on one second: the page asked with
+    /// `until: T` comes back all repeats and all at T. Step to T-1 (as
+    /// haven-go's search.go does) instead of ending the walk there.
+    func testFullPageOfRepeatsOnItsUntilSecondStepsPastIt() {
+        let step = LocalRelaySearchPlan.step(received: LocalRelaySearchPlan.pageLimit,
+                                             newIds: 0,
+                                             oldestCreatedAt: 1_699_999_999,
+                                             pagesFetched: 2,
+                                             until: 1_699_999_999)
+        XCTAssertEqual(step, .next(until: 1_699_999_998))
+    }
+
+    /// Repeats that are not all on the asked-for second cannot be stepped
+    /// past safely — stop, as before.
+    func testFullPageOfRepeatsOffTheUntilSecondStillStops() {
+        let step = LocalRelaySearchPlan.step(received: LocalRelaySearchPlan.pageLimit,
+                                             newIds: 0,
+                                             oldestCreatedAt: 1_699_999_000,
+                                             pagesFetched: 2,
+                                             until: 1_699_999_999)
+        XCTAssertEqual(step, .done)
+    }
+
+    func testSteppingPastStillRespectsThePageBound() {
+        let step = LocalRelaySearchPlan.step(received: LocalRelaySearchPlan.pageLimit,
+                                             newIds: 0,
+                                             oldestCreatedAt: 5,
+                                             pagesFetched: LocalRelaySearchPlan.maxPages,
+                                             until: 5)
+        XCTAssertEqual(step, .done)
+    }
+
     func testWalkIsBounded() {
         let step = LocalRelaySearchPlan.step(received: LocalRelaySearchPlan.pageLimit,
                                              newIds: LocalRelaySearchPlan.pageLimit,

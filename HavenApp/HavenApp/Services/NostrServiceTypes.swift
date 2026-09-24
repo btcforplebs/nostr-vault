@@ -13,6 +13,9 @@ struct UncheckedSendable<T>: @unchecked Sendable {
 struct GlobalSearchResults {
     var profiles: [FeedProfile] = []
     var notes: [FeedNote] = []
+    /// created_at of each profile's kind 0, when it came from an event
+    /// (absent for profiles from the in-memory cache).
+    var profileCreatedAt: [String: Int64] = [:]
 }
 
 /// Lightweight signal published when profile metadata changes, so views can
@@ -53,6 +56,7 @@ final class LocalRelaySearchCollector {
     private let matcher: LocalSearchMatcher
     private var notes: [String: FeedNote] = [:]
     private var profiles: [String: FeedProfile] = [:]
+    private var profileCreatedAt: [String: Int64] = [:]
     private var seenIds = Set<String>()
     private var stats: [String: PageStats] = [:]
 
@@ -96,7 +100,7 @@ final class LocalRelaySearchCollector {
         guard isNew else { return .event(subId: subId) }
 
         if kind == 1 {
-            if matcher.matchesNote(content: content) {
+            if matcher.matchesNote(content: content, tags: tags) {
                 notes[id] = FeedNote(
                     id: id,
                     pubkey: pubkey,
@@ -113,19 +117,24 @@ final class LocalRelaySearchCollector {
             }
             var profile = FeedProfile(pubkey: pubkey)
             profile.name = metadata["name"] as? String
-            profile.displayName = metadata["display_name"] as? String
+            // Some clients write camelCase; haven-go's search matches both.
+            profile.displayName = (metadata["display_name"] as? String) ?? (metadata["displayName"] as? String)
             profile.pictureURL = (metadata["picture"] as? String).flatMap { URL(string: $0) }
             profile.nip05 = metadata["nip05"] as? String
             profile.about = metadata["about"] as? String
             profile.lud16 = metadata["lud16"] as? String
             profile.lud06 = metadata["lud06"] as? String
             profile.website = metadata["website"] as? String
+            // Several kind 0s for one pubkey can sit in the store (one per
+            // route, or old replaced ones); keep the newest.
             if matcher.matchesProfile(displayName: profile.displayName,
                                       name: profile.name,
                                       about: profile.about,
                                       nip05: profile.nip05,
-                                      pubkey: pubkey) {
+                                      pubkey: pubkey),
+               createdAt >= (profileCreatedAt[pubkey] ?? Int64.min) {
                 profiles[pubkey] = profile
+                profileCreatedAt[pubkey] = createdAt
             }
         }
 
@@ -166,6 +175,7 @@ final class LocalRelaySearchCollector {
         var results = GlobalSearchResults()
         results.notes = notes.values.sorted { $0.createdAt > $1.createdAt }
         results.profiles = Array(profiles.values)
+        results.profileCreatedAt = profileCreatedAt
         return results
     }
 }

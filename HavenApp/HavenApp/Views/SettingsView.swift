@@ -2099,7 +2099,11 @@ struct SearchRelaysSettingsView: View {
     var body: some View {
         Form {
             Section {
-                RelayListEditor(relays: $relays)
+                RelayListEditor(relays: Binding(
+                    get: { relays },
+                    // Shown = saved: the same normalization the store applies.
+                    set: { relays = SearchRelayDefaults.normalized($0) }
+                ), duplicateKey: SearchRelayDefaults.key)
             } header: {
                 Text("Search Relays")
             } footer: {

@@ -32,17 +32,23 @@ enum SearchRelayDefaults {
         return normalized(stored)
     }
 
-    /// Trims, drops blanks and duplicates (case-insensitive, ignoring a trailing
-    /// slash), keeps order.
+    /// What two entries are compared by: trimmed, case-folded, no trailing
+    /// slash. The settings editor uses the same key, so a row it shows is a
+    /// row that is saved.
+    static func key(_ relay: String) -> String {
+        var key = relay.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        while key.hasSuffix("/") { key.removeLast() }
+        return key
+    }
+
+    /// Trims, drops blanks and duplicates (by `key`), keeps order.
     static func normalized(_ list: [String]) -> [String] {
         var seen = Set<String>()
         var out: [String] = []
         for raw in list {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
-            var key = trimmed.lowercased()
-            while key.hasSuffix("/") { key.removeLast() }
-            guard seen.insert(key).inserted else { continue }
+            guard seen.insert(key(trimmed)).inserted else { continue }
             out.append(trimmed)
         }
         return out
@@ -75,11 +81,27 @@ struct SearchTermMatcher: Equatable {
         return terms.allSatisfy { haystack.contains($0) }
     }
 
-    /// All terms across a profile's fields taken together, so "jane doe"
-    /// matches name "jane" + display name "Jane Doe" and also name "jane" +
-    /// nip05 "doe@example.com".
+    /// Each term must occur in at least one field, so "jane doe" matches name
+    /// "jane" + nip05 "doe@example.com". Same rule as Android's matcher.
     func matches(fields: [String?]) -> Bool {
-        matches(fields.compactMap { $0 }.joined(separator: "\n"))
+        let hay = fields.compactMap { $0?.lowercased() }
+        return terms.allSatisfy { term in hay.contains { $0.contains(term) } }
+    }
+
+    /// A note's searchable text: its content plus the headline tags
+    /// (`title`, `summary`, `subject`) — what haven-go's `searchText` matches,
+    /// so a hit the Mac relay returns for a long-form title is not thrown
+    /// away on-device.
+    static func noteFields(content: String, tags: [[String]]) -> [String] {
+        var parts = [content]
+        for tag in tags where tag.count >= 2 && ["title", "summary", "subject"].contains(tag[0]) {
+            parts.append(tag[1])
+        }
+        return parts
+    }
+
+    func matchesNote(content: String, tags: [[String]]) -> Bool {
+        matches(Self.noteFields(content: content, tags: tags).joined(separator: "\n"))
     }
 }
 
@@ -248,6 +270,8 @@ enum RelayInfoDocument {
 struct GlobalSearchMerge<Note, Profile> {
     private(set) var notes: [String: Note] = [:]
     private(set) var profiles: [String: Profile] = [:]
+    /// created_at of the kind 0 held for each pubkey.
+    private(set) var profileCreatedAt: [String: Int64] = [:]
     /// Profiles in the order they first arrived.
     private(set) var profileOrder: [String] = []
 
@@ -261,12 +285,21 @@ struct GlobalSearchMerge<Note, Profile> {
         return true
     }
 
-    /// First answer wins: the order of arrival is the ranking inside a tier,
-    /// and a later copy of the same kind 0 from another source adds nothing.
+    /// The newest kind 0 wins (by created_at; a tie keeps the one already
+    /// held). The pubkey keeps the position it first arrived at — arrival
+    /// order is the ranking inside a tier. Pass createdAt 0 when unknown
+    /// (e.g. the in-memory profile cache), so any real event replaces it.
+    /// Returns true when the pubkey was new or its profile was replaced.
     @discardableResult
-    mutating func add(profile: Profile, pubkey: String) -> Bool {
-        guard profiles[pubkey] == nil else { return false }
+    mutating func add(profile: Profile, pubkey: String, createdAt: Int64) -> Bool {
+        if let held = profileCreatedAt[pubkey] {
+            guard createdAt > held else { return false }
+            profiles[pubkey] = profile
+            profileCreatedAt[pubkey] = createdAt
+            return true
+        }
         profiles[pubkey] = profile
+        profileCreatedAt[pubkey] = createdAt
         profileOrder.append(pubkey)
         return true
     }
