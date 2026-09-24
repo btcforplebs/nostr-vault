@@ -45,9 +45,15 @@ enum RelayConfiguration {
 
     /// The Mac relay URL handed to the relay, or "" when there is none. iOS
     /// only: the Mac is the relay being pointed at, never a client of itself.
+    /// Keeps a plain ws:// (or http://) Mac as ws:// — a Mac on the LAN often
+    /// has no TLS, and the old sync service honoured that; anything else is wss://.
     static func macRelayURL(config: HavenConfig) -> String {
         #if os(iOS)
-        return config.macRelayWssURL
+        let base = config.macRelayNormalizedBase
+        guard !base.isEmpty else { return "" }
+        let typed = config.macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let plain = typed.hasPrefix("ws://") || typed.hasPrefix("http://")
+        return (plain ? "ws://" : "wss://") + base
         #else
         return ""
         #endif
@@ -66,11 +72,12 @@ enum RelayConfiguration {
         var missing: Int?      // -1: not measurable (paged fallback)
         var error: String?
         var startedAt: Int64?
+        var updatedAt: Int64?  // heartbeat while running
         var finishedAt: Int64?
 
         enum CodingKeys: String, CodingKey {
             case macURL = "mac_url", state, method, posts, mentions, missing, error
-            case startedAt = "started_at", finishedAt = "finished_at"
+            case startedAt = "started_at", updatedAt = "updated_at", finishedAt = "finished_at"
         }
     }
 

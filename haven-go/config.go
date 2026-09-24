@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -171,6 +172,13 @@ func loadConfig() Config {
 	// Relay owner is always whitelisted
 	if cfg.OwnerPubKey != "" {
 		cfg.WhitelistedPubKeys[cfg.OwnerPubKey] = struct{}{}
+	}
+
+	// The Mac relay's outbox is a seed relay for everything that reads them
+	// (import, WoT seeding, tally, catch-up), as the app's relay file used to
+	// make it. Its /inbox is added by the catch-up alone (subscribeInboxAndChat).
+	if base := macRelayBase(cfg.MacRelayURL); base != "" && !slices.Contains(cfg.ImportSeedRelays, base) {
+		cfg.ImportSeedRelays = append(cfg.ImportSeedRelays, base)
 	}
 
 	// Clamp the catch-up interval regardless of which host app passed it in:

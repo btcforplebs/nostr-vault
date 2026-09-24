@@ -486,12 +486,31 @@ struct MacRelaySyncStatusView: View {
     @State private var status: RelayConfiguration.MacSyncStatus?
     @State private var checkRequested = false
 
+    private var configuredMac: String {
+        RelayConfiguration.macRelayURL(config: configService.config)
+    }
+
+    /// The relay reads the Mac address only when it starts, so a new address
+    /// does nothing — and a check would run against the old one — until the
+    /// relay is restarted.
+    private var needsRestart: Bool {
+        guard relayManager.isRunning, let running = relayManager.lastConfig else { return false }
+        return RelayConfiguration.macRelayURL(config: running) != configuredMac
+    }
+
     private var isForCurrentMac: Bool {
-        status?.macURL == RelayConfiguration.macRelayURL(config: configService.config)
+        status?.macURL == configuredMac
+    }
+
+    /// A copy refreshes its heartbeat every 20s; one silent for 90s died with
+    /// its relay and is retried on the next start.
+    private var isStale: Bool {
+        guard let beat = status?.updatedAt ?? status?.startedAt else { return true }
+        return Date().timeIntervalSince1970 - TimeInterval(beat) > 90
     }
 
     private var isRunning: Bool {
-        isForCurrentMac && status?.state == "running"
+        isForCurrentMac && status?.state == "running" && !isStale
     }
 
     var body: some View {
@@ -519,15 +538,23 @@ struct MacRelaySyncStatusView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.havenPurple)
-            .disabled(isRunning || checkRequested || !relayManager.isRunning)
+            .disabled(isRunning || checkRequested || needsRestart || !relayManager.isRunning)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .task {
             // The copy runs inside the relay; poll its status file while visible.
+            var requestedAt: Date?
             while !Task.isCancelled {
                 let latest = RelayConfiguration.macSyncStatus(under: ConfigService.shared.relayDataDir)
-                if checkRequested, latest?.state == "running" || (latest?.startedAt ?? 0) > (status?.startedAt ?? 0) {
-                    checkRequested = false // the relay picked the request up
+                if checkRequested {
+                    requestedAt = requestedAt ?? Date()
+                    let pickedUp = latest?.state == "running" || (latest?.startedAt ?? 0) > (status?.startedAt ?? 0)
+                    // Never spin forever: a request the relay didn't take
+                    // (not running yet, or already mid-copy) clears itself.
+                    if pickedUp || Date().timeIntervalSince(requestedAt!) > 30 {
+                        checkRequested = false
+                        requestedAt = nil
+                    }
                 }
                 status = latest
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -556,12 +583,14 @@ struct MacRelaySyncStatusView: View {
     }
 
     private var headline: String {
+        if needsRestart { return "Restart the relay to use this Mac address" }
         if checkRequested { return "Checking with your Mac…" }
         guard isForCurrentMac, let status, let state = status.state else {
             return "Full copy from your Mac hasn't run yet"
         }
         switch state {
-        case "running": return "Copying your full history from the Mac…"
+        case "running":
+            return isStale ? "Copy was interrupted" : "Copying your full history from the Mac…"
         case "done":
             return (status.missing ?? 0) < 0 ? "Copied (this Mac can't be checked)" : "Everything copied · 0 missing"
         case "incomplete":
@@ -576,7 +605,9 @@ struct MacRelaySyncStatusView: View {
         guard isForCurrentMac, let status else {
             return "It starts on its own shortly after the relay starts. After that, new posts and mentions keep syncing on their own."
         }
-        if status.state == "running" { return nil }
+        if status.state == "running" {
+            return isStale ? "The app closed during the copy. It picks up again next time the relay starts." : nil
+        }
         var parts: [String] = []
         parts.append("\(status.posts ?? 0) posts and \(status.mentions ?? 0) mentions copied.")
         if let finished = status.finishedAt {

@@ -25,7 +25,7 @@ type fakeMac struct {
 	store eventstore.RelayWrapper
 }
 
-func newFakeMac(t *testing.T, negentropy bool, capLimit int) *fakeMac {
+func newFakeMac(t *testing.T, negentropy bool, capLimit int, reject ...func(context.Context, nostr.Filter) (bool, string)) *fakeMac {
 	t.Helper()
 	store := newTestStore(t)
 	rl := khatru.NewRelay()
@@ -41,6 +41,7 @@ func newFakeMac(t *testing.T, negentropy bool, capLimit int) *fakeMac {
 			}
 		})
 	}
+	rl.RejectFilter = append(rl.RejectFilter, reject...)
 	srv := httptest.NewServer(rl)
 	t.Cleanup(srv.Close)
 	return &fakeMac{url: "ws" + strings.TrimPrefix(srv.URL, "http"), store: store}
@@ -215,10 +216,8 @@ func TestMacBackfillSupersededReplaceableIsNotMissing(t *testing.T) {
 func TestMacBackfillPagedFallbackPassesRelayCap(t *testing.T) {
 	mac := newFakeMac(t, false, 100)
 	f := setupMacFixture(t, mac)
-	base, inbox := macRelayURLs()
-	markNegentropyUnsupported(base) // skip the 15s NEG-OPEN probe
-	markNegentropyUnsupported(inbox)
-	t.Cleanup(func() { negCaps.Delete(nostr.NormalizeURL(base)); negCaps.Delete(nostr.NormalizeURL(inbox)) })
+	// NIP-77 stays enabled: the copy must find out on its own (NEG-OPEN
+	// timeout on the first slice) and fall back.
 
 	f.fill.runIfNeeded(context.Background(), false)
 
@@ -254,4 +253,45 @@ func (s *refusingStore) QueryEvents(ctx context.Context, f nostr.Filter) (chan *
 }
 func (s *refusingStore) Publish(context.Context, nostr.Event) error {
 	return context.DeadlineExceeded
+}
+
+func TestMacBackfillPagedWalkCutShortIsNotDone(t *testing.T) {
+	// A Mac that answers the first page and then refuses every older one: the
+	// walk must not be recorded as a finished copy.
+	mac := newFakeMac(t, false, 100, func(_ context.Context, f nostr.Filter) (bool, string) {
+		return f.Until != nil, "blocked: try later"
+	})
+	f := setupMacFixture(t, mac)
+	f.fill.negEnabled = false
+
+	f.fill.runIfNeeded(context.Background(), false)
+
+	st := loadMacSyncStatus()
+	if st.State == "done" || st.Error == "" {
+		t.Fatalf("status = %+v, want incomplete with an error", st)
+	}
+	if st.Posts != 100 {
+		t.Fatalf("copied %d posts, want the first page (100)", st.Posts)
+	}
+}
+
+func TestMacBackfillRejectsAreNotCountedAsCopied(t *testing.T) {
+	mac := newFakeMac(t, true, 0)
+	f := setupMacFixture(t, mac)
+	// Nobody is in the WoT: every mention is rejected (a cached stub), none stored.
+	wot.MarkReady(wot.NewCycle(), stubWot{members: map[string]bool{}})
+
+	f.fill.runIfNeeded(context.Background(), false)
+	st := loadMacSyncStatus()
+	if st.State != "done" || st.Missing != 0 || st.Mentions != 0 {
+		t.Fatalf("status = %+v, want done, 0 missing, 0 mentions copied", st)
+	}
+
+	// The catch-up loop prunes the reject stubs; a later check re-downloads
+	// those rejects and must still not report them as copied.
+	f.fill.rejects.prune(nostr.Timestamp(time.Now().Add(time.Hour).Unix()))
+	f.fill.runIfNeeded(context.Background(), true)
+	if st := loadMacSyncStatus(); st.State != "done" || st.Mentions != 0 || st.Posts != 0 {
+		t.Fatalf("re-check status = %+v, want done with nothing copied", st)
+	}
 }

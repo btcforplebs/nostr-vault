@@ -261,12 +261,9 @@ func subscribeInboxAndChat(ctx context.Context) {
 	for _, r := range config.DmRelays {
 		relaySet[r] = struct{}{}
 	}
-	// The Mac relay's outbox is a seed relay (owner events, both directions)
-	// and its inbox is inbox-only, like a DM relay. Added here rather than
-	// trusted to the app's relay files so the Mac can't silently drop out.
-	macBase, macInbox := macRelayURLs()
-	if macBase != "" {
-		relaySet[macBase] = struct{}{}
+	// The Mac relay's inbox is inbox-only, like a DM relay. (Its outbox is
+	// already a seed relay: loadConfig adds it from MAC_RELAY_URL.)
+	if _, macInbox := macRelayURLs(); macInbox != "" {
 		relaySet[macInbox] = struct{}{}
 	}
 	relays := make([]string, 0, len(relaySet))
@@ -387,7 +384,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 	}
 
 	isSeedRelay := func(url string) bool {
-		return slices.Contains(config.ImportSeedRelays, url) || (macBase != "" && url == macBase)
+		return slices.Contains(config.ImportSeedRelays, url)
 	}
 
 	// runCatchup reconciles each relay via NIP-77 when supported, collecting
@@ -535,22 +532,31 @@ func subscribeInboxAndChat(ctx context.Context) {
 		runCatchup(true)
 		lastRun = time.Now()
 
-		// One-time full-history copy from the Mac relay, after the first round
-		// so recent items land first. Runs on this goroutine so it never
-		// overlaps a catch-up round on the same stores.
-		macFill := &macBackfiller{
-			pTags:      pTags,
-			inboxNeg:   inboxStore,
-			outboxNeg:  outboxStore,
-			wdbInbox:   wdbInbox,
-			wdbChat:    wdbChat,
-			wdbOutbox:  wdbOutbox,
-			notifier:   notifier,
-			rejects:    rejects,
-			now:        time.Now,
-			negEnabled: config.NegentropySyncEnabled,
+		// One-time full-history copy from the Mac relay, started after the
+		// first round so recent items land first. It runs on its own goroutine
+		// (a slow Mac can take minutes) so pull-to-refresh and the ticker keep
+		// working meanwhile; it has its own inbox store and notifier so its
+		// batch never mixes with a round's.
+		if base, _ := macRelayURLs(); base != "" {
+			macNotifier := &batchNotifier{}
+			macFill := &macBackfiller{
+				pTags: pTags,
+				inboxNeg: &inboxNegStore{
+					inbox: wdbInbox, chat: wdbChat, tombs: tombs, rejects: rejects,
+					notifier: macNotifier,
+					advance:  func(ts nostr.Timestamp) { advance(&lastSeen, ts) },
+				},
+				outboxNeg:  outboxStore,
+				wdbInbox:   wdbInbox,
+				wdbChat:    wdbChat,
+				wdbOutbox:  wdbOutbox,
+				notifier:   macNotifier,
+				rejects:    rejects,
+				now:        time.Now,
+				negEnabled: config.NegentropySyncEnabled,
+			}
+			runsafe.Go("subscribeInboxAndChat.macBackfill", func() { macFill.loop(ctx, macCheckCh) })
 		}
-		macFill.runIfNeeded(ctx, false)
 
 		// A round that runs longer than the tick interval leaves a tick
 		// pending, which would start the next round immediately — and once
@@ -593,11 +599,6 @@ func subscribeInboxAndChat(ctx context.Context) {
 					continue
 				}
 				log.Println("📢 catch-up requested (app returned)")
-			case <-macCheckCh:
-				macFill.runIfNeeded(ctx, true)
-				lastRun = time.Now()
-				restartTicker()
-				continue
 			}
 			runCatchup(announce)
 			lastRun = time.Now()
@@ -933,8 +934,8 @@ func RequestCatchUp() {
 	}
 }
 
-// macCheckCh asks the catch-up loop to re-run the Mac relay full-history copy
-// and its missing-events check.
+// macCheckCh asks the Mac relay backfill goroutine to re-run the full-history
+// copy and its missing-events check.
 var macCheckCh = make(chan struct{}, 1)
 
 // RequestMacSyncCheck re-runs the Mac relay copy and check. Non-blocking,
