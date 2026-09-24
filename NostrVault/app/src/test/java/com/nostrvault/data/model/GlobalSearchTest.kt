@@ -88,6 +88,47 @@ class GlobalSearchTest {
         assertEquals(LocalRelaySearchPlan.Step.Done, LocalRelaySearchPlan.step(1000, 1000, null, 1))
     }
 
+    @Test
+    fun `a full page of repeats at the requested second steps past it`() {
+        // More than 1000 events share second 500: the re-asked page is all repeats.
+        assertEquals(
+            LocalRelaySearchPlan.Step.Next(499L),
+            LocalRelaySearchPlan.step(1000, 0, 500L, 3, requestedUntil = 500L),
+        )
+        // Repeats on the very first page (no until) cannot be stepped past.
+        assertEquals(LocalRelaySearchPlan.Step.Done, LocalRelaySearchPlan.step(1000, 0, 500L, 1, requestedUntil = null))
+        // Second 0 has nothing below it.
+        assertEquals(LocalRelaySearchPlan.Step.Done, LocalRelaySearchPlan.step(1000, 0, 0L, 3, requestedUntil = 0L))
+    }
+
+    @Test
+    fun `note verifier also reads title, summary and subject tags`() {
+        val m = SearchTermMatcher.create("sovereign relay")!!
+        val tags = listOf(listOf("title", "Sovereign"), listOf("d", "relay-guide-ignored"))
+        assertTrue(m.matchesNote("how to run a relay", tags))
+        assertFalse(m.matchesNote("how to run a relay", listOf(listOf("d", "sovereign"))))
+        assertTrue(m.matchesNote("x", listOf(listOf("summary", "a sovereign"), listOf("subject", "RELAY"))))
+    }
+
+    @Test
+    fun `profile content verifier matches the fields haven-go matches`() {
+        val m = SearchTermMatcher.create("logen detty")!!
+        assertTrue(m.matchesProfileContent("""{"display_name":"Logen","nip05":"detty@loge.media"}""", "pk"))
+        assertTrue(m.matchesProfileContent("""{"displayName":"Logen Detty"}""", "pk"))
+        assertFalse(m.matchesProfileContent("""{"picture":"https://logen.detty/x.png"}""", "pk"))
+        assertFalse(m.matchesProfileContent("not json logen detty", "pk"))
+    }
+
+    @Test
+    fun `local network hosts match iOS`() {
+        for (h in listOf("127.0.0.1", "localhost", "10.0.0.5", "192.168.1.9", "172.16.0.1", "172.31.255.1", "mac-mini.local")) {
+            assertTrue(h, SearchRelayUrls.isLocalNetworkHost(h))
+        }
+        for (h in listOf("172.15.0.1", "172.32.0.1", "nostr.wine", "local.example.com")) {
+            assertFalse(h, SearchRelayUrls.isLocalNetworkHost(h))
+        }
+    }
+
     // ── NIP-11 ───────────────────────────────────────────────────────
 
     @Test

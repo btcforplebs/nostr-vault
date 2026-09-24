@@ -57,6 +57,22 @@ object SearchRelayUrls {
         return "$scheme://$rest"
     }
 
+    /**
+     * A host on this machine or the local network (self-signed certs are
+     * trusted there). Same set as iOS `WebSocketClient`: loopback, 10/8,
+     * 172.16/12, 192.168/16 and mDNS `.local` names.
+     */
+    fun isLocalNetworkHost(host: String): Boolean {
+        val h = host.lowercase().trimEnd('.')
+        if (h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "[::1]") return true
+        if (h.startsWith("127.") || h.startsWith("10.") || h.startsWith("192.168.")) return true
+        if (h.startsWith("172.")) {
+            val second = h.split('.').getOrNull(1)?.toIntOrNull()
+            if (second != null && second in 16..31) return true
+        }
+        return h.endsWith(".local")
+    }
+
     /** Short label for a status chip: the host without scheme. */
     fun label(url: String): String = url.substringAfter("://").trimEnd('/')
 }
@@ -77,6 +93,8 @@ object SearchRelayUrls {
 class SearchTermMatcher private constructor(val terms: List<String>) {
 
     companion object {
+        private val HEADLINE_TAGS = setOf("title", "summary", "subject")
+
         fun create(query: String): SearchTermMatcher? {
             val trimmed = query.trim()
             if (trimmed.length < 2) return null
@@ -94,9 +112,26 @@ class SearchTermMatcher private constructor(val terms: List<String>) {
 
     /**
      * A note matches on its own text only — searching a person's name finds
-     * them under People, not everything they wrote (Logen, 2026-09-09).
+     * them under People, not everything they wrote (Logen, 2026-09-09). Its
+     * text is the content plus any title / summary / subject tag, the same
+     * text haven-go's NIP-50 matches (`searchText` in haven-go/search.go), so
+     * the verifier never drops a hit the Mac relay rightly returned.
      */
-    fun matchesNote(content: String): Boolean = matches(content)
+    fun matchesNote(content: String, tags: List<List<String>> = emptyList()): Boolean {
+        val headlines = tags.filter { it.size >= 2 && it[0] in HEADLINE_TAGS }.map { it[1] }
+        return matches((listOf(content) + headlines).joinToString("\n"))
+    }
+
+    /**
+     * Kind-0 content matched on the same fields haven-go uses: name,
+     * display_name, displayName, about, nip05 (plus the pubkey, as the
+     * cached-profile path always has). Non-JSON content never matches.
+     */
+    fun matchesProfileContent(content: String, pubkey: String): Boolean {
+        val fields = profileSearchFields(content) ?: return false
+        val lowered = (fields + pubkey).map { it.lowercase() }
+        return terms.all { term -> lowered.any { it.contains(term) } }
+    }
 
     /** Each term must occur in at least one of the profile's fields. */
     fun matchesProfile(
@@ -145,14 +180,30 @@ object LocalRelaySearchPlan {
      * @param newIds how many of those had not arrived on an earlier page.
      * @param oldestCreatedAt smallest `created_at` in this page.
      * @param pagesFetched pages fetched so far, including this one.
+     * @param requestedUntil the `until` this page was asked for (null = first page).
      */
-    fun step(received: Int, newIds: Int, oldestCreatedAt: Long?, pagesFetched: Int): Step {
+    fun step(
+        received: Int,
+        newIds: Int,
+        oldestCreatedAt: Long?,
+        pagesFetched: Int,
+        requestedUntil: Long? = null,
+    ): Step {
         // A short page: the store had nothing more to give.
         if (received < PAGE_LIMIT) return Step.Done
-        // `until` is inclusive; a page of pure repeats cannot advance the cursor.
-        if (newIds <= 0) return Step.Done
         if (pagesFetched >= MAX_PAGES) return Step.Done
         val oldest = oldestCreatedAt ?: return Step.Done
+        if (newIds <= 0) {
+            // `until` is inclusive, so a full page of repeats sitting on the
+            // second we asked for means more than a page of events share that
+            // second. Step past it, as haven-go's scanSearch does, instead of
+            // stopping the whole walk there; the rest of that one second is
+            // not searched.
+            if (requestedUntil != null && oldest == requestedUntil && oldest > 0) {
+                return Step.Next(oldest - 1)
+            }
+            return Step.Done
+        }
         return Step.Next(oldest)
     }
 }
@@ -238,6 +289,16 @@ sealed class SearchWireMessage {
             return Event(sid, id, pubkey, kind, content, createdAt, tags)
         }
     }
+}
+
+/** The human fields of kind-0 content search matches on; null if not a JSON object. */
+fun profileSearchFields(content: String): List<String>? = try {
+    val m = Json.parseToJsonElement(content).jsonObject
+    listOf("name", "display_name", "displayName", "about", "nip05").mapNotNull { key ->
+        (m[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
+    }
+} catch (_: Exception) {
+    null
 }
 
 /** Profile fields out of a kind-0 content string; null if it is not a JSON object. */

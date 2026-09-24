@@ -1405,8 +1405,16 @@ class NostrService @Inject constructor(
         return session
     }
 
-    private fun ownSearchPubkeys(): Set<String> =
-        setOfNotNull(configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() })
+    /** Active account and the owner (iOS parity: `request.own`). */
+    private fun ownSearchPubkeys(): Set<String> {
+        val owner = configStore.config.value.ownerNpub
+            .takeIf { it.startsWith("npub1") }
+            ?.let { HavenBridge.decodeNpub(it) }
+        return setOfNotNull(
+            configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() },
+            owner?.takeIf { it.isNotEmpty() },
+        )
+    }
 
     /** Profiles a search discovered join the cache, so result rows and mentions resolve. */
     fun mergeSearchProfiles(found: List<FeedProfile>) {
@@ -1418,15 +1426,32 @@ class NostrService @Inject constructor(
         if (additions.isNotEmpty()) _profiles.value = current + additions
     }
 
-    private var callbackSearch: GlobalSearchSession? = null
+    /** Who a callback search belongs to; each gets its own slot. */
+    enum class SearchCaller { FEED, MENTION }
+
+    /**
+     * One in-flight callback search per caller. Feed search and @-mention
+     * lookup used to share one slot, so a mention lookup cancelled the feed's
+     * search, whose callback then never fired and left its spinner on.
+     */
+    private val callbackSearches = java.util.concurrent.ConcurrentHashMap<SearchCaller, GlobalSearchSession>()
 
     /**
      * One-shot NIP-50 search over the configured search relays, delivered once
      * every relay has answered (or the per-relay cap passed). Used by the feed's
      * search and @-mention lookup; the Search screen streams via [startSearch].
+     *
+     * A search replaced by a newer one from the same [caller], or cancelled via
+     * [cancelGlobalSearch], never calls [onResult]: delivery is checked on the
+     * main thread against the caller's current session, so a session cancelled
+     * after it finished cannot hand back stale results either.
      */
-    fun globalSearch(query: String, onResult: (GlobalSearchResults) -> Unit) {
-        cancelGlobalSearch()
+    fun globalSearch(
+        query: String,
+        caller: SearchCaller = SearchCaller.FEED,
+        onResult: (GlobalSearchResults) -> Unit,
+    ) {
+        cancelGlobalSearch(caller)
         val matcher = SearchTermMatcher.create(query)
         if (matcher == null) {
             onResult(GlobalSearchResults())
@@ -1442,20 +1467,30 @@ class NostrService @Inject constructor(
             ),
             own = ownSearchPubkeys(),
             follows = emptySet(),
-            onFinished = { results ->
-                scope.launch {
-                    mergeSearchProfiles(results.profiles)
-                    onResult(results)
-                }
-            },
+            onFinished = { results -> deliverCallbackSearch(caller, results, onResult) },
         )
-        callbackSearch = session
+        callbackSearches[caller] = session
         session.start()
     }
 
-    fun cancelGlobalSearch() {
-        callbackSearch?.cancel()
-        callbackSearch = null
+    private fun deliverCallbackSearch(
+        caller: SearchCaller,
+        results: GlobalSearchResults,
+        onResult: (GlobalSearchResults) -> Unit,
+    ) {
+        scope.launch {
+            mergeSearchProfiles(results.profiles)
+            // Still this caller's search? `results` belongs to the session that
+            // produced it; compare by the finished session's identity.
+            val current = callbackSearches[caller] ?: return@launch
+            if (current.finishedResults !== results) return@launch
+            callbackSearches.remove(caller, current)
+            onResult(results)
+        }
+    }
+
+    fun cancelGlobalSearch(caller: SearchCaller = SearchCaller.FEED) {
+        callbackSearches.remove(caller)?.cancel()
     }
 
     // ══════════════════════════════════════════════════════════════════
