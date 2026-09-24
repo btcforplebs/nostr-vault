@@ -1786,9 +1786,16 @@ struct ComposeView: View {
         }
 
         // Restore quote context from saved draft
+        // A quote of a repost saves the original's id, which may only exist
+        // inside the repost that carried it — find that repost and rebuild the
+        // original from it. Older drafts that saved the wrapper id resolve
+        // through quoteTarget too, so they come back citing the original.
         if let quoteId = draft.quoteId {
-            draftQuoteTo = FeedService.shared.notes.first(where: { $0.id == quoteId })
-                ?? FeedService.shared.parentNotesCache[quoteId]
+            let feed = FeedService.shared
+            let found = feed.findNote(id: quoteId)
+                ?? feed.notes.first(where: { $0.id == quoteId })
+                ?? feed.notes.first(where: { $0.kind == 6 && $0.repostedEventId == quoteId })
+            draftQuoteTo = found.map { feed.quoteTarget(for: $0) }
         } else {
             draftQuoteTo = nil
         }
