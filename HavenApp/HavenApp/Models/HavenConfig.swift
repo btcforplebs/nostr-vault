@@ -52,7 +52,7 @@ struct HavenConfig: Codable, Equatable {
     var zapsOnlyMode: Bool = false // When true, likes/reactions are removed from the UI entirely; zaps become the primary engagement + notification signal
     var disableTabBarAnimation: Bool = false // When true, the bottom tab bar stays fully expanded and never shrinks/hides on scroll
 
-    // Mac Relay Sync (iOS only)
+    // Mac relay (iOS only)
     var macRelayURL: String = "" // wss:// URL to a remote Mac Haven relay to sync missed notes
     
     // NWC (Nostr Wallet Connect)

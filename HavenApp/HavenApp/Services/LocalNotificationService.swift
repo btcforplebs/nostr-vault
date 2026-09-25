@@ -23,69 +23,6 @@ final class LocalNotificationService {
     private let maxSeen = 500
     private let seenLock = NSLock()
 
-    // MARK: - Catch-up batching
-
-    // While > 0, individual notify-worthy markers are tallied instead of firing
-    // their own banner/push — used by MacRelaySyncService so returning from
-    // background and catching up on a backlog produces one "N new notifications"
-    // summary instead of a flood of separate ones. Mirrors the Go relay's own
-    // batchNotifier, which does the same thing for its live/negentropy catch-up.
-    private var catchUpBatchDepth = 0
-    private var catchUpBatchCount = 0
-
-    /// Starts (or nests into) a catch-up batch. Call endCatchUpBatch() when done —
-    /// nesting is supported defensively, but MacRelaySyncService only ever runs one
-    /// round at a time.
-    func beginCatchUpBatch() {
-        catchUpBatchDepth += 1
-    }
-
-    /// Ends a catch-up batch. `settleDelay` gives already-in-flight NOTIFY markers
-    /// (the relay logs them asynchronously as it processes each injected event) a
-    /// moment to land before the summary fires — anything that arrives after this
-    /// window falls back to notifying individually rather than being lost.
-    func endCatchUpBatch(settleDelay: TimeInterval = 1.5) {
-        guard catchUpBatchDepth > 0 else { return }
-        catchUpBatchDepth -= 1
-        guard catchUpBatchDepth == 0 else { return }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay) { [weak self] in
-            guard let self = self else { return }
-            let count = self.catchUpBatchCount
-            self.catchUpBatchCount = 0
-            guard count > 0 else { return }
-            self.fireSummary(count: count)
-        }
-    }
-
-    /// Posts a single "N new notifications" summary, reusing the existing
-    /// `summary` type's title/body/icon.
-    ///
-    /// This path does not go through handle(), so it has to apply the same gates
-    /// itself — it previously applied none of them, which meant the master
-    /// Notifications switch, the per-account preferences and the "not while the
-    /// app is open" rule all governed the relay's summary marker and none of
-    /// them governed this one.
-    private func fireSummary(count: Int) {
-        guard ConfigService.shared.config.enablePushNotifications else { return }
-        guard anyAccountWantsNotifications else { return }
-
-        let preview = count == 1 ? "1 new notification" : "\(count) new notifications"
-        let id = "summary-\(Int(Date().timeIntervalSince1970))"
-
-        // Over an open app this is the in-app banner, as before: the events it
-        // counts were tallied instead of banner'd individually, so staying
-        // silent here would drop them entirely. Only the *system push* needs the
-        // absence rule, because that is the one that repeats on every wake.
-        if appInForeground {
-            showInAppBanner(id: id, type: "summary", name: nil, preview: preview, npub: "")
-            return
-        }
-        guard catchUpSummaryAllowed else { return }
-        NotificationActivityLog.recordCatchUpSummary()
-        post(id: id, type: "summary", name: nil, preview: preview, npub: "")
-    }
-
     /// Whether a catch-up summary may fire right now: never over an open app,
     /// and only once per genuine absence (NotificationPolicy.minimumAbsence).
     private var catchUpSummaryAllowed: Bool {
@@ -95,18 +32,6 @@ final class LocalNotificationService {
             lastForegroundAt: NotificationActivityLog.lastForegroundAt,
             lastAnnouncedAt: NotificationActivityLog.lastCatchUpSummaryAt
         )
-    }
-
-    /// True when at least one account on this device wants any notification at
-    /// all. The batch summary is account-agnostic (it spans every whitelisted
-    /// account), so no single account's preferences can govern it.
-    private var anyAccountWantsNotifications: Bool {
-        let config = ConfigService.shared.config
-        var npubs = ConfigService.shared.allAccountNpubs
-        if npubs.isEmpty {
-            npubs = [config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub]
-        }
-        return npubs.contains { PushNotificationService.shared.preferencesForAccount($0).wantsAnything }
     }
 
     // MARK: - Entry point
@@ -184,14 +109,6 @@ final class LocalNotificationService {
         // One summary per absence: record it as soon as it is cleared to fire,
         // so the next background wake's round does not repeat it.
         if type == "summary" { NotificationActivityLog.recordCatchUpSummary() }
-
-        // During a MacRelaySyncService catch-up round, tally instead of firing
-        // individually — endCatchUpBatch() turns this into one summary. The
-        // account-agnostic "summary" type itself never nests into a batch.
-        if catchUpBatchDepth > 0 && type != "summary" {
-            catchUpBatchCount += 1
-            return
-        }
 
         let name = author.isEmpty ? nil : NostrService.shared.profiles[author]?.bestName
 

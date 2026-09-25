@@ -33,7 +33,6 @@
 		104028AA4C9BD88AB6E1344F /* GroupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07BA4D14A6EEFD07DCB860B4 /* GroupService.swift */; };
 		105BA4BC259BD7546C6DF04A /* GroupModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7E39EC2E804B21B7832AC8 /* GroupModels.swift */; };
 		10E1131073AC917E036BDF79 /* FeedMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B91658F386F6313DBAA8D6D /* FeedMediaView.swift */; };
-		1124591241C6EA4DE3017EEB /* MacRelaySyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61CF844AAE65189FFA9CEC7C /* MacRelaySyncService.swift */; };
 		1170A2AE5A61D5B5FF2510CF /* GifPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A557F0804214239CCFEDDD8 /* GifPickerSheet.swift */; };
 		11CA2627A013602A67310A7D /* MediaGridItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279617C6C46FE95602AF2F5B /* MediaGridItem.swift */; };
 		1254B31953A9E00640351FFC /* EventPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0D438DE03F310940F4D19A /* EventPublisher.swift */; };
@@ -407,7 +406,6 @@
 		F0BFD54432F04456E43C0186 /* YarnClipService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD258416653D3DE8614C5C5E /* YarnClipService.swift */; };
 		F10135C9F1B704EF4CFDCDB7 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */; };
 		F11DF1086DA8F6B030403814 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
-		F164AEF86262F77B4B813EAD /* MacRelaySyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61CF844AAE65189FFA9CEC7C /* MacRelaySyncService.swift */; };
 		F22FA656E63FA88BF7E97461 /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E04A276931F29CD944A3474 /* CachedAsyncImage.swift */; };
 		F48C4A72B9BB0E5A9A151D0B /* GroupCreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB855E7379DA2448EE2AAE1 /* GroupCreateView.swift */; };
 		F54A606BD7416C56D334ADD5 /* SleepWakeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B403C7767568BFB3E44E0CE /* SleepWakeMonitor.swift */; };
@@ -531,7 +529,6 @@
 		5E687B37FB00F4ED20723DBB /* HavenApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenApp.swift; sourceTree = "<group>"; };
 		5E86551C962F13A9A41AB343 /* LockScreenWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenWidget.swift; sourceTree = "<group>"; };
 		618885CB514523D351B723B4 /* MosaicWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MosaicWidget.swift; sourceTree = "<group>"; };
-		61CF844AAE65189FFA9CEC7C /* MacRelaySyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelaySyncService.swift; sourceTree = "<group>"; };
 		649EE87FE3A42105E4EC17E9 /* haven */ = {isa = PBXFileReference; path = haven; sourceTree = "<group>"; };
 		65D86DC20FC17947852F5719 /* NostrService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrService.swift; sourceTree = "<group>"; };
 		665772231EE1D4B0755E95C3 /* PendingPostManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingPostManager.swift; sourceTree = "<group>"; };
@@ -1046,7 +1043,6 @@
 				2B14053AFA5E916B43335BEE /* LNURLService.swift */,
 				48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */,
 				49F43AE6D03159B7716D9F71 /* LogStore.swift */,
-				61CF844AAE65189FFA9CEC7C /* MacRelaySyncService.swift */,
 				8B294C3B4DE4C63104876789 /* MediaCacheService.swift */,
 				71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */,
 				1B03DACD65D976F80B315E19 /* MirrorService.swift */,
@@ -1378,7 +1374,6 @@
 				FF3796326AA660DE673215DB /* LogStore.swift in Sources */,
 				21CBAC62986E43C71A184473 /* LogsView.swift in Sources */,
 				2994C3A0BE9AFB6C41AD71FA /* LongFormContent.swift in Sources */,
-				1124591241C6EA4DE3017EEB /* MacRelaySyncService.swift in Sources */,
 				DDF88C90EED2AAB24C40E13E /* MediaCacheService.swift in Sources */,
 				81E4B84A7AD7E745DE93E2A4 /* MediaDateGrouping.swift in Sources */,
 				040DD927F572B12A2A02312B /* MediaGalleryDataProcessing.swift in Sources */,
@@ -1597,7 +1592,6 @@
 				CA3D7FC45AC4FC2943F69A70 /* LogStore.swift in Sources */,
 				7B63B96C1A2672ED35DAE97E /* LogsView.swift in Sources */,
 				1DE283F1E6062C16E37DAAD5 /* LongFormContent.swift in Sources */,
-				F164AEF86262F77B4B813EAD /* MacRelaySyncService.swift in Sources */,
 				5E7C388BDCF4352D837F6ED9 /* MediaCacheService.swift in Sources */,
 				4295059D93DE26D8335EE808 /* MediaDateGrouping.swift in Sources */,
 				98F3C8B40BF9B4F8F3C99EBD /* MediaGalleryDataProcessing.swift in Sources */,

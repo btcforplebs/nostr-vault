@@ -47,12 +47,8 @@ extension VaultView {
         // relays into the local DBs. Injected events stream in over the local
         // /inbox subscription opened by fetchNotes below. Non-blocking; no-op-safe
         // if the relay isn't running.
+        // The Mac relay, when set, is one of those external relays.
         RequestRelaySyncC()
-
-        // Also sync from Mac relay if configured
-        #if os(iOS)
-        MacRelaySyncService.shared.syncIfConfigured()
-        #endif
 
         // Fall back to a full reset when there's nothing on screen yet or the
         // sockets aren't live — an incremental top-up has nothing to reuse then.

@@ -58,6 +58,7 @@ type Stats struct {
 	LocalHave  int // events (incl. tombstones) in the local vector
 	Downloaded int // events fetched from the relay and published locally
 	Uploaded   int // events pushed from the local store to the relay
+	RemoteOnly int // distinct IDs the relay has that the local vector lacked (Down/Both)
 }
 
 // openTimeout is how long to wait for the relay's first NEG-MSG/NEG-ERR after
@@ -245,7 +246,7 @@ func SyncWithVector(ctx context.Context, store nostr.RelayStore, lv *LocalVector
 		}
 	}()
 
-	var downloaded, uploaded atomic.Int64
+	var downloaded, uploaded, remoteOnly atomic.Int64
 
 	directions := make([]direction, 0, 2)
 	if dir == Up || dir == Both {
@@ -337,6 +338,9 @@ func SyncWithVector(ctx context.Context, store nostr.RelayStore, lv *LocalVector
 			}
 			flush()
 			innerWg.Wait()
+			if d.label == "down" {
+				remoteOnly.Store(int64(len(seen)))
+			}
 		}(d)
 	}
 
@@ -378,5 +382,6 @@ func SyncWithVector(ctx context.Context, store nostr.RelayStore, lv *LocalVector
 	}
 	stats.Downloaded = int(downloaded.Load())
 	stats.Uploaded = int(uploaded.Load())
+	stats.RemoteOnly = int(remoteOnly.Load())
 	return stats, werr
 }

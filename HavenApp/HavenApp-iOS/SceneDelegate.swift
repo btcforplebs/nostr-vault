@@ -162,9 +162,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             DMService.shared.syncOnForeground()
         }
 
-        // Also sync from Mac relay if configured — this is the one that should
-        // actually announce a "Catching up" summary (see currentSyncShouldAnnounceCatchUp).
-        MacRelaySyncService.shared.syncIfConfigured(isForegroundReturn: true)
+        // Returning to the app is a return from absence: with a Mac relay set,
+        // ask the relay for a catch-up round (the Mac is one of its relays) that
+        // may end in a "while you were away" summary.
+        if !RelayConfiguration.macRelayURL(config: ConfigService.shared.config).isEmpty {
+            RequestCatchUpC()
+        }
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {

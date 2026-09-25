@@ -117,8 +117,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     /// Starts the relay if a prior force-quit stopped it (SceneDelegate.sceneDidDisconnect
     /// calls stopRelay(), so a background wake after a full quit finds isRunning == false),
     /// then waits up to `maxBootWaitSeconds` for it to leave the booting state. Without this,
-    /// MacRelaySyncService.syncIfConfigured()'s own readiness guard silently no-ops for the
-    /// entire background window whenever the app wasn't just backgrounded but fully quit.
+    /// the catch-up request below reaches no relay for the entire background window
+    /// whenever the app wasn't just backgrounded but fully quit.
     private static func ensureRelayRunning(maxBootWaitSeconds: Int) async {
         if !RelayProcessManager.shared.isRunning {
             RelayProcessManager.shared.startRelay(config: ConfigService.shared.config)
@@ -143,12 +143,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             // Sync DMs from external relays
             DMService.shared.syncOnForeground()
 
-            // Also sync from Mac relay if configured — pulls anything new the
-            // always-on Mac relay has accumulated and injects it into the local
-            // relay, which fires real per-type notifications via the same
-            // NOTIFY-marker pipeline as live events.
+            // With a Mac relay set, catch up from it (and the other relays):
+            // new events land in the local relay and notify through the same
+            // NOTIFY-marker pipeline as live events. A relay that was just
+            // started runs this round on its own shortly after boot.
             await ensureRelayRunning(maxBootWaitSeconds: 10)
-            MacRelaySyncService.shared.syncIfConfigured()
+            if !RelayConfiguration.macRelayURL(config: ConfigService.shared.config).isEmpty {
+                RequestCatchUpC()
+            }
 
             // Give it up to 25s to connect to relays and receive events
             try? await Task.sleep(nanoseconds: 25_000_000_000)
@@ -229,7 +231,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         Task { @MainActor in
             await ensureRelayRunning(maxBootWaitSeconds: 20)
-            MacRelaySyncService.shared.syncIfConfigured()
+            if !RelayConfiguration.macRelayURL(config: ConfigService.shared.config).isEmpty {
+                RequestCatchUpC()
+            }
 
             // More generous window than BGAppRefreshTask — this task only runs
             // when iOS grants a longer, less time-pressured slot.

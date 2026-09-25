@@ -410,6 +410,21 @@ func RequestRelaySyncC() {
 	RequestRelaySync()
 }
 
+//export RequestCatchUpC
+func RequestCatchUpC() {
+	// Like RequestRelaySyncC, but for the app returning from absence
+	// (foreground, background wake): the round may post a "while you were
+	// away" summary. No-op-safe if the relay isn't up.
+	RequestCatchUp()
+}
+
+//export RequestMacSyncCheckC
+func RequestMacSyncCheckC() {
+	// Re-runs the Mac relay full-history copy and its missing-events check;
+	// the result lands in mac_sync_status.json. No-op without a Mac relay.
+	RequestMacSyncCheck()
+}
+
 //export TrimMemoryC
 func TrimMemoryC() {
 	// Called when the host app backgrounds. Sync/import rounds spike the heap,
