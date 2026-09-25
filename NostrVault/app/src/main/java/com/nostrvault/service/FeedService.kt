@@ -417,6 +417,7 @@ class FeedService @Inject constructor(
 
     fun switchMode(mode: FeedMode) {
         if (mode == _feedMode.value) return
+        val previousSubId = primaryFeedSubId()
         _feedMode.value = mode
 
         // Pending notes are raw, unfiltered for the previous mode — drop them so
@@ -446,9 +447,23 @@ class FeedService @Inject constructor(
                 if (_mediaFeedMode.value == MediaFeedMode.GLOBAL) loadWotPubkeys()
                 subscribeToAllRelays()
             }
+            FeedMode.REELS -> closePrimaryFeedSubscription(previousSubId)
             else -> subscribeToAllRelays()
         }
         recomputeFilteredNotes()
+    }
+
+    /**
+     * End the timeline REQ on every open feed connection without closing the
+     * connection: the mention subscription riding on it doubles as
+     * notifications and has to keep running.
+     */
+    private fun closePrimaryFeedSubscription(subId: String) {
+        for (client in feedClients.values) {
+            if (client.connectionState.value == WebSocketClient.ConnectionState.CONNECTED) {
+                client.send("[\"CLOSE\",\"$subId\"]")
+            }
+        }
     }
 
     /**
@@ -987,11 +1002,9 @@ class FeedService @Inject constructor(
                     FeedMode.MEDIA -> "media"
                     FeedMode.POPULAR -> "popular"
                     FeedMode.ARTICLES -> "articles"
-            FeedMode.RECIPES -> "recipes"
-            FeedMode.LIVE -> "live"
                     FeedMode.RECIPES -> "recipes"
-            FeedMode.LIVE -> "live"
                     FeedMode.LIVE -> "live"
+                    FeedMode.REELS -> "reels"
                 }
                 sendPrimaryFeedSubscription(relayUrl, "feed-$label")
                 continue
@@ -1044,6 +1057,7 @@ class FeedService @Inject constructor(
             FeedMode.ARTICLES -> "articles"
             FeedMode.RECIPES -> "recipes"
             FeedMode.LIVE -> "live"
+            FeedMode.REELS -> "reels"
         }
         return "feed-$label"
     }
@@ -1110,6 +1124,7 @@ class FeedService @Inject constructor(
             FeedMode.ARTICLES -> "articles"
             FeedMode.RECIPES -> "recipes"
             FeedMode.LIVE -> "live"
+            FeedMode.REELS -> return
         }
         for ((relayUrl, client) in feedClients) {
             if (client.connectionState.value == WebSocketClient.ConnectionState.CONNECTED) {
@@ -1119,6 +1134,10 @@ class FeedService @Inject constructor(
     }
 
     private fun sendPrimaryFeedSubscription(relayUrl: String, subId: String) {
+        // Reels runs its own queries (ReelsFeedService). The feed connections
+        // stay up for mentions, but the note timeline idles underneath the
+        // videos rather than streaming a list nobody sees.
+        if (_feedMode.value == FeedMode.REELS) return
         val client = feedClients[relayUrl] ?: return
         val ownerHex = nostrService.activeHexPubkey
 
@@ -1151,6 +1170,7 @@ class FeedService @Inject constructor(
                     // Handled entirely by LiveFeedService; this subscription
                     // never runs for it.
                 }
+                FeedMode.REELS -> return // Returned above; ReelsFeedService owns it
                 FeedMode.RECIPES -> {
                     // Ask the relays for the topic rather than pulling every
                     // long-form event and throwing most of it away. Only the

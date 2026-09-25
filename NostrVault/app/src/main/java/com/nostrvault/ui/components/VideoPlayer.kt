@@ -32,6 +32,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.nostrvault.MainActivity
 import com.nostrvault.ui.theme.Motion
@@ -75,14 +76,7 @@ fun VideoPlayer(
     // Bumped on every control interaction to restart the auto-hide countdown
     var interactionEpoch by remember { mutableIntStateOf(0) }
 
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
-            repeatMode = Player.REPEAT_MODE_ALL
-            playWhenReady = autoplay
-            prepare()
-        }
-    }
+    val exoPlayer = remember { buildLoopingExoPlayer(context, uri, playWhenReady = autoplay) }
 
     // Listen to player state changes, register for PiP, and release on dispose
     DisposableEffect(exoPlayer) {
@@ -134,16 +128,7 @@ fun VideoPlayer(
             },
     ) {
         // Video surface
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = false
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
+        VideoSurface(player = exoPlayer, modifier = Modifier.fillMaxSize())
 
         // Control rail overlay (never shown while the activity is in a PiP window)
         AnimatedVisibility(
@@ -264,7 +249,7 @@ fun VideoPlayer(
  * area to seek.
  */
 @Composable
-private fun ThinSeekBar(
+internal fun ThinSeekBar(
     progress: Float,
     onSeekStart: () -> Unit,
     onSeek: (Float) -> Unit,
@@ -323,6 +308,56 @@ private fun ThinSeekBar(
                 .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(50)),
         )
     }
+}
+
+/**
+ * A looping ExoPlayer for one video URL — the one build every video surface in
+ * the app shares (the full-screen player and the Reels pages). The caller owns
+ * it and must [ExoPlayer.release] it.
+ */
+internal fun buildLoopingExoPlayer(
+    context: Context,
+    uri: String,
+    playWhenReady: Boolean,
+    /** MIME from the event — lets an extensionless HLS link be opened as one. */
+    mimeType: String? = null,
+): ExoPlayer =
+    ExoPlayer.Builder(context).build().apply {
+        setMediaItem(
+            MediaItem.Builder()
+                .setUri(Uri.parse(uri))
+                .apply { if (mimeType != null) setMimeType(mimeType) }
+                .build(),
+        )
+        repeatMode = Player.REPEAT_MODE_ALL
+        this.playWhenReady = playWhenReady
+        prepare()
+    }
+
+/**
+ * The bare video picture for [player]: no controller, a spinner while it
+ * buffers. [resizeMode] is an [AspectRatioFrameLayout] mode — fit by default.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+internal fun VideoSurface(
+    player: ExoPlayer,
+    modifier: Modifier = Modifier,
+    resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
+) {
+    AndroidView(
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                useController = false
+                setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+            }
+        },
+        update = { view ->
+            if (view.player !== player) view.player = player
+            if (view.resizeMode != resizeMode) view.resizeMode = resizeMode
+        },
+        modifier = modifier,
+    )
 }
 
 private fun formatPlayerTime(ms: Long): String {
