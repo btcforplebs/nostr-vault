@@ -471,7 +471,9 @@ class ConfigService: ObservableObject {
 
         // Disconnect previous NIP-46 signer if active
         let previousNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
-        if hasBunkerConfig(forNpub: previousNpub) && NIP46Service.shared.isConnected {
+        // Also stop a connect still in flight — otherwise it lands after the
+        // switch and the new account's posts go to the old account's signer.
+        if hasBunkerConfig(forNpub: previousNpub) && NIP46Service.shared.connectionState != .disconnected {
             NIP46Service.shared.disconnect()
         }
 

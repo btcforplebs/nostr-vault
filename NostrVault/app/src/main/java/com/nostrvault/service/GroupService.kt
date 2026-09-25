@@ -619,9 +619,14 @@ class GroupService @Inject constructor(
                 listOf("relay", relayUrl),
                 listOf("challenge", challenge),
             )
-            val authEvent = nostrService.signEvent(
-                kind = 22242, content = "", tags = tags, forceOwner = true,
-            ) ?: return@launch
+            val authEvent = try {
+                nostrService.signEventAsync(
+                    kind = 22242, content = "", tags = tags, forceOwner = true,
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "AUTH to $relayUrl not signed: ${e.message}")
+                null
+            } ?: return@launch
 
             val eventJson = serializeEvent(authEvent)
             relayClients[relayUrl]?.send("[\"AUTH\",$eventJson]")
@@ -645,20 +650,7 @@ class GroupService @Inject constructor(
         }
     }
 
-    private fun serializeEvent(event: NostrEvent): String {
-        val tagsJson = event.tags.joinToString(",") { tag ->
-            "[${tag.joinToString(",") { "\"$it\"" }}]"
-        }
-        return buildString {
-            append("{\"id\":\"${event.id}\",")
-            append("\"pubkey\":\"${event.pubkey}\",")
-            append("\"created_at\":${event.createdAt},")
-            append("\"kind\":${event.kind},")
-            append("\"tags\":[$tagsJson],")
-            append("\"content\":\"${event.content.replace("\"", "\\\"").replace("\n", "\\n")}\",")
-            append("\"sig\":\"${event.sig}\"}")
-        }
-    }
+    private fun serializeEvent(event: NostrEvent): String = EventPublisher.serializeSignedEvent(event)
 }
 
 // ── Data models ───────────────────────────────────────────────────

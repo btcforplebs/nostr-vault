@@ -66,7 +66,9 @@ class BlockedSettingsViewModel @Inject constructor(
 
     private fun publishMuteList() {
         val cfg = configStore.config.value
-        nostrService.publishMuteList(cfg.ownerNpub, cfg.blockedForActiveAccount())
+        // The list being published is the ACTIVE account's, so it is signed as
+        // that account — labelling it the owner's overwrote the owner's kind 10000.
+        nostrService.publishMuteList(cfg.activeOrOwnerNpub(), cfg.blockedForActiveAccount())
     }
 }
 

@@ -516,6 +516,7 @@ struct SetupWizardView: View {
 
     private func saveAndComplete() {
         saveIntermediateConfig()
+        configService.config.adoptGlobalBunkerConfigForOwner()
         configService.config.hasCompletedSetup = true
         configService.save()
         configService.refreshActiveAccountHex()

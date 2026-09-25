@@ -49,6 +49,26 @@ object EventPublisher {
     }
 
     /**
+     * Serialize a signed event for the wire with a real JSON encoder.
+     * Hand-built strings escaped only `"` and newline, so a backslash, tab, CR or
+     * control character — or a quote inside a tag — reached the relay as invalid
+     * JSON or as content that no longer matched the signed id, and was dropped.
+     */
+    fun serializeSignedEvent(event: NostrEvent): String = buildJsonObject {
+        put("id", event.id)
+        put("pubkey", event.pubkey)
+        put("created_at", event.createdAt)
+        put("kind", event.kind)
+        put("tags", buildJsonArray {
+            for (tag in event.tags) {
+                add(buildJsonArray { tag.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } })
+            }
+        })
+        put("content", event.content)
+        put("sig", event.sig)
+    }.toString()
+
+    /**
      * Append the client identification tag for kind-1 notes.
      */
     fun appendClientTag(tags: List<List<String>>, kind: Int): List<List<String>> {

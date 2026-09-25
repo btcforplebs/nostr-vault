@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1261,8 +1262,14 @@ func NIP46SignEventC(eventJSON *C.char) *C.char {
 	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
 	defer cancel()
 
+	req := event
+	req.Tags = slices.Clone(event.Tags)
 	if err := client.SignEvent(ctx, &event); err != nil {
 		slog.Error("NIP46SignEventC: SignEvent failed", "kind", event.Kind, "error", err)
+		return nil
+	}
+	if err := checkRemoteSigned(req, event, req.PubKey); err != nil {
+		slog.Error("NIP46SignEventC: rejected signer response", "kind", event.Kind, "error", err)
 		return nil
 	}
 

@@ -18,6 +18,8 @@ import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -54,6 +56,8 @@ class ProfileEditViewModel @Inject constructor(
 
     private val _isSaving = MutableStateFlow(false)
     val isSaving = _isSaving.asStateFlow()
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError = _saveError.asStateFlow()
 
     init {
         val pubkey = configStore.activeAccountHexPubkey.value
@@ -80,23 +84,32 @@ class ProfileEditViewModel @Inject constructor(
     fun save(onSaved: () -> Unit) {
         viewModelScope.launch {
             _isSaving.value = true
-            val metadataJson = buildString {
-                append("{")
-                val fields = mutableListOf<String>()
-                if (_displayName.value.isNotBlank()) fields.add("\"display_name\":\"${_displayName.value.replace("\"", "\\\"")}\"")
-                if (_name.value.isNotBlank()) fields.add("\"name\":\"${_name.value.replace("\"", "\\\"")}\"")
-                if (_about.value.isNotBlank()) fields.add("\"about\":\"${_about.value.replace("\"", "\\\"").replace("\n", "\\n")}\"")
-                if (_pictureUrl.value.isNotBlank()) fields.add("\"picture\":\"${_pictureUrl.value}\"")
-                if (_nip05.value.isNotBlank()) fields.add("\"nip05\":\"${_nip05.value}\"")
-                if (_lud16.value.isNotBlank()) fields.add("\"lud16\":\"${_lud16.value}\"")
-                if (_website.value.isNotBlank()) fields.add("\"website\":\"${_website.value}\"")
-                append(fields.joinToString(","))
-                append("}")
+            _saveError.value = null
+            val metadataJson = buildJsonObject {
+                if (_displayName.value.isNotBlank()) put("display_name", _displayName.value)
+                if (_name.value.isNotBlank()) put("name", _name.value)
+                if (_about.value.isNotBlank()) put("about", _about.value)
+                if (_pictureUrl.value.isNotBlank()) put("picture", _pictureUrl.value)
+                if (_nip05.value.isNotBlank()) put("nip05", _nip05.value)
+                if (_lud16.value.isNotBlank()) put("lud16", _lud16.value)
+                if (_website.value.isNotBlank()) put("website", _website.value)
+            }.toString()
+            // A bunker timeout or an Amber rejection throws; uncaught here it
+            // crashed the app. Stay on the screen when nothing was published.
+            val event = try {
+                nostrService.signEventAsync(kind = 0, content = metadataJson, tags = emptyList())
+            } catch (e: Exception) {
+                _saveError.value = e.message ?: "Could not sign the profile"
+                null
             }
-            val event = nostrService.signEventAsync(kind = 0, content = metadataJson, tags = emptyList())
             event?.let { nostrService.postEvent(it) }
             _isSaving.value = false
-            onSaved()
+            if (event != null) {
+                _saveError.value = null
+                onSaved()
+            } else if (_saveError.value == null) {
+                _saveError.value = "Could not sign the profile"
+            }
         }
     }
 }
@@ -116,6 +129,7 @@ fun ProfileEditScreen(
     val lud16 by viewModel.lud16.collectAsState()
     val website by viewModel.website.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
+    val saveError by viewModel.saveError.collectAsState()
     val colors = LocalNostrVaultColors.current
 
     Scaffold(
@@ -159,6 +173,14 @@ fun ProfileEditScreen(
                 .padding(horizontal = 16.dp),
         ) {
             Spacer(Modifier.height(16.dp))
+            saveError?.let {
+                Text(
+                    "Profile not saved: $it",
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+            }
             ProfileField("Display Name", displayName, viewModel::setDisplayName)
             ProfileField("Username", name, viewModel::setName)
             ProfileField("About", about, viewModel::setAbout, singleLine = false, minLines = 3)

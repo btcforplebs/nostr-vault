@@ -11,6 +11,7 @@ enum NIP46Error: Error, LocalizedError {
     case invalidBunkerURI
     case encryptionFailed
     case signingFailed
+    case wrongAccount(expected: String, got: String)
 
     var errorDescription: String? {
         switch self {
@@ -22,6 +23,8 @@ enum NIP46Error: Error, LocalizedError {
         case .invalidBunkerURI: return "Invalid bunker:// URI"
         case .encryptionFailed: return "Failed to encrypt NIP-46 request"
         case .signingFailed: return "Failed to sign NIP-46 request event"
+        case .wrongAccount(let expected, let got):
+            return "This signer is for a different account (\(got.prefix(8))…), not \(expected.prefix(8))…"
         }
     }
 }
@@ -100,6 +103,12 @@ class NIP46Service: ObservableObject {
         connectionState = .connecting
         reconnectAttempts = 0
 
+        // The account this connection is for. A signer is bound to one account;
+        // the result is checked against this, not against whatever is active
+        // when the (slow, blocking) connect finally returns.
+        let accountNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+        let expectedHex = Bech32.decode(accountNpub.trimmingCharacters(in: .whitespacesAndNewlines))?.hexString ?? ""
+
         // Build bunker URL from config
         let bunkerURL: String
         if !config.nip46BunkerURI.isEmpty {
@@ -141,6 +150,21 @@ class NIP46Service: ObservableObject {
             throw NIP46Error.notConnected
         }
 
+        // Refuse a signer that answers for a different account, and a connect
+        // that finished after the user switched away from its account.
+        let nowNpub = ConfigService.shared.config.activeAccountNpub.isEmpty
+            ? ConfigService.shared.config.ownerNpub
+            : ConfigService.shared.config.activeAccountNpub
+        if expectedHex.isEmpty || pubkey != expectedHex || nowNpub != accountNpub {
+            NIP46DisconnectC()
+            authPollerTask?.cancel()
+            authPollerTask = nil
+            connectionState = nowNpub != accountNpub ? .disconnected : .error
+            print("[NIP46] connect() REJECTED — signer pubkey=\(pubkey.prefix(8)) expected=\(expectedHex.prefix(8)) accountChanged=\(nowNpub != accountNpub)")
+            RelayProcessManager.shared.addLog("NIP-46: Signer answered for \(pubkey.prefix(8))…, expected \(expectedHex.prefix(8))… — not connected", level: "ERROR")
+            throw NIP46Error.wrongAccount(expected: expectedHex, got: pubkey)
+        }
+
         connectionState = .connected
         startPingLoop()
 
@@ -159,13 +183,10 @@ class NIP46Service: ObservableObject {
                 }
             }
             // Also clear secret in the per-account bunker config
-            let activeNpub = ConfigService.shared.config.activeAccountNpub.isEmpty
-                ? ConfigService.shared.config.ownerNpub
-                : ConfigService.shared.config.activeAccountNpub
-            if var bunkerCfg = ConfigService.shared.config.accountBunkerConfigs[activeNpub] {
+            if var bunkerCfg = ConfigService.shared.config.accountBunkerConfigs[accountNpub] {
                 bunkerCfg.secret = ""
                 bunkerCfg.bunkerURI = ConfigService.shared.config.nip46BunkerURI
-                ConfigService.shared.config.accountBunkerConfigs[activeNpub] = bunkerCfg
+                ConfigService.shared.config.accountBunkerConfigs[accountNpub] = bunkerCfg
             }
             ConfigService.shared.save()
         }

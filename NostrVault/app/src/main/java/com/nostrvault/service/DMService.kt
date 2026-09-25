@@ -1214,22 +1214,7 @@ class DMService @Inject constructor(
         }
     }
 
-    private fun serializeEvent(event: NostrEvent): String {
-        val tagsJson = event.tags.joinToString(",") { tag ->
-            "[${tag.joinToString(",") { "\"$it\"" }}]"
-        }
-        return buildString {
-            append("{")
-            append("\"id\":\"${event.id}\",")
-            append("\"pubkey\":\"${event.pubkey}\",")
-            append("\"created_at\":${event.createdAt},")
-            append("\"kind\":${event.kind},")
-            append("\"tags\":[$tagsJson],")
-            append("\"content\":\"${event.content.replace("\"", "\\\"").replace("\n", "\\n")}\",")
-            append("\"sig\":\"${event.sig}\"")
-            append("}")
-        }
-    }
+    private fun serializeEvent(event: NostrEvent): String = EventPublisher.serializeSignedEvent(event)
 }
 
 // ── Data models ───────────────────────────────────────────────────
