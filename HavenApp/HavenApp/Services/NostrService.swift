@@ -392,91 +392,94 @@ class NostrService: ObservableObject {
         }
     }
 
-    // MARK: - Global (NIP-50) Search
+    // MARK: - Global Search
 
-    private var globalSearchClients: [WebSocketClient] = []
-    private var globalSearchCancellables = Set<AnyCancellable>()
+    private var globalSearchSession: GlobalSearchSession?
+    private var mentionSearchSession: GlobalSearchSession?
 
-    /// NIP-50 global search across public search relays. Connects to external
-    /// search-capable relays, sends a REQ with a `search` filter for notes
-    /// (kind 1) and profiles (kind 0), collects results until a timeout, then
-    /// returns parsed FeedNotes/FeedProfiles on the main thread. Any prior
-    /// in-flight global search is cancelled first.
-    func globalSearch(query: String, completion: @escaping (GlobalSearchResults) -> Void) {
+    /// Global search: this device's store, the Mac relay (iOS, when set) and
+    /// every configured NIP-50 search relay, all at once. `onUpdate` runs on
+    /// the main queue each time a source answers — results stream in, ranked
+    /// own posts → follows → everyone — and a last time with `isFinished`.
+    /// Any prior Global search is cancelled first.
+    ///
+    /// - Parameter deviceRelay: the embedded relay's URL, or nil if it is not
+    ///   running. On macOS this IS the Mac relay, so the Mac is not asked twice.
+    /// - Returns: the running session (nil for a query too short to run), so
+    ///   the caller can stop it when it goes away.
+    @discardableResult
+    func startGlobalSearch(query: String,
+                           deviceRelay: URL?,
+                           follows: [String],
+                           onUpdate: @escaping (GlobalSearchSnapshot) -> Void) -> GlobalSearchSession? {
         cancelGlobalSearch()
-
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {
-            completion(GlobalSearchResults())
-            return
+            var done = GlobalSearchSnapshot()
+            done.isFinished = true
+            onUpdate(done)
+            return nil
         }
 
-        let relays = nip50SearchRelays.compactMap { URL(string: $0) }
-        guard !relays.isEmpty else {
-            completion(GlobalSearchResults())
-            return
+        var request = GlobalSearchSession.Request(
+            query: trimmed,
+            searchRelays: SearchRelaySettings.relays.compactMap { URL(string: $0) },
+            deviceRelay: deviceRelay)
+        // `macRelayURL(config:)` is "" on macOS: there the Mac relay is the
+        // device relay above.
+        let mac = RelayConfiguration.macRelayURL(config: ConfigService.shared.config)
+        if !mac.isEmpty, let macURL = URL(string: mac), macURL.host != deviceRelay?.host {
+            request.macRelay = macURL
         }
+        request.cachedProfiles = profiles
+        request.own = Set([activeHexPubkey, ownerHexPubkey].filter { !$0.isEmpty })
+        request.follows = Set(follows)
 
-        let collector = GlobalSearchCollector()
-        let subId = "gsearch-\(UUID().uuidString.prefix(8))"
-        var didFinish = false
-
-        let finish: () -> Void = { [weak self] in
+        let session = GlobalSearchSession(request: request) { [weak self] snapshot in
             guard let self = self else { return }
-            if didFinish { return }
-            didFinish = true
-            let results = collector.snapshot()
-            self.cancelGlobalSearch()
-            DispatchQueue.main.async {
-                // Merge discovered profiles into the shared cache so avatars/names render.
-                for profile in results.profiles where self.profiles[profile.pubkey] == nil {
-                    self.profiles[profile.pubkey] = profile
-                }
-                completion(results)
+            // Merge discovered profiles into the shared cache so avatars/names render.
+            for profile in snapshot.profiles where self.profiles[profile.pubkey] == nil {
+                self.profiles[profile.pubkey] = profile
             }
+            onUpdate(snapshot)
         }
-
-        for url in relays {
-            let client = WebSocketClient()
-            client.isTemporary = true
-
-            client.messageSubject
-                .receive(on: processingQueue)
-                .sink { message in
-                    collector.ingest(message: message, subId: subId)
-                }
-                .store(in: &globalSearchCancellables)
-
-            client.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { state in
-                    if state == .connected {
-                        let notesFilter: [String: Any] = ["kinds": [1], "search": trimmed, "limit": 30]
-                        let profileFilter: [String: Any] = ["kinds": [0], "search": trimmed, "limit": 20]
-                        let req = ["REQ", subId, notesFilter, profileFilter] as [Any]
-                        if let data = try? JSONSerialization.data(withJSONObject: req),
-                           let str = String(data: data, encoding: .utf8) {
-                            client.send(text: str)
-                        }
-                    }
-                }
-                .store(in: &globalSearchCancellables)
-
-            client.connect(url: url)
-            globalSearchClients.append(client)
-        }
-
-        // Return whatever was collected after a fixed window.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-            finish()
-        }
+        globalSearchSession = session
+        session.start()
+        return session
     }
 
-    /// Tears down any in-flight global search connections.
+    /// NIP-50 lookup against the search relays only. Used by @-mention lookup:
+    /// discovered profiles are merged into `profiles`, and `completion` runs on
+    /// the main queue each time a relay answers (so a fast relay's profiles show
+    /// without waiting for a slow one) — callers must tolerate repeat calls.
+    /// Does not disturb a Global search running in the Search tab.
+    func globalSearch(query: String, completion: @escaping (GlobalSearchResults) -> Void) {
+        mentionSearchSession?.cancel()
+        mentionSearchSession = nil
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let relays = SearchRelaySettings.relays.compactMap { URL(string: $0) }
+        guard trimmed.count >= 2, !relays.isEmpty else {
+            completion(GlobalSearchResults())
+            return
+        }
+        var request = GlobalSearchSession.Request(query: trimmed, searchRelays: relays, deviceRelay: nil)
+        request.includeDevice = false
+        let session = GlobalSearchSession(request: request) { [weak self] snapshot in
+            guard let self = self else { return }
+            for profile in snapshot.profiles where self.profiles[profile.pubkey] == nil {
+                self.profiles[profile.pubkey] = profile
+            }
+            if snapshot.isFinished { self.mentionSearchSession = nil }
+            completion(GlobalSearchResults(profiles: snapshot.profiles, notes: snapshot.notes))
+        }
+        mentionSearchSession = session
+        session.start()
+    }
+
+    /// Stops the Search tab's Global search. No update arrives after this.
     func cancelGlobalSearch() {
-        for client in globalSearchClients { client.disconnect() }
-        globalSearchClients.removeAll()
-        globalSearchCancellables.removeAll()
+        globalSearchSession?.cancel()
+        globalSearchSession = nil
     }
 
     // MARK: - Local Relay Search
@@ -2486,12 +2489,34 @@ final class LocalRelaySearchSession {
         let routeIndex: Int
         let kind: Int
         var page: Int
+        /// The cursor this page was asked with, so a full page stuck on one
+        /// second can be stepped past (see `LocalRelaySearchPlan.step`).
+        var until: Int64? = nil
+    }
+
+    /// How a finished session went, for Global search's per-source status.
+    struct Outcome: Equatable {
+        /// At least one route answered a page (EOSE).
+        var answered: Bool
+        /// Why nothing answered, when nothing did.
+        var reason: String?
     }
 
     private let queue = DispatchQueue(label: "com.haven.local-relay-search")
     private let collector: LocalRelaySearchCollector
     private let routes: [URL]
+    private let timeout: TimeInterval
     private let onFinish: (GlobalSearchResults) -> Void
+
+    /// Called on the session's queue with the matches so far after every page,
+    /// so a slow walk (the Mac relay over the network) can show results before
+    /// it ends. Set before `start()`.
+    var onProgress: ((GlobalSearchResults) -> Void)?
+    /// Called on the session's queue just before `onFinish`. Set before `start()`.
+    var onOutcome: ((Outcome) -> Void)?
+
+    private var answeredRoutes = Set<Int>()
+    private var failureReason: String?
 
     private var clients: [WebSocketClient] = []
     private var cancellables = Set<AnyCancellable>()
@@ -2506,9 +2531,11 @@ final class LocalRelaySearchSession {
 
     init(matcher: LocalSearchMatcher,
          routes: [URL],
+         timeout: TimeInterval = LocalRelaySearchSession.timeout,
          onFinish: @escaping (GlobalSearchResults) -> Void) {
         self.collector = LocalRelaySearchCollector(matcher: matcher)
         self.routes = routes
+        self.timeout = timeout
         self.onFinish = onFinish
     }
 
@@ -2567,8 +2594,10 @@ final class LocalRelaySearchSession {
             }
         }
 
-        queue.asyncAfter(deadline: .now() + Self.timeout) { [weak self] in
-            self?.finish()
+        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+            guard let self = self else { return }
+            if self.failureReason == nil { self.failureReason = "timed out" }
+            self.finish()
         }
     }
 
@@ -2602,6 +2631,8 @@ final class LocalRelaySearchSession {
         guard routes.indices.contains(stream.routeIndex),
               clients.indices.contains(stream.routeIndex) else { return }
         let subId = "lsearch-\(UUID().uuidString.prefix(8))"
+        var stream = stream
+        stream.until = until
         streams[subId] = stream
 
         var filter: [String: Any] = [
@@ -2625,12 +2656,15 @@ final class LocalRelaySearchSession {
         case .eose(let subId):
             guard let stream = streams.removeValue(forKey: subId) else { return }
             close(subId: subId, routeIndex: stream.routeIndex)
+            answeredRoutes.insert(stream.routeIndex)
+            if let onProgress { onProgress(collector.snapshot()) }
 
             let stats = collector.takeStats(for: subId)
             switch LocalRelaySearchPlan.step(received: stats.received,
                                              newIds: stats.newIds,
                                              oldestCreatedAt: stats.oldestCreatedAt,
-                                             pagesFetched: stream.page) {
+                                             pagesFetched: stream.page,
+                                             until: stream.until) {
             case .done:
                 // This kind is exhausted on this route: move on to the next
                 // kind, and only when there is none is the route finished.
@@ -2665,6 +2699,7 @@ final class LocalRelaySearchSession {
     /// routes can still complete the search.
     private func failStreams(routeIndex: Int) {
         guard !didFinish, !doneRoutes.contains(routeIndex) else { return }
+        if failureReason == nil { failureReason = "could not connect" }
         for (subId, stream) in streams where stream.routeIndex == routeIndex {
             streams.removeValue(forKey: subId)
         }
@@ -2685,6 +2720,8 @@ final class LocalRelaySearchSession {
         didFinish = true
         let results = collector.snapshot()
         teardown()
+        let answered = !answeredRoutes.isEmpty
+        onOutcome?(Outcome(answered: answered, reason: answered ? nil : (failureReason ?? "no response")))
         onFinish(results)
     }
 

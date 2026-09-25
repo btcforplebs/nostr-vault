@@ -9,10 +9,13 @@ struct UncheckedSendable<T>: @unchecked Sendable {
     let value: T
 }
 
-/// Parsed results of a NIP-50 global search.
+/// Parsed search results (relay-mode search, @-mention lookup).
 struct GlobalSearchResults {
     var profiles: [FeedProfile] = []
     var notes: [FeedNote] = []
+    /// created_at of each profile's kind 0, when it came from an event
+    /// (absent for profiles from the in-memory cache).
+    var profileCreatedAt: [String: Int64] = [:]
 }
 
 /// Lightweight signal published when profile metadata changes, so views can
@@ -22,78 +25,15 @@ struct ProfileUpdateSignal: Equatable {
     var pubkeys: Set<String> = []
 }
 
-/// Public NIP-50 search-capable relays queried for global search.
-let nip50SearchRelays = [
-    "wss://relay.nostr.band",
-    "wss://relay.noswhere.com"
-]
-
-// MARK: - Global Search Collector
-
-/// Thread-safe accumulator for NIP-50 global search results. EVENT messages
-/// from multiple relays are deduplicated by id (notes) / pubkey (profiles).
-final class GlobalSearchCollector {
-    private let lock = NSLock()
-    private var notes: [String: FeedNote] = [:]
-    private var profiles: [String: FeedProfile] = [:]
-
-    func ingest(message: String, subId: String) {
-        guard let data = message.data(using: .utf8),
-              let arr = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              arr.count >= 3,
-              let type = arr[0] as? String, type == "EVENT",
-              let sid = arr[1] as? String, sid == subId,
-              let ev = arr[2] as? [String: Any],
-              let id = ev["id"] as? String,
-              let pubkey = ev["pubkey"] as? String,
-              let kind = (ev["kind"] as? NSNumber)?.intValue,
-              let content = ev["content"] as? String else { return }
-        let createdAt = (ev["created_at"] as? NSNumber)?.int64Value ?? 0
-        let tags = (ev["tags"] as? [[String]]) ?? []
-
-        lock.lock()
-        defer { lock.unlock() }
-
-        if kind == 1 {
-            guard notes[id] == nil else { return }
-            notes[id] = FeedNote(
-                id: id,
-                pubkey: pubkey,
-                content: content,
-                createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
-                tags: tags,
-                kind: kind
-            )
-        } else if kind == 0 {
-            guard let metadata = try? JSONSerialization.jsonObject(with: content.data(using: .utf8) ?? Data()) as? [String: Any] else { return }
-            var profile = FeedProfile(pubkey: pubkey)
-            profile.name = metadata["name"] as? String
-            profile.displayName = metadata["display_name"] as? String
-            profile.pictureURL = (metadata["picture"] as? String).flatMap { URL(string: $0) }
-            profile.nip05 = metadata["nip05"] as? String
-            profile.about = metadata["about"] as? String
-            profile.lud16 = metadata["lud16"] as? String
-            profile.lud06 = metadata["lud06"] as? String
-            profile.website = metadata["website"] as? String
-            profiles[pubkey] = profile
-        }
-    }
-
-    func snapshot() -> GlobalSearchResults {
-        lock.lock()
-        defer { lock.unlock() }
-        var results = GlobalSearchResults()
-        results.notes = notes.values.sorted { $0.createdAt > $1.createdAt }
-        results.profiles = Array(profiles.values)
-        return results
-    }
-}
+/// Global search's relays live in `SearchRelayDefaults` (defaults) and
+/// `SearchRelaySettings` (the per-device list); the search itself is
+/// `GlobalSearchSession`.
 
 // MARK: - Local Relay Search Collector
 
 /// Accumulates relay-mode search results while paging the local relay.
 ///
-/// Differs from `GlobalSearchCollector` in three ways that paging needs:
+/// Differs from a plain NIP-50 collector in three ways that paging needs:
 /// it filters at ingest time (only matches are retained, so a 30,000-event
 /// walk stays flat in memory), it keeps per-subscription page statistics so
 /// the pager can decide whether to ask for another page, and it reports EOSE
@@ -116,6 +56,7 @@ final class LocalRelaySearchCollector {
     private let matcher: LocalSearchMatcher
     private var notes: [String: FeedNote] = [:]
     private var profiles: [String: FeedProfile] = [:]
+    private var profileCreatedAt: [String: Int64] = [:]
     private var seenIds = Set<String>()
     private var stats: [String: PageStats] = [:]
 
@@ -159,7 +100,7 @@ final class LocalRelaySearchCollector {
         guard isNew else { return .event(subId: subId) }
 
         if kind == 1 {
-            if matcher.matchesNote(content: content) {
+            if matcher.matchesNote(content: content, tags: tags) {
                 notes[id] = FeedNote(
                     id: id,
                     pubkey: pubkey,
@@ -176,19 +117,24 @@ final class LocalRelaySearchCollector {
             }
             var profile = FeedProfile(pubkey: pubkey)
             profile.name = metadata["name"] as? String
-            profile.displayName = metadata["display_name"] as? String
+            // Some clients write camelCase; haven-go's search matches both.
+            profile.displayName = (metadata["display_name"] as? String) ?? (metadata["displayName"] as? String)
             profile.pictureURL = (metadata["picture"] as? String).flatMap { URL(string: $0) }
             profile.nip05 = metadata["nip05"] as? String
             profile.about = metadata["about"] as? String
             profile.lud16 = metadata["lud16"] as? String
             profile.lud06 = metadata["lud06"] as? String
             profile.website = metadata["website"] as? String
+            // Several kind 0s for one pubkey can sit in the store (one per
+            // route, or old replaced ones); keep the newest.
             if matcher.matchesProfile(displayName: profile.displayName,
                                       name: profile.name,
                                       about: profile.about,
                                       nip05: profile.nip05,
-                                      pubkey: pubkey) {
+                                      pubkey: pubkey),
+               createdAt >= (profileCreatedAt[pubkey] ?? Int64.min) {
                 profiles[pubkey] = profile
+                profileCreatedAt[pubkey] = createdAt
             }
         }
 
@@ -229,6 +175,7 @@ final class LocalRelaySearchCollector {
         var results = GlobalSearchResults()
         results.notes = notes.values.sorted { $0.createdAt > $1.createdAt }
         results.profiles = Array(profiles.values)
+        results.profileCreatedAt = profileCreatedAt
         return results
     }
 }

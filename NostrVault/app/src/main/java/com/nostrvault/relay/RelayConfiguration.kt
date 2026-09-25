@@ -390,7 +390,19 @@ data class HavenConfig(
 
     // Search
     val recentSearches: List<String> = emptyList(),
+    /**
+     * NIP-50 relays Global search queries. Null = never edited, use
+     * [DEFAULT_SEARCH_RELAYS] (so a later change to the defaults reaches
+     * everyone who has not customised the list); an empty list is a real
+     * choice and is kept. Per device, like the rest of config.json.
+     */
+    val searchRelays: List<String>? = null,
 ) {
+    /** The search relays in effect: the user's list, or the defaults. */
+    val activeSearchRelays: List<String>
+        get() = searchRelays ?: com.nostrvault.data.model.DEFAULT_SEARCH_RELAYS
+
+
     /** Computed local relay WebSocket URL.
      *  Always uses ws:// for localhost since the local relay runs without TLS.
      *  Handles persisted configs that still have wss://127.0.0.1. */

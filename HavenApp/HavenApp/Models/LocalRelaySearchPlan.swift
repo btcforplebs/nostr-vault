@@ -44,18 +44,27 @@ enum LocalRelaySearchPlan {
     ///   - newIds: how many of those had not already arrived on an earlier page.
     ///   - oldestCreatedAt: smallest `created_at` seen in this page.
     ///   - pagesFetched: pages fetched so far, including this one.
+    ///   - until: the `until` this page was requested with (nil for the first).
     static func step(received: Int,
                      newIds: Int,
                      oldestCreatedAt: Int64?,
-                     pagesFetched: Int) -> Step {
+                     pagesFetched: Int,
+                     until: Int64? = nil) -> Step {
         // A short page means the store had nothing more to give.
         guard received >= pageLimit else { return .done }
-        // `until` is inclusive, so a page of pure repeats means the cursor
-        // cannot advance (every event shares one timestamp) — stop rather than
-        // ask for the same page forever.
-        guard newIds > 0 else { return .done }
         guard pagesFetched < maxPages else { return .done }
         guard let oldest = oldestCreatedAt else { return .done }
+        guard newIds > 0 else {
+            // `until` is inclusive, so a full page of repeats sitting on the
+            // second it was asked for means more than a page of events share
+            // that second. Step past it rather than stop the walk there (or
+            // ask for the same page forever) — what haven-go's search.go
+            // does; the rest of that one second goes unsearched.
+            if let until, oldest == until, oldest > 0 {
+                return .next(until: oldest - 1)
+            }
+            return .done
+        }
         return .next(until: oldest)
     }
 }
@@ -65,6 +74,10 @@ enum LocalRelaySearchPlan {
 /// app's in-memory cache, so the two cannot drift apart.
 struct LocalSearchMatcher {
     let needle: String
+    /// Set for Global search's own-store sources: every term must appear,
+    /// in any order. Relay mode leaves it nil and keeps its whole-phrase
+    /// substring match.
+    let allTerms: SearchTermMatcher?
 
     /// Fails for queries shorter than two characters: the relay-mode search is a
     /// substring scan, and a one-character needle matches nearly everything.
@@ -73,6 +86,15 @@ struct LocalSearchMatcher {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else { return nil }
         self.needle = trimmed.lowercased()
+        self.allTerms = nil
+    }
+
+    /// All-terms matching (case-insensitive) — what Global search uses to
+    /// verify hits from the phone's store and the Mac relay.
+    init?(allTermsOf query: String) {
+        guard let terms = SearchTermMatcher(query: query) else { return nil }
+        self.needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self.allTerms = terms
     }
 
     /// A note matches on its own text and nothing else. Searching a person's
@@ -80,7 +102,16 @@ struct LocalSearchMatcher {
     /// everything they wrote (Logen, 2026-09-09). Hashtags and links are
     /// derived from the notes this keeps.
     func matchesNote(content: String) -> Bool {
-        content.lowercased().contains(needle)
+        if let allTerms { return allTerms.matches(content) }
+        return content.lowercased().contains(needle)
+    }
+
+    /// As `matchesNote(content:)`, but in all-terms mode the `title` /
+    /// `summary` / `subject` tags count too, as they do on the server.
+    /// Relay mode ignores the tags and matches exactly as before.
+    func matchesNote(content: String, tags: [[String]]) -> Bool {
+        if let allTerms { return allTerms.matchesNote(content: content, tags: tags) }
+        return matchesNote(content: content)
     }
 
     func matchesProfile(displayName: String?,
@@ -88,6 +119,9 @@ struct LocalSearchMatcher {
                         about: String?,
                         nip05: String?,
                         pubkey: String) -> Bool {
+        if let allTerms {
+            return allTerms.matches(fields: [displayName, name, about, nip05, pubkey])
+        }
         for field in [displayName, name, about, nip05] {
             if let field, field.lowercased().contains(needle) { return true }
         }
