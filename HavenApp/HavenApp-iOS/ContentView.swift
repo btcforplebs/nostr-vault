@@ -376,6 +376,7 @@ struct iPhoneTabView: View {
     @State private var profilePath = NavigationPath()
     @State private var mediaPath = NavigationPath()
     @State private var relayPath = NavigationPath()
+    @State private var tabBarHeight: CGFloat = 0
 
     private var activeHex: String { configService.activeAccountHexPubkey }
 
@@ -420,6 +421,7 @@ struct iPhoneTabView: View {
         }
         .tint(.havenPurple)
         .toolbar(.hidden, for: .tabBar)
+        .environment(\.floatingTabBarHeight, tabBarHeight)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             BottomTabBar(
                 selectedTab: $selectedTab,
@@ -432,6 +434,13 @@ struct iPhoneTabView: View {
                 nostrService: nostrService,
                 dmService: dmService,
                 feedService: feedService
+            )
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { tabBarHeight = geo.size.height }
+                        .onChange(of: geo.size.height) { _, height in tabBarHeight = height }
+                }
             )
         }
         .overlay(alignment: .top) {

@@ -19,6 +19,7 @@
 		0550886023E5A566CEFD6FC3 /* AnimatedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FBC15E9329FDE2D78ED1BD1 /* AnimatedImage.swift */; };
 		0563BE2D8A71E6E2A6C83922 /* MenuBarStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 325A99A7D646C515AB620EE5 /* MenuBarStatusView.swift */; };
 		065C58B5B6B49523C02038DA /* FeedGlanceWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F431BCE8C47C98A4642716 /* FeedGlanceWidget.swift */; };
+		070BC2E922A305BD037D845B /* ReelsFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98C1C315AD9DCB214071B65 /* ReelsFeedView.swift */; };
 		0731D8B3DE085946811D3C1A /* libhaven.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 27A87225270090D65AC98D48 /* libhaven.a */; };
 		07D3B5A3AB257E7D23940245 /* CustomZapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */; };
 		0A25EF3C485CE440985C8FAA /* RecipeFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */; };
@@ -109,6 +110,7 @@
 		3A895A7B25C2229F1B389A2D /* ActionButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4757A74E31DFBA866003FD73 /* ActionButton.swift */; };
 		3AC2416A002144BD55B37DE1 /* PushNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ED38A5B67740F711EB5C45 /* PushNotificationService.swift */; };
 		3AEB8B86A7A7F02EB9885F69 /* FollowingBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678F22C7D5983DCD0CEDBCDC /* FollowingBackupView.swift */; };
+		3BA3D2C452CC9BAE376259BD /* ReelsFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB79C0D33E22277543C173F1 /* ReelsFeedService.swift */; };
 		3E1CF7FF7BF9CC321886CD3E /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558FCD15C2C7144DF3D20135 /* EmojiPickerView.swift */; };
 		405BE8FAC5DE89B9AC15D061 /* LocalRelaySearchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A847D1496121BC4956AAF6 /* LocalRelaySearchPlan.swift */; };
 		417A5B57E5552977F48B6B23 /* LocalNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */; };
@@ -162,6 +164,7 @@
 		5FDB457BFF6A6A03969C299B /* MediaGridItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279617C6C46FE95602AF2F5B /* MediaGridItem.swift */; };
 		60135B288D01F67F43BF7E6B /* FeedThreadGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 935F68EC9A7EBD1E570211CF /* FeedThreadGrouping.swift */; };
 		60DEA99DD39DD7237F900AB0 /* ZapValidationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4AF522091B10161BB09ED4 /* ZapValidationService.swift */; };
+		617E1B3DC71576368FA56019 /* ReelsFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB79C0D33E22277543C173F1 /* ReelsFeedService.swift */; };
 		61911D56C6C501170C8E50C2 /* WalletLightningTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A055572DB0D3E388936721 /* WalletLightningTab.swift */; };
 		6224CB5CF33FB1A934BF1FA8 /* SupportedMediaFormats.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18859E95D1E981CB5491E8F /* SupportedMediaFormats.swift */; };
 		624C04782CC198E673420D0F /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70A6C2A292B935922711F19B /* Motion.swift */; };
@@ -227,6 +230,7 @@
 		8ADB489FAB643EBB11BB577E /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB15AE080BDC0999543399A /* WebSocketClient.swift */; };
 		8B334441FF49DC33B053C484 /* NotificationNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC0F366EF1C957EF41DE12C /* NotificationNames.swift */; };
 		8BCB35219E198FB55A5B9186 /* NVWidgetLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC382C7EF657BEBE0775C5A9 /* NVWidgetLogic.swift */; };
+		8BDF1857A949D5DF277197DE /* ReelsFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98C1C315AD9DCB214071B65 /* ReelsFeedView.swift */; };
 		8C353599FEBE2E147C2A8EEE /* Confident.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 4B5A4A8F28D8FA1A5E59F7EC /* Confident.mp3 */; };
 		8C3BD71D4EE345968FB81D1E /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC33568A91E5B5B737A03D1F /* FeedService.swift */; };
 		8C6C5418A73D68D54599A473 /* MediaTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D08ABA7CDBFD26CF0423E33 /* MediaTypeDetector.swift */; };
@@ -604,9 +608,11 @@
 		A6DAA5E7383F9175577A61C7 /* ZapService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapService.swift; sourceTree = "<group>"; };
 		A79DD8C79F272181A636AC78 /* NIP46Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP46Service.swift; sourceTree = "<group>"; };
 		A85E435417789F6ABE84846C /* FeedActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedActions.swift; sourceTree = "<group>"; };
+		A98C1C315AD9DCB214071B65 /* ReelsFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelsFeedView.swift; sourceTree = "<group>"; };
 		A9CCBF9ECF9001937FA713A9 /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
 		A9DC40B4827BE001F3762233 /* NostrVaultWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NostrVaultWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA14EC3D2D24B98A94F93B56 /* ModeButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeButton.swift; sourceTree = "<group>"; };
+		AB79C0D33E22277543C173F1 /* ReelsFeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelsFeedService.swift; sourceTree = "<group>"; };
 		ABD60255398375B7A8772D93 /* VaultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultView.swift; sourceTree = "<group>"; };
 		AECE3C16F322D12D0CC02FC1 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		B082AB61C72D6EF9CCFD625B /* PushNotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationSettingsView.swift; sourceTree = "<group>"; };
@@ -734,6 +740,7 @@
 				B082AB61C72D6EF9CCFD625B /* PushNotificationSettingsView.swift */,
 				DEF0159EC6004E767A239389 /* QRScannerView.swift */,
 				998E2BF3A6A7EE811FD18ED7 /* RecipeFeedViews.swift */,
+				A98C1C315AD9DCB214071B65 /* ReelsFeedView.swift */,
 				4AB6A6872532B023E705FC6C /* RelayListEditor.swift */,
 				5A5EBCF68B3A415085E1DD3B /* Search */,
 				A271B5E3364858651DC05603 /* SettingsView.swift */,
@@ -1063,6 +1070,7 @@
 				B14E3BC6EB9439A763E73FE2 /* ProfileRepository.swift */,
 				75ED38A5B67740F711EB5C45 /* PushNotificationService.swift */,
 				481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */,
+				AB79C0D33E22277543C173F1 /* ReelsFeedService.swift */,
 				674B477FC2EDC213BEA34279 /* RelayConfiguration.swift */,
 				09F904D883705C247E543061 /* RelayLogParser.swift */,
 				22D8D67DB985CB4EA94E4FAF /* RelayProcessManager.swift */,
@@ -1434,6 +1442,8 @@
 				EB757B8BCE5DE46338963484 /* QuotedNoteView.swift in Sources */,
 				0A25EF3C485CE440985C8FAA /* RecipeFeedService.swift in Sources */,
 				AC30D521D368EF3BC8272AF8 /* RecipeFeedViews.swift in Sources */,
+				3BA3D2C452CC9BAE376259BD /* ReelsFeedService.swift in Sources */,
+				8BDF1857A949D5DF277197DE /* ReelsFeedView.swift in Sources */,
 				2D933AF056427997387682C7 /* ReferencedNoteRepair.swift in Sources */,
 				016518F704F4606FBA12DC78 /* RelayActivityBanner.swift in Sources */,
 				6CF9BD996704CA3AA18BE2BB /* RelayConfiguration.swift in Sources */,
@@ -1645,6 +1655,8 @@
 				CE658646406692011C5ACEF1 /* QuotedNoteView.swift in Sources */,
 				ED54837C471D65DD0BF8DC2F /* RecipeFeedService.swift in Sources */,
 				D82E6B7E8F48027A2A29D7BA /* RecipeFeedViews.swift in Sources */,
+				617E1B3DC71576368FA56019 /* ReelsFeedService.swift in Sources */,
+				070BC2E922A305BD037D845B /* ReelsFeedView.swift in Sources */,
 				DB665CF3AAC96B6B173FAD48 /* ReferencedNoteRepair.swift in Sources */,
 				7CC18747A782475A7DF8A793 /* RelayActivityBanner.swift in Sources */,
 				9B8F0ADC8DA2449B457C347A /* RelayConfiguration.swift in Sources */,

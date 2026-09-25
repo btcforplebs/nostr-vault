@@ -401,6 +401,7 @@ enum FeedMode: String, CaseIterable {
     case global = "Global"
     case popular = "Popular"
     case media = "Media"
+    case reels = "Reels"
     case articles = "Articles"
     case recipes = "Recipes"
     case live = "Live"
