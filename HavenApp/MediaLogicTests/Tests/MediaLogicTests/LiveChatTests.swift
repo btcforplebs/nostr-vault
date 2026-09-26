@@ -57,6 +57,36 @@ final class LiveChatTests: XCTestCase {
         XCTAssertFalse(LiveChat.isFollowed(authorPubkey: service, tags: tags, follows: [payer]))
     }
 
+    // MARK: - On air
+
+    private let t0: Int64 = 1_790_000_000
+
+    func testALiveEventUpdatedWithinTheHourIsOnAir() {
+        XCTAssertTrue(LiveChat.isOnAir(status: "live", createdAt: t0, ends: nil, now: t0 + 3600))
+        XCTAssertTrue(LiveChat.isOnAir(status: nil, createdAt: t0, ends: nil, now: t0 + 60))
+    }
+
+    /// Seen 2026-09-26: `live` events 6h to 111h old, every URL a 404.
+    func testALiveEventNobodyHasUpdatedForAnHourIsOffAir() {
+        XCTAssertFalse(LiveChat.isOnAir(status: "live", createdAt: t0, ends: nil, now: t0 + 3601))
+    }
+
+    func testAStreamPastItsEndsTimeOrEndedIsOffAir() {
+        XCTAssertFalse(LiveChat.isOnAir(status: "live", createdAt: t0, ends: t0 + 10, now: t0 + 10))
+        XCTAssertFalse(LiveChat.isOnAir(status: "ended", createdAt: t0, ends: nil, now: t0))
+    }
+
+    func testOnlyAnHLSPlaylistIsAPlayableStreamURL() {
+        let playable = [
+            "https://customer-51tzzrmdygiq19h7.cloudflarestream.com/b919559ef7b1b5512b83d273bf8cb363/manifest/video.m3u8",
+            "https://api.streamroad.money/x/hls/live.m3u8?token=abc",
+        ]
+        for raw in playable { XCTAssertTrue(LiveChat.isPlayableStreamURL(URL(string: raw)!), raw) }
+        // A youtube.com/live page was in a real `streaming` tag.
+        let unplayable = ["https://youtube.com/live/YbnlF1CRqok", "rtmp://e/live.m3u8", "https://e/watch?v=x.m3u8"]
+        for raw in unplayable { XCTAssertFalse(LiveChat.isPlayableStreamURL(URL(string: raw)!), raw) }
+    }
+
     // MARK: - Where the chat is
 
     /// zap.stream is the documented relay and, measured across every live

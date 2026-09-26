@@ -76,6 +76,28 @@ class LiveStreamTest {
         assertEquals(listOf("wss://relay.damus.io", "wss://nos.lol"), s.chatRelays)
     }
 
+    @Test fun `a web page is not a playable stream`() {
+        // Seen live 2026-09-26: a youtube.com/live link in `streaming`.
+        for (url in listOf("https://youtube.com/live/YbnlF1CRqok", "https://e/watch?v=x.m3u8")) {
+            val s = stream("d" to "x", "streaming" to url, "status" to "live")!!
+            assertNull(url, s.streamingUrl)
+        }
+        val signed = stream("d" to "x", "streaming" to "https://e/video.m3u8?token=abc")!!
+        assertEquals("https://e/video.m3u8?token=abc", signed.streamingUrl)
+    }
+
+    @Test fun `a live event nobody has updated for an hour is off air`() {
+        val s = stream("d" to "x", "streaming" to "https://e/x.m3u8", "status" to "live")!!
+        assertTrue(s.isOnAirAt(1_700_000_000L + 60 * 60))
+        assertFalse(s.isOnAirAt(1_700_000_000L + 60 * 60 + 1))
+    }
+
+    @Test fun `a stream past its ends time is off air`() {
+        val s = stream("d" to "x", "streaming" to "https://e/x.m3u8", "ends" to "1700000100")!!
+        assertTrue(s.isOnAirAt(1_700_000_099L))
+        assertFalse(s.isOnAirAt(1_700_000_100L))
+    }
+
     @Test fun `a stream with no relays tag falls back rather than failing`() {
         assertEquals(emptyList<String>(), stream("d" to "x")!!.chatRelays)
     }
