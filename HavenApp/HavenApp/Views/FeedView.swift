@@ -1907,6 +1907,14 @@ struct FeedView: View {
                     }
                     .tabBarBottomPadding()
                 }
+                // A switched account gets its own scroll view, cross-faded in at
+                // the top. Kept, this one diffed a whole feed of rows into the
+                // old scroll offset, held on to the old anchored note when both
+                // accounts had it, and then animated a scroll to the top on top
+                // of the fade — rows shuffled and slid instead of the feed
+                // simply changing.
+                .id(configService.activeAccountHexPubkey)
+                .transition(.opacity)
                 .refreshable {
                     isRefreshing = true
                     feedService.refresh()
@@ -2030,26 +2038,20 @@ struct FeedView: View {
             .onChange(of: configService.activeAccountHexPubkey) { _, _ in
                 // Identity change flips isOwnNote on every row; rebuild fully so
                 // overlapping notes (global/popular feeds) reflect the new account.
+                // No scroll to the top: the scroll view is keyed by account, so
+                // the new one already starts there, so the at-top state (which
+                // gates auto-loading new posts) and the tab bar follow it.
+                scrolledNoteID = nil
+                isAtTop = true
+                feedService.feedScrollingDown = false
                 rebuildRowDataCache()
                 rebuildThreadsIfNeeded()
-                withAnimation(Motion.scrollJump) {
-                    proxy.scrollTo("top", anchor: .top)
-                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
                 guard (note.object as? Int) == 0 else { return }
                 composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
             }
         }
-        .overlay {
-            if configService.isSwitchingAccount {
-                Color.black.opacity(0.15)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
-            }
-        }
-        .animation(Motion.fade, value: configService.isSwitchingAccount)
         .overlay(alignment: .bottomTrailing) {
             #if os(iOS)
             if !feedService.feedScrollingDown {
