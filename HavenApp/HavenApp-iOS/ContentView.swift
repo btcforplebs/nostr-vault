@@ -727,13 +727,6 @@ struct BottomTabBar: View {
                         accountMenuRow(npub: npub)
                     }
                 }
-                // A Menu has no open callback, but its content is built when
-                // the menu opens, so this is the moment it appears. The
-                // context menu this replaced buzzed on open; a Menu doesn't,
-                // and without it a hold gives no sign it worked.
-                .onAppear {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                }
             } label: {
                 label()
             } primaryAction: {
@@ -741,6 +734,13 @@ struct BottomTabBar: View {
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
+            // Buzz as the hold opens the menu, as the context menu this
+            // replaced did. A Menu has no open callback, and its content is
+            // built once and cached, so an onAppear in it fires on the first
+            // open only. A tap never completes this gesture, so it stays silent.
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            })
             // Keep the list in the settings order. The default ordering flips
             // it for a menu opening upward from the bottom bar, so the owner
             // would jump between top and bottom depending on where it opened.
