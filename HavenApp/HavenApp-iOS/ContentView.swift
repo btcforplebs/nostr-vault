@@ -581,8 +581,8 @@ struct BottomTabBar: View {
     @ViewBuilder
     private var collapsedContent: some View {
         HStack(spacing: 16) {
-            // Profile avatar — tap to expand tab bar
-            Button {
+            // Profile avatar — tap to expand tab bar, hold to switch account
+            accountSwitchButton {
                 feedService.feedScrollingDown = false
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     isCollapsed = false
@@ -601,30 +601,6 @@ struct BottomTabBar: View {
                                 .offset(x: 2, y: -2)
                         }
                     }
-            }
-            .buttonStyle(.plain)
-            .contextMenu {
-                if configService.allAccountNpubs.count > 1 {
-                    ForEach(configService.allAccountNpubs, id: \.self) { npub in
-                        let isOwner = npub == configService.config.ownerNpub
-                        let currentNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let isCurrent = currentNpub.isEmpty ? isOwner : npub == currentNpub
-                        let hex = Bech32.decode(npub)?.hexString ?? ""
-                        let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
-
-                        Button {
-                            configService.switchActiveAccount(to: npub)
-                        } label: {
-                            if isCurrent {
-                                Label(name, systemImage: "checkmark")
-                            } else {
-                                Text(name)
-                            }
-                        }
-                    }
-                } else {
-                    Text("No other accounts")
-                }
             }
 
             // Contextual FAB icon — triggers compose or relay dashboard
@@ -689,7 +665,7 @@ struct BottomTabBar: View {
 
     private var expandedProfileTabItem: some View {
         let selected = selectedTab == 2
-        return Button {
+        return accountSwitchButton {
             if selectedTab == 2 {
                 if !profilePath.isEmpty {
                     profilePath = NavigationPath()
@@ -722,29 +698,73 @@ struct BottomTabBar: View {
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .id(activeHex)
-        .contextMenu {
-            if configService.allAccountNpubs.count > 1 {
-                ForEach(configService.allAccountNpubs, id: \.self) { npub in
-                    let isOwner = npub == configService.config.ownerNpub
-                    let currentNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let isCurrent = currentNpub.isEmpty ? isOwner : npub == currentNpub
-                    let hex = Bech32.decode(npub)?.hexString ?? ""
-                    let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
+    }
 
-                    Button {
-                        configService.switchActiveAccount(to: npub)
-                    } label: {
-                        if isCurrent {
-                            Label(name, systemImage: "checkmark")
-                        } else {
-                            Text(name)
-                        }
+    // MARK: - Account Switch Menu
+
+    /// The avatar in the bar: a tap runs `primary`, a hold opens the account
+    /// list.
+    ///
+    /// This is a `Menu` with a primary action rather than a Button with a
+    /// `.contextMenu`. A context menu lifts a snapshot of the button, blurs the
+    /// screen, and animates that snapshot back down on dismissal — the same
+    /// moment the switch rebuilds every account-scoped view, and the expanded
+    /// tab also re-created itself (and the menu hosted on it) through
+    /// `.id(activeHex)`. A menu opens in place from the bar with no snapshot
+    /// to animate, and AvatarView already reloads on a pubkey change, so the
+    /// `.id` is gone. With one account there is nothing to switch to, so the
+    /// hold does nothing rather than open a menu that says so.
+    @ViewBuilder
+    private func accountSwitchButton<Content: View>(
+        primary: @escaping () -> Void,
+        @ViewBuilder label: () -> Content
+    ) -> some View {
+        let accounts = configService.allAccountNpubs
+        if accounts.count > 1 {
+            Menu {
+                Section("Switch Account") {
+                    ForEach(accounts, id: \.self) { npub in
+                        accountMenuRow(npub: npub)
                     }
                 }
+            } label: {
+                label()
+            } primaryAction: {
+                primary()
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            // Buzz as the hold opens the menu, as the context menu this
+            // replaced did. A Menu has no open callback, and its content is
+            // built once and cached, so an onAppear in it fires on the first
+            // open only. A tap never completes this gesture, so it stays silent.
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            })
+            // Keep the list in the settings order. The default ordering flips
+            // it for a menu opening upward from the bottom bar, so the owner
+            // would jump between top and bottom depending on where it opened.
+            .menuOrder(.fixed)
+        } else {
+            Button(action: primary, label: label)
+                .buttonStyle(.plain)
+        }
+    }
+
+    private func accountMenuRow(npub: String) -> some View {
+        let isOwner = npub == configService.config.ownerNpub
+        let currentNpub = configService.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isCurrent = currentNpub.isEmpty ? isOwner : npub == currentNpub
+        let hex = Bech32.decode(npub)?.hexString ?? ""
+        let name = nostrService.profiles[hex]?.bestName ?? (isOwner ? "Owner" : String(npub.prefix(8)))
+
+        return Button {
+            configService.switchActiveAccount(to: npub)
+        } label: {
+            if isCurrent {
+                Label(name, systemImage: "checkmark")
             } else {
-                Text("No other accounts")
+                Text(name)
             }
         }
     }

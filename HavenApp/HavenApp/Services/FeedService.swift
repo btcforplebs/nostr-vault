@@ -596,7 +596,11 @@ class FeedService: ObservableObject {
     /// Bounded to ~200 notes so re-switching is cheap; full backfill comes
     /// from the top-up subscription that runs immediately after.
     private func captureSnapshot(forKey key: String) {
-        guard !key.isEmpty else { return }
+        // Leaving an account before its feed loaded has nothing worth keeping,
+        // and writing it would replace that account's last good snapshot — in
+        // memory and on disk — with an empty one that later restores as a
+        // blank feed.
+        guard !key.isEmpty, !notes.isEmpty else { return }
         let cappedNotes = Array(notes.prefix(200))
         let snap = AccountFeedSnapshot(
             notes: cappedNotes,
@@ -733,7 +737,10 @@ class FeedService: ObservableObject {
     /// any relay traffic — the caller decides whether to top up or cold-load.
     @discardableResult
     private func applyDiskSnapshot(forKey key: String) -> Bool {
-        guard let diskSnap = loadDiskSnapshot(forKey: key) else { return false }
+        // Builds before captureSnapshot refused an empty feed wrote empty
+        // snapshots to disk; applied, they show a blank feed with no loading
+        // state. Treat one as missing so the caller loads the account instead.
+        guard let diskSnap = loadDiskSnapshot(forKey: key), !diskSnap.notes.isEmpty else { return false }
         notes = diskSnap.notes
         followedPubkeys = diskSnap.followedPubkeys
         extendedNetworkPubkeys = diskSnap.extendedNetworkPubkeys
@@ -1437,6 +1444,10 @@ class FeedService: ObservableObject {
         let isGlobalLike = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
         guard !followedPubkeys.isEmpty || isGlobalLike else {
             // Snapshot had no follows — fall back to the cold-start flow.
+            // An account switch sets isLoadingContacts before calling here, and
+            // refresh() returns early while it is set, so without clearing it
+            // this fallback did nothing and the feed stayed empty.
+            isLoadingContacts = false
             refresh()
             return
         }
