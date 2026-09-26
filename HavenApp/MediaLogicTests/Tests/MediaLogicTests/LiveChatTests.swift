@@ -32,6 +32,31 @@ final class LiveChatTests: XCTestCase {
         XCTAssertEqual(LiveChat.hostPubkey(authorPubkey: host, tags: []), host)
     }
 
+    // MARK: - Following
+
+    /// shosho.live signs every stream with its own key (85df822a…) and names
+    /// the streamer only as `Host`. Tags are from a real one, 2026-09-26.
+    func testAFollowedHostsServicePublishedStreamIsFollowed() {
+        let tags = [
+            ["d", "4dbfc337-fbc2-4cb3-b454-93a6e1cefde0"],
+            ["status", "live"],
+            ["p", host, "", "host"],
+            ["service", "https://api.shosho.live/api/v1"],
+        ]
+        XCTAssertTrue(LiveChat.isFollowed(authorPubkey: service, tags: tags, follows: [host]))
+        XCTAssertFalse(LiveChat.isFollowed(authorPubkey: service, tags: tags, follows: [payer]))
+    }
+
+    func testAStreamTheOwnerFollowsTheAuthorOfIsFollowed() {
+        XCTAssertTrue(LiveChat.isFollowed(authorPubkey: host, tags: [], follows: [host]))
+    }
+
+    /// A `#p` query also returns streams a followed pubkey only guests on.
+    func testAFollowedGuestDoesNotMakeTheStreamFollowed() {
+        let tags = [["p", payer, "", "Speaker"], ["p", host, "", "Host"]]
+        XCTAssertFalse(LiveChat.isFollowed(authorPubkey: service, tags: tags, follows: [payer]))
+    }
+
     // MARK: - Where the chat is
 
     /// zap.stream is the documented relay and, measured across every live
