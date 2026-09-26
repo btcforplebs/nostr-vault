@@ -134,8 +134,9 @@ class LiveFeedService @Inject constructor(
     }
 
     private fun publish(values: Collection<LiveStream>) {
+        val now = System.currentTimeMillis() / 1000
         _streams.value = values
-            .filter { it.isPlayableLive }
+            .filter { it.isPlayableLive && it.isOnAirAt(now) }
             .sortedByDescending { it.participants ?: 0 }
     }
 

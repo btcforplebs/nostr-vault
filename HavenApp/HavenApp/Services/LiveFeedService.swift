@@ -168,8 +168,9 @@ final class LiveFeedService: ObservableObject {
     }
 
     private func publish() {
+        let now = Int64(Date().timeIntervalSince1970)
         streams = collected.values
-            .filter { $0.isPlayableLive }
+            .filter { $0.isPlayableLive(at: now) }
             .sorted {
                 if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
                 return $0.address > $1.address
@@ -200,6 +201,8 @@ struct LiveStream: Identifiable, Equatable {
     let imageURL: URL?
     let streamingURL: URL?
     let status: String?
+    /// NIP-53 `ends`: when the host said the stream finished.
+    let ends: Int64?
     let participants: Int?
     /// Relays the stream itself says its chat is on (NIP-53 `relays` tag).
     let chatRelays: [String]
@@ -216,10 +219,12 @@ struct LiveStream: Identifiable, Equatable {
     /// carried a streaming tag at all, so without both halves of this test the
     /// grid is mostly gravestones. A missing status with a live URL counts —
     /// 71 events omit status entirely, which is a real bucket, not noise.
-    var isPlayableLive: Bool {
+    ///
+    /// A `live` status alone is not enough: hosts who quit without publishing
+    /// `ended` leave it standing, so staleness is part of the test too.
+    func isPlayableLive(at now: Int64) -> Bool {
         guard streamingURL != nil else { return false }
-        guard let status else { return true }
-        return status == "live"
+        return LiveChat.isOnAir(status: status, createdAt: createdAt, ends: ends, now: now)
     }
 
     init?(id: String, pubkey: String, createdAt: Int64, tags: [[String]]) {
@@ -239,16 +244,16 @@ struct LiveStream: Identifiable, Equatable {
         self.summary = value("summary")
         self.imageURL = value("image").flatMap { URL(string: $0) }
         self.status = value("status")
+        self.ends = value("ends").flatMap { Int64($0) }
         // The whole tag is the list, not just its first value.
         self.chatRelays = (tags.first { $0.count >= 2 && $0[0] == "relays" }?.dropFirst())
             .map { $0.compactMap(LiveChat.normalizedRelay) } ?? []
         self.participants = value("current_participants").flatMap { Int($0) }
 
-        // AVPlayer speaks HTTP(S). The sample also carried rtmp, ftp and a
-        // `zapcast:` scheme — none of which it can open, so a tile for one is a
-        // tile that can only disappoint.
-        if let raw = value("streaming"), let url = URL(string: raw),
-           let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" {
+        // AVPlayer speaks HTTP(S) HLS. The sample also carried rtmp, ftp, a
+        // `zapcast:` scheme and plain web pages — none of which it can open,
+        // so a tile for one is a tile that can only disappoint.
+        if let raw = value("streaming"), let url = URL(string: raw), LiveChat.isPlayableStreamURL(url) {
             self.streamingURL = url
         } else {
             self.streamingURL = nil
