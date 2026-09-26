@@ -727,6 +727,13 @@ struct BottomTabBar: View {
                         accountMenuRow(npub: npub)
                     }
                 }
+                // A Menu has no open callback, but its content is built when
+                // the menu opens, so this is the moment it appears. The
+                // context menu this replaced buzzed on open; a Menu doesn't,
+                // and without it a hold gives no sign it worked.
+                .onAppear {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
             } label: {
                 label()
             } primaryAction: {
