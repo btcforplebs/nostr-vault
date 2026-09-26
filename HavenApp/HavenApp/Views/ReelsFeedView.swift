@@ -50,6 +50,13 @@ struct ReelsFeedView: View {
             service.loadIfNeeded()
             if currentId == nil { currentId = service.reels.first?.id }
         }
+        // Pages only mute themselves; the session goes back to mixing, so
+        // other apps' music can resume, once the whole feed is gone.
+        .onDisappear {
+            if VideoPlayerCache.shared.activeFullScreenURL == nil {
+                AudioSessionManager.shared.enableMixingWithOthers()
+            }
+        }
         .onChange(of: service.reels) { _, reels in
             if currentId == nil || !reels.contains(where: { $0.id == currentId }) {
                 currentId = reels.first?.id
@@ -263,7 +270,11 @@ private struct ReelPageView: View {
             syncPlayback()
         }
         .onChange(of: isMuted) { _, muted in
-            if isActive, let player { VideoPlaybackService.shared.setMuted(muted, on: player) }
+            guard isActive, let player else { return }
+            VideoPlaybackService.shared.setMuted(muted, on: player)
+            // Switching the session category stops the players in it; pick
+            // the reel back up unless the viewer had paused it.
+            applyState(to: player)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Video by \(authorName)")
@@ -331,7 +342,7 @@ private struct ReelPageView: View {
                 // while the player was being built.
                 guard isOnScreen, wantsPlay || wantsWarm else {
                     prepared.pause()
-                    if !prepared.isMuted { VideoPlaybackService.shared.setMuted(true, on: prepared) }
+                    prepared.isMuted = true
                     return
                 }
                 player = prepared
@@ -364,7 +375,10 @@ private struct ReelPageView: View {
         isOnScreen = false
         guard let player else { return }
         player.pause()
-        if !player.isMuted { VideoPlaybackService.shared.setMuted(true, on: player) }
+        // Mute the player only. Switching the session to mixing here would cut
+        // the sound of the reel that just scrolled in; the feed hands audio
+        // back when it leaves the screen.
+        player.isMuted = true
         self.player = nil
         hasFrame = false
     }
