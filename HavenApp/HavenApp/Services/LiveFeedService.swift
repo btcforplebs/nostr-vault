@@ -50,15 +50,24 @@ final class LiveFeedService: ObservableObject {
         followSetIsEmpty = false
         isLoading = true
 
-        var filter: [String: Any] = ["kinds": [30311], "limit": 300]
+        var filters: [[String: Any]] = [["kinds": [30311], "limit": 300]]
+        var follows: Set<String>?
         if scope == .following {
-            let follows = FeedService.shared.followedPubkeys
-            guard !follows.isEmpty else {
+            let followed = FeedService.shared.followedPubkeys
+            guard !followed.isEmpty else {
                 isLoading = false
                 followSetIsEmpty = true
                 return
             }
-            filter["authors"] = follows
+            // Asked twice: by author, and by `p` tag for streams a service
+            // publishes on the host's behalf. The `p` half also returns
+            // streams a followed pubkey is only a guest on, which `handle`
+            // drops.
+            filters = [
+                ["kinds": [30311], "authors": followed, "limit": 300],
+                ["kinds": [30311], "#p": followed, "limit": 300],
+            ]
+            follows = Set(followed)
         }
 
         let relayURLs = Self.relayURLs
@@ -79,13 +88,14 @@ final class LiveFeedService: ObservableObject {
             client.messageSubject
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] message in
-                    self?.handle(message: message, blocked: blocked)
+                    self?.handle(message: message, blocked: blocked, follows: follows)
                 }
                 .store(in: &cancellables)
 
             client.connect(url: url)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                let req = ["REQ", subId, filter] as [Any]
+                var req: [Any] = ["REQ", subId]
+                req.append(contentsOf: filters)
                 if let data = try? JSONSerialization.data(withJSONObject: req),
                    let text = String(data: data, encoding: .utf8) {
                     client.send(text: text)
@@ -126,7 +136,7 @@ final class LiveFeedService: ObservableObject {
 
     // MARK: - Private
 
-    private func handle(message: String, blocked: Set<String>) {
+    private func handle(message: String, blocked: Set<String>, follows: Set<String>?) {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json.first as? String else { return }
@@ -144,7 +154,11 @@ final class LiveFeedService: ObservableObject {
               !blocked.contains(pubkey)
         else { return }
 
-        guard let stream = LiveStream(id: id, pubkey: pubkey, createdAt: createdAt, tags: tags) else { return }
+        if let follows, !LiveChat.isFollowed(authorPubkey: pubkey, tags: tags, follows: follows) { return }
+        guard let stream = LiveStream(id: id, pubkey: pubkey, createdAt: createdAt, tags: tags),
+              // A block on the streamer has to reach their service-published streams too.
+              !blocked.contains(stream.zapPubkey)
+        else { return }
 
         // Addressable: the newest event for an address wins, which is how a
         // stream that has since ended replaces its own live announcement.

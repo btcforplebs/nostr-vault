@@ -96,6 +96,16 @@ enum LiveChat {
         return host?[1] ?? authorPubkey
     }
 
+    /// Whether a stream belongs in a Following feed.
+    ///
+    /// A service such as shosho.live publishes every stream under its own key,
+    /// with the streamer only in the `Host` p tag, so checking the author alone
+    /// never matches anyone the owner follows. Other p tags (guests, speakers)
+    /// do not count: a followed guest does not make the stream theirs.
+    static func isFollowed(authorPubkey: String, tags: [[String]], follows: Set<String>) -> Bool {
+        follows.contains(authorPubkey) || follows.contains(hostPubkey(authorPubkey: authorPubkey, tags: tags))
+    }
+
     /// Builds a row from a relay event, or nil if it is not one we render.
     static func message(id: String, pubkey: String, kind: Int, createdAt: Int64,
                         content: String, tags: [[String]]) -> LiveChatMessage? {
