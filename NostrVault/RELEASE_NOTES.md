@@ -1,9 +1,10 @@
 # NostrVault v2.7.0 (Build 15) Release Notes
 
-A new look and a lot of new surface. The filing-cabinet icon is gone — the app now wears the lit arch in Sunset Orange, as a proper adaptive icon and as the silhouette you see in your notification shade. Behind it the app has a real visual system for the first time: one elevation ramp, named colours instead of hardcoded ones, and animations that honour Reduce Motion. This release also adds home-screen widgets, long-form Articles, a Recipes feed, and Live streams with chat and zapping. The Global feed no longer shows the raw firehose to brand-new accounts.
+A new look and a lot of new surface. The filing-cabinet icon is gone — the app now wears the lit arch in Sunset Orange, as a proper adaptive icon and as the silhouette you see in your notification shade. Behind it the app has a real visual system for the first time: one elevation ramp, named colours instead of hardcoded ones, and animations that honour Reduce Motion. This release also adds home-screen widgets, Reels, long-form Articles, a Recipes feed, Live streams with chat and zapping, and a search that asks everywhere at once. Your chosen signer is now used for everything you sign, and the Global feed no longer shows the raw firehose to brand-new accounts.
 
 ## Security
 
+*   **Some Actions Bypassed Your Signer**: Likes, reposts, follows, mute and relay lists, deletes, reports, drafts and group sign-ins went through a separate signing path that did not use the remote signer or Amber you had chosen. Everything you sign now goes through your chosen signer, and what comes back is checked: a signature for a different account, or for anything other than what was asked, is refused.
 *   **The Global Feed Showed Everything to New Accounts**: The spam filter is built from your follow graph, and an empty graph — exactly what a new account has — let everybody through. Global now shows only accounts in your graph, and the graph is seeded from the app's own starter packs so a new account has one within seconds of first launch.
 
 ## New
@@ -11,10 +12,13 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — the app
 *   **A New App Icon**: The lit arch in Sunset Orange, as an adaptive icon, with a themed monochrome layer so notifications show the brand instead of a generic dot.
 *   **A Consistent Look**: One elevation ramp and one set of named colours behind every screen — card and page contrast used to be inverted — plus one animation vocabulary with Reduce Motion support.
 *   **Home-Screen Widgets**.
+*   **Reels**: A full-screen video feed in the feed menu — one video per page, swipe up for the next, with its neighbours already loading. Following by default; Global asks first. Posts marked with a content warning are left out.
+*   **Search Everywhere at Once**: Global search asks your device, your Mac relay and several Nostr search services in parallel, shows results as they arrive, and shows how each source is doing — so a service that is down no longer looks like "no results".
+*   **Use a Relay From Another App**: Advanced › External Relay turns off the built-in relay and Blossom server and points the app at ones running in another app on your phone, such as Citrine — for keeping your client and your storage in separate sandboxes.
 *   **A Threaded Feed**: The feed's view button now cycles expanded, condensed and threaded. Threaded gathers a conversation into one card with its replies on a rail; tap a reply to open it in place with its action bar, tap again to go to the thread. Each feed remembers its own layout.
 *   **Articles**: Long-form posts from the people you follow, drawn as articles with a reader.
 *   **Recipes**: A feed of cooking posts from zapcooking and nostrcooking, live from relays.
-*   **Live Streams**: Only the streams actually running, with chat, zapping, report and block.
+*   **Live Streams**: Only the streams actually on air that can actually play, with chat, zapping, report and block.
 *   **Scan a Signer's QR Code**: Connect a remote signer with the camera instead of typing a bunker string, including during setup.
 *   **Taps From Outside the App** open the right screen, and Groups is reachable.
 
@@ -30,6 +34,8 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — the app
 *   **Quoted Posts**: A quoted post now draws as a card in the feed, on the focused note and on the relay tab, with quoted articles resolved.
 *   **Zap Amounts**: Read from the invoice, since receipts do not carry them — and an invoice with no amount no longer reads as 1 BTC in live chat.
 *   **Live Streams**: The live feed no longer crashes on its first real run, and the chat composer no longer sits behind the tab bar.
+*   **Posts With Unusual Characters**: Backslashes, tabs and other control characters were encoded wrongly in signed events, which relays could reject.
+*   **Signing Failures**: Saving your profile no longer crashes when the signer fails — it says what went wrong — and a like or repost that could not be signed is undone instead of showing as done.
 *   **Tap Targets**: The note action row is a full 48dp tall with no dead gaps between buttons.
 *   **Search Results Can Be Acted On**: Reply, repost, like and zap from a result instead of buttons that draw nothing.
 *   **Report and Block From the Feed**.
