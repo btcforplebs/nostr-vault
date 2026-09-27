@@ -54,6 +54,9 @@ class AudioSessionManager {
         if PiPManager.shared.isPiPActive { return }
         do {
             let audioSession = AVAudioSession.sharedInstance()
+            // Already mixing: nothing to hand back, and deactivating would stop
+            // whatever this app is playing right now.
+            if audioSession.category == .ambient { return }
             // Deactivate the active playback session so background music can resume
             try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
 
@@ -73,6 +76,13 @@ class AudioSessionManager {
     func enablePlayback() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
+            // Already in playback: only make sure it is active. Deactivating a
+            // session stops every player in it — Reels warms the next video
+            // with this intent while the current one is playing with sound.
+            if audioSession.category == .playback && audioSession.mode == .moviePlayback {
+                try audioSession.setActive(true)
+                return
+            }
             // Deactivate current session first to ensure clean transition
             try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
 
