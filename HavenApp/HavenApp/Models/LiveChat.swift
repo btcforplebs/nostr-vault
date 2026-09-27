@@ -106,6 +106,27 @@ enum LiveChat {
         follows.contains(authorPubkey) || follows.contains(hostPubkey(authorPubkey: authorPubkey, tags: tags))
     }
 
+    /// NIP-53: a `live` event not updated for an hour may be treated as ended.
+    /// Running streams are republished every few minutes (viewer counts), so
+    /// an older one is a stream whose host quit without saying so — measured
+    /// 2026-09-26, every such tile's URL was a 404.
+    static let staleAfterSeconds: Int64 = 60 * 60
+
+    /// Whether a stream's announcement still means it is on air at `now`.
+    static func isOnAir(status: String?, createdAt: Int64, ends: Int64?, now: Int64) -> Bool {
+        if let status, status != "live" { return false }
+        if let ends, ends <= now { return false }
+        return now - createdAt <= staleAfterSeconds
+    }
+
+    /// Only an HLS playlist is a live stream the player can open. `streaming`
+    /// also carries web pages (a youtube.com/live link, 2026-09-26), which
+    /// AVPlayer takes and then shows nothing.
+    static func isPlayableStreamURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return false }
+        return url.path.lowercased().hasSuffix(".m3u8")
+    }
+
     /// Builds a row from a relay event, or nil if it is not one we render.
     static func message(id: String, pubkey: String, kind: Int, createdAt: Int64,
                         content: String, tags: [[String]]) -> LiveChatMessage? {

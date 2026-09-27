@@ -16,6 +16,8 @@ data class LiveStream(
     val imageUrl: String?,
     val streamingUrl: String?,
     val status: String?,
+    /** NIP-53 `ends`: when the host said the stream finished, in seconds. */
+    val ends: Long? = null,
     val participants: Int?,
     /**
      * The `relays` tag: where this stream's own chat lives.
@@ -42,8 +44,22 @@ data class LiveStream(
     val isPlayableLive: Boolean
         get() = streamingUrl != null && (status == null || status == "live")
 
+    /**
+     * Whether the announcement still means the stream is on air at [nowSeconds].
+     *
+     * A `live` status alone is not enough: hosts who quit without publishing
+     * `ended` leave it standing. Running streams are republished every few
+     * minutes, so NIP-53's one-hour cutoff is safe — measured 2026-09-26,
+     * every older `live` tile's URL was a 404.
+     */
+    fun isOnAirAt(nowSeconds: Long): Boolean =
+        (ends == null || ends > nowSeconds) && nowSeconds - createdAt <= STALE_AFTER_SECONDS
+
     companion object {
         const val KIND = 30311
+
+        /** NIP-53: a `live` event not updated for an hour may be treated as ended. */
+        const val STALE_AFTER_SECONDS = 60L * 60
 
         /** @return null when the event is not a usable live event (no `d` tag). */
         fun from(pubkey: String, createdAt: Long, tags: List<List<String>>): LiveStream? {
@@ -55,12 +71,14 @@ data class LiveStream(
 
             val identifier = value("d") ?: return null
 
-            // ExoPlayer speaks HTTP(S). Real events also carry rtmp, ftp and
-            // even `zapcast:` URLs, none of which it can open — a tile for one
-            // of those is a tile that can only disappoint.
+            // Only an HTTP(S) HLS playlist is a live stream the player can
+            // open. Real events also carry rtmp, ftp, `zapcast:` URLs and plain
+            // web pages (a youtube.com/live link) — a tile for one of those is
+            // a tile that can only disappoint.
             val streaming = value("streaming")?.takeIf { raw ->
                 val scheme = raw.substringBefore(':').lowercase()
-                scheme == "http" || scheme == "https"
+                val path = raw.substringBefore('?').substringBefore('#').lowercase()
+                (scheme == "http" || scheme == "https") && path.endsWith(".m3u8")
             }
 
             return LiveStream(
@@ -72,6 +90,7 @@ data class LiveStream(
                 imageUrl = value("image"),
                 streamingUrl = streaming,
                 status = value("status")?.lowercase(),
+                ends = value("ends")?.toLongOrNull(),
                 participants = value("current_participants")?.toIntOrNull(),
                 chatRelays = tags.firstOrNull { it.isNotEmpty() && it[0] == "relays" }
                     ?.drop(1)
