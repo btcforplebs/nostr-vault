@@ -42,6 +42,13 @@ struct NoteDetailView: View {
 
     @State private var focusedNoteId: String = ""
 
+    /// The note pinned to the top of the scroll view. Kept in step with
+    /// `focusedNoteId` so that whichever note the reader landed on never
+    /// moves on screen — thread history that loads in above it just extends
+    /// the scrollable area upward instead of shoving the note (and
+    /// everything below it) down mid-read.
+    @State private var pinnedScrollId: String?
+
     private var threadRootId: String {
         let eTags = note.tags.filter { $0.count >= 2 && $0[0] == "e" }
         if let explicitRoot = eTags.first(where: { $0.count >= 4 && $0[3] == "root" }) {
@@ -101,6 +108,7 @@ struct NoteDetailView: View {
     private func selectAndScrollToNote(_ targetId: String, proxy: ScrollViewProxy) {
         withAnimation(Motion.scrollJump) {
             focusedNoteId = targetId
+            pinnedScrollId = targetId
             proxy.scrollTo(targetId, anchor: .center)
         }
     }
@@ -145,16 +153,7 @@ struct NoteDetailView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 90)
             }
-            .onChange(of: isLoadingParents) { _, loading in
-                if !loading {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        withAnimation(Motion.scrollJump) {
-                            let target = focusedNoteId.isEmpty ? note.id : focusedNoteId
-                            proxy.scrollTo(target, anchor: .center)
-                        }
-                    }
-                }
-            }
+            .scrollPosition(id: $pinnedScrollId, anchor: .top)
             .onChange(of: focusedNoteId) { _, newId in
                 if !newId.isEmpty {
                     fetchEngagement(for: newId)
@@ -249,6 +248,9 @@ struct NoteDetailView: View {
             detailedZaps.removeAll()
             if focusedNoteId.isEmpty {
                 focusedNoteId = note.id
+            }
+            if pinnedScrollId == nil {
+                pinnedScrollId = note.id
             }
             fetchParents()
             fetchReplies()
