@@ -24,7 +24,7 @@ enum MediaKindResolver {
     }
 
     /// Resolves without touching the network: extension, caller-provided MIME
-    /// hint, then the detector's cache. Generic MIME types
+    /// hint, the note's `imeta` MIME, then the detector's cache. Generic MIME types
     /// (application/octet-stream) are ignored — they carry no information.
     static func cachedKind(for url: URL, mimeHint: String? = nil) -> MediaKind? {
         let ext = url.pathExtension.lowercased()
@@ -33,6 +33,10 @@ enum MediaKindResolver {
         if SupportedMediaFormats.imageExtensions.contains(ext) { return .image }
         if SupportedMediaFormats.audioExtensions.contains(ext) { return .audio }
         if let hint = mimeHint, !MediaTypeDetector.isGenericContentType(hint) {
+            return kind(fromMime: hint)
+        }
+        if let hint = MediaHints.shared.hint(for: url)?.mime,
+           !MediaTypeDetector.isGenericContentType(hint) {
             return kind(fromMime: hint)
         }
         if let cached = MediaTypeDetector.shared.getCachedContentType(for: url),

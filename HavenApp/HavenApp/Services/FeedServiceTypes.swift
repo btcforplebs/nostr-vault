@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 // MARK: - Models
 
@@ -112,6 +113,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         self.mediaURLs = (contentURLs + imetaURLs).filter { seen.insert($0.absoluteString).inserted }
         self.linkURLs = Self.parseLinkURLs(from: resolvedContent, excludingMedia: self.mediaURLs)
         self.quotedEventIds = Self.parseQuotedEventIds(from: resolvedContent)
+        MediaHints.shared.register(tags: resolvedTags)
     }
 
     var replyCount: Int {
@@ -210,6 +212,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         self.linkURLs = try c.decodeIfPresent([URL].self, forKey: .linkURLs) ?? []
         self.quotedEventIds = try c.decode([String].self, forKey: .quotedEventIds)
         self.repostedEventId = try c.decodeIfPresent(String.self, forKey: .repostedEventId)
+        MediaHints.shared.register(tags: tags)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -470,5 +473,81 @@ extension FeedNote: ReferencedNoteRow {
     /// carries no marked `e` tag — in both cases the parent edge is enough.
     var threadRootEventId: String? {
         tags.first { $0.count >= 4 && $0[0] == "e" && $0[3] == "root" }?[1]
+    }
+}
+
+// MARK: - NIP-92 media hints
+
+/// What a note's `imeta` tag says about a media URL before any byte of it
+/// downloads: pixel size, MIME type, blurhash.
+struct MediaHint: Equatable {
+    var size: CGSize?
+    var mime: String?
+    var blurhash: String?
+
+    /// width / height, when the note published a usable `dim`.
+    var aspectRatio: CGFloat? {
+        guard let size, size.width > 0, size.height > 0 else { return nil }
+        return size.width / size.height
+    }
+}
+
+/// URL-keyed store of `imeta` hints, filled as feed notes are built. Media
+/// views read it to reserve a photo's real height up front (so the row does not
+/// resize when the image lands) and to classify extensionless uploads without a
+/// HEAD request. Keyed by URL rather than stored on `FeedNote` so every view
+/// that renders a URL benefits without threading the note through.
+final class MediaHints: @unchecked Sendable {
+    static let shared = MediaHints()
+
+    private final class Box {
+        let hint: MediaHint
+        init(_ hint: MediaHint) { self.hint = hint }
+    }
+
+    private let cache: NSCache<NSURL, Box> = {
+        let cache = NSCache<NSURL, Box>()
+        cache.countLimit = 4000
+        return cache
+    }()
+
+    func hint(for url: URL) -> MediaHint? {
+        cache.object(forKey: url as NSURL)?.hint
+    }
+
+    func register(tags: [[String]]) {
+        for tag in tags where tag.first == "imeta" {
+            guard let (url, hint) = Self.parse(imeta: tag) else { continue }
+            cache.setObject(Box(hint), forKey: url as NSURL)
+        }
+    }
+
+    /// Parses one flat NIP-92 tag: `["imeta", "url …", "dim 1920x1080", "m image/jpeg", …]`.
+    /// Returns nil when the tag has no URL or carries nothing useful.
+    static func parse(imeta tag: [String]) -> (URL, MediaHint)? {
+        var url: URL?
+        var hint = MediaHint()
+        for field in tag.dropFirst() {
+            guard let space = field.firstIndex(of: " ") else { continue }
+            let key = field[..<space]
+            let value = field[field.index(after: space)...].trimmingCharacters(in: .whitespaces)
+            switch key {
+            case "url":
+                url = URL(string: value)
+            case "dim":
+                let parts = value.lowercased().split(separator: "x")
+                if parts.count == 2, let w = Double(parts[0]), let h = Double(parts[1]), w > 0, h > 0 {
+                    hint.size = CGSize(width: w, height: h)
+                }
+            case "m":
+                if !value.isEmpty { hint.mime = value }
+            case "blurhash":
+                if !value.isEmpty { hint.blurhash = value }
+            default:
+                continue
+            }
+        }
+        guard let url, hint != MediaHint() else { return nil }
+        return (url, hint)
     }
 }

@@ -18,13 +18,18 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     private let cacheDirectory: URL
     private let thumbnailDirectory: URL
     private var inFlightDownloads: [String: [CheckedContinuation<Data?, Never>]] = [:]
+    /// Queued-or-running download operations by cache filename, so a view can
+    /// re-rank a transfer it no longer (or now) needs. Guarded by downloadLock.
+    private var downloadOperations: [String: Operation] = [:]
     private let downloadLock = NSLock()
 
     // In-memory decoded image cache (NSCache auto-evicts under memory pressure)
     private let imageCache: NSCache<NSURL, PlatformImage> = {
         let cache = NSCache<NSURL, PlatformImage>()
-        cache.countLimit = 100
-        cache.totalCostLimit = 40 * 1024 * 1024 // 40 MB (full-res decoded images)
+        cache.countLimit = 150
+        // Feed photos decode at up to 800 px (~2 MB each), so 40 MB held only
+        // ~20 and scrolling back re-decoded from disk with a spinner.
+        cache.totalCostLimit = 96 * 1024 * 1024
         return cache
     }()
 
@@ -44,6 +49,15 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         let queue = OperationQueue()
         queue.name = "MediaCacheDownloadQueue"
         queue.maxConcurrentOperationCount = 4
+        return queue
+    }()
+
+    /// Videos download on their own lane: a video holds its slot for the whole
+    /// file, and on the shared queue two or three of them starved every photo.
+    private let videoDownloadQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "MediaCacheVideoDownloadQueue"
+        queue.maxConcurrentOperationCount = 2
         return queue
     }()
 
@@ -538,7 +552,11 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         return "mp4"
     }
 
-    func fetchData(url: URL) async -> Data? {
+    /// - Parameter priority: Rank among queued downloads. On-screen media uses
+    ///   the default; feed prefetch passes `.low` so it never delays what the
+    ///   user is looking at. A later, higher-priority request for the same URL
+    ///   promotes the queued transfer.
+    func fetchData(url: URL, priority: Operation.QueuePriority = .normal) async -> Data? {
         // Bypass cache for local relay Blossom URLs to avoid redundant storage and preserve MIME handling
         if isLocalURL(url) {
             do {
@@ -564,6 +582,9 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
             if var waiters = inFlightDownloads[filename] {
                 waiters.append(continuation)
                 inFlightDownloads[filename] = waiters
+                if let op = downloadOperations[filename], op.queuePriority.rawValue < priority.rawValue {
+                    op.queuePriority = priority
+                }
                 downloadLock.unlock()
             } else {
                 inFlightDownloads[filename] = [continuation]
@@ -577,7 +598,7 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
                 // Run on the bounded downloadQueue (the operation blocks its slot
                 // until the transfer finishes) so a fast scroll through a
                 // video-heavy feed can't stack unbounded concurrent downloads.
-                downloadQueue.addOperation { [weak self] in
+                let operation = BlockOperation { [weak self] in
                     guard let self = self else { return }
                     let semaphore = DispatchSemaphore(value: 0)
                     var result: Data?
@@ -597,13 +618,30 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
                     self.downloadLock.lock()
                     let waiters = self.inFlightDownloads[filename] ?? []
                     self.inFlightDownloads.removeValue(forKey: filename)
+                    self.downloadOperations.removeValue(forKey: filename)
                     self.downloadLock.unlock()
                     for waiter in waiters {
                         waiter.resume(returning: result)
                     }
                 }
+                operation.queuePriority = priority
+                downloadLock.lock()
+                downloadOperations[filename] = operation
+                downloadLock.unlock()
+                let isVideo = MediaKindResolver.cachedKind(for: url) == .video
+                (isVideo ? videoDownloadQueue : downloadQueue).addOperation(operation)
             }
         }
+    }
+
+    /// Sends a not-yet-started download to the back of the line when its view
+    /// scrolls away (or forward again when it returns). The transfer is kept,
+    /// not cancelled, so scrolling back still finds it cached.
+    func setDownloadPriority(_ priority: Operation.QueuePriority, for url: URL) {
+        let filename = hash(url: url)
+        downloadLock.lock()
+        downloadOperations[filename]?.queuePriority = priority
+        downloadLock.unlock()
     }
 
     /// Moves a completed downloadTask temp file into the cache and returns its

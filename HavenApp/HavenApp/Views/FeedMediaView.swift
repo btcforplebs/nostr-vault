@@ -116,14 +116,14 @@ struct FeedMediaView: View {
                     avoidFullDownload: isThumbnail,
                     onAspectRatio: { ratio in if ratio > 0 { videoAspectRatio = ratio } }
                 )
-                .aspectRatio(isThumbnail ? 1 : videoAspectRatio, contentMode: isThumbnail ? .fill : .fit)
+                .aspectRatio(isThumbnail ? 1 : videoAspectRatio ?? hintAspectRatio, contentMode: isThumbnail ? .fill : .fit)
             } else {
                 InlineFeedVideoPlayer(
                     url: url,
                     onTap: onTap,
                     onAspectRatio: { ratio in if ratio > 0 { videoAspectRatio = ratio } }
                 )
-                .aspectRatio(isThumbnail ? 1 : videoAspectRatio, contentMode: isThumbnail ? .fill : .fit)
+                .aspectRatio(isThumbnail ? 1 : videoAspectRatio ?? hintAspectRatio, contentMode: isThumbnail ? .fill : .fit)
             }
         }
         .frame(maxWidth: .infinity)
@@ -141,7 +141,7 @@ struct FeedMediaView: View {
     /// taller cap so they fill the width; defaults to the landscape cap until
     /// the video's dimensions are known.
     private var videoHeightCap: CGFloat {
-        guard let ratio = videoAspectRatio else { return maxHeight }
+        guard let ratio = videoAspectRatio ?? hintAspectRatio else { return maxHeight }
         return ratio < 1 ? portraitMaxHeight : maxHeight
     }
 
@@ -162,12 +162,31 @@ struct FeedMediaView: View {
         .onTapGestureIfSome(onTap)
     }
 
+    /// Aspect ratio the note published in its `imeta` `dim`, if any.
+    private var hintAspectRatio: CGFloat? {
+        MediaHints.shared.hint(for: url)?.aspectRatio
+    }
+
+    @ViewBuilder
     private var placeholderView: some View {
+        if !isThumbnail, let ratio = hintAspectRatio {
+            // Reserve the media's real shape so the row doesn't resize when
+            // the type resolves and the image lands.
+            placeholderShape
+                .aspectRatio(ratio, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .frame(maxHeight: ratio < 1 ? portraitMaxHeight : maxHeight)
+        } else {
+            placeholderShape
+                .frame(maxWidth: .infinity)
+                .frame(height: isThumbnail ? nil : 200)
+                .aspectRatio(isThumbnail ? 1 : nil, contentMode: .fill)
+        }
+    }
+
+    private var placeholderShape: some View {
         RoundedRectangle(cornerRadius: 8)
             .fill(Color.platformTertiaryGroupedBackground)
-            .frame(maxWidth: .infinity)
-            .frame(height: isThumbnail ? nil : 200)
-            .aspectRatio(isThumbnail ? 1 : nil, contentMode: .fill)
             .overlay(
                 ProgressView()
                     .tint(Color.havenPurple.opacity(0.6))
@@ -232,14 +251,27 @@ private struct FeedPhotoView: View {
                     .tint(Color.havenPurple.opacity(0.6))
             }
         }
-        .aspectRatio(isThumbnail ? nil : aspectRatio, contentMode: .fit)
+        .aspectRatio(isThumbnail ? nil : displayAspectRatio, contentMode: .fit)
         .frame(maxHeight: heightCap)
-        .onAppear { loadImage() }
+        .onAppear {
+            MediaCacheService.shared.setDownloadPriority(.normal, for: url)
+            loadImage()
+        }
+        .onDisappear {
+            // Scrolled away before it loaded: let on-screen photos go first.
+            if image == nil { MediaCacheService.shared.setDownloadPriority(.low, for: url) }
+        }
+    }
+
+    /// The decoded image's ratio, or the note's `imeta` `dim` until it lands,
+    /// so the row is already the right height when the pixels arrive.
+    private var displayAspectRatio: CGFloat? {
+        aspectRatio ?? MediaHints.shared.hint(for: url)?.aspectRatio
     }
 
     private var heightCap: CGFloat {
         if isThumbnail { return .infinity }
-        guard let ratio = aspectRatio else { return landscapeMaxHeight }
+        guard let ratio = displayAspectRatio else { return landscapeMaxHeight }
         return ratio < 1 ? portraitMaxHeight : landscapeMaxHeight
     }
 
@@ -329,13 +361,17 @@ private struct FeedGIFView: View {
                     .tint(Color.havenPurple.opacity(0.6))
             }
         }
-        .aspectRatio(isThumbnail ? nil : aspectRatio, contentMode: .fit)
+        .aspectRatio(isThumbnail ? nil : displayAspectRatio, contentMode: .fit)
         .frame(maxHeight: heightCap)
+    }
+
+    private var displayAspectRatio: CGFloat? {
+        aspectRatio ?? MediaHints.shared.hint(for: url)?.aspectRatio
     }
 
     private var heightCap: CGFloat {
         if isThumbnail { return .infinity }
-        guard let ratio = aspectRatio else { return landscapeMaxHeight }
+        guard let ratio = displayAspectRatio else { return landscapeMaxHeight }
         return ratio < 1 ? portraitMaxHeight : landscapeMaxHeight
     }
 }
