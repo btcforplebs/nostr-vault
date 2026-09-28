@@ -3075,6 +3075,14 @@ class FeedService: ObservableObject {
             if let parentId = note.parentEventId {
                 parentIdsToFetch.append(parentId)
             }
+            // The thread root too: a deep reply's parent is not its root, and
+            // threaded mode heads the card with the root. Waiting to walk the
+            // chain one fetch at a time left cards on "Loading the start of
+            // this thread…" for a second each.
+            if let rootId = note.tags.first(where: { $0.count >= 4 && $0[0] == "e" && $0[3] == "root" })?[1],
+               rootId != note.parentEventId {
+                parentIdsToFetch.append(rootId)
+            }
         }
         trimSeenIdsIfNeeded()
 

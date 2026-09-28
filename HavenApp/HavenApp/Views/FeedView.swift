@@ -1318,6 +1318,13 @@ struct FeedView: View {
                 // service's caches; pulling them in keeps a conversation whole.
                 feedService.findNote(id: id)
             }
+            // Ask for every missing root now, in one batch, rather than from
+            // each card's onAppear: a fast scroll reaches cards faster than a
+            // relay round trip, so each one sat on its loading header.
+            // fetchMissingNote dedupes, so a rebuild re-asks nothing in flight.
+            for thread in feedThreads where thread.root == nil {
+                feedService.fetchMissingNote(id: thread.rootId)
+            }
         }
         threadRebuildWork = work
 
