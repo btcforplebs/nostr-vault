@@ -35,6 +35,9 @@ struct FeedThreadCard: View {
     var onQuote: ((FeedNote) -> Void)? = nil
     var onProfile: ((String) -> Void)? = nil
     var onMedia: ((URL, [URL]) -> Void)? = nil
+    /// No relay returned the root after every fetch pass; say so instead of
+    /// loading forever.
+    var rootUnavailable: Bool = false
 
     @Environment(\.feedActions) private var actions
     @EnvironmentObject private var configService: ConfigService
@@ -179,7 +182,7 @@ struct FeedThreadCard: View {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.appSystem(size: 12, weight: .semibold))
                 .foregroundColor(Color.havenPurple.opacity(0.7))
-            Text("Loading the start of this thread…")
+            Text(rootUnavailable ? "Start of this thread isn't available" : "Loading the start of this thread…")
                 .font(.appSystem(size: 12, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
             Spacer(minLength: 0)

@@ -1862,7 +1862,8 @@ struct FeedView: View {
                                     onProfile: { showingProfileKey = IdentifiableString(id: $0) },
                                     onMedia: { url, urls in
                                         showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
-                                    }
+                                    },
+                                    rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId)
                                 )
                                 .padding(.horizontal, 12)
                                 .onAppear { prefetchAhead(ofThread: thread.rootId) }
