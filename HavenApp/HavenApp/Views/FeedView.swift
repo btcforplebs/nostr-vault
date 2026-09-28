@@ -2321,6 +2321,8 @@ struct FeedNoteRow: View {
     @State private var parentFetchStartedAt: Date? = nil
     @State private var parentFetchFailed = false
     @State private var parentSkeletonShimmer = false
+    @State private var quoteFetchStarted: Set<String> = []
+    @State private var quoteFetchFailed: Set<String> = []
 
     var useCompactMode: Bool = false // Whether compact mode is active for this feed type
     var isExpanded: Bool = false // Whether this specific note is expanded
@@ -2467,6 +2469,7 @@ struct FeedNoteRow: View {
                 }
                 .buttonStyle(.plain)
                 .fixedSize(horizontal: false, vertical: true)
+                .transition(Self.arrivalTransition)
             } else if parentFetchFailed {
                 // The parent never arrived — likely not on any connected relay.
                 HStack(spacing: 10) {
@@ -2488,33 +2491,39 @@ struct FeedNoteRow: View {
                 }
                 .padding(.vertical, 6)
             } else {
-                // Skeleton while parent is being fetched
+                // Skeleton while parent is being fetched. Built from the loaded
+                // preview's own fonts, spacing and two-line limit (redacted)
+                // rather than fixed-size bars, so it already has the height of
+                // a typical text-only parent and the swap doesn't shift the row.
                 HStack(alignment: .top, spacing: 12) {
                     VStack(spacing: 0) {
                         Circle()
                             .fill(Color.platformTertiaryGroupedBackground)
-                            .frame(width: 40, height: 40)
+                            .frame(width: avatarSize, height: avatarSize)
                         Rectangle()
                             .fill(Color.havenPurple.opacity(0.3))
                             .frame(width: 2)
                             .frame(maxHeight: .infinity)
                     }
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.platformTertiaryGroupedBackground)
-                                .frame(width: 80, height: 12)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("Loading name")
+                                .font(.appSystem(size: 14, weight: .semibold, design: .default))
+                                .lineLimit(1)
                             Spacer()
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.platformTertiaryGroupedBackground)
-                                .frame(width: 40, height: 10)
+                            Text("00m")
+                                .font(.appSystem(size: 11, weight: .regular, design: .monospaced))
                         }
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.platformTertiaryGroupedBackground)
-                            .frame(width: 180, height: 12)
+                        .padding(.top, 4)
+                        Text("Loading the original note so it can be shown above this reply")
+                            .font(.appSystem(size: 14, weight: .regular))
+                            .lineLimit(2)
                     }
-                    .padding(.top, 4)
+                    .redacted(reason: .placeholder)
+                    .foregroundColor(Color.platformTertiaryGroupedBackground)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Loading original note")
                 .fixedSize(horizontal: false, vertical: true)
                 .opacity(parentSkeletonShimmer ? 0.5 : 1.0)
                 .animation(Motion.shimmer, value: parentSkeletonShimmer)
@@ -2747,11 +2756,17 @@ struct FeedNoteRow: View {
                             QuotedNoteView(note: quotedNote)
                         }
                         .buttonStyle(.plain)
+                        .transition(Self.arrivalTransition)
+                    } else if quoteFetchFailed.contains(quoteId) {
+                        Text("Quoted note unavailable")
+                            .font(.appSystem(size: 12, weight: .regular))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        Color.clear
-                            .frame(height: 0)
+                        QuotedNoteSkeleton()
                             .onAppear {
                                 actions.fetchMissingNote(quoteId)
+                                scheduleQuoteFetchTimeout(quoteId)
                             }
                     }
                 }
@@ -3158,6 +3173,24 @@ struct FeedNoteRow: View {
     /// before `else if parentFetchFailed` — a parent that loaded in the
     /// meantime renders regardless of this flag. Do not reorder those branches
     /// without giving this timeout a live way to observe the current note.
+    /// A parent or quoted note replacing its skeleton: the swap itself is
+    /// instant (a removal transition would keep the skeleton in the stack
+    /// while the note fades in, briefly doubling the height), and only the
+    /// arriving note fades.
+    private static var arrivalTransition: AnyTransition {
+        .asymmetric(insertion: .opacity.animation(Motion.media), removal: .identity)
+    }
+
+    /// Same budget as the parent fetch; collapses a quote that never arrives
+    /// to one line instead of shimmering forever.
+    private func scheduleQuoteFetchTimeout(_ id: String) {
+        guard !quoteFetchStarted.contains(id) else { return }
+        quoteFetchStarted.insert(id)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) {
+            quoteFetchFailed.insert(id)
+        }
+    }
+
     private func scheduleParentFetchTimeout(_ id: String) {
         guard parentFetchStartedAt == nil else { return }
         parentFetchStartedAt = Date()
@@ -3377,6 +3410,48 @@ struct AvatarView: View {
         AvatarImageCache.shared.load(url: url) { img in
             if let img = img { image = img }
         }
+    }
+}
+
+// MARK: - Quoted Note Skeleton
+
+/// Placeholder for a quote whose note hasn't arrived. Mirrors `QuotedNoteView`'s
+/// header and a two-line body (redacted) so the card holds roughly its final
+/// height instead of growing out of nothing.
+private struct QuotedNoteSkeleton: View {
+    @State private var shimmer = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color.platformSecondaryGroupedBackground)
+                    .frame(width: 18, height: 18)
+                Text("Loading name")
+                    .font(.appSystem(size: 12, weight: .semibold))
+                Spacer()
+                Text("00m")
+                    .font(.appSystem(size: 10, weight: .regular, design: .monospaced))
+            }
+            Text("Loading the quoted note so its text can be shown here")
+                .font(.appSystem(size: 13, weight: .regular))
+                .lineLimit(2)
+        }
+        .redacted(reason: .placeholder)
+        .foregroundColor(Color.platformSecondaryGroupedBackground)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.platformTertiaryGroupedBackground)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.borderStrong, lineWidth: 1)
+        )
+        .opacity(shimmer ? 0.5 : 1.0)
+        .animation(Motion.shimmer, value: shimmer)
+        .onAppear { if Motion.shimmer != nil { shimmer = true } }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading quoted note")
     }
 }
 
