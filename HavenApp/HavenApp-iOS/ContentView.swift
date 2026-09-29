@@ -318,6 +318,7 @@ struct iPadSidebarView: View {
         }
         .overlay(alignment: .top) {
             VStack(spacing: 6) {
+                SignerApprovalBanner()
                 PostActionNotificationBanner()
                 ZapNotificationBanner()
                 FollowNotificationBanner()
@@ -445,6 +446,7 @@ struct iPhoneTabView: View {
         }
         .overlay(alignment: .top) {
             VStack(spacing: 6) {
+                SignerApprovalBanner()
                 PostActionNotificationBanner()
                 ZapNotificationBanner()
                 FollowNotificationBanner()

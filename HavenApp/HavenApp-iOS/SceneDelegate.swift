@@ -108,10 +108,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
-        // Reconnect NIP-46 remote signer if configured
-        if ConfigService.shared.config.activeSigningMode() == "nip46" {
-            NIP46Service.shared.connectFromConfig()
-        }
+        // Check the NIP-46 signer session survived the suspension; reconnect
+        // only if it no longer answers.
+        NIP46Service.shared.resumeAfterForeground()
 
         // Reconnect immediately — REQs go out from each socket's .connected
         // event, so a fixed "settle" delay only adds latency. The relay is
@@ -171,10 +170,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
-        // Disconnect NIP-46 remote signer to free resources while backgrounded
-        if ConfigService.shared.config.activeSigningMode() == "nip46" {
-            NIP46Service.shared.disconnect()
-        }
+        // The NIP-46 signer session is deliberately kept: approving a request
+        // means switching to the signer app, and disconnecting here killed the
+        // request the moment the user left to approve it. Outstanding requests
+        // hold a background task (NIP46Service.signerRequest).
 
         // Persist the current feed to disk so the next cold launch can restore
         // it instantly. Must run before pauseFeed() while notes are still in

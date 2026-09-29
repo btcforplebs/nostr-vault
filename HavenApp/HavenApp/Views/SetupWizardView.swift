@@ -1415,6 +1415,18 @@ private struct IdentityStepView: View {
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 } else {
                     VStack(spacing: 12) {
+                        if !bunkerConnected {
+                            SignInWithClaveView { request, signerPubkey in
+                                try await signInWithClave(request, signerPubkey: signerPubkey)
+                            }
+                            .tint(WizardColors.accentPrimary)
+
+                            Text("Or paste a bunker link from any signer app")
+                                .font(.appSystem(size: 12))
+                                .foregroundColor(WizardColors.textMuted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
                         WizardInputField(
                             label: String(localized: "setup.identity.label.bunker"),
                             text: $bunkerURI,
@@ -1465,6 +1477,12 @@ private struct IdentityStepView: View {
                                     .controlSize(.small)
                                     .tint(WizardColors.accentPrimary)
                             }
+                        }
+
+                        if isConnectingBunker {
+                            Text("Approve the connection in your signer app")
+                                .font(.appSystem(size: 12, weight: .regular))
+                                .foregroundColor(WizardColors.textSecondary)
                         }
                     }
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -1686,8 +1704,8 @@ private struct IdentityStepView: View {
                 ConfigService.shared.config.signingMode = "nip46"
                 ConfigService.shared.save()
 
-                try await NIP46Service.shared.connect()
-                let pubkey = try await NIP46Service.shared.getPublicKey()
+                // No account exists yet during setup: the signer's key becomes it.
+                let pubkey = try await NIP46Service.shared.connect(adoptSignerAccount: true)
 
                 if let pubData = Bech32.hexToData(pubkey),
                    let generatedNpub = Bech32.encode(hrp: "npub", data: pubData) {
@@ -1701,6 +1719,35 @@ private struct IdentityStepView: View {
                 isConnectingBunker = false
                 ConfigService.shared.config.signingMode = "local"
             }
+        }
+    }
+
+    /// Finishes a "Sign in with Clave" pairing: store it the way a pasted
+    /// bunker link is stored, then connect, adopting the signer's key as the
+    /// new account.
+    private func signInWithClave(_ request: NIP46Service.NostrConnectRequest, signerPubkey: String) async throws {
+        let uri = NIP46Service.bunkerURI(signerPubkey: signerPubkey, relays: request.relays)
+        let config = ConfigService.shared
+        config.config.nip46SignerPubkey = signerPubkey
+        config.config.nip46RelayURL = request.relays.first ?? ""
+        config.config.nip46Secret = ""
+        config.config.nip46BunkerURI = uri
+        config.config.nip46ClientSecretKey = request.clientSecretKey
+        config.config.nip46ClientPubkey = request.clientPubkey
+        config.config.signingMode = "nip46"
+        config.save()
+        do {
+            let pubkey = try await NIP46Service.shared.connect(adoptSignerAccount: true)
+            if let pubData = Bech32.hexToData(pubkey),
+               let signerNpub = Bech32.encode(hrp: "npub", data: pubData) {
+                npub = signerNpub
+            }
+            bunkerURI = uri
+            bunkerConnected = true
+            bunkerError = nil
+        } catch {
+            config.config.signingMode = "local"
+            throw error
         }
     }
 
