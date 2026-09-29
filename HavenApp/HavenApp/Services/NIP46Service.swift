@@ -58,6 +58,8 @@ class NIP46Service: ObservableObject {
     /// "Approve in your signer" banner.
     @Published private(set) var awaitingApproval: String?
     private var outstandingRequests = 0
+    /// Outstanding requests that may show the banner (user actions only).
+    private var bannerRequests = 0
 
     private var reconnectAttempts = 0
     private let maxReconnectAttempts = 10
@@ -327,7 +329,8 @@ class NIP46Service: ObservableObject {
     func signEvent(eventJSON: String) async throws -> String {
         print("NIP46Service: signEvent called, connectionState=\(connectionState.rawValue)")
         try await ensureConnected()
-        return try await signerRequest("Approve signing in your signer") {
+        let label = Self.approvalLabel(forEventJSON: eventJSON)
+        return try await signerRequest(label) {
             try await self.callGo { NIP46SignEventC(
                 UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
             )}
@@ -347,7 +350,7 @@ class NIP46Service: ObservableObject {
 
     func nip04Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest("Encrypting a message with your signer") {
+        return try await signerRequest(nil) {
             try await self.callGo { NIP46NIP04EncryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
@@ -357,7 +360,7 @@ class NIP46Service: ObservableObject {
 
     func nip04Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest("Decrypting messages with your signer") {
+        return try await signerRequest(nil) {
             try await self.callGo { NIP46NIP04DecryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
@@ -367,7 +370,7 @@ class NIP46Service: ObservableObject {
 
     func nip44Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest("Encrypting a message with your signer") {
+        return try await signerRequest(nil) {
             try await self.callGo { NIP46NIP44EncryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
@@ -377,7 +380,7 @@ class NIP46Service: ObservableObject {
 
     func nip44Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest("Decrypting messages with your signer") {
+        return try await signerRequest(nil) {
             try await self.callGo { NIP46NIP44DecryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
@@ -457,8 +460,27 @@ class NIP46Service: ObservableObject {
     /// while it is outstanding (so switching to the signer to approve doesn't
     /// kill it), and after a short grace raises the "Approve in your signer"
     /// banner — a request the signer auto-approves never shows it.
-    private func signerRequest<T>(_ label: String, _ body: @escaping () async throws -> T) async throws -> T {
+    /// Kinds a person signs by doing something (posting, reacting, following,
+    /// sending a DM — kind 13 is the DM seal). Everything else the app signs on
+    /// its own — relay AUTH (22242), Blossom and HTTP auth (24242, 27235),
+    /// list syncs — and must never put up the approval banner: those run all
+    /// the time, and a banner that is always up means nothing.
+    private static let userActionKinds: Set<Int> = [0, 1, 3, 5, 6, 7, 9, 13, 16, 20, 21, 22, 1111, 1984, 9734, 30023]
+
+    private nonisolated static func approvalLabel(forEventJSON json: String) -> String? {
+        struct KindOnly: Decodable { let kind: Int }
+        guard let data = json.data(using: .utf8),
+              let kind = try? JSONDecoder().decode(KindOnly.self, from: data).kind,
+              userActionKinds.contains(kind) else { return nil }
+        return kind == 13 ? "Approve sending your message" : "Approve in your signer"
+    }
+
+    /// - Parameter label: banner text if this request waits on the person, or
+    ///   nil for background work (decrypting the DM backlog, relay AUTH), which
+    ///   never shows the banner however long the signer takes.
+    private func signerRequest<T>(_ label: String?, _ body: @escaping () async throws -> T) async throws -> T {
         outstandingRequests += 1
+        if label != nil { bannerRequests += 1 }
         #if os(iOS)
         var bgTask: UIBackgroundTaskIdentifier = .invalid
         bgTask = UIApplication.shared.beginBackgroundTask(withName: "NIP46Request") {
@@ -469,13 +491,15 @@ class NIP46Service: ObservableObject {
         }
         #endif
         let banner = Task { @MainActor in
+            guard let label else { return }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             if !Task.isCancelled { self.awaitingApproval = label }
         }
         defer {
             banner.cancel()
             outstandingRequests -= 1
-            if outstandingRequests == 0 { awaitingApproval = nil }
+            if label != nil { bannerRequests -= 1 }
+            if bannerRequests == 0 { awaitingApproval = nil }
             #if os(iOS)
             if bgTask != .invalid {
                 UIApplication.shared.endBackgroundTask(bgTask)
