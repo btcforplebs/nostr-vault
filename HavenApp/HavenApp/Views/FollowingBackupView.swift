@@ -112,9 +112,7 @@ struct FollowingBackupSettingsView: View {
                 }
                 .disabled(isQuerying)
             } header: {
-                Text("Recover Following List")
-            } footer: {
-                Text("Queries your local relay and external relays for all historical contact list events. Select one to view or restore.")
+                Text("Recover Following List").settingInfo(.accountFollowingBackup)
             }
 
             if !backupService.snapshots.isEmpty {
