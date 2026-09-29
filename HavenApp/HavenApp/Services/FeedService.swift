@@ -476,6 +476,22 @@ class FeedService: ObservableObject {
     private var fetchingNoteTimestamps: [String: Date] = [:] // Tracks when each fetch was started for retry
     private var noteFetchQueue  = Set<String>()
     private var noteFetchTimer: Timer?
+    /// Where an e-tag says the referenced event lives (the NIP-10 relay hint).
+    /// A root by someone outside your relays is often only there.
+    private var noteRelayHints: [String: URL] = [:]
+    /// Who wrote a referenced note, when the reference says: the e-tag's
+    /// NIP-10 pubkey slot, or the reply's p-tag. Their NIP-65 write relays
+    /// are where the note actually lives (outbox model).
+    private var noteAuthorHints: [String: String] = [:]
+    /// Fetch passes each referenced id has had with no answer.
+    private var noteFetchPasses: [String: Int] = [:]
+    /// Referenced notes no relay returned after every pass. Thread cards show
+    /// "unavailable" for these instead of loading forever.
+    @Published private(set) var unavailableNoteIds = Set<String>()
+
+    /// Asked on the second pass only, for references neither your relays nor
+    /// the author's carry.
+    private static let fallbackNoteRelays = ["wss://relay.damus.io", "wss://relay.primal.net", "wss://nos.lol"]
 
     // Profile saving
     private var profileSaveTimer: Timer?
@@ -661,6 +677,8 @@ class FeedService: ObservableObject {
         noteFetchQueue.removeAll()
         noteFetchTimer?.invalidate()
         noteFetchTimer = nil
+        noteFetchPasses.removeAll()
+        unavailableNoteIds.removeAll()
         noteStats.removeAll()
         popularNoteScores.removeAll()
         isLoadingPopular = false
@@ -1160,6 +1178,8 @@ class FeedService: ObservableObject {
         noteFetchQueue.removeAll()
         noteFetchTimer?.invalidate()
         noteFetchTimer = nil
+        noteFetchPasses.removeAll()
+        unavailableNoteIds.removeAll()
         noteStats.removeAll()
         popularNoteScores.removeAll()
         newNoteCount = 0
@@ -1686,6 +1706,11 @@ class FeedService: ObservableObject {
     /// `force` bypasses that throttle, for a user-initiated Retry tap.
     func fetchMissingNote(id: String, force: Bool = false) {
         guard findNote(id: id) == nil else { return }
+        if unavailableNoteIds.contains(id) {
+            guard force else { return }
+            unavailableNoteIds.remove(id)
+            noteFetchPasses[id] = nil
+        }
         if fetchingNoteIds.contains(id) {
             // Allow retry if the previous attempt was more than 30s ago
             if !force, let ts = fetchingNoteTimestamps[id], Date().timeIntervalSince(ts) < 30 {
@@ -3061,6 +3086,7 @@ class FeedService: ObservableObject {
     private func applySnapshot(_ snap: BackgroundAccumulator.Snapshot) {
         var added = false
         var parentIdsToFetch: [String] = []
+        var referencedAuthors = Set<String>()
         for note in snap.notes {
             guard !seenIds.contains(note.id) else { continue }
             seenIds.insert(note.id)
@@ -3075,9 +3101,39 @@ class FeedService: ObservableObject {
             if let parentId = note.parentEventId {
                 parentIdsToFetch.append(parentId)
             }
+            if noteRelayHints.count > 5000 { noteRelayHints.removeAll() }
+            if noteAuthorHints.count > 5000 { noteAuthorHints.removeAll() }
+            for tag in note.tags where tag.count >= 2 && tag[0] == "e" {
+                if tag.count >= 3, tag[2].hasPrefix("wss://") {
+                    noteRelayHints[tag[1]] = URL(string: tag[2])
+                }
+                if tag.count >= 5, tag[4].count == 64 {
+                    noteAuthorHints[tag[1]] = tag[4]
+                }
+            }
+            // Older clients leave the e-tag pubkey slot empty; the direct
+            // parent's author is then the reply's p-tag.
+            if let parentId = note.parentEventId, noteAuthorHints[parentId] == nil,
+               let replyTo = note.replyToPubkey {
+                noteAuthorHints[parentId] = replyTo
+            }
+            for tag in note.tags where tag.count >= 2 && tag[0] == "e" {
+                if let author = noteAuthorHints[tag[1]] { referencedAuthors.insert(author) }
+            }
+            // The thread root too: a deep reply's parent is not its root, and
+            // threaded mode heads the card with the root. Waiting to walk the
+            // chain one fetch at a time left cards on "Loading the start of
+            // this thread…" for a second each.
+            if let rootId = note.tags.first(where: { $0.count >= 4 && $0[0] == "e" && $0[3] == "root" })?[1],
+               rootId != note.parentEventId {
+                parentIdsToFetch.append(rootId)
+            }
         }
         trimSeenIdsIfNeeded()
 
+        // Load the referenced authors' relay lists before the fetch flushes,
+        // so its first pass can already ask their own relays.
+        requestRelayLists(for: referencedAuthors)
         for parentId in parentIdsToFetch {
             fetchMissingNote(id: parentId)
         }
@@ -3265,12 +3321,61 @@ class FeedService: ObservableObject {
             candidates.append(local)
         }
         candidates.append(contentsOf: externalRelayURLs)
+        // Every relay the feed is already connected to (outbox relays of the
+        // people you follow included): free to ask, and it's where replies
+        // you can see came from.
+        candidates.append(contentsOf: feedClients
+            .filter { $0.value.connectionState == .connected }
+            .compactMap { URL(string: $0.key) })
+        var seenRelays = Set<String>()
+        candidates = candidates.filter { seenRelays.insert(Self.normalizeRelayKey($0.absoluteString) ?? $0.absoluteString).inserted }
 
         #if DEBUG
         print("FeedService: Fetching \(ids.count) missing notes for threading")
         #endif
 
-        for url in candidates {
+        var requests: [(URL, [String])] = candidates.map { ($0, ids) }
+
+        // Relay hints, and on a second pass the fallback relays: each asked
+        // only for the ids that need it. Capped so one flush can't open a
+        // dozen sockets.
+        var extra: [String: (URL, [String])] = [:]
+        var authorsWithoutRelayList = Set<String>()
+        for id in ids {
+            var urls: [URL] = []
+            if let hint = noteRelayHints[id] { urls.append(hint) }
+            if let author = noteAuthorHints[id] {
+                if let outbox = NostrService.shared.outboxRelays[author] {
+                    urls.append(contentsOf: outbox.prefix(3).compactMap { URL(string: $0) })
+                } else {
+                    authorsWithoutRelayList.insert(author)
+                }
+            }
+            if (noteFetchPasses[id] ?? 0) >= 1 {
+                urls.append(contentsOf: Self.fallbackNoteRelays.compactMap { URL(string: $0) })
+            }
+            for url in urls {
+                let key = Self.normalizeRelayKey(url.absoluteString) ?? url.absoluteString
+                guard !seenRelays.contains(key) else { continue }
+                if extra[key] == nil {
+                    guard extra.count < 12 else { continue }
+                    extra[key] = (url, [])
+                }
+                extra[key]?.1.append(id)
+            }
+        }
+        requests.append(contentsOf: extra.values)
+        // Unknown relay list: fetch it now so the retry pass can ask the
+        // author's own relays.
+        requestRelayLists(for: authorsWithoutRelayList)
+
+        // Check back once the relays have had time to answer: re-ask what's
+        // still missing (now including hints and fallbacks), then give up.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+            self?.reviewNoteFetch(ids)
+        }
+
+        for (url, ids) in requests {
             let subId = "tfetch-\(UUID().uuidString.prefix(6))"
             let filter: [String: Any] = ["ids": ids]
             let req = ["REQ", subId, filter] as [Any]
@@ -3315,7 +3420,7 @@ class FeedService: ObservableObject {
                 .sink { state in
                     if state == .connected {
                         c.send(text: reqStr)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
                             c.disconnect()
                         }
                     }
@@ -3324,6 +3429,43 @@ class FeedService: ObservableObject {
 
             c.connect(url: url)
         }
+    }
+
+    /// Authors whose relay list was already requested, so each is asked once.
+    private var relayListRequested = Set<String>()
+
+    /// Batched NIP-65 lookup for authors with no known write relays. Goes
+    /// through the profile fetch (one REQ covering kind 0 and 10002 for all of
+    /// them) rather than `fetchRelayList`, which opens sockets per author.
+    private func requestRelayLists(for authors: Set<String>) {
+        if relayListRequested.count > 5000 { relayListRequested.removeAll() }
+        let needed = authors.filter {
+            NostrService.shared.outboxRelays[$0] == nil && relayListRequested.insert($0).inserted
+        }
+        guard !needed.isEmpty else { return }
+        NostrService.shared.fetchMissingProfiles(for: Array(needed), force: true)
+    }
+
+    /// Second look at a fetch pass: anything still missing gets one more pass
+    /// (which adds the fallback relays), then is marked unavailable so its
+    /// card stops saying "Loading".
+    private func reviewNoteFetch(_ ids: [String]) {
+        var retry: [String] = []
+        var givenUp = Set<String>()
+        for id in ids where findNote(id: id) == nil && fetchingNoteIds.contains(id) {
+            let passes = (noteFetchPasses[id] ?? 0) + 1
+            noteFetchPasses[id] = passes
+            if passes >= 2 {
+                givenUp.insert(id)
+                fetchingNoteIds.remove(id)
+            } else {
+                retry.append(id)
+            }
+        }
+        if !givenUp.isEmpty { unavailableNoteIds.formUnion(givenUp) }
+        guard !retry.isEmpty else { return }
+        noteFetchQueue.formUnion(retry)
+        scheduleNoteFetchFlush()
     }
 
     /// Fast-path handler for parent note fetches — inserts directly into notes on the main
@@ -3355,7 +3497,9 @@ class FeedService: ObservableObject {
             kind: kind
         )
 
-        guard !FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) else { return }
+        // No spam filter here: this note was fetched because something in the
+        // feed references it. Dropping it didn't hide it, it left the replying
+        // card on "Loading the start of this thread…" forever.
 
         // Cache raw event JSON for NIP-18 repost embedding
         if kind == 1 || kind == 30023 {
@@ -3365,6 +3509,8 @@ class FeedService: ObservableObject {
             }
         }
 
+        if unavailableNoteIds.contains(id) { unavailableNoteIds.remove(id) }
+        noteFetchPasses[id] = nil
         fetchingNoteIds.remove(id)
         fetchingNoteTimestamps.removeValue(forKey: id)
         parentNotesCache[id] = note
