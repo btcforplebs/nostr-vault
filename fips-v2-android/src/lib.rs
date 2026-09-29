@@ -68,6 +68,11 @@ struct Running {
 
 static STATE: Mutex<Option<Running>> = Mutex::new(None);
 
+/// How long an offer stays valid and how long we wait for its answer. Upstream
+/// defaults to 120 s, which is also how long a missed offer stalls a connect
+/// (the glare path drops the peer's offer while ours goes unanswered).
+const SIGNAL_TTL_SECS: u64 = 30;
+
 pub const ERR_CONFIG: i32 = -1;
 pub const ERR_UNSUPPORTED: i32 = -2;
 pub const ERR_NOT_RUNNING: i32 = -3;
@@ -101,6 +106,7 @@ fn config_yaml(nsec: &str, opts: &StartOptions) -> Zeroizing<String> {
       advertise: true
       policy: configured_only
       share_local_candidates: {lan}
+      signal_ttl_secs: {SIGNAL_TTL_SECS}
 {relays}dns:
   enabled: false
 transports:
@@ -382,6 +388,7 @@ mod tests {
             let yaml = config_yaml(&nsec, &opts);
             let cfg: Config = serde_yaml::from_str(&yaml).expect("parses");
             assert!(!cfg.node.control.enabled);
+            assert_eq!(cfg.node.rendezvous.nostr.signal_ttl_secs, SIGNAL_TTL_SECS);
             assert_eq!(cfg.peers.len(), opts.peers.len());
         }
     }
