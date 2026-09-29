@@ -1,3 +1,13 @@
+# NostrVault v2.7.1 (Build 16) Release Notes
+
+A same-day follow-up to 2.7.0. On Android this build carries one fix: a quoted post no longer masquerades as a reply.
+
+## Bug Fixes
+
+*   **A Quote Is Not a Reply**: A post that quoted another was treated as a reply to it, so it sat under "Start of this thread isn't available" in the threaded feed, or above an empty "Could not load original note" box. Quotes are now drawn as quotes.
+
+---
+
 # NostrVault v2.7.0 (Build 15) Release Notes
 
 A new look and a lot of new surface. The filing-cabinet icon is gone — the app now wears the lit arch in Sunset Orange, as a proper adaptive icon and as the silhouette you see in your notification shade. Behind it the app has a real visual system for the first time: one elevation ramp, named colours instead of hardcoded ones, and animations that honour Reduce Motion. This release also adds home-screen widgets, Reels, long-form Articles, a Recipes feed, Live streams with chat and zapping, and a search that asks everywhere at once. Your chosen signer is now used for everything you sign, and the Global feed no longer shows the raw firehose to brand-new accounts.

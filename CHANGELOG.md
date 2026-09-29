@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1 (16) — macOS / iOS / Android] - 2026-09-29
+
+> **Same-day follow-up.** Clave and other NIP-46 remote signers survive the switch away to approve, gain a one-tap "Sign in with Clave", a quote is no longer mistaken for a reply, and the composer's relay picker matches the Media tab.
+
+### Added
+- **Sign in With Clave (iOS/macOS)**: Settings › Connect Remote Signer and the setup page open Clave over its Universal Link with a `nostrconnect://` request and return through `nostrvault://`; the Mac shows a QR code instead. The answer must echo the request's secret, and the wait window starts at the request so an answer delivered while the app was suspended is still accepted. (#90)
+
+### Fixed
+- **NIP-46 Sessions Died in the Background (iOS/macOS)**: The signer session was torn down whenever the app was backgrounded, so every request died the moment the user switched to the signer to approve it. The session now stays up, each outstanding request holds a background task, foreground pings and reconnects only when the signer stopped answering and never over an in-flight request. Errors are reported (`NIP46LastErrorC`: declined / timed out / relay unreachable), `connect` sends perms plus client metadata so Clave names the connection, fresh-install bunker sign-in no longer fails with "different account", and the approval banner shows only for user-initiated actions. (#90)
+- **A Quote Is Not a Reply (all platforms)**: `parentEventId` took the last `e` tag regardless of NIP-10 marker, so a `mention` tag became the parent. One shared rule now: `reply` marker, else `root`, else last unmarked tag; `mention` is never a parent. (#89)
+- **Composer Relay Picker Parity (iOS/macOS)**: The relay photo picker uses the Media tab's type filter, sort menu and date headings, shares its stored settings, dates blobs by the publishing note, and a pick attaches as a thumbnail with ALT and publishes the existing URL + imeta with no re-upload. (#88)
+
 ## [2.7.0 (15) — macOS / iOS / Android] - 2026-09-29
 
 > **A new mark, and a surface to put it on.** The filing cabinet is gone: every platform now wears the lit arch in Sunset Orange, down to the Android notification silhouette and the icons in the relay's own web pages. Behind it, the app finally has a visual system — an elevation ramp where there was none, semantic colour tokens instead of hardcoded values, and one motion vocabulary that honours Reduce Motion everywhere. On top of that: home-screen widgets, a real two-column iPad layout, a Global search that fans out to every source at once, and four new feeds — Reels, Articles, Recipes and Live streams with chat and zaps. A biometric bypass that could reveal your signing key without authentication is fixed, and the Global feed no longer fails open to the raw firehose.

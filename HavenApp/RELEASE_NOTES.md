@@ -1,3 +1,16 @@
+# Nostr Vault v2.7.1 Build 16 (macOS / iOS) Release Notes
+
+A same-day follow-up to 2.7.0 with three fixes from the first hours of use. Clave (and any NIP-46 remote signer) now works properly: the connection survives switching away to approve, and there is a one-tap "Sign in with Clave" button. A quoted post no longer masquerades as a reply, and the composer's relay photo picker is organised like the Media tab and shows what you picked.
+
+## Bug Fixes
+
+*   **Remote Signer Requests Died When You Switched Apps**: The signer session was dropped every time the app went to the background, so a request died the moment you opened Clave to approve it. The session now stays up while you approve, reconnects only if the signer stopped answering, and says what went wrong (declined, timed out, relay unreachable) instead of hanging. Signing in with a bunker string on a fresh install no longer fails with "different account", and the "approve in your signer" bar shows only for things you did, never for background decrypting.
+*   **Sign in With Clave**: Settings › Connect Remote Signer and the setup page have a one-tap button that opens Clave, has you approve, and brings you back connected. On the Mac it shows a QR code to scan with Clave on your phone.
+*   **A Quote Is Not a Reply**: A post that quoted another was treated as a reply to it, so it sat under "Start of this thread isn't available" in the threaded feed, or above an empty "Could not load original note" box. Quotes are now drawn as quotes.
+*   **The Composer's Relay Picker**: It now has the Media tab's Photo/Video/GIF buttons, sort menu and date headings, and shares the tab's settings. Picking a photo adds it to the attachment strip as a thumbnail instead of pasting a link.
+
+---
+
 # Nostr Vault v2.7.0 Build 15 (macOS / iOS) Release Notes
 
 A new look and a lot of new surface. The filing-cabinet icon is gone — every platform now wears the lit arch in Sunset Orange, and behind it the app has a real visual system for the first time: consistent elevation, semantic colours, and one set of animations that honours Reduce Motion. This release also brings home-screen widgets, a proper two-column iPad layout, a search that asks everywhere at once, and four new feeds: Reels, Articles, Recipes, and Live streams with chat and zaps. Three things that were quietly unsafe are fixed — revealing your private key could skip authentication entirely, a remote signer could publish under the wrong account, and the Global feed showed the raw firehose to brand-new accounts.
