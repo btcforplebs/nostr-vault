@@ -92,7 +92,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         // Kind 6 reposts have e-tags but are not replies
         self.isReply = kind != 6 && !nonMentionETags.isEmpty
         self.replyToPubkey = kind != 6 ? resolvedTags.first { $0.count >= 2 && $0[0] == "p" }?[1] : nil
-        self.parentEventId = kind != 6 ? resolvedTags.last { $0.count >= 2 && $0[0] == "e" }?[1] : nil
+        self.parentEventId = kind != 6 ? NIP10Thread.parentEventId(tags: resolvedTags) : nil
 
         self.repostedEventId = outerRepostedEventId
 

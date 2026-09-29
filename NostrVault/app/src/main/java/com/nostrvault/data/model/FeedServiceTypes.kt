@@ -233,7 +233,7 @@ data class FeedNote(
                 resolvedTags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
             } else null
             val parentEventId = if (kind != 6) {
-                resolvedTags.lastOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                NIP10Thread.parentEventId(resolvedTags)
             } else null
 
             // Parse media URLs from content + imeta tags

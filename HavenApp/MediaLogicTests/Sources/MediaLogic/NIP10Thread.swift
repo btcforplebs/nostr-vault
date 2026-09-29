@@ -1,0 +1,1 @@
+../../../HavenApp/Models/NIP10Thread.swift
