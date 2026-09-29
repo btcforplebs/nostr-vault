@@ -1,0 +1,33 @@
+[package]
+name = "fips-v2-android"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# JNI library for the Android app: upstream FIPS embedded in-process with an
+# app-owned TUN, and fips-v2's smoltcp stack (included by path, not copied).
+[lib]
+name = "nvfips"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fips = { git = "https://github.com/jmcorgan/fips", tag = "v0.5.2" }
+smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+zeroize = "1"
+socket2 = "0.6"
+jni = "0.21"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+tracing-android = "0.2"
+
+[profile.release]
+lto = "thin"
+strip = true
