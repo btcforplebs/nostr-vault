@@ -1476,6 +1476,56 @@ func NIP46PingC() C.int {
 	return 0
 }
 
+// NIP46AwaitNostrConnectC listens for a signer's answer to a nostrconnect://
+// pairing request (see nostrConnectAck) and returns the signer's hex pubkey,
+// or nil if none arrived within waitSeconds.
+//
+// since is when the request was shown. Asking from then on — rather than
+// "new events only" — lets a relay that keeps kind 24133 (Clave's
+// relay.powr.build does) replay an answer sent while this app was suspended
+// in the background, which is exactly when the user is approving in Clave.
+// The app calls this in short rounds so it can stop between them.
+//
+//export NIP46AwaitNostrConnectC
+func NIP46AwaitNostrConnectC(clientSK *C.char, relaysJSON *C.char, secret *C.char, since C.longlong, waitSeconds C.int) *C.char {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("NIP46AwaitNostrConnectC: recovered from panic: %v", r)
+		}
+	}()
+
+	sk := C.GoString(clientSK)
+	sec := C.GoString(secret)
+	var relays []string
+	if err := json.Unmarshal([]byte(C.GoString(relaysJSON)), &relays); err != nil || len(relays) == 0 {
+		nip46LastError.Store("error:no relays for nostrconnect")
+		return nil
+	}
+	clientPK, err := nostr.GetPublicKey(sk)
+	if err != nil {
+		nip46LastError.Store("error:invalid client key")
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(waitSeconds)*time.Second)
+	defer cancel()
+	pool := nostr.NewSimplePool(ctx)
+	from := nostr.Timestamp(since)
+	events := pool.SubscribeMany(ctx, relays, nostr.Filter{
+		Kinds: []int{nostr.KindNostrConnect},
+		Tags:  nostr.TagMap{"p": []string{clientPK}},
+		Since: &from,
+	})
+	for ie := range events {
+		if pk, ok := nostrConnectAck(ie.Event, sk, clientPK, sec); ok {
+			log.Printf("NIP-46: nostrconnect answered by %s", pk[:8])
+			return C.CString(pk)
+		}
+	}
+	nip46LastError.Store("timeout")
+	return nil
+}
+
 //export NIP46GetPendingAuthURLC
 func NIP46GetPendingAuthURLC() *C.char {
 	val := nip46PendingAuthURL.Load()

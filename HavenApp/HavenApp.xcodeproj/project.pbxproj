@@ -354,6 +354,7 @@
 		D39D530FAF14B1784E25FE34 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E7F41B7A5FACA30EA7AE9015 /* Localizable.xcstrings */; };
 		D3ED7A3CC129E99735F99CB6 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 848045286D78E78658D43BE3 /* MenuBarView.swift */; };
 		D4B365B7F713A9A69966A8F5 /* Juntos.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = B16BA3C0FD98FA86CA181B2C /* Juntos.mp3 */; };
+		D4CBD50DD844C82D618664BA /* SignInWithClaveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BD3B4068A03F5AF468D320 /* SignInWithClaveView.swift */; };
 		D4FEBF02D25AA17670907C36 /* DMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775FD3A0FC8C2289FB4BBFE3 /* DMService.swift */; };
 		D55C2F09C6C9E056CAFEC4C1 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A271B5E3364858651DC05603 /* SettingsView.swift */; };
 		D5B6B2758E4DB429EDC4A717 /* FollowingSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE4FF1BF35D7CF7BEF59AD4 /* FollowingSnapshot.swift */; };
@@ -413,6 +414,7 @@
 		F11DF1086DA8F6B030403814 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
 		F21AC6DF7BE3739513710028 /* GlobalSearchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 671F0CF1A73CA1BA693AE904 /* GlobalSearchSession.swift */; };
 		F22FA656E63FA88BF7E97461 /* CachedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E04A276931F29CD944A3474 /* CachedAsyncImage.swift */; };
+		F34E2131558134F8708AB50E /* SignInWithClaveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BD3B4068A03F5AF468D320 /* SignInWithClaveView.swift */; };
 		F48C4A72B9BB0E5A9A151D0B /* GroupCreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB855E7379DA2448EE2AAE1 /* GroupCreateView.swift */; };
 		F54A606BD7416C56D334ADD5 /* SleepWakeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B403C7767568BFB3E44E0CE /* SleepWakeMonitor.swift */; };
 		F5C34D13E951219A71472A03 /* VideoPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */; };
@@ -522,6 +524,7 @@
 		4E0FC14B3CEA24424481BBA3 /* MediaGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryView.swift; sourceTree = "<group>"; };
 		4E4EFE6422E6E0A896809308 /* ContactManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactManager.swift; sourceTree = "<group>"; };
 		4F1498D793BB43A6EF6996AF /* VaultNoteRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultNoteRow.swift; sourceTree = "<group>"; };
+		51BD3B4068A03F5AF468D320 /* SignInWithClaveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInWithClaveView.swift; sourceTree = "<group>"; };
 		51C29A25C6DBE37CB0202A7F /* LiveFeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFeedService.swift; sourceTree = "<group>"; };
 		51EA54117C5443C0DA93781D /* HavenApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HavenApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		528D1E62E799D477438A8E24 /* QuoteReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteReference.swift; sourceTree = "<group>"; };
@@ -1013,6 +1016,7 @@
 				F8495489F7284415840FE673 /* RetryableAsyncImage.swift */,
 				A9CCBF9ECF9001937FA713A9 /* ShareSheet.swift */,
 				2D661145C7723C64C01870CE /* SignerApprovalBanner.swift */,
+				51BD3B4068A03F5AF468D320 /* SignInWithClaveView.swift */,
 				81AB8C04FD43E0DE0F8BA520 /* SourceIndicatorView.swift */,
 				EC0AF323C6A978AA0E08E94A /* StatsCard.swift */,
 				6D0D1824D5ECD6975EAF3F98 /* VideoThumbnailView.swift */,
@@ -1465,6 +1469,7 @@
 				9A29693B7623772411B51DE7 /* SettingsView.swift in Sources */,
 				5E92A621990EB60F7D3CEA01 /* SetupWizardView.swift in Sources */,
 				72CD4E84E5ECC2F15E446436 /* ShareSheet.swift in Sources */,
+				F34E2131558134F8708AB50E /* SignInWithClaveView.swift in Sources */,
 				5D2DB8447424AFC98D5680CE /* SignerApprovalBanner.swift in Sources */,
 				F54A606BD7416C56D334ADD5 /* SleepWakeMonitor.swift in Sources */,
 				0171628A378595AE2A1C48CD /* SourceIndicatorView.swift in Sources */,
@@ -1679,6 +1684,7 @@
 				D55C2F09C6C9E056CAFEC4C1 /* SettingsView.swift in Sources */,
 				79E1E1A82F04ABF7DE2C2957 /* SetupWizardView.swift in Sources */,
 				EC05976F014D8D0EA368495B /* ShareSheet.swift in Sources */,
+				D4CBD50DD844C82D618664BA /* SignInWithClaveView.swift in Sources */,
 				2E016A87010042DE2A3A3527 /* SignerApprovalBanner.swift in Sources */,
 				DFDA2D4ADCC88506D3F07CF0 /* SleepWakeMonitor.swift in Sources */,
 				50D12D38589AF317DAA47E4E /* SourceIndicatorView.swift in Sources */,

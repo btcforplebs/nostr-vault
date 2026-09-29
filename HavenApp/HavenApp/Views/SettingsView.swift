@@ -1184,6 +1184,13 @@ struct ConnectSignerSheetView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
+                SignInWithClaveView { request, signerPubkey in
+                    try await pairWithClave(request, signerPubkey: signerPubkey)
+                }
+                .tint(Color.havenPurple)
+
+                Divider()
+
                 Text("Paste the bunker:// URI from your remote signer app to connect it to this account.")
                     .font(.appCaption)
                     .foregroundColor(.secondary)
@@ -1211,6 +1218,15 @@ struct ConnectSignerSheetView: View {
         #else
         NavigationStack {
             Form {
+                Section {
+                    SignInWithClaveView { request, signerPubkey in
+                        try await pairWithClave(request, signerPubkey: signerPubkey)
+                    }
+                    .tint(Color.havenPurple)
+                } footer: {
+                    Text("Or paste a bunker link from any signer app below.")
+                }
+
                 Section {
                     HStack(spacing: 8) {
                         TextField("bunker://...", text: $bunkerURI)
@@ -1281,6 +1297,31 @@ struct ConnectSignerSheetView: View {
             }
         }
         #endif
+    }
+
+    /// Finishes a "Sign in with Clave" pairing for this account: stored like a
+    /// pasted bunker link (with the pairing's own client key), then connected.
+    private func pairWithClave(_ request: NIP46Service.NostrConnectRequest, signerPubkey: String) async throws {
+        let bunkerConfig = AccountBunkerConfig(
+            bunkerURI: NIP46Service.bunkerURI(signerPubkey: signerPubkey, relays: request.relays),
+            signerPubkey: signerPubkey,
+            relayURL: request.relays.first ?? "",
+            secret: "",
+            clientSecretKey: request.clientSecretKey,
+            clientPubkey: request.clientPubkey
+        )
+        configService.setBunkerConfig(bunkerConfig, forNpub: npub)
+        configService.setSigningMode("nip46", forNpub: npub)
+        let activeNpub = configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub
+        do {
+            if npub == activeNpub {
+                try await NIP46Service.shared.waitForConnection()
+            }
+        } catch {
+            configService.removeBunkerConfig(forNpub: npub)
+            throw error
+        }
+        performDismiss()
     }
 
     private func connectBunker() {
