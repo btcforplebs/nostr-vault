@@ -1,0 +1,17 @@
+[package]
+name = "fipsv2-probe"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Upstream FIPS (jmcorgan). Git-only; pin a release tag, never a branch.
+[dependencies]
+fips = { git = "https://github.com/jmcorgan/fips", tag = "v0.5.2" }
+smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv6", "socket-tcp"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+anyhow = "1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
