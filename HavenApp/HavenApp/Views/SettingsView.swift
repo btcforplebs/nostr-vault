@@ -1308,10 +1308,12 @@ struct ConnectSignerSheetView: View {
                 // Set signing mode to nip46 for this account
                 configService.setSigningMode("nip46", forNpub: npub)
 
-                // If this is the active account, connect now
+                // If this is the active account, setSigningMode already started
+                // the connect: wait on that one handshake rather than starting a
+                // second that would re-send the single-use secret.
                 let activeNpub = configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub
-                if npub == activeNpub && !NIP46Service.shared.isConnected {
-                    try await NIP46Service.shared.connect()
+                if npub == activeNpub {
+                    try await NIP46Service.shared.waitForConnection()
                 }
 
                 isConnecting = false

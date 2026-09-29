@@ -121,7 +121,34 @@ var (
 	nip46Mu     sync.RWMutex
 
 	nip46PendingAuthURL atomic.Value // stores string
+
+	// nip46LastError records why the most recent NIP-46 call returned nil, so
+	// the app can tell "the signer said no" from "the signer never answered".
+	// One of "timeout", "offline", "rejected:<signer message>", "error:<detail>".
+	nip46LastError atomic.Value // stores string
 )
+
+// nip46Perms is what the app asks a signer for at connect time.
+const nip46Perms = "sign_event,nip04_encrypt,nip04_decrypt,nip44_encrypt,nip44_decrypt"
+
+// nip46ClientMetadata rides as the optional 4th connect param so a signer
+// (Clave shows it as the connection's name) knows which app is asking. It is
+// a JSON string, not an object: signers decode params as string[].
+const nip46ClientMetadata = `{"name":"Nostr Vault","url":"https://nostrvault.app","image":"https://nostrvault.app/assets/haven_icon.png"}`
+
+// recordNIP46Error stores why a NIP-46 call failed, for NIP46LastErrorC.
+func recordNIP46Error(ctx context.Context, err error) {
+	nip46LastError.Store(classifyNIP46Error(ctx, err))
+}
+
+// NIP46LastErrorC returns the classification of the most recent failed
+// NIP-46 call (see nip46LastError), or "" if none.
+//
+//export NIP46LastErrorC
+func NIP46LastErrorC() *C.char {
+	val, _ := nip46LastError.Load().(string)
+	return C.CString(val)
+}
 
 func isCShared() bool {
 	return true
@@ -1196,8 +1223,21 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	connectCtx, connectCancel := context.WithTimeout(nip46Ctx, 60*time.Second)
 	defer connectCancel()
 
-	if _, err := bunker.RPC(connectCtx, "connect", []string{targetPubkey, secret}); err != nil {
+	nip46LastError.Store("")
+	result, err := bunker.RPC(connectCtx, "connect", []string{targetPubkey, secret, nip46Perms, nip46ClientMetadata})
+	if err != nil {
 		slog.Error("NIP46ConnectC: connect RPC failed", "error", err)
+		recordNIP46Error(connectCtx, err)
+		nip46Cancel()
+		nip46Client = nil
+		nip46Pool = nil
+		return nil
+	}
+	// NIP-46: connect answers "ack" or echoes the secret. With a secret in
+	// play, anything else did not come from the signer we paired with.
+	if !nip46ConnectConfirmed(result, secret) {
+		slog.Error("NIP46ConnectC: connect result is neither ack nor our secret")
+		nip46LastError.Store("error:signer did not confirm the pairing secret")
 		nip46Cancel()
 		nip46Client = nil
 		nip46Pool = nil
@@ -1214,6 +1254,7 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	pubkey, err := bunker.GetPublicKey(pkCtx)
 	if err != nil {
 		slog.Error("NIP46ConnectC: GetPublicKey failed", "error", err)
+		recordNIP46Error(pkCtx, err)
 		return nil
 	}
 
@@ -1259,17 +1300,21 @@ func NIP46SignEventC(eventJSON *C.char) *C.char {
 	}
 	log.Printf("NIP46SignEventC: sending sign_event to bunker kind=%d pubkey=%s tags=%v", event.Kind, pubPrefix, event.Tags)
 
-	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
+	// A signer may put this in front of a person (Clave's lock-screen
+	// Approve), so give them time to read it.
+	ctx, cancel := context.WithTimeout(parentCtx, 90*time.Second)
 	defer cancel()
 
 	req := event
 	req.Tags = slices.Clone(event.Tags)
 	if err := client.SignEvent(ctx, &event); err != nil {
 		slog.Error("NIP46SignEventC: SignEvent failed", "kind", event.Kind, "error", err)
+		recordNIP46Error(ctx, err)
 		return nil
 	}
 	if err := checkRemoteSigned(req, event, req.PubKey); err != nil {
 		slog.Error("NIP46SignEventC: rejected signer response", "kind", event.Kind, "error", err)
+		nip46LastError.Store("error:" + err.Error())
 		return nil
 	}
 
@@ -1296,6 +1341,7 @@ func NIP46GetPublicKeyC() *C.char {
 	pubkey, err := client.GetPublicKey(ctx)
 	if err != nil {
 		slog.Error("NIP46GetPublicKeyC: failed", "error", err)
+		recordNIP46Error(ctx, err)
 		return nil
 	}
 	return C.CString(pubkey)
@@ -1313,12 +1359,13 @@ func NIP46NIP44EncryptC(targetPubkey *C.char, plaintext *C.char) *C.char {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(parentCtx, 60*time.Second)
 	defer cancel()
 
 	result, err := client.NIP44Encrypt(ctx, C.GoString(targetPubkey), C.GoString(plaintext))
 	if err != nil {
 		slog.Error("NIP46NIP44EncryptC: failed", "error", err)
+		recordNIP46Error(ctx, err)
 		return nil
 	}
 	return C.CString(result)
@@ -1342,6 +1389,7 @@ func NIP46NIP44DecryptC(targetPubkey *C.char, ciphertext *C.char) *C.char {
 	result, err := client.NIP44Decrypt(ctx, C.GoString(targetPubkey), C.GoString(ciphertext))
 	if err != nil {
 		slog.Error("NIP46NIP44DecryptC: failed", "error", err)
+		recordNIP46Error(ctx, err)
 		return nil
 	}
 	return C.CString(result)
@@ -1359,12 +1407,13 @@ func NIP46NIP04EncryptC(targetPubkey *C.char, plaintext *C.char) *C.char {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(parentCtx, 60*time.Second)
 	defer cancel()
 
 	result, err := client.NIP04Encrypt(ctx, C.GoString(targetPubkey), C.GoString(plaintext))
 	if err != nil {
 		slog.Error("NIP46NIP04EncryptC: failed", "error", err)
+		recordNIP46Error(ctx, err)
 		return nil
 	}
 	return C.CString(result)
@@ -1388,6 +1437,7 @@ func NIP46NIP04DecryptC(targetPubkey *C.char, ciphertext *C.char) *C.char {
 	result, err := client.NIP04Decrypt(ctx, C.GoString(targetPubkey), C.GoString(ciphertext))
 	if err != nil {
 		slog.Error("NIP46NIP04DecryptC: failed", "error", err)
+		recordNIP46Error(ctx, err)
 		return nil
 	}
 	return C.CString(result)
@@ -1409,6 +1459,7 @@ func NIP46PingC() C.int {
 
 	if err := client.Ping(ctx); err != nil {
 		slog.Error("NIP46PingC: failed", "error", err)
+		recordNIP46Error(ctx, err)
 		return 1
 	}
 	return 0

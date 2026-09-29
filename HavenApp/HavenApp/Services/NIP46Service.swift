@@ -1,10 +1,15 @@
 import Foundation
+#if os(iOS)
+import UIKit
+#endif
 
 // MARK: - NIP-46 Error Types
 
 enum NIP46Error: Error, LocalizedError {
     case notConnected
     case timeout
+    case rejected(String)
+    case offline
     case signerError(String)
     case authChallenge(String)
     case invalidResponse
@@ -16,7 +21,9 @@ enum NIP46Error: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConnected: return "Not connected to remote signer"
-        case .timeout: return "Remote signer did not respond"
+        case .timeout: return "Your signer didn't answer in time. Open it and check for a pending request."
+        case .rejected(let msg): return msg.isEmpty ? "Your signer declined the request" : "Your signer declined the request: \(msg)"
+        case .offline: return "Couldn't reach your signer's relay. Check your connection."
         case .signerError(let msg): return "Signer error: \(msg)"
         case .authChallenge(let url): return "Signer requires verification: \(url)"
         case .invalidResponse: return "Invalid response from signer"
@@ -45,6 +52,13 @@ class NIP46Service: ObservableObject {
     @Published var connectionState: ConnectionState = .disconnected
     @Published var authChallengeURL: String?
 
+    /// What the app is currently waiting on the signer for ("Sign your note",
+    /// "Decrypt a message"), set only once a request has been outstanding long
+    /// enough that the person may need to approve it. Drives the
+    /// "Approve in your signer" banner.
+    @Published private(set) var awaitingApproval: String?
+    private var outstandingRequests = 0
+
     private var reconnectAttempts = 0
     private let maxReconnectAttempts = 10
     private var reconnectTask: Task<Void, Never>?
@@ -70,8 +84,12 @@ class NIP46Service: ObservableObject {
 
     // MARK: - Connection Management
 
+    /// - Parameter adoptSignerAccount: true only while signing in with a signer
+    ///   (setup), when there is no account yet and the signer's key *becomes*
+    ///   the account. Everywhere else the signer must answer for the account
+    ///   it was paired to.
     @discardableResult
-    func connect() async throws -> String {
+    func connect(adoptSignerAccount: Bool = false) async throws -> String {
         let config = ConfigService.shared.config
         print("[NIP46] connect() called — activeSigningMode=\(config.activeSigningMode()) bunkerURI=\(!config.nip46BunkerURI.isEmpty) signerPK=\(!config.nip46SignerPubkey.isEmpty)")
         guard config.activeSigningMode() == "nip46",
@@ -147,7 +165,7 @@ class NIP46Service: ObservableObject {
             connectionState = .error
             checkPendingAuthURL()
             print("[NIP46] connect() FAILED — NIP46ConnectC returned nil")
-            throw NIP46Error.notConnected
+            throw Self.lastBridgeError() ?? NIP46Error.notConnected
         }
 
         // Refuse a signer that answers for a different account, and a connect
@@ -155,7 +173,8 @@ class NIP46Service: ObservableObject {
         let nowNpub = ConfigService.shared.config.activeAccountNpub.isEmpty
             ? ConfigService.shared.config.ownerNpub
             : ConfigService.shared.config.activeAccountNpub
-        if expectedHex.isEmpty || pubkey != expectedHex || nowNpub != accountNpub {
+        let accountMismatch = !adoptSignerAccount && (expectedHex.isEmpty || pubkey != expectedHex)
+        if accountMismatch || nowNpub != accountNpub {
             NIP46DisconnectC()
             authPollerTask?.cancel()
             authPollerTask = nil
@@ -196,7 +215,9 @@ class NIP46Service: ObservableObject {
         return pubkey
     }
 
-    private var connectTask: Task<Void, Never>?
+    /// The in-flight connect, so every caller waits on the same handshake
+    /// instead of starting a second one that would re-send a single-use secret.
+    private var connectTask: Task<String, Error>?
 
     func connectFromConfig() {
         let config = ConfigService.shared.config
@@ -213,12 +234,50 @@ class NIP46Service: ObservableObject {
         connectionState = .connecting
 
         connectTask?.cancel()
-        connectTask = Task {
+        let task = Task { try await connect() }
+        connectTask = task
+        Task {
             do {
-                try await connect()
+                _ = try await task.value
             } catch {
                 print("NIP46Service: Auto-connect failed: \(error.localizedDescription)")
+                if connectionState == .connecting { connectionState = .error }
+            }
+        }
+    }
+
+    /// Waits for the connect already in flight, or starts one. Use this after
+    /// anything that may have kicked off `connectFromConfig()`; it surfaces the
+    /// real failure (wrong account, declined, timed out) instead of a generic one.
+    @discardableResult
+    func waitForConnection() async throws -> String {
+        if connectionState == .connected, let task = connectTask, let pubkey = try? await task.value {
+            return pubkey
+        }
+        if connectionState == .connecting, let task = connectTask {
+            return try await task.value
+        }
+        return try await connect()
+    }
+
+    /// Called when the app comes back to the foreground. The session is kept
+    /// across backgrounding (so a request approved in the signer still lands),
+    /// but the socket may have died while suspended: ping it, and reconnect
+    /// only if the signer no longer answers.
+    func resumeAfterForeground() {
+        let config = ConfigService.shared.config
+        guard config.activeSigningMode() == "nip46" else { return }
+        guard connectionState == .connected else {
+            connectFromConfig()
+            return
+        }
+        Task {
+            do {
+                try await ping()
+            } catch {
+                print("NIP46Service: resume ping failed, reconnecting: \(error.localizedDescription)")
                 connectionState = .error
+                connectFromConfig()
             }
         }
     }
@@ -246,9 +305,11 @@ class NIP46Service: ObservableObject {
     func signEvent(eventJSON: String) async throws -> String {
         print("NIP46Service: signEvent called, connectionState=\(connectionState.rawValue)")
         try await ensureConnected()
-        return try await callGo { NIP46SignEventC(
-            UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
-        )}
+        return try await signerRequest("Approve signing in your signer") {
+            try await self.callGo { NIP46SignEventC(
+                UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
+            )}
+        }
     }
 
     func getPublicKey() async throws -> String {
@@ -264,34 +325,42 @@ class NIP46Service: ObservableObject {
 
     func nip04Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
-        return try await callGo { NIP46NIP04EncryptC(
-            UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
-        )}
+        return try await signerRequest("Approve encrypting a message in your signer") {
+            try await self.callGo { NIP46NIP04EncryptC(
+                UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
+                UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
+            )}
+        }
     }
 
     func nip04Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
-        return try await callGo { NIP46NIP04DecryptC(
-            UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
-        )}
+        return try await signerRequest("Approve decrypting messages in your signer") {
+            try await self.callGo { NIP46NIP04DecryptC(
+                UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
+                UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
+            )}
+        }
     }
 
     func nip44Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
-        return try await callGo { NIP46NIP44EncryptC(
-            UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
-        )}
+        return try await signerRequest("Approve encrypting a message in your signer") {
+            try await self.callGo { NIP46NIP44EncryptC(
+                UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
+                UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
+            )}
+        }
     }
 
     func nip44Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
-        return try await callGo { NIP46NIP44DecryptC(
-            UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
-            UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
-        )}
+        return try await signerRequest("Approve decrypting messages in your signer") {
+            try await self.callGo { NIP46NIP44DecryptC(
+                UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
+                UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
+            )}
+        }
     }
 
     /// Ensures the NIP-46 connection is active, reconnecting if it dropped.
@@ -302,10 +371,14 @@ class NIP46Service: ObservableObject {
         // rather than starting a redundant connect() that will tear down
         // the in-progress Go session behind the NIP-46 mutex.
         if connectionState == .connecting {
-            for _ in 0..<60 {  // up to 30 seconds
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if connectionState == .connected { return }
-                if connectionState != .connecting { break }
+            if let task = connectTask {
+                _ = try await task.value
+            } else {
+                for _ in 0..<60 {  // up to 30 seconds
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    if connectionState == .connected { return }
+                    if connectionState != .connecting { break }
+                }
             }
             guard connectionState == .connected else {
                 throw NIP46Error.notConnected
@@ -318,7 +391,7 @@ class NIP46Service: ObservableObject {
             try await connect()
         } catch {
             print("NIP46Service: ensureConnected reconnect failed: \(error.localizedDescription)")
-            throw NIP46Error.notConnected
+            throw error
         }
         guard connectionState == .connected else {
             throw NIP46Error.notConnected
@@ -335,9 +408,59 @@ class NIP46Service: ObservableObject {
             return str
         }.value
         guard let result else {
-            throw NIP46Error.signerError("Go bridge returned nil")
+            throw Self.lastBridgeError() ?? NIP46Error.signerError("Go bridge returned nil")
         }
         return result
+    }
+
+    /// Why the last NIP-46 bridge call returned nil, as classified by the Go
+    /// side (`NIP46LastErrorC`). Nil when it recorded nothing.
+    private nonisolated static func lastBridgeError() -> NIP46Error? {
+        guard let cStr = NIP46LastErrorC() else { return nil }
+        let raw = String(cString: cStr)
+        free(cStr)
+        switch raw {
+        case "": return nil
+        case "timeout": return .timeout
+        case "offline": return .offline
+        default:
+            if raw.hasPrefix("rejected:") { return .rejected(String(raw.dropFirst("rejected:".count))) }
+            if raw.hasPrefix("error:") { return .signerError(String(raw.dropFirst("error:".count))) }
+            return .signerError(raw)
+        }
+    }
+
+    /// Runs one request to the signer. Keeps the app alive in the background
+    /// while it is outstanding (so switching to the signer to approve doesn't
+    /// kill it), and after a short grace raises the "Approve in your signer"
+    /// banner — a request the signer auto-approves never shows it.
+    private func signerRequest<T>(_ label: String, _ body: @escaping () async throws -> T) async throws -> T {
+        outstandingRequests += 1
+        #if os(iOS)
+        var bgTask: UIBackgroundTaskIdentifier = .invalid
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "NIP46Request") {
+            if bgTask != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTask)
+                bgTask = .invalid
+            }
+        }
+        #endif
+        let banner = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if !Task.isCancelled { self.awaitingApproval = label }
+        }
+        defer {
+            banner.cancel()
+            outstandingRequests -= 1
+            if outstandingRequests == 0 { awaitingApproval = nil }
+            #if os(iOS)
+            if bgTask != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTask)
+                bgTask = .invalid
+            }
+            #endif
+        }
+        return try await body()
     }
 
     // MARK: - Auth URL Polling

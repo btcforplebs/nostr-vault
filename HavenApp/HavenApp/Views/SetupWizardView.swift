@@ -1686,8 +1686,8 @@ private struct IdentityStepView: View {
                 ConfigService.shared.config.signingMode = "nip46"
                 ConfigService.shared.save()
 
-                try await NIP46Service.shared.connect()
-                let pubkey = try await NIP46Service.shared.getPublicKey()
+                // No account exists yet during setup: the signer's key becomes it.
+                let pubkey = try await NIP46Service.shared.connect(adoptSignerAccount: true)
 
                 if let pubData = Bech32.hexToData(pubkey),
                    let generatedNpub = Bech32.encode(hrp: "npub", data: pubData) {

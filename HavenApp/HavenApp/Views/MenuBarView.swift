@@ -872,6 +872,7 @@ struct MenuBarView: View {
         }
         .overlay(alignment: .top) {
             VStack(spacing: 6) {
+                SignerApprovalBanner()
                 PostActionNotificationBanner()
                 ZapNotificationBanner()
                 FollowNotificationBanner()
