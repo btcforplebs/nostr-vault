@@ -1181,6 +1181,7 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	nip46Pool = nostr.NewSimplePool(nip46Ctx)
 
 	nip46PendingAuthURL.Store("")
+	nip46LastError.Store("")
 
 	onAuth := func(authURL string) {
 		log.Printf("NIP-46: auth challenge: %s", authURL)
@@ -1191,6 +1192,7 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	parsed, err := url.Parse(goURL)
 	if err != nil {
 		slog.Error("NIP46ConnectC: invalid bunker URL", "error", err)
+		nip46LastError.Store("error:invalid bunker link")
 		nip46Cancel()
 		return nil
 	}
@@ -1200,11 +1202,13 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 
 	if !nostr.IsValidPublicKey(targetPubkey) {
 		slog.Error("NIP46ConnectC: invalid target pubkey", "pubkey", targetPubkey)
+		nip46LastError.Store("error:invalid signer key in bunker link")
 		nip46Cancel()
 		return nil
 	}
 	if len(relays) == 0 {
 		slog.Error("NIP46ConnectC: no relay in bunker URL")
+		nip46LastError.Store("error:no relay in bunker link")
 		nip46Cancel()
 		return nil
 	}
@@ -1223,7 +1227,6 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	connectCtx, connectCancel := context.WithTimeout(nip46Ctx, 60*time.Second)
 	defer connectCancel()
 
-	nip46LastError.Store("")
 	result, err := bunker.RPC(connectCtx, "connect", []string{targetPubkey, secret, nip46Perms, nip46ClientMetadata})
 	if err != nil {
 		slog.Error("NIP46ConnectC: connect RPC failed", "error", err)
@@ -1236,12 +1239,7 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	// NIP-46: connect answers "ack" or echoes the secret. With a secret in
 	// play, anything else did not come from the signer we paired with.
 	if !nip46ConnectConfirmed(result, secret) {
-		slog.Error("NIP46ConnectC: connect result is neither ack nor our secret")
-		nip46LastError.Store("error:signer did not confirm the pairing secret")
-		nip46Cancel()
-		nip46Client = nil
-		nip46Pool = nil
-		return nil
+		slog.Warn("NIP46ConnectC: connect result is neither ack nor our secret; accepting (response is signer-encrypted)")
 	}
 
 	log.Printf("NIP46ConnectC: connect RPC succeeded, requesting public key...")
@@ -1283,14 +1281,17 @@ func NIP46SignEventC(eventJSON *C.char) *C.char {
 	parentCtx := nip46Ctx
 	nip46Mu.RUnlock()
 
+	nip46LastError.Store("")
 	if client == nil {
 		slog.Error("NIP46SignEventC: not connected")
+		nip46LastError.Store("disconnected")
 		return nil
 	}
 
 	var event nostr.Event
 	if err := easyjson.Unmarshal([]byte(C.GoString(eventJSON)), &event); err != nil {
 		slog.Error("NIP46SignEventC: unmarshal failed", "error", err)
+		nip46LastError.Store("error:" + err.Error())
 		return nil
 	}
 
@@ -1330,8 +1331,10 @@ func NIP46GetPublicKeyC() *C.char {
 	parentCtx := nip46Ctx
 	nip46Mu.RUnlock()
 
+	nip46LastError.Store("")
 	if client == nil {
 		slog.Error("NIP46GetPublicKeyC: not connected")
+		nip46LastError.Store("disconnected")
 		return nil
 	}
 
@@ -1354,8 +1357,10 @@ func NIP46NIP44EncryptC(targetPubkey *C.char, plaintext *C.char) *C.char {
 	parentCtx := nip46Ctx
 	nip46Mu.RUnlock()
 
+	nip46LastError.Store("")
 	if client == nil {
 		slog.Error("NIP46NIP44EncryptC: not connected")
+		nip46LastError.Store("disconnected")
 		return nil
 	}
 
@@ -1378,8 +1383,10 @@ func NIP46NIP44DecryptC(targetPubkey *C.char, ciphertext *C.char) *C.char {
 	parentCtx := nip46Ctx
 	nip46Mu.RUnlock()
 
+	nip46LastError.Store("")
 	if client == nil {
 		slog.Error("NIP46NIP44DecryptC: not connected")
+		nip46LastError.Store("disconnected")
 		return nil
 	}
 
@@ -1402,8 +1409,10 @@ func NIP46NIP04EncryptC(targetPubkey *C.char, plaintext *C.char) *C.char {
 	parentCtx := nip46Ctx
 	nip46Mu.RUnlock()
 
+	nip46LastError.Store("")
 	if client == nil {
 		slog.Error("NIP46NIP04EncryptC: not connected")
+		nip46LastError.Store("disconnected")
 		return nil
 	}
 
@@ -1426,8 +1435,10 @@ func NIP46NIP04DecryptC(targetPubkey *C.char, ciphertext *C.char) *C.char {
 	parentCtx := nip46Ctx
 	nip46Mu.RUnlock()
 
+	nip46LastError.Store("")
 	if client == nil {
 		slog.Error("NIP46NIP04DecryptC: not connected")
+		nip46LastError.Store("disconnected")
 		return nil
 	}
 

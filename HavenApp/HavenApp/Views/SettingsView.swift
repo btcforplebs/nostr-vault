@@ -1250,6 +1250,11 @@ struct ConnectSignerSheetView: View {
                         }
                     }
                     .disabled(bunkerURI.isEmpty || isConnecting)
+                    if isConnecting {
+                        Text("Approve the connection in your signer app")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             .navigationTitle("Connect Signer")

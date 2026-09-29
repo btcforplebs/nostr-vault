@@ -90,6 +90,16 @@ class NIP46Service: ObservableObject {
     ///   it was paired to.
     @discardableResult
     func connect(adoptSignerAccount: Bool = false) async throws -> String {
+        let task = Task { try await self.performConnect(adoptSignerAccount: adoptSignerAccount) }
+        connectTask = task
+        return try await task.value
+    }
+
+    /// The signer pubkey of the live session, for callers that only need to
+    /// know the handshake already happened.
+    private var connectedSignerPubkey: String?
+
+    private func performConnect(adoptSignerAccount: Bool) async throws -> String {
         let config = ConfigService.shared.config
         print("[NIP46] connect() called — activeSigningMode=\(config.activeSigningMode()) bunkerURI=\(!config.nip46BunkerURI.isEmpty) signerPK=\(!config.nip46SignerPubkey.isEmpty)")
         guard config.activeSigningMode() == "nip46",
@@ -173,7 +183,10 @@ class NIP46Service: ObservableObject {
         let nowNpub = ConfigService.shared.config.activeAccountNpub.isEmpty
             ? ConfigService.shared.config.ownerNpub
             : ConfigService.shared.config.activeAccountNpub
-        let accountMismatch = !adoptSignerAccount && (expectedHex.isEmpty || pubkey != expectedHex)
+        // Adopting only applies when there is genuinely no account to compare
+        // against; otherwise the signer must answer for the account it is for.
+        let adopting = adoptSignerAccount && accountNpub.isEmpty
+        let accountMismatch = !adopting && (expectedHex.isEmpty || pubkey != expectedHex)
         if accountMismatch || nowNpub != accountNpub {
             NIP46DisconnectC()
             authPollerTask?.cancel()
@@ -185,6 +198,7 @@ class NIP46Service: ObservableObject {
         }
 
         connectionState = .connected
+        connectedSignerPubkey = pubkey
         startPingLoop()
 
         // Clear the bunker secret after successful pairing — it's one-time-use
@@ -234,7 +248,7 @@ class NIP46Service: ObservableObject {
         connectionState = .connecting
 
         connectTask?.cancel()
-        let task = Task { try await connect() }
+        let task = Task { try await self.performConnect(adoptSignerAccount: false) }
         connectTask = task
         Task {
             do {
@@ -251,7 +265,7 @@ class NIP46Service: ObservableObject {
     /// real failure (wrong account, declined, timed out) instead of a generic one.
     @discardableResult
     func waitForConnection() async throws -> String {
-        if connectionState == .connected, let task = connectTask, let pubkey = try? await task.value {
+        if connectionState == .connected, let pubkey = connectedSignerPubkey {
             return pubkey
         }
         if connectionState == .connecting, let task = connectTask {
@@ -271,10 +285,17 @@ class NIP46Service: ObservableObject {
             connectFromConfig()
             return
         }
+        // A reconnect tears down the session, and with it any request still
+        // waiting on an answer — possibly one the user just approved. Leave a
+        // session with work in flight alone; the ping loop covers it after.
+        guard outstandingRequests == 0 else { return }
         Task {
             do {
                 try await ping()
             } catch {
+                // Only if nothing else (a disconnect, an account switch) has
+                // moved the session on while the ping was out.
+                guard connectionState == .connected, outstandingRequests == 0 else { return }
                 print("NIP46Service: resume ping failed, reconnecting: \(error.localizedDescription)")
                 connectionState = .error
                 connectFromConfig()
@@ -295,6 +316,7 @@ class NIP46Service: ObservableObject {
         NIP46DisconnectC()
 
         connectionState = .disconnected
+        connectedSignerPubkey = nil
         authChallengeURL = nil
 
         RelayProcessManager.shared.addLog("NIP-46: Disconnected from signer", level: "INFO")
@@ -325,7 +347,7 @@ class NIP46Service: ObservableObject {
 
     func nip04Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest("Approve encrypting a message in your signer") {
+        return try await signerRequest("Encrypting a message with your signer") {
             try await self.callGo { NIP46NIP04EncryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
@@ -335,7 +357,7 @@ class NIP46Service: ObservableObject {
 
     func nip04Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest("Approve decrypting messages in your signer") {
+        return try await signerRequest("Decrypting messages with your signer") {
             try await self.callGo { NIP46NIP04DecryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
@@ -345,7 +367,7 @@ class NIP46Service: ObservableObject {
 
     func nip44Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest("Approve encrypting a message in your signer") {
+        return try await signerRequest("Encrypting a message with your signer") {
             try await self.callGo { NIP46NIP44EncryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
@@ -355,7 +377,7 @@ class NIP46Service: ObservableObject {
 
     func nip44Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest("Approve decrypting messages in your signer") {
+        return try await signerRequest("Decrypting messages with your signer") {
             try await self.callGo { NIP46NIP44DecryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
@@ -422,6 +444,7 @@ class NIP46Service: ObservableObject {
         switch raw {
         case "": return nil
         case "timeout": return .timeout
+        case "disconnected": return .notConnected
         case "offline": return .offline
         default:
             if raw.hasPrefix("rejected:") { return .rejected(String(raw.dropFirst("rejected:".count))) }

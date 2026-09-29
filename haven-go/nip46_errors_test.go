@@ -12,6 +12,8 @@ func TestClassifyNIP46Error(t *testing.T) {
 	live := context.Background()
 	expired, cancel := context.WithCancel(context.Background())
 	cancel()
+	timedOut, cancelTimeout := context.WithTimeout(context.Background(), 0)
+	defer cancelTimeout()
 
 	cases := []struct {
 		name string
@@ -22,7 +24,8 @@ func TestClassifyNIP46Error(t *testing.T) {
 		{"signer refused", live, errors.New("response error: user rejected"), "rejected:user rejected"},
 		{"refusal wins over an expired context", expired, errors.New("response error: denied"), "rejected:denied"},
 		{"no relay", expired, errors.New("couldn't connect to any relay"), "offline"},
-		{"ran out of time", expired, errors.New("context canceled"), "timeout"},
+		{"ran out of time", timedOut, errors.New("context canceled"), "timeout"},
+		{"session torn down", expired, errors.New("context canceled"), "disconnected"},
 		{"anything else", live, errors.New("boom"), "error:boom"},
 	}
 	for _, c := range cases {

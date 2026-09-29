@@ -1466,6 +1466,12 @@ private struct IdentityStepView: View {
                                     .tint(WizardColors.accentPrimary)
                             }
                         }
+
+                        if isConnectingBunker {
+                            Text("Approve the connection in your signer app")
+                                .font(.appSystem(size: 12, weight: .regular))
+                                .foregroundColor(WizardColors.textSecondary)
+                        }
                     }
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
