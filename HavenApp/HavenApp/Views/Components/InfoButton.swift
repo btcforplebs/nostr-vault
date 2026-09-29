@@ -28,7 +28,10 @@ struct InfoButton: View {
             } label: {
                 Image(systemName: "info.circle")
                     .font(.appSubheadline)
-                    .foregroundStyle(.secondary)
+                    // A plain grey, not `.secondary`: inside a Button the
+                    // hierarchical style resolves against the button's tint,
+                    // so the icon came out as a faded accent colour.
+                    .foregroundStyle(Color.secondary)
                     .frame(width: hitSize, height: hitSize)
                     .contentShape(Rectangle())
             }
