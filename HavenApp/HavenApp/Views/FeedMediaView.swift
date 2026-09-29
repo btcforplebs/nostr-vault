@@ -261,19 +261,20 @@ private struct FeedPhotoView: View {
                 if let downsampled = await ImageDownsampler.downsample(data: data, maxDimension: maxDimension) {
                     MediaCacheService.shared.cacheImage(downsampled, for: url)
                     await MainActor.run {
-                        withAnimation(Motion.media) {
-                            self.image = downsampled
-                            self.aspectRatio = ratioFor(downsampled)
-                        }
+                        // No `withAnimation`: the row must take its final
+                        // height in one frame. Animating `aspectRatio` grew
+                        // the row over 0.18s and slid every post below it
+                        // mid-scroll. The image's own `.transition` still
+                        // fades the pixels in.
+                        self.image = downsampled
+                        self.aspectRatio = ratioFor(downsampled)
                         self.isLoading = false
                     }
                 } else if let img = PlatformImage(data: data) {
                     MediaCacheService.shared.cacheImage(img, for: url)
                     await MainActor.run {
-                        withAnimation(Motion.media) {
-                            self.image = img
-                            self.aspectRatio = ratioFor(img)
-                        }
+                        self.image = img
+                        self.aspectRatio = ratioFor(img)
                         self.isLoading = false
                     }
                 } else {
@@ -314,15 +315,15 @@ private struct FeedGIFView: View {
                 contentMode: isThumbnail ? .fill : .fit,
                 shouldAnimate: !isThumbnail,
                 onLoad: { size in
-                    withAnimation(Motion.media) {
-                        if size.width > 0 && size.height > 0 {
-                            self.aspectRatio = size.width / size.height
-                        }
-                        self.isLoading = false
+                    // Unanimated, as in FeedPhotoView: resize the row at
+                    // once and animate only the opacity below.
+                    if size.width > 0 && size.height > 0 {
+                        self.aspectRatio = size.width / size.height
                     }
+                    self.isLoading = false
                 }
             )
-            .opacity(isLoading ? 0 : 1)
+            .animation(Motion.media) { $0.opacity(isLoading ? 0 : 1) }
 
             if isLoading {
                 ProgressView()
