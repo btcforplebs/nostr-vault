@@ -187,10 +187,7 @@ struct FeedMediaView: View {
     private var placeholderShape: some View {
         RoundedRectangle(cornerRadius: 8)
             .fill(Color.platformTertiaryGroupedBackground)
-            .overlay(
-                ProgressView()
-                    .tint(Color.havenPurple.opacity(0.6))
-            )
+            .overlay(MediaLoadingPlaceholder(url: url, isLoading: true))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color.platformSeparator, lineWidth: 0.5)
@@ -246,9 +243,9 @@ private struct FeedPhotoView: View {
                     .resizable()
                     .aspectRatio(contentMode: isThumbnail ? .fill : .fit)
                     .transition(.opacity.animation(Motion.media))
-            } else if isLoading {
-                ProgressView()
-                    .tint(Color.havenPurple.opacity(0.6))
+            } else {
+                MediaLoadingPlaceholder(url: url, isLoading: isLoading)
+                    .transition(MediaLoadingPlaceholder.removal)
             }
         }
         .aspectRatio(isThumbnail ? nil : displayAspectRatio, contentMode: .fit)
@@ -358,8 +355,8 @@ private struct FeedGIFView: View {
             .animation(Motion.media) { $0.opacity(isLoading ? 0 : 1) }
 
             if isLoading {
-                ProgressView()
-                    .tint(Color.havenPurple.opacity(0.6))
+                MediaLoadingPlaceholder(url: url, isLoading: true)
+                    .transition(MediaLoadingPlaceholder.removal)
             }
         }
         .aspectRatio(isThumbnail ? nil : displayAspectRatio, contentMode: .fit)
@@ -458,5 +455,156 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+// MARK: - Loading placeholder
+
+/// What a photo shows before its pixels arrive. With a NIP-92 `blurhash` it is
+/// a blurred preview of the image; without one it is the plain card fill, and
+/// a spinner appears only if the load is still going after 0.6s, so an image
+/// that lands quickly never flashes a spinner first.
+private struct MediaLoadingPlaceholder: View {
+    let url: URL
+    let isLoading: Bool
+
+    @State private var spinnerDue = false
+
+    /// Stay under the arriving image until its fade has finished; dropping the
+    /// preview at once would flash the empty card between the two.
+    static var removal: AnyTransition {
+        .asymmetric(insertion: .identity, removal: .opacity.animation(Motion.media.delay(0.18)))
+    }
+
+    var body: some View {
+        if let preview = BlurHashDecoder.image(for: MediaHints.shared.hint(for: url)?.blurhash) {
+            Image(decorative: preview, scale: 1)
+                .resizable()
+                .interpolation(.medium)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
+        } else if isLoading {
+            ZStack {
+                if spinnerDue {
+                    ProgressView()
+                        .tint(Color.havenPurple.opacity(0.6))
+                        .transition(.opacity.animation(Motion.fade))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .task {
+                try? await Task.sleep(for: .milliseconds(600))
+                spinnerDue = true
+            }
+        }
+    }
+}
+
+// MARK: - BlurHash
+
+/// Decodes a BlurHash (https://blurha.sh) into a small CGImage that SwiftUI
+/// scales up. Kept in this file rather than its own so the change does not
+/// regenerate the Xcode project under two other open feed PRs.
+enum BlurHashDecoder {
+    /// Output is always 32x32: a blurhash has at most 9x9 components, so more
+    /// pixels add nothing once it is stretched to the card.
+    private static let side = 32
+
+    private static let cache: NSCache<NSString, CGImage> = {
+        let cache = NSCache<NSString, CGImage>()
+        cache.countLimit = 500
+        return cache
+    }()
+
+    static func image(for hash: String?) -> CGImage? {
+        guard let hash, !hash.isEmpty else { return nil }
+        if let cached = cache.object(forKey: hash as NSString) { return cached }
+        guard let image = decode(hash) else { return nil }
+        cache.setObject(image, forKey: hash as NSString)
+        return image
+    }
+
+    private static let alphabet = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~")
+    private static let digit: [Character: Int] = Dictionary(uniqueKeysWithValues: alphabet.enumerated().map { ($1, $0) })
+
+    private static func decode83(_ s: Substring) -> Int? {
+        var value = 0
+        for ch in s {
+            guard let d = digit[ch] else { return nil }
+            value = value * 83 + d
+        }
+        return value
+    }
+
+    private static func sRGBToLinear(_ v: Int) -> Float {
+        let x = Float(v) / 255
+        return x <= 0.04045 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4)
+    }
+
+    private static func linearToSRGB(_ v: Float) -> UInt8 {
+        let x = max(0, min(1, v))
+        let s = x <= 0.0031308 ? x * 12.92 : 1.055 * pow(x, 1 / 2.4) - 0.055
+        return UInt8(max(0, min(255, (s * 255 + 0.5).rounded(.down))))
+    }
+
+    private static func signPow(_ v: Float, _ e: Float) -> Float {
+        copysign(pow(abs(v), e), v)
+    }
+
+    static func decode(_ hash: String) -> CGImage? {
+        let chars = Array(hash)
+        guard chars.count >= 6, let sizeFlag = decode83(Substring(String(chars[0]))) else { return nil }
+        let nx = sizeFlag % 9 + 1
+        let ny = sizeFlag / 9 + 1
+        guard chars.count == 4 + 2 * nx * ny,
+              let quantMax = decode83(Substring(String(chars[1]))) else { return nil }
+        let maxAC = Float(quantMax + 1) / 166
+
+        func sub(_ from: Int, _ len: Int) -> Substring { Substring(String(chars[from..<(from + len)])) }
+
+        var colors: [(Float, Float, Float)] = []
+        colors.reserveCapacity(nx * ny)
+        guard let dc = decode83(sub(2, 4)) else { return nil }
+        colors.append((sRGBToLinear(dc >> 16), sRGBToLinear((dc >> 8) & 255), sRGBToLinear(dc & 255)))
+        for i in 1..<(nx * ny) {
+            guard let ac = decode83(sub(4 + i * 2, 2)) else { return nil }
+            let r = ac / (19 * 19), g = (ac / 19) % 19, b = ac % 19
+            colors.append((
+                signPow((Float(r) - 9) / 9, 2) * maxAC,
+                signPow((Float(g) - 9) / 9, 2) * maxAC,
+                signPow((Float(b) - 9) / 9, 2) * maxAC
+            ))
+        }
+
+        let n = side
+        var pixels = [UInt8](repeating: 255, count: n * n * 4)
+        // Basis cosines are separable: precompute each axis once.
+        let cosX = (0..<nx).map { i in (0..<n).map { x in cos(Float.pi * Float(x * i) / Float(n)) } }
+        let cosY = (0..<ny).map { j in (0..<n).map { y in cos(Float.pi * Float(y * j) / Float(n)) } }
+        for y in 0..<n {
+            for x in 0..<n {
+                var r: Float = 0, g: Float = 0, b: Float = 0
+                for j in 0..<ny {
+                    let cy = cosY[j][y]
+                    for i in 0..<nx {
+                        let basis = cosX[i][x] * cy
+                        let c = colors[i + j * nx]
+                        r += c.0 * basis; g += c.1 * basis; b += c.2 * basis
+                    }
+                }
+                let o = (y * n + x) * 4
+                pixels[o] = linearToSRGB(r)
+                pixels[o + 1] = linearToSRGB(g)
+                pixels[o + 2] = linearToSRGB(b)
+            }
+        }
+
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
+        return CGImage(
+            width: n, height: n, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: n * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent
+        )
     }
 }
