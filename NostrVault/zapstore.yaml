@@ -49,4 +49,4 @@ images:
   - screenshots/05_settings.png
 
 release_source:
-  asset_url: https://logen.btcforplebs.com/b5cdf3969932b974b4241a65b8feb37ad5cb6a0e65154a158663849951550810.apk
+  asset_url: https://github.com/btcforplebs/nostr-vault/releases/download/v2.7.0-b15/NostrVault-b15-v2.7.0.apk
