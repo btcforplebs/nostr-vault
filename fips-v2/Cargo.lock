@@ -1153,6 +1153,7 @@ dependencies = [
  "anyhow",
  "fips",
  "smoltcp",
+ "socket2",
  "tokio",
  "tracing-subscriber",
 ]

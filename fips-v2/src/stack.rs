@@ -227,6 +227,7 @@ pub fn run(
                     Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                     Err(e) => {
                         eprintln!("local write failed: {e}");
+                        sp.pending.clear();
                         s.abort();
                     }
                 }
@@ -263,9 +264,16 @@ pub fn run(
                 let _ = sp.stream.shutdown(std::net::Shutdown::Write);
             }
 
-            let done = s.state() == tcp::State::Closed
-                || (s.state() == tcp::State::TimeWait && sp.pending.is_empty());
+            // smoltcp keeps received bytes readable after Closed/TimeWait, so a
+            // splice lives until they have reached the local stream too.
+            let ended = matches!(s.state(), tcp::State::Closed | tcp::State::TimeWait);
+            let done = ended && !s.can_recv() && sp.pending.is_empty();
             if done {
+                if !sp.local_shut {
+                    // Closed without the peer's FIN (RST or timeout): reset the
+                    // local client so a cut-off body is an error, not a clean EOF.
+                    let _ = socket2::SockRef::from(&sp.stream).set_linger(Some(Duration::ZERO));
+                }
                 sockets.remove(sp.handle);
             }
             !done
