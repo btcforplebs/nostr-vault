@@ -120,8 +120,10 @@ struct ComposeView: View {
     
     struct Attachment: Identifiable {
         let id = UUID()
-        // Exactly one of `data` or `fileURL` is set. Images use `data` (small,
+        // At most one of `data` or `fileURL` is set. Images use `data` (small,
         // possibly transcoded); videos use `fileURL` so they stream from disk.
+        // Neither is set for media already on the relay, picked from the
+        // Blossom picker: that arrives with `url` set and `isUploaded` true.
         let data: Data?
         let fileURL: URL?
         var type: UTType
@@ -131,6 +133,9 @@ struct ComposeView: View {
         /// NIP-92 `alt` — what this media is, for anyone who cannot see it.
         /// Published inside the attachment's `imeta` tag; empty means omitted.
         var altText: String = ""
+        /// For relay-picked media: the blob in the local Blossom directory,
+        /// read only for `imeta` dimensions and size. Never uploaded or deleted.
+        var relayBlobFile: URL? = nil
     }
 
     /// `sheet(item:)` needs an Identifiable; the attachment's own id is a bare
@@ -324,12 +329,7 @@ struct ComposeView: View {
                     blossomMedia: $blossomMedia,
                     isLoading: $isLoadingBlossomMedia,
                     onSelect: { item in
-                        let url = item.shareURL(with: configService).absoluteString
-                        if content.isEmpty || content.hasSuffix("\n") || content.hasSuffix(" ") {
-                            content += url
-                        } else {
-                            content += " " + url
-                        }
+                        attachRelayMedia(item)
                         showBlossomPicker = false
                     },
                     onAppearLoad: { loadBlossomMedia() }
@@ -876,6 +876,10 @@ struct ComposeView: View {
                                     .scaledToFill()
                                     .frame(width: 100, height: 100)
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } else if let url = attachment.url, attachment.data == nil, attachment.fileURL == nil {
+                                relayMediaThumbnail(url: url, type: attachment.type)
+                                    .frame(width: 100, height: 100)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
                             } else {
                                 ZStack {
                                     Color.platformSecondaryGroupedBackground
@@ -931,6 +935,19 @@ struct ComposeView: View {
             .padding()
         }
         .frame(height: 120)
+    }
+
+    /// Preview for media picked from the relay: it is already hosted, so it
+    /// renders from its URL the same way the picker grid did.
+    @ViewBuilder
+    private func relayMediaThumbnail(url: URL, type: UTType) -> some View {
+        if type.conforms(to: .movie) || type.conforms(to: .video) {
+            VideoThumbnailView(url: url, mimeType: type.preferredMIMEType)
+        } else if type.conforms(to: .gif) {
+            AnimatedImage(url: url, contentMode: .fill, shouldAnimate: false, targetSize: CGSize(width: 200, height: 200))
+        } else {
+            RetryableAsyncImage(url: url, contentMode: .fill, targetSize: CGSize(width: 200, height: 200))
+        }
     }
 
     /// The ALT affordance on a thumbnail: filled once the attachment has a
@@ -1127,6 +1144,13 @@ struct ComposeView: View {
         return hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
     }
 
+    /// The Blossom SHA-256 a blob URL is named by, if its last path component
+    /// is one (`<64 hex>` or `<64 hex>.<ext>`).
+    nonisolated static func blossomHash(in url: URL) -> String? {
+        let name = url.deletingPathExtension().lastPathComponent.lowercased()
+        return name.count == 64 && name.allSatisfy(\.isHexDigit) ? name : nil
+    }
+
     /// Pixel dimensions of encoded image bytes, read from the image's own
     /// header rather than by decoding it — an `imeta dim` is worth one header
     /// read, not a full decode of a 12-megapixel photo.
@@ -1177,6 +1201,34 @@ struct ComposeView: View {
         }
         attachments.append(attachment)
         return true
+    }
+
+    /// Attaches media that already lives on the relay. It shows in the
+    /// attachment strip like a fresh upload, but posting skips the upload and
+    /// publishes its existing URL.
+    private func attachRelayMedia(_ item: MediaItem) {
+        let type: UTType
+        if let mime = item.mimeType, let t = UTType(mimeType: mime) {
+            type = t
+        } else if item.isAnimatedGIF {
+            type = .gif
+        } else {
+            switch item.type {
+            case .video: type = .movie
+            case .audio: type = .audio
+            default: type = .image
+            }
+        }
+        appendAttachment(Attachment(
+            data: nil,
+            fileURL: nil,
+            type: type,
+            url: item.shareURL(with: configService),
+            isUploaded: true,
+            relayBlobFile: configService.relayDataDir
+                .appendingPathComponent(configService.config.blossomPath)
+                .appendingPathComponent(item.url.lastPathComponent)
+        ))
     }
 
     private func cleanupAttachmentTempFiles() {
@@ -1385,6 +1437,31 @@ struct ComposeView: View {
             for i in attachments.indices {
                 uploadInfoProvider.setCurrentIndex(i + 1, type: attachments[i].type)
                 let mimeType = attachments[i].type.preferredMIMEType ?? "application/octet-stream"
+
+                // Picked from the relay: already hosted, nothing to upload.
+                if attachments[i].data == nil, attachments[i].fileURL == nil,
+                   let hostedURL = attachments[i].url {
+                    let blob = attachments[i].relayBlobFile
+                    var pixelSize: CGSize?
+                    if let blob {
+                        if attachments[i].type.conforms(to: .movie) || attachments[i].type.conforms(to: .video) {
+                            pixelSize = await ComposeView.pixelSize(ofVideoAt: blob)
+                        } else if let data = try? Data(contentsOf: blob, options: .mappedIfSafe) {
+                            pixelSize = ComposeView.pixelSize(ofImageData: data)
+                        }
+                    }
+                    finalContent += "\n\(hostedURL.absoluteString)"
+                    mediaDescriptors.append(NoteTagging.MediaDescriptor(
+                        url: hostedURL.absoluteString,
+                        mimeType: mimeType,
+                        sha256: ComposeView.blossomHash(in: hostedURL),
+                        pixelWidth: pixelSize.map { Int($0.width.rounded()) },
+                        pixelHeight: pixelSize.map { Int($0.height.rounded()) },
+                        alt: attachments[i].altText,
+                        byteCount: blob.flatMap { (try? FileManager.default.attributesOfItem(atPath: $0.path))?[.size] as? Int }
+                    ))
+                    continue
+                }
                 let progressHandler: (Double) -> Void = { progressFraction in
                     self.uploadInfoProvider.updateProgress(progressFraction)
                 }
@@ -1654,6 +1731,16 @@ struct ComposeView: View {
         let ownerHex = nostrService.activeHexPubkey
         let webURL = configService.config.webURL
         let rpm = relayManager
+        // The Media tab dates a blob by the note that published it, not by the
+        // file's mtime; without this the same photo sits under different
+        // headings in the tab and here.
+        var eventDates: [String: Date] = [:]
+        for item in nostrService.noteMedia {
+            guard let hash = ComposeView.blossomHash(in: item.url) else { continue }
+            if let existing = eventDates[hash], existing >= item.dateAdded { continue }
+            eventDates[hash] = item.dateAdded
+        }
+        let publishedDates = eventDates
 
         Task {
             let result = await Task.detached(priority: .background) { () -> [MediaItem] in
@@ -1667,7 +1754,8 @@ struct ComposeView: View {
                     if filename.starts(with: ".") || filename == "LOCK" { return nil }
                     guard let serveURL = URL(string: "\(webURL)/\(filename)") else { return nil }
                     let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-                    let date = (attributes?[.modificationDate] as? Date) ?? (attributes?[.creationDate] as? Date) ?? Date()
+                    let fileDate = (attributes?[.modificationDate] as? Date) ?? (attributes?[.creationDate] as? Date) ?? Date()
+                    let date = ComposeView.blossomHash(in: fileURL).flatMap { publishedDates[$0] } ?? fileDate
                     let proof = rpm.detectMimeFromBytes(for: fileURL)
                     let resolvedMime = rpm.resolveMime(claim: nil, proof: proof)
                     let mimeType = resolvedMime == "application/octet-stream" ? nil : resolvedMime
@@ -1870,20 +1958,22 @@ class MediaUploadsIndicatorInfoProvider: ObservableObject {
     }
 }
 
+/// Media already on the relay, for attaching to a note. Organised exactly like
+/// the Media tab — same type chips, same sort, same date headings — and it
+/// reads and writes the tab's stored settings, so the two never disagree.
 struct BlossomMediaPickerSheet: View {
     @Binding var blossomMedia: [MediaItem]
     @Binding var isLoading: Bool
     let onSelect: (MediaItem) -> Void
     let onAppearLoad: () -> Void
     @Environment(\.dismiss) var dismiss
-    @State private var selectedFilter: BlossomMediaFilter = .all
 
-    enum BlossomMediaFilter: String, CaseIterable {
-        case all = "All"
-        case photo = "Photo"
-        case video = "Video"
-        case gif = "GIF"
-    }
+    @AppStorage(MediaTypeFilter.storageKey) private var typeFilterRaw: String =
+        MediaTypeFilter.rawSelection(Set(MediaTypeFilter.allCases))
+    @AppStorage(MediaSortOption.storageKey) private var sortOptionRaw: String = MediaSortOption.newestFirst.rawValue
+
+    private var typeFilter: Set<MediaTypeFilter> { MediaTypeFilter.selection(from: typeFilterRaw) }
+    private var sortOption: MediaSortOption { MediaSortOption(rawValue: sortOptionRaw) ?? .newestFirst }
 
     #if os(macOS)
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
@@ -1891,17 +1981,32 @@ struct BlossomMediaPickerSheet: View {
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
     #endif
 
+    /// Every item here is on the relay by construction, so "On relay first"
+    /// reduces to its date tiebreak.
     private var filteredMedia: [MediaItem] {
-        switch selectedFilter {
-        case .all:
-            return blossomMedia
-        case .photo:
-            return blossomMedia.filter { $0.type == .image && !$0.isAnimatedGIF }
-        case .video:
-            return blossomMedia.filter { $0.type == .video }
-        case .gif:
-            return blossomMedia.filter { $0.isAnimatedGIF }
+        let selection = typeFilter
+        return sortOption.sorted(blossomMedia.filter { selection.contains(MediaTypeFilter.category(of: $0)) }) { _ in true }
+    }
+
+    private var sections: [MediaDateSection] {
+        guard sortOption.groupsByDate else {
+            return [MediaDateSection(id: "all", title: "", items: filteredMedia)]
         }
+        return MediaDateSection.sections(for: filteredMedia)
+    }
+
+    /// Same toggle rules as the Media tab: from "all", a tap isolates that
+    /// type; the last selected type cannot be switched off.
+    private func toggle(_ filter: MediaTypeFilter) {
+        var selection = typeFilter
+        if selection.count == MediaTypeFilter.allCases.count {
+            selection = [filter]
+        } else if selection.contains(filter) {
+            if selection.count > 1 { selection.remove(filter) }
+        } else {
+            selection.insert(filter)
+        }
+        withAnimation(Motion.toggle) { typeFilterRaw = MediaTypeFilter.rawSelection(selection) }
     }
 
     var body: some View {
@@ -1922,7 +2027,7 @@ struct BlossomMediaPickerSheet: View {
                         Image(systemName: "camera.macro")
                             .font(.appSystem(size: 48, weight: .thin))
                             .foregroundColor(Color.havenPurple.opacity(0.6))
-                        Text("No \(selectedFilter.rawValue.lowercased()) media")
+                        Text("No media matches these filters")
                             .font(.appSystem(size: 16, weight: .medium))
                             .foregroundColor(.secondary)
                     }
@@ -1939,13 +2044,20 @@ struct BlossomMediaPickerSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 6) {
-                            ForEach(filteredMedia) { item in
-                                BlossomPickerGridItem(item: item)
-                                    .onTapGesture { onSelect(item) }
+                        LazyVGrid(columns: columns, spacing: 8, pinnedViews: [.sectionHeaders]) {
+                            ForEach(sections) { section in
+                                Section {
+                                    ForEach(section.items) { item in
+                                        BlossomPickerGridItem(item: item)
+                                            .onTapGesture { onSelect(item) }
+                                    }
+                                } header: {
+                                    sectionHeader(section.title)
+                                }
                             }
                         }
-                        .padding(8)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
                     }
                 }
             }
@@ -1959,30 +2071,88 @@ struct BlossomMediaPickerSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .principal) {
-                    HStack(spacing: 4) {
-                        ForEach(BlossomMediaFilter.allCases, id: \.self) { filter in
-                            Button {
-                                selectedFilter = filter
-                            } label: {
-                                Text(filter.rawValue)
-                                    .font(.appSystem(size: 13, weight: selectedFilter == filter ? .semibold : .regular))
-                                    .foregroundColor(selectedFilter == filter ? .white : .secondary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(
-                                        selectedFilter == filter
-                                            ? Color.havenPurple
-                                            : Color.secondary.opacity(0.15)
-                                    )
-                                    .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    typeFilterButtons
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    sortMenu
                 }
             }
         }
         .onAppear { onAppearLoad() }
+    }
+
+    /// The Media tab's type row: All, Photo, Video, GIF.
+    private var typeFilterButtons: some View {
+        HStack(spacing: 12) {
+            let allSelected = typeFilter.count == MediaTypeFilter.allCases.count
+            let photoSelected = typeFilter.contains(.photo)
+            let videoSelected = typeFilter.contains(.video)
+            let gifSelected = typeFilter.contains(.gif)
+
+            IconFilterButton(
+                icon: allSelected ? "circle.grid.2x2.fill" : "circle.grid.2x2",
+                tooltip: "All Media",
+                isSelected: allSelected,
+                color: .havenPurple
+            ) {
+                withAnimation(Motion.toggle) {
+                    typeFilterRaw = MediaTypeFilter.rawSelection(Set(MediaTypeFilter.allCases))
+                }
+            }
+            IconFilterButton(
+                icon: photoSelected ? "photo.fill" : "photo",
+                tooltip: "Photos",
+                isSelected: photoSelected,
+                color: .primary
+            ) { toggle(.photo) }
+            IconFilterButton(
+                icon: videoSelected ? "video.fill" : "video",
+                tooltip: "Videos",
+                isSelected: videoSelected,
+                color: .primary
+            ) { toggle(.video) }
+            IconFilterButton(
+                icon: "GIF",
+                tooltip: "GIFs",
+                isSelected: gifSelected,
+                color: .primary
+            ) { toggle(.gif) }
+        }
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            ForEach(MediaSortOption.allCases) { option in
+                Button {
+                    withAnimation(Motion.toggle) { sortOptionRaw = option.rawValue }
+                } label: {
+                    Label(option.label, systemImage: sortOption == option ? "checkmark" : option.icon)
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(.havenPurple)
+        }
+        .accessibilityLabel("Sort")
+    }
+
+    /// Pinned date heading, styled like the Media tab's. Nothing for the
+    /// untitled single section a non-date sort produces.
+    @ViewBuilder
+    private func sectionHeader(_ title: String) -> some View {
+        if !title.isEmpty {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.appSystem(size: 13, weight: .bold, design: .rounded))
+                    .tracking(0.3)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.ultraThinMaterial)
+        }
     }
 }
 

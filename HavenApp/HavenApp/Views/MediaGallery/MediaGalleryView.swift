@@ -28,28 +28,16 @@ struct MediaGalleryView: View {
 
     // Type filter, layout and sort survive leaving the tab and relaunching.
     // Stored as raw strings because AppStorage cannot hold a Set or a bare enum.
-    @AppStorage("mediaGallery.typeFilter") var mediaTypeFilterRaw: String =
-        MediaTypeFilter.allCases.map(\.rawValue).joined(separator: ",")
+    @AppStorage(MediaTypeFilter.storageKey) var mediaTypeFilterRaw: String =
+        MediaTypeFilter.rawSelection(Set(MediaTypeFilter.allCases))
     @AppStorage("mediaGallery.layoutMode") var mediaLayoutModeRaw: String = MediaLayoutMode.grid.rawValue
-    @AppStorage("mediaGallery.sortOption") var sortOptionRaw: String = MediaSortOption.newestFirst.rawValue
+    @AppStorage(MediaSortOption.storageKey) var sortOptionRaw: String = MediaSortOption.newestFirst.rawValue
 
     /// Selected media types. Reading rebuilds the set from storage; writing
     /// normalises to `allCases` order so the stored string is stable.
     var mediaTypeFilter: Set<MediaTypeFilter> {
-        get {
-            let stored = Set(mediaTypeFilterRaw
-                .split(separator: ",")
-                .compactMap { MediaTypeFilter(rawValue: String($0)) })
-            // An empty selection shows nothing at all and there is no UI path
-            // back from it, so treat "none stored" as "everything".
-            return stored.isEmpty ? Set(MediaTypeFilter.allCases) : stored
-        }
-        nonmutating set {
-            mediaTypeFilterRaw = MediaTypeFilter.allCases
-                .filter { newValue.contains($0) }
-                .map(\.rawValue)
-                .joined(separator: ",")
-        }
+        get { MediaTypeFilter.selection(from: mediaTypeFilterRaw) }
+        nonmutating set { mediaTypeFilterRaw = MediaTypeFilter.rawSelection(newValue) }
     }
 
     var mediaLayoutMode: MediaLayoutMode {
