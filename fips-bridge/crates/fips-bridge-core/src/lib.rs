@@ -13,5 +13,5 @@ pub mod transport;
 pub use quinn;
 pub use rustls;
 
-pub use endpoint::{bind_endpoint, EndpointOptions};
+pub use endpoint::{bind_endpoint, public_mesh_peers, seed_alias, EndpointOptions, PUBLIC_MESH_SEEDS};
 pub use transport::{FipsQuic, FipsUdpSocket, SERVICE_PORT};

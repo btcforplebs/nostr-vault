@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.fips.FipsMeshManager
 import com.nostrvault.relay.LogStore
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.AmberResultBridge
@@ -59,6 +60,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var pendingPostManager: PendingPostManager
     @Inject lateinit var mediaUploadManager: MediaUploadManager
     @Inject lateinit var widgetPublisher: WidgetPublisher
+    @Inject lateinit var fipsMeshManager: FipsMeshManager
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* result ignored */ }
@@ -77,6 +79,11 @@ class MainActivity : FragmentActivity() {
 
         // Load persisted config so hasCompletedSetup reflects saved state
         configStore.reload()
+
+        // After reload(), never before: the preference lives in the config file
+        // and reads false until it has been loaded, which would make this a
+        // silent no-op every launch.
+        fipsMeshManager.restoreIfEnabled(lifecycleScope)
 
         // Handle media shared into the app via the system share sheet (ACTION_SEND)
         handleShareIntent(intent)

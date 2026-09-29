@@ -99,6 +99,23 @@ object CredentialStore {
     fun getCredentialHexKey(npub: String): String? =
         get(credHexKey(npub))
 
+    // ---- FIPS mesh network identity ----
+    //
+    // Deliberately not one of the account keys above: the mesh address should
+    // be rotatable without touching the social identity, and vice versa. One
+    // per install, not per account.
+
+    private const val MESH_IDENTITY = "fips-mesh-nsec"
+
+    fun storeMeshNsec(nsec: String): Boolean =
+        store(nsec, MESH_IDENTITY)
+
+    fun getMeshNsec(): String? =
+        get(MESH_IDENTITY)
+
+    fun deleteMeshNsec(): Boolean =
+        delete(MESH_IDENTITY)
+
     // ---- Private helpers ----
 
     private fun store(password: String, account: String): Boolean = try {
