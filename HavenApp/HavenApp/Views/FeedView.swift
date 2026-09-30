@@ -2335,6 +2335,7 @@ struct FeedNoteRow: View {
 
     @State private var showingEmojiPicker = false
     @State private var showLightning = false
+    @State private var zapBoltAnchor = ZapFlightAnchor()
     @State private var zapSheetContext: ZapSheetContext?
     @State private var showingDeleteConfirm = false
     @State private var showingBroadcastSheet = false
@@ -2863,6 +2864,7 @@ struct FeedNoteRow: View {
                     .frame(width: 32, height: 32)
                     .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
                     .clipShape(Capsule())
+                    .zapFlightTarget(zapBoltAnchor)
                     .overlay { ZapBurstView(isAnimating: $showLightning) }
                     .scaleEffect(zapPulse ? Motion.pulseScale : 1.0)
                     .animation(Motion.pop, value: zapPulse)
@@ -2883,7 +2885,12 @@ struct FeedNoteRow: View {
                                 let sent = await actions.zapNote(note, lud16, nil)
                                 if sent { Motion.firePulse($zapPulse) }
                             }
-                            showLightning = true
+                            // Sats fly from your avatar to this button and
+                            // burst on landing; with nowhere to fly from (or
+                            // Reduce Motion) the burst plays on its own.
+                            if !ZapFlightCoordinator.shared.launch(to: zapBoltAnchor, onArrive: { showLightning = true }) {
+                                showLightning = true
+                            }
                         } else {
                             noLightningAddressAlert = true
                         }
