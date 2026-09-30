@@ -9,7 +9,6 @@ import Foundation
 enum SettingsHelp: String, CaseIterable {
     // Relay status card
     case relayStatus = "relay.status"
-    case relayRestart = "relay.restart"
 
     // Account
     case accountAccounts = "account.accounts"
@@ -74,7 +73,6 @@ enum SettingsHelp: String, CaseIterable {
     var title: String {
         switch self {
         case .relayStatus: return "Your Vault Relay"
-        case .relayRestart: return "Restart Needed"
         case .accountAccounts: return "Accounts"
         case .accountSigning: return "Signing"
         case .accountRevealKey: return "Reveal Key"
@@ -128,7 +126,6 @@ enum SettingsHelp: String, CaseIterable {
     var text: String {
         switch self {
         case .relayStatus: return "The relay on this device stores your notes and media locally."
-        case .relayRestart: return "This change needs a relay restart to take effect."
         case .accountAccounts: return "Add multiple accounts and switch between them anytime."
         case .accountSigning: return "Sign with a key on this device, or approve posts from a separate signer app."
         case .accountRevealKey: return "Shows your secret key after verifying it's you."

@@ -13,11 +13,6 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
         "Your Vault Relay",
         "The relay on this device stores your notes and media locally.",
     ),
-    RELAY_RESTART(
-        "relay.restart",
-        "Restart Needed",
-        "This change needs a relay restart to take effect.",
-    ),
     ACCOUNT_ACCOUNTS(
         "account.accounts",
         "Accounts",

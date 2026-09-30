@@ -17,7 +17,6 @@ struct SettingsView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
     @State private var selectedTab: SettingsTab = .accounts
     @State private var saveTask: Task<Void, Never>?
-    @State private var isRestarting = false
     @State private var showingSetupWizard = false
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
@@ -32,14 +31,6 @@ struct SettingsView: View {
         #else
         return "\(version) (\(build))"
         #endif
-    }
-    
-    var needsRestart: Bool {
-        guard let lastLaunch = relayManager.lastConfig else { return false }
-        var current = configService.config
-        let last = lastLaunch
-        current.activeAccountNpub = last.activeAccountNpub
-        return current != last
     }
     
     enum SettingsTab: String, CaseIterable, Identifiable {
@@ -144,12 +135,16 @@ struct SettingsView: View {
             saveTask = Task {
                 try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second debounce
                 if !Task.isCancelled {
-                    configService.save()
+                    commitSave()
                 }
             }
         }
         .onDisappear {
-            saveTask?.cancel()
+            // Leaving mid-debounce must not drop the change or its restart.
+            if saveTask != nil {
+                saveTask?.cancel()
+                commitSave()
+            }
         }
         #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenFeedRelaySettings)) { _ in
@@ -274,24 +269,18 @@ struct SettingsView: View {
             Divider()
                 .background(Color.platformSeparator)
             
-            // Save & Restart / About in sidebar bottom
+            // Restart status / About in sidebar bottom
             VStack(spacing: 8) {
-                if isRestarting {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(.vertical, 8)
-                } else {
-                    Button(action: restartRelay) {
-                        Text("Save & Restart Relay")
-                            .font(.appSystem(size: 11, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Color.havenPurple)
-                            .cornerRadius(8)
+                if relayManager.isApplyingConfig {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Restarting relay…")
+                            .font(.appSystem(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .disabled((!needsRestart && configService.config == relayManager.lastConfig) || !relayManager.isRunning)
+                    .padding(.vertical, 4)
+                    .accessibilityElement(children: .combine)
                 }
                 
                 VStack(spacing: 2) {
@@ -403,7 +392,7 @@ struct SettingsView: View {
             }
 
             Section {
-                RelayStatusCard(needsRestart: needsRestart, isRestarting: isRestarting, restart: restartRelay)
+                RelayStatusCard()
                     .padding(.horizontal)
             }
             .listRowInsets(EdgeInsets())
@@ -547,15 +536,12 @@ struct SettingsView: View {
         }
     }
 
-    private func restartRelay() {
-        isRestarting = true
+    /// Saves, then lets the relay manager restart the relay if (and only if)
+    /// the save changed something the relay reads at start.
+    private func commitSave() {
+        saveTask = nil
         configService.save()
-        relayManager.stopRelay {
-            Task { @MainActor in
-                relayManager.startRelay(config: configService.config)
-                isRestarting = false
-            }
-        }
+        relayManager.applySavedConfig(configService.config)
     }
     
     @ViewBuilder
@@ -597,8 +583,8 @@ struct SettingsView: View {
 }
 
 /// The first thing on the Settings screen: whether this device's Vault relay
-/// is running, where it answers, and a Restart button that exists only while
-/// a saved change is waiting on one.
+/// is running and where it answers. A saved change the relay reads at start
+/// restarts it automatically; the card shows "Restarting…" meanwhile.
 ///
 /// This replaces a purple "Restart Required" banner that appeared from
 /// nowhere and never said which relay it meant — people with a Mac relay
@@ -606,17 +592,15 @@ struct SettingsView: View {
 struct RelayStatusCard: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
-    let needsRestart: Bool
-    let isRestarting: Bool
-    let restart: () -> Void
 
     private enum Status {
-        case running, starting, stopped
+        case running, starting, restarting, stopped
 
         var label: String {
             switch self {
             case .running: return "Running"
             case .starting: return "Starting…"
+            case .restarting: return "Restarting…"
             case .stopped: return "Stopped"
             }
         }
@@ -624,14 +608,15 @@ struct RelayStatusCard: View {
         var color: Color {
             switch self {
             case .running: return .havenOnline
-            case .starting: return .orange
+            case .starting, .restarting: return .orange
             case .stopped: return .red
             }
         }
     }
 
     private var status: Status {
-        if isRestarting || relayManager.isBooting { return .starting }
+        if relayManager.isApplyingConfig { return .restarting }
+        if relayManager.isBooting { return .starting }
         return relayManager.isRunning ? .running : .stopped
     }
 
@@ -697,29 +682,6 @@ struct RelayStatusCard: View {
                         .cornerRadius(10)
                 }
                 .buttonStyle(.plain)
-            } else if needsRestart {
-                HStack(spacing: 10) {
-                    Button(action: restart) {
-                        HStack(spacing: 8) {
-                            if isRestarting {
-                                ProgressView().controlSize(.small).tint(.white)
-                            } else {
-                                Image(systemName: "arrow.clockwise")
-                            }
-                            Text("Restart to Apply Changes")
-                        }
-                        .font(.appSubheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.havenPurple)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isRestarting)
-
-                    InfoButton(.relayRestart)
-                }
             }
         }
         .padding(14)
