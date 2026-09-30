@@ -75,6 +75,11 @@ struct ContentView: View {
             if configService.config.hasCompletedSetup && configService.config.activeSigningMode() == "nip46" {
                 NIP46Service.shared.connectFromConfig()
             }
+            // A notification tapped on a cold start routes before this view
+            // exists, so its tab switch went nowhere; the target is still parked.
+            if RelayFocus.pending != nil {
+                selectedTab = 4 // Relay tab
+            }
             // Replay any queued notification action from a cold start
             if let action = AppDelegate.pendingAction {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

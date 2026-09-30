@@ -63,6 +63,9 @@ struct VaultView: View {
     @State var hasEstablishedNotificationBaseline = false
 
     @State var showingNoteId: String?
+    /// The row a tapped notification landed on, outlined for a few seconds.
+    @State var focusedEventId: String?
+    @State var focusTask: Task<Void, Never>?
     /// Non-nil when an iPad split pane owns the note detail column.
     @Environment(\.noteDetailSelection) var noteDetailSelection
 

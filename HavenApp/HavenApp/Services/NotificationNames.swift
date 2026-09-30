@@ -17,6 +17,9 @@ extension Notification.Name {
     static let havenOpenRelayLikes = Notification.Name("com.haven.openRelayLikes")
     /// Posted when the user taps a repost notification — opens relay page notes section.
     static let havenOpenRelayNotes = Notification.Name("com.haven.openRelayNotes")
+    /// Posted after a relay-tab route when a notification names one event — the
+    /// relay tab scrolls to it. The target itself is parked in `RelayFocus.pending`.
+    static let havenFocusRelayEvent = Notification.Name("com.haven.focusRelayEvent")
     /// Posted when the user taps feed relays in the dashboard — navigates to Settings > Feed Relays.
     static let havenOpenFeedRelaySettings = Notification.Name("com.haven.openFeedRelaySettings")
     /// Posted to open the Settings view from any context (e.g. profile toolbar, footer gear).

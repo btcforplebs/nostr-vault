@@ -3518,7 +3518,7 @@ struct AvatarView: View {
 /// Placeholder for a quote whose note hasn't arrived. Mirrors `QuotedNoteView`'s
 /// header and a two-line body (redacted) so the card holds roughly its final
 /// height instead of growing out of nothing.
-private struct QuotedNoteSkeleton: View {
+struct QuotedNoteSkeleton: View {
     @State private var shimmer = false
 
     var body: some View {

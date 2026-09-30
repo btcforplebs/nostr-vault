@@ -217,15 +217,19 @@ final class LocalNotificationService {
         if let npub, !npub.isEmpty, npub != currentNpub {
             ConfigService.shared.switchActiveAccount(to: npub)
         }
+        // Every relay-event notification lands on that event in the Relay tab.
+        // Mentions and replies used to open the thread sheet over the Feed tab
+        // instead, and the others only picked a filter without finding the post.
         switch type {
-        case "mention", "reply":
-            NotificationCenter.default.post(name: .havenOpenMentions, object: id)
+        case "mention", "reply", "repost":
+            NotificationCenter.default.post(name: .havenOpenRelayNotes, object: nil)
+            RelayFocus.request(type: type, eventId: id)
         case "reaction":
             NotificationCenter.default.post(name: .havenOpenRelayLikes, object: nil)
-        case "repost":
-            NotificationCenter.default.post(name: .havenOpenRelayNotes, object: nil)
+            RelayFocus.request(type: type, eventId: id)
         case "zap":
             NotificationCenter.default.post(name: .havenOpenRelayZaps, object: nil)
+            RelayFocus.request(type: type, eventId: id)
         case "dm", "giftwrap":
             NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
         default:
