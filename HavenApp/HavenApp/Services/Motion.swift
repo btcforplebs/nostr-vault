@@ -135,6 +135,11 @@ enum Motion {
     /// doesn't cut the outward spring off before it arrives at `pulseScale`.
     /// `nil` under Reduce Motion, same as the rest of this vocabulary — the
     /// icon's fill and color already carry the meaning.
+    /// The confirmation burst for a zap landing — a small shockwave and
+    /// spark scatter anchored to the bolt button, distinct from `pop`
+    /// (the icon's own tap feedback). This is the payment's arrival.
+    static var zapBurst: Animation { spring(0.46, 0.72) }
+
     static func firePulse(_ flag: Binding<Bool>) {
         guard !isReduced else { return }
         flag.wrappedValue = true

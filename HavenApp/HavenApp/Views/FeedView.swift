@@ -2863,6 +2863,7 @@ struct FeedNoteRow: View {
                     .frame(width: 32, height: 32)
                     .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
                     .clipShape(Capsule())
+                    .overlay { ZapBurstView(isAnimating: $showLightning) }
                     .scaleEffect(zapPulse ? Motion.pulseScale : 1.0)
                     .animation(Motion.pop, value: zapPulse)
                     .contentShape(Capsule())
@@ -2951,10 +2952,6 @@ struct FeedNoteRow: View {
             for qId in note.quotedEventIds where actions.findNote(qId) == nil {
                 actions.fetchMissingNote(qId)
             }
-        }
-        .overlay {
-            LightningAnimationView(isAnimating: $showLightning)
-                .allowsHitTesting(false)
         }
         .sheet(item: $zapSheetContext) { context in
             CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
