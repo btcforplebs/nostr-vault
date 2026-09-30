@@ -1433,7 +1433,16 @@ struct ComposeView: View {
             // bytes arrive and can read out what the media is.
             var mediaDescriptors: [NoteTagging.MediaDescriptor] = []
 
-            // Upload all attachments and fail if any fail
+            // The same attachments, kept for the waiting-post queue in case an
+            // outside Blossom server doesn't answer. `baseContent` is the text
+            // before any media line is appended.
+            let baseContent = finalContent
+            var queuedMedia: [QueuedMediaPost.Media] = []
+            var unreachableServers: [String] = []
+
+            // Upload all attachments. Each one lands in this device's relay
+            // first; if no outside server takes it, the post waits in
+            // MediaPostQueue instead of being cancelled.
             for i in attachments.indices {
                 uploadInfoProvider.setCurrentIndex(i + 1, type: attachments[i].type)
                 let mimeType = attachments[i].type.preferredMIMEType ?? "application/octet-stream"
@@ -1451,7 +1460,7 @@ struct ComposeView: View {
                         }
                     }
                     finalContent += "\n\(hostedURL.absoluteString)"
-                    mediaDescriptors.append(NoteTagging.MediaDescriptor(
+                    let hostedDescriptor = NoteTagging.MediaDescriptor(
                         url: hostedURL.absoluteString,
                         mimeType: mimeType,
                         sha256: ComposeView.blossomHash(in: hostedURL),
@@ -1459,6 +1468,12 @@ struct ComposeView: View {
                         pixelHeight: pixelSize.map { Int($0.height.rounded()) },
                         alt: attachments[i].altText,
                         byteCount: blob.flatMap { (try? FileManager.default.attributesOfItem(atPath: $0.path))?[.size] as? Int }
+                    )
+                    mediaDescriptors.append(hostedDescriptor)
+                    queuedMedia.append(QueuedMediaPost.Media(
+                        sha256: hostedDescriptor.sha256, mimeType: mimeType, url: hostedDescriptor.url,
+                        pixelWidth: hostedDescriptor.pixelWidth, pixelHeight: hostedDescriptor.pixelHeight,
+                        alt: hostedDescriptor.alt, byteCount: hostedDescriptor.byteCount
                     ))
                     continue
                 }
@@ -1466,7 +1481,8 @@ struct ComposeView: View {
                     self.uploadInfoProvider.updateProgress(progressFraction)
                 }
 
-                let uploadedURL: URL?
+                let outcome: BlossomService.PostUploadOutcome
+                let skipOutside = !unreachableServers.isEmpty
                 var uploadedSHA256: String?
                 var pixelSize: CGSize?
                 var byteCount: Int?
@@ -1483,10 +1499,11 @@ struct ComposeView: View {
                     uploadedSHA256 = sha256
                     pixelSize = await ComposeView.pixelSize(ofVideoAt: fileURL)
                     byteCount = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.size] as? Int
-                    uploadedURL = await blossomService.uploadAndMirror(
+                    outcome = await blossomService.uploadForPost(
                         fileURL: fileURL,
                         sha256: sha256,
                         contentType: mimeType,
+                        skipOutsideServers: skipOutside,
                         progress: progressHandler
                     )
                 } else if let data = attachments[i].data {
@@ -1494,19 +1511,40 @@ struct ComposeView: View {
                     uploadedSHA256 = sha256
                     pixelSize = ComposeView.pixelSize(ofImageData: data)
                     byteCount = data.count
-                    uploadedURL = await blossomService.uploadAndMirror(
+                    outcome = await blossomService.uploadForPost(
                         data: data,
                         sha256: sha256,
                         contentType: mimeType,
+                        skipOutsideServers: skipOutside,
                         progress: progressHandler
                     )
                 } else {
-                    uploadedURL = nil
+                    outcome = .notSavedOnDevice
                 }
 
-                guard let url = uploadedURL else {
+                let url: URL
+                switch outcome {
+                case .hosted(let hostedURL):
+                    url = hostedURL
+                case .savedOnDevice(let unreachable):
+                    // Safe on this device; the post will wait for a server.
+                    unreachableServers = unreachable
+                    queuedMedia.append(QueuedMediaPost.Media(
+                        sha256: uploadedSHA256, mimeType: mimeType, url: nil,
+                        pixelWidth: pixelSize.map { Int($0.width.rounded()) },
+                        pixelHeight: pixelSize.map { Int($0.height.rounded()) },
+                        alt: attachments[i].altText, byteCount: byteCount
+                    ))
+                    continue
+                case .noOutsideServer, .notSavedOnDevice:
+                    let message: String
+                    if case .noOutsideServer = outcome {
+                        message = MediaUploadOutcomeMessage.noOutsideServer
+                    } else {
+                        message = MediaUploadOutcomeMessage.notSavedOnDevice
+                    }
                     DispatchQueue.main.async {
-                        error = "Failed to upload media to Blossom mirrors. Check your connection and try again."
+                        error = message
                         isPosting = false
                         isUploading = false
                         uploadInfoProvider.reset()
@@ -1517,7 +1555,7 @@ struct ComposeView: View {
                 attachments[i].isUploaded = true
                 finalContent += "\n\(url.absoluteString)"
 
-                mediaDescriptors.append(NoteTagging.MediaDescriptor(
+                let descriptor = NoteTagging.MediaDescriptor(
                     url: url.absoluteString,
                     mimeType: mimeType,
                     sha256: uploadedSHA256,
@@ -1525,6 +1563,12 @@ struct ComposeView: View {
                     pixelHeight: pixelSize.map { Int($0.height.rounded()) },
                     alt: attachments[i].altText,
                     byteCount: byteCount
+                )
+                mediaDescriptors.append(descriptor)
+                queuedMedia.append(QueuedMediaPost.Media(
+                    sha256: descriptor.sha256, mimeType: mimeType, url: descriptor.url,
+                    pixelWidth: descriptor.pixelWidth, pixelHeight: descriptor.pixelHeight,
+                    alt: descriptor.alt, byteCount: descriptor.byteCount
                 ))
             }
             isUploading = false
@@ -1644,12 +1688,49 @@ struct ComposeView: View {
             }
 
             // Quote post: append nevent reference and q tag (NIP-18)
+            var quoteSuffix: String?
             if let quoted = effectiveQuoteTo {
+                quoteSuffix = "\nnostr:\(quoted.nevent)"
                 finalContent += "\nnostr:\(quoted.nevent)"
                 tags.append(["q", quoted.id, relayHint, quoted.pubkey])
                 if !tags.contains(where: { $0.count >= 2 && $0[0] == "p" && $0[1] == quoted.pubkey }) {
                     tags.append(["p", quoted.pubkey])
                 }
+            }
+
+            // Some media is only on this device: hand the post to the queue,
+            // which sends it once an outside server takes the media. Everything
+            // above is kept; hashtags and imeta are rebuilt from the final URLs
+            // by QueuedMediaPost.assembled(), exactly as below.
+            if queuedMedia.contains(where: { $0.url == nil }) {
+                let powSnap = PowPreferences.snapshot()
+                let queued = QueuedMediaPost(
+                    accountNpub: configService.config.activeAccountNpub,
+                    body: baseContent,
+                    media: queuedMedia,
+                    quoteSuffix: quoteSuffix,
+                    baseTags: tags,
+                    powDifficulty: powSnap.noteEnabled ? powSnap.noteDifficulty : 0
+                )
+                let macHost = URL(string: configService.config.macRelayHttpsURL)?.host
+                let hosts = unreachableServers.compactMap { URL(string: $0)?.host }
+                await MainActor.run {
+                    MediaPostQueue.shared.enqueue(queued)
+                    // The queue now holds the post on disk; a draft too would
+                    // offer to post it a second time.
+                    if let id = self.draftId {
+                        Task { await DraftService.shared.deleteDraft(id: id) }
+                    }
+                    ErrorNotificationManager.shared.show(
+                        MediaUploadOutcomeMessage.queued(hosts: hosts, macHost: macHost),
+                        icon: "clock.arrow.circlepath",
+                        style: .warning
+                    )
+                    self.lastSavedContent = self.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    isPosting = false
+                    performDismiss()
+                }
+                return
             }
 
             // NIP-24 `t` tags. Without these a note typed with #bitcoin is
