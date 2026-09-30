@@ -492,7 +492,8 @@ struct MacRelaySyncStatusView: View {
 
     /// The relay reads the Mac address only when it starts, so a new address
     /// does nothing — and a check would run against the old one — until the
-    /// relay is restarted.
+    /// relay restarts onto it. Saving the address in Settings does that
+    /// automatically; the headline only says "Restarting" while it happens.
     private var needsRestart: Bool {
         guard relayManager.isRunning, let running = relayManager.lastConfig else { return false }
         return RelayConfiguration.macRelayURL(config: running) != configuredMac
@@ -583,7 +584,11 @@ struct MacRelaySyncStatusView: View {
     }
 
     private var headline: String {
-        if needsRestart { return "Restart the relay to use this Mac address" }
+        if needsRestart {
+            return relayManager.isApplyingConfig
+                ? "Restarting the relay to use this Mac address…"
+                : "This Mac address applies when the relay next starts"
+        }
         if checkRequested { return "Checking with your Mac…" }
         guard isForCurrentMac, let status, let state = status.state else {
             return "Full copy from your Mac hasn't run yet"

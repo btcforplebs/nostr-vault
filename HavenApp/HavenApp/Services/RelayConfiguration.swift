@@ -112,6 +112,29 @@ enum RelayConfiguration {
         )
     }
 
+    /// Everything the relay reads when it starts: its environment plus the
+    /// list files written beside it. Two configs with equal inputs run an
+    /// identical relay, so this is what decides whether a saved settings
+    /// change needs a restart. The blocklist is deliberately absent: it
+    /// reaches a running relay live through UpdateBlacklistC.
+    struct LaunchInputs: Equatable {
+        let env: [String: String]
+        let importSeedRelays: [String]
+        let blastrRelays: [String]
+        let dmRelays: [String]
+        let whitelistedNpubs: [String]
+    }
+
+    static func launchInputs(config: HavenConfig, relayDataDir: URL) -> LaunchInputs {
+        LaunchInputs(
+            env: generateEnvDictionary(config: config, relayDataDir: relayDataDir),
+            importSeedRelays: config.importSeedRelays,
+            blastrRelays: config.activeBlastrRelays,
+            dmRelays: config.dmRelays,
+            whitelistedNpubs: config.whitelistedNpubs
+        )
+    }
+
     /// Build the full environment dictionary from a HavenConfig.
     /// `relayDataDir` is passed explicitly so this function has no
     /// dependency on ConfigService.shared.

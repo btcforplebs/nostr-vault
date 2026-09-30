@@ -6,13 +6,9 @@ struct ProofOfWorkSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Text("Proof of Work mines a hash prefix on your events, acting as a spam deterrent. Higher difficulty takes longer but signals more effort.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Section {
-                Toggle("Enable for notes", isOn: $prefs.notePowEnabled)
+                Toggle(isOn: $prefs.notePowEnabled) {
+                    Text("Enable for Notes").settingInfo(.advPow)
+                }
                 if prefs.notePowEnabled {
                     Stepper("Difficulty: \(prefs.noteDifficulty) bits",
                             value: $prefs.noteDifficulty,
@@ -23,7 +19,7 @@ struct ProofOfWorkSettingsView: View {
             }
 
             Section {
-                Toggle("Enable for reactions", isOn: $prefs.reactionPowEnabled)
+                Toggle("Enable for Reactions", isOn: $prefs.reactionPowEnabled)
                 if prefs.reactionPowEnabled {
                     Stepper("Difficulty: \(prefs.reactionDifficulty) bits",
                             value: $prefs.reactionDifficulty,

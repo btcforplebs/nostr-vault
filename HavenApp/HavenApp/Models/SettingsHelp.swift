@@ -1,0 +1,178 @@
+import Foundation
+
+/// The words behind each setting's (i) button.
+///
+/// Keys match `SettingsHelp.kt` on Android — change a string in one and change
+/// it in the other, so the two apps never describe a setting differently.
+/// Keep each entry to one or two plain sentences; anything longer belongs in
+/// a guide, not under a switch.
+enum SettingsHelp: String, CaseIterable {
+    // Relay status card
+    case relayStatus = "relay.status"
+
+    // Account
+    case accountAccounts = "account.accounts"
+    case accountSigning = "account.signing"
+    case accountRevealKey = "account.revealKey"
+    case accountPublishInbox = "account.publishInbox"
+    case accountBlocked = "account.blocked"
+    case accountSlowed = "account.slowed"
+    case accountFollowingBackup = "account.followingBackup"
+    case walletNWC = "wallet.nwc"
+    case walletDefaultZap = "wallet.defaultZap"
+    case walletBitcoin = "wallet.bitcoin"
+
+    // Feed & Display
+    case feedReposts = "feed.reposts"
+    case feedReplies = "feed.replies"
+    case feedAutoLoad = "feed.autoLoad"
+    case feedRelays = "feed.relays"
+    case feedSearchRelays = "feed.searchRelays"
+    case displayTextSize = "display.textSize"
+    case displayTabBarAnimation = "display.tabBarAnimation"
+    case displayZapsOnly = "display.zapsOnly"
+    case displayDefaultReaction = "display.defaultReaction"
+    case mediaAutoplay = "media.autoplay"
+    case mediaDisableCache = "media.disableCache"
+    case mediaPrefetchAvatars = "media.prefetchAvatars"
+    case mediaCacheTTL = "media.cacheTTL"
+    case mediaClearCache = "media.clearCache"
+
+    // Notifications
+    case notifyEnable = "notify.enable"
+    case notifyFeedNotes = "notify.feedNotes"
+    case notifyPerAccount = "notify.perAccount"
+
+    // Sharing
+    case shareDMRelays = "share.dmRelays"
+    case shareBroadcast = "share.broadcast"
+    case shareMediaServers = "share.mediaServers"
+    case shareAutoMirror = "share.autoMirror"
+    case shareFIPS = "share.fips"
+
+    // Your Vault Relay
+    case relaySync = "relay.sync"
+    case relayDomain = "relay.domain"
+    case relayPort = "relay.port"
+    case relayWotDepth = "relay.wotDepth"
+    case relayMinFollowers = "relay.minFollowers"
+    case relayWotRefresh = "relay.wotRefresh"
+    case relayRateLimits = "relay.rateLimits"
+    case relayImport = "relay.import"
+    case relayBackup = "relay.backup"
+    case relayAutoStart = "relay.autoStart"
+    case relayExternal = "relay.external"
+
+    // Advanced
+    case advPow = "adv.pow"
+    case advDatabase = "adv.database"
+    case advLogLevel = "adv.logLevel"
+    case advFactoryReset = "adv.factoryReset"
+
+    /// Names the setting in the popover heading and the button's VoiceOver label.
+    var title: String {
+        switch self {
+        case .relayStatus: return "Your Vault Relay"
+        case .accountAccounts: return "Accounts"
+        case .accountSigning: return "Signing"
+        case .accountRevealKey: return "Reveal Key"
+        case .accountPublishInbox: return "Publish Inbox Relay"
+        case .accountBlocked: return "Blocked"
+        case .accountSlowed: return "Slowed Down"
+        case .accountFollowingBackup: return "Following Backup"
+        case .walletNWC: return "Wallet Connect"
+        case .walletDefaultZap: return "Default Zap"
+        case .walletBitcoin: return "Bitcoin Address"
+        case .feedReposts: return "Reposts"
+        case .feedReplies: return "Replies"
+        case .feedAutoLoad: return "Auto-Load"
+        case .feedRelays: return "Feed Relays"
+        case .feedSearchRelays: return "Search Relays"
+        case .displayTextSize: return "Text Size"
+        case .displayTabBarAnimation: return "Tab Bar Animation"
+        case .displayZapsOnly: return "Zaps Only"
+        case .displayDefaultReaction: return "Default Reaction"
+        case .mediaAutoplay: return "Autoplay Videos"
+        case .mediaDisableCache: return "Media Cache"
+        case .mediaPrefetchAvatars: return "Prefetch Profile Pictures"
+        case .mediaCacheTTL: return "Cache Lifetime"
+        case .mediaClearCache: return "Clear Media Cache"
+        case .notifyEnable: return "Notifications"
+        case .notifyFeedNotes: return "New Notes"
+        case .notifyPerAccount: return "Alerts per Account"
+        case .shareDMRelays: return "DM Relays"
+        case .shareBroadcast: return "Broadcast"
+        case .shareMediaServers: return "Media Servers"
+        case .shareAutoMirror: return "Auto-Mirror Media"
+        case .shareFIPS: return "FIPS Address"
+        case .relaySync: return "Sync"
+        case .relayDomain: return "Domain"
+        case .relayPort: return "Port"
+        case .relayWotDepth: return "Trust Depth"
+        case .relayMinFollowers: return "Minimum Followers"
+        case .relayWotRefresh: return "Trust Refresh"
+        case .relayRateLimits: return "Rate Limits"
+        case .relayImport: return "Import"
+        case .relayBackup: return "Backup & Restore"
+        case .relayAutoStart: return "Auto-Start"
+        case .relayExternal: return "External Relay"
+        case .advPow: return "Proof of Work"
+        case .advDatabase: return "Database"
+        case .advLogLevel: return "Log Level"
+        case .advFactoryReset: return "Factory Reset"
+        }
+    }
+
+    var text: String {
+        switch self {
+        case .relayStatus: return "The relay on this device stores your notes and media locally."
+        case .accountAccounts: return "Add multiple accounts and switch between them anytime."
+        case .accountSigning: return "Sign with a key on this device, or approve posts from a separate signer app."
+        case .accountRevealKey: return "Shows your secret key after verifying it's you."
+        case .accountPublishInbox: return "Tells other apps to deliver your messages to this relay."
+        case .accountBlocked: return "Hides blocked accounts from your feed. For your main account, also blocks them from posting to your relay."
+        case .accountSlowed: return "Limits how many posts from one account show at once (1–20)."
+        case .accountFollowingBackup: return "Saves snapshots of your follow list as it changes, and can restore an older one."
+        case .walletNWC: return "Connects an outside wallet so you can send zaps."
+        case .walletDefaultZap: return "Sets the sats amount used when you zap with one tap."
+        case .walletBitcoin: return "Generates a Bitcoin address from your Nostr key."
+        case .feedReposts: return "Show reposts in your feed."
+        case .feedReplies: return "Show replies in your feed."
+        case .feedAutoLoad: return "Adds new posts to your feed as they arrive, instead of waiting for you to tap."
+        case .feedRelays: return "Relays your feed pulls posts from. Separate from your own relay."
+        case .feedSearchRelays: return "Relays used for global search on this device."
+        case .displayTextSize: return "Adjusts how large text appears throughout the app."
+        case .displayTabBarAnimation: return "Keeps the bottom tab bar full size instead of shrinking as you scroll."
+        case .displayZapsOnly: return "Hides likes and reactions, and turns off their notifications."
+        case .displayDefaultReaction: return "Sets which emoji is used for one-tap reactions."
+        case .mediaAutoplay: return "Plays videos automatically as you scroll."
+        case .mediaDisableCache: return "Stops saving media locally, so it re-downloads each time."
+        case .mediaPrefetchAvatars: return "Loads profile pictures ahead of time for smoother scrolling."
+        case .mediaCacheTTL: return "How long downloaded media is kept before it's cleared."
+        case .mediaClearCache: return "Deletes locally stored media now to free up space."
+        case .notifyEnable: return "Turns on notifications, made on this device by your relay — no outside push server involved."
+        case .notifyFeedNotes: return "Notifies you when new notes appear in your feed."
+        case .notifyPerAccount: return "Choose which alerts (mentions, replies, DMs, zaps, reactions, reposts) each account gets."
+        case .shareDMRelays: return "Relays your encrypted DMs are sent to and read from."
+        case .shareBroadcast: return "Copies your notes to public relays so more people can find them."
+        case .shareMediaServers: return "Extra servers that keep copies of your media."
+        case .shareAutoMirror: return "Downloads your own media from those servers so it works offline."
+        case .shareFIPS: return "Publishes an address so others can find your media directly."
+        case .relaySync: return "Address of your relay on a Mac or server. Notes posted there appear here too."
+        case .relayDomain: return "Public address for your relay. Leave blank to keep it local-only."
+        case .relayPort: return "Network port your relay uses. Default is 3355."
+        case .relayWotDepth: return "How many follows away someone can be and still reach your inbox. Lower is more private."
+        case .relayMinFollowers: return "Minimum followers someone needs before they can reach your inbox."
+        case .relayWotRefresh: return "How often your trust list is recalculated."
+        case .relayRateLimits: return "Limits on events and connections per minute, to block spam."
+        case .relayImport: return "Pulls in your past notes and mentions from other relays, starting at a chosen date."
+        case .relayBackup: return "Saves or restores your notes and media as a file. Briefly pauses the relay."
+        case .relayAutoStart: return "Starts your relay automatically when the device turns on."
+        case .relayExternal: return "Uses another app's relay instead of the built-in one. Pauses notifications and broadcasting."
+        case .advPow: return "Adds extra computation to your posts to discourage spam. Slower to send, harder to spam."
+        case .advDatabase: return "Shows which storage engine your relay uses. View only."
+        case .advLogLevel: return "How much detail your relay writes to its logs. Takes effect after restart."
+        case .advFactoryReset: return "Stops your relay and permanently deletes all its data and settings."
+        }
+    }
+}
