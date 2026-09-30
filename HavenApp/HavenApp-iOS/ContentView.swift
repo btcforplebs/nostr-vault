@@ -179,6 +179,7 @@ struct iPadSidebarView: View {
                                 size: 32
                             )
                             .id(activeHex)
+                            .zapFlightOrigin()
                             .overlay(
                                 Circle()
                                     .stroke(
@@ -329,6 +330,7 @@ struct iPadSidebarView: View {
             }
             .padding(.top, 4)
         }
+        .overlay { ZapFlightStage() }
         .sheet(isPresented: $showingAccountSwitcher) {
             AccountSwitcherView(configService: configService)
         }
@@ -457,6 +459,7 @@ struct iPhoneTabView: View {
             }
             .padding(.top, 4)
         }
+        .overlay { ZapFlightStage() }
         .onAppear {
             if configService.config.hasCompletedSetup && relayManager.state == .idle {
                 relayManager.startRelay(config: configService.config)
@@ -595,6 +598,7 @@ struct BottomTabBar: View {
                         Circle()
                             .stroke(Color.havenPurple.opacity(0.6), lineWidth: 2)
                     )
+                    .zapFlightOrigin()
                     .overlay(alignment: .topTrailing) {
                         if dmService.totalUnreadCount > 0 || relayManager.hasNewRelayActivity {
                             Circle()
@@ -684,6 +688,7 @@ struct BottomTabBar: View {
                         Circle()
                             .stroke(selected ? Color.havenPurple : .white.opacity(0.5), lineWidth: selected ? 2 : 1)
                     )
+                    .zapFlightOrigin()
                     .frame(height: 24)
                     .overlay(alignment: .topTrailing) {
                         if dmService.totalUnreadCount > 0 {

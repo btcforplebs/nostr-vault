@@ -218,6 +218,7 @@ struct MenuBarView: View {
                                                     .stroke(selectedTab == .profile ? Color.white.opacity(0.6) : Color.clear, lineWidth: 1.5)
                                             )
                                             .frame(width: 20, height: 20)
+                                            .zapFlightOrigin()
 
                                         Text("My Profile")
                                             .font(.appSystem(size: 13, weight: selectedTab == .profile ? .semibold : .medium))
@@ -882,6 +883,7 @@ struct MenuBarView: View {
             }
             .padding(.top, 4)
         }
+        .overlay { ZapFlightStage() }
         #if os(macOS)
         .environment(\.noteDetailSelection, noteSelection)
         .sheet(isPresented: Binding(

@@ -140,17 +140,6 @@ enum Motion {
     /// (the icon's own tap feedback). This is the payment's arrival.
     static var zapBurst: Animation { spring(0.46, 0.72) }
 
-    /// A zap's visible trip across a note row, from the zapped author's
-    /// avatar to the bolt button that sent it — an ease-out toss, not a
-    /// spring, because a thrown object shouldn't bounce past where it's
-    /// going. Callers (`ZapFlightView`) skip the flight outright under
-    /// Reduce Motion rather than play a shortened version of it, same as
-    /// `zapBurst`; this still degrades to a plain fade if ever driven
-    /// directly, for defense in depth.
-    static var zapFlight: Animation {
-        isReduced ? .easeOut(duration: 0.2) : .timingCurve(0.25, 0.1, 0.25, 1, duration: 0.38)
-    }
-
     static func firePulse(_ flag: Binding<Bool>) {
         guard !isReduced else { return }
         flag.wrappedValue = true
