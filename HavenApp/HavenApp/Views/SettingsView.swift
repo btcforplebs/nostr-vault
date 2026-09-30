@@ -3488,6 +3488,7 @@ struct BlossomSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var relayManager: RelayProcessManager
     @ObservedObject private var mirrorService = MirrorService.shared
+    @ObservedObject private var waitingPosts = MediaPostQueue.shared
 
     @State private var newMirrorURL = ""
     #if os(macOS)
@@ -3498,6 +3499,44 @@ struct BlossomSettingsView: View {
     
     var body: some View {
         Form {
+            // Posts whose media is on this device but on no outside server
+            // yet. They send themselves; this is where the user can see them.
+            if !waitingPosts.posts.isEmpty {
+                Section {
+                    ForEach(waitingPosts.posts) { post in
+                        HStack(spacing: 12) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.appSystem(size: 18))
+                                .foregroundColor(.orange)
+                                .frame(width: 24, height: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(post.body.isEmpty ? "Post with \(post.media.count) attachment(s)" : post.body)
+                                    .font(.appSubheadline)
+                                    .lineLimit(2)
+                                Text("Waiting for a media server since \(post.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.appCaption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                waitingPosts.discard(id: post.id)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    Button("Try sending now") {
+                        waitingPosts.retryAll(reason: "user")
+                    }
+                } header: {
+                    Text("Waiting to send")
+                } footer: {
+                    Text("The photos are saved on this device. These posts send themselves as soon as a media server below answers.")
+                }
+            }
+
             // Section 1: Auto-Applied Blossom Server
             Section {
                 let macHttps = configService.config.macRelayHttpsURL

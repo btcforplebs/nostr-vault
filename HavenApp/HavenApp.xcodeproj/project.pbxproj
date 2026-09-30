@@ -110,7 +110,9 @@
 		3A895A7B25C2229F1B389A2D /* ActionButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4757A74E31DFBA866003FD73 /* ActionButton.swift */; };
 		3AC2416A002144BD55B37DE1 /* PushNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ED38A5B67740F711EB5C45 /* PushNotificationService.swift */; };
 		3AEB8B86A7A7F02EB9885F69 /* FollowingBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678F22C7D5983DCD0CEDBCDC /* FollowingBackupView.swift */; };
+		3B87F862800C34B5D341E481 /* QueuedMediaPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */; };
 		3BA3D2C452CC9BAE376259BD /* ReelsFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB79C0D33E22277543C173F1 /* ReelsFeedService.swift */; };
+		3D7D31F1738232081D005FD7 /* MediaPostQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD42E02DBEB72A43ECB28F5 /* MediaPostQueue.swift */; };
 		3E1CF7FF7BF9CC321886CD3E /* EmojiPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558FCD15C2C7144DF3D20135 /* EmojiPickerView.swift */; };
 		405BE8FAC5DE89B9AC15D061 /* LocalRelaySearchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A847D1496121BC4956AAF6 /* LocalRelaySearchPlan.swift */; };
 		417A5B57E5552977F48B6B23 /* LocalNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */; };
@@ -305,6 +307,7 @@
 		B269F0CA9A5435B3EA0A9922 /* BlossomDashboardMirrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */; };
 		B2889A6B902C69E8612485A8 /* CustomZapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */; };
 		B2D799D053929F4DB6071E97 /* PowPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9953E9DA772C31A74141B335 /* PowPreferences.swift */; };
+		B349FEF83E4EA2ADDD63CD3F /* MediaPostQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD42E02DBEB72A43ECB28F5 /* MediaPostQueue.swift */; };
 		B3A065D965688DBC83174179 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC33568A91E5B5B737A03D1F /* FeedService.swift */; };
 		B65312DC3E3DC12BEA80B9DA /* MediaPagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */; };
 		B764BF0A8BA3B90BCBD9B52E /* Chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = D5F84F499115E83DCA24A989 /* Chime.mp3 */; };
@@ -393,6 +396,7 @@
 		DDF88C90EED2AAB24C40E13E /* MediaCacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B294C3B4DE4C63104876789 /* MediaCacheService.swift */; };
 		DED9A13B12AEAFFFC0B44BDC /* starter_packs.json in Resources */ = {isa = PBXBuildFile; fileRef = E76B268D327BDC761BB5AC1E /* starter_packs.json */; };
 		DFDA2D4ADCC88506D3F07CF0 /* SleepWakeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B403C7767568BFB3E44E0CE /* SleepWakeMonitor.swift */; };
+		E06E050A55097E0E672B9C3F /* QueuedMediaPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */; };
 		E0A5461B68AE422C1589FC94 /* BlossomMediaCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B16351ED2F5677D2447FC87 /* BlossomMediaCache.swift */; };
 		E0AEE7D87B73FF5DA4703EC1 /* NostrVaultWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D5FDEA395EFFC23FE419C55 /* NostrVaultWidgetBundle.swift */; };
 		E0D882CB85829D6B7D8940E5 /* NostrContentFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF76B5373E734C5934402DBD /* NostrContentFormatter.swift */; };
@@ -503,6 +507,7 @@
 		2FE41D591439EC1513D51DAF /* VaultToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultToolbar.swift; sourceTree = "<group>"; };
 		3041B6BA67CC97B2AC442E6D /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
 		325A99A7D646C515AB620EE5 /* MenuBarStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarStatusView.swift; sourceTree = "<group>"; };
+		32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedMediaPost.swift; sourceTree = "<group>"; };
 		331ACF045B8F97CBE8B9F819 /* SilentPaymentsKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SilentPaymentsKit; path = SilentPaymentsKit; sourceTree = SOURCE_ROOT; };
 		3479233DA13D1E79374B68FD /* MediaTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTabView.swift; sourceTree = "<group>"; };
 		34B22EE405098B9706D5B1D8 /* WelcomeWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindowView.swift; sourceTree = "<group>"; };
@@ -595,6 +600,7 @@
 		8CB855E7379DA2448EE2AAE1 /* GroupCreateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupCreateView.swift; sourceTree = "<group>"; };
 		8EDBCA3BC62E9A4C8AA9E128 /* FeedMediaViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedMediaViewer.swift; sourceTree = "<group>"; };
 		8EE02D17B251A319CA3CAA1A /* VaultModeLists.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultModeLists.swift; sourceTree = "<group>"; };
+		8FD42E02DBEB72A43ECB28F5 /* MediaPostQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPostQueue.swift; sourceTree = "<group>"; };
 		915DF9A0796218139DE0703E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		917FF6B76ACEFA8BD210FC37 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		91CE4EF614B57F02C652177F /* GlobalSearchLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchLogic.swift; sourceTree = "<group>"; };
@@ -996,6 +1002,7 @@
 				6D4E22D61B152894312A2DB6 /* NotificationPolicy.swift */,
 				7F9B00BF5E1FFC589465ED7F /* NotificationSound.swift */,
 				CC8C3E65ED03CD249289CAA9 /* PlayableLinks.swift */,
+				32EA96B6514D35753903D9D6 /* QueuedMediaPost.swift */,
 				528D1E62E799D477438A8E24 /* QuoteReference.swift */,
 				771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */,
 				F8BC6C1B7108F0D538B2C558 /* ReferencedNoteRepair.swift */,
@@ -1076,6 +1083,7 @@
 				48CA2811713E8B33E246FC55 /* LocalNotificationService.swift */,
 				49F43AE6D03159B7716D9F71 /* LogStore.swift */,
 				8B294C3B4DE4C63104876789 /* MediaCacheService.swift */,
+				8FD42E02DBEB72A43ECB28F5 /* MediaPostQueue.swift */,
 				71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */,
 				1B03DACD65D976F80B315E19 /* MirrorService.swift */,
 				70A6C2A292B935922711F19B /* Motion.swift */,
@@ -1421,6 +1429,7 @@
 				2F1FD7253CE6BB1663ADC269 /* MediaItem.swift in Sources */,
 				E6B954A06F5DEC06F4C960AE /* MediaListItem.swift in Sources */,
 				A42CB5C975C2F3ADAE17DC9B /* MediaPagerView.swift in Sources */,
+				B349FEF83E4EA2ADDD63CD3F /* MediaPostQueue.swift in Sources */,
 				82226E9D704A71764A35BB7D /* MediaTabView.swift in Sources */,
 				1F0E85CA638E913E0179BA1D /* MediaTypeDetector.swift in Sources */,
 				7682D9DBB00E467214FB1150 /* MempoolAPIService.swift in Sources */,
@@ -1467,6 +1476,7 @@
 				7FE48AE78C682880DD70123F /* PushNotificationService.swift in Sources */,
 				44E16F1E6747845181FD3F3A /* PushNotificationSettingsView.swift in Sources */,
 				2644A473BAF426830EE61E6F /* QRScannerView.swift in Sources */,
+				3B87F862800C34B5D341E481 /* QueuedMediaPost.swift in Sources */,
 				CB6C6600EA69654CCD511E87 /* QuoteReference.swift in Sources */,
 				CF11F2A3B34BC8D6843AE229 /* QuoteReferenceIDs.swift in Sources */,
 				EB757B8BCE5DE46338963484 /* QuotedNoteView.swift in Sources */,
@@ -1647,6 +1657,7 @@
 				C8F9F8DCF05C8D05CBFD37F2 /* MediaItem.swift in Sources */,
 				9A441353279669903E59CBD0 /* MediaListItem.swift in Sources */,
 				B65312DC3E3DC12BEA80B9DA /* MediaPagerView.swift in Sources */,
+				3D7D31F1738232081D005FD7 /* MediaPostQueue.swift in Sources */,
 				68F697D47223F3BB082DC65B /* MediaTabView.swift in Sources */,
 				8C6C5418A73D68D54599A473 /* MediaTypeDetector.swift in Sources */,
 				F10135C9F1B704EF4CFDCDB7 /* MempoolAPIService.swift in Sources */,
@@ -1687,6 +1698,7 @@
 				3AC2416A002144BD55B37DE1 /* PushNotificationService.swift in Sources */,
 				AFDA27A41E12259BC68B70E9 /* PushNotificationSettingsView.swift in Sources */,
 				1C3C7BC7F17020B4B6BEA795 /* QRScannerView.swift in Sources */,
+				E06E050A55097E0E672B9C3F /* QueuedMediaPost.swift in Sources */,
 				E215B1FE35EB9D31FF48C426 /* QuoteReference.swift in Sources */,
 				F11DF1086DA8F6B030403814 /* QuoteReferenceIDs.swift in Sources */,
 				CE658646406692011C5ACEF1 /* QuotedNoteView.swift in Sources */,
