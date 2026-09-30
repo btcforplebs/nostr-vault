@@ -28,6 +28,7 @@ import com.nostrvault.service.AmberResultBridge
 import com.nostrvault.service.DMService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.LocalNotificationService
+import com.nostrvault.service.MediaPostQueue
 import com.nostrvault.service.MediaUploadManager
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.PendingPostManager
@@ -58,6 +59,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var notificationManager: NotificationManager
     @Inject lateinit var pendingPostManager: PendingPostManager
     @Inject lateinit var mediaUploadManager: MediaUploadManager
+    @Inject lateinit var mediaPostQueue: MediaPostQueue
     @Inject lateinit var widgetPublisher: WidgetPublisher
 
     private val notificationPermissionLauncher =
@@ -77,6 +79,11 @@ class MainActivity : FragmentActivity() {
 
         // Load persisted config so hasCompletedSetup reflects saved state
         configStore.reload()
+
+        // Posts waiting for an outside media server: watch the network and
+        // retry every minute while any wait. Started right after the config
+        // load (a queued post is only signed by the account that wrote it).
+        mediaPostQueue.start()
 
         // Handle media shared into the app via the system share sheet (ACTION_SEND)
         handleShareIntent(intent)
@@ -315,6 +322,8 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         localNotificationService.appInForeground = true
+        // Back in the foreground: a sleeping Mac vault may be awake now.
+        mediaPostQueue.retryAll("foreground")
         // Restore the snapshot for instant UI, then reconnect in the background.
         if (configStore.config.value.hasCompletedSetup) {
             feedService.resumeFeed()

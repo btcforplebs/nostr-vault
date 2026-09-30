@@ -15,10 +15,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.QueuedMediaPost
+import com.nostrvault.service.MediaPostQueue
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -31,7 +34,15 @@ import javax.inject.Inject
 class BlossomSettingsViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
+    private val mediaPostQueue: MediaPostQueue,
 ) : ViewModel() {
+
+    /** Posts whose media is on this device but on no outside server yet. */
+    val waitingPosts: StateFlow<List<QueuedMediaPost>> = mediaPostQueue.posts
+
+    fun discardWaitingPost(id: String) = mediaPostQueue.discard(id)
+
+    fun retryWaitingPosts() = mediaPostQueue.retryAll("user")
 
     private val _mirrors = MutableStateFlow<List<String>>(emptyList())
     val mirrors = _mirrors.asStateFlow()
@@ -97,6 +108,7 @@ fun BlossomSettingsScreen(
     val newMirrorUrl by viewModel.newMirrorUrl.collectAsState()
     val macRelayHttps by viewModel.macRelayHttps.collectAsState()
     val publishStatus by viewModel.publishStatus.collectAsState()
+    val waitingPosts by viewModel.waitingPosts.collectAsState()
     val colors = LocalNostrVaultColors.current
 
     Scaffold(
@@ -122,6 +134,17 @@ fun BlossomSettingsScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            // Posts whose media is on this device but on no outside server
+            // yet. They send themselves; this is where the user can see them.
+            if (waitingPosts.isNotEmpty()) {
+                WaitingPostsSection(
+                    posts = waitingPosts,
+                    onDiscard = viewModel::discardWaitingPost,
+                    onRetry = viewModel::retryWaitingPosts,
+                )
+                HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
+            }
+
             // Auto-applied server from Haven relay
             if (!macRelayHttps.isNullOrBlank()) {
                 Surface(
@@ -297,5 +320,78 @@ private fun MirrorRow(
                 modifier = Modifier.size(18.dp),
             )
         }
+    }
+}
+
+@Composable
+private fun WaitingPostsSection(
+    posts: List<QueuedMediaPost>,
+    onDiscard: (String) -> Unit,
+    onRetry: () -> Unit,
+) {
+    val dateFormat = remember {
+        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+    }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "WAITING TO SEND",
+            color = SecondaryText,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp),
+        )
+        // A handful at most in practice; a plain Column keeps the screen's
+        // single LazyColumn (the mirror list) as the only scrolling child.
+        posts.forEach { post ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Icon(
+                    imageVector = NostrVaultIcons.History,
+                    contentDescription = null,
+                    tint = ZapOrange,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = post.body.ifBlank { "Post with ${post.media.size} attachment(s)" },
+                        color = PrimaryText,
+                        fontSize = 15.sp,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "Waiting for a media server since ${dateFormat.format(java.util.Date(post.createdAt))}",
+                        color = SecondaryText,
+                        fontSize = 12.sp,
+                    )
+                }
+                IconButton(onClick = { onDiscard(post.id) }) {
+                    Icon(
+                        imageVector = NostrVaultIcons.Delete,
+                        contentDescription = "Discard waiting post",
+                        tint = ErrorRed,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+        TextButton(
+            onClick = onRetry,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        ) {
+            Text("Try sending now", color = LocalNostrVaultColors.current.primary)
+        }
+        Text(
+            text = "The photos are saved on this device. These posts send themselves as soon as a media server below answers.",
+            color = SecondaryText,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        )
     }
 }
