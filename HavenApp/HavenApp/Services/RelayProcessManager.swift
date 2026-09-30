@@ -467,7 +467,14 @@ class RelayProcessManager: ObservableObject {
                     let gapLeft = self.lastRestartFinished.map { Self.applyMinimumGap - now.timeIntervalSince($0) } ?? 0
                     let wait = max(quietLeft, gapLeft)
                     if wait <= 0 { break }
-                    try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                    do {
+                        try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                    } catch {
+                        // Cancelled: stop without restarting.
+                        self.isApplyingConfig = false
+                        self.applyConfigTask = nil
+                        return
+                    }
                 }
                 if let other = self.inFlightRestart { _ = await other.value }
                 guard let next = self.pendingAppliedConfig else { break }
