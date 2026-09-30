@@ -17,17 +17,16 @@ enum ContentFilter {
     case whitelist
 }
 
+/// Likes and Zaps each have two views: what came in on your notes, and what you
+/// gave. "On tagged" and "on whitelisted" notes used to be views too; they were
+/// the Notes filters again with a heart on, so they're gone.
 enum LikesFilter {
     case onMyNotes
-    case onTagged
-    case onWhitelisted
     case myLikes
 }
 
 enum ZapsFilter {
     case onMyNotes
-    case onTagged
-    case onWhitelisted
     case myZaps
 }
 

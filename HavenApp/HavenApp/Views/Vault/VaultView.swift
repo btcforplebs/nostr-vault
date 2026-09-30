@@ -130,15 +130,11 @@ struct VaultView: View {
         case .likes:
             switch likesFilter {
             case .onMyNotes: return "Likes on My Notes"
-            case .onTagged: return "Likes on Tagged Notes"
-            case .onWhitelisted: return "Likes on Whitelisted Notes"
             case .myLikes: return "Notes I've Liked"
             }
         case .zaps:
             switch zapsFilter {
             case .onMyNotes: return "Zaps on My Notes"
-            case .onTagged: return "Zaps on Tagged Notes"
-            case .onWhitelisted: return "Zaps on Whitelisted Notes"
             case .myZaps: return "Notes I've Zapped"
             }
         }
