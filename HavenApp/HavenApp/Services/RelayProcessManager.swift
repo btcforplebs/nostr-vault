@@ -438,20 +438,51 @@ class RelayProcessManager: ObservableObject {
             != RelayConfiguration.launchInputs(config: running, relayDataDir: dir)
     }
 
+    /// How long saves must stop arriving before a restart, so a value typed
+    /// with pauses (a port, a domain) restarts the relay once, not per pause.
+    private static let applyQuietPeriod: TimeInterval = 3
+    /// Minimum time between the end of one settings restart and the start of
+    /// the next. Rapid stop/start cycling is what used to corrupt BadgerDB.
+    private static let applyMinimumGap: TimeInterval = 10
+    private var lastApplyRequest = Date.distantPast
+
     /// Called after Settings saves. Restarts the relay in place when a
-    /// relay-facing setting changed and does nothing otherwise. Saves that
-    /// land while a restart is running coalesce: when it finishes, the relay
-    /// restarts once more only if the latest saved config still differs.
-    /// Shares `inFlightRestart` so a Blossom recovery restart waits on this
-    /// one instead of cycling the relay a second time.
+    /// relay-facing setting changed and does nothing otherwise. Saves
+    /// coalesce: a restart waits for `applyQuietPeriod` without new saves and
+    /// for `applyMinimumGap` after the previous restart, then applies only the
+    /// latest config. Shares `inFlightRestart` so a Blossom recovery restart
+    /// waits on this one instead of cycling the relay a second time.
     func applySavedConfig(_ config: HavenConfig) {
         pendingAppliedConfig = config
+        lastApplyRequest = Date()
         guard applyConfigTask == nil else { return }
         applyConfigTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            while let next = self.pendingAppliedConfig {
-                self.pendingAppliedConfig = nil
+            while self.pendingAppliedConfig != nil {
+                // Wait until saves have gone quiet and the relay has had its
+                // minimum rest since the last settings restart.
+                while true {
+                    let now = Date()
+                    let quietLeft = Self.applyQuietPeriod - now.timeIntervalSince(self.lastApplyRequest)
+                    let gapLeft = self.lastRestartFinished.map { Self.applyMinimumGap - now.timeIntervalSince($0) } ?? 0
+                    let wait = max(quietLeft, gapLeft)
+                    if wait <= 0 { break }
+                    try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                }
                 if let other = self.inFlightRestart { _ = await other.value }
+                guard let next = self.pendingAppliedConfig else { break }
+                self.pendingAppliedConfig = nil
+
+                // An import stops the relay and restarts it from
+                // pendingImportConfig when it ends; hand it the newer config
+                // so the save is applied then rather than dropped.
+                if self.isImporting {
+                    if self.pendingImportConfig != nil {
+                        self.pendingImportConfig = next
+                        self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay settings changed during import; they apply when the import ends"))
+                    }
+                    continue
+                }
                 guard self.needsRestart(for: next) else { continue }
                 self.isApplyingConfig = true
                 self.logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Relay settings changed; restarting relay to apply them"))

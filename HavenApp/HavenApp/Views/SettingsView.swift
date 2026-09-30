@@ -3222,7 +3222,7 @@ struct MacRelayDomainSettingsView: View {
         Form {
             // MARK: - Domain
             Section {
-                TextField("relay.yourdomain.com", text: $configService.config.relayURL)
+                CommitOnEndTextField("relay.yourdomain.com", text: $configService.config.relayURL)
                     .font(.system(.body, design: .monospaced))
                     .autocorrectionDisabled()
                     .textFieldStyle(.roundedBorder)
@@ -3259,7 +3259,12 @@ struct MacRelayDomainSettingsView: View {
                 HStack {
                     Text("Port").settingInfo(.relayPort)
                     Spacer()
-                    TextField("3355", value: $configService.config.relayPort, formatter: NumberFormatter.noSeparator)
+                    CommitOnEndTextField("3355", text: Binding(
+                        get: { String(configService.config.relayPort) },
+                        // A value that isn't a port is dropped; the field
+                        // snaps back to the port in use.
+                        set: { if let port = Int($0), (1...65535).contains(port) { configService.config.relayPort = port } }
+                    ))
                         .frame(width: 80)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
@@ -3337,7 +3342,7 @@ struct MacRelaySettingsView: View {
             // ── URL Input ──────────────────────────────────────────────
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    TextField("https://relay.example.com", text: $configService.config.macRelayURL)
+                    CommitOnEndTextField("https://relay.example.com", text: $configService.config.macRelayURL)
                         .font(.system(.body, design: .monospaced))
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
@@ -3894,3 +3899,39 @@ struct AppIconPicker: View {
 
 // RelayListEditor and LogsView moved to separate files
 
+/// A text field that writes to its binding only when editing ends (Return,
+/// focus leaving, or the page closing). For settings the relay reads at
+/// start: every write of a half-typed port or domain would otherwise be a
+/// saved config, and a saved relay-facing config restarts the relay.
+struct CommitOnEndTextField: View {
+    private let title: String
+    @Binding private var text: String
+    @State private var draft = ""
+    @FocusState private var isFocused: Bool
+
+    init(_ title: String, text: Binding<String>) {
+        self.title = title
+        self._text = text
+    }
+
+    var body: some View {
+        TextField(title, text: $draft)
+            .focused($isFocused)
+            .onSubmit(commit)
+            .onChange(of: isFocused) { _, focused in
+                if !focused { commit() }
+            }
+            .onChange(of: text) { _, newValue in
+                if !isFocused { draft = newValue }
+            }
+            .onAppear { draft = text }
+            .onDisappear(perform: commit)
+    }
+
+    private func commit() {
+        if draft != text { text = draft }
+        // The binding may reject or normalise the value (an out-of-range
+        // port); show what was actually kept.
+        draft = text
+    }
+}
