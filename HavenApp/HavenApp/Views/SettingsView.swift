@@ -3904,6 +3904,8 @@ struct AppIconPicker: View {
 /// start: every write of a half-typed port or domain would otherwise be a
 /// saved config, and a saved relay-facing config restarts the relay.
 struct CommitOnEndTextField: View {
+    @EnvironmentObject private var configService: ConfigService
+    @EnvironmentObject private var relayManager: RelayProcessManager
     private let title: String
     @Binding private var text: String
     @State private var draft = ""
@@ -3917,7 +3919,7 @@ struct CommitOnEndTextField: View {
     var body: some View {
         TextField(title, text: $draft)
             .focused($isFocused)
-            .onSubmit(commit)
+            .onSubmit { commit() }
             .onChange(of: isFocused) { _, focused in
                 if !focused { commit() }
             }
@@ -3925,13 +3927,25 @@ struct CommitOnEndTextField: View {
                 if !isFocused { draft = newValue }
             }
             .onAppear { draft = text }
-            .onDisappear(perform: commit)
+            .onDisappear {
+                // Leaving Settings from this page, SettingsView's own
+                // onDisappear may already have saved, and its onChange
+                // no longer fires. Save and apply here so the edit isn't lost.
+                if commit() {
+                    configService.save()
+                    relayManager.applySavedConfig(configService.config)
+                }
+            }
     }
 
-    private func commit() {
-        if draft != text { text = draft }
+    /// Returns whether the binding was written.
+    @discardableResult
+    private func commit() -> Bool {
+        let changed = draft != text
+        if changed { text = draft }
         // The binding may reject or normalise the value (an out-of-range
         // port); show what was actually kept.
         draft = text
+        return changed
     }
 }
