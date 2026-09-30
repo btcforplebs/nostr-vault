@@ -484,10 +484,6 @@ struct ProfileView: View {
             }
             .environmentObject(nostrService)
         }
-        .overlay {
-            LightningAnimationView(isAnimating: $showLightning)
-                .allowsHitTesting(false)
-        }
         .overlay(alignment: .top) {
             if onDismiss != nil {
                 VStack(spacing: 6) {
@@ -815,6 +811,7 @@ struct ProfileView: View {
                     .padding(.vertical, 7)
                     .background(Color.orange.opacity(0.15))
                     .cornerRadius(6)
+                    .overlay { ZapBurstView(isAnimating: $showLightning) }
                     .contentShape(RoundedRectangle(cornerRadius: 6))
                     .onLongPressGesture {
                         #if os(iOS)
@@ -949,6 +946,7 @@ struct ProfileView: View {
             .padding(.vertical, 4)
             .background(Color.orange.opacity(0.15))
             .cornerRadius(4)
+            .overlay { ZapBurstView(isAnimating: $showLightning) }
             .contentShape(RoundedRectangle(cornerRadius: 4))
             .onLongPressGesture {
                 #if os(iOS)
