@@ -43,22 +43,24 @@ struct SettingsView: View {
     }
     
     enum SettingsTab: String, CaseIterable, Identifiable {
-        case accounts = "Accounts"
+        case accounts = "Accounts & Keys"
         case blocked = "Blocked"
-        case appearance = "Appearance"
-        case feed = "Feed Relays"
-        case dm = "DM Relays"
-        case pushNotifications = "Notifications"
-        case importNotes = "Import"
-        case searchRelays = "Search Relays"
-        case backup = "Backup"
         case followingBackup = "Following Backup"
-        case blastr = "Blastr"
-        case blossom = "Blossom"
-        case macRelay = "Mac Relay"
-        case proofOfWork = "Proof of Work"
-        case advanced = "Advanced"
         case wallet = "Wallet"
+        case feed = "Feed"
+        case appearance = "Appearance"
+        case media = "Media & Cache"
+        case pushNotifications = "Notifications"
+        case dm = "DM Relays"
+        case blastr = "Broadcast"
+        case blossom = "Media Servers"
+        case macRelay = "Sync with Mac"
+        case relayAccess = "Who Can Reach You"
+        case importNotes = "Import Notes"
+        case backup = "Backup & Restore"
+        case startup = "Startup"
+        case proofOfWork = "Proof of Work"
+        case advanced = "Database & Reset"
         case logs = "Logs"
 
         var id: String { self.rawValue }
@@ -67,7 +69,7 @@ struct SettingsView: View {
             switch self {
             case .macRelay:
                 #if os(macOS)
-                return "Domain"
+                return "Domain & Port"
                 #else
                 return rawValue
                 #endif
@@ -80,14 +82,13 @@ struct SettingsView: View {
             switch self {
             case .accounts: return "person.badge.key"
             case .blocked: return "person.crop.circle.badge.xmark"
-            case .appearance: return "paintpalette"
-            case .feed: return "newspaper"
-            case .dm: return "bubble.left.and.bubble.right"
-            case .pushNotifications: return "bell.badge"
-            case .importNotes: return "square.and.arrow.down"
-            case .searchRelays: return "magnifyingglass"
-            case .backup: return "externaldrive.fill"
             case .followingBackup: return "person.crop.circle.badge.clock"
+            case .wallet: return "bitcoinsign.circle"
+            case .feed: return "newspaper"
+            case .appearance: return "paintpalette"
+            case .media: return "photo.on.rectangle"
+            case .pushNotifications: return "bell.badge"
+            case .dm: return "bubble.left.and.bubble.right"
             case .blastr: return "paperplane"
             case .blossom: return "server.rack"
             case .macRelay:
@@ -96,14 +97,40 @@ struct SettingsView: View {
                 #else
                 return "desktopcomputer"
                 #endif
+            case .relayAccess: return "person.2.badge.gearshape"
+            case .importNotes: return "square.and.arrow.down"
+            case .backup: return "externaldrive.fill"
+            case .startup: return "power"
             case .proofOfWork: return "hammer.fill"
             case .advanced: return "gearshape.2"
-            case .wallet: return "bitcoinsign.circle"
             case .logs: return "list.bullet.rectangle"
             }
         }
     }
-    
+
+    /// The settings grouped by what someone is trying to do, not by which
+    /// process owns the value. Both the iPhone list and the Mac sidebar read
+    /// this, so the two can't drift into different orders.
+    ///
+    /// Startup is a page on the Mac (auto-start plus launch at login) but a
+    /// single inline switch on iPhone, where a page for one toggle is a
+    /// dead end.
+    static var groups: [(title: String, tabs: [SettingsTab])] {
+        #if os(macOS)
+        let relayTabs: [SettingsTab] = [.macRelay, .relayAccess, .importNotes, .backup, .startup]
+        #else
+        let relayTabs: [SettingsTab] = [.macRelay, .relayAccess, .importNotes, .backup]
+        #endif
+        return [
+            ("Account", [.accounts, .blocked, .followingBackup, .wallet]),
+            ("Feed & Display", [.feed, .appearance, .media]),
+            ("Notifications", [.pushNotifications]),
+            ("Sharing", [.dm, .blastr, .blossom]),
+            ("Your Vault Relay", relayTabs),
+            ("Advanced", [.proofOfWork, .advanced, .logs]),
+        ]
+    }
+
     var body: some View {
         Group {
             #if os(iOS)
@@ -235,10 +262,9 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    settingsSidebarSection("Profile", items: [.accounts, .blocked])
-                    settingsSidebarSection("Appearance", items: [.appearance])
-                    settingsSidebarSection("Relay Configuration", items: [.macRelay, .feed, .dm, .blastr, .blossom, .importNotes, .searchRelays, .backup, .followingBackup])
-                    settingsSidebarSection("System", items: [.pushNotifications, .wallet, .proofOfWork, .advanced, .logs])
+                    ForEach(Self.groups, id: \.title) { group in
+                        settingsSidebarSection(group.title, items: group.tabs)
+                    }
                 }
                 .padding(.horizontal, 8)
             }
@@ -377,42 +403,33 @@ struct SettingsView: View {
             }
 
             Section {
-                if needsRestart && relayManager.isRunning {
-                    RestartBanner(action: restartRelay, isRestarting: isRestarting)
-                }
+                RelayStatusCard(needsRestart: needsRestart, isRestarting: isRestarting, restart: restartRelay)
+                    .padding(.horizontal)
             }
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
 
-            Section("Profile") {
-                tabLink(.accounts)
-                tabLink(.blocked)
-            }
-            
-            Section("Appearance") {
-                tabLink(.appearance)
-            }
-            
-            Section("Relay Configuration") {
-                tabLink(.feed)
-                tabLink(.dm)
-                tabLink(.blastr)
-                tabLink(.blossom)
-                tabLink(.importNotes)
-                tabLink(.searchRelays)
-                tabLink(.backup)
-                tabLink(.followingBackup)
-                tabLink(.macRelay)
+            ForEach(Self.groups, id: \.title) { group in
+                Section(group.title) {
+                    ForEach(group.tabs) { tab in
+                        tabLink(tab)
+                    }
+                    if group.title == "Your Vault Relay" {
+                        // One switch, so it lives here rather than behind a
+                        // page of its own (the Mac has a Startup page).
+                        Toggle(isOn: $configService.config.autoStartRelay) {
+                            Label {
+                                Text("Start Relay Automatically")
+                                    .font(.appBody)
+                                    .settingInfo(.relayAutoStart)
+                            } icon: {
+                                settingsIcon(SettingsTab.startup.icon, color: .green)
+                            }
+                        }
+                    }
+                }
             }
 
-            Section("System") {
-                tabLink(.pushNotifications)
-                tabLink(.wallet)
-                tabLink(.proofOfWork)
-                tabLink(.advanced)
-                tabLink(.logs)
-            }
-            
             Section("About") {
                 VStack(spacing: 4) {
                     Text("Nostr Vault")
@@ -486,15 +503,19 @@ struct SettingsView: View {
                 Text(tab.title)
                     .font(.appBody)
             } icon: {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(iconBackgroundColor(for: tab))
-                        .frame(width: 28, height: 28)
-                    Image(systemName: tab.icon)
-                        .font(.appSystem(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                }
+                settingsIcon(tab.icon, color: iconBackgroundColor(for: tab))
             }
+        }
+    }
+
+    private func settingsIcon(_ systemName: String, color: Color) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(color)
+                .frame(width: 28, height: 28)
+            Image(systemName: systemName)
+                .font(.appSystem(size: 14, weight: .semibold))
+                .foregroundColor(.white)
         }
     }
 
@@ -504,11 +525,13 @@ struct SettingsView: View {
         case .blocked: return .red
         case .appearance: return .purple
         case .feed: return .pink
+        case .media: return .indigo
         case .dm: return .mint
-        case .pushNotifications: return .blue
+        case .pushNotifications: return .red
         case .importNotes: return .orange
-        case .searchRelays: return .indigo
+        case .relayAccess: return .blue
         case .backup: return .indigo
+        case .startup: return .green
         case .followingBackup: return .teal
         case .blastr: return .cyan
         // Stays system green: this list is a categorical palette for the
@@ -546,7 +569,9 @@ struct SettingsView: View {
             case .dm: DMSettingsView()
             case .pushNotifications: PushNotificationSettingsView()
             case .importNotes: ImportSettingsView()
-            case .searchRelays: SearchRelaysSettingsView()
+            case .media: MediaSettingsView()
+            case .relayAccess: RelayAccessSettingsView()
+            case .startup: StartupSettingsView()
             case .backup: BackupSettingsView()
             case .followingBackup: FollowingBackupSettingsView()
             case .blastr: BlastrSettingsView()
@@ -571,44 +596,141 @@ struct SettingsView: View {
     
 }
 
-struct RestartBanner: View {
-    var action: () -> Void
-    var isRestarting: Bool
-    
+/// The first thing on the Settings screen: whether this device's Vault relay
+/// is running, where it answers, and a Restart button that exists only while
+/// a saved change is waiting on one.
+///
+/// This replaces a purple "Restart Required" banner that appeared from
+/// nowhere and never said which relay it meant — people with a Mac relay
+/// assumed it meant that one.
+struct RelayStatusCard: View {
+    @EnvironmentObject var configService: ConfigService
+    @EnvironmentObject var relayManager: RelayProcessManager
+    let needsRestart: Bool
+    let isRestarting: Bool
+    let restart: () -> Void
+
+    private enum Status {
+        case running, starting, stopped
+
+        var label: String {
+            switch self {
+            case .running: return "Running"
+            case .starting: return "Starting…"
+            case .stopped: return "Stopped"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .running: return .havenOnline
+            case .starting: return .orange
+            case .stopped: return .red
+            }
+        }
+    }
+
+    private var status: Status {
+        if isRestarting || relayManager.isBooting { return .starting }
+        return relayManager.isRunning ? .running : .stopped
+    }
+
+    /// The public domain when one is set (Mac), otherwise the loopback
+    /// address the app itself talks to.
+    private var address: String {
+        let domain = configService.config.sanitizedRelayURL
+        if !domain.isEmpty && !configService.config.isLocal {
+            return "wss://\(domain)"
+        }
+        return "ws://127.0.0.1:\(configService.config.relayPort)"
+    }
+
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.clockwise.circle.fill")
-                    .font(.appTitle2)
-                    .foregroundColor(.white)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Restart Required")
-                        .font(.appHeadline)
-                        .foregroundColor(.white)
-                    Text("Some changes require a relay restart to take effect.")
-                        .font(.appCaption)
-                        .foregroundColor(.white.opacity(0.8))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.havenPurple.opacity(0.18))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "externaldrive.connected.to.line.below")
+                        .font(.appSystem(size: 20, weight: .semibold))
+                        .foregroundColor(.havenPurple)
                 }
-                
-                Spacer()
-                
-                if isRestarting {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.appCaption.bold())
-                        .foregroundColor(.white.opacity(0.5))
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Your Vault Relay")
+                        .font(.appHeadline)
+                        .settingInfo(.relayStatus)
+                    Text(address)
+                        .font(.appSystem(size: 12, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(status.color)
+                        .frame(width: 8, height: 8)
+                    Text(status.label)
+                        .font(.appSubheadline.weight(.semibold))
+                        .foregroundColor(status.color)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Relay \(status.label)")
+            }
+
+            if status == .stopped {
+                Button {
+                    relayManager.startRelay(config: configService.config)
+                } label: {
+                    Label("Start Relay", systemImage: "play.fill")
+                        .font(.appSubheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.havenOnline.opacity(0.18))
+                        .foregroundColor(.havenOnline)
+                        .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+            } else if needsRestart {
+                HStack(spacing: 10) {
+                    Button(action: restart) {
+                        HStack(spacing: 8) {
+                            if isRestarting {
+                                ProgressView().controlSize(.small).tint(.white)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            Text("Restart to Apply Changes")
+                        }
+                        .font(.appSubheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.havenPurple)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRestarting)
+
+                    InfoButton(.relayRestart)
                 }
             }
-            .padding()
-            .background(Color.havenPurple)
-            .cornerRadius(12)
-            .padding(.horizontal)
         }
-        .buttonStyle(.plain)
-        .disabled(isRestarting)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.platformControlBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
     }
 }
 
@@ -655,12 +777,12 @@ struct AccountsSettingsView: View {
                     configService.save()
                 }
             } header: {
-                Text("Accounts")
+                Text("Accounts").settingInfo(.accountAccounts)
             } footer: {
                 #if os(iOS)
-                Text("Each account can hold both a local key and a remote signer. Tap to manage signing. Swipe to remove.")
+                Text("Tap an account to manage its keys. Swipe to remove.")
                 #else
-                Text("Each account can hold both a local key and a remote signer. Click to manage signing, or to remove the account.")
+                Text("Click an account to manage its keys or remove it.")
                 #endif
             }
 
@@ -884,13 +1006,7 @@ struct AccountDetailView: View {
                         }
                         .pickerStyle(.segmented)
                     } header: {
-                        Text("Active Signing Method")
-                    } footer: {
-                        if currentMode == "nip46" {
-                            Text("Events will be signed by the remote signer (NIP-46).")
-                        } else {
-                            Text("Events will be signed with the locally stored private key.")
-                        }
+                        Text("Sign With").settingInfo(.accountSigning)
                     }
                 }
 
@@ -920,6 +1036,7 @@ struct AccountDetailView: View {
                         } label: {
                             Label("Reveal Key", systemImage: "eye")
                         }
+                        .settingInfo(.accountRevealKey)
 
                         Button(role: .destructive) {
                             showingRemoveKeyConfirm = true
@@ -975,7 +1092,7 @@ struct AccountDetailView: View {
                 // NIP-65 Relay List Publishing
                 if (hasLocalKey || hasBunker) && !configService.config.isLocal {
                     Section {
-                        Toggle("Publish Inbox Relay", isOn: Binding(
+                        Toggle(isOn: Binding(
                             get: { configService.config.publishRelayListPerAccount[npub] ?? false },
                             set: { enabled in
                                 configService.config.publishRelayListPerAccount[npub] = enabled
@@ -984,11 +1101,11 @@ struct AccountDetailView: View {
                                     NostrService.shared.publishRelayList(forNpub: npub)
                                 }
                             }
-                        ))
+                        )) {
+                            Text("Publish Inbox Relay").settingInfo(.accountPublishInbox)
+                        }
                     } header: {
-                        Text("Relay List (NIP-65)")
-                    } footer: {
-                        Text("Publishes this relay as the account's inbox so other clients know where to send events.")
+                        Text("Relay List")
                     }
                 }
 
@@ -1880,9 +1997,7 @@ struct BlockedSettingsView: View {
                     .disabled(!searchInput.starts(with: "npub1"))
                 }
             } header: {
-                Text("Block Profile")
-            } footer: {
-                Text("Enter an npub to block it. Blocked profiles cannot interact with you.")
+                Text("Block Someone").settingInfo(.accountBlocked)
             }
 
             Section("Blocked Accounts") {
@@ -1944,9 +2059,9 @@ struct BlockedSettingsView: View {
                     }
                 }
             } header: {
-                Text("Slowed Down")
+                Text("Slowed Down").settingInfo(.accountSlowed)
             } footer: {
-                Text("Slowed-down accounts have a limit on how many of their posts appear in your feed at once. Tap a username in the feed to slow someone down.")
+                Text("Tap a name in the feed to slow someone down.")
             }
         }
         .groupedFormStyleCompat()
@@ -1964,32 +2079,21 @@ struct AdvancedSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Stepper("Max Events: \(configService.config.outboxMaxEventsPerMinute) / min", 
-                       value: $configService.config.outboxMaxEventsPerMinute, in: 10...1000, step: 10)
-                
-                Stepper("Max Connections: \(configService.config.outboxMaxConnectionsPerMinute) / min",
-                       value: $configService.config.outboxMaxConnectionsPerMinute, in: 1...100)
-            } header: {
-                Text("Performance & Limits")
-            } footer: {
-               Text("These limits help protect your relay from spam and abuse.")
-            }
-            
-            Section {
                 HStack {
                     Text("Engine")
+                        .settingInfo(.advDatabase)
                     Spacer()
                     Text(configService.config.dbEngine == "badger" ? "BadgerDB" : "LMDB")
                         .foregroundColor(.secondary)
                 }
-                
+
                 #if os(macOS)
                 HStack {
-                    Text("Blossom Path")
+                    Text("Media Folder")
                     Spacer()
                     Text(configService.config.blossomPath)
                         .foregroundColor(.secondary)
-                    
+
                     Button {
                         let fullPath = configService.relayDataDir.appendingPathComponent(configService.config.blossomPath).path
                         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: fullPath)
@@ -1997,66 +2101,13 @@ struct AdvancedSettingsView: View {
                         Image(systemName: "folder")
                     }
                     .buttonStyle(.plain)
+                    .help("Show in Finder")
                 }
                 #endif
             } header: {
                 Text("Database")
-            } footer: {
-                Text(configService.config.dbEngine == "badger" ? 
-                     "BadgerDB pre-allocates ~11GB of space. This is normal." :
-                     "LMDB uses sparse files.")
-            }
-            
-            Section {
-                Toggle("Autoplay Videos", isOn: $configService.config.autoplayVideos)
-                Toggle("Disable Media Cache", isOn: $configService.config.disableMediaCache)
-                Toggle("Prefetch Profile Pictures", isOn: $configService.config.prefetchProfilePictures)
-
-                Picker("Cache TTL", selection: $configService.config.cacheTTLDays) {
-                    Text("1 day").tag(1)
-                    Text("3 days").tag(3)
-                    Text("7 days").tag(7)
-                    Text("14 days").tag(14)
-                    Text("30 days").tag(30)
-                    Text("Never").tag(0)
-                }
-
-                Button(role: .destructive) {
-                    MediaCacheService.shared.clearCache()
-                } label: {
-                    Label("Clear Media Cache", systemImage: "trash")
-                }
-            } header: {
-                Text("Media")
-            } footer: {
-                Text("When autoplay is off, videos show a thumbnail until tapped. Cache TTL controls how long downloaded media is kept before automatic cleanup. Clearing the cache will remove downloaded remote images but won't touch your local Blossom data. Profile picture prefetching downloads avatars for all followed accounts once per day over Wi-Fi only.")
             }
 
-            Section {
-                Stepper("Depth: \(configService.config.chatRelayWotDepth)", 
-                       value: $configService.config.chatRelayWotDepth, in: 1...5)
-                Stepper("Minimum Followers: \(configService.config.chatRelayMinFollowers)",
-                       value: $configService.config.chatRelayMinFollowers, in: 0...100)
-                
-                Picker("Refresh Interval", selection: $configService.config.wotRefreshInterval) {
-                    Text("1 Hour").tag("1h")
-                    Text("12 Hours").tag("12h")
-                    Text("24 Hours").tag("24h")
-                    Text("7 Days").tag("168h")
-                }
-            } header: {
-                Text("Global Web of Trust")
-            } footer: {
-                Text("WoT determines who can post to your inbox and chat relays. Lower depth is more private.")
-            }
-            
-            Section("Diagnostics & Startup") {
-                #if os(macOS)
-                Toggle("Launch at Login", isOn: $configService.config.launchAtLogin)
-                #endif
-                Toggle("Auto-start Relay", isOn: $configService.config.autoStartRelay)
-            }
-            
             Section {
                 Button(role: .destructive) {
                     showResetConfirmation = true
@@ -2064,10 +2115,9 @@ struct AdvancedSettingsView: View {
                     Label("Factory Reset", systemImage: "trash")
                         .foregroundColor(.red)
                 }
+                .settingInfo(.advFactoryReset)
             } header: {
                 Text("Danger Zone")
-            } footer: {
-                Text("This will stop the relay, delete all data (database, logs), and reset settings to default.")
             }
         }
         .groupedFormStyleCompat()
@@ -2088,7 +2138,150 @@ struct AdvancedSettingsView: View {
             Text("This action cannot be undone. All your relay data will be lost and the app will quit.")
         }
     }
+}
 
+/// How media is played and kept on this device. App-side only: none of this
+/// reaches the relay, which is why it no longer sits in Advanced next to the
+/// relay's database.
+struct MediaSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(isOn: $configService.config.autoplayVideos) {
+                    Text("Autoplay Videos").settingInfo(.mediaAutoplay)
+                }
+                Toggle(isOn: $configService.config.prefetchProfilePictures) {
+                    Text("Prefetch Profile Pictures").settingInfo(.mediaPrefetchAvatars)
+                }
+            } header: {
+                Text("Playback")
+            }
+
+            Section {
+                Toggle(isOn: $configService.config.disableMediaCache) {
+                    Text("Disable Media Cache").settingInfo(.mediaDisableCache)
+                }
+                Picker(selection: $configService.config.cacheTTLDays) {
+                    Text("1 day").tag(1)
+                    Text("3 days").tag(3)
+                    Text("7 days").tag(7)
+                    Text("14 days").tag(14)
+                    Text("30 days").tag(30)
+                    Text("Never").tag(0)
+                } label: {
+                    Text("Keep Media For").settingInfo(.mediaCacheTTL)
+                }
+                .disabled(configService.config.disableMediaCache)
+
+                Button(role: .destructive) {
+                    MediaCacheService.shared.clearCache()
+                } label: {
+                    Label("Clear Media Cache", systemImage: "trash")
+                }
+                .settingInfo(.mediaClearCache)
+            } header: {
+                Text("Cache")
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+}
+
+/// Who may write to your relay's inbox and chat, and how fast. These used
+/// to be split between "Performance & Limits" and "Global Web of Trust" in
+/// Advanced, although both answer the same question.
+struct RelayAccessSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+
+    var body: some View {
+        Form {
+            Section {
+                Stepper(value: $configService.config.chatRelayWotDepth, in: 1...5) {
+                    HStack {
+                        Text("Follow Distance").settingInfo(.relayWotDepth)
+                        Spacer()
+                        Text("\(configService.config.chatRelayWotDepth)")
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                Stepper(value: $configService.config.chatRelayMinFollowers, in: 0...100) {
+                    HStack {
+                        Text("Minimum Followers").settingInfo(.relayMinFollowers)
+                        Spacer()
+                        Text("\(configService.config.chatRelayMinFollowers)")
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                Picker(selection: $configService.config.wotRefreshInterval) {
+                    Text("Every hour").tag("1h")
+                    Text("Every 12 hours").tag("12h")
+                    Text("Every day").tag("24h")
+                    Text("Every week").tag("168h")
+                } label: {
+                    Text("Refresh Trust List").settingInfo(.relayWotRefresh)
+                }
+            } header: {
+                Text("Web of Trust")
+            }
+
+            Section {
+                Stepper(value: $configService.config.outboxMaxEventsPerMinute, in: 10...1000, step: 10) {
+                    HStack {
+                        Text("Events").settingInfo(.relayRateLimits)
+                        Spacer()
+                        Text("\(configService.config.outboxMaxEventsPerMinute) / min")
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                Stepper(value: $configService.config.outboxMaxConnectionsPerMinute, in: 1...100) {
+                    HStack {
+                        Text("Connections")
+                        Spacer()
+                        Text("\(configService.config.outboxMaxConnectionsPerMinute) / min")
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+            } header: {
+                Text("Rate Limits")
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+}
+
+/// Mac only in the sidebar: two switches about when the relay comes up.
+/// iPhone shows auto-start inline in the Settings list instead.
+struct StartupSettingsView: View {
+    @EnvironmentObject var configService: ConfigService
+
+    var body: some View {
+        Form {
+            Section {
+                #if os(macOS)
+                Toggle("Launch at Login", isOn: $configService.config.launchAtLogin)
+                #endif
+                Toggle(isOn: $configService.config.autoStartRelay) {
+                    Text("Start Relay Automatically").settingInfo(.relayAutoStart)
+                }
+            }
+        }
+        .groupedFormStyleCompat()
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
 }
 
 
@@ -2114,21 +2307,18 @@ struct ImportSettingsView: View {
 
     var body: some View {
         Form {
+            // No "Seed Relays File" field: the app writes that file from the
+            // list below on every relay start, so a typed path was ignored.
             Section {
-                DatePicker("Start Date", selection: importDateBinding, displayedComponents: .date)
-                TextField("Seed Relays File", text: $configService.config.importSeedRelaysFile)
-            } header: {
-                Text("Import Configuration")
-            } footer: {
-                Text("Notes will be fetched starting from this date.")
+                DatePicker(selection: importDateBinding, displayedComponents: .date) {
+                    Text("Start Date").settingInfo(.relayImport)
+                }
             }
-            
+
             Section {
                 RelayListEditor(relays: $configService.config.importSeedRelays)
             } header: {
-                Text("Seed Relays")
-            } footer: {
-                Text("The import process will fetch your own notes and notes where you are tagged. Make sure you have your npub set correctly in the Identity tab.")
+                Text("Import From")
             }
         }
         .groupedFormStyleCompat()
@@ -2139,42 +2329,30 @@ struct ImportSettingsView: View {
 }
 
 /// The NIP-50 relays Global search asks, per device (UserDefaults, not the
-/// relay config — the relay never reads this list).
-struct SearchRelaysSettingsView: View {
+/// relay config — the relay never reads this list). Lives on the Feed page:
+/// it was a separate "Search Relays" row among the relay's own settings,
+/// which made it look like something the relay did.
+struct SearchRelaysSection: View {
     @State private var relays: [String] = SearchRelaySettings.relays
     @State private var isDefault = SearchRelaySettings.isDefault
 
     var body: some View {
-        Form {
-            Section {
-                RelayListEditor(relays: Binding(
-                    get: { relays },
-                    // Shown = saved: the same normalization the store applies.
-                    set: { relays = SearchRelayDefaults.normalized($0) }
-                ), duplicateKey: SearchRelayDefaults.key)
-            } header: {
-                Text("Search Relays")
-            } footer: {
-                Text("Global search asks these NIP-50 relays along with this device's own store and your Mac relay. Notes and profiles are requested separately, so profile-only search relays work too. Saved on this device only.")
-            }
+        Section {
+            RelayListEditor(relays: Binding(
+                get: { relays },
+                // Shown = saved: the same normalization the store applies.
+                set: { relays = SearchRelayDefaults.normalized($0) }
+            ), duplicateKey: SearchRelayDefaults.key)
 
-            Section {
-                Button("Reset to Defaults") {
-                    SearchRelaySettings.resetToDefaults()
-                    isDefault = true
-                    relays = SearchRelaySettings.relays
-                }
-                .disabled(isDefault)
-            } footer: {
-                Text("Defaults: " + SearchRelayDefaults.relays
-                    .map { $0.replacingOccurrences(of: "wss://", with: "") }
-                    .joined(separator: ", "))
+            Button("Reset to Defaults") {
+                SearchRelaySettings.resetToDefaults()
+                isDefault = true
+                relays = SearchRelaySettings.relays
             }
+            .disabled(isDefault)
+        } header: {
+            Text("Search Relays").settingInfo(.feedSearchRelays)
         }
-        .groupedFormStyleCompat()
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
         .onChange(of: relays) { _, newValue in
             // A reset has already cleared the stored list; writing the
             // defaults back would pin them and stop future default changes.
@@ -2251,9 +2429,7 @@ struct BackupSettingsView: View {
                     .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
                 }
             } header: {
-                Text("Notes (JSONL)")
-            } footer: {
-                Text("Export creates a compressed backup of all your notes. Import restores from a previously exported backup.")
+                Text("Notes").settingInfo(.relayBackup)
             }
             
             Section {
@@ -2303,9 +2479,7 @@ struct BackupSettingsView: View {
                     .disabled(isExportingJSONL || isImportingJSONL || isExportingBlossom || isImportingBlossom)
                 }
             } header: {
-                Text("Media (Blossom)")
-            } footer: {
-                Text("Export creates a compressed backup of your images and videos. Import restores media from a previously exported backup.")
+                Text("Media")
             }
 
             if !statusMessage.isEmpty {
@@ -2557,23 +2731,46 @@ struct BackupSettingsView: View {
 
 }
 
+/// Everything about what the feed shows and where it reads from. The three
+/// switches are the same values as the feed's toolbar buttons, so flipping
+/// one in either place flips both.
 struct FeedSettingsView: View {
     @EnvironmentObject var configService: ConfigService
 
     var body: some View {
         Form {
             Section {
+                Toggle(isOn: $configService.config.showReposts) {
+                    Text("Show Reposts").settingInfo(.feedReposts)
+                }
+                Toggle(isOn: $configService.config.showReplies) {
+                    Text("Show Replies").settingInfo(.feedReplies)
+                }
+                Toggle(isOn: $configService.config.autoLoadNewPosts) {
+                    Text("Auto-Load New Posts").settingInfo(.feedAutoLoad)
+                }
+            } header: {
+                Text("What You See")
+            }
+
+            Section {
                 RelayListEditor(relays: $configService.config.feedRelays)
             } header: {
-                Text("Feed Relays")
-            } footer: {
-                Text("The feed reads from multiple relays to build your timeline. Connect to relays your followers are actively using.")
+                Text("Feed Relays").settingInfo(.feedRelays)
             }
+
+            SearchRelaysSection()
         }
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .onChange(of: configService.config.showReposts) { _, _ in
+            FeedService.shared.recomputeFilteredNotes()
+        }
+        .onChange(of: configService.config.showReplies) { _, _ in
+            FeedService.shared.recomputeFilteredNotes()
+        }
     }
 }
 
@@ -2597,9 +2794,7 @@ struct DMSettingsView: View {
                         }
                     }
             } header: {
-                Text("DM Relays")
-            } footer: {
-                Text("NIP-17 encrypted DMs are sent to these relays. Your local Haven relay and Mac relay (if configured) are automatically added when publishing.")
+                Text("DM Relays").settingInfo(.shareDMRelays)
             }
 
             if showPublishSuccess {
@@ -2653,20 +2848,13 @@ struct BlastrSettingsView: View {
     
     var body: some View {
         Form {
-            Section {
-                TextField("Blastr Relays File", text: $configService.config.blastrRelaysFile)
-            } header: {
-                Text("Blastr Configuration")
-            } footer: {
-               Text("The JSON file containing relays to broadcast notes to.")
-            }
-            
+            // The raw "Blastr Relays File" field is gone: it named a JSON file
+            // inside the relay's data folder that the app writes itself from
+            // this list, so editing it only ever broke the broadcast.
             Section {
                 RelayListEditor(relays: $configService.config.blastrRelays)
             } header: {
-                Text("Broadcast Relays")
-            } footer: {
-                Text("Blastr automatically broadcasts your local notes to these external relays.")
+                Text("Broadcast Relays").settingInfo(.shareBroadcast)
             }
         }
         .groupedFormStyleCompat()
@@ -2702,15 +2890,15 @@ struct WalletSettingsView: View {
                     .keyboardType(.URL)
                     #endif
             } header: {
-                Text("Nostr Wallet Connect (NWC) URI")
+                Text("Wallet Connect").settingInfo(.walletNWC)
             } footer: {
-                Text("Paste your nostr+walletconnect:// URI here to enable sending Zaps directly from Nostr Vault.")
+                Text("Paste a nostr+walletconnect:// link.")
             }
 
             if !configService.config.nwcURI.isEmpty {
-                Section("Wallet Output") {
+                Section("Zaps") {
                     HStack {
-                        Text("Default Zap Amount")
+                        Text("Default Zap").settingInfo(.walletDefaultZap)
                         Spacer()
                         let amountSats = configService.config.defaultZapAmount / 1000
                         TextField("Sats", value: Binding(
@@ -2758,7 +2946,11 @@ struct WalletSettingsView: View {
             // Bitcoin Taproot wallet derived from Nostr keypair (BIP-341)
             Section {
                 Toggle(isOn: $configService.config.showBitcoinWallet) {
-                    Label("Bitcoin Address", systemImage: "bitcoinsign.circle")
+                    Label {
+                        Text("Bitcoin Address").settingInfo(.walletBitcoin)
+                    } icon: {
+                        Image(systemName: "bitcoinsign.circle")
+                    }
                 }
                 .onChange(of: configService.config.showBitcoinWallet) { _, enabled in
                     if enabled { deriveTaprootAddress() }
@@ -2827,8 +3019,6 @@ struct WalletSettingsView: View {
                 }
             } header: {
                 Text("Bitcoin")
-            } footer: {
-                Text("Your Nostr key is a valid Bitcoin Taproot key. This address is derived deterministically from your npub via BIP-341 — no separate seed phrase needed.")
             }
         }
         .groupedFormStyleCompat()
@@ -2928,7 +3118,7 @@ struct AppearanceSettingsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Text Size")
+                        Text("Text Size").settingInfo(.displayTextSize)
                         Spacer()
                         Text(String(format: "%.0f%%", configService.config.textSizeScale * 100))
                             .foregroundColor(.secondary)
@@ -2951,9 +3141,7 @@ struct AppearanceSettingsView: View {
                 }
                 .padding(.vertical, 4)
             } header: {
-                Text("Text Accessibility")
-            } footer: {
-                Text("Adjust the size of text across the app — feeds, note details, profiles, DM inbox, message threads, and compose editors.")
+                Text("Text")
             }
 
             // OLED black is the app's only appearance now, so there is nothing
@@ -2963,52 +3151,56 @@ struct AppearanceSettingsView: View {
             #if os(iOS)
             Section {
                 Toggle(isOn: $configService.config.disableTabBarAnimation) {
-                    Label("Disable Tab Bar Animation", systemImage: "rectangle.bottombar.fill")
+                    Label {
+                        Text("Keep Tab Bar Full Size").settingInfo(.displayTabBarAnimation)
+                    } icon: {
+                        Image(systemName: "rectangle.bottombar.fill")
+                    }
                 }
                 .onChange(of: configService.config.disableTabBarAnimation) { _, _ in
                     configService.save()
                 }
             } header: {
                 Text("Tab Bar")
-            } footer: {
-                Text("Keep the bottom tab bar fully expanded at all times. When off, the bar shrinks and hides as you scroll.")
             }
             #endif
 
             Section {
                 Toggle(isOn: $configService.config.zapsOnlyMode) {
-                    Label("Zaps Only Mode", systemImage: "bolt.fill")
+                    Label {
+                        Text("Zaps Only").settingInfo(.displayZapsOnly)
+                    } icon: {
+                        Image(systemName: "bolt.fill")
+                    }
                 }
                 .onChange(of: configService.config.zapsOnlyMode) { _, _ in
                     configService.save()
                 }
             } header: {
                 Text("Engagement")
-            } footer: {
-                Text("Remove likes and reactions from the app entirely. Zaps become the only way to engage with notes and the primary source of relay notifications.")
             }
 
             if !configService.config.zapsOnlyMode {
                 Section {
-                    Button(action: {
-                        showEmojiPicker = true
-                    }) {
-                        HStack {
-                            Label("Default Reaction", systemImage: "heart.fill")
-                                .foregroundColor(.primary)
-                            Spacer()
-                            Text(configService.config.defaultReactionEmoji)
-                                .font(.appSystem(size: 24))
-                            Image(systemName: "chevron.right")
-                                .font(.appSystem(size: 12))
-                                .foregroundColor(.secondary)
-                        }
+                    // A tap gesture rather than a Button: the (i) is a button
+                    // too, and a Button inside a Button's label never fires.
+                    HStack {
+                        Label("Default Reaction", systemImage: "heart.fill")
+                            .foregroundColor(.primary)
+                        InfoButton(.displayDefaultReaction)
+                        Spacer()
+                        Text(configService.config.defaultReactionEmoji)
+                            .font(.appSystem(size: 24))
+                        Image(systemName: "chevron.right")
+                            .font(.appSystem(size: 12))
+                            .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .onTapGesture { showEmojiPicker = true }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityAddTraits(.isButton)
                 } header: {
                     Text("Reactions")
-                } footer: {
-                    Text("Choose your default reaction emoji. This emoji will be used when you tap the heart button on a note.")
                 }
             }
 
@@ -3020,8 +3212,6 @@ struct AppearanceSettingsView: View {
                 }
             } header: {
                 Text("App Icon")
-            } footer: {
-                Text("Choose your app icon. Changes take effect immediately.")
             }
             #endif
         }
@@ -3099,15 +3289,13 @@ struct MacRelayDomainSettingsView: View {
                     .padding(.top, 4)
                 }
             } header: {
-                Text("Relay Domain")
-            } footer: {
-                Text("Enter a domain to make your relay publicly accessible. Leave blank for local-only. Accepts any format (https://, wss://, or bare domain).")
+                Text("Relay Domain").settingInfo(.relayDomain)
             }
 
             // MARK: - Port
             Section {
                 HStack {
-                    Text("Port")
+                    Text("Port").settingInfo(.relayPort)
                     Spacer()
                     TextField("3355", value: $configService.config.relayPort, formatter: NumberFormatter.noSeparator)
                         .frame(width: 80)
@@ -3116,8 +3304,6 @@ struct MacRelayDomainSettingsView: View {
                 }
             } header: {
                 Text("Network")
-            } footer: {
-                Text("The relay listens on all network interfaces (0.0.0.0). Default port is 3355.")
             }
 
             // MARK: - Cloudflare Tunnel Instructions
@@ -3201,17 +3387,10 @@ struct MacRelaySettingsView: View {
                             RoundedRectangle(cornerRadius: 8)
                                 .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                         )
-
-                    Text("Enter your Mac relay in any format — https://, wss://, or bare domain. All derived addresses below are computed automatically.")
-                        .font(.appCaption)
-                        .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 4)
             } header: {
-                HStack(spacing: 6) {
-                    Image(systemName: "desktopcomputer")
-                    Text("Mac Relay URL")
-                }
+                Text("Your Mac's Address").settingInfo(.relaySync)
             }
 
             // ── Derived Addresses ──────────────────────────────────────
@@ -3284,9 +3463,7 @@ struct MacRelaySettingsView: View {
                     }
                     .padding(.vertical, 2)
                 } header: {
-                    Text("Derived Addresses")
-                } footer: {
-                    Text("Your Mac relay is automatically included in all relay lists. Your posts and mentions sync from it like any other relay.")
+                    Text("Also Used For")
                 }
 
                 // ── Sync ───────────────────────────────────────────────
@@ -3294,8 +3471,6 @@ struct MacRelaySettingsView: View {
                     MacRelaySyncStatusView()
                 } header: {
                     Text("Sync")
-                } footer: {
-                    Text("New posts, mentions and replies sync on their own whenever the app is open or refreshing. The first time a Mac is set, your full history is copied from it once, then compared again to make sure nothing is missing. Check sync with Mac repeats that comparison.")
                 }
             }
         }
@@ -3403,7 +3578,7 @@ struct BlossomSettingsView: View {
                             Text("No Mac Sync Relay Configured")
                                 .font(.appSubheadline.bold())
                                 .foregroundColor(.secondary)
-                            Text("Configure your Mac relay in the 'Mac Relay' tab to automatically apply it here.")
+                            Text("Add your Mac in Sync with Mac and it's used here automatically.")
                                 .font(.appCaption)
                                 .foregroundColor(.secondary.opacity(0.7))
                         }
@@ -3412,9 +3587,7 @@ struct BlossomSettingsView: View {
                     .padding(.vertical, 4)
                 }
             } header: {
-                Text("Auto-Applied Blossom Servers")
-            } footer: {
-                Text("Your personal Mac Sync Relay is automatically applied as a Blossom mirror. No manual setup required.")
+                Text("Your Mac")
             }
             
             // Section 2: Additional Blossom Servers (Mirrors)
@@ -3472,9 +3645,7 @@ struct BlossomSettingsView: View {
                 }
                 .padding(.top, 4)
             } header: {
-                Text("Additional Blossom Servers")
-            } footer: {
-                Text("Add external Blossom servers. The relay will fetch from and mirror your media to these servers.")
+                Text("Other Servers").settingInfo(.shareMediaServers)
             }
             
             // Section 3: Media Sync & Mirroring
@@ -3522,19 +3693,12 @@ struct BlossomSettingsView: View {
                         configService.save()
                     }
                 )) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Auto-Mirror Media")
-                            .font(.appBody)
-                            .foregroundColor(.white)
-                        Text("Automatically download your media from mirrors when the relay starts")
-                            .font(.appCaption)
-                            .foregroundColor(.secondary)
-                    }
+                    Text("Auto-Mirror Media")
+                        .font(.appBody)
+                        .settingInfo(.shareAutoMirror)
                 }
             } header: {
-                Text("Media Mirroring")
-            } footer: {
-                Text("Downloads your own Blossom media from active servers to your local relay for offline access.")
+                Text("Offline Copies")
             }
 
             // Section 4: FIPS
@@ -3557,14 +3721,9 @@ struct BlossomSettingsView: View {
                         NostrService.shared.publishServerList(fipsDetectedNpub: fipsDetection.detectedNpub)
                     }
                 )) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Publish .fips Blossom Address")
-                            .font(.appBody)
-                            .foregroundColor(.white)
-                        Text("Advertise your FIPS address in your Blossom server list (kind 10063)")
-                            .font(.appCaption)
-                            .foregroundColor(.secondary)
-                    }
+                    Text("Publish .fips Address")
+                        .font(.appBody)
+                        .settingInfo(.shareFIPS)
                 }
 
                 if configService.config.fipsPublishEnabled {

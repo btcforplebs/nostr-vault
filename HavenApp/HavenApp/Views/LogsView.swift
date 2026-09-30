@@ -211,6 +211,7 @@ struct LogsView: View {
             }
             .frame(width: 80)
             .help("Log level sent to the relay process (takes effect on restart)")
+            InfoButton(.advLogLevel)
         }
     }
 

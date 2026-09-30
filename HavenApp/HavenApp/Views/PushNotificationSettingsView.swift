@@ -8,25 +8,25 @@ struct PushNotificationSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Notifications", isOn: $configService.config.enablePushNotifications)
+                Toggle(isOn: $configService.config.enablePushNotifications) {
+                    Text("Notifications").settingInfo(.notifyEnable)
+                }
                     .onChange(of: configService.config.enablePushNotifications) { _, enabled in
                         configService.save()
                         if enabled {
                             PushNotificationService.shared.requestPermissionAndRegister()
                         }
                     }
-            } footer: {
-                Text("Notifications for mentions, replies, DMs, zaps, and more are generated on-device by your relay — no external server involved.")
             }
 
             if configService.config.enablePushNotifications {
                 Section {
-                    Toggle("New notes in your feed", isOn: $configService.config.enableFeedNotifications)
+                    Toggle(isOn: $configService.config.enableFeedNotifications) {
+                        Text("New Notes in Your Feed").settingInfo(.notifyFeedNotes)
+                    }
                         .onChange(of: configService.config.enableFeedNotifications) { _, _ in
                             configService.save()
                         }
-                } footer: {
-                    Text("A single summary of what people you follow posted, and only after you have been away for a couple of hours. Everything else here is about notes addressed to you.")
                 }
 
                 NotificationSoundSection()
@@ -123,6 +123,7 @@ struct AccountNotificationSection: View {
                 let profile = nostrService.profiles[hex]
                 AvatarView(url: profile?.pictureURL, pubkey: hex, size: 20)
                 Text(displayName)
+                    .settingInfo(.notifyPerAccount)
                 if isOwner {
                     Text("Owner")
                         .font(.appCaption2)
