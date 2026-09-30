@@ -45,13 +45,9 @@ extension VaultView {
                 IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Whitelisted", isSelected: contentFilter == .whitelist, color: .havenPurple) { contentFilter = .whitelist }
             } else if viewMode == .likes {
                 IconFilterButton(icon: "person.fill", tooltip: "My Notes", isSelected: likesFilter == .onMyNotes, color: .havenPurple) { likesFilter = .onMyNotes }
-                IconFilterButton(icon: "at", tooltip: "Tagged", isSelected: likesFilter == .onTagged, color: .havenPurple) { likesFilter = .onTagged }
-                IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Whitelisted", isSelected: likesFilter == .onWhitelisted, color: .havenPurple) { likesFilter = .onWhitelisted }
                 IconFilterButton(icon: "heart", tooltip: "My Likes", isSelected: likesFilter == .myLikes, color: .havenPurple) { likesFilter = .myLikes }
             } else if viewMode == .zaps {
                 IconFilterButton(icon: "person.fill", tooltip: "My Notes", isSelected: zapsFilter == .onMyNotes, color: .havenPurple) { zapsFilter = .onMyNotes }
-                IconFilterButton(icon: "at", tooltip: "Tagged", isSelected: zapsFilter == .onTagged, color: .havenPurple) { zapsFilter = .onTagged }
-                IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Whitelisted", isSelected: zapsFilter == .onWhitelisted, color: .havenPurple) { zapsFilter = .onWhitelisted }
                 IconFilterButton(icon: "bolt", tooltip: "My Zaps", isSelected: zapsFilter == .myZaps, color: .havenPurple) { zapsFilter = .myZaps }
             }
         }
@@ -91,24 +87,12 @@ extension VaultView {
                 Button { likesFilter = .onMyNotes } label: {
                     Label("My Notes", systemImage: "person.fill")
                 }
-                Button { likesFilter = .onTagged } label: {
-                    Label("Tagged", systemImage: "at")
-                }
-                Button { likesFilter = .onWhitelisted } label: {
-                    Label("Whitelisted", systemImage: "checkmark.seal.fill")
-                }
                 Button { likesFilter = .myLikes } label: {
                     Label("My Likes", systemImage: "heart")
                 }
             } else if viewMode == .zaps {
                 Button { zapsFilter = .onMyNotes } label: {
                     Label("My Notes", systemImage: "person.fill")
-                }
-                Button { zapsFilter = .onTagged } label: {
-                    Label("Tagged", systemImage: "at")
-                }
-                Button { zapsFilter = .onWhitelisted } label: {
-                    Label("Whitelisted", systemImage: "checkmark.seal.fill")
                 }
                 Button { zapsFilter = .myZaps } label: {
                     Label("My Zaps", systemImage: "bolt")
@@ -287,12 +271,6 @@ extension VaultView {
             FilterButton(title: "My Notes", icon: "person.fill", color: .havenPurple, isSelected: likesFilter == .onMyNotes) {
                 likesFilter = .onMyNotes
             }
-            FilterButton(title: "Tagged", icon: "at", color: .havenPurple, isSelected: likesFilter == .onTagged) {
-                likesFilter = .onTagged
-            }
-            FilterButton(title: "Whitelisted", icon: "checkmark.seal.fill", color: .havenPurple, isSelected: likesFilter == .onWhitelisted) {
-                likesFilter = .onWhitelisted
-            }
             FilterButton(title: "My Likes", icon: "heart", color: .pink, isSelected: likesFilter == .myLikes) {
                 likesFilter = .myLikes
             }
@@ -307,12 +285,6 @@ extension VaultView {
         HStack(spacing: 2) {
             FilterButton(title: "My Notes", icon: "person.fill", color: .havenPurple, isSelected: zapsFilter == .onMyNotes) {
                 zapsFilter = .onMyNotes
-            }
-            FilterButton(title: "Tagged", icon: "at", color: .havenPurple, isSelected: zapsFilter == .onTagged) {
-                zapsFilter = .onTagged
-            }
-            FilterButton(title: "Whitelisted", icon: "checkmark.seal.fill", color: .havenPurple, isSelected: zapsFilter == .onWhitelisted) {
-                zapsFilter = .onWhitelisted
             }
             FilterButton(title: "My Zaps", icon: "bolt", color: .yellow, isSelected: zapsFilter == .myZaps) {
                 zapsFilter = .myZaps

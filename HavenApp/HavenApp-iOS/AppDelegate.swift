@@ -42,13 +42,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 DMService.shared.refresh()
                 NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
             case 1:
-                NotificationCenter.default.post(name: .havenOpenMentions, object: action.eventId)
+                NotificationCenter.default.post(name: .havenOpenRelayNotes, object: nil)
+                if let id = action.eventId { RelayFocus.request(type: "mention", eventId: id) }
             case 7:
                 NotificationCenter.default.post(name: .havenOpenRelayLikes, object: nil)
+                if let id = action.eventId { RelayFocus.request(type: "reaction", eventId: id) }
             case 6:
                 NotificationCenter.default.post(name: .havenOpenRelayNotes, object: nil)
+                if let id = action.eventId { RelayFocus.request(type: "repost", eventId: id) }
             case 9735:
                 NotificationCenter.default.post(name: .havenOpenRelayZaps, object: nil)
+                if let id = action.eventId { RelayFocus.request(type: "zap", eventId: id) }
             default:
                 break
             }

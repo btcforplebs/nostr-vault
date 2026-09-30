@@ -63,6 +63,9 @@ struct VaultView: View {
     @State var hasEstablishedNotificationBaseline = false
 
     @State var showingNoteId: String?
+    /// The row a tapped notification landed on, outlined for a few seconds.
+    @State var focusedEventId: String?
+    @State var focusTask: Task<Void, Never>?
     /// Non-nil when an iPad split pane owns the note detail column.
     @Environment(\.noteDetailSelection) var noteDetailSelection
 
@@ -127,15 +130,11 @@ struct VaultView: View {
         case .likes:
             switch likesFilter {
             case .onMyNotes: return "Likes on My Notes"
-            case .onTagged: return "Likes on Tagged Notes"
-            case .onWhitelisted: return "Likes on Whitelisted Notes"
             case .myLikes: return "Notes I've Liked"
             }
         case .zaps:
             switch zapsFilter {
             case .onMyNotes: return "Zaps on My Notes"
-            case .onTagged: return "Zaps on Tagged Notes"
-            case .onWhitelisted: return "Zaps on Whitelisted Notes"
             case .myZaps: return "Notes I've Zapped"
             }
         }

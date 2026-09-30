@@ -225,17 +225,6 @@ extension VaultView {
                     switch currentLikesFilter {
                     case .onMyNotes:
                         targetNoteIds = Set(currentEvents.filter { $0.pubkey == owner && noteKinds.contains($0.kind) }.map { $0.id })
-                    case .onTagged:
-                        targetNoteIds = Set(currentEvents.filter {
-                            noteKinds.contains($0.kind) &&
-                            $0.pubkey != owner &&
-                            $0.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner }
-                        }.map { $0.id })
-                    case .onWhitelisted:
-                        targetNoteIds = Set(currentEvents.filter {
-                            noteKinds.contains($0.kind) &&
-                            whitelist.contains($0.pubkey)
-                        }.map { $0.id })
                     case .myLikes:
                         targetNoteIds = [] // handled above
                     }
@@ -349,17 +338,6 @@ extension VaultView {
                     switch currentZapsFilter {
                     case .onMyNotes:
                         targetNoteIds = Set(currentEvents.filter { $0.pubkey == owner && noteKinds.contains($0.kind) }.map { $0.id })
-                    case .onTagged:
-                        targetNoteIds = Set(currentEvents.filter {
-                            noteKinds.contains($0.kind) &&
-                            $0.pubkey != owner &&
-                            $0.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner }
-                        }.map { $0.id })
-                    case .onWhitelisted:
-                        targetNoteIds = Set(currentEvents.filter {
-                            noteKinds.contains($0.kind) &&
-                            whitelist.contains($0.pubkey)
-                        }.map { $0.id })
                     case .myZaps:
                         targetNoteIds = [] // handled above
                     }
@@ -414,7 +392,24 @@ extension VaultView {
                     }
                 }
 
-                let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
+                // A repost is a second card for a post: when the original is
+                // listed with its engagement bar, the repost is already counted
+                // there, so drop the card. Several reposts of the same note
+                // that isn't listed collapse to the newest one.
+                let listedWithEngagement = Set(filtered.lazy
+                    .filter { $0.kind != 6 && ($0.pubkey == owner || whitelist.contains($0.pubkey)) }
+                    .map(\.id))
+                var repostTargetsShown = Set<String>()
+                // Events arrive newest first, so the first repost kept is the newest.
+                let deduped = filtered.filter { event in
+                    guard event.kind == 6,
+                          let target = event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
+                    else { return true }
+                    if listedWithEngagement.contains(target) { return false }
+                    return repostTargetsShown.insert(target).inserted
+                }
+
+                let result = Self.applySearchFilter(to: deduped, search: currentSearch, scope: currentScope)
 
                 // Compute engagement data (reactions & zaps) for all displayed notes
                 let displaySlice = Array(result.prefix(currentMaxDisplayed))
