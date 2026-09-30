@@ -2335,6 +2335,9 @@ struct FeedNoteRow: View {
 
     @State private var showingEmojiPicker = false
     @State private var showLightning = false
+    @State private var showZapFlight = false
+    @State private var zapAvatarFrame: CGRect = .zero
+    @State private var zapBoltFrame: CGRect = .zero
     @State private var zapSheetContext: ZapSheetContext?
     @State private var showingDeleteConfirm = false
     @State private var showingBroadcastSheet = false
@@ -2400,6 +2403,20 @@ struct FeedNoteRow: View {
         VStack(alignment: .leading, spacing: 10) {
             // [Existing body content will be extracted here]
             fullLayoutContent
+        }
+        .coordinateSpace(name: "zapFlight")
+        .onPreferenceChange(ZapAvatarFrameKey.self) { zapAvatarFrame = $0 }
+        .onPreferenceChange(ZapBoltFrameKey.self) { zapBoltFrame = $0 }
+        .overlay {
+            if showZapFlight {
+                ZapFlightView(
+                    isAnimating: $showZapFlight,
+                    start: CGPoint(x: zapAvatarFrame.midX, y: zapAvatarFrame.midY),
+                    end: CGPoint(x: zapBoltFrame.midX, y: zapBoltFrame.midY)
+                ) {
+                    showLightning = true
+                }
+            }
         }
         .foregroundColor(Color(red: 1, green: 1, blue: 1))
         .if(!suppressCardStyling) { view in
@@ -2585,6 +2602,7 @@ struct FeedNoteRow: View {
                     VStack(spacing: 6) {
                         AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey, size: avatarSize)
                             .onTapGesture { toggleUserMenu() }
+                            .zapFlightOrigin()
                         if showingUserMenu {
                             userMenuToolbar
                         }
@@ -2649,6 +2667,7 @@ struct FeedNoteRow: View {
 
                     AvatarView(url: rowData.displayProfile?.pictureURL, pubkey: displayPubkey, size: avatarSize)
                         .onTapGesture { toggleUserMenu() }
+                        .zapFlightOrigin()
 
                     if showingUserMenu {
                         userMenuToolbar
@@ -2863,6 +2882,7 @@ struct FeedNoteRow: View {
                     .frame(width: 32, height: 32)
                     .background(isZapped ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
                     .clipShape(Capsule())
+                    .zapFlightDestination()
                     .overlay { ZapBurstView(isAnimating: $showLightning) }
                     .scaleEffect(zapPulse ? Motion.pulseScale : 1.0)
                     .animation(Motion.pop, value: zapPulse)
@@ -2883,7 +2903,11 @@ struct FeedNoteRow: View {
                                 let sent = await actions.zapNote(note, lud16, nil)
                                 if sent { Motion.firePulse($zapPulse) }
                             }
-                            showLightning = true
+                            if Motion.isReduced || zapAvatarFrame == .zero {
+                                showLightning = true
+                            } else {
+                                showZapFlight = true
+                            }
                         } else {
                             noLightningAddressAlert = true
                         }
