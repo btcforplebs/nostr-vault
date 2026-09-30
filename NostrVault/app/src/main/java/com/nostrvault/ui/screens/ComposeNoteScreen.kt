@@ -51,13 +51,16 @@ import coil.compose.AsyncImage
 import com.nostrvault.data.model.Draft
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.MediaUploadOutcomeMessage
 import com.nostrvault.data.model.NoteTagging
+import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.BlobDescriptor
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.DraftService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.MediaItem
+import com.nostrvault.service.MediaPostQueue
 import com.nostrvault.service.MediaType
 import com.nostrvault.service.NostrService
 import com.nostrvault.relay.HavenBridge
@@ -69,6 +72,8 @@ import com.nostrvault.ui.components.buildAccountInfos
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.components.QuotedNoteCard
+import com.nostrvault.ui.notification.ErrorStyle
+import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -138,6 +143,8 @@ class ComposeNoteViewModel @Inject constructor(
     private val blossomService: BlossomService,
     private val statsService: StatsService,
     private val configStore: ConfigStore,
+    private val mediaPostQueue: MediaPostQueue,
+    private val notificationManager: NotificationManager,
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -692,31 +699,46 @@ class ComposeNoteViewModel @Inject constructor(
             try {
                 // 1. Upload attachments first
                 // Convert `@name` display tokens back to canonical `nostr:npub…` references.
-                var finalContent = convertMentionsToNostr(text)
+                val baseContent = convertMentionsToNostr(text)
+                var finalContent = baseContent
                 // NIP-92 descriptors, filled in as each upload lands. Published
                 // as `imeta` tags so a reader can reserve the right box before
                 // the bytes arrive and can read out what the media is.
                 var mediaDescriptors: List<NoteTagging.MediaDescriptor> = emptyList()
+                // The same attachments in queue form. Any with a null url are
+                // saved on this device only; the post then waits in
+                // MediaPostQueue instead of being cancelled.
+                var queuedMedia: List<QueuedMediaPost.Media> = emptyList()
+                var unreachableServers: List<String> = emptyList()
                 if (_attachments.value.isNotEmpty()) {
                     _isUploading.value = true
-                    val uploaded = uploadAttachments()
+                    val result = uploadAttachments()
                     _isUploading.value = false
 
-                    if (uploaded == null) {
-                        _error.value = "Failed to upload media. Check your connection and try again."
-                        _isPublishing.value = false
-                        return@launch
+                    when (result) {
+                        is AttachmentUploadResult.Failed -> {
+                            _error.value = result.message
+                            _isPublishing.value = false
+                            return@launch
+                        }
+                        is AttachmentUploadResult.Done -> {
+                            queuedMedia = result.media
+                            unreachableServers = result.unreachableServers
+                        }
                     }
-                    mediaDescriptors = uploaded
 
-                    // Append media URLs to content
-                    uploaded.forEach { media ->
-                        finalContent += "\n${media.url}"
+                    if (queuedMedia.all { it.url != null }) {
+                        mediaDescriptors = queuedMedia.map { it.descriptor() }
+                        // Append media URLs to content
+                        mediaDescriptors.forEach { media ->
+                            finalContent += "\n${media.url}"
+                        }
                     }
                 }
 
                 // 2. Build tags
                 val tags = buildReplyTags().toMutableList()
+                var quoteSuffix: String? = null
                 if (quoteToNoteId != null) {
                     val relayHint = configStore.config.value.nostrURL ?: ""
                     val quotedPubkey = feedService.findNote(quoteToNoteId)?.pubkey ?: ""
@@ -725,7 +747,45 @@ class ComposeNoteViewModel @Inject constructor(
                         tags.add(listOf("p", quotedPubkey))
                     }
                     val note1 = HavenBridge.hexToNote1(quoteToNoteId)
-                    if (note1 != null) finalContent += "\nnostr:$note1"
+                    if (note1 != null) {
+                        quoteSuffix = "\nnostr:$note1"
+                        finalContent += "\nnostr:$note1"
+                    }
+                }
+
+                // Some media is only on this device: hand the post to the queue,
+                // which sends it once an outside server takes the media. The
+                // reply/quote/mention tags are kept; hashtags and imeta are
+                // rebuilt from the final URLs by QueuedMediaPost.assembled(),
+                // exactly as below.
+                if (queuedMedia.any { it.url == null }) {
+                    // Mentions read from the same text a direct post reads them
+                    // from, minus the media lines (URLs carry no nostr: refs).
+                    tags.addAll(extractMentionPTags(baseContent + (quoteSuffix ?: ""), tags))
+                    val queued = QueuedMediaPost(
+                        accountNpub = configStore.config.value.activeOrOwnerNpub(),
+                        body = baseContent,
+                        media = queuedMedia,
+                        quoteSuffix = quoteSuffix,
+                        baseTags = tags,
+                    )
+                    mediaPostQueue.enqueue(queued)
+                    // The queue now holds the post on disk; a draft too would
+                    // offer to post it a second time.
+                    autoSaveJob?.cancel()
+                    draftService.deleteDraft(draftId)
+                    val macHost = configStore.config.value.macRelayHttpsURL
+                        .takeIf { it.isNotEmpty() }?.let { hostOf(it) }
+                    notificationManager.showError(
+                        MediaUploadOutcomeMessage.queued(
+                            hosts = unreachableServers.mapNotNull { hostOf(it) },
+                            macHost = macHost,
+                        ),
+                        ErrorStyle.WARNING,
+                    )
+                    _isPublishing.value = false
+                    onPublished()
+                    return@launch
                 }
 
                 // 2b. Add p-tags for inline @mentions (nostr:npub/nprofile refs).
@@ -782,8 +842,28 @@ class ComposeNoteViewModel @Inject constructor(
         }
     }
 
-    private suspend fun uploadAttachments(): List<NoteTagging.MediaDescriptor>? = withContext(Dispatchers.IO) {
-        val uploaded = mutableListOf<NoteTagging.MediaDescriptor>()
+    /** How the attachments of one post ended up. */
+    private sealed class AttachmentUploadResult {
+        /**
+         * Every attachment is at least on this device. A null [QueuedMediaPost.Media.url]
+         * means no outside server took it yet; [unreachableServers] is what was tried.
+         */
+        data class Done(
+            val media: List<QueuedMediaPost.Media>,
+            val unreachableServers: List<String>,
+        ) : AttachmentUploadResult()
+
+        /** The post cannot be sent or queued; [message] says why. */
+        data class Failed(val message: String) : AttachmentUploadResult()
+    }
+
+    private suspend fun uploadAttachments(): AttachmentUploadResult = withContext(Dispatchers.IO) {
+        val uploaded = mutableListOf<QueuedMediaPost.Media>()
+        // Set once an attachment found every outside server down; the rest of
+        // this post's attachments are then saved on this device only, instead
+        // of each waiting out the same 10 s retry.
+        var unreachableServers: List<String> = emptyList()
+        val notSaved = AttachmentUploadResult.Failed(MediaUploadOutcomeMessage.NOT_SAVED_ON_DEVICE)
 
         for ((index, attachment) in _attachments.value.withIndex()) {
             withContext(Dispatchers.Main) {
@@ -794,7 +874,7 @@ class ComposeNoteViewModel @Inject constructor(
             try {
                 // Read file from URI
                 val inputStream = context.contentResolver.openInputStream(attachment.uri)
-                    ?: return@withContext null
+                    ?: return@withContext notSaved
 
                 val tempFile = File.createTempFile("upload_", ".tmp", context.cacheDir)
                 tempFile.outputStream().use { output ->
@@ -811,10 +891,11 @@ class ComposeNoteViewModel @Inject constructor(
                 val byteCount = tempFile.length()
 
                 // Upload with progress
-                val url = blossomService.uploadAndMirror(
+                val outcome = blossomService.uploadForPost(
                     fileURL = tempFile,
                     sha256 = sha256,
                     contentType = attachment.mimeType,
+                    skipOutsideServers = unreachableServers.isNotEmpty(),
                     onProgress = { progress ->
                         viewModelScope.launch(Dispatchers.Main) {
                             val pct = (progress * 100).toInt()
@@ -827,24 +908,33 @@ class ComposeNoteViewModel @Inject constructor(
                 // Clean up temp file
                 tempFile.delete()
 
-                if (url != null) {
-                    uploaded.add(
-                        NoteTagging.MediaDescriptor(
-                            url = url,
-                            mimeType = attachment.mimeType,
-                            sha256 = sha256,
-                            pixelWidth = pixelSize?.first,
-                            pixelHeight = pixelSize?.second,
-                            alt = attachment.altText,
-                            byteCount = byteCount,
-                        )
-                    )
-                } else {
-                    return@withContext null
+                val url = when (outcome) {
+                    is BlossomService.PostUploadOutcome.Hosted -> outcome.url
+                    is BlossomService.PostUploadOutcome.SavedOnDevice -> {
+                        // Safe on this device; the post will wait for a server.
+                        unreachableServers = outcome.unreachable
+                        null
+                    }
+                    BlossomService.PostUploadOutcome.NoOutsideServer ->
+                        return@withContext AttachmentUploadResult.Failed(MediaUploadOutcomeMessage.NO_OUTSIDE_SERVER)
+                    BlossomService.PostUploadOutcome.NotSavedOnDevice ->
+                        return@withContext notSaved
                 }
+
+                uploaded.add(
+                    QueuedMediaPost.Media(
+                        sha256 = sha256,
+                        mimeType = attachment.mimeType,
+                        url = url,
+                        pixelWidth = pixelSize?.first,
+                        pixelHeight = pixelSize?.second,
+                        alt = attachment.altText,
+                        byteCount = byteCount,
+                    )
+                )
             } catch (e: Exception) {
                 Log.e("ComposeNote", "Upload failed", e)
-                return@withContext null
+                return@withContext notSaved
             }
         }
 
@@ -852,8 +942,12 @@ class ComposeNoteViewModel @Inject constructor(
             _uploadMessage.value = null
         }
 
-        uploaded
+        AttachmentUploadResult.Done(uploaded, unreachableServers)
     }
+
+    /** Host of a server URL, for naming it in a message. */
+    private fun hostOf(url: String): String? =
+        runCatching { java.net.URI(url).host }.getOrNull()?.takeIf { it.isNotEmpty() }
 
     /**
      * Pixel dimensions of a local media file, as `width to height`.
