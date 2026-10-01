@@ -492,7 +492,11 @@ struct BottomTabBar: View {
     @ObservedObject var dmService: DMService
     @ObservedObject var feedService: FeedService
 
-    @State private var isCollapsed: Bool = false
+    /// Scroll-linked fold, 0 = full tab bar, 1 = avatar + compose capsule.
+    private var chrome: ChromeCollapse { .shared }
+    @State private var availableWidth: CGFloat = 0
+    @State private var collapsedSize: CGSize = .zero
+    @State private var expandedHeight: CGFloat = 0
 
     private var activeHex: String { configService.activeAccountHexPubkey }
 
@@ -509,32 +513,54 @@ struct BottomTabBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if isCollapsed {
-                collapsedContent
-            } else {
-                expandedContent
-            }
+        // Both layouts are always present and cross-fade with the scroll, so
+        // the bar can sit anywhere between them while the finger is down.
+        // The capsule's width and height are interpolated between the two
+        // measured sizes; the outer frame keeps the expanded height so the
+        // safe-area inset (and every tab's content under it) never relayouts
+        // per frame.
+        let p = chrome.progress
+        let fullWidth = max(availableWidth - 32, collapsedSize.width)
+        let width = availableWidth > 0 ? lerp(fullWidth, collapsedSize.width, p) : nil
+        let height = expandedHeight > 0 ? lerp(expandedHeight, collapsedSize.height, p) : nil
+
+        ZStack {
+            HStack(spacing: 0) { expandedContent }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 8)
+                .frame(width: availableWidth > 0 ? fullWidth : nil)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { expandedHeight = $0 }
+                // Shrinks with the capsule rather than being clipped by it,
+                // so every tab stays whole while it fades. Gone by 60%, and
+                // the folded layout only starts at 40%, so the two never
+                // read as overlapping.
+                .scaleEffect(width.map { $0 / fullWidth } ?? 1)
+                .opacity(ChromeCollapse.fadeOut(p))
+                .allowsHitTesting(p < 0.5)
+                .accessibilityHidden(p >= 0.5)
+
+            collapsedContent
+                .padding(6)
+                .fixedSize()
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { collapsedSize = $0 }
+                .opacity(ChromeCollapse.fadeIn(p))
+                .scaleEffect(lerp(0.85, 1, p))
+                .allowsHitTesting(p >= 0.5)
+                .accessibilityHidden(p < 0.5)
         }
-        .padding(.vertical, isCollapsed ? 6 : 10)
-        .padding(.horizontal, isCollapsed ? 6 : 8)
+        .frame(width: width, height: height)
+        .clipShape(Capsule())
         .applyGlassCapsule()
-        .padding(.horizontal, isCollapsed ? 0 : 16)
-        .padding(.bottom, 0)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .animation(.spring(response: 0.5, dampingFraction: 0.82), value: isCollapsed)
-        .onChange(of: feedService.feedScrollingDown) { _, scrollingDown in
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
-                isCollapsed = scrollingDown
-            }
-        }
+        .frame(maxWidth: .infinity, minHeight: expandedHeight > 0 ? expandedHeight : nil, alignment: .bottom)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
         .onChange(of: selectedTab) { _, _ in
-            // Reset scroll state when switching tabs so bar starts expanded
-            feedService.feedScrollingDown = false
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
-                isCollapsed = false
-            }
+            // A new tab starts with the bar fully open.
+            chrome.reset()
         }
+    }
+
+    private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
+        a + (b - a) * t
     }
 
     // MARK: - Expanded Content
@@ -544,7 +570,6 @@ struct BottomTabBar: View {
         tabItem(index: 0, title: "Feed", icon: "person.2.wave.2") {
             NotificationCenter.default.post(name: NSNotification.Name("FeedTabReselected"), object: nil)
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.85)))
 
         tabItem(index: 1, title: "Search", icon: "magnifyingglass") {
             if !searchPath.isEmpty {
@@ -553,10 +578,8 @@ struct BottomTabBar: View {
                 NotificationCenter.default.post(name: NSNotification.Name("SearchScrollToTop"), object: nil)
             }
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.85)))
 
         expandedProfileTabItem
-            .transition(.opacity.combined(with: .scale(scale: 0.85)))
 
         tabItem(index: 3, title: "Media", icon: "photo.on.rectangle") {
             if !mediaPath.isEmpty {
@@ -565,7 +588,6 @@ struct BottomTabBar: View {
                 NotificationCenter.default.post(name: NSNotification.Name("MediaScrollToTop"), object: nil)
             }
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.85)))
 
         tabItem(index: 4, title: "Relay", icon: "doc.text.image", hasRedBadge: relayManager.hasNewRelayActivity) {
             if !relayPath.isEmpty {
@@ -575,17 +597,30 @@ struct BottomTabBar: View {
                 NotificationCenter.default.post(name: NSNotification.Name("RelayScrollToTop"), object: nil)
             }
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.85)))
     }
 
     // MARK: - Collapsed Content
 
+    /// Feed, Search and Profile compose; Media opens its Blossom dashboard
+    /// (the same as Android); Relay opens the relay dashboard.
     private var collapsedFABIcon: String {
-        selectedTab <= 2 ? "square.and.pencil" : "antenna.radiowaves.left.and.right"
+        switch selectedTab {
+        case ...2: return "square.and.pencil"
+        case 3: return "camera.macro"
+        default: return "antenna.radiowaves.left.and.right"
+        }
     }
 
     private var collapsedFABColor: Color {
-        selectedTab <= 2 ? Color.havenPurple : relayStatusColor
+        selectedTab == 4 ? relayStatusColor : Color.havenPurple
+    }
+
+    private var collapsedFABLabel: String {
+        switch selectedTab {
+        case ...2: return "Compose new post"
+        case 3: return "Blossom Dashboard"
+        default: return "Relay Dashboard"
+        }
     }
 
     @ViewBuilder
@@ -593,10 +628,7 @@ struct BottomTabBar: View {
         HStack(spacing: 16) {
             // Profile avatar — tap to expand tab bar, hold to switch account
             accountSwitchButton {
-                feedService.feedScrollingDown = false
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                    isCollapsed = false
-                }
+                chrome.reset()
             } label: {
                 AvatarView(url: nostrService.profiles[activeHex]?.pictureURL, pubkey: activeHex, size: 36)
                     .overlay(
@@ -616,9 +648,12 @@ struct BottomTabBar: View {
 
             // Contextual FAB icon — triggers compose or relay dashboard
             Button {
-                if selectedTab <= 2 {
+                switch selectedTab {
+                case ...2:
                     NotificationCenter.default.post(name: .composeFromTabBar, object: selectedTab)
-                } else {
+                case 3:
+                    NotificationCenter.default.post(name: .openBlossomDashboard, object: selectedTab)
+                default:
                     NotificationCenter.default.post(name: .openRelayDashboard, object: selectedTab)
                 }
             } label: {
@@ -634,8 +669,8 @@ struct BottomTabBar: View {
             }
             .buttonStyle(.plain)
             .tint(collapsedFABColor)
+            .accessibilityLabel(collapsedFABLabel)
         }
-        .transition(.scale(scale: 0.9).combined(with: .opacity))
     }
 
     // MARK: - Tab Item
