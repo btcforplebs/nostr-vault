@@ -489,9 +489,23 @@ class FeedService: ObservableObject {
     /// "unavailable" for these instead of loading forever.
     @Published private(set) var unavailableNoteIds = Set<String>()
 
-    /// Asked on the second pass only, for references neither your relays nor
-    /// the author's carry.
-    private static let fallbackNoteRelays = ["wss://relay.damus.io", "wss://relay.primal.net", "wss://nos.lol"]
+    /// Asked on the second pass, for references neither your relays nor the
+    /// author's carry. Picked by measurement, not reputation: on 2026-10-01
+    /// the old set (damus, primal, nos.lol) left 59% of Following-tab thread
+    /// roots unavailable — nos.lol refused connections and damus answered no
+    /// REQ — and these found two thirds of what was left (19% remained).
+    /// Re-measure with `.scratch/roots/probe5.py` in the Buzz nest before
+    /// changing the list.
+    private static let fallbackNoteRelays = [
+        "wss://offchain.pub",
+        "wss://nostr.wine",
+        "wss://nostr.oxtr.dev",
+        "wss://nostr.land",
+        "wss://relay.nostrplebs.com",
+        "wss://relay.snort.social",
+        "wss://relay.primal.net",
+        "wss://relay.damus.io",
+    ]
 
     // Profile saving
     private var profileSaveTimer: Timer?
@@ -3336,9 +3350,8 @@ class FeedService: ObservableObject {
 
         var requests: [(URL, [String])] = candidates.map { ($0, ids) }
 
-        // Relay hints, and on a second pass the fallback relays: each asked
-        // only for the ids that need it. Capped so one flush can't open a
-        // dozen sockets.
+        // Relay hints and author outboxes: each asked only for the ids that
+        // need it, and capped so one flush can't open dozens of sockets.
         var extra: [String: (URL, [String])] = [:]
         var authorsWithoutRelayList = Set<String>()
         for id in ids {
@@ -3351,27 +3364,51 @@ class FeedService: ObservableObject {
                     authorsWithoutRelayList.insert(author)
                 }
             }
-            if (noteFetchPasses[id] ?? 0) >= 1 {
-                urls.append(contentsOf: Self.fallbackNoteRelays.compactMap { URL(string: $0) })
-            }
             for url in urls {
                 let key = Self.normalizeRelayKey(url.absoluteString) ?? url.absoluteString
                 guard !seenRelays.contains(key) else { continue }
-                if extra[key] == nil {
-                    guard extra.count < 12 else { continue }
-                    extra[key] = (url, [])
-                }
+                if extra[key] == nil { extra[key] = (url, []) }
                 extra[key]?.1.append(id)
             }
         }
+        // Keep the relays that cover the most missing notes. The cap used to
+        // apply in arrival order, so the first ids' relays filled it and
+        // everything after was asked nowhere: on 2026-10-01 that skipped the
+        // hint or outbox relay for 141 of the 366 roots still missing after
+        // the fallbacks. The retry pass gets a bigger budget, since by then
+        // the authors' relay lists have usually arrived.
+        let hintCap = ids.contains { (noteFetchPasses[$0] ?? 0) >= 1 } ? 24 : 12
+        if extra.count > hintCap {
+            let kept = extra.sorted { $0.value.1.count > $1.value.1.count }.prefix(hintCap)
+            extra = Dictionary(uniqueKeysWithValues: kept.map { ($0.key, $0.value) })
+        }
         requests.append(contentsOf: extra.values)
+        // Second pass: every fallback relay gets every id still missing. These
+        // sit outside the hint cap above, so busy hint relays can't crowd
+        // them out.
+        let retryIds = ids.filter { (noteFetchPasses[$0] ?? 0) >= 1 }
+        if !retryIds.isEmpty {
+            for url in Self.fallbackNoteRelays.compactMap({ URL(string: $0) }) {
+                let key = Self.normalizeRelayKey(url.absoluteString) ?? url.absoluteString
+                if seenRelays.contains(key) { continue }
+                if var hinted = extra[key] {
+                    hinted.1 = Array(Set(hinted.1).union(retryIds))
+                    requests.removeAll { (Self.normalizeRelayKey($0.0.absoluteString) ?? $0.0.absoluteString) == key }
+                    requests.append(hinted)
+                } else {
+                    requests.append((url, retryIds))
+                }
+            }
+        }
         // Unknown relay list: fetch it now so the retry pass can ask the
         // author's own relays.
         requestRelayLists(for: authorsWithoutRelayList)
 
         // Check back once the relays have had time to answer: re-ask what's
         // still missing (now including hints and fallbacks), then give up.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+        // The second pass mostly opens fresh sockets to relays the feed isn't
+        // connected to, so it gets longer before the give-up.
+        DispatchQueue.main.asyncAfter(deadline: .now() + (retryIds.isEmpty ? 3.5 : 6)) { [weak self] in
             self?.reviewNoteFetch(ids)
         }
 
