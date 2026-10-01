@@ -17,6 +17,7 @@ import com.nostrvault.data.model.SearchWireMessage
 import com.nostrvault.data.model.finalSourceStatus
 import com.nostrvault.data.model.parseProfileMetadata
 import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -426,6 +427,9 @@ class GlobalSearchSession(
             }
             0 -> {
                 val profile = parseProfileMetadata(ev.pubkey, ev.content) ?: return
+                // Search results can seed the profile cache (lightning address
+                // included), so an unsigned or forged kind-0 is dropped here.
+                if (!HavenBridge.verifyEvent(ev.raw)) return
                 if (verify && !matcher.matchesProfileContent(ev.content, ev.pubkey)) return
                 synchronized(lock) {
                     accumulator.addProfile(profile, ev.createdAt)

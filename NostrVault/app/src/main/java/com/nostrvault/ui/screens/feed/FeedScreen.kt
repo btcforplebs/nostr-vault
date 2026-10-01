@@ -105,6 +105,7 @@ fun FeedScreen(
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val isLoadingExtendedNetwork by viewModel.isLoadingExtendedNetwork.collectAsState()
     val followedPubkeys by viewModel.followedPubkeys.collectAsState()
+    val unavailableNoteIds by viewModel.unavailableNoteIds.collectAsState()
     val connectionColor by viewModel.connectionColor.collectAsState()
     // Read straight off the ViewModel's snapshot map. Collecting it here would
     // subscribe the whole screen to every metadata batch; each feed row narrows
@@ -213,8 +214,19 @@ fun FeedScreen(
             lastVisible >= listState.layoutInfo.totalItemsCount - 5
         }
     }
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && notes.isNotEmpty()) viewModel.loadMore()
+    LoadMoreEffect(shouldLoadMore, isLoadingMore, notes.size, viewModel::loadMore)
+
+    // Load the next rows' photos and avatars while these are on screen.
+    // Reads the lists through rememberUpdatedState inside the effect, so a
+    // new page or a metadata batch does not restart it.
+    FeedPrefetchEffect(listState) { row ->
+        if (isThreaded) {
+            val thread = feedThreads.getOrNull(row) ?: return@FeedPrefetchEffect emptyList()
+            prefetchItemsForThread(thread.entries.map { it.note to (it.depth == 0) }, allProfiles)
+        } else {
+            val note = notes.getOrNull(row) ?: return@FeedPrefetchEffect emptyList()
+            prefetchItemsFor(note, allProfiles, compact = isCompact && expandedNoteId != note.id)
+        }
     }
 
     // Track whether the user is at the top of the feed
@@ -283,17 +295,28 @@ fun FeedScreen(
     // changes while the user is (or just was) at the top, scroll to the
     // absolute top so the new post lands fully in view below the toolbar.
     // Also covers replies, which insert directly and bypass pendingNotes.
+    // Threaded mode lists thread cards, not notes: a reply moves its card to
+    // the top without changing notes' first id, so watch the first key the
+    // list actually renders.
     LaunchedEffect(Unit) {
         var prevFirstId: String? = null
         var wasAtTop = true
-        snapshotFlow { notes.firstOrNull()?.id to isAtTop }
-            .collect { (firstId, atTop) ->
-                // Prepend = first id changed but the old first note is still
+        snapshotFlow {
+            val keys = if (isThreaded) feedThreads.map { it.rootId } else notes.map { it.id }
+            keys to isAtTop
+        }
+            .collect { (keys, atTop) ->
+                val firstId = keys.firstOrNull()
+                // Prepend = first key changed but the old first item is still
                 // in the list (a refresh/reload replaces it entirely).
                 val prepended = firstId != null && prevFirstId != null &&
-                    firstId != prevFirstId && notes.any { it.id == prevFirstId }
+                    firstId != prevFirstId && prevFirstId in keys
                 if (prepended && (wasAtTop || atTop)) {
-                    listState.animateScrollToItem(0)
+                    // requestScrollToItem wins over the next layout's key
+                    // anchoring. animateScrollToItem could run before that
+                    // layout, see index 0, do nothing, and leave the new
+                    // item above the viewport.
+                    listState.requestScrollToItem(0)
                 }
                 prevFirstId = firstId
                 wasAtTop = atTop
@@ -500,6 +523,7 @@ fun FeedScreen(
                                 onProfileClick = onProfileClick,
                                 onOpenThread = { note -> onNoteClick(note.id) },
                                 onFetchMissingNote = viewModel::fetchMissingNote,
+                                rootUnavailable = thread.rootId in unavailableNoteIds,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 expandedRow = { note, _ ->
                                     FeedFullNoteRow(
@@ -970,9 +994,7 @@ private fun MediaFeedGrid(
             last >= gridState.layoutInfo.totalItemsCount - 6
         }
     }
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && notes.isNotEmpty()) onLoadMore()
-    }
+    LoadMoreEffect(shouldLoadMore, isLoadingMore, notes.size, onLoadMore)
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
@@ -1099,9 +1121,27 @@ private fun FeedFullNoteRow(
             addAll(NostrMentions.mentionedPubkeys(note.content))
         }.distinct()
     }
+    // Subscribed here, not read with `viewModel.isLiked(...)`: a plain
+    // StateFlow `.value` read is invisible to Compose, so the row skipped
+    // recomposition and a tapped heart, a zap, new counts or a late-arriving
+    // parent never showed until the row scrolled off and back. derivedStateOf
+    // narrows each to this note, so another note's like does not redraw it.
+    val likedState = viewModel.likedEventIds.collectAsState()
+    val zappedState = viewModel.zappedEventIds.collectAsState()
+    val statsState = viewModel.noteStats.collectAsState()
+    val parentsState = viewModel.parentNotesCache.collectAsState()
+    val parentNextState = viewModel.parentIsNextNote.collectAsState()
+    // Likes and zaps are recorded against effectiveEventId (EngagementBar
+    // sends it) and reactions are counted against the e-tag target, so a
+    // repost is looked up by the note it reposts.
+    val isLiked by remember(note.id) { derivedStateOf { note.effectiveEventId in likedState.value } }
+    val isZapped by remember(note.id) { derivedStateOf { note.effectiveEventId in zappedState.value } }
+    val stats by remember(note.id) { derivedStateOf { statsState.value[note.effectiveEventId] } }
     val parentEventId = note.parentEventId
-    val parentNote = parentEventId?.let { viewModel.parentNoteFor(it) }
-    val isParentNext = parentEventId?.let { viewModel.isParentNext(note.id) } ?: false
+    val parentNote by remember(note.id) { derivedStateOf { parentEventId?.let { parentsState.value[it] } } }
+    val isParentNext by remember(note.id) {
+        derivedStateOf { parentEventId != null && note.id in parentNextState.value }
+    }
 
     val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotes) {
         if (note.quotedEventIds.isEmpty()) {
@@ -1121,11 +1161,11 @@ private fun FeedFullNoteRow(
     NoteCard(
         note = note,
         profile = cardProfiles[note.pubkey],
-        stats = viewModel.statsFor(note.id),
+        stats = stats,
         profiles = cardProfiles,
         quotedNotes = quotedNotesMap,
-        isLiked = viewModel.isLiked(note.id),
-        isZapped = viewModel.isZapped(note.id),
+        isLiked = isLiked,
+        isZapped = isZapped,
         isReposted = note.effectiveEventId in repostedIds,
         repostedByProfile = note.repostedBy?.let { cardProfiles[it] },
         replyToProfile = note.replyToPubkey?.let { cardProfiles[it] },

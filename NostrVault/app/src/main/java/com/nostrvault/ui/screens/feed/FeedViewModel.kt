@@ -193,8 +193,10 @@ class FeedViewModel @Inject constructor(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    private val _isLoadingMore = MutableStateFlow(false)
-    val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
+    // The service's own in-flight flag. This was a local flag set true and
+    // false around a non-suspending call, so it was never true long enough for
+    // the spinner to show.
+    val isLoadingMore: StateFlow<Boolean> = feedService.loadingOlder
 
     // ── Filtered notes ───────────────────────────────────────────
     // Use FeedService.filteredNotes which is already filtered by FeedFilterEngine
@@ -392,14 +394,7 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    fun loadMore() {
-        if (_isLoadingMore.value) return
-        viewModelScope.launch {
-            _isLoadingMore.value = true
-            feedService.loadOlderNotes()
-            _isLoadingMore.value = false
-        }
-    }
+    fun loadMore() = feedService.loadOlderNotes()
 
     fun likeNote(noteId: String, emoji: String? = null) {
         if (likedEventIds.value.contains(noteId) && emoji == null) {
@@ -488,6 +483,7 @@ class FeedViewModel @Inject constructor(
     // ── Parent note cache (for inline reply previews) ──────────
 
     val parentNotesCache: StateFlow<Map<String, FeedNote>> = feedService.parentNotesCache
+    val unavailableNoteIds: StateFlow<Set<String>> = feedService.unavailableNoteIds
 
     /** Fetched quoted events, keyed by the lookup key `quotedEventIds` holds. */
     val quotedNotesCache: StateFlow<Map<String, FeedNote>> = feedService.quotedNotes

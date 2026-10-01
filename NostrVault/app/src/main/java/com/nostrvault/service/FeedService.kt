@@ -16,6 +16,7 @@ import com.nostrvault.ui.notification.NotificationManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import java.io.File
@@ -63,6 +64,28 @@ class FeedService @Inject constructor(
         private const val FEED_LOAD_TIMEOUT_MS = 20_000L
         private const val EXTENDED_NETWORK_TIMEOUT_MS = 15_000L
         private const val NOTE_FETCH_TIMEOUT_MS = 8_000L
+        /** One lookup's widest pass asks about 24 hint relays plus fallbacks. */
+        private const val MAX_NOTE_FETCH_SOCKETS = 32
+        private const val NOTE_FETCH_SOCKET_WAIT_MS = 2_000L
+        private const val NOTE_FETCH_BATCH_DELAY_MS = 300L
+        private const val UNAVAILABLE_RETRY_MS = 60_000L
+
+        /**
+         * Asked on the second pass, for referenced notes neither your relays
+         * nor the author's carry. Same list as iOS FeedService.fallbackNoteRelays,
+         * picked by measurement on 2026-10-01; re-measure with
+         * `.scratch/roots/probe5.py` in the Buzz nest before changing it.
+         */
+        private val FALLBACK_NOTE_RELAYS = listOf(
+            "wss://offchain.pub",
+            "wss://nostr.wine",
+            "wss://nostr.oxtr.dev",
+            "wss://nostr.land",
+            "wss://relay.nostrplebs.com",
+            "wss://relay.snort.social",
+            "wss://relay.primal.net",
+            "wss://relay.damus.io",
+        )
         private const val SEARCH_TIMEOUT_MS = 10_000L
         private const val SEARCH_DEBOUNCE_MS = 400L
         private const val INTERACTION_SAVE_THROTTLE_MS = 2_000L
@@ -355,6 +378,10 @@ class FeedService @Inject constructor(
 
     // Guards loadMore() against re-entry from scroll-triggered re-fires
     private val isLoadingMore = AtomicBoolean(false)
+
+    /** True while an older page is being fetched; the feed's spinner and retry key. */
+    private val _loadingOlder = MutableStateFlow(false)
+    val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
 
     // Search debounce
     private var searchDebounceJob: Job? = null
@@ -1884,6 +1911,7 @@ class FeedService @Inject constructor(
             isLoadingMore.set(false)
             return
         }
+        _loadingOlder.value = true
         val config = configStore.config.value
         val relayUrls = buildList {
             config.nostrURL?.let { add(it) }
@@ -1940,6 +1968,7 @@ class FeedService @Inject constructor(
             } finally {
                 collectors.forEach { it.cancel() }
                 clients.forEach { it.disconnect() }
+                _loadingOlder.value = false
                 isLoadingMore.set(false)
             }
         }
@@ -1949,150 +1978,278 @@ class FeedService @Inject constructor(
     // Note fetching (threading)
     // ══════════════════════════════════════════════════════════════════
 
-    fun fetchMissingNote(id: String) {
-        if (_parentNotesCache.value.containsKey(id)) return
+    /**
+     * Referenced notes (thread roots, parents, quotes) no relay returned after
+     * both passes. Thread cards drop their "Loading the start of this
+     * thread…" line for these instead of showing it forever.
+     */
+    private val _unavailableNoteIds = MutableStateFlow<Set<String>>(emptySet())
+    val unavailableNoteIds: StateFlow<Set<String>> = _unavailableNoteIds.asStateFlow()
 
-        scope.launch(Dispatchers.IO) {
-            val config = configStore.config.value
-            val relayUrls = buildList {
-                config.nostrURL?.let { add(it) }
-                config.inboxRelays?.let { addAll(it.take(2)) }
-            }
+    /**
+     * When each id was given up on. Unavailable is not forever: past
+     * [UNAVAILABLE_RETRY_MS] the next request asks again, so a launch on a bad
+     * network doesn't hide those notes for the rest of the session.
+     */
+    private val unavailableSince = ConcurrentHashMap<String, Long>()
 
-            val subId = "tfetch-${UUID.randomUUID().toString().take(8)}"
-            val filter = """{"ids":["$id"]}"""
+    /** Ids queued for the next lookup, or being looked up right now. */
+    private val noteFetchQueue = mutableSetOf<String>()
+    private val noteFetchInFlight = ConcurrentHashMap.newKeySet<String>()
+    /** Guards [noteFetchQueue] and [noteFetchFlushJob] together. */
+    private val noteFetchLock = Any()
+    private var noteFetchFlushJob: Job? = null
 
-            val tempClients = mutableListOf<WebSocketClient>()
-            val collectors = mutableListOf<Job>()
-            for (relayUrl in relayUrls) {
-                val existingClient = feedClients[relayUrl]
-                val client: WebSocketClient
-                if (existingClient != null) {
-                    client = existingClient
-                } else {
-                    client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
-                    tempClients.add(client)
-                    client.connect()
-                }
+    /** Temporary sockets open across all note lookups; see [requestNotes]. */
+    private val noteFetchSockets = Semaphore(MAX_NOTE_FETCH_SOCKETS)
 
-                // Tracked so it is cancelled below. Critical for reused persistent
-                // feed clients: an un-cancelled collector here would re-parse every
-                // future feed message for the life of the app, once per thread opened.
-                collectors.add(scope.launch {
-                    client.messages.collect { msg ->
-                        try {
-                            val parsed = json.parseToJsonElement(msg).jsonArray
-                            if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                                val eventObj = parsed[2].jsonObject
-                                val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull
-                                if (eventId == id) {
-                                    val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    val tags = eventObj["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } } ?: emptyList()
-                                    val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return@collect
-                                    val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
+    /** Authors whose relay list was already requested, so each is asked once. */
+    private val relayListRequested = ConcurrentHashMap.newKeySet<String>()
 
-                                    val note = FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)
-                                    withContext(Dispatchers.Main.immediate) {
-                                        var updated = _parentNotesCache.value + (id to note)
-                                        if (updated.size > 500) {
-                                            val referencedIds = FeedNote.referencedIds(_notes.value)
+    /**
+     * Thread cards ask for their root one at a time as they compose. Queue
+     * them and look up the batch together, so a screenful of cards shares
+     * one REQ per relay instead of a socket fan-out each.
+     */
+    fun fetchMissingNote(id: String) = fetchMissingNotesBatch(listOf(id))
 
-                                            // LRU eviction: keep most recently created referenced notes
-                                            updated = updated.filter { it.key in referencedIds }
-                                                .toList()
-                                                .sortedByDescending { it.second.createdAt }
-                                                .take(500)
-                                                .toMap()
-                                        }
-                                        _parentNotesCache.value = updated
-                                    }
-                                }
-                            }
-                        } catch (_: Exception) {}
+    fun fetchMissingNotesBatch(ids: List<String>) {
+        val now = System.currentTimeMillis()
+        val wanted = ids.filter { id ->
+            if (_parentNotesCache.value.containsKey(id) || id in noteFetchInFlight) return@filter false
+            val since = unavailableSince[id] ?: return@filter true
+            now - since >= UNAVAILABLE_RETRY_MS
+        }
+        if (wanted.isEmpty()) return
+        synchronized(noteFetchLock) {
+            noteFetchQueue.addAll(wanted)
+            if (noteFetchFlushJob != null) return
+            noteFetchFlushJob = scope.launch(Dispatchers.IO) {
+                // Drain until nothing new arrived during the wait. The lookups
+                // run outside this job: as children they kept it active for the
+                // whole fetch window, and ids queued meanwhile were never sent.
+                while (true) {
+                    delay(NOTE_FETCH_BATCH_DELAY_MS)
+                    val batch = synchronized(noteFetchLock) {
+                        val b = noteFetchQueue.toList()
+                        noteFetchQueue.clear()
+                        // Cleared under the same lock an enqueue checks, so an
+                        // id added after this either sees the job and is drained,
+                        // or sees null and starts the next one.
+                        if (b.isEmpty()) noteFetchFlushJob = null
+                        b
                     }
-                })
-
-                client.send("[\"REQ\",\"$subId\",$filter]")
+                    if (batch.isEmpty()) break
+                    noteFetchInFlight.addAll(batch)
+                    for (chunk in batch.chunked(50)) {
+                        scope.launch(Dispatchers.IO) { lookUpNotes(chunk) }
+                    }
+                }
             }
-
-            delay(NOTE_FETCH_TIMEOUT_MS)
-            collectors.forEach { it.cancel() }
-            tempClients.forEach { it.disconnect() }
         }
     }
 
-    fun fetchMissingNotesBatch(ids: List<String>) {
-        val missing = ids.filter { !_parentNotesCache.value.containsKey(it) }.distinct()
-        if (missing.isEmpty()) return
+    /**
+     * Two passes, mirroring iOS FeedService.flushNoteFetchRequests:
+     *  1. your relays (local, inbox, feed, blastr) for every id, plus each
+     *     id's relay hint and its author's write relays;
+     *  2. for what's still missing, [FALLBACK_NOTE_RELAYS] and a bigger hint
+     *     budget, since the authors' relay lists have usually arrived by then.
+     * Then anything still missing is marked unavailable.
+     *
+     * Measured 2026-10-01 (iOS logic, Logen's Following tab): this used to ask
+     * only the local relay and two inbox relays. The wider set took the miss
+     * rate from 61% to about 12%.
+     */
+    private suspend fun lookUpNotes(chunk: List<String>) {
+        try {
+            lookUpNotesInPasses(chunk)
+        } finally {
+            noteFetchInFlight.removeAll(chunk.toSet())
+        }
+    }
 
-        scope.launch(Dispatchers.IO) {
-            val config = configStore.config.value
-            val relayUrls = buildList {
-                config.nostrURL?.let { add(it) }
-                config.inboxRelays?.let { addAll(it) }
-                // Quoted/parent notes are often from external authors who publish
-                // to feed/blastr relays, not the local+inbox set. Match the live
-                // feed relay set (relay-set parity) so these actually resolve.
-                addAll(config.activeFeedRelays)
-                addAll(config.activeBlastrRelays)
-            }.distinct()
+    private suspend fun lookUpNotesInPasses(chunk: List<String>) {
+        val config = configStore.config.value
+        val ownRelays = buildList {
+            config.nostrURL?.let { add(it) }
+            config.inboxRelays?.let { addAll(it) }
+            addAll(config.activeFeedRelays)
+            addAll(config.activeBlastrRelays)
+        }.distinct()
 
-            // Chunk to stay within relay filter limits
-            for (chunk in missing.chunked(50)) {
-                val chunkSet = chunk.toSet()
-                val subId = "pnbatch-${UUID.randomUUID().toString().take(8)}"
-                val idsJson = chunk.joinToString(",") { "\"$it\"" }
-                val filter = """{"ids":[$idsJson]}"""
+        // Arrivals are tracked here, not read back from the cache: the cache's
+        // over-500 trim drops notes the feed doesn't reference (one opened
+        // from Search, say), and those must not then be called unavailable.
+        val arrived = ConcurrentHashMap.newKeySet<String>()
+        requestRelayListsFor(chunk)
+        val firstHints = hintRelays(chunk, ownRelays, cap = 12)
+        requestNotes(ownRelays.associateWith { chunk } + firstHints, arrived)
 
-                val tempClients = mutableListOf<WebSocketClient>()
-                val collectors = mutableListOf<Job>()
-                for (relayUrl in relayUrls) {
-                    val existingClient = feedClients[relayUrl]
-                    val client: WebSocketClient
-                    if (existingClient != null) {
-                        client = existingClient
-                    } else {
-                        client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
-                        tempClients.add(client)
-                        client.connect()
-                    }
+        val stillMissing = chunk.filter { it !in arrived && !_parentNotesCache.value.containsKey(it) }
+        if (stillMissing.isNotEmpty()) {
+            val asked = ownRelays + firstHints.keys
+            val askedKeys = asked.map { normalizeRelay(it) }.toSet()
+            val fallbacks = FALLBACK_NOTE_RELAYS.filter { normalizeRelay(it) !in askedKeys }
+            val hints = hintRelays(stillMissing, asked + fallbacks, cap = 24)
+            requestNotes(fallbacks.associateWith { stillMissing } + hints, arrived)
+        }
 
-                    collectors.add(scope.launch {
-                        client.messages.collect { msg ->
-                            try {
-                                val parsed = json.parseToJsonElement(msg).jsonArray
-                                if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                                    val eventObj = parsed[2].jsonObject
-                                    val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    if (eventId !in chunkSet) return@collect
-                                    val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    val tags = eventObj["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } } ?: emptyList()
-                                    val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return@collect
-                                    val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
+        val givenUp = chunk.filter { it !in arrived && !_parentNotesCache.value.containsKey(it) }.toSet()
+        if (givenUp.isNotEmpty()) {
+            val now = System.currentTimeMillis()
+            givenUp.forEach { unavailableSince[it] = now }
+            _unavailableNoteIds.update { it + givenUp }
+        }
+    }
 
-                                    val note = FeedNote.fromEvent(eventId, pubkey, content, tags, createdAt, kind)
-                                    withContext(Dispatchers.Main.immediate) {
-                                        var updated = _parentNotesCache.value + (eventId to note)
-                                        if (updated.size > 500) {
-                                            val referencedIds = FeedNote.referencedIds(_notes.value)
-                                            updated = updated.filter { it.key in referencedIds }
-                                        }
-                                        _parentNotesCache.value = updated
-                                    }
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    })
-
-                    client.send("[\"REQ\",\"$subId\",$filter]")
-                }
-
-                delay(NOTE_FETCH_TIMEOUT_MS)
-                collectors.forEach { it.cancel() }
-                tempClients.forEach { it.disconnect() }
+    /**
+     * Each id's relay hint and its author's write relays, keeping the relays
+     * that cover the most ids. Keeping them in arrival order let the first
+     * ids fill the cap, so later ids got no hint relay at all.
+     */
+    private fun hintRelays(ids: List<String>, exclude: Collection<String>, cap: Int): Map<String, List<String>> {
+        val skip = exclude.map { normalizeRelay(it) }.toSet()
+        // Keyed by the normalized form to merge duplicates, but the request
+        // goes to the URL as written: lowercasing would change a path.
+        val urlForKey = mutableMapOf<String, String>()
+        val byRelay = mutableMapOf<String, MutableList<String>>()
+        for (id in ids) {
+            val (hint, author) = referenceHints(id)
+            val urls = buildList {
+                hint?.let { add(it) }
+                author?.let { a -> nostrService.outboxRelays.value[a]?.take(3)?.let { addAll(it) } }
             }
+            for (url in urls) {
+                val key = normalizeRelay(url)
+                if (key in skip) continue
+                urlForKey.getOrPut(key) { url.trim() }
+                byRelay.getOrPut(key) { mutableListOf() }.add(id)
+            }
+        }
+        return byRelay.entries
+            .sortedByDescending { it.value.size }
+            .take(cap)
+            .associate { urlForKey.getValue(it.key) to it.value.distinct() }
+    }
+
+    /** The relay hint and author a note in the feed gives for the id it references. */
+    private fun referenceHints(id: String): Pair<String?, String?> {
+        for (note in _notes.value) {
+            val tag = note.tags.firstOrNull { it.size >= 2 && (it[0] == "e" || it[0] == "q") && it[1] == id } ?: continue
+            val hint = tag.getOrNull(2)?.takeIf { it.startsWith("wss://") || it.startsWith("ws://") }
+            val author = tag.getOrNull(4)?.takeIf { it.length == 64 }
+                ?: tag.getOrNull(3)?.takeIf { tag[0] == "q" && it.length == 64 }
+                ?: if (note.parentEventId == id) note.tags.lastOrNull { it.size >= 2 && it[0] == "p" }?.get(1) else null
+            return hint to author
+        }
+        return null to null
+    }
+
+    /** Authors referenced by these ids whose write relays aren't known yet. */
+    private fun requestRelayListsFor(ids: List<String>) {
+        val known = nostrService.outboxRelays.value
+        if (relayListRequested.size > 5000) relayListRequested.clear()
+        // Once per author: force skips the profile fetch's throttle, and an
+        // author with no kind 10002 would otherwise be re-asked every batch.
+        val authors = ids.mapNotNull { referenceHints(it).second }
+            .filter { it !in known && relayListRequested.add(it) }
+            .distinct()
+        if (authors.isNotEmpty()) nostrService.fetchMissingProfiles(authors, force = true)
+    }
+
+    private fun normalizeRelay(url: String) = url.trim().trimEnd('/').lowercase()
+
+    /** Sends one REQ per relay for its ids, waits out the fetch window, then cleans up. */
+    private suspend fun requestNotes(requests: Map<String, List<String>>, arrived: MutableSet<String>) {
+        if (requests.isEmpty()) return
+        val tempClients = mutableListOf<WebSocketClient>()
+        val collectors = mutableListOf<Job>()
+        var socketsExhausted = false
+        try {
+            for ((relayUrl, ids) in requests) {
+                if (ids.isEmpty()) continue
+                val idSet = ids.toSet()
+                val subId = "pnbatch-${UUID.randomUUID().toString().take(8)}"
+                val filter = """{"ids":[${ids.joinToString(",") { "\"$it\"" }}]}"""
+                val client = feedClients[relayUrl] ?: run {
+                    // Every chunk's lookup opens its own sockets; the shared cap
+                    // keeps a screenful of thread cards from opening hundreds.
+                    // The wait is bounded: lookups hold sockets while asking for
+                    // more, so an unbounded acquire could leave two waiting on
+                    // each other. Once one wait runs out, the rest of this pass's
+                    // new relays are skipped rather than each waiting in turn.
+                    if (socketsExhausted) return@run null
+                    if (withTimeoutOrNull(NOTE_FETCH_SOCKET_WAIT_MS) { noteFetchSockets.acquire() } == null) {
+                        socketsExhausted = true
+                        return@run null
+                    }
+                    WebSocketClient(
+                        url = relayUrl,
+                        scope = scope,
+                        trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"),
+                    ).also {
+                        tempClients.add(it)
+                        it.connect()
+                    }
+                } ?: continue
+
+                // Tracked so it is cancelled below. Critical for reused persistent
+                // feed clients: an un-cancelled collector here would re-parse every
+                // future feed message for the life of the app.
+                collectors.add(scope.launch {
+                    client.messages.collect { msg -> handleFetchedNote(msg, idSet)?.let { arrived.add(it) } }
+                })
+                client.send("[\"REQ\",\"$subId\",$filter]")
+            }
+            delay(NOTE_FETCH_TIMEOUT_MS)
+        } finally {
+            collectors.forEach { it.cancel() }
+            tempClients.forEach {
+                it.disconnect()
+                noteFetchSockets.release()
+            }
+        }
+    }
+
+    /** Caches a fetched note; returns its id when it was one of [wanted]. */
+    private suspend fun handleFetchedNote(msg: String, wanted: Set<String>): String? {
+        try {
+            val parsed = json.parseToJsonElement(msg).jsonArray
+            if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "EVENT") return null
+            val eventObj = parsed[2].jsonObject
+            val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return null
+            if (eventId !in wanted) return null
+            if (_parentNotesCache.value.containsKey(eventId)) return eventId
+            // These come from relay hints and outboxes named in other people's
+            // notes: any of them can send a note under the wanted id and any
+            // author's name. Only a valid id hash and signature make it real.
+            if (!HavenBridge.verifyEvent(eventObj.toString())) return null
+            val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return null
+            val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
+            val tags = eventObj["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } } ?: emptyList()
+            val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return null
+            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return null
+
+            val note = FeedNote.fromEvent(eventId, pubkey, content, tags, createdAt, kind)
+            withContext(Dispatchers.Main.immediate) {
+                var updated = _parentNotesCache.value + (eventId to note)
+                if (updated.size > 500) {
+                    val referencedIds = FeedNote.referencedIds(_notes.value)
+                    // Keep the most recently created referenced notes.
+                    updated = updated.filter { it.key in referencedIds }
+                        .toList()
+                        .sortedByDescending { it.second.createdAt }
+                        .take(500)
+                        .toMap()
+                }
+                _parentNotesCache.value = updated
+                unavailableSince.remove(eventId)
+                if (eventId in _unavailableNoteIds.value) _unavailableNoteIds.update { it - eventId }
+            }
+            return eventId
+        } catch (_: Exception) {
+            return null
         }
     }
 
@@ -2723,6 +2880,11 @@ class FeedService @Inject constructor(
         _newNoteCount.value = 0
         seenIdsLock.withLock { seenIds.clear() }
         rawEventCache.clear()
+        // A new account means new relays: what this one couldn't find, the
+        // next might.
+        unavailableSince.clear()
+        _unavailableNoteIds.value = emptySet()
+        relayListRequested.clear()
         recomputeFilteredNotes()
     }
 

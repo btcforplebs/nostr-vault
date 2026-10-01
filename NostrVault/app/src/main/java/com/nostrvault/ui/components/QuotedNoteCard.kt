@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -238,22 +239,31 @@ fun QuotedNotePlaceholder(
             .fillMaxWidth()
             .then(if (isCoordinate) Modifier else Modifier.clickable { onClick(identifier) }),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(10.dp),
-        ) {
-            Icon(
-                imageVector = NostrVaultIcons.Feed,
-                contentDescription = null,
-                tint = TertiaryText,
-                modifier = Modifier.size(14.dp),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = if (isCoordinate) "Loading article..." else "Loading quoted note...",
-                color = TertiaryText,
-                fontSize = 12.sp,
-            )
+        // Laid out like [QuotedNoteCard]: header row, then two lines of
+        // body in its text style, so the card does not grow when the note
+        // arrives (iOS `QuotedNoteSkeleton`).
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(SecondaryGroupedBg),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = if (isCoordinate) "Loading article..." else "Loading quoted note...",
+                    color = TertiaryText,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            SkeletonTextLine(fontSize = 13.sp, lineHeight = 17.sp, widthFraction = 0.9f, color = SecondaryGroupedBg)
+            SkeletonTextLine(fontSize = 13.sp, lineHeight = 17.sp, widthFraction = 0.55f, color = SecondaryGroupedBg)
         }
     }
 }

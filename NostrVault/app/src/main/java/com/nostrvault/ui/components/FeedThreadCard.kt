@@ -55,6 +55,8 @@ fun FeedThreadCard(
     onProfileClick: (String) -> Unit,
     onOpenThread: (FeedNote) -> Unit,
     onFetchMissingNote: (String) -> Unit = {},
+    /** No relay returned the root after every fetch pass. */
+    rootUnavailable: Boolean = false,
     expandedRow: @Composable (note: FeedNote, depth: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -111,7 +113,10 @@ fun FeedThreadCard(
                 onTap = tapAction(root),
                 expandedRow = expandedRow,
             )
-        } else {
+        } else if (!rootUnavailable) {
+            // A root no relay has, after every pass, gets no line at all: the
+            // replies read as posts, rather than every such card announcing
+            // what it can't show.
             MissingRootHeader()
         }
 

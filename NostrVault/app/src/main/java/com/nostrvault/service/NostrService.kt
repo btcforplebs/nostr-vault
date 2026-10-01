@@ -46,6 +46,9 @@ class NostrService @Inject constructor(
     private val powPreferences: com.nostrvault.data.local.PowPreferences,
 ) {
     companion object {
+        /** Kinds whose newest event replaces cached state; see [acceptReplaceable]. */
+        private val REPLACEABLE_STATE_KINDS = setOf(0, 10000, 10002, 10050, 10063)
+
         /**
          * A loopback address means "this machine". Advertising one, or
          * publishing someone else's DM to one, sends the event to the *sender's*
@@ -83,9 +86,28 @@ class NostrService @Inject constructor(
         private const val BASE_RECONNECT_DELAY_MS = 2_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val TEMP_CLIENT_DISCONNECT_MS = 3_000L
-        private const val METADATA_POOL_SIZE = 3
+        // Profile relays plus Blastr, up to this many. Kind 0 coverage varies
+        // wildly: relay.primal.net returns few profiles for an authors filter,
+        // and a relay that is down or blocked returns none, so a short list
+        // could leave the whole feed nameless.
+        private const val METADATA_POOL_SIZE = 10
+        // Asked for names/avatars ahead of the Blastr relays. On 2026-10-01,
+        // for 300 recent posters, the default Blastr set (nos.lol and
+        // nostr.mom unreachable, primal ~11%) had 115 profiles; adding these
+        // reached 193. Re-measure with `.scratch/profprobe/probe.py` in the
+        // Buzz nest before changing it.
+        private val PROFILE_RELAYS = listOf(
+            "wss://offchain.pub",
+            "wss://relay.damus.io",
+            "wss://user.kindpag.es",
+            "wss://purplepag.es",
+        )
         private const val METADATA_IDLE_TIMEOUT_MS = 60_000L
         private const val METADATA_SUB_ID = "meta-pool"
+        // How long a dispatched pubkey stays in the pool's filter waiting for
+        // its kind 0, and the most authors one REQ carries.
+        private const val METADATA_PENDING_WINDOW_MS = 60_000L
+        private const val METADATA_MAX_AUTHORS = 500
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -521,10 +543,16 @@ class NostrService @Inject constructor(
         val nowSecs = System.currentTimeMillis() / 1000
         if (createdAt > nowSecs + 60) return
 
-        // Process metadata and relay list events immediately (before dedup)
+        // Process metadata and relay list events immediately (before dedup).
+        // These overwrite cached state (profiles, relay lists, the owner's blocked
+        // list), so only a validly signed, newest-seen event may do that.
+        if (kind in REPLACEABLE_STATE_KINDS) {
+            if (kind == 10000 && pubkey != ownerHexPubkey) return
+            if (!acceptReplaceable(eventObj, kind, pubkey, createdAt)) return
+        }
         when (kind) {
             0 -> {
-                parseAndCacheProfile(pubkey, content)
+                parseAndCacheProfile(pubkey, content, createdAt)
                 return
             }
             10002 -> {
@@ -566,6 +594,24 @@ class NostrService @Inject constructor(
             eventBuffer.add(event to mediaItems)
         }
         scheduleBufferFlush()
+    }
+
+    /** Newest accepted created_at per "kind:pubkey" for [REPLACEABLE_STATE_KINDS]. */
+    private val replaceableNewest = ConcurrentHashMap<String, Long>()
+
+    /**
+     * True when [eventObj] is validly signed and not older than the newest event of
+     * the same kind and author already accepted. Records it as the newest.
+     */
+    private fun acceptReplaceable(eventObj: JsonObject, kind: Int, pubkey: String, createdAt: Long): Boolean {
+        val key = "$kind:$pubkey"
+        // A profile saved on disk counts as seen, so after a restart an older
+        // signed kind-0 cannot replace a newer one.
+        val seen = replaceableNewest[key] ?: if (kind == 0) _profiles.value[pubkey]?.createdAt else null
+        if (seen != null && createdAt < seen) return false
+        if (!HavenBridge.verifyEvent(eventObj.toString())) return false
+        replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
+        return createdAt >= (replaceableNewest[key] ?: createdAt)
     }
 
     private fun handleEOSE(subId: String, relayUrl: String) {
@@ -730,7 +776,6 @@ class NostrService @Inject constructor(
         if (pubkeys.isEmpty()) return
 
         val blastrRelays = configStore.config.value.activeBlastrRelays
-        if (blastrRelays.isEmpty()) return
 
         // Record the dispatch time so these pubkeys are negatively-cached for
         // PROFILE_RETRY_TTL_MS even if no kind-0 comes back (no resolvable profile, or it
@@ -744,17 +789,25 @@ class NostrService @Inject constructor(
             }
         }
 
-        val filter = buildMap<String, Any> {
-            put("kinds", listOf(0))
-            put("authors", pubkeys)
-        }
-        val filterJson = buildFilterJson(filter)
+        // The pool shares one sub id, so each REQ *replaces* the last on every
+        // relay, and a REQ sent before a socket connects is dropped (send()
+        // returns false; only the latest filter is re-sent on connect). A filter
+        // of just this flush's pubkeys therefore cancelled every earlier batch
+        // still in flight, and those pubkeys were then negatively cached for
+        // PROFILE_RETRY_TTL_MS: on a cold start almost every feed author stayed
+        // an npub with a letter avatar. Ask for everything still unanswered.
+        val filterJson = pendingMetadataFilterJson(now) ?: return
         lastMetadataFilterJson = filterJson
 
         // Reuse a small pool of WARM connections to the Blastr relays (kind 0 is
         // widely replicated) instead of opening fresh sockets per flush. A stable
         // sub id means each flush just replaces the filter on the open sockets.
-        val relays = blastrRelays.filter { isValidRelayUrl(it) }.take(METADATA_POOL_SIZE)
+        // The user's own relay (first in blastrRelays when configured) leads,
+        // then the profile relays, then the rest of Blastr.
+        val relays = (blastrRelays.take(1) + PROFILE_RELAYS + blastrRelays)
+            .distinct()
+            .filter { isValidRelayUrl(it) }
+            .take(METADATA_POOL_SIZE)
         if (relays.isEmpty()) return
         metadataPoolLock.withLock {
             // Drop pooled relays no longer in the configured set.
@@ -764,10 +817,39 @@ class NostrService @Inject constructor(
             }
             for (relayUrl in relays) {
                 val client = metadataClients.getOrPut(relayUrl) { createMetadataClient(relayUrl) }
+                // CLOSE first: a relay may refuse a REQ that reuses the id of a
+                // subscription it still holds open, rather than replace it.
+                client.send("[\"CLOSE\",\"$METADATA_SUB_ID\"]")
                 client.send("[\"REQ\",\"$METADATA_SUB_ID\",$filterJson]")
             }
         }
         armMetadataIdleTimeout()
+    }
+
+    /**
+     * kind-0 filter for every pubkey dispatched in the last
+     * [METADATA_PENDING_WINDOW_MS] whose metadata has not arrived since, newest
+     * first, capped at [METADATA_MAX_AUTHORS]. Null when nothing is pending.
+     */
+    private fun pendingMetadataFilterJson(now: Long): String? {
+        val profiles = _profiles.value
+        val staged = profileEmitLock.withLock { pendingProfiles.keys.toSet() }
+        val authors = profileQueueLock.withLock {
+            profileFetchAttempts.entries
+                .filter { (pubkey, attemptedAt) ->
+                    now - attemptedAt < METADATA_PENDING_WINDOW_MS &&
+                        pubkey !in staged &&
+                        (profiles[pubkey]?.fetchedAt ?: 0L) < attemptedAt
+                }
+                .sortedByDescending { it.value }
+                .take(METADATA_MAX_AUTHORS)
+                .map { it.key }
+        }
+        if (authors.isEmpty()) return null
+        return buildFilterJson(buildMap<String, Any> {
+            put("kinds", listOf(0))
+            put("authors", authors)
+        })
     }
 
     /** Open a long-lived metadata-pool connection that survives across flushes. */
@@ -782,10 +864,12 @@ class NostrService @Inject constructor(
         // recovers without waiting for the next flush.
         scope.launch {
             client.connectionState.collect { state ->
-                if (state == WebSocketClient.ConnectionState.CONNECTED &&
-                    lastMetadataFilterJson.isNotEmpty()
-                ) {
-                    client.send("[\"REQ\",\"$METADATA_SUB_ID\",$lastMetadataFilterJson]")
+                if (state == WebSocketClient.ConnectionState.CONNECTED) {
+                    val filterJson = pendingMetadataFilterJson(System.currentTimeMillis())
+                        ?: lastMetadataFilterJson.takeIf { it.isNotEmpty() }
+                    if (filterJson != null) {
+                        client.send("[\"REQ\",\"$METADATA_SUB_ID\",$filterJson]")
+                    }
                 }
             }
         }
@@ -810,7 +894,7 @@ class NostrService @Inject constructor(
         }
     }
 
-    private fun parseAndCacheProfile(pubkey: String, content: String) {
+    private fun parseAndCacheProfile(pubkey: String, content: String, createdAt: Long) {
         val existingProfile = _profiles.value[pubkey]
         val result = profileRepository.parseMetadataContent(content, pubkey, existingProfile) ?: return
         val (parsed, changed) = result
@@ -823,11 +907,11 @@ class NostrService @Inject constructor(
             val lastStamp = existingProfile.fetchedAt
             if (lastStamp != null && now - lastStamp < PROFILE_RETRY_TTL_MS) return
             // Freshness-only refresh: stage it, but no UI-change signal needed.
-            stageProfile(pubkey, existingProfile.copy(fetchedAt = now), notify = false)
+            stageProfile(pubkey, existingProfile.copy(fetchedAt = now, createdAt = createdAt), notify = false)
             return
         }
 
-        stageProfile(pubkey, parsed.copy(fetchedAt = now), notify = true)
+        stageProfile(pubkey, parsed.copy(fetchedAt = now, createdAt = createdAt), notify = true)
     }
 
     /** Stage a parsed profile for the next batched emission window (see [pendingProfiles]). */
@@ -1712,7 +1796,9 @@ class NostrService @Inject constructor(
                 } catch (_: Exception) { emptyList() }
 
                 when {
-                    kind == 0 && evPubkey == pubkey -> parseAndCacheProfile(pubkey, content)
+                    kind == 0 && evPubkey == pubkey -> {
+                        if (acceptReplaceable(ev, kind, evPubkey, createdAt)) parseAndCacheProfile(pubkey, content, createdAt)
+                    }
                     kind == 3 && evPubkey == pubkey -> {
                         val pTags = tags.filter { it.size >= 2 && it[0] == "p" }
                         val following = pTags.map { it[1] }.filter { it != pubkey }.distinct().size
