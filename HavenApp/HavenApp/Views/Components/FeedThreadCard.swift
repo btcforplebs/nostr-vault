@@ -11,6 +11,8 @@ import SwiftUI
 ///
 /// Replies past `collapsedReplyLimit` stay folded so a long argument can't take
 /// over the timeline; the fold opens in place instead of pushing a new screen.
+/// The fold keeps the newest replies showing — a new reply is what brought the
+/// thread back to the top — and hides the earlier ones above them.
 struct FeedThreadCard: View {
     let thread: FeedThread<FeedNote>
     /// Which note is open in place. Feed-wide, and owned by the feed, for two
@@ -50,7 +52,7 @@ struct FeedThreadCard: View {
 
     private var visibleReplies: [FeedThreadEntry<FeedNote>] {
         guard !isExpanded, replies.count > Self.collapsedReplyLimit else { return replies }
-        return Array(replies.prefix(Self.collapsedReplyLimit))
+        return thread.latestReplies(limit: Self.collapsedReplyLimit)
     }
 
     private var hiddenReplyCount: Int { replies.count - visibleReplies.count }
@@ -67,13 +69,15 @@ struct FeedThreadCard: View {
                 missingRootHeader
             }
 
+            if hiddenReplyCount > 0 {
+                expandButton
+            }
+
             ForEach(visibleReplies) { entry in
                 line(for: entry, replyCount: directReplyCount(of: entry.note.id))
             }
 
-            if hiddenReplyCount > 0 {
-                expandButton
-            } else if isExpanded && replies.count > Self.collapsedReplyLimit {
+            if isExpanded && replies.count > Self.collapsedReplyLimit {
                 collapseButton
             }
 
@@ -194,7 +198,7 @@ struct FeedThreadCard: View {
     private var expandButton: some View {
         threadButton(
             icon: "arrow.turn.down.right",
-            title: "Show \(hiddenReplyCount) more \(hiddenReplyCount == 1 ? "reply" : "replies")"
+            title: "Show \(hiddenReplyCount) earlier \(hiddenReplyCount == 1 ? "reply" : "replies")"
         ) {
             isExpanded = true
         }

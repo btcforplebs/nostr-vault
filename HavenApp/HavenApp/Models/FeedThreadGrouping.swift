@@ -45,6 +45,25 @@ struct FeedThread<Note: ThreadGroupable>: Identifiable {
         return entries.filter { $0.note.id != root.id }
     }
 
+    /// The `limit` most recent replies, kept in reading order. A reply is what
+    /// lifts a thread to the top of the feed, so a folded card has to show the
+    /// replies that did it rather than the oldest few.
+    func latestReplies(limit: Int) -> [FeedThreadEntry<Note>] {
+        let all = replies
+        guard all.count > limit else { return all }
+        let newest = Set(
+            all.enumerated()
+                .sorted { lhs, rhs in
+                    lhs.element.note.createdAt == rhs.element.note.createdAt
+                        ? lhs.offset > rhs.offset
+                        : lhs.element.note.createdAt > rhs.element.note.createdAt
+                }
+                .prefix(limit)
+                .map(\.element.id)
+        )
+        return all.filter { newest.contains($0.id) }
+    }
+
     /// Distinct authors, root first, in the order they appear in the thread.
     var participantPubkeys: [String] {
         var seen = Set<String>()

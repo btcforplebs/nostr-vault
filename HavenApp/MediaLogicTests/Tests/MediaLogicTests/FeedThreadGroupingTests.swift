@@ -150,6 +150,23 @@ final class FeedThreadGroupingTests: XCTestCase {
         XCTAssertEqual(total, 2)
     }
 
+    func testLatestRepliesKeepsTheNewestInReadingOrder() {
+        // Reading order is r1, r1a, r2, r2a, r3; the three newest are r2a, r1a, r3.
+        let notes = [
+            TestNote("r2a", at: 600, parent: "r2", root: "root"),
+            TestNote("r1a", at: 500, parent: "r1", root: "root"),
+            TestNote("r3", at: 400, parent: "root", root: "root"),
+            TestNote("r2", at: 300, parent: "root", root: "root"),
+            TestNote("r1", at: 200, parent: "root", root: "root"),
+            TestNote("root", at: 100),
+        ]
+        let thread = FeedThreadGrouping.build(notes: notes)[0]
+
+        XCTAssertEqual(thread.replies.map(\.id), ["r1", "r1a", "r2", "r2a", "r3"])
+        XCTAssertEqual(thread.latestReplies(limit: 3).map(\.id), ["r1a", "r2a", "r3"])
+        XCTAssertEqual(thread.latestReplies(limit: 5).map(\.id), thread.replies.map(\.id))
+    }
+
     func testEmptyFeedProducesNoThreads() {
         XCTAssertTrue(FeedThreadGrouping.build(notes: [TestNote]()).isEmpty)
     }

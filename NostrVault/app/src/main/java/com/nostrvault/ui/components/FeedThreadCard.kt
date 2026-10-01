@@ -63,7 +63,7 @@ fun FeedThreadCard(
 
     val replies = thread.replies
     val visibleReplies = if (!isExpanded && replies.size > COLLAPSED_REPLY_LIMIT) {
-        replies.take(COLLAPSED_REPLY_LIMIT)
+        thread.latestReplies(COLLAPSED_REPLY_LIMIT)
     } else {
         replies
     }
@@ -115,6 +115,15 @@ fun FeedThreadCard(
             MissingRootHeader()
         }
 
+        if (hiddenReplyCount > 0) {
+            ThreadFoldButton(
+                icon = NostrVaultIcons.ChevronDown,
+                title = "Show $hiddenReplyCount earlier ${if (hiddenReplyCount == 1) "reply" else "replies"}",
+                themeColor = themeColor,
+                onClick = { onExpandedChange(true) },
+            )
+        }
+
         for (entry in visibleReplies) {
             ThreadCardLine(
                 entry = entry,
@@ -129,14 +138,7 @@ fun FeedThreadCard(
             )
         }
 
-        if (hiddenReplyCount > 0) {
-            ThreadFoldButton(
-                icon = NostrVaultIcons.ChevronDown,
-                title = "Show $hiddenReplyCount more ${if (hiddenReplyCount == 1) "reply" else "replies"}",
-                themeColor = themeColor,
-                onClick = { onExpandedChange(true) },
-            )
-        } else if (isExpanded && replies.size > COLLAPSED_REPLY_LIMIT) {
+        if (isExpanded && replies.size > COLLAPSED_REPLY_LIMIT) {
             ThreadFoldButton(
                 icon = NostrVaultIcons.ChevronDown,
                 title = "Show fewer replies",
