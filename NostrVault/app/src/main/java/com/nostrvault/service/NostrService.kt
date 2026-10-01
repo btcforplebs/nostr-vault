@@ -1968,6 +1968,90 @@ class NostrService @Inject constructor(
         }
     }
 
+    /**
+     * One-shot REQ that hands back the raw events: sends [filters] (JSON
+     * objects) to every relay in [relayUrls] on temporary clients and
+     * collects events, deduplicated by id, until each relay has sent EOSE or
+     * CLOSED (or dropped the connection) or [timeoutMs] passes. Any kind; the
+     * caller decides what the events are.
+     */
+    suspend fun queryRawEvents(
+        filters: List<String>,
+        relayUrls: List<String>,
+        timeoutMs: Long = 5_000L,
+    ): List<JsonObject> {
+        if (filters.isEmpty() || relayUrls.isEmpty()) return emptyList()
+        val subId = "q-${UUID.randomUUID().toString().take(8)}"
+        val req = "[\"REQ\",\"$subId\",${filters.joinToString(",")}]"
+        val collected = ConcurrentHashMap<String, JsonObject>()
+
+        withTimeoutOrNull(timeoutMs) {
+            coroutineScope {
+                for (relayUrl in relayUrls) launch(Dispatchers.IO) {
+                    val client = WebSocketClient(
+                        url = relayUrl, scope = scope,
+                        trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"),
+                    )
+                    tempClientsLock.withLock { temporaryClients.add(client) }
+                    try {
+                        coroutineScope {
+                            val done = CompletableDeferred<Unit>()
+                            // A relay that refuses the connection is finished,
+                            // not something to wait the whole timeout on.
+                            val watchState = launch(start = CoroutineStart.UNDISPATCHED) {
+                                client.connectionState
+                                    .dropWhile { it == WebSocketClient.ConnectionState.DISCONNECTED }
+                                    .first { it == WebSocketClient.ConnectionState.DISCONNECTED }
+                                done.complete(Unit)
+                            }
+                            val read = launch {
+                                client.messages
+                                    .onSubscription {
+                                        client.connect()
+                                        client.send(req)
+                                    }
+                                    .first { msg -> handleRawQueryMessage(msg, subId, collected) }
+                                done.complete(Unit)
+                            }
+                            done.await()
+                            watchState.cancel()
+                            read.cancel()
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                    } finally {
+                        client.disconnect()
+                        tempClientsLock.withLock { temporaryClients.remove(client) }
+                    }
+                }
+            }
+        }
+        return collected.values.toList()
+    }
+
+    /** Stores an EVENT for [subId]; true once the relay is done (EOSE/CLOSED). */
+    private fun handleRawQueryMessage(
+        msg: String,
+        subId: String,
+        collected: MutableMap<String, JsonObject>,
+    ): Boolean {
+        val parsed = try { json.parseToJsonElement(msg).jsonArray } catch (_: Exception) { return false }
+        if (parsed.size < 2) return false
+        val type = (parsed[0] as? JsonPrimitive)?.contentOrNull ?: return false
+        if ((parsed[1] as? JsonPrimitive)?.contentOrNull != subId) return false
+        return when (type) {
+            "EVENT" -> {
+                val ev = parsed.getOrNull(2) as? JsonObject
+                val id = (ev?.get("id") as? JsonPrimitive)?.contentOrNull
+                if (ev != null && id != null) collected[id] = ev
+                false
+            }
+            "EOSE", "CLOSED" -> true
+            else -> false
+        }
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // Fetch notes by ID
     // ══════════════════════════════════════════════════════════════════

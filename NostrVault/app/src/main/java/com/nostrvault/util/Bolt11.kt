@@ -97,4 +97,57 @@ object Bolt11 {
     /** Sats, or null when the invoice names no readable positive amount. */
     fun satsOrNull(invoice: String): Long? =
         (amount(invoice) as? Bolt11Amount.Sats)?.sats?.takeIf { it > 0 }
+
+    // ── Payment hash ────────────────────────────────────────────────
+
+    private const val CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+    /**
+     * The invoice's payment hash (tagged field `p`), as lowercase hex.
+     *
+     * The one identifier a wallet's history and a zap receipt both carry —
+     * what lets a payment be matched to the receipt that says who sent it.
+     * Checksum is not verified: this only reads, and a receipt whose bolt11
+     * is corrupt simply matches nothing.
+     */
+    fun paymentHash(invoice: String): String? {
+        val lower = invoice.trim().lowercase()
+        val separator = lower.lastIndexOf('1')
+        if (separator < 0) return null
+        val words = ArrayList<Int>(lower.length - separator)
+        for (ch in lower.substring(separator + 1)) {
+            val v = CHARSET.indexOf(ch)
+            if (v < 0) return null
+            words.add(v)
+        }
+        // timestamp (7) … tagged fields … signature (104) + checksum (6)
+        if (words.size <= 7 + 104 + 6) return null
+        val end = words.size - 104 - 6
+        var i = 7
+        while (i + 3 <= end) {
+            val type = words[i]
+            val length = (words[i + 1] shl 5) or words[i + 2]
+            i += 3
+            if (i + length > end) return null
+            if (type == 1 && length == 52) {
+                // 52 five-bit words = 260 bits; the hash is the first 256.
+                val bytes = ArrayList<Int>(33)
+                var acc = 0
+                var bits = 0
+                for (w in words.subList(i, i + length)) {
+                    acc = (acc shl 5) or w
+                    bits += 5
+                    if (bits >= 8) {
+                        bits -= 8
+                        bytes.add((acc shr bits) and 0xff)
+                        acc = acc and ((1 shl bits) - 1)
+                    }
+                }
+                if (bytes.size < 32) return null
+                return bytes.take(32).joinToString("") { "%02x".format(it) }
+            }
+            i += length
+        }
+        return null
+    }
 }

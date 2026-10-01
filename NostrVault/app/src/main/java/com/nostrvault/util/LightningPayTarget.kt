@@ -173,11 +173,20 @@ data class WalletTransaction(
     val state: State,
     val amountSats: Long,
     val feeSats: Long,
+    /**
+     * The invoice's own description, or null when it is empty or is a zap
+     * request (which is JSON, and goes to [zap] instead).
+     */
     val description: String?,
     /** Unix seconds. */
     val createdAt: Long,
     /** Unix seconds. */
     val settledAt: Long?,
+    /** Lowercase hex; from the wallet, else read out of [invoice]. */
+    val paymentHash: String? = null,
+    val invoice: String? = null,
+    /** Set when the wallet returned the zap request as the description. */
+    val zap: ZapDetail? = null,
 ) {
     enum class Direction { INCOMING, OUTGOING }
     enum class State { SETTLED, PENDING, FAILED, EXPIRED }
@@ -200,7 +209,9 @@ data class WalletTransaction(
             val settledAt = number(obj["settled_at"])
             val amountSats = (number(obj["amount"]) ?: 0L) / 1000
             val feeSats = (number(obj["fees_paid"]) ?: 0L) / 1000
-            val description = obj["description"].stringOrNull()?.trim()?.ifEmpty { null }
+            val desc = obj["description"].stringOrNull()?.trim()?.ifEmpty { null }
+            val zap = desc?.let { ZapDetail.fromZapRequest(it) }
+            val description = if (zap != null) null else desc
 
             // `state` is newer in NIP-47; older wallets only send `settled_at`.
             val state = when (obj["state"].stringOrNull()?.lowercase()) {
@@ -211,8 +222,10 @@ data class WalletTransaction(
                 else -> if (settledAt != null) State.SETTLED else State.PENDING
             }
 
-            val id = obj["payment_hash"].stringOrNull()
-                ?: obj["invoice"].stringOrNull()
+            val hash = obj["payment_hash"].stringOrNull()?.lowercase()
+            val invoice = obj["invoice"].stringOrNull()?.ifEmpty { null }
+            val id = hash
+                ?: invoice
                 ?: "$type-$created-$amountSats"
 
             return WalletTransaction(
@@ -224,6 +237,9 @@ data class WalletTransaction(
                 description = description,
                 createdAt = created,
                 settledAt = settledAt,
+                paymentHash = hash ?: invoice?.let { Bolt11.paymentHash(it) },
+                invoice = invoice,
+                zap = zap,
             )
         }
 

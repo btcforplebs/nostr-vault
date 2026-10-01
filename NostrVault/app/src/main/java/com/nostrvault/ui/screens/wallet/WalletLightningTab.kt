@@ -2,6 +2,7 @@ package com.nostrvault.ui.screens.wallet
 
 import android.text.format.DateUtils
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
@@ -39,6 +40,10 @@ import com.nostrvault.util.Bolt11Amount
 import com.nostrvault.util.LNURLAmountRange
 import com.nostrvault.util.LightningPayTarget
 import com.nostrvault.util.WalletTransaction
+import com.nostrvault.util.ZapDetail
+import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.util.lnurlPlainTextMetadata
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -49,7 +54,7 @@ import kotlinx.coroutines.delay
  * Port of iOS WalletLightningTab.
  */
 @Composable
-fun WalletLightningTab(viewModel: WalletViewModel) {
+fun WalletLightningTab(viewModel: WalletViewModel, onNoteClick: (String) -> Unit = {}) {
     val config by viewModel.config.collectAsState()
     val balance by viewModel.lightningBalance.collectAsState()
     val busy by viewModel.busy.collectAsState()
@@ -297,7 +302,7 @@ fun WalletLightningTab(viewModel: WalletViewModel) {
         Spacer(Modifier.height(28.dp))
 
         // ── History ───────────────────────────────────────────────
-        WalletHistory(viewModel)
+        WalletHistory(viewModel, onNoteClick)
         Spacer(Modifier.height(32.dp))
     }
 
@@ -471,8 +476,12 @@ private fun LnurlAmountInput(
 // ── History ───────────────────────────────────────────────────────
 
 @Composable
-private fun WalletHistory(viewModel: WalletViewModel) {
+private fun WalletHistory(viewModel: WalletViewModel, onNoteClick: (String) -> Unit) {
     val transactions by viewModel.transactions.collectAsState()
+    val zapDetails by viewModel.zapDetails.collectAsState()
+    val zapPosts by viewModel.zapPosts.collectAsState()
+    val profiles by viewModel.profiles.collectAsState()
+    val me = viewModel.myPubkey
     val loading by viewModel.historyLoading.collectAsState()
     val error by viewModel.historyError.collectAsState()
     val unsupported by viewModel.historyUnsupported.collectAsState()
@@ -502,7 +511,16 @@ private fun WalletHistory(viewModel: WalletViewModel) {
         else -> {
             val now = System.currentTimeMillis()
             transactions.forEachIndexed { index, tx ->
-                TransactionRow(tx, now)
+                val zap = zapDetails[tx.id]
+                val person = zap?.counterparty(me, tx.direction)
+                TransactionRow(
+                    tx, now,
+                    zap = zap,
+                    person = person,
+                    profile = person?.let { profiles[it] },
+                    post = zap?.postId?.let { zapPosts[it] },
+                    onNoteClick = onNoteClick,
+                )
                 if (index != transactions.lastIndex) {
                     HorizontalDivider(color = SecondaryText.copy(alpha = 0.2f))
                 }
@@ -519,33 +537,87 @@ private fun WalletHistory(viewModel: WalletViewModel) {
     }
 }
 
+/**
+ * One history row. A zap shows who it came from (or went to) and what it was
+ * on, and opens the zapped post on tap; anything else is just a row.
+ */
 @Composable
-private fun TransactionRow(tx: WalletTransaction, nowMillis: Long) {
+private fun TransactionRow(
+    tx: WalletTransaction,
+    nowMillis: Long,
+    zap: ZapDetail?,
+    person: String?,
+    profile: FeedProfile?,
+    post: FeedNote?,
+    onNoteClick: (String) -> Unit,
+) {
     val incoming = tx.direction == WalletTransaction.Direction.INCOMING
-    val tint = if (incoming) SuccessGreen else ZapOrange
+    val tint = if (zap != null || !incoming) ZapOrange else SuccessGreen
     val dead = tx.state == WalletTransaction.State.FAILED || tx.state == WalletTransaction.State.EXPIRED
+    // The note-detail screen fetches a post it does not have, so a known id
+    // is enough to open it.
+    val postId = zap?.postId
+    val context = zapContextLine(zap, post, incoming)
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (postId != null) Modifier.clickable { onNoteClick(postId) } else Modifier)
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier.size(28.dp).clip(CircleShape).background(tint.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                if (incoming) NostrVaultIcons.Incoming else NostrVaultIcons.Outgoing,
-                contentDescription = if (incoming) "Received" else "Sent",
-                tint = tint, modifier = Modifier.size(16.dp),
-            )
+        if (person != null) {
+            Box(Modifier.size(28.dp)) {
+                AvatarImage(
+                    url = profile?.pictureURL, pubkey = person, size = 28.dp,
+                    displayName = profile?.bestName,
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 3.dp, y = 3.dp)
+                        .size(13.dp)
+                        .clip(CircleShape)
+                        .background(ZapOrange),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(NostrVaultIcons.Zap, contentDescription = "Zap", tint = Color.White, modifier = Modifier.size(9.dp))
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier.size(28.dp).clip(CircleShape).background(tint.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    when {
+                        zap != null -> NostrVaultIcons.Zap
+                        incoming -> NostrVaultIcons.Incoming
+                        else -> NostrVaultIcons.Outgoing
+                    },
+                    contentDescription = when {
+                        zap != null -> "Zap"
+                        incoming -> "Received"
+                        else -> "Sent"
+                    },
+                    tint = tint, modifier = Modifier.size(16.dp),
+                )
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                tx.description ?: if (incoming) "Received" else "Sent",
+                transactionTitle(tx, zap, person, profile),
                 color = PrimaryText, fontSize = 14.sp, fontWeight = FontWeight.Medium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
+            if (context != null) {
+                Text(
+                    context,
+                    color = SecondaryText, fontSize = 12.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 transactionSubtitle(tx, nowMillis),
                 color = if (dead) ErrorRed else SecondaryText, fontSize = 12.sp,
@@ -563,6 +635,35 @@ private fun TransactionRow(tx: WalletTransaction, nowMillis: Long) {
             fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
             textDecoration = if (dead) TextDecoration.LineThrough else null,
         )
+    }
+}
+
+private fun transactionTitle(
+    tx: WalletTransaction,
+    zap: ZapDetail?,
+    person: String?,
+    profile: FeedProfile?,
+): String {
+    val incoming = tx.direction == WalletTransaction.Direction.INCOMING
+    if (zap == null) return tx.description ?: if (incoming) "Received" else "Sent"
+    if (incoming && zap.isAnonymous) return "Anonymous zap"
+    if (person == null) return if (incoming) "Zap received" else "Zap sent"
+    val name = profile?.bestName ?: ("npub…" + person.takeLast(6))
+    return if (incoming) "Zap from $name" else "Zap to $name"
+}
+
+/** What the zap was for: the sender's comment, else the start of the post. */
+private fun zapContextLine(zap: ZapDetail?, post: FeedNote?, incoming: Boolean): String? {
+    if (zap == null) return null
+    zap.comment?.let { return "\u201C$it\u201D" }
+    if (post != null) {
+        val text = post.content.replace("\n", " ").trim()
+        return if (text.isEmpty()) "on a post" else "on: $text"
+    }
+    return when {
+        zap.postId != null -> "on a post"
+        incoming -> "on your profile"
+        else -> "on their profile"
     }
 }
 

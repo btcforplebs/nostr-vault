@@ -32,6 +32,11 @@ import com.nostrvault.service.NWCService
 import com.nostrvault.service.NWCTimeoutException
 import com.nostrvault.service.NWCWalletException
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.ZapHistoryService
+import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.util.ZapDetail
+import kotlinx.coroutines.CancellationException
 import com.nostrvault.ui.screens.wallet.WalletLightningTab
 import com.nostrvault.ui.theme.*
 import com.nostrvault.util.Bolt11
@@ -52,6 +57,7 @@ class WalletViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nwcService: NWCService,
     private val nostrService: NostrService,
+    private val zapHistoryService: ZapHistoryService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
     private val _lightningBalance = MutableStateFlow<Long?>(null)
@@ -90,6 +96,18 @@ class WalletViewModel @Inject constructor(
 
     private val _canLoadMoreHistory = MutableStateFlow(false)
     val canLoadMoreHistory = _canLoadMoreHistory.asStateFlow()
+
+    /** Who each zap in the history came from, keyed by transaction id. */
+    private val _zapDetails = MutableStateFlow<Map<String, ZapDetail>>(emptyMap())
+    val zapDetails = _zapDetails.asStateFlow()
+
+    /** The zapped posts, keyed by post id. */
+    private val _zapPosts = MutableStateFlow<Map<String, FeedNote>>(emptyMap())
+    val zapPosts = _zapPosts.asStateFlow()
+
+    val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
+
+    val myPubkey: String get() = nostrService.activeHexPubkey
 
     /** A refresh asked for while a page was loading; it runs once that page lands. */
     private var historyRefreshPending = false
@@ -258,6 +276,7 @@ class WalletViewModel @Inject constructor(
             try {
                 val page = nwcService.listTransactions(limit = HISTORY_PAGE_SIZE, offset = offset)
                 _transactions.value = if (reset) page else WalletTransaction.merge(_transactions.value, page)
+                resolveZaps(page)
                 _canLoadMoreHistory.value = page.size >= HISTORY_PAGE_SIZE
                 _historyUnsupported.value = false
             } catch (e: NWCWalletException) {
@@ -270,6 +289,22 @@ class WalletViewModel @Inject constructor(
                 historyRefreshPending = false
                 loadHistory(reset = true)
             }
+        }
+    }
+
+    /** Looks up who each zap on this page came from, without holding up the list. */
+    private fun resolveZaps(page: List<WalletTransaction>) {
+        val me = nostrService.activeHexPubkey
+        viewModelScope.launch {
+            val found = try {
+                zapHistoryService.lookup(page, me)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return@launch
+            }
+            _zapDetails.value = _zapDetails.value + found.details
+            _zapPosts.value = _zapPosts.value + found.posts
         }
     }
 
@@ -286,6 +321,7 @@ private enum class WalletTab(val label: String) { LIGHTNING("Lightning"), SETTIN
 fun WalletScreen(
     onBack: () -> Unit,
     onSweep: () -> Unit = {},
+    onNoteClick: (String) -> Unit = {},
     viewModel: WalletViewModel = hiltViewModel(),
 ) {
     var selectedTab by remember { mutableStateOf(WalletTab.LIGHTNING) }
@@ -335,7 +371,7 @@ fun WalletScreen(
             }
 
             when (selectedTab) {
-                WalletTab.LIGHTNING -> WalletLightningTab(viewModel)
+                WalletTab.LIGHTNING -> WalletLightningTab(viewModel, onNoteClick)
                 WalletTab.SETTINGS -> WalletSettingsTab(viewModel, onSweep)
             }
         }
