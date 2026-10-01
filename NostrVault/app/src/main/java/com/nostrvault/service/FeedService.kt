@@ -64,6 +64,7 @@ class FeedService @Inject constructor(
         private const val EXTENDED_NETWORK_TIMEOUT_MS = 15_000L
         private const val NOTE_FETCH_TIMEOUT_MS = 8_000L
         private const val NOTE_FETCH_BATCH_DELAY_MS = 300L
+        private const val UNAVAILABLE_RETRY_MS = 60_000L
 
         /**
          * Asked on the second pass, for referenced notes neither your relays
@@ -1981,10 +1982,22 @@ class FeedService @Inject constructor(
     private val _unavailableNoteIds = MutableStateFlow<Set<String>>(emptySet())
     val unavailableNoteIds: StateFlow<Set<String>> = _unavailableNoteIds.asStateFlow()
 
+    /**
+     * When each id was given up on. Unavailable is not forever: past
+     * [UNAVAILABLE_RETRY_MS] the next request asks again, so a launch on a bad
+     * network doesn't hide those notes for the rest of the session.
+     */
+    private val unavailableSince = ConcurrentHashMap<String, Long>()
+
     /** Ids queued for the next lookup, or being looked up right now. */
-    private val noteFetchQueue = ConcurrentHashMap.newKeySet<String>()
+    private val noteFetchQueue = mutableSetOf<String>()
     private val noteFetchInFlight = ConcurrentHashMap.newKeySet<String>()
+    /** Guards [noteFetchQueue] and [noteFetchFlushJob] together. */
+    private val noteFetchLock = Any()
     private var noteFetchFlushJob: Job? = null
+
+    /** Authors whose relay list was already requested, so each is asked once. */
+    private val relayListRequested = ConcurrentHashMap.newKeySet<String>()
 
     /**
      * Thread cards ask for their root one at a time as they compose. Queue
@@ -1994,24 +2007,36 @@ class FeedService @Inject constructor(
     fun fetchMissingNote(id: String) = fetchMissingNotesBatch(listOf(id))
 
     fun fetchMissingNotesBatch(ids: List<String>) {
-        val wanted = ids.filter {
-            !_parentNotesCache.value.containsKey(it) && it !in _unavailableNoteIds.value && it !in noteFetchInFlight
+        val now = System.currentTimeMillis()
+        val wanted = ids.filter { id ->
+            if (_parentNotesCache.value.containsKey(id) || id in noteFetchInFlight) return@filter false
+            val since = unavailableSince[id] ?: return@filter true
+            now - since >= UNAVAILABLE_RETRY_MS
         }
         if (wanted.isEmpty()) return
-        noteFetchQueue.addAll(wanted)
-        if (noteFetchFlushJob?.isActive == true) return
-        noteFetchFlushJob = scope.launch(Dispatchers.IO) {
-            // Drain until nothing new arrived during the wait. The lookups run
-            // outside this job: as children they kept it active for the whole
-            // fetch window, and ids queued meanwhile were never sent.
-            while (true) {
-                delay(NOTE_FETCH_BATCH_DELAY_MS)
-                val batch = noteFetchQueue.toList()
-                if (batch.isEmpty()) break
-                noteFetchQueue.removeAll(batch.toSet())
-                noteFetchInFlight.addAll(batch)
-                for (chunk in batch.chunked(50)) {
-                    scope.launch(Dispatchers.IO) { lookUpNotes(chunk) }
+        synchronized(noteFetchLock) {
+            noteFetchQueue.addAll(wanted)
+            if (noteFetchFlushJob != null) return
+            noteFetchFlushJob = scope.launch(Dispatchers.IO) {
+                // Drain until nothing new arrived during the wait. The lookups
+                // run outside this job: as children they kept it active for the
+                // whole fetch window, and ids queued meanwhile were never sent.
+                while (true) {
+                    delay(NOTE_FETCH_BATCH_DELAY_MS)
+                    val batch = synchronized(noteFetchLock) {
+                        val b = noteFetchQueue.toList()
+                        noteFetchQueue.clear()
+                        // Cleared under the same lock an enqueue checks, so an
+                        // id added after this either sees the job and is drained,
+                        // or sees null and starts the next one.
+                        if (b.isEmpty()) noteFetchFlushJob = null
+                        b
+                    }
+                    if (batch.isEmpty()) break
+                    noteFetchInFlight.addAll(batch)
+                    for (chunk in batch.chunked(50)) {
+                        scope.launch(Dispatchers.IO) { lookUpNotes(chunk) }
+                    }
                 }
             }
         }
@@ -2046,20 +2071,29 @@ class FeedService @Inject constructor(
             addAll(config.activeBlastrRelays)
         }.distinct()
 
-        val requested = mutableSetOf<String>()
+        // Arrivals are tracked here, not read back from the cache: the cache's
+        // over-500 trim drops notes the feed doesn't reference (one opened
+        // from Search, say), and those must not then be called unavailable.
+        val arrived = ConcurrentHashMap.newKeySet<String>()
         requestRelayListsFor(chunk)
-        requestNotes(ownRelays.associateWith { chunk } + hintRelays(chunk, ownRelays, cap = 12))
-        requested += ownRelays
+        val firstHints = hintRelays(chunk, ownRelays, cap = 12)
+        requestNotes(ownRelays.associateWith { chunk } + firstHints, arrived)
 
-        val stillMissing = chunk.filter { !_parentNotesCache.value.containsKey(it) }
+        val stillMissing = chunk.filter { it !in arrived && !_parentNotesCache.value.containsKey(it) }
         if (stillMissing.isNotEmpty()) {
-            val fallbacks = FALLBACK_NOTE_RELAYS.filter { it !in requested }
-            val hints = hintRelays(stillMissing, requested + fallbacks, cap = 24)
-            requestNotes(fallbacks.associateWith { stillMissing } + hints)
+            val asked = ownRelays + firstHints.keys
+            val askedKeys = asked.map { normalizeRelay(it) }.toSet()
+            val fallbacks = FALLBACK_NOTE_RELAYS.filter { normalizeRelay(it) !in askedKeys }
+            val hints = hintRelays(stillMissing, asked + fallbacks, cap = 24)
+            requestNotes(fallbacks.associateWith { stillMissing } + hints, arrived)
         }
 
-        val givenUp = chunk.filter { !_parentNotesCache.value.containsKey(it) }.toSet()
-        if (givenUp.isNotEmpty()) _unavailableNoteIds.update { it + givenUp }
+        val givenUp = chunk.filter { it !in arrived && !_parentNotesCache.value.containsKey(it) }.toSet()
+        if (givenUp.isNotEmpty()) {
+            val now = System.currentTimeMillis()
+            givenUp.forEach { unavailableSince[it] = now }
+            _unavailableNoteIds.update { it + givenUp }
+        }
     }
 
     /**
@@ -2069,6 +2103,9 @@ class FeedService @Inject constructor(
      */
     private fun hintRelays(ids: List<String>, exclude: Collection<String>, cap: Int): Map<String, List<String>> {
         val skip = exclude.map { normalizeRelay(it) }.toSet()
+        // Keyed by the normalized form to merge duplicates, but the request
+        // goes to the URL as written: lowercasing would change a path.
+        val urlForKey = mutableMapOf<String, String>()
         val byRelay = mutableMapOf<String, MutableList<String>>()
         for (id in ids) {
             val (hint, author) = referenceHints(id)
@@ -2079,13 +2116,14 @@ class FeedService @Inject constructor(
             for (url in urls) {
                 val key = normalizeRelay(url)
                 if (key in skip) continue
+                urlForKey.getOrPut(key) { url.trim() }
                 byRelay.getOrPut(key) { mutableListOf() }.add(id)
             }
         }
         return byRelay.entries
             .sortedByDescending { it.value.size }
             .take(cap)
-            .associate { it.key to it.value.distinct() }
+            .associate { urlForKey.getValue(it.key) to it.value.distinct() }
     }
 
     /** The relay hint and author a note in the feed gives for the id it references. */
@@ -2104,14 +2142,19 @@ class FeedService @Inject constructor(
     /** Authors referenced by these ids whose write relays aren't known yet. */
     private fun requestRelayListsFor(ids: List<String>) {
         val known = nostrService.outboxRelays.value
-        val authors = ids.mapNotNull { referenceHints(it).second }.filter { it !in known }.distinct()
+        if (relayListRequested.size > 5000) relayListRequested.clear()
+        // Once per author: force skips the profile fetch's throttle, and an
+        // author with no kind 10002 would otherwise be re-asked every batch.
+        val authors = ids.mapNotNull { referenceHints(it).second }
+            .filter { it !in known && relayListRequested.add(it) }
+            .distinct()
         if (authors.isNotEmpty()) nostrService.fetchMissingProfiles(authors, force = true)
     }
 
     private fun normalizeRelay(url: String) = url.trim().trimEnd('/').lowercase()
 
     /** Sends one REQ per relay for its ids, waits out the fetch window, then cleans up. */
-    private suspend fun requestNotes(requests: Map<String, List<String>>) {
+    private suspend fun requestNotes(requests: Map<String, List<String>>, arrived: MutableSet<String>) {
         if (requests.isEmpty()) return
         val tempClients = mutableListOf<WebSocketClient>()
         val collectors = mutableListOf<Job>()
@@ -2134,7 +2177,7 @@ class FeedService @Inject constructor(
                 // feed clients: an un-cancelled collector here would re-parse every
                 // future feed message for the life of the app.
                 collectors.add(scope.launch {
-                    client.messages.collect { msg -> handleFetchedNote(msg, idSet) }
+                    client.messages.collect { msg -> handleFetchedNote(msg, idSet)?.let { arrived.add(it) } }
                 })
                 client.send("[\"REQ\",\"$subId\",$filter]")
             }
@@ -2145,18 +2188,20 @@ class FeedService @Inject constructor(
         }
     }
 
-    private suspend fun handleFetchedNote(msg: String, wanted: Set<String>) {
+    /** Caches a fetched note; returns its id when it was one of [wanted]. */
+    private suspend fun handleFetchedNote(msg: String, wanted: Set<String>): String? {
         try {
             val parsed = json.parseToJsonElement(msg).jsonArray
-            if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "EVENT") return
+            if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "EVENT") return null
             val eventObj = parsed[2].jsonObject
-            val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
-            if (eventId !in wanted || _parentNotesCache.value.containsKey(eventId)) return
-            val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return
+            val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return null
+            if (eventId !in wanted) return null
+            if (_parentNotesCache.value.containsKey(eventId)) return eventId
+            val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return null
             val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
             val tags = eventObj["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } } ?: emptyList()
-            val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return
-            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return
+            val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return null
+            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return null
 
             val note = FeedNote.fromEvent(eventId, pubkey, content, tags, createdAt, kind)
             withContext(Dispatchers.Main.immediate) {
@@ -2171,9 +2216,13 @@ class FeedService @Inject constructor(
                         .toMap()
                 }
                 _parentNotesCache.value = updated
+                unavailableSince.remove(eventId)
                 if (eventId in _unavailableNoteIds.value) _unavailableNoteIds.update { it - eventId }
             }
-        } catch (_: Exception) {}
+            return eventId
+        } catch (_: Exception) {
+            return null
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -2803,6 +2852,11 @@ class FeedService @Inject constructor(
         _newNoteCount.value = 0
         seenIdsLock.withLock { seenIds.clear() }
         rawEventCache.clear()
+        // A new account means new relays: what this one couldn't find, the
+        // next might.
+        unavailableSince.clear()
+        _unavailableNoteIds.value = emptySet()
+        relayListRequested.clear()
         recomputeFilteredNotes()
     }
 
