@@ -12,6 +12,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -58,21 +60,24 @@ enum class CondensedLineStyle {
 fun condensedIndentWidth(depth: Int): Dp =
     (minOf(depth, FeedThreadGrouping.MAX_DEPTH) * 14).dp
 
-/** The rail that ties a reply back to what it answers. */
-@Composable
-fun ThreadRail(
-    isOled: Boolean,
-    modifier: Modifier = Modifier,
-    themeColor: Color = LocalNostrVaultColors.current.primary,
-) {
-    Box(
-        modifier = modifier
-            .width(1.5.dp)
-            .fillMaxHeight()
-            .padding(end = 8.dp)
-            .background(themeColor.copy(alpha = if (isOled) 0.35f else 0.22f)),
-    )
-}
+/**
+ * The rail that ties a reply back to what it answers: a line down the left edge,
+ * as tall as the row, with the content set in past it. Mirrors iOS
+ * `CondensedNoteLine.rail` (1.5 wide, 8 of space after).
+ *
+ * Drawn behind rather than as a child Box: a `fillMaxHeight` child of a row in a
+ * lazy list gets no height to fill, and padding inside its 1.5 dp width left it
+ * nothing to paint, so the line never showed on Android.
+ */
+fun Modifier.threadRail(color: Color, isOled: Boolean): Modifier =
+    drawBehind {
+        drawRect(
+            color = color.copy(alpha = if (isOled) 0.35f else 0.22f),
+            size = Size(THREAD_RAIL_WIDTH.toPx(), size.height),
+        )
+    }.padding(start = THREAD_RAIL_WIDTH + 8.dp)
+
+private val THREAD_RAIL_WIDTH = 1.5.dp
 
 /**
  * The single condensed representation of a note.
@@ -140,13 +145,10 @@ fun CondensedNoteLine(
     Row(
         modifier = modifier
             .padding(start = condensedIndentWidth(depth))
-            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier),
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
+            .then(if (depth > 0) Modifier.threadRail(themeColor, isOled) else Modifier),
         verticalAlignment = Alignment.Top,
     ) {
-        if (depth > 0) {
-            ThreadRail(isOled = isOled, modifier = Modifier.heightIn(min = 1.dp), themeColor = themeColor)
-        }
-
         Row(
             verticalAlignment = Alignment.Top,
             modifier = Modifier

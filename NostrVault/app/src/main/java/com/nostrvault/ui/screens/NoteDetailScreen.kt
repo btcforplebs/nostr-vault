@@ -9,7 +9,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -20,6 +19,9 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -1066,44 +1068,44 @@ private fun ThreadedReplyNode(
                     )
                 }
             } else {
-                // Render children with connector line (matches iOS HStack + Rectangle)
-                Row(
+                // Render children with connector line (matches iOS HStack + Rectangle).
+                // Drawn behind the column, not as a fillMaxHeight sibling: that
+                // needed an intrinsic-height pass through every nested note.
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
                         .padding(start = 8.dp)
-                        .height(IntrinsicSize.Min),
-                ) {
-                    // Vertical connector line
-                    Box(
-                        modifier = Modifier
-                            .width(1.5.dp)
-                            .fillMaxHeight()
-                            .padding(vertical = 2.dp)
-                            .background(themeColor.copy(alpha = 0.25f)),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (child in childReplies) {
-                            ThreadedReplyNode(
-                                reply = child,
-                                depth = depth + 1,
-                                focusedNoteId = focusedNoteId,
-                                themeColor = themeColor,
-                                viewModel = viewModel,
-                                expandedEngagement = expandedEngagement,
-                                perNoteEngagement = perNoteEngagement,
-                                profiles = profiles,
-                                onProfileClick = onProfileClick,
-                                onNoteClick = onNoteClick,
-                                onArticleClick = onArticleClick,
-                                onFocus = onFocus,
-                                onReply = onReply,
-                                onQuote = onQuote,
-                                onZapNote = onZapNote,
-                                onBroadcastNote = onBroadcastNote,
-                                onModerateNote = onModerateNote,
-                                onLongPressLikeNote = onLongPressLikeNote,
+                        .drawBehind {
+                            val inset = 2.dp.toPx()
+                            drawRect(
+                                color = themeColor.copy(alpha = 0.25f),
+                                topLeft = Offset(0f, inset),
+                                size = Size(1.5.dp.toPx(), (size.height - 2 * inset).coerceAtLeast(0f)),
                             )
                         }
+                        .padding(start = 7.5.dp),
+                ) {
+                    for (child in childReplies) {
+                        ThreadedReplyNode(
+                            reply = child,
+                            depth = depth + 1,
+                            focusedNoteId = focusedNoteId,
+                            themeColor = themeColor,
+                            viewModel = viewModel,
+                            expandedEngagement = expandedEngagement,
+                            perNoteEngagement = perNoteEngagement,
+                            profiles = profiles,
+                            onProfileClick = onProfileClick,
+                            onNoteClick = onNoteClick,
+                            onArticleClick = onArticleClick,
+                            onFocus = onFocus,
+                            onReply = onReply,
+                            onQuote = onQuote,
+                            onZapNote = onZapNote,
+                            onBroadcastNote = onBroadcastNote,
+                            onModerateNote = onModerateNote,
+                            onLongPressLikeNote = onLongPressLikeNote,
+                        )
                     }
                 }
             }

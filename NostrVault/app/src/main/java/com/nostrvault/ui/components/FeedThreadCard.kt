@@ -203,13 +203,16 @@ private fun ThreadCardLine(
         // rail and indent the condensed line had, so nothing shifts sideways
         // under the tap. Tapping it again goes to the thread (wired by the
         // caller's expandedRow, which reuses onOpenThread as onNoteClick).
-        Row(modifier = Modifier.fillMaxWidth()) {
-            if (entry.depth > 0) {
-                ThreadRail(isOled = LocalOledMode.current, modifier = Modifier.heightIn(min = 1.dp))
-            }
-            Box(modifier = Modifier.weight(1f).padding(start = condensedIndentWidth(entry.depth))) {
-                expandedRow(note, entry.depth)
-            }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = condensedIndentWidth(entry.depth))
+                .then(
+                    if (entry.depth > 0) Modifier.threadRail(LocalNostrVaultColors.current.primary, LocalOledMode.current)
+                    else Modifier,
+                ),
+        ) {
+            expandedRow(note, entry.depth)
         }
     } else {
         CondensedNoteLine(
