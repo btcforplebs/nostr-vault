@@ -10,6 +10,43 @@ import SwiftUI
 struct ZapBurstView: View {
     @Binding var isAnimating: Bool
 
+    /// Identity of the burst on screen, if any. Nothing is drawn between
+    /// zaps; each trigger mounts a fresh `Burst`, so it always plays from
+    /// zero — even when the previous one hasn't finished.
+    @State private var burstID: UUID?
+
+    var body: some View {
+        ZStack {
+            if let burstID {
+                Burst().id(burstID)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .allowsHitTesting(false)
+        .onChange(of: isAnimating) { _, newValue in
+            if newValue { trigger() }
+        }
+    }
+
+    private func trigger() {
+        guard !Motion.isReduced else {
+            isAnimating = false
+            return
+        }
+        let id = UUID()
+        burstID = id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.46) {
+            isAnimating = false
+        }
+        // Unmount once the spring has settled; a newer burst keeps its own.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            if burstID == id { burstID = nil }
+        }
+    }
+}
+
+/// One play of the burst, from mount to fully faded.
+private struct Burst: View {
     @State private var progress: CGFloat = 0
     @State private var sparks: [Spark] = Self.makeSparks()
 
@@ -56,10 +93,10 @@ struct ZapBurstView: View {
                     )
             }
         }
-        .frame(width: 44, height: 44)
-        .allowsHitTesting(false)
-        .onChange(of: isAnimating) { _, newValue in
-            if newValue { trigger() }
+        .onAppear {
+            withAnimation(Motion.zapBurst) {
+                progress = 1
+            }
         }
     }
 
@@ -74,21 +111,6 @@ struct ZapBurstView: View {
 
     private var sparkOpacity: Double {
         Double(1 - progress)
-    }
-
-    private func trigger() {
-        guard !Motion.isReduced else {
-            isAnimating = false
-            return
-        }
-        sparks = Self.makeSparks()
-        progress = 0
-        withAnimation(Motion.zapBurst) {
-            progress = 1
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.46) {
-            isAnimating = false
-        }
     }
 }
 
