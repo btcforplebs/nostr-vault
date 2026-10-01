@@ -66,6 +66,7 @@ class FeedService @Inject constructor(
         private const val NOTE_FETCH_TIMEOUT_MS = 8_000L
         /** One lookup's widest pass asks about 24 hint relays plus fallbacks. */
         private const val MAX_NOTE_FETCH_SOCKETS = 32
+        private const val NOTE_FETCH_SOCKET_WAIT_MS = 2_000L
         private const val NOTE_FETCH_BATCH_DELAY_MS = 300L
         private const val UNAVAILABLE_RETRY_MS = 60_000L
 
@@ -2164,6 +2165,7 @@ class FeedService @Inject constructor(
         if (requests.isEmpty()) return
         val tempClients = mutableListOf<WebSocketClient>()
         val collectors = mutableListOf<Job>()
+        var socketsExhausted = false
         try {
             for ((relayUrl, ids) in requests) {
                 if (ids.isEmpty()) continue
@@ -2173,7 +2175,15 @@ class FeedService @Inject constructor(
                 val client = feedClients[relayUrl] ?: run {
                     // Every chunk's lookup opens its own sockets; the shared cap
                     // keeps a screenful of thread cards from opening hundreds.
-                    noteFetchSockets.acquire()
+                    // The wait is bounded: lookups hold sockets while asking for
+                    // more, so an unbounded acquire could leave two waiting on
+                    // each other. Once one wait runs out, the rest of this pass's
+                    // new relays are skipped rather than each waiting in turn.
+                    if (socketsExhausted) return@run null
+                    if (withTimeoutOrNull(NOTE_FETCH_SOCKET_WAIT_MS) { noteFetchSockets.acquire() } == null) {
+                        socketsExhausted = true
+                        return@run null
+                    }
                     WebSocketClient(
                         url = relayUrl,
                         scope = scope,
@@ -2182,7 +2192,7 @@ class FeedService @Inject constructor(
                         tempClients.add(it)
                         it.connect()
                     }
-                }
+                } ?: continue
 
                 // Tracked so it is cancelled below. Critical for reused persistent
                 // feed clients: an un-cancelled collector here would re-parse every
