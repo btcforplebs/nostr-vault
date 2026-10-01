@@ -69,10 +69,13 @@ sealed interface LightningPayTarget {
 
             if (lower.startsWith("lnurl1")) return Lnurl(lower)
 
-            // lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest).
-            if (lower.startsWith("lnbc") || lower.startsWith("lntb")) return Invoice(lower)
-
+            // Before the invoice test: `lntbob@getalby.com` is an address.
             if (isLightningAddress(lower)) return Address(lower)
+
+            // lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest).
+            if ((lower.startsWith("lnbc") || lower.startsWith("lntb")) && '@' !in lower) {
+                return Invoice(lower)
+            }
             return null
         }
 
@@ -136,9 +139,12 @@ data class LNURLAmountRange(val minMsat: Long, val maxMsat: Long) {
 
     fun check(sats: Long?): Check {
         if (sats == null || sats <= 0) return Check.Invalid
+        // Compared in sats first: `sats * 1000` wraps silently for a long
+        // enough number typed into the field, and a wrapped negative would
+        // read as "too small" — or, worse, land inside the range.
+        if (sats > maxSats) return Check.TooLarge(maxSats)
         val msat = sats * 1000
         if (msat < minMsat) return Check.TooSmall(minSats)
-        if (msat > maxMsat) return Check.TooLarge(maxSats)
         return Check.Ok(msat)
     }
 }
@@ -223,8 +229,18 @@ data class WalletTransaction(
 
         private fun number(element: JsonElement?): Long? {
             val p = element as? JsonPrimitive ?: return null
-            if (p.isString) return p.content.toLongOrNull() ?: p.content.toDoubleOrNull()?.toLong()
-            return p.longOrNull ?: p.doubleOrNull?.toLong()
+            if (p.isString) return p.content.toLongOrNull() ?: p.content.toDoubleOrNull()?.let(::wholeOrNull)
+            return p.longOrNull ?: p.doubleOrNull?.let(::wholeOrNull)
+        }
+
+        /**
+         * A double that fits a Long, truncated; null otherwise. Kotlin's
+         * toLong() would turn NaN into 0 and 1e300 into Long.MAX_VALUE —
+         * garbage that reads as a real number.
+         */
+        private fun wholeOrNull(d: Double): Long? {
+            if (d.isNaN() || d < Long.MIN_VALUE.toDouble() || d >= Long.MAX_VALUE.toDouble()) return null
+            return d.toLong()
         }
 
         /**

@@ -29,12 +29,12 @@ import com.nostrvault.service.LNURLPayResponse
 import com.nostrvault.service.LNURLService
 import com.nostrvault.service.LNURLWithdrawResponse
 import com.nostrvault.service.NWCService
+import com.nostrvault.service.NWCTimeoutException
 import com.nostrvault.service.NWCWalletException
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.screens.wallet.WalletLightningTab
 import com.nostrvault.ui.theme.*
 import com.nostrvault.util.Bolt11
-import com.nostrvault.util.Bolt11Amount
 import com.nostrvault.util.WalletTransaction
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -90,6 +90,9 @@ class WalletViewModel @Inject constructor(
 
     private val _canLoadMoreHistory = MutableStateFlow(false)
     val canLoadMoreHistory = _canLoadMoreHistory.asStateFlow()
+
+    /** A refresh asked for while a page was loading; it runs once that page lands. */
+    private var historyRefreshPending = false
 
     init {
         refreshBalance()
@@ -165,6 +168,7 @@ class WalletViewModel @Inject constructor(
         val sats = amountMsat / 1000
         viewModelScope.launch {
             _busy.value = true; _error.value = null; _message.value = null
+            var unconfirmed = false
             try {
                 val invoice = LNURLService.fetchInvoice(
                     callback = pay.callback,
@@ -173,19 +177,41 @@ class WalletViewModel @Inject constructor(
                 )
                 // LUD-06: never pay an invoice for a different amount than the
                 // one asked for — a service that swaps it is either broken or
-                // stealing.
-                if (Bolt11.amount(invoice) != Bolt11Amount.Sats(sats)) {
+                // stealing. Exact msat: whole sats would let it add up to 999.
+                if (Bolt11.msat(invoice) != amountMsat) {
                     _error.value = "$recipient returned an invoice for a different amount, so nothing was sent."
                     return@launch
                 }
-                nwcService.payInvoice(invoice)
+                try {
+                    nwcService.payInvoice(invoice)
+                } catch (e: NWCTimeoutException) {
+                    // The request reached the relay and the wallet may be paying
+                    // right now. Retrying would fetch a NEW invoice from the
+                    // service and pay twice, so clear the form instead of
+                    // leaving Send one tap away.
+                    unconfirmed = true
+                    _error.value = "Your wallet didn't confirm in time. The payment may still go " +
+                        "through, so check History before sending again."
+                    onSent()
+                    return@launch
+                }
                 _message.value = "Sent ${"%,d".format(sats)} sats to $recipient."
                 onSent()
                 refreshBalance()
                 loadHistory(reset = true)
             } catch (e: Exception) {
                 _error.value = e.message ?: "Payment failed"
-            } finally { _busy.value = false }
+            } finally {
+                _busy.value = false
+                if (unconfirmed) {
+                    // Look again once a late settlement has had a moment to land.
+                    viewModelScope.launch {
+                        delay(5_000)
+                        refreshBalance()
+                        loadHistory(reset = true)
+                    }
+                }
+            }
         }
     }
 
@@ -219,7 +245,12 @@ class WalletViewModel @Inject constructor(
 
     // ── History ───────────────────────────────────────────────────
     fun loadHistory(reset: Boolean) {
-        if (_historyLoading.value || config.value.nwcURI.isNullOrBlank()) return
+        if (config.value.nwcURI.isNullOrBlank()) return
+        if (_historyLoading.value) {
+            // A payment just finished while a page was loading: refresh after.
+            if (reset) historyRefreshPending = true
+            return
+        }
         _historyLoading.value = true
         _historyError.value = null
         val offset = if (reset) 0 else _transactions.value.size
@@ -235,6 +266,10 @@ class WalletViewModel @Inject constructor(
             } catch (e: Exception) {
                 _historyError.value = "Couldn't load history: ${e.message}"
             } finally { _historyLoading.value = false }
+            if (historyRefreshPending) {
+                historyRefreshPending = false
+                loadHistory(reset = true)
+            }
         }
     }
 

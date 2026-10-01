@@ -43,23 +43,55 @@ object Bolt11 {
      */
     private val PREFIX = Regex("""^ln(?:bc|tb|bcrt)(\d*)([munp]?)1""")
 
-    fun amount(invoice: String): Bolt11Amount {
-        val match = PREFIX.find(invoice.trim().lowercase()) ?: return Bolt11Amount.Unreadable
-        val digits = match.groupValues[1]
-        if (digits.isEmpty()) return Bolt11Amount.Unspecified
+    fun amount(invoice: String): Bolt11Amount = when (val p = parse(invoice)) {
+        is Parsed.Msat -> Bolt11Amount.Sats(p.msat / 1000L)
+        Parsed.Unspecified -> Bolt11Amount.Unspecified
+        Parsed.Unreadable -> Bolt11Amount.Unreadable
+    }
 
-        val value = digits.toLongOrNull() ?: return Bolt11Amount.Unreadable
+    /**
+     * The exact amount in millisatoshis, or null for an amountless or
+     * unreadable invoice. For checking an invoice against the amount that was
+     * asked for — [amount] rounds down to whole sats, which would let a
+     * service add up to 999 msat unnoticed.
+     */
+    fun msat(invoice: String): Long? {
+        val p = parse(invoice) as? Parsed.Msat ?: return null
+        return p.msat.takeIf { p.exact && it > 0 && it < MAX_MSAT }
+    }
+
+    /** 21 million BTC, in msat. */
+    private const val MAX_MSAT = 21_000_000L * 100_000_000_000L
+
+    /** `exact` is false for a pico amount that is not a whole msat. */
+    private sealed interface Parsed {
+        data class Msat(val msat: Long, val exact: Boolean) : Parsed
+        data object Unspecified : Parsed
+        data object Unreadable : Parsed
+    }
+
+    private fun parse(invoice: String): Parsed {
+        val match = PREFIX.find(invoice.trim().lowercase()) ?: return Parsed.Unreadable
+        val digits = match.groupValues[1]
+        if (digits.isEmpty()) return Parsed.Unspecified
+
+        val value = digits.toLongOrNull() ?: return Parsed.Unreadable
         // 1 BTC = 100_000_000_000 msat.
-        val msat = when (match.groupValues[2]) {
-            "m" -> value * 100_000_000L
-            "u" -> value * 100_000L
-            "n" -> value * 100L
+        val perUnit = when (match.groupValues[2]) {
+            "m" -> 100_000_000L
+            "u" -> 100_000L
+            "n" -> 100L
             // pico-BTC is a tenth of a msat; a valid pico amount is a multiple of 10.
-            "p" -> value / 10L
-            "" -> value * 100_000_000_000L
-            else -> return Bolt11Amount.Unreadable
+            "p" -> return Parsed.Msat(value / 10L, exact = value % 10L == 0L)
+            "" -> 100_000_000_000L
+            else -> return Parsed.Unreadable
         }
-        return Bolt11Amount.Sats(msat / 1000L)
+        // The amount comes off the wire and nothing upstream bounds its
+        // length; Long multiplication would wrap silently.
+        val msat = try { Math.multiplyExact(value, perUnit) } catch (_: ArithmeticException) {
+            return Parsed.Unreadable
+        }
+        return Parsed.Msat(msat, exact = true)
     }
 
     /** Sats, or null when the invoice names no readable positive amount. */

@@ -250,7 +250,7 @@ class NWCService @Inject constructor(
                 if (!isCompleted) {
                     isCompleted = true
                     client.disconnect()
-                    cont.resumeWithException(NWCException("Request timed out"))
+                    cont.resumeWithException(NWCTimeoutException())
                 }
             }
 
@@ -314,6 +314,12 @@ data class NIP47Error(
 )
 
 open class NWCException(message: String) : Exception(message)
+
+/**
+ * No reply within the timeout. The request was already published, so the
+ * wallet may have acted on it — for pay_invoice, the payment may still settle.
+ */
+class NWCTimeoutException : NWCException("Request timed out")
 
 /**
  * A NIP-47 error the wallet answered with, keeping its code so callers can

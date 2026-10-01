@@ -61,6 +61,14 @@ class LightningPayTargetTest {
         assertNull(parse("has space@domain.com"))
     }
 
+    /** Address before invoice prefix: `lntbob@getalby.com` is a person, not testnet. */
+    @Test fun `address that looks like an invoice prefix`() {
+        assertEquals(LightningPayTarget.Address("lntbob@getalby.com"), parse("lntbob@getalby.com"))
+        assertEquals(LightningPayTarget.Address("lnbc@pay.example.com"), parse("lnbc@pay.example.com"))
+        // Not an address and not an invoice: bolt11 never contains '@'.
+        assertNull(parse("lnbc@nodomain"))
+    }
+
     @Test fun `bech32 LNURL`() {
         assertEquals(LightningPayTarget.Lnurl(lnurl.lowercase()), parse(lnurl))
         assertEquals(LightningPayTarget.Lnurl(lnurl.lowercase()), parse("lightning:$lnurl"))
@@ -128,6 +136,20 @@ class LightningPayTargetTest {
         assertEquals(LNURLAmountRange.Check.TooLarge(9), r.check(10))
     }
 
+    /**
+     * A long run of digits must not wrap: this check runs as the user types,
+     * and a wrapped product reads as a small or even in-range amount.
+     */
+    @Test fun `huge amount does not overflow`() {
+        val r = LNURLAmountRange(minMsat = 1_000, maxMsat = 100_000_000)
+        assertEquals(LNURLAmountRange.Check.TooLarge(100_000), r.check(10_000_000_000_000_000L))
+        assertEquals(LNURLAmountRange.Check.TooLarge(100_000), r.check(Long.MAX_VALUE))
+        // 18_446_744_073_709_552 sats * 1000 wraps to 384 msat: inside a
+        // range that starts at 1 msat. It must still be refused.
+        val wide = LNURLAmountRange(minMsat = 1, maxMsat = 1_000_000)
+        assertEquals(LNURLAmountRange.Check.TooLarge(1_000), wide.check(18_446_744_073_709_552L))
+    }
+
     @Test fun `fixed amount`() {
         assertTrue(LNURLAmountRange(minMsat = 50_000, maxMsat = 50_000).isFixed)
     }
@@ -189,6 +211,17 @@ class LightningPayTargetTest {
             "incoming-7-3",
             WalletTransaction.fromNip47(obj("""{"type":"incoming","amount":3000,"created_at":7}"""))?.id,
         )
+    }
+
+    /** NaN and 1e300 read as absent, not as 0-by-accident or Long.MAX_VALUE. */
+    @Test fun `out of range numbers read as absent`() {
+        assertEquals(0L, WalletTransaction.fromNip47(obj("""{"type":"incoming","created_at":1,"amount":"NaN"}"""))?.amountSats)
+        assertEquals(0L, WalletTransaction.fromNip47(obj("""{"type":"incoming","created_at":1,"amount":1e300}"""))?.amountSats)
+        assertEquals(0L, WalletTransaction.fromNip47(obj("""{"type":"incoming","created_at":1,"amount":"1e300"}"""))?.amountSats)
+        assertEquals(0L, WalletTransaction.fromNip47(obj("""{"type":"outgoing","created_at":1,"amount":1,"fees_paid":"Infinity"}"""))?.feeSats)
+        // A time that does not fit is no time, so the entry is dropped.
+        assertNull(WalletTransaction.fromNip47(obj("""{"type":"incoming","created_at":1e300}""")))
+        assertNull(WalletTransaction.fromNip47(obj("""{"type":"incoming","created_at":1,"settled_at":"NaN"}"""))?.settledAt)
     }
 
     @Test fun `unusable entries are dropped`() {
