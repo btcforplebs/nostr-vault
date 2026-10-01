@@ -92,6 +92,28 @@ final class ZapHistoryTests: XCTestCase {
         XCTAssertNil(m[other.id])
     }
 
+    /// A forger can copy a real receipt's bolt11 into a receipt of their own.
+    /// Two receipts that disagree about one payment: neither is shown.
+    func testConflictingReceiptsForOnePaymentShowNeither() {
+        let real = ZapReceipt(tags: [["bolt11", specInvoice],
+                                     ["description", zapRequest(from: alice, to: bob, post: post, content: "nice")]])!
+        let fake = ZapReceipt(tags: [["bolt11", specInvoice],
+                                     ["description", zapRequest(from: alice, to: bob, post: post, content: "refund me at evil")]])!
+        let byHash = WalletTransaction(nip47: ["type": "incoming", "created_at": 1, "payment_hash": specHash])!
+        let byInvoice = WalletTransaction(id: "inv", direction: .incoming, state: .settled, amountSats: 1, feeSats: 0,
+                                          description: nil, createdAt: Date(), settledAt: nil,
+                                          paymentHash: nil, invoice: specInvoice)
+        XCTAssertTrue(ZapReceipt.match([byHash, byInvoice], [real, fake]).isEmpty)
+        // The same receipt twice (it came back from two relays) is no conflict.
+        XCTAssertEqual(ZapReceipt.match([byHash], [real, real])[byHash.id]?.comment, "nice")
+    }
+
+    /// The raw request is kept so the service can check its signature.
+    func testZapDetailKeepsTheRequestText() {
+        let json = zapRequest(from: alice, to: bob, post: nil)
+        XCTAssertEqual(ZapDetail.fromZapRequest(json: "  " + json + "\n")?.requestJSON, json)
+    }
+
     func testReceiptMissingPartsIsDropped() {
         XCTAssertNil(ZapReceipt(tags: [["bolt11", specInvoice]]))
         XCTAssertNil(ZapReceipt(tags: [["description", zapRequest(from: alice, to: bob, post: nil)]]))

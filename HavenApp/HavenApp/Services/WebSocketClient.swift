@@ -435,6 +435,21 @@ struct Bech32 {
         return Result(hrp: hrp, data: Data(result))
     }
 
+    /// Whether `bechString` carries a valid bech32 checksum. `decode` skips
+    /// it, so a mistyped or altered string still decodes to *something*;
+    /// callers that will act on the payload (an LNURL to pay) check here.
+    static func hasValidChecksum(_ bechString: String) -> Bool {
+        let lower = bechString.lowercased()
+        guard let pos = lower.lastIndex(of: "1"), pos != lower.startIndex else { return false }
+        var data = [UInt8]()
+        for char in lower[lower.index(after: pos)...] {
+            guard let index = alphabet.firstIndex(of: char) else { return false }
+            data.append(UInt8(alphabet.distance(from: alphabet.startIndex, to: index)))
+        }
+        guard data.count >= 6 else { return false }
+        return polymod(expandHrp(String(lower[..<pos])) + data) == 1
+    }
+
     static func encode(hrp: String, data: Data) -> String? {
         guard let converted = convertBits(data: Array(data), from: 8, to: 5, pad: true) else { return nil }
 

@@ -20,6 +20,10 @@ struct ZapDetail: Equatable {
     /// What the sender wrote with the zap.
     let comment: String?
     let isAnonymous: Bool
+    /// The zap request exactly as it arrived, so its signature can be checked
+    /// before any of the above is believed: the fields are whatever its
+    /// author wrote, and only a valid signature makes the author who it says.
+    var requestJSON: String? = nil
 
     /// The person on the other side of the payment from `me`.
     func counterparty(me: String, direction: WalletTransaction.Direction) -> String? {
@@ -35,8 +39,10 @@ struct ZapDetail: Equatable {
         let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("{"),
               let data = trimmed.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return fromZapRequest(obj)
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var detail = fromZapRequest(obj) else { return nil }
+        detail.requestJSON = trimmed
+        return detail
     }
 
     static func fromZapRequest(_ obj: [String: Any]) -> ZapDetail? {
@@ -80,18 +86,28 @@ struct ZapReceipt: Equatable {
 
     /// Pairs each transaction with its receipt: by payment hash when both
     /// sides have one, otherwise by the invoice text itself.
+    ///
+    /// Two receipts that tell different stories about the same payment mean
+    /// at least one is forged, and there is no telling which: that payment
+    /// gets neither.
     static func match(_ transactions: [WalletTransaction], _ receipts: [ZapReceipt]) -> [String: ZapDetail] {
         var byHash: [String: ZapDetail] = [:]
         var byInvoice: [String: ZapDetail] = [:]
+        var conflictedHashes = Set<String>()
+        var conflictedInvoices = Set<String>()
         for r in receipts {
-            if let h = r.paymentHash { byHash[h] = r.detail }
+            if let h = r.paymentHash {
+                if let seen = byHash[h], seen != r.detail { conflictedHashes.insert(h) }
+                byHash[h] = r.detail
+            }
+            if let seen = byInvoice[r.bolt11], seen != r.detail { conflictedInvoices.insert(r.bolt11) }
             byInvoice[r.bolt11] = r.detail
         }
         var out: [String: ZapDetail] = [:]
         for tx in transactions {
-            if let h = tx.paymentHash, let d = byHash[h] {
-                out[tx.id] = d
-            } else if let inv = tx.invoice?.lowercased(), let d = byInvoice[inv] {
+            if let h = tx.paymentHash, byHash[h] != nil {
+                if !conflictedHashes.contains(h) { out[tx.id] = byHash[h] }
+            } else if let inv = tx.invoice?.lowercased(), let d = byInvoice[inv], !conflictedInvoices.contains(inv) {
                 out[tx.id] = d
             }
         }

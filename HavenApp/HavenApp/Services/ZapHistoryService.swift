@@ -21,9 +21,13 @@ enum ZapHistoryService {
         var result = Result()
 
         // 1. Wallets that return the zap request as the description need no
-        //    network at all.
+        //    network at all. The payer wrote that request, so it is believed
+        //    only with a valid signature.
         for tx in transactions {
-            if let zap = tx.zap { result.details[tx.id] = zap }
+            if let zap = tx.zap, let json = zap.requestJSON, NostrEventVerifier.isValid(json: json),
+               fits(zap, tx, me: me) {
+                result.details[tx.id] = zap
+            }
         }
 
         // 2. Receipts for the rest, over the time span the page covers.
@@ -39,16 +43,24 @@ enum ZapHistoryService {
                 ["kinds": [9735], "#P": [me], "since": since, "until": until, "limit": 500],
             ]
             let events = await query(filters: filters, relays: relayURLs(me: me))
-            let receipts = events.compactMap { ($0["tags"] as? [[String]]).flatMap(ZapReceipt.init(tags:)) }
-            result.details.merge(ZapReceipt.match(unresolved, receipts)) { current, _ in current }
+            var receipts: [ZapReceipt] = []
+            for event in events {
+                if let receipt = await trustedReceipt(event) { receipts.append(receipt) }
+            }
+            let byTx = Dictionary(uniqueKeysWithValues: unresolved.map { ($0.id, $0) })
+            for (txId, detail) in ZapReceipt.match(unresolved, receipts) {
+                guard result.details[txId] == nil, let tx = byTx[txId], fits(detail, tx, me: me) else { continue }
+                result.details[txId] = detail
+            }
         }
 
         // 3. The zapped posts, for the "on: …" line and tap-to-open.
         let postIds = Array(Set(result.details.values.compactMap(\.postId)))
         if !postIds.isEmpty {
             let events = await query(filters: [["ids": postIds, "limit": postIds.count]], relays: relayURLs(me: me))
+            let wanted = Set(postIds)
             for e in events {
-                guard let id = e["id"] as? String,
+                guard let id = e["id"] as? String, wanted.contains(id), NostrEventVerifier.isValid(e),
                       let pubkey = e["pubkey"] as? String,
                       let kind = e["kind"] as? Int,
                       let createdAt = (e["created_at"] as? NSNumber)?.doubleValue else { continue }
@@ -66,6 +78,35 @@ enum ZapHistoryService {
         NostrService.shared.fetchMissingProfiles(for: Array(Set(people + authors)))
 
         return result
+    }
+
+    /// A receipt is anyone's event until proven otherwise. Believed only when
+    /// it is signed, the zap request inside it is signed, and it was
+    /// published by the key the zapped person's own LNURL service names
+    /// (`nostrPubkey`). Without the last check, anyone could copy a real
+    /// receipt's bolt11 into one of their own and put any sender, post or
+    /// comment ("refund me at …") on your payment.
+    private static func trustedReceipt(_ event: [String: Any]) async -> ZapReceipt? {
+        guard (event["kind"] as? Int) == 9735,
+              let publisher = event["pubkey"] as? String,
+              let tags = event["tags"] as? [[String]],
+              let receipt = ZapReceipt(tags: tags),
+              let requestJSON = receipt.detail.requestJSON,
+              let recipient = receipt.detail.recipientPubkey,
+              NostrEventVerifier.isValid(event),
+              NostrEventVerifier.isValid(json: requestJSON),
+              let authorized = await ZapValidationService.authorizedPublisher(for: recipient),
+              authorized.lowercased() == publisher.lowercased() else { return nil }
+        return receipt
+    }
+
+    /// A zap you received was made out to you; one you sent was made by you
+    /// (or anonymously, from a throwaway key).
+    private static func fits(_ zap: ZapDetail, _ tx: WalletTransaction, me: String) -> Bool {
+        switch tx.direction {
+        case .incoming: return zap.recipientPubkey?.lowercased() == me.lowercased()
+        case .outgoing: return zap.isAnonymous || zap.senderPubkey.lowercased() == me.lowercased()
+        }
     }
 
     /// Your relay first (it is local and holds what was sent to you), then
