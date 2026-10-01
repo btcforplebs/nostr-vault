@@ -40,17 +40,47 @@ final class ZapFlightCoordinator: ObservableObject {
 
     @Published private(set) var flights: [Flight] = []
 
-    /// Window-space frame of the signed-in account's avatar. Not published:
-    /// it moves with the tab bar's collapse animation, and nothing should
-    /// re-render for that — it is only read at the moment of launch.
-    var originFrame: CGRect = .zero
+    /// Window-space frames of every on-screen copy of the signed-in
+    /// account's avatar, keyed per copy so one leaving the screen can never
+    /// erase another's. Not published: they move with the tab bar's collapse
+    /// animation, and nothing should re-render for that — they are only read
+    /// at the moment of launch.
+    private var origins: [UUID: CGRect] = [:]
+    private var latestOrigin: UUID?
+
+    /// Window-space frame of the stage, for launching from the bottom of the
+    /// screen when no avatar has reported where it is.
+    var stageFrame: CGRect = .zero
+
+    func setOrigin(_ frame: CGRect, for id: UUID) {
+        origins[id] = frame
+        latestOrigin = id
+    }
+
+    func clearOrigin(_ id: UUID) {
+        origins[id] = nil
+        if latestOrigin == id { latestOrigin = origins.keys.first }
+    }
+
+    private var originFrame: CGRect {
+        if let id = latestOrigin, let frame = origins[id], frame != .zero { return frame }
+        guard stageFrame != .zero else { return .zero }
+        // Where the tab bar's avatar sits, give or take.
+        return CGRect(x: stageFrame.midX - 12, y: stageFrame.maxY - 72, width: 24, height: 24)
+    }
 
     /// Starts a flight towards `target` and calls `onArrive` as it lands.
     /// Returns `false` — and does nothing — when there's no flight to show
-    /// (Reduce Motion, or no avatar on screen to launch from), so the caller
-    /// can fall back to the burst on its own.
+    /// (Reduce Motion, or nowhere to fly between), so the caller can fall
+    /// back to the burst on its own.
     func launch(to target: ZapFlightAnchor, onArrive: @escaping () -> Void) -> Bool {
-        guard !Motion.isReduced, originFrame != .zero, target.frame != .zero else { return false }
+        let originFrame = originFrame
+        guard !Motion.isReduced, originFrame != .zero, target.frame != .zero else {
+            RelayProcessManager.shared.addLog(
+                "Zap flight skipped: reduceMotion=\(Motion.isReduced) origin=\(originFrame) target=\(target.frame) stage=\(stageFrame)"
+            )
+            return false
+        }
 
         let start = CGPoint(x: originFrame.midX, y: originFrame.midY)
         let end = CGPoint(x: target.frame.midX, y: target.frame.midY)
@@ -168,6 +198,10 @@ struct ZapFlightStage: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let stageFrame = proxy.frame(in: .global)
+            Color.clear
+                .onAppear { coordinator.stageFrame = stageFrame }
+                .onChange(of: stageFrame) { _, newFrame in coordinator.stageFrame = newFrame }
             if !coordinator.flights.isEmpty {
                 // Anchors are measured in window space; the stage may not sit
                 // exactly at the window's origin, so shift into its own space.
@@ -281,17 +315,7 @@ extension View {
     /// when more than one is on screen (the tab bar mid-collapse), the last
     /// to lay out wins, and one leaving the screen only clears its own frame.
     func zapFlightOrigin() -> some View {
-        background(GeometryReader { proxy in
-            let frame = proxy.frame(in: .global)
-            Color.clear
-                .onAppear { ZapFlightCoordinator.shared.originFrame = frame }
-                .onChange(of: frame) { _, newFrame in ZapFlightCoordinator.shared.originFrame = newFrame }
-                .onDisappear {
-                    if ZapFlightCoordinator.shared.originFrame == frame {
-                        ZapFlightCoordinator.shared.originFrame = .zero
-                    }
-                }
-        })
+        modifier(ZapFlightOriginModifier())
     }
 
     /// Keeps `anchor` holding this view's window-space frame, so a flight can
@@ -302,6 +326,20 @@ extension View {
             Color.clear
                 .onAppear { anchor.frame = frame }
                 .onChange(of: frame) { _, newFrame in anchor.frame = newFrame }
+        })
+    }
+}
+
+private struct ZapFlightOriginModifier: ViewModifier {
+    @State private var id = UUID()
+
+    func body(content: Content) -> some View {
+        content.background(GeometryReader { proxy in
+            let frame = proxy.frame(in: .global)
+            Color.clear
+                .onAppear { ZapFlightCoordinator.shared.setOrigin(frame, for: id) }
+                .onChange(of: frame) { _, newFrame in ZapFlightCoordinator.shared.setOrigin(newFrame, for: id) }
+                .onDisappear { ZapFlightCoordinator.shared.clearOrigin(id) }
         })
     }
 }
