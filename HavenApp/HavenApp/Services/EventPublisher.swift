@@ -126,3 +126,19 @@ enum EventPublisher {
         return .image
     }
 }
+
+/// Checks an event received from a relay: its id must be the NIP-01 hash of
+/// its contents and its sig a valid schnorr signature by its pubkey. A relay
+/// can send anything under any id and any author; nothing else proves either.
+enum NostrEventVerifier {
+    static func isValid(_ event: [String: Any]) -> Bool {
+        guard JSONSerialization.isValidJSONObject(event),
+              let data = try? JSONSerialization.data(withJSONObject: event),
+              let json = String(data: data, encoding: .utf8) else { return false }
+        return isValid(json: json)
+    }
+
+    static func isValid(json: String) -> Bool {
+        json.withCString { VerifyEventC(UnsafeMutablePointer(mutating: $0)) } == 1
+    }
+}

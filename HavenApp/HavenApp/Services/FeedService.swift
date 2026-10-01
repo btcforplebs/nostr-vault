@@ -3525,6 +3525,17 @@ class FeedService: ObservableObject {
         // notes[] by the 800-cap flush, in which case we still need it in parentNotesCache.
         guard findNote(id: id) == nil else { return }
 
+        // Only what was asked for, and only if it is genuine. These come from
+        // relay hints and outboxes named in other people's notes, so any of
+        // them can answer with a note under any id and any author's name —
+        // and this one is shown as that author's post and can be embedded in
+        // your reposts.
+        let dTag = tags.first { $0.count >= 2 && $0[0] == "d" }?[1] ?? ""
+        let coordinate = "\(QuoteReference.coordinatePrefix)\(kind):\(pubkey):\(dTag)"
+        guard fetchingNoteIds.contains(id) || unavailableNoteIds.contains(id)
+                || fetchingNoteIds.contains(coordinate) || unavailableNoteIds.contains(coordinate),
+              NostrEventVerifier.isValid(ev) else { return }
+
         let note = FeedNote(
             id: id,
             pubkey: pubkey,
