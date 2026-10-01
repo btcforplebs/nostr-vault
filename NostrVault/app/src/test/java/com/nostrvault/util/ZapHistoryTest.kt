@@ -136,6 +136,32 @@ class ZapHistoryTest {
         assertNull(m[other.id])
     }
 
+    /**
+     * A forger can copy a real receipt's bolt11 into a receipt of their own.
+     * Two receipts that disagree about one payment: neither is shown.
+     */
+    @Test fun `conflicting receipts for one payment show neither`() {
+        val real = ZapReceipt.fromTags(listOf(listOf("bolt11", specInvoice),
+            listOf("description", zapRequest(from = alice, to = bob, post = post, content = "nice"))))!!
+        val fake = ZapReceipt.fromTags(listOf(listOf("bolt11", specInvoice),
+            listOf("description", zapRequest(from = alice, to = bob, post = post, content = "refund me at evil"))))!!
+        val byHash = nip47("type" to "incoming", "created_at" to 1, "payment_hash" to specHash)!!
+        val byInvoice = WalletTransaction(
+            id = "inv", direction = WalletTransaction.Direction.INCOMING, state = WalletTransaction.State.SETTLED,
+            amountSats = 1, feeSats = 0, description = null, createdAt = 1, settledAt = null,
+            paymentHash = null, invoice = specInvoice,
+        )
+        assertEquals(emptyMap<String, ZapDetail>(), ZapReceipt.match(listOf(byHash, byInvoice), listOf(real, fake)))
+        // The same receipt twice (it came back from two relays) is no conflict.
+        assertEquals("nice", ZapReceipt.match(listOf(byHash), listOf(real, real))[byHash.id]?.comment)
+    }
+
+    /** The raw request is kept so the service can check its signature. */
+    @Test fun `zap detail keeps the request text`() {
+        val json = zapRequest(from = alice, to = bob, post = null)
+        assertEquals(json, ZapDetail.fromZapRequest("  $json\n")?.requestJson)
+    }
+
     @Test fun `receipt missing parts is dropped`() {
         assertNull(ZapReceipt.fromTags(listOf(listOf("bolt11", specInvoice))))
         assertNull(ZapReceipt.fromTags(listOf(listOf("description", zapRequest(from = alice, to = bob, post = null)))))

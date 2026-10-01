@@ -34,6 +34,12 @@ data class ZapDetail(
     /** What the sender wrote with the zap. */
     val comment: String?,
     val isAnonymous: Boolean,
+    /**
+     * The zap request exactly as it arrived, so its signature can be checked
+     * before any of the above is believed: the fields are whatever its author
+     * wrote, and only a valid signature makes the author who it says.
+     */
+    val requestJson: String? = null,
 ) {
     /** The person on the other side of the payment from `me`. */
     fun counterparty(me: String, direction: WalletTransaction.Direction): String? = when (direction) {
@@ -52,7 +58,7 @@ data class ZapDetail(
             val trimmed = text.trim()
             if (!trimmed.startsWith("{")) return null
             val obj = runCatching { json.parseToJsonElement(trimmed) as? JsonObject }.getOrNull() ?: return null
-            return fromZapRequest(obj)
+            return fromZapRequest(obj)?.copy(requestJson = trimmed)
         }
 
         fun fromZapRequest(obj: JsonObject): ZapDetail? {
@@ -112,19 +118,33 @@ data class ZapReceipt(
          * Pairs each transaction with its receipt: by payment hash when both
          * sides have one, otherwise by the invoice text itself. Keyed by
          * transaction id.
+         *
+         * Two receipts that tell different stories about the same payment mean
+         * at least one is forged, and there is no telling which: that payment
+         * gets neither.
          */
         fun match(transactions: List<WalletTransaction>, receipts: List<ZapReceipt>): Map<String, ZapDetail> {
             val byHash = HashMap<String, ZapDetail>()
             val byInvoice = HashMap<String, ZapDetail>()
+            val conflictedHashes = HashSet<String>()
+            val conflictedInvoices = HashSet<String>()
             for (r in receipts) {
-                r.paymentHash?.let { byHash[it] = r.detail }
+                r.paymentHash?.let { h ->
+                    if (byHash[h]?.let { it != r.detail } == true) conflictedHashes.add(h)
+                    byHash[h] = r.detail
+                }
+                if (byInvoice[r.bolt11]?.let { it != r.detail } == true) conflictedInvoices.add(r.bolt11)
                 byInvoice[r.bolt11] = r.detail
             }
             val out = LinkedHashMap<String, ZapDetail>()
             for (tx in transactions) {
-                val byH = tx.paymentHash?.let { byHash[it] }
-                val found = byH ?: tx.invoice?.lowercase()?.let { byInvoice[it] }
-                if (found != null) out[tx.id] = found
+                val hash = tx.paymentHash
+                if (hash != null && hash in byHash) {
+                    if (hash !in conflictedHashes) out[tx.id] = byHash.getValue(hash)
+                    continue
+                }
+                val inv = tx.invoice?.lowercase() ?: continue
+                if (inv !in conflictedInvoices) byInvoice[inv]?.let { out[tx.id] = it }
             }
             return out
         }

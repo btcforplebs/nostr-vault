@@ -2,10 +2,12 @@ package com.nostrvault.service
 
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.relay.HavenBridge
 import com.nostrvault.util.WalletTransaction
 import com.nostrvault.util.ZapDetail
 import com.nostrvault.util.ZapDetail.Companion.parseTags
 import com.nostrvault.util.ZapReceipt
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -41,9 +43,14 @@ class ZapHistoryService @Inject constructor(
         if (me.isEmpty() || transactions.isEmpty()) return Result()
 
         // 1. Wallets that return the zap request as the description need no
-        //    network at all.
+        //    network at all. The payer wrote that request, so it is believed
+        //    only with a valid signature.
         val details = LinkedHashMap<String, ZapDetail>()
-        for (tx in transactions) tx.zap?.let { details[tx.id] = it }
+        for (tx in transactions) {
+            val zap = tx.zap ?: continue
+            val json = zap.requestJson ?: continue
+            if (HavenBridge.verifyEvent(json) && fits(zap, tx, me)) details[tx.id] = zap
+        }
 
         val relays = relayUrls(me)
 
@@ -57,9 +64,12 @@ class ZapHistoryService @Inject constructor(
             val filters = listOf("#p", "#P").map { tag ->
                 """{"kinds":[9735],"$tag":["$me"],"since":$since,"until":$until,"limit":500}"""
             }
-            val receipts = nostrService.queryRawEvents(filters, relays)
-                .mapNotNull { ZapReceipt.fromTags(parseTags(it["tags"])) }
-            for ((id, zap) in ZapReceipt.match(unresolved, receipts)) details.putIfAbsent(id, zap)
+            val receipts = nostrService.queryRawEvents(filters, relays).mapNotNull { trustedReceipt(it) }
+            val byTx = unresolved.associateBy { it.id }
+            for ((id, zap) in ZapReceipt.match(unresolved, receipts)) {
+                val tx = byTx[id] ?: continue
+                if (fits(zap, tx, me)) details.putIfAbsent(id, zap)
+            }
         }
 
         // 3. The zapped posts, for the "on: …" line and tap-to-open.
@@ -68,8 +78,11 @@ class ZapHistoryService @Inject constructor(
             .filter { it.length == 64 && it.all { c -> c in '0'..'9' || c in 'a'..'f' } }
         if (postIds.isNotEmpty()) {
             val ids = postIds.joinToString(",") { "\"$it\"" }
+            val wanted = postIds.toSet()
             for (e in nostrService.queryRawEvents(listOf("""{"ids":[$ids],"limit":${postIds.size}}"""), relays)) {
                 val id = e["id"].string() ?: continue
+                // Shown as that author's post, and cached for the note screen.
+                if (id !in wanted || !HavenBridge.verifyEvent(e.toString())) continue
                 val pubkey = e["pubkey"].string() ?: continue
                 val kind = (e["kind"] as? JsonPrimitive)?.intOrNull ?: continue
                 val createdAt = (e["created_at"] as? JsonPrimitive)?.longOrNull ?: continue
@@ -91,6 +104,34 @@ class ZapHistoryService @Inject constructor(
         if (missing.isNotEmpty()) nostrService.fetchMissingProfiles(missing)
 
         return Result(details, posts)
+    }
+
+    /**
+     * A receipt is anyone's event until proven otherwise. Believed only when
+     * it is signed, the zap request inside it is signed, and it was published
+     * by the key the zapped person's own LNURL service names (`nostrPubkey`).
+     * Without the last check, anyone could copy a real receipt's bolt11 into
+     * one of their own and put any sender, post or comment ("refund me at …")
+     * on your payment.
+     */
+    private suspend fun trustedReceipt(event: JsonObject): ZapReceipt? {
+        if ((event["kind"] as? JsonPrimitive)?.intOrNull != 9735) return null
+        val publisher = event["pubkey"].string() ?: return null
+        val receipt = ZapReceipt.fromTags(parseTags(event["tags"])) ?: return null
+        val requestJson = receipt.detail.requestJson ?: return null
+        val recipient = receipt.detail.recipientPubkey ?: return null
+        if (!HavenBridge.verifyEvent(event.toString()) || !HavenBridge.verifyEvent(requestJson)) return null
+        val authorized = ZapValidationService.authorizedPublisher(recipient, nostrService.profiles.value) ?: return null
+        return receipt.takeIf { authorized.equals(publisher, ignoreCase = true) }
+    }
+
+    /**
+     * A zap you received was made out to you; one you sent was made by you (or
+     * anonymously, from a throwaway key).
+     */
+    private fun fits(zap: ZapDetail, tx: WalletTransaction, me: String): Boolean = when (tx.direction) {
+        WalletTransaction.Direction.INCOMING -> zap.recipientPubkey.equals(me, ignoreCase = true)
+        WalletTransaction.Direction.OUTGOING -> zap.isAnonymous || zap.senderPubkey.equals(me, ignoreCase = true)
     }
 
     /**

@@ -31,6 +31,14 @@ object LNURLService {
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
+        // A network interceptor runs for every hop, redirects included.
+        .addNetworkInterceptor { chain ->
+            val url = chain.request().url
+            if (!url.isHttps && !url.host.endsWith(".onion")) {
+                throw IOException("Refused an insecure (non-https) payment link")
+            }
+            chain.proceed(chain.request())
+        }
         .build()
 
     // ══════════════════════════════════════════════════════════════════
@@ -134,7 +142,8 @@ object LNURLService {
             is LightningPayTarget.LnurlUrl -> target.url
         }
         val httpUrl = url.toHttpUrlOrNull() ?: throw LNURLError.InvalidAddress
-        Log.d(TAG, "Resolving $httpUrl")
+        // Host only: a withdraw link's query carries its k1 secret.
+        Log.d(TAG, "Resolving ${httpUrl.host}")
 
         val request = Request.Builder().url(httpUrl).get().build()
         val (code, body) = try {
@@ -284,8 +293,11 @@ object Bech32 {
             val pos = lower.lastIndexOf("1")
             if (pos < 1) return null
 
-            val data = lower.substring(pos + 1).dropLast(6) // Remove checksum
-            val decoded = data.map { CHARSET.indexOf(it) }.filter { it >= 0 }
+            val words = lower.substring(pos + 1).map { CHARSET.indexOf(it) }
+            // A mistyped or altered LNURL must not decode to some other URL.
+            if (words.size < 6 || words.any { it < 0 }) return null
+            if (polymod(expandHrp(lower.substring(0, pos)) + words) != 1) return null
+            val decoded = words.dropLast(6) // Remove checksum
 
             // Convert 5-bit groups to 8-bit bytes
             val bytes = convertBits(decoded, 5, 8, false) ?: return null
@@ -294,6 +306,20 @@ object Bech32 {
             Log.w("Bech32", "LNURL decode failed: ${e.message}")
             null
         }
+    }
+
+    private fun expandHrp(hrp: String): List<Int> =
+        hrp.map { it.code shr 5 } + 0 + hrp.map { it.code and 31 }
+
+    private fun polymod(values: List<Int>): Int {
+        val gen = intArrayOf(0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3)
+        var chk = 1
+        for (v in values) {
+            val top = chk ushr 25
+            chk = ((chk and 0x1ffffff) shl 5) xor v
+            for (i in 0 until 5) if ((top shr i) and 1 == 1) chk = chk xor gen[i]
+        }
+        return chk
     }
 
     private fun convertBits(data: List<Int>, fromBits: Int, toBits: Int, pad: Boolean): List<Byte>? {
