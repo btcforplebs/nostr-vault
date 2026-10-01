@@ -2,6 +2,9 @@ import SwiftUI
 import AVKit
 import CryptoKit
 import os.log
+#if os(iOS)
+import Photos
+#endif
 
 struct IdentifiableURL: Identifiable {
     let id = UUID()
@@ -89,6 +92,9 @@ struct FeedMediaViewer: View {
     @State private var isDeleting: Bool = false
     @State private var deleteStatus: DeleteStatus? = nil
     @State private var isCopied: Bool = false
+    @State private var photosSave: PhotosSave = .idle
+
+    enum PhotosSave { case idle, saving, saved }
 
     enum MirrorStatus {
         case loading
@@ -285,6 +291,35 @@ struct FeedMediaViewer: View {
                             }
                         }
                     }
+                    #if os(iOS)
+                    if !isLoadingType {
+                        Button {
+                            saveToPhotosTapped()
+                        } label: {
+                            HStack(spacing: 6) {
+                                if photosSave == .saving {
+                                    ProgressView().controlSize(.small).tint(.white)
+                                } else {
+                                    Image(systemName: photosSave == .saved ? "checkmark.circle.fill" : "square.and.arrow.down")
+                                        .font(.appSystem(size: 16, weight: .semibold))
+                                }
+                                Text(photosSave == .saved ? "Saved" : "Save to Photos")
+                                    .font(.appSystem(size: 12, weight: .bold, design: .rounded))
+                            }
+                            .foregroundColor(.white.opacity(0.95))
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 14)
+                            .background(
+                                Capsule()
+                                    .fill(photosSave == .saved ? Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8) : Color.black.opacity(0.6))
+                                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                            )
+                            .shadow(color: Color.black.opacity(0.3), radius: 4)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(photosSave != .idle)
+                    }
+                    #endif
                     Spacer()
                     Button {
                         performDismiss()
@@ -343,6 +378,7 @@ struct FeedMediaViewer: View {
             }
         }
         .task(id: url) {
+            photosSave = .idle
             updateMirrorStatus()
         }
         #if os(iOS)
@@ -400,6 +436,55 @@ struct FeedMediaViewer: View {
                 .padding(.horizontal)
         }
     }
+
+    #if os(iOS)
+    /// Downloads the media as shown and adds it to the Photos library.
+    /// A video goes in as a file so Photos keeps it a video.
+    private func saveToPhotosTapped() {
+        photosSave = .saving
+        let mediaURL = url
+        let asVideo = isVideo
+        Task {
+            func fail(_ message: String) async {
+                await MainActor.run {
+                    photosSave = .idle
+                    ErrorNotificationManager.shared.show(message, icon: "exclamationmark.triangle.fill")
+                }
+            }
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else {
+                await fail("Allow Nostr Vault to add to Photos in Settings")
+                return
+            }
+            let session = URLSession(configuration: .default, delegate: LocalhostTrustDelegate(), delegateQueue: nil)
+            defer { session.finishTasksAndInvalidate() }
+            do {
+                let (data, response) = try await session.data(from: mediaURL)
+                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                    await fail("Couldn't download the media (HTTP \(http.statusCode))")
+                    return
+                }
+                if asVideo {
+                    let ext = mediaURL.pathExtension.isEmpty ? "mp4" : mediaURL.pathExtension
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + ext)
+                    try data.write(to: tempURL)
+                    defer { try? FileManager.default.removeItem(at: tempURL) }
+                    try await PHPhotoLibrary.shared().performChanges {
+                        PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: tempURL, options: nil)
+                    }
+                } else {
+                    try await PHPhotoLibrary.shared().performChanges {
+                        PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
+                    }
+                }
+                await MainActor.run { photosSave = .saved }
+            } catch {
+                logger.error("Save to Photos failed: \(error.localizedDescription)")
+                await fail("Couldn't save to Photos")
+            }
+        }
+    }
+    #endif
 
     private func mirrorToBlossomTapped() {
         isMirroring = true
