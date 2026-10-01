@@ -670,6 +670,24 @@ func SignEventC(jsonStr *C.char, sk *C.char) *C.char {
 	return C.CString(string(res))
 }
 
+// VerifyEventC returns 1 when the event JSON's id is the NIP-01 hash of its
+// contents and its sig is a valid schnorr signature by its pubkey, else 0.
+//
+//export VerifyEventC
+func VerifyEventC(jsonStr *C.char) C.int {
+	event := nostr.Event{}
+	if err := easyjson.Unmarshal([]byte(C.GoString(jsonStr)), &event); err != nil {
+		return 0
+	}
+	if !event.CheckID() {
+		return 0
+	}
+	if ok, err := event.CheckSignature(); err != nil || !ok {
+		return 0
+	}
+	return 1
+}
+
 // countLeadingZeroBits counts leading zero bits in a byte slice (typically a 32-byte SHA-256 hash).
 func countLeadingZeroBits(data []byte) int {
 	n := 0
