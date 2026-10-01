@@ -63,6 +63,7 @@ extern int RestoreFromCloudC(void);
 extern int ZipDirectoryC(const char* dirPath, const char* zipPath);
 extern int UnzipDirectoryC(const char* zipPath, const char* destPath);
 extern char* SignEventC(const char* jsonStr, const char* sk);
+extern int VerifyEventC(const char* jsonStr);
 extern char* MineAndSignEventC(const char* jsonStr, const char* sk, int difficulty, int maxAttempts);
 extern char* GenerateKeyPairC(void);
 extern char* GetPublicKeyC(const char* sk);
@@ -186,6 +187,14 @@ Java_com_nostrvault_relay_HavenBridge_signEvent(JNIEnv *env, jobject thiz, jstri
     REL_CSTR(env, eventJson, cJson);
     REL_CSTR(env, secretKeyHex, cSk);
     return goStringToJstring(env, result);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_nostrvault_relay_HavenBridge_verifyEventNative(JNIEnv *env, jobject thiz, jstring eventJson) {
+    const char *cJson = GET_CSTR(env, eventJson);
+    int ok = VerifyEventC((char*)cJson);
+    REL_CSTR(env, eventJson, cJson);
+    return ok == 1 ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jstring JNICALL
