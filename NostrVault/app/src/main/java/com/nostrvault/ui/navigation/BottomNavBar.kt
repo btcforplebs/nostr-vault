@@ -1,13 +1,6 @@
 package com.nostrvault.ui.navigation
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +21,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import com.nostrvault.ui.components.blockedWhen
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -97,7 +105,8 @@ fun BottomNavBar(
     activeAvatarUrl: String? = null,
     activeDisplayName: String? = null,
     isOwner: Boolean,
-    condensed: Boolean = false,
+    /** 0 shown in full, 1 folded to the avatar + action cluster. Read in layout/draw only. */
+    foldProgress: () -> Float = { 0f },
     hasUnreadDMs: Boolean = false,
     hasNewRelayActivity: Boolean = false,
     onNavigate: (Screen) -> Unit,
@@ -118,42 +127,20 @@ fun BottomNavBar(
             .padding(horizontal = 24.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        // Morph between the full 5-tab row and a condensed avatar + compose
-        // cluster. SizeTransform shrinks the glass pill inward from both sides;
-        // the cross-fade + scale mirrors the iOS distillation. This is
-        // scroll-driven chrome, so it takes the `chrome` token — damping 0.86
-        // rather than the 0.82 it had, because a bar that overshoots after your
-        // thumb has already stopped reads as a bug.
-        AnimatedContent(
-            targetState = condensed,
-            transitionSpec = {
-                val barSpring = Motion.chrome<Float>()
-                (fadeIn(barSpring) + scaleIn(barSpring, initialScale = 0.9f)) togetherWith
-                    (fadeOut(barSpring) + scaleOut(barSpring, targetScale = 0.9f)) using
-                    SizeTransform(clip = false) { _, _ -> Motion.chrome() }
-            },
-            label = "navBarCondense",
-        ) { isCondensed ->
-            if (isCondensed) {
-                CondensedNavCluster(
-                    isOwner = isOwner,
-                    activeAccountPubkey = activeAccountPubkey,
-                    activeAvatarUrl = activeAvatarUrl,
-                    activeDisplayName = activeDisplayName,
-                    showBadge = hasUnreadDMs || hasNewRelayActivity,
-                    primaryColor = colors.primary,
-                    isOled = isOled,
-                    actionIcon = condensedActionIcon,
-                    actionTint = condensedActionTint ?: colors.primary,
-                    onAction = onCondensedAction,
-                    onExpand = onExpand,
-                    onAccountSwitcher = onAccountSwitcher,
-                )
-            } else {
+        // Morph between the full 5-tab row and a condensed avatar + action
+        // cluster, following the finger: one glass pill narrows from the full
+        // width to the cluster's, the tabs fade out of it in the first part of
+        // the fold and the cluster fades in over the last. Progress is read in
+        // layout and draw only, so a drag re-lays-out the pill each frame and
+        // never recomposes it. The side that is mostly hidden takes no taps.
+        val progress by rememberUpdatedState(foldProgress)
+        val folded by remember { derivedStateOf { progress() > 0.5f } }
+        Layout(
+            content = {
+                Box(Modifier.glassPillBackground(isOled = isOled, accentColor = colors.primary))
                 ExpandedNavRow(
                     currentRoute = currentRoute,
                     primaryColor = colors.primary,
-                    isOled = isOled,
                     isOwner = isOwner,
                     activeAccountPubkey = activeAccountPubkey,
                     activeAvatarUrl = activeAvatarUrl,
@@ -163,9 +150,67 @@ fun BottomNavBar(
                     onNavigate = onNavigate,
                     onReselect = onReselect,
                     onAccountSwitcher = onAccountSwitcher,
+                    modifier = Modifier.blockedWhen(folded),
                 )
+                CondensedNavCluster(
+                    isOwner = isOwner,
+                    activeAccountPubkey = activeAccountPubkey,
+                    activeAvatarUrl = activeAvatarUrl,
+                    activeDisplayName = activeDisplayName,
+                    showBadge = hasUnreadDMs || hasNewRelayActivity,
+                    primaryColor = colors.primary,
+                    actionIcon = condensedActionIcon,
+                    actionTint = condensedActionTint ?: colors.primary,
+                    onAction = onCondensedAction,
+                    onExpand = onExpand,
+                    onAccountSwitcher = onAccountSwitcher,
+                    modifier = Modifier.blockedWhen(!folded),
+                )
+            },
+        ) { measurables, constraints ->
+            val loose = constraints.copy(minWidth = 0, minHeight = 0)
+            val expanded = measurables[1].measure(loose)
+            val cluster = measurables[2].measure(loose)
+            val p = progress().coerceIn(0f, 1f)
+            val pillWidth = lerp(expanded.width, cluster.width, p)
+            val pillHeight = lerp(expanded.height, cluster.height, p)
+            val pill = measurables[0].measure(Constraints.fixed(pillWidth, pillHeight))
+            // Fixed size whatever the fold: the floating-bar inset is measured
+            // from this, and changing it per frame would re-pad every list.
+            val width = maxOf(expanded.width, cluster.width)
+            val height = maxOf(expanded.height, cluster.height)
+            layout(width, height) {
+                val pillX = (width - pillWidth) / 2
+                val pillY = height - pillHeight
+                pill.place(pillX, pillY)
+                // A form faded out entirely is not placed, so it can't take a
+                // tap meant for the other one or for the feed beside the pill.
+                val expandedX = (width - expanded.width) / 2
+                val expandedAlpha = (1f - p / 0.6f).coerceIn(0f, 1f)
+                if (expandedAlpha > 0f) expanded.placeWithLayer(expandedX, height - expanded.height) {
+                    alpha = expandedAlpha
+                    // Clip the tabs to the narrowing pill, so none hang outside it.
+                    clip = true
+                    shape = PillWindow(insetX = (pillX - expandedX).toFloat(), top = (pillY - (height - expanded.height)).toFloat())
+                }
+                val q = ((p - 0.4f) / 0.6f).coerceIn(0f, 1f)
+                if (q > 0f) cluster.placeWithLayer((width - cluster.width) / 2, height - cluster.height) {
+                    alpha = q
+                    scaleX = 0.85f + 0.15f * q
+                    scaleY = 0.85f + 0.15f * q
+                }
             }
         }
+    }
+}
+
+private fun lerp(a: Int, b: Int, t: Float): Int = (a + (b - a) * t).roundToInt()
+
+/** The narrowing pill, in the expanded row's own coordinates. */
+private class PillWindow(private val insetX: Float, private val top: Float) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val rect = Rect(insetX, top.coerceAtLeast(0f), size.width - insetX, size.height)
+        return Outline.Rounded(RoundRect(rect, CornerRadius(rect.height / 2f)))
     }
 }
 
@@ -173,7 +218,6 @@ fun BottomNavBar(
 private fun ExpandedNavRow(
     currentRoute: String?,
     primaryColor: Color,
-    isOled: Boolean,
     isOwner: Boolean,
     activeAccountPubkey: String,
     activeAvatarUrl: String?,
@@ -183,11 +227,12 @@ private fun ExpandedNavRow(
     onNavigate: (Screen) -> Unit,
     onReselect: (Screen) -> Unit,
     onAccountSwitcher: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    // The glass pill is drawn by BottomNavBar, behind both forms.
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .glassPillBackground(isOled = isOled, accentColor = primaryColor)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
@@ -255,19 +300,18 @@ private fun CondensedNavCluster(
     activeDisplayName: String?,
     showBadge: Boolean,
     primaryColor: Color,
-    isOled: Boolean,
     actionIcon: ImageVector,
     actionTint: Color,
     onAction: () -> Unit,
     onExpand: () -> Unit,
     onAccountSwitcher: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
     val ringColor = if (isOwner) primaryColor else ZapOrange
 
     Row(
-        modifier = Modifier
-            .glassPillBackground(isOled = isOled, accentColor = primaryColor)
+        modifier = modifier
             .padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,

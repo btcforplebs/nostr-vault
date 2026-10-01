@@ -72,6 +72,10 @@ import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.components.threadLink
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.components.ScrollCondenseEffect
+import com.nostrvault.ui.components.blockedWhen
+import com.nostrvault.ui.components.chromeFab
+import com.nostrvault.ui.components.chromeFold
+import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.service.ScrollPosition
 import com.nostrvault.ui.theme.*
@@ -238,12 +242,11 @@ fun FeedScreen(
         }
     }
 
-    // Scroll-direction detection → drives the bottom-bar + FAB condense animation.
+    // Where the list is relative to its top: the chrome always shows near it.
     ScrollCondenseEffect(
         scrollKey = listState,
         firstVisibleItemIndex = { listState.firstVisibleItemIndex },
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
-        setScrollingDown = viewModel::setFeedScrollingDown,
     )
 
     // Save scroll position for snapshot persistence (debounced on scroll stop)
@@ -376,15 +379,10 @@ fun FeedScreen(
         floatingActionButton = {
             // Reading the flag inside this slot keeps recomposition scoped to the
             // FAB — the feed list never re-renders when it shows/hides.
-            val scrollingDown by viewModel.feedScrollingDown.collectAsState()
-            // The FAB hides and shows with the scroll, so it is chrome.
-            val fabSpring = Motion.chrome<Float>()
-            AnimatedVisibility(
-                // Reels has its own reply button, and the rail sits where the FAB would.
-                visible = !scrollingDown && feedMode != FeedMode.REELS,
-                enter = scaleIn(animationSpec = fabSpring, initialScale = 0.5f) + fadeIn(fabSpring),
-                exit = scaleOut(animationSpec = fabSpring, targetScale = 0.5f) + fadeOut(fabSpring),
-            ) {
+            // The FAB folds with the bars, following the finger.
+            val folded by rememberChromeFolded()
+            // Reels has its own reply button, and the rail sits where the FAB would.
+            if (feedMode != FeedMode.REELS) Box(Modifier.chromeFab().blockedWhen(folded)) {
                 // iOS-style gradient "Post" capsule (FeedView compose FAB)
                 val colors = LocalNostrVaultColors.current
                 Surface(
@@ -1204,8 +1202,9 @@ private fun FeedFullNoteRow(
 @Composable
 private fun FeedTopBar(
     feedMode: FeedMode,
-    /// Folds with the bottom bar while the feed scrolls down: only the
-    /// connection dot and the layout button stay, like the iOS top bar.
+    /// Folded past halfway with the bottom bar (the pieces fold continuously
+    /// with the finger, via chromeFold): only the connection dot and the
+    /// layout button stay, like the iOS top bar. Folded pieces take no taps.
     collapsed: Boolean,
     connectionStatus: String,
     connectionColor: String,
@@ -1270,11 +1269,7 @@ private fun FeedTopBar(
             }
 
             // Feed mode dropdown
-            AnimatedVisibility(
-                visible = !collapsed,
-                enter = topBarEnter(),
-                exit = topBarExit(),
-            ) { Box {
+            Box(Modifier.chromeFold().blockedWhen(collapsed)) { Box {
                 TextButton(
                     onClick = { feedModeExpanded = true },
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
@@ -1346,11 +1341,7 @@ private fun FeedTopBar(
             // Mode-dependent filter buttons. Articles has none: reposts,
             // replies and auto-load are all about kind-1 traffic, and a
             // long-form list is short enough not to need them.
-            AnimatedVisibility(
-                visible = !collapsed,
-                enter = topBarEnter(),
-                exit = topBarExit(),
-            ) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
+            Box(Modifier.chromeFold().blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
                 FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE -> Unit
                 FeedMode.REELS -> {
                     // Following, or everyone behind the sensitive-content warning.
@@ -1467,10 +1458,6 @@ private fun FeedTopBar(
         } }
     }
 }
-
-// The pills shrink toward the button they keep rather than popping.
-private fun topBarEnter() = expandHorizontally(Motion.chrome()) + fadeIn(Motion.chrome())
-private fun topBarExit() = shrinkHorizontally(Motion.chrome()) + fadeOut(Motion.chrome())
 
 // ── Empty state ──────────────────────────────────────────────────
 

@@ -51,6 +51,9 @@ import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.reactionDisplayEmoji
 import com.nostrvault.ui.components.reactionEmojiSummary
 import com.nostrvault.ui.components.ScrollCondenseEffect
+import com.nostrvault.ui.components.blockedWhen
+import com.nostrvault.ui.components.chromeFab
+import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.ui.components.VaultNoteCard
 import com.nostrvault.ui.components.VaultNoteLayoutMode
@@ -1829,12 +1832,11 @@ fun DashboardScreen(
         else -> SecondaryText
     }
 
-    // Scroll-direction detection → condense the bottom bar + Dashboard FAB.
+    // Where the list is relative to its top: the chrome always shows near it.
     ScrollCondenseEffect(
         scrollKey = listState,
         firstVisibleItemIndex = { listState.firstVisibleItemIndex },
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
-        setScrollingDown = feedService::setFeedScrollingDown,
     )
 
     // Condensed-bar relay antenna opens the dashboard stats sheet (iOS parity).
@@ -1973,14 +1975,9 @@ fun DashboardScreen(
             }
         },
         floatingActionButton = {
-            val scrollingDown by feedService.feedScrollingDown.collectAsState()
-            // The FAB hides and shows with the scroll, so it is chrome.
-            val fabSpring = Motion.chrome<Float>()
-            AnimatedVisibility(
-                visible = !scrollingDown,
-                enter = scaleIn(animationSpec = fabSpring, initialScale = 0.5f) + fadeIn(fabSpring),
-                exit = scaleOut(animationSpec = fabSpring, targetScale = 0.5f) + fadeOut(fabSpring),
-            ) {
+            // The FAB folds with the bars, following the finger.
+            val folded by rememberChromeFolded()
+            Box(Modifier.chromeFab().blockedWhen(folded)) {
                 Surface(
                     onClick = {
                         viewModel.loadStats()
