@@ -1098,8 +1098,14 @@ private fun SingleMediaPreview(
  * a small JPEG instead of a frame read out of the video.
  */
 internal fun feedImageModel(tags: List<List<String>>, url: String): String =
-    if (isVideoUrl(url)) imetaField(tags, url, "image") ?: imetaField(tags, url, "thumb") ?: url
-    else url
+    if (isVideoUrl(url)) {
+        (imetaField(tags, url, "image") ?: imetaField(tags, url, "thumb"))
+            ?.takeIf { isWebUrl(it) } ?: url
+    } else url
+
+/** A poster comes from the note's author, so only a web URL is fetched, never file: or content:. */
+private fun isWebUrl(s: String): Boolean =
+    s.startsWith("https://", ignoreCase = true) || s.startsWith("http://", ignoreCase = true)
 
 /**
  * What a photo shows before its pixels arrive: the NIP-92 `blurhash` preview,

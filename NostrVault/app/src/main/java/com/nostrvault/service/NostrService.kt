@@ -46,6 +46,9 @@ class NostrService @Inject constructor(
     private val powPreferences: com.nostrvault.data.local.PowPreferences,
 ) {
     companion object {
+        /** Kinds whose newest event replaces cached state; see [acceptReplaceable]. */
+        private val REPLACEABLE_STATE_KINDS = setOf(0, 10000, 10002, 10050, 10063)
+
         /**
          * A loopback address means "this machine". Advertising one, or
          * publishing someone else's DM to one, sends the event to the *sender's*
@@ -540,7 +543,13 @@ class NostrService @Inject constructor(
         val nowSecs = System.currentTimeMillis() / 1000
         if (createdAt > nowSecs + 60) return
 
-        // Process metadata and relay list events immediately (before dedup)
+        // Process metadata and relay list events immediately (before dedup).
+        // These overwrite cached state (profiles, relay lists, the owner's blocked
+        // list), so only a validly signed, newest-seen event may do that.
+        if (kind in REPLACEABLE_STATE_KINDS) {
+            if (kind == 10000 && pubkey != ownerHexPubkey) return
+            if (!acceptReplaceable(eventObj, kind, pubkey, createdAt)) return
+        }
         when (kind) {
             0 -> {
                 parseAndCacheProfile(pubkey, content)
@@ -585,6 +594,22 @@ class NostrService @Inject constructor(
             eventBuffer.add(event to mediaItems)
         }
         scheduleBufferFlush()
+    }
+
+    /** Newest accepted created_at per "kind:pubkey" for [REPLACEABLE_STATE_KINDS]. */
+    private val replaceableNewest = ConcurrentHashMap<String, Long>()
+
+    /**
+     * True when [eventObj] is validly signed and not older than the newest event of
+     * the same kind and author already accepted. Records it as the newest.
+     */
+    private fun acceptReplaceable(eventObj: JsonObject, kind: Int, pubkey: String, createdAt: Long): Boolean {
+        val key = "$kind:$pubkey"
+        val seen = replaceableNewest[key]
+        if (seen != null && createdAt < seen) return false
+        if (!HavenBridge.verifyEvent(eventObj.toString())) return false
+        replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
+        return createdAt >= (replaceableNewest[key] ?: createdAt)
     }
 
     private fun handleEOSE(subId: String, relayUrl: String) {
@@ -1769,7 +1794,9 @@ class NostrService @Inject constructor(
                 } catch (_: Exception) { emptyList() }
 
                 when {
-                    kind == 0 && evPubkey == pubkey -> parseAndCacheProfile(pubkey, content)
+                    kind == 0 && evPubkey == pubkey -> {
+                        if (acceptReplaceable(ev, kind, evPubkey, createdAt)) parseAndCacheProfile(pubkey, content)
+                    }
                     kind == 3 && evPubkey == pubkey -> {
                         val pTags = tags.filter { it.size >= 2 && it[0] == "p" }
                         val following = pTags.map { it[1] }.filter { it != pubkey }.distinct().size

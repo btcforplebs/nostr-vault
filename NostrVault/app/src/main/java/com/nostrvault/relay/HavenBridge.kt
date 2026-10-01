@@ -116,6 +116,15 @@ object HavenBridge {
     /** Sign a Nostr event JSON with the given secret key hex. Returns signed event JSON. */
     external fun signEvent(eventJson: String, secretKeyHex: String): String?
 
+    private external fun verifyEventNative(eventJson: String): Boolean
+
+    /**
+     * True when [eventJson]'s id is the NIP-01 hash of its contents and its sig is a
+     * valid signature by its pubkey. False (fail closed) if the native library is absent.
+     */
+    fun verifyEvent(eventJson: String): Boolean =
+        isLoaded && runCatching { verifyEventNative(eventJson) }.getOrDefault(false)
+
     /**
      * Mine a PoW nonce and sign the event.
      * Falls back to signing without PoW if maxAttempts is exhausted.

@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
@@ -58,8 +59,16 @@ class RemoteVideoFrameFetcher(
         val frame = try {
             // The retriever's network read is native and ignores cancellation;
             // run it apart so a dead host costs a slot for TIMEOUT_MS, not forever.
-            val grab = retrievalScope.async { grabFrame(url) }
-            withTimeoutOrNull(TIMEOUT_MS) { grab.await() }
+            // Reads left running past the timeout keep a [nativeReads] slot until
+            // they end, so dead hosts cannot pile up unbounded native reads.
+            if (!nativeReads.tryAcquire()) throw IOException("Too many stalled frame reads")
+            val grab = retrievalScope.async {
+                try { grabFrame(url) { isActive } } finally { nativeReads.release() }
+            }
+            withTimeoutOrNull(TIMEOUT_MS) { grab.await() } ?: run {
+                grab.cancel()
+                null
+            }
         } finally {
             permits.release()
         } ?: throw IOException("No frame for $url")
@@ -96,25 +105,40 @@ class RemoteVideoFrameFetcher(
         /** Long side of the stored frame; the feed decodes photos at 800 too. */
         const val MAX_SIDE = 800
         const val DISK_KEY_PREFIX = "video-frame:"
+        /** API 26 full-size decode limit: 1080p. */
+        const val MAX_FULL_DECODE_PIXELS = 1920L * 1080L
+
+        /** Native reads in flight, including ones whose caller already timed out. */
+        const val MAX_NATIVE_READS = 4
 
         val permits = Semaphore(MAX_CONCURRENT)
+        val nativeReads = Semaphore(MAX_NATIVE_READS)
         val retrievalScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-        fun grabFrame(url: String): Bitmap? {
+        /**
+         * One frame of [url], at most [MAX_SIDE] on its long side. Never decodes at
+         * full size: a 4K or larger frame is tens of MB and can exhaust the heap.
+         * Returns null without decoding once [active] turns false (caller timed out).
+         */
+        fun grabFrame(url: String, active: () -> Boolean): Bitmap? {
             val retriever = MediaMetadataRetriever()
             return try {
                 retriever.setDataSource(url, HashMap())
-                val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
-                val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
-                val scale = if (w > 0 && h > 0) minOf(1f, MAX_SIDE.toFloat() / maxOf(w, h)) else 1f
-                if (Build.VERSION.SDK_INT >= 27 && scale < 1f) {
+                if (!active()) return null
+                if (Build.VERSION.SDK_INT >= 27) {
+                    // Fits within MAX_SIDE x MAX_SIDE keeping the aspect ratio, so
+                    // no width/height metadata is needed to bound the decode.
                     retriever.getScaledFrameAtTime(
-                        0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                        (w * scale).toInt(), (h * scale).toInt(),
+                        0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, MAX_SIDE, MAX_SIDE,
                     )
                 } else {
-                    val full = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    if (full != null && scale < 1f) {
+                    // API 26 has no scaled decode: only take frames known to be small.
+                    val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                    val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                    if (w <= 0 || h <= 0 || w.toLong() * h > MAX_FULL_DECODE_PIXELS) return null
+                    val full = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: return null
+                    val scale = minOf(1f, MAX_SIDE.toFloat() / maxOf(full.width, full.height))
+                    if (scale < 1f) {
                         Bitmap.createScaledBitmap(full, (full.width * scale).toInt(), (full.height * scale).toInt(), true)
                             .also { if (it !== full) full.recycle() }
                     } else full

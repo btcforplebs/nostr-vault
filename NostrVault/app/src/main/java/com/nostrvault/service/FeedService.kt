@@ -16,6 +16,7 @@ import com.nostrvault.ui.notification.NotificationManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import java.io.File
@@ -63,6 +64,8 @@ class FeedService @Inject constructor(
         private const val FEED_LOAD_TIMEOUT_MS = 20_000L
         private const val EXTENDED_NETWORK_TIMEOUT_MS = 15_000L
         private const val NOTE_FETCH_TIMEOUT_MS = 8_000L
+        /** One lookup's widest pass asks about 24 hint relays plus fallbacks. */
+        private const val MAX_NOTE_FETCH_SOCKETS = 32
         private const val NOTE_FETCH_BATCH_DELAY_MS = 300L
         private const val UNAVAILABLE_RETRY_MS = 60_000L
 
@@ -1996,6 +1999,9 @@ class FeedService @Inject constructor(
     private val noteFetchLock = Any()
     private var noteFetchFlushJob: Job? = null
 
+    /** Temporary sockets open across all note lookups; see [requestNotes]. */
+    private val noteFetchSockets = Semaphore(MAX_NOTE_FETCH_SOCKETS)
+
     /** Authors whose relay list was already requested, so each is asked once. */
     private val relayListRequested = ConcurrentHashMap.newKeySet<String>()
 
@@ -2164,13 +2170,18 @@ class FeedService @Inject constructor(
                 val idSet = ids.toSet()
                 val subId = "pnbatch-${UUID.randomUUID().toString().take(8)}"
                 val filter = """{"ids":[${ids.joinToString(",") { "\"$it\"" }}]}"""
-                val client = feedClients[relayUrl] ?: WebSocketClient(
-                    url = relayUrl,
-                    scope = scope,
-                    trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"),
-                ).also {
-                    tempClients.add(it)
-                    it.connect()
+                val client = feedClients[relayUrl] ?: run {
+                    // Every chunk's lookup opens its own sockets; the shared cap
+                    // keeps a screenful of thread cards from opening hundreds.
+                    noteFetchSockets.acquire()
+                    WebSocketClient(
+                        url = relayUrl,
+                        scope = scope,
+                        trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"),
+                    ).also {
+                        tempClients.add(it)
+                        it.connect()
+                    }
                 }
 
                 // Tracked so it is cancelled below. Critical for reused persistent
@@ -2184,7 +2195,10 @@ class FeedService @Inject constructor(
             delay(NOTE_FETCH_TIMEOUT_MS)
         } finally {
             collectors.forEach { it.cancel() }
-            tempClients.forEach { it.disconnect() }
+            tempClients.forEach {
+                it.disconnect()
+                noteFetchSockets.release()
+            }
         }
     }
 
