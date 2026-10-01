@@ -105,6 +105,7 @@ fun FeedScreen(
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val isLoadingExtendedNetwork by viewModel.isLoadingExtendedNetwork.collectAsState()
     val followedPubkeys by viewModel.followedPubkeys.collectAsState()
+    val unavailableNoteIds by viewModel.unavailableNoteIds.collectAsState()
     val connectionColor by viewModel.connectionColor.collectAsState()
     // Read straight off the ViewModel's snapshot map. Collecting it here would
     // subscribe the whole screen to every metadata batch; each feed row narrows
@@ -511,6 +512,7 @@ fun FeedScreen(
                                 onProfileClick = onProfileClick,
                                 onOpenThread = { note -> onNoteClick(note.id) },
                                 onFetchMissingNote = viewModel::fetchMissingNote,
+                                rootUnavailable = thread.rootId in unavailableNoteIds,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 expandedRow = { note, _ ->
                                     FeedFullNoteRow(
