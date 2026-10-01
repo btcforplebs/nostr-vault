@@ -3,7 +3,9 @@ package com.nostrvault.ui.screens.feed
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
@@ -320,8 +322,11 @@ fun FeedScreen(
         // behind the toolbar would sit over the top of every video.
         containerColor = if (feedMode == FeedMode.REELS) Color.Black else WindowBackground,
         toolbar = {
+            // Read here so only the toolbar recomposes when the feed scrolls.
+            val scrollingDown by viewModel.feedScrollingDown.collectAsState()
             FeedTopBar(
                 feedMode = feedMode,
+                collapsed = scrollingDown,
                 connectionStatus = connectionStatus,
                 connectionColor = connectionColor,
                 layoutMode = layoutMode,
@@ -1159,6 +1164,9 @@ private fun FeedFullNoteRow(
 @Composable
 private fun FeedTopBar(
     feedMode: FeedMode,
+    /// Folds with the bottom bar while the feed scrolls down: only the
+    /// connection dot and the layout button stay, like the iOS top bar.
+    collapsed: Boolean,
     connectionStatus: String,
     connectionColor: String,
     layoutMode: FeedLayoutMode,
@@ -1197,7 +1205,10 @@ private fun FeedTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            // The list's top padding is this bar's height; holding it while
+            // the pills fold keeps the feed from jumping under your thumb.
+            .heightIn(min = 48.dp),
     ) {
         // ── Leading pill: connection dot (clickable for dashboard) + feed mode dropdown
         GlassPill(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1219,7 +1230,11 @@ private fun FeedTopBar(
             }
 
             // Feed mode dropdown
-            Box {
+            AnimatedVisibility(
+                visible = !collapsed,
+                enter = topBarEnter(),
+                exit = topBarExit(),
+            ) { Box {
                 TextButton(
                     onClick = { feedModeExpanded = true },
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
@@ -1260,13 +1275,18 @@ private fun FeedTopBar(
                         )
                     }
                 }
-            }
+            } }
         }
 
         Spacer(Modifier.weight(1f))
 
-        // ── Trailing pill: compact toggle + mode-dependent filters
-        GlassPill {
+        // ── Trailing pill: compact toggle + mode-dependent filters.
+        // Reels has no layout button, so collapsed there leaves nothing to show.
+        AnimatedVisibility(
+            visible = !(collapsed && feedMode == FeedMode.REELS),
+            enter = fadeIn(Motion.chrome()),
+            exit = fadeOut(Motion.chrome()),
+        ) { GlassPill {
             // Layout mode toggle: expanded -> condensed -> threaded -> expanded.
             // Reels is one video per screen — there is no layout to switch.
             if (feedMode != FeedMode.REELS) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
@@ -1286,7 +1306,11 @@ private fun FeedTopBar(
             // Mode-dependent filter buttons. Articles has none: reposts,
             // replies and auto-load are all about kind-1 traffic, and a
             // long-form list is short enough not to need them.
-            when (feedMode) {
+            AnimatedVisibility(
+                visible = !collapsed,
+                enter = topBarEnter(),
+                exit = topBarExit(),
+            ) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
                 FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE -> Unit
                 FeedMode.REELS -> {
                     // Following, or everyone behind the sensitive-content warning.
@@ -1399,10 +1423,14 @@ private fun FeedTopBar(
                         )
                     }
                 }
-            }
-        }
+            } } }
+        } }
     }
 }
+
+// The pills shrink toward the button they keep rather than popping.
+private fun topBarEnter() = expandHorizontally(Motion.chrome()) + fadeIn(Motion.chrome())
+private fun topBarExit() = shrinkHorizontally(Motion.chrome()) + fadeOut(Motion.chrome())
 
 // ── Empty state ──────────────────────────────────────────────────
 
