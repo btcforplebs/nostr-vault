@@ -1386,37 +1386,19 @@ private fun ParentNoteSkeleton(
 
         Spacer(Modifier.width(12.dp))
 
-        // Right column: skeleton bars
+        // Right column: one line-height bar per line of the loaded preview
+        // (name, timestamp, two lines of content), in the same text styles, so
+        // the card is already the height the parent will need when it arrives.
         Column(
             modifier = Modifier
                 .weight(1f)
                 .padding(top = 4.dp),
         ) {
-            Row {
-                Box(
-                    modifier = Modifier
-                        .width(80.dp)
-                        .height(12.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(TertiaryGroupedBg),
-                )
-                Spacer(Modifier.weight(1f))
-                Box(
-                    modifier = Modifier
-                        .width(40.dp)
-                        .height(10.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(TertiaryGroupedBg),
-                )
-            }
-            Spacer(Modifier.height(5.dp))
-            Box(
-                modifier = Modifier
-                    .width(180.dp)
-                    .height(12.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(TertiaryGroupedBg),
-            )
+            SkeletonTextLine(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, widthFraction = 0.35f, color = TertiaryGroupedBg)
+            SkeletonTextLine(fontSize = 11.sp, widthFraction = 0.12f, color = TertiaryGroupedBg)
+            Spacer(Modifier.height(2.dp))
+            SkeletonTextLine(fontSize = 14.sp, widthFraction = 0.9f, color = TertiaryGroupedBg)
+            SkeletonTextLine(fontSize = 14.sp, widthFraction = 0.55f, color = TertiaryGroupedBg)
         }
     }
 }

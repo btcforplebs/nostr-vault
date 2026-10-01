@@ -7,11 +7,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import com.nostrvault.ui.theme.*
 
@@ -157,4 +165,39 @@ fun SkeletonFeed(
             NoteCardSkeleton()
         }
     }
+}
+
+/**
+ * A placeholder bar exactly one text line tall in the given style, so a
+ * skeleton built from these is the height the loaded text will be and the row
+ * does not grow when it arrives. The bar is inset vertically so stacked lines
+ * read as separate lines rather than one block.
+ */
+@Composable
+internal fun SkeletonTextLine(
+    fontSize: TextUnit,
+    widthFraction: Float,
+    color: Color,
+    modifier: Modifier = Modifier,
+    lineHeight: TextUnit = TextUnit.Unspecified,
+    fontWeight: FontWeight? = null,
+) {
+    Text(
+        text = " ",
+        fontSize = fontSize,
+        lineHeight = lineHeight,
+        fontWeight = fontWeight,
+        maxLines = 1,
+        modifier = modifier
+            .fillMaxWidth(widthFraction)
+            .drawBehind {
+                val inset = minOf(3.dp.toPx(), size.height / 4)
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(0f, inset),
+                    size = Size(size.width, size.height - 2 * inset),
+                    cornerRadius = CornerRadius(4.dp.toPx()),
+                )
+            },
+    )
 }

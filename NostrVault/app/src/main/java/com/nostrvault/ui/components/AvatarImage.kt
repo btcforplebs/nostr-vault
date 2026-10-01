@@ -128,9 +128,20 @@ private fun avatarRequest(context: Context, url: String): ImageRequest =
  * Loads [url] exactly as [AvatarImage] will — same loader, size and cache key —
  * so the avatar paints from memory when its row scrolls in.
  */
-internal suspend fun prefetchAvatar(context: Context, url: String) {
-    avatarImageLoader(context).execute(avatarRequest(context, url))
+internal suspend fun prefetchAvatar(context: Context, url: String, httpClient: okhttp3.OkHttpClient) {
+    prefetchAvatarLoader(context, httpClient).execute(avatarRequest(context, url))
 }
+
+@Volatile private var prefetchAvatarLoaderInstance: ImageLoader? = null
+
+/** [avatarImageLoader] on the feed prefetch lane's [httpClient]. */
+private fun prefetchAvatarLoader(context: Context, httpClient: okhttp3.OkHttpClient): ImageLoader =
+    prefetchAvatarLoaderInstance ?: synchronized(avatarLoaderLock) {
+        prefetchAvatarLoaderInstance ?: avatarImageLoader(context).newBuilder()
+            .okHttpClient(httpClient)
+            .build()
+            .also { prefetchAvatarLoaderInstance = it }
+    }
 
 // 8 fixed gradient pairs derived from existing theme palette.
 // Deterministic: pubkey byte 0 selects the pair, same user = same color always.

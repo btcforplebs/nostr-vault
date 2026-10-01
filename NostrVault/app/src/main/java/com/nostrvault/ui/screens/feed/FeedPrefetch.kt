@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
+import coil.ImageLoader
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.nostrvault.data.model.FeedNote
@@ -23,6 +24,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
+import okhttp3.Dispatcher
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 /** One image a feed row is about to draw, described the way the row requests it. */
 internal sealed interface FeedPrefetchItem {
@@ -45,8 +49,10 @@ internal sealed interface FeedPrefetchItem {
  *
  * Each image is requested exactly as its row will request it (same model and
  * decode size, same avatar loader), so the row's own request is a memory-cache
- * hit. Only [MAX_CONCURRENT] prefetches run at once: Coil has no request
- * priority, so this cap is what keeps the rows on screen ahead of the queue.
+ * hit. Coil has no request priority, so prefetches get a lane of their own:
+ * [prefetchImageLoader] downloads on a separate connection queue, at most
+ * [MAX_CONCURRENT] at once, and a row on screen never waits behind one in
+ * the shared queue (iOS: on-screen `.high`, prefetch `.low`).
  * Videos without a poster image are skipped; their frames have a lane of their
  * own and on-screen rows need it more.
  *
@@ -89,8 +95,8 @@ internal fun FeedPrefetchEffect(
 
 private suspend fun load(context: Context, item: FeedPrefetchItem) {
     when (item) {
-        is FeedPrefetchItem.Avatar -> prefetchAvatar(context, item.url)
-        is FeedPrefetchItem.Media -> context.imageLoader.execute(
+        is FeedPrefetchItem.Avatar -> prefetchAvatar(context, item.url, prefetchHttpClient)
+        is FeedPrefetchItem.Media -> prefetchImageLoader(context).execute(
             ImageRequest.Builder(context).data(item.model).size(item.size).build()
         )
     }
@@ -129,6 +135,34 @@ internal fun prefetchItemsForThread(
         add(FeedPrefetchItem.Media(url, if (isRoot) 160 else 112))
     }
 }
+
+/**
+ * The prefetch lane's HTTP client: its own [Dispatcher], so prefetches queue
+ * among themselves and not ahead of the rows on screen, which use the app
+ * loader's client. Same timeouts as that client.
+ */
+private val prefetchHttpClient: OkHttpClient by lazy {
+    OkHttpClient.Builder()
+        .dispatcher(Dispatcher().apply {
+            maxRequests = MAX_CONCURRENT
+            maxRequestsPerHost = MAX_CONCURRENT
+        })
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(25, TimeUnit.SECONDS)
+        .build()
+}
+
+@Volatile private var prefetchLoader: ImageLoader? = null
+
+/** The app loader (same caches, decoders and fetchers) on [prefetchHttpClient]. */
+private fun prefetchImageLoader(context: Context): ImageLoader =
+    prefetchLoader ?: synchronized(prefetchHttpClient) {
+        prefetchLoader ?: context.imageLoader.newBuilder()
+            .okHttpClient(prefetchHttpClient)
+            .build()
+            .also { prefetchLoader = it }
+    }
 
 private const val ROWS_AHEAD = 8
 private const val MAX_CONCURRENT = 3
