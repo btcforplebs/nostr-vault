@@ -160,6 +160,9 @@ struct FeedView: View {
     @State private var navigationPath = NavigationPath()
     /// Non-nil when an iPad split pane owns the note detail column.
     @Environment(\.noteDetailSelection) private var noteDetailSelection
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     /// Debounce work item for auto-loading pending notes so overlapping
     /// onChange triggers don't queue duplicate applyPendingNotes() calls.
     @State private var autoLoadWork: DispatchWorkItem?
@@ -282,6 +285,70 @@ struct FeedView: View {
         layoutModeForCurrentFeed == .threaded && currentFeedSupportsThreading
     }
 
+    // MARK: - Feed Leading Toolbar
+
+    #if os(iOS)
+    /// The top bar folds with the bottom tab bar: scrolling down leaves only
+    /// the connection dot on the left and the feed-style button on the right,
+    /// and scrolling up brings the rest back. iPhone only — iPad has a sidebar
+    /// instead of the bottom bar this pairs with.
+    private var isTopBarCollapsed: Bool {
+        horizontalSizeClass == .compact && feedService.feedScrollingDown
+    }
+
+    private var feedLeadingToolbar: some View {
+        HStack(spacing: 12) {
+            Button(action: { showingRelayStatus = true }) {
+                Circle()
+                    .fill(feedService.connectionDotColor)
+                    .frame(width: 10, height: 10)
+                    .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 3)
+            }
+            .buttonStyle(.plain)
+            .frame(width: 30, height: 30)
+            .applyGlassCircle()
+
+            if !isTopBarCollapsed {
+                Menu {
+                    ForEach(FeedMode.allCases, id: \.self) { mode in
+                        Button(action: { feedService.switchMode(mode) }) {
+                            let displayName = mode == .discovery ? "Discover" : mode.rawValue
+                            if feedService.feedMode == mode {
+                                Label(displayName, systemImage: "checkmark")
+                            } else {
+                                Text(displayName)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        let displayName = feedService.feedMode == .discovery ? "Discover" : feedService.feedMode.rawValue
+                        Text(displayName)
+                            .font(.appSystem(size: 17, weight: .bold))
+                        Image(systemName: "chevron.down")
+                            .font(.appSystem(size: 9, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                }
+                .transition(.scale(scale: 0.85, anchor: .leading).combined(with: .opacity))
+            }
+        }
+    }
+    #endif
+
+    /// Cycles expanded → condensed → threaded. Shared by the full trailing
+    /// row and the collapsed top bar, which keeps only this button.
+    private var layoutModeButton: some View {
+        IconFilterButton(
+            icon: layoutModeForCurrentFeed.symbolName,
+            tooltip: layoutModeForCurrentFeed.displayName,
+            isSelected: layoutModeForCurrentFeed != .expanded,
+            color: .havenPurple
+        ) {
+            cycleLayoutModeForCurrentFeed()
+        }
+    }
+
     // MARK: - Feed Trailing Toolbar (inline vs. compact menu)
 
     @ViewBuilder
@@ -289,14 +356,7 @@ struct FeedView: View {
         HStack(spacing: 4) {
             // Reels is one video per screen — there is no layout to switch.
             if feedService.feedMode != .reels {
-                IconFilterButton(
-                    icon: layoutModeForCurrentFeed.symbolName,
-                    tooltip: layoutModeForCurrentFeed.displayName,
-                    isSelected: layoutModeForCurrentFeed != .expanded,
-                    color: .havenPurple
-                ) {
-                    cycleLayoutModeForCurrentFeed()
-                }
+                layoutModeButton
 
                 Divider()
                     .frame(height: 20)
@@ -788,46 +848,28 @@ struct FeedView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                HStack(spacing: 12) {
-                    Button(action: { showingRelayStatus = true }) {
-                        Circle()
-                            .fill(feedService.connectionDotColor)
-                            .frame(width: 10, height: 10)
-                            .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 3)
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: 30, height: 30)
-                    .applyGlassCircle()
-
-                    Menu {
-                        ForEach(FeedMode.allCases, id: \.self) { mode in
-                            Button(action: { feedService.switchMode(mode) }) {
-                                let displayName = mode == .discovery ? "Discover" : mode.rawValue
-                                if feedService.feedMode == mode {
-                            Label(displayName, systemImage: "checkmark")
-                        } else {
-                            Text(displayName)
-                        }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 3) {
-                            let displayName = feedService.feedMode == .discovery ? "Discover" : feedService.feedMode.rawValue
-                            Text(displayName)
-                                .font(.appSystem(size: 17, weight: .bold))
-                            Image(systemName: "chevron.down")
-                                .font(.appSystem(size: 9, weight: .bold))
-                        }
-                        .foregroundColor(.white)
-                    }
-                }
+                feedLeadingToolbar
+                    .animation(Motion.chrome, value: isTopBarCollapsed)
             }
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                ViewThatFits {
-                    feedTrailingToolbarInline
-                    feedTrailingToolbarMenu
+                ZStack(alignment: .trailing) {
+                    if isTopBarCollapsed {
+                        if feedService.feedMode != .reels {
+                            layoutModeButton
+                                .padding(4)
+                                .applyGlassCapsule()
+                                .transition(.opacity)
+                        }
+                    } else {
+                        ViewThatFits {
+                            feedTrailingToolbarInline
+                            feedTrailingToolbarMenu
+                        }
+                        .transition(.scale(scale: 0.85, anchor: .trailing).combined(with: .opacity))
+                    }
                 }
+                .animation(Motion.chrome, value: isTopBarCollapsed)
             }
         }
         #endif
