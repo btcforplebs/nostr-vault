@@ -22,6 +22,26 @@ enum Bolt11 {
     private static let msatPerBTC = 100_000_000_000
 
     static func amount(_ invoice: String) -> Amount {
+        switch parse(invoice) {
+        case .msat(let msat, _): return sats(msat: msat)
+        case .unspecified: return .unspecified
+        case .unreadable: return .unreadable
+        }
+    }
+
+    /// The exact amount in millisatoshis, or nil for an amountless or
+    /// unreadable invoice. For checking an invoice against the amount that was
+    /// asked for — `amount` rounds down to whole sats, which would let a
+    /// service add up to 999 msat unnoticed.
+    static func msat(_ invoice: String) -> Int? {
+        if case .msat(let m, exact: true) = parse(invoice), m > 0, m < 21_000_000 * msatPerBTC { return m }
+        return nil
+    }
+
+    /// `exact` is false for a pico amount that is not a whole msat.
+    private enum Parsed { case msat(Int, exact: Bool), unspecified, unreadable }
+
+    private static func parse(_ invoice: String) -> Parsed {
         let lower = invoice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         // The bech32 data charset excludes `1`, so the last `1` is the
@@ -53,7 +73,7 @@ enum Bolt11 {
         case "u": perUnit = msatPerBTC / 1_000_000
         case "n": perUnit = msatPerBTC / 1_000_000_000
         // Pico-BTC is a tenth of a msat; a valid pico amount is a multiple of 10.
-        case "p": return sats(msat: value / 10)
+        case "p": return .msat(value / 10, exact: value % 10 == 0)
         case nil: perUnit = msatPerBTC
         default: return .unreadable
         }
@@ -62,7 +82,7 @@ enum Bolt11 {
         // wire and nothing upstream bounds its length.
         let (msat, overflowed) = value.multipliedReportingOverflow(by: perUnit)
         guard !overflowed else { return .unreadable }
-        return sats(msat: msat)
+        return .msat(msat, exact: true)
     }
 
     /// Sats, or nil for anything that does not state at least one.
@@ -76,5 +96,53 @@ enum Bolt11 {
         guard msat >= 1_000 else { return .unspecified }
         guard msat < 21_000_000 * msatPerBTC else { return .unreadable }
         return .sats(msat / 1_000)
+    }
+
+    // MARK: - Payment hash
+
+    private static let charset = Array("qpzry9x8gf2tvdw0s3jn54khce6mua7l")
+
+    /// The invoice's payment hash (tagged field `p`), as lowercase hex.
+    ///
+    /// The one identifier a wallet's history and a zap receipt both carry —
+    /// what lets a payment be matched to the receipt that says who sent it.
+    /// Checksum is not verified: this only reads, and a receipt whose bolt11
+    /// is corrupt simply matches nothing.
+    static func paymentHash(_ invoice: String) -> String? {
+        let lower = invoice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let separator = lower.lastIndex(of: "1") else { return nil }
+        var words: [UInt8] = []
+        for ch in lower[lower.index(after: separator)...] {
+            guard let v = charset.firstIndex(of: ch) else { return nil }
+            words.append(UInt8(v))
+        }
+        // timestamp (7) … tagged fields … signature (104) + checksum (6)
+        guard words.count > 7 + 104 + 6 else { return nil }
+        let end = words.count - 104 - 6
+        var i = 7
+        while i + 3 <= end {
+            let type = words[i]
+            let length = Int(words[i + 1]) << 5 | Int(words[i + 2])
+            i += 3
+            guard i + length <= end else { return nil }
+            if type == 1 && length == 52 {
+                // 52 five-bit words = 260 bits; the hash is the first 256.
+                var bytes: [UInt8] = []
+                var acc = 0, bits = 0
+                for w in words[i..<(i + length)] {
+                    acc = (acc << 5) | Int(w)
+                    bits += 5
+                    if bits >= 8 {
+                        bits -= 8
+                        bytes.append(UInt8((acc >> bits) & 0xff))
+                        acc &= (1 << bits) - 1
+                    }
+                }
+                guard bytes.count >= 32 else { return nil }
+                return bytes.prefix(32).map { String(format: "%02x", $0) }.joined()
+            }
+            i += length
+        }
+        return nil
     }
 }
