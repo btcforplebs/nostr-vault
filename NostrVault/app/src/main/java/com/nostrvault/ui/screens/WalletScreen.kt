@@ -25,13 +25,21 @@ import com.journeyapps.barcodescanner.BarcodeEncoder
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.service.LNURLPayResponse
+import com.nostrvault.service.LNURLService
+import com.nostrvault.service.LNURLWithdrawResponse
 import com.nostrvault.service.NWCService
+import com.nostrvault.service.NWCWalletException
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.screens.wallet.WalletLightningTab
 import com.nostrvault.ui.theme.*
+import com.nostrvault.util.Bolt11
+import com.nostrvault.util.Bolt11Amount
+import com.nostrvault.util.WalletTransaction
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -65,6 +73,23 @@ class WalletViewModel @Inject constructor(
     // Lightning receive
     private val _generatedInvoice = MutableStateFlow<String?>(null)
     val generatedInvoice = _generatedInvoice.asStateFlow()
+
+    // Lightning history (NIP-47 list_transactions)
+    private val _transactions = MutableStateFlow<List<WalletTransaction>>(emptyList())
+    val transactions = _transactions.asStateFlow()
+
+    private val _historyLoading = MutableStateFlow(false)
+    val historyLoading = _historyLoading.asStateFlow()
+
+    private val _historyError = MutableStateFlow<String?>(null)
+    val historyError = _historyError.asStateFlow()
+
+    /** The wallet, or this connection's permissions, does not share history. */
+    private val _historyUnsupported = MutableStateFlow(false)
+    val historyUnsupported = _historyUnsupported.asStateFlow()
+
+    private val _canLoadMoreHistory = MutableStateFlow(false)
+    val canLoadMoreHistory = _canLoadMoreHistory.asStateFlow()
 
     init {
         refreshBalance()
@@ -118,10 +143,103 @@ class WalletViewModel @Inject constructor(
                 nwcService.payInvoice(invoice)
                 _message.value = "Payment sent"
                 refreshBalance()
+                loadHistory(reset = true)
             } catch (e: Exception) {
                 _error.value = e.message ?: "Payment failed"
             } finally { _busy.value = false }
         }
+    }
+
+    /**
+     * Pays a resolved LNURL-pay / lightning address. [onSent] runs only once
+     * the payment went through, so the Send box keeps its text on failure.
+     */
+    fun payLnurl(
+        pay: LNURLPayResponse,
+        amountMsat: Long,
+        recipient: String,
+        comment: String,
+        onSent: () -> Unit,
+    ) {
+        if (_busy.value) return
+        val sats = amountMsat / 1000
+        viewModelScope.launch {
+            _busy.value = true; _error.value = null; _message.value = null
+            try {
+                val invoice = LNURLService.fetchInvoice(
+                    callback = pay.callback,
+                    amountMsat = amountMsat,
+                    comment = comment.trim().ifEmpty { null },
+                )
+                // LUD-06: never pay an invoice for a different amount than the
+                // one asked for — a service that swaps it is either broken or
+                // stealing.
+                if (Bolt11.amount(invoice) != Bolt11Amount.Sats(sats)) {
+                    _error.value = "$recipient returned an invoice for a different amount, so nothing was sent."
+                    return@launch
+                }
+                nwcService.payInvoice(invoice)
+                _message.value = "Sent ${"%,d".format(sats)} sats to $recipient."
+                onSent()
+                refreshBalance()
+                loadHistory(reset = true)
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Payment failed"
+            } finally { _busy.value = false }
+        }
+    }
+
+    /** LNURL-withdraw: make an invoice on our wallet and hand it to the service. */
+    fun withdrawLnurl(
+        withdraw: LNURLWithdrawResponse,
+        amountMsat: Long,
+        sender: String,
+        onReceived: () -> Unit,
+    ) {
+        if (_busy.value) return
+        val sats = amountMsat / 1000
+        viewModelScope.launch {
+            _busy.value = true; _error.value = null; _message.value = null
+            try {
+                val invoice = nwcService.makeInvoice(amountMsat, withdraw.defaultDescription)
+                LNURLService.submitWithdraw(withdraw, invoice)
+                _message.value = "$sender is sending you ${"%,d".format(sats)} sats. " +
+                    "It shows up in History once it lands."
+                onReceived()
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Withdrawal failed"
+                return@launch
+            } finally { _busy.value = false }
+            // The service pays asynchronously; look again once it has had a moment.
+            delay(4_000)
+            refreshBalance()
+            loadHistory(reset = true)
+        }
+    }
+
+    // ── History ───────────────────────────────────────────────────
+    fun loadHistory(reset: Boolean) {
+        if (_historyLoading.value || config.value.nwcURI.isNullOrBlank()) return
+        _historyLoading.value = true
+        _historyError.value = null
+        val offset = if (reset) 0 else _transactions.value.size
+        viewModelScope.launch {
+            try {
+                val page = nwcService.listTransactions(limit = HISTORY_PAGE_SIZE, offset = offset)
+                _transactions.value = if (reset) page else WalletTransaction.merge(_transactions.value, page)
+                _canLoadMoreHistory.value = page.size >= HISTORY_PAGE_SIZE
+                _historyUnsupported.value = false
+            } catch (e: NWCWalletException) {
+                if (e.isUnsupported) _historyUnsupported.value = true
+                else _historyError.value = "Couldn't load history: ${e.message}"
+            } catch (e: Exception) {
+                _historyError.value = "Couldn't load history: ${e.message}"
+            } finally { _historyLoading.value = false }
+        }
+    }
+
+    private companion object {
+        const val HISTORY_PAGE_SIZE = 20
     }
 
 }

@@ -14,6 +14,8 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.NorthEast
+import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
@@ -133,6 +135,8 @@ object NostrVaultIcons {
     val Alert: ImageVector = Icons.Filled.Warning          // exclamationmark.triangle.fill
     val Create: ImageVector = Icons.Filled.Add             // plus
     val ArrowUp: ImageVector = Icons.Filled.ArrowUpward    // arrow.up
+    val Incoming: ImageVector = Icons.Filled.SouthWest     // arrow.down.left
+    val Outgoing: ImageVector = Icons.Filled.NorthEast     // arrow.up.right
     val Search: ImageVector = Icons.Filled.Search          // magnifyingglass
     val History: ImageVector = Icons.Filled.History         // clock.arrow.circlepath
     val Media: ImageVector = Icons.Filled.Image            // photo

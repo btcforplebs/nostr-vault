@@ -4,6 +4,7 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.util.WalletTransaction
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
@@ -133,11 +134,40 @@ class NWCService @Inject constructor(
         throw NWCException("No invoice in response")
     }
 
+    /**
+     * One page of the wallet's payment history, newest first (NIP-47
+     * `list_transactions`). Throws [NWCWalletException] with
+     * [NWCWalletException.isUnsupported] when the wallet or this connection
+     * does not share history.
+     */
+    suspend fun listTransactions(limit: Int = 20, offset: Int = 0): List<WalletTransaction> =
+        withContext(Dispatchers.IO) {
+            val payload = buildJsonObject {
+                put("method", "list_transactions")
+                putJsonObject("params") {
+                    put("limit", limit)
+                    put("offset", offset)
+                    put("unpaid", false)
+                }
+            }
+            val response = sendNWCRequest(payload.toString())
+            response.error?.let { throw NWCWalletException(it.code, it.message.ifBlank { it.code }) }
+            val raw = response.result?.get("transactions") as? JsonArray ?: JsonArray(emptyList())
+            WalletTransaction.merge(
+                emptyList(),
+                raw.mapNotNull { (it as? JsonObject)?.let(WalletTransaction::fromNip47) },
+            )
+        }
+
     // ══════════════════════════════════════════════════════════════════
     // Core NWC request/response
     // ══════════════════════════════════════════════════════════════════
 
-    private suspend fun sendNWCRequest(request: NWCRequest): NWCResponse {
+    private suspend fun sendNWCRequest(request: NWCRequest): NWCResponse =
+        sendNWCRequest(json.encodeToString(NWCRequest.serializer(), request))
+
+    /** Sends one already-encoded NIP-47 request payload and awaits its reply. */
+    private suspend fun sendNWCRequest(payloadJson: String): NWCResponse {
         val connectionUri = configStore.config.value.nwcURI
             ?: throw NWCException("No NWC connection configured")
         val connection = parseURI(connectionUri)
@@ -148,7 +178,6 @@ class NWCService @Inject constructor(
             ?: throw NWCException("Failed to derive public key")
 
         // Encrypt request payload
-        val payloadJson = json.encodeToString(NWCRequest.serializer(), request)
         val encrypted = NIP04Service.encrypt(payloadJson, connection.pubkey, connection.secret)
             ?: throw NWCException("Encryption failed")
 
@@ -280,8 +309,17 @@ data class NWCResponse(
 
 @Serializable
 data class NIP47Error(
-    val code: String,
-    val message: String,
+    val code: String = "OTHER",
+    val message: String = "",
 )
 
-class NWCException(message: String) : Exception(message)
+open class NWCException(message: String) : Exception(message)
+
+/**
+ * A NIP-47 error the wallet answered with, keeping its code so callers can
+ * tell "this wallet does not do that" from a real failure.
+ */
+class NWCWalletException(val code: String, message: String) : NWCException(message) {
+    /** The wallet (or this connection's permissions) does not offer the method. */
+    val isUnsupported: Boolean get() = code in setOf("NOT_IMPLEMENTED", "RESTRICTED", "UNAUTHORIZED")
+}
