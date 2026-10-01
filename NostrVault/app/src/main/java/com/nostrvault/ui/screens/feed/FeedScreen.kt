@@ -295,17 +295,28 @@ fun FeedScreen(
     // changes while the user is (or just was) at the top, scroll to the
     // absolute top so the new post lands fully in view below the toolbar.
     // Also covers replies, which insert directly and bypass pendingNotes.
+    // Threaded mode lists thread cards, not notes: a reply moves its card to
+    // the top without changing notes' first id, so watch the first key the
+    // list actually renders.
     LaunchedEffect(Unit) {
         var prevFirstId: String? = null
         var wasAtTop = true
-        snapshotFlow { notes.firstOrNull()?.id to isAtTop }
-            .collect { (firstId, atTop) ->
-                // Prepend = first id changed but the old first note is still
+        snapshotFlow {
+            val keys = if (isThreaded) feedThreads.map { it.rootId } else notes.map { it.id }
+            keys to isAtTop
+        }
+            .collect { (keys, atTop) ->
+                val firstId = keys.firstOrNull()
+                // Prepend = first key changed but the old first item is still
                 // in the list (a refresh/reload replaces it entirely).
                 val prepended = firstId != null && prevFirstId != null &&
-                    firstId != prevFirstId && notes.any { it.id == prevFirstId }
+                    firstId != prevFirstId && prevFirstId in keys
                 if (prepended && (wasAtTop || atTop)) {
-                    listState.animateScrollToItem(0)
+                    // requestScrollToItem wins over the next layout's key
+                    // anchoring. animateScrollToItem could run before that
+                    // layout, see index 0, do nothing, and leave the new
+                    // item above the viewport.
+                    listState.requestScrollToItem(0)
                 }
                 prevFirstId = firstId
                 wasAtTop = atTop
