@@ -65,7 +65,10 @@ struct FeedThreadCard: View {
         VStack(alignment: .leading, spacing: 2) {
             if let root = thread.root {
                 line(for: FeedThreadEntry(note: root, depth: 0), replyCount: directReplyCount(of: root.id))
-            } else {
+            } else if !rootUnavailable {
+                // A root no relay has, after every pass, gets no line at all:
+                // the replies read as posts, rather than every such card
+                // announcing what it can't show.
                 missingRootHeader
             }
 
@@ -186,7 +189,7 @@ struct FeedThreadCard: View {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.appSystem(size: 12, weight: .semibold))
                 .foregroundColor(Color.havenPurple.opacity(0.7))
-            Text(rootUnavailable ? "Start of this thread isn't available" : "Loading the start of this thread…")
+            Text("Loading the start of this thread…")
                 .font(.appSystem(size: 12, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
             Spacer(minLength: 0)
