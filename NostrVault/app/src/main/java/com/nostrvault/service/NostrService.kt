@@ -83,11 +83,22 @@ class NostrService @Inject constructor(
         private const val BASE_RECONNECT_DELAY_MS = 2_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val TEMP_CLIENT_DISCONNECT_MS = 3_000L
-        // Every Blastr relay, as iOS asks (up to this many). Kind 0 coverage
-        // varies wildly: relay.primal.net returns ~0 profiles for an authors
-        // filter, and a relay that is down or blocked returns none, so the
-        // first three alone could leave the whole feed nameless.
-        private const val METADATA_POOL_SIZE = 8
+        // Profile relays plus Blastr, up to this many. Kind 0 coverage varies
+        // wildly: relay.primal.net returns few profiles for an authors filter,
+        // and a relay that is down or blocked returns none, so a short list
+        // could leave the whole feed nameless.
+        private const val METADATA_POOL_SIZE = 10
+        // Asked for names/avatars ahead of the Blastr relays. On 2026-10-01,
+        // for 300 recent posters, the default Blastr set (nos.lol and
+        // nostr.mom unreachable, primal ~11%) had 115 profiles; adding these
+        // reached 193. Re-measure with `.scratch/profprobe/probe.py` in the
+        // Buzz nest before changing it.
+        private val PROFILE_RELAYS = listOf(
+            "wss://offchain.pub",
+            "wss://relay.damus.io",
+            "wss://user.kindpag.es",
+            "wss://purplepag.es",
+        )
         private const val METADATA_IDLE_TIMEOUT_MS = 60_000L
         private const val METADATA_SUB_ID = "meta-pool"
         // How long a dispatched pubkey stays in the pool's filter waiting for
@@ -738,7 +749,6 @@ class NostrService @Inject constructor(
         if (pubkeys.isEmpty()) return
 
         val blastrRelays = configStore.config.value.activeBlastrRelays
-        if (blastrRelays.isEmpty()) return
 
         // Record the dispatch time so these pubkeys are negatively-cached for
         // PROFILE_RETRY_TTL_MS even if no kind-0 comes back (no resolvable profile, or it
@@ -765,7 +775,12 @@ class NostrService @Inject constructor(
         // Reuse a small pool of WARM connections to the Blastr relays (kind 0 is
         // widely replicated) instead of opening fresh sockets per flush. A stable
         // sub id means each flush just replaces the filter on the open sockets.
-        val relays = blastrRelays.filter { isValidRelayUrl(it) }.take(METADATA_POOL_SIZE)
+        // The user's own relay (first in blastrRelays when configured) leads,
+        // then the profile relays, then the rest of Blastr.
+        val relays = (blastrRelays.take(1) + PROFILE_RELAYS + blastrRelays)
+            .distinct()
+            .filter { isValidRelayUrl(it) }
+            .take(METADATA_POOL_SIZE)
         if (relays.isEmpty()) return
         metadataPoolLock.withLock {
             // Drop pooled relays no longer in the configured set.
