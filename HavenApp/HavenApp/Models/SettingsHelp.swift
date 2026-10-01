@@ -149,7 +149,7 @@ enum SettingsHelp: String, CaseIterable {
         case .mediaDisableCache: return "Stops saving media locally, so it re-downloads each time."
         case .mediaPrefetchAvatars: return "Loads profile pictures ahead of time for smoother scrolling."
         case .mediaCacheTTL: return "How long downloaded media is kept before it's cleared."
-        case .mediaClearCache: return "Deletes locally stored media now to free up space."
+        case .mediaClearCache: return "Deletes temporary copies of media to free up space. Your vault and your Blossom servers are not touched."
         case .notifyEnable: return "Turns on notifications, made on this device by your relay — no outside push server involved."
         case .notifyFeedNotes: return "Notifies you when new notes appear in your feed."
         case .notifyPerAccount: return "Choose which alerts (mentions, replies, DMs, zaps, reactions, reposts) each account gets."

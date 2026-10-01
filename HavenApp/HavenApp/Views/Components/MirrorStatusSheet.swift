@@ -6,7 +6,7 @@ struct MirrorStatusSheet: View {
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
 
-    @State private var mirrorStatus: [String: Bool] = [:]
+    @State private var mirrorStatus: [String: BlobPresence] = [:]
     @State private var isLoading = true
     @State private var sha256Hash: String?
 
@@ -40,8 +40,8 @@ struct MirrorStatusSheet: View {
                         Section("Mirror Status") {
                             ForEach(Array(mirrorStatus.keys.sorted()), id: \.self) { mirror in
                                 HStack {
-                                    Image(systemName: mirrorStatus[mirror] == true ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                        .foregroundColor(mirrorStatus[mirror] == true ? .green : .red)
+                                    Image(systemName: Self.icon(mirrorStatus[mirror]))
+                                        .foregroundColor(Self.tint(mirrorStatus[mirror]))
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         if let host = URL(string: mirror)?.host {
@@ -56,15 +56,9 @@ struct MirrorStatusSheet: View {
 
                                     Spacer()
 
-                                    if mirrorStatus[mirror] == true {
-                                        Text("Available")
-                                            .font(.appSystem(size: 11, weight: .medium))
-                                            .foregroundColor(.green)
-                                    } else {
-                                        Text("Not Found")
-                                            .font(.appSystem(size: 11, weight: .medium))
-                                            .foregroundColor(.secondary)
-                                    }
+                                    Text(Self.label(mirrorStatus[mirror]))
+                                        .font(.appSystem(size: 11, weight: .medium))
+                                        .foregroundColor(mirrorStatus[mirror] == .present ? .green : .secondary)
                                 }
                             }
                         }
@@ -96,17 +90,43 @@ struct MirrorStatusSheet: View {
         if lastComponent.count == 64, lastComponent.allSatisfy({ $0.isHexDigit }) {
             sha256Hash = lastComponent
 
+            // Same answer the badges show: re-check through the shared store.
             let service = BlossomService(configService: configService, nostrService: nostrService)
-            let status = await service.checkMirrorStatus(sha256: lastComponent)
+            let store = BlossomBackupStore.shared
+            await store.refresh(hash: lastComponent.lowercased(), service: service, force: true)
 
             await MainActor.run {
-                mirrorStatus = status
+                mirrorStatus = store.presence(hash: lastComponent.lowercased()) ?? [:]
                 isLoading = false
             }
         } else {
             await MainActor.run {
                 isLoading = false
             }
+        }
+    }
+
+    private static func icon(_ presence: BlobPresence?) -> String {
+        switch presence {
+        case .present: return "checkmark.circle.fill"
+        case .unreachable: return "questionmark.circle.fill"
+        default: return "xmark.circle.fill"
+        }
+    }
+
+    private static func tint(_ presence: BlobPresence?) -> Color {
+        switch presence {
+        case .present: return .green
+        case .unreachable: return .orange
+        default: return .red
+        }
+    }
+
+    private static func label(_ presence: BlobPresence?) -> String {
+        switch presence {
+        case .present: return "Available"
+        case .unreachable: return "Couldn't reach"
+        default: return "Not Found"
         }
     }
 }

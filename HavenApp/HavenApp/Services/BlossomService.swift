@@ -221,7 +221,9 @@ class BlossomService: @unchecked Sendable {
 
     /// Push a locally-stored blob to configured external mirrors.
     /// Downloads the blob from the local relay, then re-uploads to each external mirror.
-    func pushLocalToMirrors(sha256: String) async -> Bool {
+    /// `only` limits the upload to those servers (the ones missing the blob);
+    /// nil means every configured server.
+    func pushLocalToMirrors(sha256: String, only: [String]? = nil) async -> Bool {
         let port = await MainActor.run { configService.config.relayPort }
         #if os(macOS)
         let localURLStr = "http://127.0.0.1:\(port)/\(sha256)"
@@ -246,7 +248,8 @@ class BlossomService: @unchecked Sendable {
             // servers. Success means at least one of them accepted it — going
             // through saveToLocalRelay returned true even when every mirror
             // failed, because its result is the local save's.
-            let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
+            let configured = await MainActor.run { configService.config.activeBlossomMirrors }
+            let mirrors = only.map { wanted in configured.filter { wanted.contains($0) } } ?? configured
             guard !mirrors.isEmpty else {
                 logger.error("pushLocalToMirrors: no outside Blossom server configured")
                 return false
@@ -1212,30 +1215,36 @@ class BlossomService: @unchecked Sendable {
     /// - Parameter sha256: The SHA256 hash of the blob to check
     /// - Returns: Dictionary mapping mirror URL to availability status
     func checkMirrorStatus(sha256: String) async -> [String: Bool] {
-        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
-        guard !mirrors.isEmpty else {
-            return [:]
-        }
+        let presence = await checkMirrorPresence(sha256: sha256)
+        return presence.mapValues { $0 == .present }
+    }
 
-        return await withTaskGroup(of: (String, Bool).self) { group in
+    /// Asks every configured Blossom server whether it holds `sha256`.
+    /// Unlike `checkMirrorStatus`, a server that could not be reached is
+    /// reported as `.unreachable`, not as "does not have it".
+    func checkMirrorPresence(sha256: String) async -> [String: BlobPresence] {
+        let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
+        guard !mirrors.isEmpty else { return [:] }
+
+        return await withTaskGroup(of: (String, BlobPresence).self) { group in
             for mirror in mirrors {
                 group.addTask {
-                    let exists = await self.checkBlobExists(mirror: mirror, sha256: sha256)
-                    return (mirror, exists)
+                    (mirror, await self.checkBlobExists(mirror: mirror, sha256: sha256))
                 }
             }
-
-            var results: [String: Bool] = [:]
-            for await (mirror, exists) in group {
-                results[mirror] = exists
+            var results: [String: BlobPresence] = [:]
+            for await (mirror, presence) in group {
+                results[mirror] = presence
             }
             return results
         }
     }
 
-    /// Check if a specific blob exists on a mirror server
-    private func checkBlobExists(mirror: String, sha256: String) async -> Bool {
-        guard var mirrorURL = URL(string: mirror) else { return false }
+    /// Check if a specific blob exists on a mirror server.
+    /// A 2xx alone is not enough: some servers answer 200 with an HTML page
+    /// for any path, which used to read as "Available" for every file.
+    private func checkBlobExists(mirror: String, sha256: String) async -> BlobPresence {
+        guard var mirrorURL = URL(string: mirror) else { return .unreachable }
 
         // Ensure HTTPS for remote servers
         if mirrorURL.scheme == "http" && !isLocalhost(mirrorURL) {
@@ -1254,15 +1263,38 @@ class BlossomService: @unchecked Sendable {
         do {
             let session = isLocalhost(mirrorURL) ? localhostSession : remoteSession
             let (_, response) = try await session.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                return (200...299).contains(httpResponse.statusCode)
-            }
-            return false
+            guard let http = response as? HTTPURLResponse else { return .unreachable }
+            return Self.presence(statusCode: http.statusCode,
+                                 contentType: http.value(forHTTPHeaderField: "Content-Type"),
+                                 contentLength: http.value(forHTTPHeaderField: "Content-Length"))
         } catch {
             logger.debug("checkBlobExists: \(mirror)/\(sha256.prefix(8)) error: \(error.localizedDescription)")
-            return false
+            return .unreachable
         }
     }
+
+    /// The decision behind `checkBlobExists`, split out so it can be tested
+    /// without a server.
+    static func presence(statusCode: Int, contentType: String?, contentLength: String?) -> BlobPresence {
+        switch statusCode {
+        case 200...299:
+            if let type = contentType?.lowercased(), type.hasPrefix("text/html") { return .absent }
+            if let length = contentLength.flatMap({ Int64($0) }), length == 0 { return .absent }
+            return .present
+        case 400...499:
+            return .absent
+        default:
+            return .unreachable
+        }
+    }
+}
+
+/// Whether one Blossom server holds a blob.
+enum BlobPresence: Sendable, Equatable {
+    case present
+    case absent
+    /// The server did not answer (offline, timeout, 5xx), so we do not know.
+    case unreachable
 }
 
 /// Helper class conforming to NSObject and URLSessionTaskDelegate to report body upload progress.

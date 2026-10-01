@@ -950,8 +950,13 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         return host == sanitizedHost || host.hasSuffix("." + sanitizedHost)
     }
 
+    /// Where this file lives as far as the phone is concerned. A file stored
+    /// in the vault counts as on the phone even when it is shown through a
+    /// Blossom server's URL — the gallery promotes items to a mirror URL.
     func getSource(for url: URL) -> MediaSource {
         if isLocalURL(url) {
+            return .blossom
+        } else if let hash = Self.blossomHash(in: url), isInLocalBlossom(hash: hash) {
             return .blossom
         } else if isCached(url: url) {
             return .cached
@@ -973,31 +978,62 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
         return hashed.compactMap { String(format: "%02x", $0) }.joined()
     }
 
-    /// Clears the media cache directory while preserving Blossom data
-    func clearCache() {
-        do {
-            let cacheContents = try FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)
-            var deletedCount = 0
-            for fileURL in cacheContents {
-                // Skip the thumbnails directory — we handle it separately so it stays initialized
-                if fileURL.lastPathComponent == "thumbnails" { continue }
-                try FileManager.default.removeItem(at: fileURL)
-                deletedCount += 1
-            }
-            if let thumbContents = try? FileManager.default.contentsOfDirectory(at: thumbnailDirectory, includingPropertiesForKeys: nil) {
-                for fileURL in thumbContents {
-                    try? FileManager.default.removeItem(at: fileURL)
-                }
-            }
-            thumbnailMemoryCache.removeAllObjects()
-            #if DEBUG
-            print("MediaCacheService: Cleared \(deletedCount) cached files + thumbnails (Blossom data preserved)")
-            #endif
-        } catch {
-            Task { @MainActor in RelayProcessManager.shared.addLog("MediaCache: Failed to clear cache: \(error.localizedDescription)", level: "ERROR") }
-        }
+    /// What `clearCache()` did, so the UI can say it.
+    struct ClearCacheResult: Sendable {
+        let bytesFreed: Int64
+        let filesRemoved: Int
+        let filesFailed: Int
     }
 
+    /// Bytes held by temporary copies: the media cache and its thumbnails.
+    /// The vault (Blossom store) is not counted — clearing never touches it.
+    func cacheSizeBytes() -> Int64 {
+        var total: Int64 = 0
+        for dir in [cacheDirectory, thumbnailDirectory] {
+            guard let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey]) else { continue }
+            for case let fileURL as URL in walker {
+                guard let values = try? fileURL.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey]),
+                      values.isRegularFile == true else { continue }
+                total += Int64(values.totalFileAllocatedSize ?? 0)
+            }
+        }
+        return total
+    }
+
+    /// Clears the media cache, its thumbnails and the decoded images held in
+    /// memory, while preserving Blossom data. Keeps going past a file it
+    /// cannot remove, and reports what it did. Posts `.havenMediaCacheCleared`
+    /// so open views re-read where each file lives.
+    @discardableResult
+    func clearCache() -> ClearCacheResult {
+        let fm = FileManager.default
+        let sizeBefore = cacheSizeBytes()
+        var removed = 0
+        var failed = 0
+        for dir in [cacheDirectory, thumbnailDirectory] {
+            let contents = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+            for fileURL in contents {
+                // The thumbnails directory sits beside the cache, never inside
+                // it, but skip it by name in case an old install nested it.
+                if dir == cacheDirectory && fileURL.lastPathComponent == "thumbnails" { continue }
+                do {
+                    try fm.removeItem(at: fileURL)
+                    removed += 1
+                } catch {
+                    failed += 1
+                    Task { @MainActor in RelayProcessManager.shared.addLog("MediaCache: could not remove \(fileURL.lastPathComponent): \(error.localizedDescription)", level: "ERROR") }
+                }
+            }
+        }
+        imageCache.removeAllObjects()
+        thumbnailMemoryCache.removeAllObjects()
+        let freed = max(0, sizeBefore - cacheSizeBytes())
+        Task { @MainActor in
+            RelayProcessManager.shared.addLog("MediaCache: cleared \(removed) files, \(ByteCountFormatter.string(fromByteCount: freed, countStyle: .file)) freed, \(failed) failed (Blossom data preserved)")
+            NotificationCenter.default.post(name: .havenMediaCacheCleared, object: nil)
+        }
+        return ClearCacheResult(bytesFreed: freed, filesRemoved: removed, filesFailed: failed)
+    }
 
     /// Removes cached files older than the given TTL.
     /// Called automatically on launch. Skips Blossom data.
@@ -1027,9 +1063,9 @@ class MediaCacheService: ObservableObject, @unchecked Sendable {
     }
 
     enum MediaSource: String {
-        case blossom = "Local"
-        case cached = "Cached"
-        case remote = "Remote"
+        case blossom = "On phone"
+        case cached = "Temporary copy"
+        case remote = "Link only"
 
         var isLocal: Bool {
             return self == .blossom
