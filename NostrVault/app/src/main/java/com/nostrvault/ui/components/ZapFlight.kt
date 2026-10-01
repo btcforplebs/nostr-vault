@@ -107,8 +107,9 @@ object ZapFlight {
     }
 
     /**
-     * Flies the sats to the bolt on [noteId]. Returns false, drawing nothing,
-     * under Reduce Motion or when the bolt isn't on screen.
+     * Flies the sats to the bolt on [noteId]. Call it only once the wallet has
+     * paid: a failed zap must not play a success animation. Returns false,
+     * drawing nothing, under Reduce Motion or when the bolt isn't on screen.
      */
     fun launch(noteId: String): Boolean {
         val origin = originFrame()

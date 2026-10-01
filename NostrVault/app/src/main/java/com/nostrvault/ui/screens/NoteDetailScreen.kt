@@ -307,6 +307,7 @@ class NoteDetailViewModel @Inject constructor(
             _isZapping.value = false
             result.fold(
                 onSuccess = {
+                    ZapFlight.launch(note.effectiveEventId)
                     _zapMessage.emit("Zapped ⚡$amountSats sats")
                     kotlinx.coroutines.delay(3_000)
                     fetchEngagement(note.effectiveEventId)
@@ -873,7 +874,6 @@ fun NoteDetailScreen(
             onDismiss = { zapTargetNote = null },
             onZap = { amount ->
                 viewModel.zapNote(target, amount)
-                ZapFlight.launch(target.effectiveEventId)
                 zapTargetNote = null
             },
         )

@@ -1,6 +1,5 @@
 package com.nostrvault.ui.screens.feed
 
-import com.nostrvault.ui.components.ZapFlight
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -662,10 +661,7 @@ fun FeedScreen(
             sheetState = zapSheetState,
             onDismiss = { zapNoteId = null },
             onZap = { amount ->
-                zapNoteId?.let {
-                    viewModel.zapNote(it, amount)
-                    ZapFlight.launch(it)
-                }
+                zapNoteId?.let { viewModel.zapNote(it, amount) }
                 zapNoteId = null
             },
         )

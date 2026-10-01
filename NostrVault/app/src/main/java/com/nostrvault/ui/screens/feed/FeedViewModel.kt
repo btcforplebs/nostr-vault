@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.feed
 
+import com.nostrvault.ui.components.ZapFlight
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.lifecycle.ViewModel
@@ -430,7 +431,10 @@ class FeedViewModel @Inject constructor(
             // Real NIP-57 zap; effective id redirects kind-6 reposts to the
             // reposted event. ZapSendService bumps local stats on success.
             zapSendService.zapNote(note.effectiveEventId, note.pubkey, amount).fold(
-                onSuccess = { _zapMessage.emit("Zapped ⚡$amount sats") },
+                onSuccess = {
+                    ZapFlight.launch(note.effectiveEventId)
+                    _zapMessage.emit("Zapped ⚡$amount sats")
+                },
                 onFailure = { e -> _zapMessage.emit(e.message ?: "Zap failed") },
             )
         }

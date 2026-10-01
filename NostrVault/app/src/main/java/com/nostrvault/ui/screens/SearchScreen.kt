@@ -152,7 +152,10 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             val result = zapSendService.zapNote(noteId, notePubkey, DEFAULT_ZAP_SATS)
             _toast.value = result.fold(
-                onSuccess = { "Zapped $DEFAULT_ZAP_SATS sats ⚡️" },
+                onSuccess = {
+                    ZapFlight.launch(noteId)
+                    "Zapped $DEFAULT_ZAP_SATS sats ⚡️"
+                },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )
         }
@@ -801,10 +804,7 @@ fun SearchScreen(
                             onRepost = viewModel::repostNote,
                             onReply = onReply,
                             onQuote = onQuote,
-                            onZap = {
-                                viewModel.zapNote(note.effectiveEventId, note.pubkey)
-                                ZapFlight.launch(note.effectiveEventId)
-                            },
+                            onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
                         )
                         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                     }
