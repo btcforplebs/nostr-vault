@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 #if os(iOS)
 import UIKit
@@ -40,6 +41,8 @@ final class ZapFlightCoordinator: ObservableObject {
 
     @Published private(set) var flights: [Flight] = []
 
+    private static let logger = Logger(subsystem: "com.havenapp.relay", category: "ZapFlight")
+
     /// Window-space frames of every on-screen copy of the signed-in
     /// account's avatar, keyed per copy so one leaving the screen can never
     /// erase another's. Not published: they move with the tab bar's collapse
@@ -76,18 +79,20 @@ final class ZapFlightCoordinator: ObservableObject {
     func launch(to target: ZapFlightAnchor, onArrive: @escaping () -> Void) -> Bool {
         let originFrame = originFrame
         guard !Motion.isReduced, originFrame != .zero, target.frame != .zero else {
-            RelayProcessManager.shared.addLog(
-                "Zap flight skipped: reduceMotion=\(Motion.isReduced) origin=\(originFrame) target=\(target.frame) stage=\(stageFrame)"
-            )
+            let reason = "reduceMotion=\(Motion.isReduced) origin=\(originFrame) target=\(target.frame) stage=\(stageFrame)"
+            Self.logger.notice("Zap flight skipped: \(reason, privacy: .public)")
+            RelayProcessManager.shared.addLog("Zap flight skipped: " + reason)
             return false
         }
+        Self.logger.notice("Zap flight launched: origin=\(originFrame.debugDescription, privacy: .public) target=\(target.frame.debugDescription, privacy: .public)")
 
         let start = CGPoint(x: originFrame.midX, y: originFrame.midY)
         let end = CGPoint(x: target.frame.midX, y: target.frame.midY)
         let distance = hypot(end.x - start.x, end.y - start.y)
-        // Long trips get a little more time so the speed reads the same, but
-        // never so much that it stops feeling like a single flick.
-        let duration = 0.5 + min(Double(distance) / 3600, 0.14)
+        // Long enough to follow with your eye, even when the button sits just
+        // above your thumb; long trips get a little more so the speed reads
+        // the same.
+        let duration = 0.85 + min(Double(distance) / 2000, 0.25)
 
         let flight = Flight(
             launchedAt: Date(),
@@ -114,7 +119,7 @@ final class ZapFlightCoordinator: ObservableObject {
             Self.impact(.rigid)
             onArrive()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration * ZapFlightPath.arrival + ZapFlightPath.glowLife) { [weak self] in
             self?.flights.removeAll { $0.id == flight.id }
         }
         return true
@@ -147,6 +152,8 @@ enum ZapFlightPath {
     /// Measured in time rather than distance so the streak stretches out at
     /// full speed and pulls back into the head as it brakes on landing.
     static let trailLength: Double = 0.14
+    /// Seconds the screen glows after the bolt lands.
+    static let glowLife: Double = 0.6
 
     /// Picks up speed off the avatar, darts, then settles into the button — a
     /// cubic ease (0.4, 0.05, 0.2, 1) rather than a spring, because something
@@ -163,7 +170,9 @@ enum ZapFlightPath {
         let length = max(hypot(dx, dy), 1)
         // Unit normal to the straight line between the two ends.
         let nx = -dy / length, ny = dx / length
-        let swing = min(length * 0.3, 140) * bowSign
+        // Never less than a wide swing, so a short hop from the tab bar to a
+        // nearby button still sweeps out across the screen.
+        let swing = max(min(length * 0.45, 240), 150) * bowSign
         let p1 = CGPoint(x: start.x + dx * 0.2 + nx * swing, y: start.y + dy * 0.2 + ny * swing)
         let p2 = CGPoint(x: start.x + dx * 0.8 + nx * swing * 0.35, y: start.y + dy * 0.8 + ny * swing * 0.35)
         let mt = 1 - t
@@ -207,15 +216,16 @@ struct ZapFlightStage: View {
                 // exactly at the window's origin, so shift into its own space.
                 let stageOrigin = proxy.frame(in: .global).origin
                 TimelineView(.animation) { timeline in
-                    Canvas { context, _ in
+                    Canvas { context, size in
                         context.translateBy(x: -stageOrigin.x, y: -stageOrigin.y)
                         context.blendMode = .plusLighter
+                        let stage = CGRect(origin: stageOrigin, size: size)
                         for flight in coordinator.flights {
-                            draw(flight, at: timeline.date, in: &context)
+                            draw(flight, at: timeline.date, on: stage, in: &context)
                         }
                     } symbols: {
                         Image(systemName: "bolt.fill")
-                            .font(.system(size: 19, weight: .black))
+                            .font(.system(size: 34, weight: .black))
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [.white, Color(red: 1, green: 0.84, blue: 0.45)],
@@ -232,8 +242,9 @@ struct ZapFlightStage: View {
         .accessibilityHidden(true)
     }
 
-    private func draw(_ flight: ZapFlightCoordinator.Flight, at date: Date, in context: inout GraphicsContext) {
-        let u = min(max(date.timeIntervalSince(flight.launchedAt) / flight.duration, 0), 1)
+    private func draw(_ flight: ZapFlightCoordinator.Flight, at date: Date, on stage: CGRect, in context: inout GraphicsContext) {
+        let elapsed = date.timeIntervalSince(flight.launchedAt)
+        let u = min(max(elapsed / flight.duration, 0), 1)
         let start = CGPoint(x: flight.origin.midX, y: flight.origin.midY)
         let targetFrame = flight.target.frame
         let end = targetFrame == .zero ? start : CGPoint(x: targetFrame.midX, y: targetFrame.midY)
@@ -244,9 +255,9 @@ struct ZapFlightStage: View {
         // Launch: a ring leaves your avatar's edge, like a charge letting go.
         if u < 0.35 {
             let k = u / 0.35
-            let radius = flight.origin.width / 2 + 2 + CGFloat(k) * 14
+            let radius = flight.origin.width / 2 + 2 + CGFloat(k) * 26
             let ring = Path(ellipseIn: CGRect(x: start.x - radius, y: start.y - radius, width: radius * 2, height: radius * 2))
-            context.stroke(ring, with: .color(amber.opacity(0.85 * (1 - k))), lineWidth: 1.5 * (1 - CGFloat(k)) + 0.5)
+            context.stroke(ring, with: .color(amber.opacity(0.85 * (1 - k))), lineWidth: 2.5 * (1 - CGFloat(k)) + 0.5)
         }
 
         // Head fades up fast off the avatar and sinks into the button at the end.
@@ -259,7 +270,7 @@ struct ZapFlightStage: View {
         // brightens smoothly toward the head, with no seams between pieces.
         let tailStart = ZapFlightPath.eased(u - ZapFlightPath.trailLength)
         context.drawLayer { trail in
-            trail.addFilter(.shadow(color: amber.opacity(0.8), radius: 5))
+            trail.addFilter(.shadow(color: amber.opacity(0.8), radius: 9))
             let layers = 6
             for layer in 0..<layers {
                 let f = CGFloat(layer) / CGFloat(layers)
@@ -272,7 +283,7 @@ struct ZapFlightStage: View {
                 trail.stroke(
                     streak,
                     with: .color((layer == layers - 1 ? Color.white : amber).opacity(0.36 * headOpacity)),
-                    style: StrokeStyle(lineWidth: 1 + 3.8 * f, lineCap: .round, lineJoin: .round)
+                    style: StrokeStyle(lineWidth: 2 + 7 * f, lineCap: .round, lineJoin: .round)
                 )
             }
         }
@@ -291,6 +302,25 @@ struct ZapFlightStage: View {
             )
         }
 
+        // Landing: warm light floods out from the button and the screen's
+        // edges glow for a beat, then it all falls away.
+        let landed = (elapsed - flight.duration * ZapFlightPath.arrival) / ZapFlightPath.glowLife
+        if landed > 0, landed < 1 {
+            let g = CGFloat(landed)
+            let strength = g < 0.15 ? g / 0.15 : 1 - (g - 0.15) / 0.85
+            context.fill(
+                Path(stage),
+                with: .radialGradient(
+                    Gradient(colors: [amber.opacity(0.42 * strength), amber.opacity(0.12 * strength), .clear]),
+                    center: end, startRadius: 0, endRadius: 140 + 520 * g
+                )
+            )
+            context.drawLayer { edge in
+                edge.addFilter(.blur(radius: 22))
+                edge.stroke(Path(stage), with: .color(amber.opacity(0.55 * strength)), lineWidth: 36)
+            }
+        }
+
         // Head: a white-hot bolt, leaning into the direction it's travelling.
         guard headOpacity > 0, let bolt = context.resolveSymbol(id: Self.boltID) else { return }
         let ahead = point(min(t + 0.02, 1))
@@ -303,7 +333,7 @@ struct ZapFlightStage: View {
         head.translateBy(x: point(t).x, y: point(t).y)
         head.rotate(by: .radians(lean))
         head.scaleBy(x: scale, y: scale)
-        head.addFilter(.shadow(color: amber, radius: 8))
+        head.addFilter(.shadow(color: amber, radius: 14))
         head.addFilter(.shadow(color: .white.opacity(0.6), radius: 2))
         head.draw(bolt, at: .zero)
     }
