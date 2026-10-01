@@ -9,6 +9,8 @@ struct SourceIndicatorView: View {
     @State private var isCaching = false
     @State private var isMirroring = false
     @State private var showMirrorStatus = false
+    @State private var isPushing = false
+    @State private var didPush = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -61,6 +63,27 @@ struct SourceIndicatorView: View {
                 .controlSize(.small)
                 .disabled(isMirroring)
             }
+
+            // A blob that lives on this device's own relay: copy it out to the
+            // user's outside Blossom servers. This was only reachable from the
+            // grid's long-press menu, so the viewer had no way to do it.
+            if source == .blossom && !configService.config.activeBlossomMirrors.isEmpty {
+                Button(action: pushToMirrors) {
+                    if isPushing {
+                        ProgressView().controlSize(.small)
+                            .frame(width: 16, height: 16)
+                    } else if didPush {
+                        Label("Mirrored", systemImage: "checkmark.icloud")
+                            .font(.appSystem(size: 11, weight: .bold))
+                    } else {
+                        Label("Mirror to Blossom", systemImage: "arrow.up.circle")
+                            .font(.appSystem(size: 11, weight: .bold))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isPushing || didPush)
+            }
         }
         .onAppear {
             updateSource()
@@ -91,6 +114,40 @@ struct SourceIndicatorView: View {
                 }
             }
         }.resume()
+    }
+
+    private func pushToMirrors() {
+        let sha256 = url.deletingPathExtension().lastPathComponent
+        guard sha256.count == 64 && sha256.allSatisfy({ $0.isHexDigit }) else {
+            ErrorNotificationManager.shared.show(
+                String(localized: "media.push.error.noHash"),
+                icon: "exclamationmark.icloud.fill",
+                style: .warning
+            )
+            return
+        }
+        isPushing = true
+        Task {
+            let service = BlossomService(configService: configService, nostrService: nostrService)
+            let success = await service.pushLocalToMirrors(sha256: sha256)
+            await MainActor.run {
+                isPushing = false
+                if success {
+                    didPush = true
+                    ActionToastManager.shared.show(
+                        icon: "icloud.and.arrow.up.fill",
+                        message: String(localized: "media.push.succeeded"),
+                        color: Color.havenVerified
+                    )
+                    onMirrorComplete?()
+                } else {
+                    ErrorNotificationManager.shared.show(
+                        String(localized: "media.push.failed"),
+                        icon: "exclamationmark.icloud.fill"
+                    )
+                }
+            }
+        }
     }
 
     private func mirrorToBlossom() {

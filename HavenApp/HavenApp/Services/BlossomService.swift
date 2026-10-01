@@ -242,7 +242,26 @@ class BlossomService: @unchecked Sendable {
             }
 
             let contentType = httpResponse.mimeType ?? "application/octet-stream"
-            return await saveToLocalRelay(data: data, sha256: sha256, contentType: contentType, mirrorToExternal: true)
+            // The blob is already on this device, so upload only to the outside
+            // servers. Success means at least one of them accepted it — going
+            // through saveToLocalRelay returned true even when every mirror
+            // failed, because its result is the local save's.
+            let mirrors = await MainActor.run { configService.config.activeBlossomMirrors }
+            guard !mirrors.isEmpty else {
+                logger.error("pushLocalToMirrors: no outside Blossom server configured")
+                return false
+            }
+            let auth = await makeUploadAuth(sha256: sha256)
+            let accepted = await mirrorUploadPass(source: .data(data), sha256: sha256, contentType: contentType, mirrors: mirrors, authBase64: auth, progress: nil)
+            if !accepted.isEmpty && accepted.count < mirrors.count {
+                // Count, not hosts: a server may answer with a CDN URL whose
+                // host differs from the one configured.
+                let message = "Mirrored to \(accepted.count) of \(mirrors.count) Blossom servers"
+                await MainActor.run {
+                    ErrorNotificationManager.shared.show(message, icon: "exclamationmark.icloud.fill", style: .warning)
+                }
+            }
+            return !accepted.isEmpty
         } catch {
             logger.error("pushLocalToMirrors: error reading local blob: \(error.localizedDescription)")
             return false
