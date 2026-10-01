@@ -116,9 +116,15 @@ struct WalletTransaction: Identifiable, Equatable {
     let state: State
     let amountSats: Int
     let feeSats: Int
+    /// The invoice's own description, or nil when it is empty or is a zap
+    /// request (which is JSON, and goes to `zap` instead).
     let description: String?
     let createdAt: Date
     let settledAt: Date?
+    let paymentHash: String?
+    let invoice: String?
+    /// Set when the wallet returned the zap request as the description.
+    let zap: ZapDetail?
 
     /// Builds one from the decrypted NIP-47 transaction object. Wallets are
     /// loose about number types (int, double, numeric string), so every
@@ -139,7 +145,8 @@ struct WalletTransaction: Identifiable, Equatable {
         feeSats = (Self.number(dict["fees_paid"]) ?? 0) / 1000
 
         let desc = (dict["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        description = (desc?.isEmpty ?? true) ? nil : desc
+        zap = desc.flatMap { ZapDetail.fromZapRequest(json: $0) }
+        description = (desc?.isEmpty ?? true) || zap != nil ? nil : desc
 
         // `state` is newer in NIP-47; older wallets only send `settled_at`.
         switch (dict["state"] as? String)?.lowercased() {
@@ -150,13 +157,19 @@ struct WalletTransaction: Identifiable, Equatable {
         default: state = settledAt != nil ? .settled : .pending
         }
 
-        let hash = dict["payment_hash"] as? String
-        let invoice = dict["invoice"] as? String
+        let hash = (dict["payment_hash"] as? String)?.lowercased()
+        let invoice = (dict["invoice"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        paymentHash = hash ?? invoice.flatMap { Bolt11.paymentHash($0) }
+        self.invoice = invoice
         id = hash ?? invoice ?? "\(type)-\(created)-\(amountSats)"
     }
 
     init(id: String, direction: Direction, state: State, amountSats: Int, feeSats: Int,
-         description: String?, createdAt: Date, settledAt: Date?) {
+         description: String?, createdAt: Date, settledAt: Date?,
+         paymentHash: String? = nil, invoice: String? = nil, zap: ZapDetail? = nil) {
+        self.paymentHash = paymentHash
+        self.invoice = invoice
+        self.zap = zap
         self.id = id
         self.direction = direction
         self.state = state

@@ -97,4 +97,52 @@ enum Bolt11 {
         guard msat < 21_000_000 * msatPerBTC else { return .unreadable }
         return .sats(msat / 1_000)
     }
+
+    // MARK: - Payment hash
+
+    private static let charset = Array("qpzry9x8gf2tvdw0s3jn54khce6mua7l")
+
+    /// The invoice's payment hash (tagged field `p`), as lowercase hex.
+    ///
+    /// The one identifier a wallet's history and a zap receipt both carry —
+    /// what lets a payment be matched to the receipt that says who sent it.
+    /// Checksum is not verified: this only reads, and a receipt whose bolt11
+    /// is corrupt simply matches nothing.
+    static func paymentHash(_ invoice: String) -> String? {
+        let lower = invoice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let separator = lower.lastIndex(of: "1") else { return nil }
+        var words: [UInt8] = []
+        for ch in lower[lower.index(after: separator)...] {
+            guard let v = charset.firstIndex(of: ch) else { return nil }
+            words.append(UInt8(v))
+        }
+        // timestamp (7) … tagged fields … signature (104) + checksum (6)
+        guard words.count > 7 + 104 + 6 else { return nil }
+        let end = words.count - 104 - 6
+        var i = 7
+        while i + 3 <= end {
+            let type = words[i]
+            let length = Int(words[i + 1]) << 5 | Int(words[i + 2])
+            i += 3
+            guard i + length <= end else { return nil }
+            if type == 1 && length == 52 {
+                // 52 five-bit words = 260 bits; the hash is the first 256.
+                var bytes: [UInt8] = []
+                var acc = 0, bits = 0
+                for w in words[i..<(i + length)] {
+                    acc = (acc << 5) | Int(w)
+                    bits += 5
+                    if bits >= 8 {
+                        bits -= 8
+                        bytes.append(UInt8((acc >> bits) & 0xff))
+                        acc &= (1 << bits) - 1
+                    }
+                }
+                guard bytes.count >= 32 else { return nil }
+                return bytes.prefix(32).map { String(format: "%02x", $0) }.joined()
+            }
+            i += length
+        }
+        return nil
+    }
 }

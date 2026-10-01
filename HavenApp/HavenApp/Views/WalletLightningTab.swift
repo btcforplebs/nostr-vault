@@ -44,6 +44,8 @@ struct WalletLightningTab: View {
     @State private var historyUnsupported = false
     @State private var canLoadMoreHistory = false
     @State private var historyRefreshPending = false
+    @State private var zapDetails: [String: ZapDetail] = [:]
+    @State private var zapPosts: [String: FeedNote] = [:]
     private static let historyPageSize = 20
 
     private var lightningAddress: String? {
@@ -90,6 +92,9 @@ struct WalletLightningTab: View {
             }
         }
         .task(id: invoiceToPay) { await resolveLNURLIfNeeded() }
+        .navigationDestination(for: FeedNote.self) { note in
+            NoteDetailView(note: note)
+        }
     }
 
     // MARK: - NWC Not Configured
@@ -779,20 +784,54 @@ struct WalletLightningTab: View {
         .padding(.horizontal, 16)
     }
 
+    /// A zap row opens the zapped post; anything else is just a row.
+    @ViewBuilder
     private func transactionRow(_ tx: WalletTransaction) -> some View {
+        if let postId = zapDetails[tx.id]?.postId, let post = zapPosts[postId] {
+            NavigationLink(value: post) {
+                transactionRowContent(tx)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            transactionRowContent(tx)
+        }
+    }
+
+    private func transactionRowContent(_ tx: WalletTransaction) -> some View {
         let incoming = tx.direction == .incoming
+        let zap = zapDetails[tx.id]
+        let person = zap?.counterparty(me: nostrService.activeHexPubkey, direction: tx.direction)
         return HStack(spacing: 12) {
-            Image(systemName: incoming ? "arrow.down.left" : "arrow.up.right")
-                .font(.appSystem(size: 13, weight: .bold))
-                .foregroundColor(incoming ? .green : .orange)
-                .frame(width: 28, height: 28)
-                .background((incoming ? Color.green : Color.orange).opacity(0.12))
-                .clipShape(Circle())
+            if let person {
+                AvatarView(url: nostrService.profiles[person]?.pictureURL, pubkey: person, size: 28)
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "bolt.fill")
+                            .font(.appSystem(size: 8, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(2)
+                            .background(Circle().fill(Color.orange))
+                            .offset(x: 3, y: 3)
+                    }
+            } else {
+                Image(systemName: zap != nil ? "bolt.fill" : (incoming ? "arrow.down.left" : "arrow.up.right"))
+                    .font(.appSystem(size: 13, weight: .bold))
+                    .foregroundColor(zap != nil ? .orange : (incoming ? .green : .orange))
+                    .frame(width: 28, height: 28)
+                    .background((zap != nil ? Color.orange : (incoming ? Color.green : Color.orange)).opacity(0.12))
+                    .clipShape(Circle())
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text(tx.description ?? (incoming ? "Received" : "Sent"))
+                Text(transactionTitle(tx, zap: zap, person: person))
                     .font(.appSystem(size: 13, weight: .medium))
                     .foregroundColor(.primary)
                     .lineLimit(1)
+                if let line = zapContextLine(zap, incoming: incoming) {
+                    Text(line)
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
                 Text(transactionSubtitle(tx))
                     .font(.appCaption)
                     .foregroundColor(tx.state == .failed || tx.state == .expired ? .red : .secondary)
@@ -805,6 +844,38 @@ struct WalletLightningTab: View {
                 .strikethrough(tx.state == .failed || tx.state == .expired)
         }
         .padding(.vertical, 8)
+    }
+
+    private func transactionTitle(_ tx: WalletTransaction, zap: ZapDetail?, person: String?) -> String {
+        let incoming = tx.direction == .incoming
+        guard let zap else { return tx.description ?? (incoming ? "Received" : "Sent") }
+        if incoming && zap.isAnonymous { return "Anonymous zap" }
+        guard let person else { return incoming ? "Zap received" : "Zap sent" }
+        let name = nostrService.profiles[person]?.bestName ?? ("npub…" + String(person.suffix(6)))
+        return incoming ? "Zap from \(name)" : "Zap to \(name)"
+    }
+
+    /// What the zap was for: the sender's comment, else the start of the post.
+    private func zapContextLine(_ zap: ZapDetail?, incoming: Bool) -> String? {
+        guard let zap else { return nil }
+        if let comment = zap.comment { return "\u{201C}\(comment)\u{201D}" }
+        if let id = zap.postId, let post = zapPosts[id] {
+            let text = post.content
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? "on a post" : "on: \(text)"
+        }
+        return zap.postId != nil ? "on a post" : (incoming ? "on your profile" : "on their profile")
+    }
+
+    /// Looks up who each zap on this page came from, without holding up the list.
+    private func resolveZaps(_ page: [WalletTransaction]) {
+        let me = nostrService.activeHexPubkey
+        Task {
+            let found = await ZapHistoryService.lookup(for: page, me: me)
+            zapDetails.merge(found.details) { _, new in new }
+            zapPosts.merge(found.posts) { _, new in new }
+        }
     }
 
     private func transactionSubtitle(_ tx: WalletTransaction) -> String {
@@ -834,6 +905,7 @@ struct WalletLightningTab: View {
             do {
                 let page = try await NWCService.listTransactions(limit: Self.historyPageSize, offset: offset)
                 transactions = reset ? page : WalletTransaction.merge(transactions, page)
+                resolveZaps(page)
                 canLoadMoreHistory = page.count >= Self.historyPageSize
                 historyUnsupported = false
             } catch let err as NWCService.WalletError where err.isUnsupported {
