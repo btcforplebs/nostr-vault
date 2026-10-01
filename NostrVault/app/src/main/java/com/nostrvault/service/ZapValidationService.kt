@@ -38,6 +38,14 @@ object ZapValidationService {
         return receiptPubkey.equals(authorized, ignoreCase = true)
     }
 
+    /**
+     * The pubkey [recipientPubkey]'s LNURL service names as its zap-receipt
+     * publisher, or null when that can't be determined. For callers that must
+     * fail closed, unlike [isValidReceipt].
+     */
+    suspend fun authorizedPublisher(recipientPubkey: String, profiles: Map<String, FeedProfile>): String? =
+        resolveAuthorizedPublisher(recipientPubkey, profiles)
+
     private suspend fun resolveAuthorizedPublisher(
         recipientPubkey: String,
         profiles: Map<String, FeedProfile>,
@@ -45,11 +53,13 @@ object ZapValidationService {
         authorizedPublisherCache[recipientPubkey]?.let { return it }
         if (authorizedPublisherCache.containsKey(recipientPubkey)) return null // cached negative
 
-        val profile = profiles[recipientPubkey]
+        // No profile yet is not an answer: caching null here would leave this
+        // recipient unresolved for the whole session once it loads.
+        val profile = profiles[recipientPubkey] ?: return null
         val resolved = try {
             when {
-                !profile?.lud16.isNullOrEmpty() -> LNURLService.resolveAddress(profile!!.lud16!!).nostrPubkey
-                !profile?.lud06.isNullOrEmpty() -> LNURLService.resolveRawLNURL(profile!!.lud06!!).nostrPubkey
+                !profile.lud16.isNullOrEmpty() -> LNURLService.resolveAddress(profile.lud16!!).nostrPubkey
+                !profile.lud06.isNullOrEmpty() -> LNURLService.resolveRawLNURL(profile.lud06!!).nostrPubkey
                 else -> null
             }
         } catch (e: Exception) {

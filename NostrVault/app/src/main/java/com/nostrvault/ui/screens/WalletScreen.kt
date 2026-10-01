@@ -25,13 +25,26 @@ import com.journeyapps.barcodescanner.BarcodeEncoder
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.service.LNURLPayResponse
+import com.nostrvault.service.LNURLService
+import com.nostrvault.service.LNURLWithdrawResponse
 import com.nostrvault.service.NWCService
+import com.nostrvault.service.NWCTimeoutException
+import com.nostrvault.service.NWCWalletException
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.ZapHistoryService
+import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.util.ZapDetail
+import kotlinx.coroutines.CancellationException
 import com.nostrvault.ui.screens.wallet.WalletLightningTab
 import com.nostrvault.ui.theme.*
+import com.nostrvault.util.Bolt11
+import com.nostrvault.util.WalletTransaction
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -44,6 +57,7 @@ class WalletViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nwcService: NWCService,
     private val nostrService: NostrService,
+    private val zapHistoryService: ZapHistoryService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
     private val _lightningBalance = MutableStateFlow<Long?>(null)
@@ -65,6 +79,38 @@ class WalletViewModel @Inject constructor(
     // Lightning receive
     private val _generatedInvoice = MutableStateFlow<String?>(null)
     val generatedInvoice = _generatedInvoice.asStateFlow()
+
+    // Lightning history (NIP-47 list_transactions)
+    private val _transactions = MutableStateFlow<List<WalletTransaction>>(emptyList())
+    val transactions = _transactions.asStateFlow()
+
+    private val _historyLoading = MutableStateFlow(false)
+    val historyLoading = _historyLoading.asStateFlow()
+
+    private val _historyError = MutableStateFlow<String?>(null)
+    val historyError = _historyError.asStateFlow()
+
+    /** The wallet, or this connection's permissions, does not share history. */
+    private val _historyUnsupported = MutableStateFlow(false)
+    val historyUnsupported = _historyUnsupported.asStateFlow()
+
+    private val _canLoadMoreHistory = MutableStateFlow(false)
+    val canLoadMoreHistory = _canLoadMoreHistory.asStateFlow()
+
+    /** Who each zap in the history came from, keyed by transaction id. */
+    private val _zapDetails = MutableStateFlow<Map<String, ZapDetail>>(emptyMap())
+    val zapDetails = _zapDetails.asStateFlow()
+
+    /** The zapped posts, keyed by post id. */
+    private val _zapPosts = MutableStateFlow<Map<String, FeedNote>>(emptyMap())
+    val zapPosts = _zapPosts.asStateFlow()
+
+    val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
+
+    val myPubkey: String get() = nostrService.activeHexPubkey
+
+    /** A refresh asked for while a page was loading; it runs once that page lands. */
+    private var historyRefreshPending = false
 
     init {
         refreshBalance()
@@ -118,10 +164,152 @@ class WalletViewModel @Inject constructor(
                 nwcService.payInvoice(invoice)
                 _message.value = "Payment sent"
                 refreshBalance()
+                loadHistory(reset = true)
             } catch (e: Exception) {
                 _error.value = e.message ?: "Payment failed"
             } finally { _busy.value = false }
         }
+    }
+
+    /**
+     * Pays a resolved LNURL-pay / lightning address. [onSent] runs only once
+     * the payment went through, so the Send box keeps its text on failure.
+     */
+    fun payLnurl(
+        pay: LNURLPayResponse,
+        amountMsat: Long,
+        recipient: String,
+        comment: String,
+        onSent: () -> Unit,
+    ) {
+        if (_busy.value) return
+        val sats = amountMsat / 1000
+        viewModelScope.launch {
+            _busy.value = true; _error.value = null; _message.value = null
+            var unconfirmed = false
+            try {
+                val invoice = LNURLService.fetchInvoice(
+                    callback = pay.callback,
+                    amountMsat = amountMsat,
+                    comment = comment.trim().ifEmpty { null },
+                )
+                // LUD-06: never pay an invoice for a different amount than the
+                // one asked for — a service that swaps it is either broken or
+                // stealing. Exact msat: whole sats would let it add up to 999.
+                if (Bolt11.msat(invoice) != amountMsat) {
+                    _error.value = "$recipient returned an invoice for a different amount, so nothing was sent."
+                    return@launch
+                }
+                try {
+                    nwcService.payInvoice(invoice)
+                } catch (e: NWCTimeoutException) {
+                    // The request reached the relay and the wallet may be paying
+                    // right now. Retrying would fetch a NEW invoice from the
+                    // service and pay twice, so clear the form instead of
+                    // leaving Send one tap away.
+                    unconfirmed = true
+                    _error.value = "Your wallet didn't confirm in time. The payment may still go " +
+                        "through, so check History before sending again."
+                    onSent()
+                    return@launch
+                }
+                _message.value = "Sent ${"%,d".format(sats)} sats to $recipient."
+                onSent()
+                refreshBalance()
+                loadHistory(reset = true)
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Payment failed"
+            } finally {
+                _busy.value = false
+                if (unconfirmed) {
+                    // Look again once a late settlement has had a moment to land.
+                    viewModelScope.launch {
+                        delay(5_000)
+                        refreshBalance()
+                        loadHistory(reset = true)
+                    }
+                }
+            }
+        }
+    }
+
+    /** LNURL-withdraw: make an invoice on our wallet and hand it to the service. */
+    fun withdrawLnurl(
+        withdraw: LNURLWithdrawResponse,
+        amountMsat: Long,
+        sender: String,
+        onReceived: () -> Unit,
+    ) {
+        if (_busy.value) return
+        val sats = amountMsat / 1000
+        viewModelScope.launch {
+            _busy.value = true; _error.value = null; _message.value = null
+            try {
+                val invoice = nwcService.makeInvoice(amountMsat, withdraw.defaultDescription)
+                LNURLService.submitWithdraw(withdraw, invoice)
+                _message.value = "$sender is sending you ${"%,d".format(sats)} sats. " +
+                    "It shows up in History once it lands."
+                onReceived()
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Withdrawal failed"
+                return@launch
+            } finally { _busy.value = false }
+            // The service pays asynchronously; look again once it has had a moment.
+            delay(4_000)
+            refreshBalance()
+            loadHistory(reset = true)
+        }
+    }
+
+    // ── History ───────────────────────────────────────────────────
+    fun loadHistory(reset: Boolean) {
+        if (config.value.nwcURI.isNullOrBlank()) return
+        if (_historyLoading.value) {
+            // A payment just finished while a page was loading: refresh after.
+            if (reset) historyRefreshPending = true
+            return
+        }
+        _historyLoading.value = true
+        _historyError.value = null
+        val offset = if (reset) 0 else _transactions.value.size
+        viewModelScope.launch {
+            try {
+                val page = nwcService.listTransactions(limit = HISTORY_PAGE_SIZE, offset = offset)
+                _transactions.value = if (reset) page else WalletTransaction.merge(_transactions.value, page)
+                resolveZaps(page)
+                _canLoadMoreHistory.value = page.size >= HISTORY_PAGE_SIZE
+                _historyUnsupported.value = false
+            } catch (e: NWCWalletException) {
+                if (e.isUnsupported) _historyUnsupported.value = true
+                else _historyError.value = "Couldn't load history: ${e.message}"
+            } catch (e: Exception) {
+                _historyError.value = "Couldn't load history: ${e.message}"
+            } finally { _historyLoading.value = false }
+            if (historyRefreshPending) {
+                historyRefreshPending = false
+                loadHistory(reset = true)
+            }
+        }
+    }
+
+    /** Looks up who each zap on this page came from, without holding up the list. */
+    private fun resolveZaps(page: List<WalletTransaction>) {
+        val me = nostrService.activeHexPubkey
+        viewModelScope.launch {
+            val found = try {
+                zapHistoryService.lookup(page, me)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return@launch
+            }
+            _zapDetails.value = _zapDetails.value + found.details
+            _zapPosts.value = _zapPosts.value + found.posts
+        }
+    }
+
+    private companion object {
+        const val HISTORY_PAGE_SIZE = 20
     }
 
 }
@@ -133,6 +321,7 @@ private enum class WalletTab(val label: String) { LIGHTNING("Lightning"), SETTIN
 fun WalletScreen(
     onBack: () -> Unit,
     onSweep: () -> Unit = {},
+    onNoteClick: (String) -> Unit = {},
     viewModel: WalletViewModel = hiltViewModel(),
 ) {
     var selectedTab by remember { mutableStateOf(WalletTab.LIGHTNING) }
@@ -182,7 +371,7 @@ fun WalletScreen(
             }
 
             when (selectedTab) {
-                WalletTab.LIGHTNING -> WalletLightningTab(viewModel)
+                WalletTab.LIGHTNING -> WalletLightningTab(viewModel, onNoteClick)
                 WalletTab.SETTINGS -> WalletSettingsTab(viewModel, onSweep)
             }
         }

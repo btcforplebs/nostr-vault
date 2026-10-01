@@ -1,12 +1,18 @@
 package com.nostrvault.service
 
 import android.util.Log
+import com.nostrvault.util.LightningPayTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.IOException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -25,6 +31,14 @@ object LNURLService {
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
+        // A network interceptor runs for every hop, redirects included.
+        .addNetworkInterceptor { chain ->
+            val url = chain.request().url
+            if (!url.isHttps && !url.host.endsWith(".onion")) {
+                throw IOException("Refused an insecure (non-https) payment link")
+            }
+            chain.proceed(chain.request())
+        }
         .build()
 
     // ══════════════════════════════════════════════════════════════════
@@ -67,16 +81,22 @@ object LNURLService {
      * @param callback The callback URL from LNURLPayResponse
      * @param amountMsat Amount in millisatoshis
      * @param zapRequest Optional NIP-57 zap request event JSON
+     * @param comment Optional LUD-12 comment, only when the service allows one
      * @return BOLT11 invoice string
      */
     suspend fun fetchInvoice(
         callback: String,
         amountMsat: Long,
         zapRequest: String? = null,
+        comment: String? = null,
     ): String = withContext(Dispatchers.IO) {
         val urlBuilder = StringBuilder(callback)
         urlBuilder.append(if (callback.contains("?")) "&" else "?")
         urlBuilder.append("amount=$amountMsat")
+
+        if (!comment.isNullOrEmpty()) {
+            urlBuilder.append("&comment=${URLEncoder.encode(comment, "UTF-8")}")
+        }
 
         zapRequest?.let { zap ->
             val encoded = URLEncoder.encode(zap, "UTF-8")
@@ -89,13 +109,99 @@ object LNURLService {
             .build()
 
         val response = client.newCall(request).execute()
+        val body = response.body?.string()
+        // A service that refuses says why (`{"status":"ERROR","reason":…}`),
+        // often with a 200; that reason is the only useful explanation.
+        serviceError(body)?.let { throw it }
         if (!response.isSuccessful) {
             throw LNURLError.NetworkError("HTTP ${response.code}")
         }
 
-        val body = response.body?.string() ?: throw LNURLError.InvalidResponse
+        body ?: throw LNURLError.InvalidResponse
         val parsed = json.decodeFromString<LNURLCallbackResponse>(body)
         parsed.pr ?: throw LNURLError.InvalidInvoice
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Wallet send box: any LNURL, pay or withdraw
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * Resolves whatever the user pasted — address, bech32 LNURL or LUD-17
+     * link — to the pay or withdraw request behind it.
+     */
+    suspend fun resolve(target: LightningPayTarget): LNURLResolved = withContext(Dispatchers.IO) {
+        val url = when (target) {
+            is LightningPayTarget.Invoice -> throw LNURLError.InvalidAddress
+            is LightningPayTarget.Address -> {
+                val parts = target.address.split("@")
+                if (parts.size != 2) throw LNURLError.InvalidAddress
+                "https://${parts[1]}/.well-known/lnurlp/${parts[0]}"
+            }
+            is LightningPayTarget.Lnurl -> Bech32.decodeLNURL(target.bech32) ?: throw LNURLError.InvalidAddress
+            is LightningPayTarget.LnurlUrl -> target.url
+        }
+        val httpUrl = url.toHttpUrlOrNull() ?: throw LNURLError.InvalidAddress
+        // Host only: a withdraw link's query carries its k1 secret.
+        Log.d(TAG, "Resolving ${httpUrl.host}")
+
+        val request = Request.Builder().url(httpUrl).get().build()
+        val (code, body) = try {
+            client.newCall(request).execute().use { it.code to it.body?.string() }
+        } catch (e: IOException) {
+            throw LNURLError.NetworkError(e.message ?: "unreachable")
+        }
+        serviceError(body)?.let { throw it }
+        val obj = body?.let { runCatching { json.parseToJsonElement(it) as? JsonObject }.getOrNull() }
+        if (code != 200 || obj == null) throw LNURLError.InvalidResponse
+
+        val host = httpUrl.host
+        when ((obj["tag"] as? JsonPrimitive)?.content) {
+            "payRequest" -> LNURLResolved.Pay(
+                runCatching { json.decodeFromJsonElement<LNURLPayResponse>(obj) }
+                    .getOrElse { throw LNURLError.InvalidResponse },
+                host,
+            )
+            "withdrawRequest" -> LNURLResolved.Withdraw(
+                runCatching { json.decodeFromJsonElement<LNURLWithdrawResponse>(obj) }
+                    .getOrElse { throw LNURLError.InvalidResponse },
+                host,
+            )
+            else -> throw LNURLError.ServiceError(
+                "This link isn't a payment or a withdrawal, so the wallet can't use it."
+            )
+        }
+    }
+
+    /** LUD-03 step two: hand the service an invoice of ours to pay. */
+    suspend fun submitWithdraw(withdraw: LNURLWithdrawResponse, invoice: String) = withContext(Dispatchers.IO) {
+        val url = withdraw.callback.toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("k1", withdraw.k1)
+            ?.addQueryParameter("pr", invoice)
+            ?.build()
+            ?: throw LNURLError.InvalidResponse
+        val request = Request.Builder().url(url).get().build()
+        val body = try {
+            client.newBuilder().readTimeout(15, TimeUnit.SECONDS).build()
+                .newCall(request).execute().use { it.body?.string() }
+        } catch (e: IOException) {
+            throw LNURLError.NetworkError(e.message ?: "unreachable")
+        }
+        val obj = body?.let { runCatching { json.parseToJsonElement(it) as? JsonObject }.getOrNull() }
+        val status = (obj?.get("status") as? JsonPrimitive)?.content
+        if (!status.equals("OK", ignoreCase = true)) {
+            val reason = (obj?.get("reason") as? JsonPrimitive)?.content
+            throw LNURLError.ServiceError(reason ?: "The service did not accept the withdrawal.")
+        }
+    }
+
+    /** The service's own `{"status":"ERROR","reason":…}`, if that is what came back. */
+    private fun serviceError(body: String?): LNURLError.ServiceError? {
+        val obj = body?.let { runCatching { json.parseToJsonElement(it) as? JsonObject }.getOrNull() } ?: return null
+        val status = (obj["status"] as? JsonPrimitive)?.content ?: return null
+        if (!status.equals("ERROR", ignoreCase = true)) return null
+        val reason = (obj["reason"] as? JsonPrimitive)?.content
+        return LNURLError.ServiceError(reason ?: "The service refused the request.")
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -131,7 +237,25 @@ data class LNURLPayResponse(
     val tag: String,
     val nostrPubkey: String? = null,
     val allowsNostr: Boolean? = null,
+    /** LUD-12: longest comment the service accepts; null or 0 means none. */
+    val commentAllowed: Int? = null,
 )
+
+/** LUD-03: a service that pays *you*. */
+@Serializable
+data class LNURLWithdrawResponse(
+    val callback: String,
+    val k1: String,
+    val minWithdrawable: Long,
+    val maxWithdrawable: Long,
+    val defaultDescription: String? = null,
+)
+
+sealed interface LNURLResolved {
+    val host: String
+    data class Pay(val pay: LNURLPayResponse, override val host: String) : LNURLResolved
+    data class Withdraw(val withdraw: LNURLWithdrawResponse, override val host: String) : LNURLResolved
+}
 
 @Serializable
 data class LNURLCallbackResponse(
@@ -140,10 +264,21 @@ data class LNURLCallbackResponse(
 )
 
 sealed class LNURLError : Exception() {
-    data object InvalidAddress : LNURLError()
+    data object InvalidAddress : LNURLError() {
+        override val message: String get() = "Invalid Lightning Address"
+    }
     data class NetworkError(override val message: String) : LNURLError()
-    data object InvalidResponse : LNURLError()
-    data object InvalidInvoice : LNURLError()
+    data object InvalidResponse : LNURLError() {
+        override val message: String get() = "Invalid response from LNURL service"
+    }
+    data object InvalidInvoice : LNURLError() {
+        override val message: String get() = "Failed to retrieve a valid invoice"
+    }
+
+    /** The service's own error, shown as-is: usually the only useful explanation. */
+    data class ServiceError(val reason: String) : LNURLError() {
+        override val message: String get() = reason
+    }
 }
 
 /**
@@ -158,8 +293,11 @@ object Bech32 {
             val pos = lower.lastIndexOf("1")
             if (pos < 1) return null
 
-            val data = lower.substring(pos + 1).dropLast(6) // Remove checksum
-            val decoded = data.map { CHARSET.indexOf(it) }.filter { it >= 0 }
+            val words = lower.substring(pos + 1).map { CHARSET.indexOf(it) }
+            // A mistyped or altered LNURL must not decode to some other URL.
+            if (words.size < 6 || words.any { it < 0 }) return null
+            if (polymod(expandHrp(lower.substring(0, pos)) + words) != 1) return null
+            val decoded = words.dropLast(6) // Remove checksum
 
             // Convert 5-bit groups to 8-bit bytes
             val bytes = convertBits(decoded, 5, 8, false) ?: return null
@@ -168,6 +306,20 @@ object Bech32 {
             Log.w("Bech32", "LNURL decode failed: ${e.message}")
             null
         }
+    }
+
+    private fun expandHrp(hrp: String): List<Int> =
+        hrp.map { it.code shr 5 } + 0 + hrp.map { it.code and 31 }
+
+    private fun polymod(values: List<Int>): Int {
+        val gen = intArrayOf(0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3)
+        var chk = 1
+        for (v in values) {
+            val top = chk ushr 25
+            chk = ((chk and 0x1ffffff) shl 5) xor v
+            for (i in 0 until 5) if ((top shr i) and 1 == 1) chk = chk xor gen[i]
+        }
+        return chk
     }
 
     private fun convertBits(data: List<Int>, fromBits: Int, toBits: Int, pad: Boolean): List<Byte>? {

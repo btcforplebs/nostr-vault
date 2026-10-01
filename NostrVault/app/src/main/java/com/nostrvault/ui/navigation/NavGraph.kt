@@ -504,6 +504,9 @@ fun NostrVaultNavHost(
                 WalletScreen(
                     onBack = { navController.popBackStack() },
                     onSweep = { navController.navigate(Screen.BitcoinSweep.route) },
+                    onNoteClick = { noteId ->
+                        navController.navigate(Screen.NoteDetail.createRoute(noteId))
+                    },
                 )
             }
 

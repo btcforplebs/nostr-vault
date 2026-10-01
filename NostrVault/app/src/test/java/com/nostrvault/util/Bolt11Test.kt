@@ -54,4 +54,30 @@ class Bolt11Test {
         assertEquals(null, Bolt11.satsOrNull("lnbc1p4fakabc"))
         assertEquals(null, Bolt11.satsOrNull("not-an-invoice"))
     }
+
+    /**
+     * The exact amount, so a payer can refuse an invoice that is off by less
+     * than a sat — [Bolt11.amount] rounds that away.
+     */
+    @Test fun `msat is exact`() {
+        assertEquals(21_000L, Bolt11.msat("lnbc210n1p4fakabc"))
+        assertEquals(21_001L, Bolt11.msat("lnbc210010p1p4fakabc"))
+        assertEquals(Bolt11Amount.Sats(21L), Bolt11.amount("lnbc210010p1p4fakabc"))
+        assertEquals(100_000_000_000L, Bolt11.msat("lnbc11p4fakabc"))
+    }
+
+    @Test fun `msat is null when there is no exact amount`() {
+        assertEquals(null, Bolt11.msat("lnbc1p4fakabc"))       // amountless
+        assertEquals(null, Bolt11.msat("lnbc1p1p4fakabc"))     // a tenth of a msat
+        assertEquals(null, Bolt11.msat("lnbc215p1p4fakabc"))   // 21.5 msat
+        assertEquals(null, Bolt11.msat("not-an-invoice"))
+    }
+
+    /** A wire amount whose msat value overflows a Long is unreadable, not wrapped. */
+    @Test fun `overflowing amount is unreadable`() {
+        assertEquals(Bolt11Amount.Unreadable, Bolt11.amount("lnbc999999999999m1p4fakabc"))
+        assertEquals(null, Bolt11.msat("lnbc999999999999m1p4fakabc"))
+        // More than 21 million BTC: readable, but no exact amount to pay.
+        assertEquals(null, Bolt11.msat("lnbc210000011p4fakabc"))
+    }
 }
