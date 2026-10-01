@@ -41,6 +41,22 @@ data class FeedThread(
     /** Everything below the root, in the same order as [entries]. */
     val replies: List<FeedThreadEntry>
         get() = if (root == null) entries else entries.filter { it.note.id != root.id }
+
+    /**
+     * The [limit] most recent replies, kept in reading order. A reply is what
+     * lifts a thread to the top of the feed, so a folded card has to show the
+     * replies that did it rather than the oldest few.
+     */
+    fun latestReplies(limit: Int): List<FeedThreadEntry> {
+        val all = replies
+        if (all.size <= limit) return all
+        val newest = all.withIndex()
+            .sortedWith(compareByDescending<IndexedValue<FeedThreadEntry>> { it.value.note.createdAt }.thenByDescending { it.index })
+            .take(limit)
+            .map { it.value.id }
+            .toSet()
+        return all.filter { it.id in newest }
+    }
 }
 
 /** Mirrors iOS `FeedThreadGrouping.swift`: pure logic, no service/view dependency. */

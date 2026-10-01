@@ -151,6 +151,24 @@ class FeedThreadGroupingTest {
     }
 
     @Test
+    fun `latest replies keeps the newest in reading order`() {
+        // Reading order is r1, r1a, r2, r2a, r3; the three newest are r2a, r1a, r3.
+        val notes = listOf(
+            note("r2a", 600, parent = "r2", root = "root"),
+            note("r1a", 500, parent = "r1", root = "root"),
+            note("r3", 400, parent = "root", root = "root"),
+            note("r2", 300, parent = "root", root = "root"),
+            note("r1", 200, parent = "root", root = "root"),
+            note("root", 100),
+        )
+        val thread = FeedThreadGrouping.build(notes)[0]
+
+        assertEquals(listOf("r1", "r1a", "r2", "r2a", "r3"), thread.replies.map { it.id })
+        assertEquals(listOf("r1a", "r2a", "r3"), thread.latestReplies(3).map { it.id })
+        assertEquals(thread.replies.map { it.id }, thread.latestReplies(5).map { it.id })
+    }
+
+    @Test
     fun `empty feed produces no threads`() {
         assertTrue(FeedThreadGrouping.build(emptyList()).isEmpty())
     }
