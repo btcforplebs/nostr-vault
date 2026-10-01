@@ -50,13 +50,14 @@ enum LightningPayTarget: Equatable {
             return .lnurl(lower)
         }
 
-        // lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest).
-        if lower.hasPrefix("lnbc") || lower.hasPrefix("lntb") || lower.hasPrefix("lntbs") {
-            return .invoice(lower)
-        }
-
+        // Before the invoice test: `lntbob@getalby.com` is an address.
         if isLightningAddress(lower) {
             return .address(lower)
+        }
+
+        // lnbc (mainnet), lntb (testnet), lntbs (signet), lnbcrt (regtest).
+        if (lower.hasPrefix("lnbc") || lower.hasPrefix("lntb")) && !lower.contains("@") {
+            return .invoice(lower)
         }
         return nil
     }
@@ -96,9 +97,11 @@ struct LNURLAmountRange: Equatable {
 
     func check(sats: Int?) -> Check {
         guard let sats, sats > 0 else { return .invalid }
+        // Compared in sats first: `sats * 1000` traps for a long enough
+        // number typed into the field, and this runs on every keystroke.
+        if sats > maxSats { return .tooLarge(maxSats: maxSats) }
         let msat = sats * 1000
         if msat < minMsat { return .tooSmall(minSats: minSats) }
-        if msat > maxMsat { return .tooLarge(maxSats: maxSats) }
         return .ok(msat: msat)
     }
 }
@@ -167,8 +170,8 @@ struct WalletTransaction: Identifiable, Equatable {
     private static func number(_ v: Any?) -> Int? {
         switch v {
         case let i as Int: return i
-        case let d as Double: return Int(d)
-        case let s as String: return Int(s) ?? Double(s).map { Int($0) }
+        case let d as Double: return Int(exactly: d.rounded(.towardZero))
+        case let s as String: return Int(s) ?? Double(s).flatMap { Int(exactly: $0.rounded(.towardZero)) }
         default: return nil
         }
     }

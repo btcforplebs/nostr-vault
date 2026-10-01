@@ -22,6 +22,26 @@ enum Bolt11 {
     private static let msatPerBTC = 100_000_000_000
 
     static func amount(_ invoice: String) -> Amount {
+        switch parse(invoice) {
+        case .msat(let msat, _): return sats(msat: msat)
+        case .unspecified: return .unspecified
+        case .unreadable: return .unreadable
+        }
+    }
+
+    /// The exact amount in millisatoshis, or nil for an amountless or
+    /// unreadable invoice. For checking an invoice against the amount that was
+    /// asked for — `amount` rounds down to whole sats, which would let a
+    /// service add up to 999 msat unnoticed.
+    static func msat(_ invoice: String) -> Int? {
+        if case .msat(let m, exact: true) = parse(invoice), m > 0, m < 21_000_000 * msatPerBTC { return m }
+        return nil
+    }
+
+    /// `exact` is false for a pico amount that is not a whole msat.
+    private enum Parsed { case msat(Int, exact: Bool), unspecified, unreadable }
+
+    private static func parse(_ invoice: String) -> Parsed {
         let lower = invoice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         // The bech32 data charset excludes `1`, so the last `1` is the
@@ -53,7 +73,7 @@ enum Bolt11 {
         case "u": perUnit = msatPerBTC / 1_000_000
         case "n": perUnit = msatPerBTC / 1_000_000_000
         // Pico-BTC is a tenth of a msat; a valid pico amount is a multiple of 10.
-        case "p": return sats(msat: value / 10)
+        case "p": return .msat(value / 10, exact: value % 10 == 0)
         case nil: perUnit = msatPerBTC
         default: return .unreadable
         }
@@ -62,7 +82,7 @@ enum Bolt11 {
         // wire and nothing upstream bounds its length.
         let (msat, overflowed) = value.multipliedReportingOverflow(by: perUnit)
         guard !overflowed else { return .unreadable }
-        return sats(msat: msat)
+        return .msat(msat, exact: true)
     }
 
     /// Sats, or nil for anything that does not state at least one.

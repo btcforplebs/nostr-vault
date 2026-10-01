@@ -81,6 +81,23 @@ final class LightningPayTargetTests: XCTestCase {
         XCTAssertEqual(r.check(sats: 10), .tooLarge(maxSats: 9))
     }
 
+    /// A long run of digits must not trap — this check runs as the user types.
+    func testHugeAmountDoesNotOverflow() {
+        let r = LNURLAmountRange(minMsat: 1_000, maxMsat: 100_000_000)
+        XCTAssertEqual(r.check(sats: 10_000_000_000_000_000), .tooLarge(maxSats: 100_000))
+        XCTAssertEqual(r.check(sats: Int.max), .tooLarge(maxSats: 100_000))
+    }
+
+    func testAddressThatLooksLikeAnInvoicePrefix() {
+        XCTAssertEqual(LightningPayTarget.parse("lntbob@getalby.com"), .address("lntbob@getalby.com"))
+        XCTAssertEqual(LightningPayTarget.parse("lnbc@pay.example.com"), .address("lnbc@pay.example.com"))
+    }
+
+    func testOutOfRangeNumbersDoNotTrap() {
+        XCTAssertEqual(WalletTransaction(nip47: ["type": "incoming", "created_at": 1, "amount": Double.nan])?.amountSats, 0)
+        XCTAssertEqual(WalletTransaction(nip47: ["type": "incoming", "created_at": 1, "amount": 1e300])?.amountSats, 0)
+    }
+
     func testFixedAmount() {
         XCTAssertTrue(LNURLAmountRange(minMsat: 50_000, maxMsat: 50_000).isFixed)
     }

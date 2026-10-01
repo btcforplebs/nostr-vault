@@ -43,6 +43,7 @@ struct WalletLightningTab: View {
     @State private var historyError: String? = nil
     @State private var historyUnsupported = false
     @State private var canLoadMoreHistory = false
+    @State private var historyRefreshPending = false
     private static let historyPageSize = 20
 
     private var lightningAddress: String? {
@@ -381,6 +382,13 @@ struct WalletLightningTab: View {
         LightningPayTarget.parse(invoiceToPay)
     }
 
+    /// The bolt11 in the box with any `lightning:` / BIP21 wrapping removed —
+    /// what is shown, confirmed and sent to the wallet.
+    private var parsedInvoice: String {
+        if case .invoice(let s) = payTarget { return s }
+        return invoiceToPay.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var payInvoiceButton: some View {
         VStack(spacing: 12) {
             Button(action: { showingPayConfirm = true }) {
@@ -645,12 +653,26 @@ struct WalletLightningTab: View {
                 // LUD-06: never pay an invoice for a different amount than the
                 // one asked for — a service that swaps it is either broken or
                 // stealing.
-                guard Bolt11.amount(invoice) == .sats(sats) else {
+                guard Bolt11.msat(invoice) == msat else {
                     sendError = "\(name) returned an invoice for a different amount, so nothing was sent."
                     isSending = false
                     return
                 }
-                _ = try await NWCService.payInvoice(bolt11: invoice)
+                do {
+                    _ = try await NWCService.payInvoice(bolt11: invoice)
+                } catch NWCService.NWCError.notConnected {
+                    // The request may have reached the wallet and be paying
+                    // right now. Retrying would fetch a NEW invoice from the
+                    // service and pay twice, so clear the form instead of
+                    // leaving Send one tap away.
+                    sendError = "Your wallet didn't confirm in time. The payment may still go through, so check History before sending again."
+                    invoiceToPay = ""
+                    isSending = false
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    fetchBalance()
+                    loadHistory(reset: true)
+                    return
+                }
                 sendResult = "Sent \(sats.formatted()) sats to \(name)."
                 invoiceToPay = ""
                 isSending = false
@@ -800,7 +822,11 @@ struct WalletLightningTab: View {
     }
 
     private func loadHistory(reset: Bool) {
-        guard !isLoadingHistory else { return }
+        guard !isLoadingHistory else {
+            // A payment just finished while a page was loading: refresh after.
+            if reset { historyRefreshPending = true }
+            return
+        }
         isLoadingHistory = true
         historyError = nil
         let offset = reset ? 0 : transactions.count
@@ -816,6 +842,10 @@ struct WalletLightningTab: View {
                 historyError = "Couldn't load history: \(error.localizedDescription)"
             }
             isLoadingHistory = false
+            if historyRefreshPending {
+                historyRefreshPending = false
+                loadHistory(reset: true)
+            }
         }
     }
 
@@ -850,7 +880,7 @@ struct WalletLightningTab: View {
     /// the wallet on the other end is the authority on that, not us.
     @ViewBuilder
     private var invoiceAmountLine: some View {
-        switch Bolt11.amount(invoiceToPay) {
+        switch Bolt11.amount(parsedInvoice) {
         case .sats(let sats):
             Text("Paying \(sats.formatted()) sats")
                 .font(.appSystem(size: 13, weight: .semibold))
@@ -873,7 +903,7 @@ struct WalletLightningTab: View {
     /// next to the field, but the alert is the last surface before the sats
     /// leave, so it repeats the number rather than assuming you read the line.
     private var payConfirmationMessage: String {
-        switch Bolt11.amount(invoiceToPay.trimmingCharacters(in: .whitespacesAndNewlines)) {
+        switch Bolt11.amount(parsedInvoice) {
         case .sats(let sats):
             return "This sends \(sats.formatted()) sats from your wallet. Lightning payments cannot be reversed."
         case .unspecified:
@@ -884,7 +914,7 @@ struct WalletLightningTab: View {
     }
 
     private func payInvoice() {
-        let invoice = invoiceToPay.trimmingCharacters(in: .whitespacesAndNewlines)
+        let invoice = parsedInvoice
         guard !invoice.isEmpty else { return }
         isSending = true
         sendError = nil

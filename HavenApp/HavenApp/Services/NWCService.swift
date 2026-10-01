@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 @MainActor
 struct NWCService {
@@ -804,11 +805,16 @@ extension NWCService {
             let wsClient = WebSocketClient()
             wsClient.isTemporary = true
             var isCompleted = false
+            var cancellable: AnyCancellable? = nil
+            var stateCancellable: AnyCancellable? = nil
 
             func finish(_ result: Result<[String: Any], Error>) {
                 guard !isCompleted else { return }
                 isCompleted = true
                 wsClient.disconnect()
+                // Dropping the subscriptions breaks the client -> sink -> client cycle.
+                cancellable = nil
+                stateCancellable = nil
                 continuation.resume(with: result)
             }
 
@@ -834,7 +840,6 @@ extension NWCService {
                 return
             }
 
-            var cancellable: Any? = nil
             cancellable = wsClient.messageSubject
                 .receive(on: DispatchQueue.main)
                 .sink { message in
@@ -846,7 +851,6 @@ extension NWCService {
                           let eventObj = array[2] as? [String: Any],
                           let eventData = try? JSONSerialization.data(withJSONObject: eventObj),
                           let responseEvent = try? JSONDecoder().decode(NostrEvent.self, from: eventData) else { return }
-                    _ = cancellable // keep the subscription alive until a reply lands
                     do {
                         let decrypted = try NIP04Service.decrypt(
                             ciphertext: responseEvent.content,
@@ -872,13 +876,11 @@ extension NWCService {
                     }
                 }
 
-            var stateCancellable: Any? = nil
             stateCancellable = wsClient.$connectionState
                 .removeDuplicates()
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
                 .sink { state in
-                    _ = stateCancellable
                     switch state {
                     case .connected:
                         wsClient.send(text: subStr)
@@ -897,8 +899,6 @@ extension NWCService {
                     RelayProcessManager.shared.addLog("NWC: \(method) timed out after \(Int(timeout))s", level: "ERROR")
                 }
                 finish(.failure(NWCError.notConnected))
-                _ = cancellable
-                _ = stateCancellable
             }
         }
     }
