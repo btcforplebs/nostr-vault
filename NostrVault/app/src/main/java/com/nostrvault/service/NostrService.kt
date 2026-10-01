@@ -83,9 +83,17 @@ class NostrService @Inject constructor(
         private const val BASE_RECONNECT_DELAY_MS = 2_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val TEMP_CLIENT_DISCONNECT_MS = 3_000L
-        private const val METADATA_POOL_SIZE = 3
+        // Every Blastr relay, as iOS asks (up to this many). Kind 0 coverage
+        // varies wildly: relay.primal.net returns ~0 profiles for an authors
+        // filter, and a relay that is down or blocked returns none, so the
+        // first three alone could leave the whole feed nameless.
+        private const val METADATA_POOL_SIZE = 8
         private const val METADATA_IDLE_TIMEOUT_MS = 60_000L
         private const val METADATA_SUB_ID = "meta-pool"
+        // How long a dispatched pubkey stays in the pool's filter waiting for
+        // its kind 0, and the most authors one REQ carries.
+        private const val METADATA_PENDING_WINDOW_MS = 60_000L
+        private const val METADATA_MAX_AUTHORS = 500
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -744,11 +752,14 @@ class NostrService @Inject constructor(
             }
         }
 
-        val filter = buildMap<String, Any> {
-            put("kinds", listOf(0))
-            put("authors", pubkeys)
-        }
-        val filterJson = buildFilterJson(filter)
+        // The pool shares one sub id, so each REQ *replaces* the last on every
+        // relay, and a REQ sent before a socket connects is dropped (send()
+        // returns false; only the latest filter is re-sent on connect). A filter
+        // of just this flush's pubkeys therefore cancelled every earlier batch
+        // still in flight, and those pubkeys were then negatively cached for
+        // PROFILE_RETRY_TTL_MS: on a cold start almost every feed author stayed
+        // an npub with a letter avatar. Ask for everything still unanswered.
+        val filterJson = pendingMetadataFilterJson(now) ?: return
         lastMetadataFilterJson = filterJson
 
         // Reuse a small pool of WARM connections to the Blastr relays (kind 0 is
@@ -764,10 +775,39 @@ class NostrService @Inject constructor(
             }
             for (relayUrl in relays) {
                 val client = metadataClients.getOrPut(relayUrl) { createMetadataClient(relayUrl) }
+                // CLOSE first: a relay may refuse a REQ that reuses the id of a
+                // subscription it still holds open, rather than replace it.
+                client.send("[\"CLOSE\",\"$METADATA_SUB_ID\"]")
                 client.send("[\"REQ\",\"$METADATA_SUB_ID\",$filterJson]")
             }
         }
         armMetadataIdleTimeout()
+    }
+
+    /**
+     * kind-0 filter for every pubkey dispatched in the last
+     * [METADATA_PENDING_WINDOW_MS] whose metadata has not arrived since, newest
+     * first, capped at [METADATA_MAX_AUTHORS]. Null when nothing is pending.
+     */
+    private fun pendingMetadataFilterJson(now: Long): String? {
+        val profiles = _profiles.value
+        val staged = profileEmitLock.withLock { pendingProfiles.keys.toSet() }
+        val authors = profileQueueLock.withLock {
+            profileFetchAttempts.entries
+                .filter { (pubkey, attemptedAt) ->
+                    now - attemptedAt < METADATA_PENDING_WINDOW_MS &&
+                        pubkey !in staged &&
+                        (profiles[pubkey]?.fetchedAt ?: 0L) < attemptedAt
+                }
+                .sortedByDescending { it.value }
+                .take(METADATA_MAX_AUTHORS)
+                .map { it.key }
+        }
+        if (authors.isEmpty()) return null
+        return buildFilterJson(buildMap<String, Any> {
+            put("kinds", listOf(0))
+            put("authors", authors)
+        })
     }
 
     /** Open a long-lived metadata-pool connection that survives across flushes. */
@@ -782,10 +822,12 @@ class NostrService @Inject constructor(
         // recovers without waiting for the next flush.
         scope.launch {
             client.connectionState.collect { state ->
-                if (state == WebSocketClient.ConnectionState.CONNECTED &&
-                    lastMetadataFilterJson.isNotEmpty()
-                ) {
-                    client.send("[\"REQ\",\"$METADATA_SUB_ID\",$lastMetadataFilterJson]")
+                if (state == WebSocketClient.ConnectionState.CONNECTED) {
+                    val filterJson = pendingMetadataFilterJson(System.currentTimeMillis())
+                        ?: lastMetadataFilterJson.takeIf { it.isNotEmpty() }
+                    if (filterJson != null) {
+                        client.send("[\"REQ\",\"$METADATA_SUB_ID\",$filterJson]")
+                    }
                 }
             }
         }
