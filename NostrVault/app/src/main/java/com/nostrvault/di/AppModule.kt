@@ -96,6 +96,9 @@ object AppModule {
                     .build()
             }
             .components {
+                // Before the built-in HTTP fetcher, which would download a whole
+                // video to read one frame of it.
+                add(com.nostrvault.service.RemoteVideoFrameFetcher.Factory())
                 add(GifDecoder.Factory())
                 add(VideoFrameDecoder.Factory())
             }

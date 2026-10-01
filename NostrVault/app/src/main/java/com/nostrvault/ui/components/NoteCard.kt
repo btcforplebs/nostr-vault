@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -1030,7 +1031,7 @@ private fun SingleMediaPreview(
     // 600dp portrait. Matches iOS FeedMediaView (Fit, no crop).
     val painter = rememberAsyncImagePainter(
         model = ImageRequest.Builder(context)
-            .data(url)
+            .data(remember(url, tags) { feedImageModel(tags, url) })
             .size(800)
             .crossfade(100)
             .build(),
@@ -1067,6 +1068,12 @@ private fun SingleMediaPreview(
                 .background(TertiaryGroupedBg)
                 .clickable { onMediaClick(url) },
         ) {
+            BlurHashPreview(
+                url = url,
+                tags = tags,
+                ratio = ratio,
+                loaded = painter.state is AsyncImagePainter.State.Success,
+            )
             Image(
                 painter = painter,
                 contentDescription = null,
@@ -1083,6 +1090,49 @@ private fun SingleMediaPreview(
             }
         }
     }
+}
+
+/**
+ * What the feed asks Coil for to show [url]: the URL itself, except for a video
+ * whose `imeta` names a poster image (`image`, or the older `thumb`), which is
+ * a small JPEG instead of a frame read out of the video.
+ */
+internal fun feedImageModel(tags: List<List<String>>, url: String): String =
+    if (isVideoUrl(url)) imetaField(tags, url, "image") ?: imetaField(tags, url, "thumb") ?: url
+    else url
+
+/**
+ * What a photo shows before its pixels arrive: the NIP-92 `blurhash` preview,
+ * stretched over exactly the rect the `Fit` image will occupy. Without a
+ * blurhash it draws nothing and the card fill shows, as before. iOS parity:
+ * `MediaLoadingPlaceholder`.
+ */
+@Composable
+private fun BlurHashPreview(
+    url: String,
+    tags: List<List<String>>,
+    ratio: Float?,
+    loaded: Boolean,
+) {
+    val preview = remember(url, tags) {
+        BlurHash.bitmap(imetaField(tags, url, "blurhash"))?.asImageBitmap()
+    } ?: return
+    // Stay under the arriving image until its 100ms crossfade has finished;
+    // dropping the preview at once would flash the empty card between the two.
+    var gone by remember(url) { mutableStateOf(false) }
+    LaunchedEffect(loaded) {
+        if (loaded) {
+            delay(250)
+            gone = true
+        }
+    }
+    if (gone) return
+    Image(
+        bitmap = preview,
+        contentDescription = null,
+        contentScale = ContentScale.FillBounds,
+        modifier = if (ratio != null) Modifier.aspectRatio(ratio) else Modifier.fillMaxSize(),
+    )
 }
 
 @Composable
@@ -1122,15 +1172,23 @@ private fun MediaCarousel(
                     .background(TertiaryGroupedBg)
                     .clickable { onMediaClick(page) },
             ) {
+                var loaded by remember(url) { mutableStateOf(false) }
+                BlurHashPreview(
+                    url = url,
+                    tags = tags,
+                    ratio = remember(url, tags) { knownAspectRatio(tags, url) },
+                    loaded = loaded,
+                )
                 AsyncImage(
                     model = ImageRequest.Builder(context)
-                        .data(url)
+                        .data(remember(url, tags) { feedImageModel(tags, url) })
                         .size(800)
                         .crossfade(100)
                         .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     onSuccess = { result ->
+                        loaded = true
                         val d = result.result.drawable
                         if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) {
                             MediaAspectCache.put(

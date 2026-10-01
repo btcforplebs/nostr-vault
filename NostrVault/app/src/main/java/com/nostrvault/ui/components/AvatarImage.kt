@@ -99,18 +99,7 @@ fun AvatarImage(
         if (url != null) {
             AsyncImage(
                 imageLoader = avatarImageLoader(context),
-                model = ImageRequest.Builder(context)
-                    .data(url)
-                    .size(128)
-                    .memoryCacheKey(url)
-                    .memoryCachePolicy(CachePolicy.ENABLED)
-                    .diskCachePolicy(CachePolicy.ENABLED)
-                    .allowHardware(true)
-                    // No crossfade: the 150ms fade fired on every avatar as it
-                    // scrolled into view, adding per-frame animation work + flicker.
-                    // A stable memoryCacheKey lets cached avatars paint instantly.
-                    .crossfade(false)
-                    .build(),
+                model = remember(url) { avatarRequest(context, url) },
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -119,6 +108,28 @@ fun AvatarImage(
             )
         }
     }
+}
+
+private fun avatarRequest(context: Context, url: String): ImageRequest =
+    ImageRequest.Builder(context)
+        .data(url)
+        .size(128)
+        .memoryCacheKey(url)
+        .memoryCachePolicy(CachePolicy.ENABLED)
+        .diskCachePolicy(CachePolicy.ENABLED)
+        .allowHardware(true)
+        // No crossfade: the 150ms fade fired on every avatar as it
+        // scrolled into view, adding per-frame animation work + flicker.
+        // A stable memoryCacheKey lets cached avatars paint instantly.
+        .crossfade(false)
+        .build()
+
+/**
+ * Loads [url] exactly as [AvatarImage] will — same loader, size and cache key —
+ * so the avatar paints from memory when its row scrolls in.
+ */
+internal suspend fun prefetchAvatar(context: Context, url: String) {
+    avatarImageLoader(context).execute(avatarRequest(context, url))
 }
 
 // 8 fixed gradient pairs derived from existing theme palette.

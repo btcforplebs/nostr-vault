@@ -18,19 +18,29 @@ package com.nostrvault.ui.components
  * that do — which is most of them.
  */
 internal fun imetaAspectRatio(tags: List<List<String>>, url: String): Float? {
+    val dim = imetaField(tags, url, "dim") ?: return null
+    val parts = dim.split('x', 'X')
+    if (parts.size != 2) return null
+    val w = parts[0].trim().toFloatOrNull() ?: return null
+    val h = parts[1].trim().toFloatOrNull() ?: return null
+    if (w <= 0f || h <= 0f) return null
+    return w / h
+}
+
+/**
+ * The value of one field (`dim`, `blurhash`, `image`, …) in the NIP-92 `imeta`
+ * tag whose `url` is [url], or null. A field from another URL's tag is never
+ * returned: in a two-image note that would dress the second in the first's data.
+ */
+internal fun imetaField(tags: List<List<String>>, url: String, field: String): String? {
+    val prefix = "$field "
     for (tag in tags) {
         if (tag.firstOrNull() != "imeta" || tag.size < 2) continue
         val fields = tag.drop(1)
         val tagUrl = fields.firstOrNull { it.startsWith("url ") }?.removePrefix("url ")?.trim()
         if (tagUrl != url) continue
-        val dim = fields.firstOrNull { it.startsWith("dim ") }?.removePrefix("dim ")?.trim()
-            ?: continue
-        val parts = dim.split('x', 'X')
-        if (parts.size != 2) continue
-        val w = parts[0].trim().toFloatOrNull() ?: continue
-        val h = parts[1].trim().toFloatOrNull() ?: continue
-        if (w <= 0f || h <= 0f) continue
-        return w / h
+        val value = fields.firstOrNull { it.startsWith(prefix) }?.removePrefix(prefix)?.trim()
+        if (!value.isNullOrEmpty()) return value
     }
     return null
 }

@@ -213,8 +213,19 @@ fun FeedScreen(
             lastVisible >= listState.layoutInfo.totalItemsCount - 5
         }
     }
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && notes.isNotEmpty()) viewModel.loadMore()
+    LoadMoreEffect(shouldLoadMore, isLoadingMore, notes.size, viewModel::loadMore)
+
+    // Load the next rows' photos and avatars while these are on screen.
+    // Reads the lists through rememberUpdatedState inside the effect, so a
+    // new page or a metadata batch does not restart it.
+    FeedPrefetchEffect(listState) { row ->
+        if (isThreaded) {
+            val thread = feedThreads.getOrNull(row) ?: return@FeedPrefetchEffect emptyList()
+            prefetchItemsForThread(thread.entries.map { it.note to (it.depth == 0) }, allProfiles)
+        } else {
+            val note = notes.getOrNull(row) ?: return@FeedPrefetchEffect emptyList()
+            prefetchItemsFor(note, allProfiles, compact = isCompact && expandedNoteId != note.id)
+        }
     }
 
     // Track whether the user is at the top of the feed
@@ -970,9 +981,7 @@ private fun MediaFeedGrid(
             last >= gridState.layoutInfo.totalItemsCount - 6
         }
     }
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && notes.isNotEmpty()) onLoadMore()
-    }
+    LoadMoreEffect(shouldLoadMore, isLoadingMore, notes.size, onLoadMore)
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
@@ -1099,9 +1108,27 @@ private fun FeedFullNoteRow(
             addAll(NostrMentions.mentionedPubkeys(note.content))
         }.distinct()
     }
+    // Subscribed here, not read with `viewModel.isLiked(...)`: a plain
+    // StateFlow `.value` read is invisible to Compose, so the row skipped
+    // recomposition and a tapped heart, a zap, new counts or a late-arriving
+    // parent never showed until the row scrolled off and back. derivedStateOf
+    // narrows each to this note, so another note's like does not redraw it.
+    val likedState = viewModel.likedEventIds.collectAsState()
+    val zappedState = viewModel.zappedEventIds.collectAsState()
+    val statsState = viewModel.noteStats.collectAsState()
+    val parentsState = viewModel.parentNotesCache.collectAsState()
+    val parentNextState = viewModel.parentIsNextNote.collectAsState()
+    // Likes and zaps are recorded against effectiveEventId (EngagementBar
+    // sends it) and reactions are counted against the e-tag target, so a
+    // repost is looked up by the note it reposts.
+    val isLiked by remember(note.id) { derivedStateOf { note.effectiveEventId in likedState.value } }
+    val isZapped by remember(note.id) { derivedStateOf { note.effectiveEventId in zappedState.value } }
+    val stats by remember(note.id) { derivedStateOf { statsState.value[note.effectiveEventId] } }
     val parentEventId = note.parentEventId
-    val parentNote = parentEventId?.let { viewModel.parentNoteFor(it) }
-    val isParentNext = parentEventId?.let { viewModel.isParentNext(note.id) } ?: false
+    val parentNote by remember(note.id) { derivedStateOf { parentEventId?.let { parentsState.value[it] } } }
+    val isParentNext by remember(note.id) {
+        derivedStateOf { parentEventId != null && note.id in parentNextState.value }
+    }
 
     val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotes) {
         if (note.quotedEventIds.isEmpty()) {
@@ -1121,11 +1148,11 @@ private fun FeedFullNoteRow(
     NoteCard(
         note = note,
         profile = cardProfiles[note.pubkey],
-        stats = viewModel.statsFor(note.id),
+        stats = stats,
         profiles = cardProfiles,
         quotedNotes = quotedNotesMap,
-        isLiked = viewModel.isLiked(note.id),
-        isZapped = viewModel.isZapped(note.id),
+        isLiked = isLiked,
+        isZapped = isZapped,
         isReposted = note.effectiveEventId in repostedIds,
         repostedByProfile = note.repostedBy?.let { cardProfiles[it] },
         replyToProfile = note.replyToPubkey?.let { cardProfiles[it] },

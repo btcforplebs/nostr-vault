@@ -356,6 +356,10 @@ class FeedService @Inject constructor(
     // Guards loadMore() against re-entry from scroll-triggered re-fires
     private val isLoadingMore = AtomicBoolean(false)
 
+    /** True while an older page is being fetched; the feed's spinner and retry key. */
+    private val _loadingOlder = MutableStateFlow(false)
+    val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
+
     // Search debounce
     private var searchDebounceJob: Job? = null
 
@@ -1884,6 +1888,7 @@ class FeedService @Inject constructor(
             isLoadingMore.set(false)
             return
         }
+        _loadingOlder.value = true
         val config = configStore.config.value
         val relayUrls = buildList {
             config.nostrURL?.let { add(it) }
@@ -1940,6 +1945,7 @@ class FeedService @Inject constructor(
             } finally {
                 collectors.forEach { it.cancel() }
                 clients.forEach { it.disconnect() }
+                _loadingOlder.value = false
                 isLoadingMore.set(false)
             }
         }
