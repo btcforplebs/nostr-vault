@@ -153,4 +153,21 @@ final class FeedThreadGroupingTests: XCTestCase {
     func testEmptyFeedProducesNoThreads() {
         XCTAssertTrue(FeedThreadGrouping.build(notes: [TestNote]()).isEmpty)
     }
+
+    func testFetchedRootShowsWhenTheReplysParentIsMissing() {
+        // r answers p, which no relay returned; r's NIP-10 root tag names
+        // "root", which was fetched. The root is no ancestor of anything in
+        // the pool, so the parent walk alone never added it and the card said
+        // "Loading the start of this thread…" with the root already cached.
+        let root = TestNote("root", at: 100, author: "dave")
+        let notes = [TestNote("r", at: 300, parent: "p", root: "root", author: "bob")]
+
+        let threads = FeedThreadGrouping.build(notes: notes) { $0 == "root" ? root : nil }
+
+        XCTAssertEqual(threads.count, 1)
+        XCTAssertEqual(threads[0].rootId, "root")
+        XCTAssertEqual(threads[0].root?.id, "root")
+        XCTAssertEqual(ids(threads[0]), ["root", "r"])
+        XCTAssertEqual(depths(threads[0]), [0, 1])
+    }
 }

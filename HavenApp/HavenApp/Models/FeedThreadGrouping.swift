@@ -149,6 +149,13 @@ enum FeedThreadGrouping {
                 currentId = ancestor.parentEventId
                 hops += 1
             }
+
+            // A root taken from the NIP-10 tag (the reply's parent never
+            // loaded) is no ancestor of anything in the pool, so the walk above
+            // never adds it, and the card kept saying "Loading the start of
+            // this thread…" with the root already fetched.
+            if pool[root] == nil, let resolved = resolveNote(root) { pool[root] = resolved }
+            if let rootNote = pool[root] { add(rootNote, to: root) }
         }
 
         var threads: [FeedThread<Note>] = []
