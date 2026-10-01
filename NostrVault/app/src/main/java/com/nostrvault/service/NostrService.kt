@@ -552,7 +552,7 @@ class NostrService @Inject constructor(
         }
         when (kind) {
             0 -> {
-                parseAndCacheProfile(pubkey, content)
+                parseAndCacheProfile(pubkey, content, createdAt)
                 return
             }
             10002 -> {
@@ -605,7 +605,9 @@ class NostrService @Inject constructor(
      */
     private fun acceptReplaceable(eventObj: JsonObject, kind: Int, pubkey: String, createdAt: Long): Boolean {
         val key = "$kind:$pubkey"
-        val seen = replaceableNewest[key]
+        // A profile saved on disk counts as seen, so after a restart an older
+        // signed kind-0 cannot replace a newer one.
+        val seen = replaceableNewest[key] ?: if (kind == 0) _profiles.value[pubkey]?.createdAt else null
         if (seen != null && createdAt < seen) return false
         if (!HavenBridge.verifyEvent(eventObj.toString())) return false
         replaceableNewest.merge(key, createdAt) { a, b -> maxOf(a, b) }
@@ -892,7 +894,7 @@ class NostrService @Inject constructor(
         }
     }
 
-    private fun parseAndCacheProfile(pubkey: String, content: String) {
+    private fun parseAndCacheProfile(pubkey: String, content: String, createdAt: Long) {
         val existingProfile = _profiles.value[pubkey]
         val result = profileRepository.parseMetadataContent(content, pubkey, existingProfile) ?: return
         val (parsed, changed) = result
@@ -905,11 +907,11 @@ class NostrService @Inject constructor(
             val lastStamp = existingProfile.fetchedAt
             if (lastStamp != null && now - lastStamp < PROFILE_RETRY_TTL_MS) return
             // Freshness-only refresh: stage it, but no UI-change signal needed.
-            stageProfile(pubkey, existingProfile.copy(fetchedAt = now), notify = false)
+            stageProfile(pubkey, existingProfile.copy(fetchedAt = now, createdAt = createdAt), notify = false)
             return
         }
 
-        stageProfile(pubkey, parsed.copy(fetchedAt = now), notify = true)
+        stageProfile(pubkey, parsed.copy(fetchedAt = now, createdAt = createdAt), notify = true)
     }
 
     /** Stage a parsed profile for the next batched emission window (see [pendingProfiles]). */
@@ -1795,7 +1797,7 @@ class NostrService @Inject constructor(
 
                 when {
                     kind == 0 && evPubkey == pubkey -> {
-                        if (acceptReplaceable(ev, kind, evPubkey, createdAt)) parseAndCacheProfile(pubkey, content)
+                        if (acceptReplaceable(ev, kind, evPubkey, createdAt)) parseAndCacheProfile(pubkey, content, createdAt)
                     }
                     kind == 3 && evPubkey == pubkey -> {
                         val pTags = tags.filter { it.size >= 2 && it[0] == "p" }

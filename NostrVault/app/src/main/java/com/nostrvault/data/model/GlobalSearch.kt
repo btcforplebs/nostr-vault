@@ -251,6 +251,8 @@ sealed class SearchWireMessage {
         val content: String,
         val createdAt: Long,
         val tags: List<List<String>>,
+        /** The event as received, for signature checks. */
+        val raw: String = "",
     ) : SearchWireMessage()
 
     data class Eose(val subId: String) : SearchWireMessage()
@@ -286,7 +288,7 @@ sealed class SearchWireMessage {
             } catch (_: Exception) {
                 emptyList()
             }
-            return Event(sid, id, pubkey, kind, content, createdAt, tags)
+            return Event(sid, id, pubkey, kind, content, createdAt, tags, ev.toString())
         }
     }
 }

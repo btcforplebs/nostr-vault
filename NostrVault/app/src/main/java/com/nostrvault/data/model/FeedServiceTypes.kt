@@ -398,6 +398,8 @@ data class FeedProfile(
     var website: String? = null,
     /** Epoch millis of the last successful metadata fetch; null for legacy/unstamped entries. */
     var fetchedAt: Long? = null,
+    /** created_at (epoch seconds) of the kind-0 this came from; null for older cache entries. */
+    var createdAt: Long? = null,
 ) {
     /** Best display name: display_name > name > truncated pubkey. Computed once at
      *  construction (profiles are replaced via copy(), never mutated in place), so
