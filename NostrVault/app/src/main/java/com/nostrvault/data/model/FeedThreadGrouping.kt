@@ -146,6 +146,13 @@ object FeedThreadGrouping {
                 currentId = ancestor.parentEventId
                 hops++
             }
+
+            // A root taken from the NIP-10 tag (the reply's parent never
+            // loaded) is no ancestor of anything in the pool, so the walk above
+            // never adds it, and the card kept saying "Loading the start of
+            // this thread…" with the root already fetched.
+            if (pool[root] == null) resolveNote(root)?.let { pool[root] = it }
+            pool[root]?.let { add(it, root) }
         }
 
         val threads = order.mapNotNull { root ->

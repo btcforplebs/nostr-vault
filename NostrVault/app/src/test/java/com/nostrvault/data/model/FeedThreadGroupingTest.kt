@@ -154,4 +154,22 @@ class FeedThreadGroupingTest {
     fun `empty feed produces no threads`() {
         assertTrue(FeedThreadGrouping.build(emptyList()).isEmpty())
     }
+
+    @Test
+    fun `fetched root shows when the reply's parent is missing`() {
+        // r answers p, which no relay returned; r's NIP-10 root tag names
+        // "root", which was fetched. The root is no ancestor of anything in
+        // the pool, so the parent walk alone never added it and the card said
+        // "Loading the start of this thread…" with the root already cached.
+        val root = note("root", 100, author = "dave")
+        val notes = listOf(note("r", 300, parent = "p", root = "root", author = "bob"))
+
+        val threads = FeedThreadGrouping.build(notes) { id -> if (id == "root") root else null }
+
+        assertEquals(1, threads.size)
+        assertEquals("root", threads[0].rootId)
+        assertEquals("root", threads[0].root?.id)
+        assertEquals(listOf("root", "r"), ids(threads[0]))
+        assertEquals(listOf(0, 1), depths(threads[0]))
+    }
 }
