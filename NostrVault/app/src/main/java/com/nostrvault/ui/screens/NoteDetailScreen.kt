@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.components.ZapFlight
 import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -306,6 +307,7 @@ class NoteDetailViewModel @Inject constructor(
             _isZapping.value = false
             result.fold(
                 onSuccess = {
+                    ZapFlight.launch(note.effectiveEventId)
                     _zapMessage.emit("Zapped ⚡$amountSats sats")
                     kotlinx.coroutines.delay(3_000)
                     fetchEngagement(note.effectiveEventId)

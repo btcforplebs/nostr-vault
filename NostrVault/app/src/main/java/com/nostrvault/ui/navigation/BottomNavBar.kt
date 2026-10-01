@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.glassPillBackground
+import com.nostrvault.ui.components.zapFlightOrigin
 import com.nostrvault.ui.theme.ErrorRed
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.LocalOledMode
@@ -285,6 +286,7 @@ private fun CondensedNavCluster(
         ) {
             Box(
                 modifier = Modifier
+                    .zapFlightOrigin()
                     .size(36.dp)
                     .border(width = 1.5.dp, color = ringColor, shape = CircleShape)
                     .padding(2.dp)
@@ -424,6 +426,7 @@ private fun ProfileTab(
         Box {
             Box(
                 modifier = Modifier
+                    .zapFlightOrigin()
                     .size(31.dp)
                     .scale(scale)
                     .border(

@@ -1,5 +1,6 @@
 package com.nostrvault.ui.navigation
 
+import com.nostrvault.ui.components.ZapFlightStage
 import androidx.compose.animation.*
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.layout.*
@@ -755,6 +756,9 @@ fun NostrVaultNavHost(
             notificationManager = notificationManager,
             modifier = Modifier.align(Alignment.TopCenter),
         )
+
+        // Zap flights cross the whole window, so they're drawn above it all.
+        ZapFlightStage()
     }
 
     // Account switcher bottom sheet

@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.profile
 
+import com.nostrvault.ui.components.ZapFlight
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -338,7 +339,10 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             val result = zapSendService.zapNote(noteId, notePubkey, DEFAULT_ZAP_SATS)
             _toast.value = result.fold(
-                onSuccess = { "Zapped $DEFAULT_ZAP_SATS sats ⚡️" },
+                onSuccess = {
+                    ZapFlight.launch(noteId)
+                    "Zapped $DEFAULT_ZAP_SATS sats ⚡️"
+                },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )
         }

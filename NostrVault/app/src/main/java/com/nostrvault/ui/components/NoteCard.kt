@@ -563,7 +563,7 @@ internal fun EngagementBar(
         }
 
         // Zap
-        if (onZap != null) {
+        if (onZap != null) Box(Modifier.zapFlightTarget(noteId)) {
             EngagementButton(
                 icon = NostrVaultIcons.Zap,
                 isActive = isZapped,

@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.components.ZapFlight
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -151,7 +152,10 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             val result = zapSendService.zapNote(noteId, notePubkey, DEFAULT_ZAP_SATS)
             _toast.value = result.fold(
-                onSuccess = { "Zapped $DEFAULT_ZAP_SATS sats ⚡️" },
+                onSuccess = {
+                    ZapFlight.launch(noteId)
+                    "Zapped $DEFAULT_ZAP_SATS sats ⚡️"
+                },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )
         }
