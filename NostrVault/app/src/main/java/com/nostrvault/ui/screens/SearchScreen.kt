@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.components.ZapFlight
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -800,7 +801,10 @@ fun SearchScreen(
                             onRepost = viewModel::repostNote,
                             onReply = onReply,
                             onQuote = onQuote,
-                            onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
+                            onZap = {
+                                viewModel.zapNote(note.effectiveEventId, note.pubkey)
+                                ZapFlight.launch(note.effectiveEventId)
+                            },
                         )
                         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                     }

@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.profile
 
+import com.nostrvault.ui.components.ZapFlight
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -302,7 +303,10 @@ fun ProfileScreen(
                         onRepost = viewModel::repostNote,
                         onReply = onReply,
                         onQuote = onQuote,
-                        onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
+                        onZap = {
+                            viewModel.zapNote(note.effectiveEventId, note.pubkey)
+                            ZapFlight.launch(note.effectiveEventId)
+                        },
                     )
                     HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                 }

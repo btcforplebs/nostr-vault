@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.components.ZapFlight
 import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -872,6 +873,7 @@ fun NoteDetailScreen(
             onDismiss = { zapTargetNote = null },
             onZap = { amount ->
                 viewModel.zapNote(target, amount)
+                ZapFlight.launch(target.effectiveEventId)
                 zapTargetNote = null
             },
         )
