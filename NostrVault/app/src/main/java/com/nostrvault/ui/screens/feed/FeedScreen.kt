@@ -69,6 +69,9 @@ import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.ui.screens.LiveStreamScreen
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.FullScreenMediaRouter
+import com.nostrvault.ui.components.MediaSourceKey
+import com.nostrvault.ui.components.MediaZoomSources
+import com.nostrvault.ui.components.mediaZoomSource
 import com.nostrvault.ui.components.RetryableAsyncImage
 import com.nostrvault.ui.components.isVideoUrl
 import com.nostrvault.ui.components.BroadcastSheet
@@ -1089,6 +1092,7 @@ private fun MediaFeedGrid(
     // The pager opens across the first media of every cell, so its indices line up
     // 1:1 with the grid. filterMediaNotes guarantees a non-empty mediaURLs per note.
     val gridUrls = remember(notes) { notes.map { it.mediaURLs.first() } }
+    val zoomOrigin = remember { MediaZoomSources.newOrigin() }
 
     // Infinite scroll: load older media as the user nears the end of the grid.
     val shouldLoadMore by remember {
@@ -1118,7 +1122,8 @@ private fun MediaFeedGrid(
             MediaGridCell(
                 url = note.mediaURLs.first(),
                 mediaCount = note.mediaURLs.size,
-                onTap = { FullScreenMediaRouter.open(gridUrls, index) },
+                sourceKey = MediaSourceKey(zoomOrigin, index),
+                onTap = { FullScreenMediaRouter.open(gridUrls, index, zoomOrigin) },
                 onLongPress = { onNoteClick(note.id) },
             )
         }
@@ -1147,12 +1152,14 @@ private fun MediaFeedGrid(
 private fun MediaGridCell(
     url: String,
     mediaCount: Int,
+    sourceKey: MediaSourceKey,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .aspectRatio(1f)
+            .mediaZoomSource(sourceKey, crop = true)
             .combinedClickable(
                 onClick = onTap,
                 onLongClick = onLongPress,
