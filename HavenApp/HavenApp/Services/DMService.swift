@@ -76,12 +76,27 @@ class DMService: ObservableObject {
     private var seenGiftWrapIds = Set<String>()
     private let maxSeenGiftWrapIds = 10_000
 
+    /// Gift wraps that opened to something that is not a chat message (or
+    /// could never be opened). Saved per account, so a launch does not send
+    /// them to a remote signer again — with NIP-46 each one costs the user's
+    /// signer two NIP-44 decrypts, every launch, forever.
+    private var unreadableGiftWrapIds = Set<String>()
+    private let maxUnreadableGiftWrapIds = 5_000
+
+    /// Gift wraps waiting to be opened. Drained newest first by at most
+    /// `maxGiftWrapWorkers` at a time: the backlog used to start one Task per
+    /// wrap at once, which flooded a remote signer with decrypt requests.
+    private var pendingGiftWraps: [NostrEvent] = []
+    private var giftWrapWorkers = 0
+    private let maxGiftWrapWorkers = 1
+
     /// Rebuild the dedup set from retained conversation messages once it
     /// outgrows the cap — it otherwise accumulates an entry for every gift
     /// wrap ever observed across a long-running session.
     private func trimSeenGiftWrapIdsIfNeeded() {
         guard seenGiftWrapIds.count > maxSeenGiftWrapIds else { return }
         seenGiftWrapIds = Set(conversations.flatMap { $0.messages.map { $0.id } })
+            .union(unreadableGiftWrapIds)
     }
     private var dmUpdateSubject = PassthroughSubject<Void, Never>()
     private let processingQueue = DispatchQueue(label: "com.haven.dm-processing", qos: .userInitiated)
@@ -1032,9 +1047,36 @@ class DMService: ObservableObject {
         seenGiftWrapIds.insert(event.id)
         trimSeenGiftWrapIdsIfNeeded()
 
-        let generation = self.switchGeneration
+        pendingGiftWraps.append(event)
+        startGiftWrapWorkersIfNeeded()
+    }
 
-        Task {
+    private func startGiftWrapWorkersIfNeeded() {
+        while giftWrapWorkers < maxGiftWrapWorkers && !pendingGiftWraps.isEmpty {
+            giftWrapWorkers += 1
+            let generation = switchGeneration
+            Task { await drainGiftWraps(generation: generation) }
+        }
+    }
+
+    private func drainGiftWraps(generation: UInt64) async {
+        while generation == switchGeneration, let next = popNewestGiftWrap() {
+            await processGiftWrap(next, generation: generation)
+        }
+        giftWrapWorkers -= 1
+        // Work queued for a new account while this worker was finishing.
+        startGiftWrapWorkersIfNeeded()
+    }
+
+    /// Newest first, so the latest messages appear before the backlog.
+    private func popNewestGiftWrap() -> NostrEvent? {
+        guard let index = pendingGiftWraps.indices.max(by: {
+            pendingGiftWraps[$0].created_at < pendingGiftWraps[$1].created_at
+        }) else { return nil }
+        return pendingGiftWraps.remove(at: index)
+    }
+
+    private func processGiftWrap(_ event: NostrEvent, generation: UInt64) async {
         do {
             // Verify account hasn't switched since we started processing
             guard self.switchGeneration == generation else { return }
@@ -1109,10 +1151,25 @@ class DMService: ObservableObject {
             sortConversations()
             dmUpdateSubject.send()
             saveConversations()
+        } catch let error as NIP17Service.NIP17Error {
+            // The wrap opened to something that is not a chat message (or
+            // cannot be opened with this key): it will not change, so do not
+            // ask the signer about it again on the next launch.
+            print("Failed to unwrap gift wrap: \(error)")
+            guard self.switchGeneration == generation else { return }
+            rememberUnreadableGiftWrap(event.id)
         } catch {
+            // Signer offline, timed out or refused: try again next launch.
             print("Failed to unwrap gift wrap: \(error)")
         }
-        } // end Task
+    }
+
+    private func rememberUnreadableGiftWrap(_ id: String) {
+        guard unreadableGiftWrapIds.insert(id).inserted else { return }
+        if unreadableGiftWrapIds.count > maxUnreadableGiftWrapIds {
+            unreadableGiftWrapIds = Set(unreadableGiftWrapIds.shuffled().prefix(maxUnreadableGiftWrapIds))
+        }
+        saveUnreadableGiftWrapIds()
     }
 
     private func handleAccountSwitch() {
@@ -1144,6 +1201,8 @@ class DMService: ObservableObject {
         loadedAccountPubkey = newPubkey
         conversations = []
         seenGiftWrapIds.removeAll()
+        unreadableGiftWrapIds.removeAll()
+        pendingGiftWraps.removeAll()
         injectedDmIds.removeAll()
         isAuthenticated = false
         pendingAuthChallenge = nil
@@ -1338,6 +1397,12 @@ class DMService: ObservableObject {
             }
         }
 
+        if let data = try? Data(contentsOf: unreadableFileURL()),
+           let ids = try? JSONDecoder().decode([String].self, from: data) {
+            unreadableGiftWrapIds = Set(ids)
+            seenGiftWrapIds.formUnion(unreadableGiftWrapIds)
+        }
+
         guard let data = try? Data(contentsOf: fileURL) else { return }
         conversations = (try? JSONDecoder().decode([DMConversation].self, from: data)) ?? []
 
@@ -1347,6 +1412,18 @@ class DMService: ObservableObject {
                 seenGiftWrapIds.insert(message.id)
             }
         }
+    }
+
+    private func saveUnreadableGiftWrapIds() {
+        guard let data = try? JSONEncoder().encode(Array(unreadableGiftWrapIds)) else { return }
+        try? data.write(to: unreadableFileURL())
+    }
+
+    /// Beside the conversation cache, same per-account suffix.
+    private func unreadableFileURL() -> URL {
+        let cache = cacheFileURL()
+        let name = cache.lastPathComponent.replacingOccurrences(of: "dm_cache", with: "dm_unreadable")
+        return cache.deletingLastPathComponent().appendingPathComponent(name)
     }
 
     private func saveConversations() {
