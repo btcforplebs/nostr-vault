@@ -307,7 +307,7 @@ struct SearchView: View {
             searchFieldFocused = false
         }
         .overlay(alignment: .bottomTrailing) {
-            if !feedService.feedScrollingDown {
+            ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingCompose = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "square.and.pencil")
@@ -333,10 +333,8 @@ struct SearchView: View {
                 .padding(.trailing, 20)
                 .padding(.bottom, 90)
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
         .toolbar {
             // Left glass pill: result-type filters
             ToolbarItem(placement: .navigationBarLeading) {

@@ -22,8 +22,8 @@ struct IdentifiableString: Identifiable {
 /// `@Observable`, not a `FeedService` property: `progress` changes every
 /// frame of a drag, and only the two bars should re-render for it. A
 /// `@Published` write would invalidate every view observing `FeedService`.
-/// Views that need a yes/no (the per-screen compose buttons, the feed top
-/// bar's layout) read `isFolded`, which only changes at the ends.
+/// Views that need a yes/no (the feed top bar's layout) read `isFolded`,
+/// which only changes at the ends.
 @Observable
 @MainActor
 final class ChromeCollapse {
@@ -77,13 +77,6 @@ final class ChromeCollapse {
         if clamped != progress { progress = clamped }
         let folded = clamped >= 1
         if folded != isFolded { isFolded = folded }
-        // The per-screen compose buttons and the profile/media/vault chrome
-        // still observe the FeedService flag. Mirror the edge-only state so
-        // they keep working without observing every frame.
-        let feedService = FeedService.shared
-        if feedService.feedScrollingDown != folded {
-            feedService.feedScrollingDown = folded
-        }
     }
 }
 
@@ -2362,7 +2355,7 @@ struct FeedView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             #if os(iOS)
-            if !feedService.feedScrollingDown {
+            ChromeFold(anchor: .bottomTrailing) {
                 Button {
                     composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
                 } label: {
@@ -2391,11 +2384,9 @@ struct FeedView: View {
                 .padding(.trailing, 20)
                 .padding(.bottom, 90)
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
             #endif
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
     }
 
     private var mediaGridView: some View {

@@ -497,36 +497,36 @@ struct ProfileView: View {
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
-            if isOwnProfile && !feedService.feedScrollingDown {
-                Button(action: { showingCompose = true }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "square.and.pencil")
-                            .font(.appSystem(size: 15, weight: .bold))
-                        Text("Post")
-                            .font(.appSystem(size: 14, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(.white)
-                    .frame(height: 48)
-                    .padding(.horizontal, 18)
-                    .background(
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+            if isOwnProfile {
+                ChromeFold(anchor: .bottomTrailing) {
+                    Button(action: { showingCompose = true }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.appSystem(size: 15, weight: .bold))
+                            Text("Post")
+                                .font(.appSystem(size: 14, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.white)
+                        .frame(height: 48)
+                        .padding(.horizontal, 18)
+                        .background(
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [Color.havenPurple, Color.havenPurpleLight]),
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
                                 )
-                            )
-                            .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
-                    )
+                                .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
+                        )
+                    }
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 90)
+                    .hoverEffect(.lift)
                 }
-                .padding(.trailing, 20)
-                .padding(.bottom, 90)
-                .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
             guard (note.object as? Int) == 2 else { return }
             showingCompose = true
