@@ -405,6 +405,7 @@ struct FeedView: View {
     @State private var galleryDragOffset: CGSize = .zero
     @State private var isRefreshing = false
     @State private var showingGlobalMediaWarning = false
+    @State private var showingGlobalEveryoneWarning = false
     /// Same warning, raised before Recipes switches to the global set.
     @State private var showingGlobalRecipeWarning = false
     @State private var isAtTop: Bool = true
@@ -786,6 +787,26 @@ struct FeedView: View {
                     feedService.showPopularEngagement.toggle()
                 }
             } else {
+                if feedService.feedMode == .global {
+                    // One button for who Global shows, so the pill keeps its
+                    // width: the shield is your Web of Trust, the globe is
+                    // everyone (behind a warning).
+                    let everyone = configService.config.globalShowsEveryone
+                    IconFilterButton(icon: everyone ? "globe" : "checkmark.shield.fill", tooltip: everyone ? "Everyone" : "Web of Trust", isSelected: true, color: .havenPurple) {
+                        if everyone {
+                            configService.config.globalShowsEveryone = false
+                            configService.save()
+                            feedService.recomputeFilteredNotes()
+                        } else {
+                            showingGlobalEveryoneWarning = true
+                        }
+                    }
+                    LanguageFilterMenu(selected: configService.config.globalFeedLanguages, color: .havenPurple) { codes in
+                        configService.config.globalFeedLanguages = codes
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    }
+                }
                 IconFilterButton(icon: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle", tooltip: "Auto-load", isSelected: configService.config.autoLoadNewPosts, color: .havenPurple) {
                     configService.config.autoLoadNewPosts.toggle()
                     configService.save()
@@ -795,10 +816,14 @@ struct FeedView: View {
                     configService.save()
                     feedService.recomputeFilteredNotes()
                 }
-                IconFilterButton(icon: configService.config.showReplies ? "message.fill" : "message", tooltip: "Replies", isSelected: configService.config.showReplies, color: .havenPurple) {
-                    configService.config.showReplies.toggle()
-                    configService.save()
-                    feedService.recomputeFilteredNotes()
+                // Global never shows replies (FeedFilterEngine), so the
+                // toggle would do nothing there.
+                if feedService.feedMode != .global {
+                    IconFilterButton(icon: configService.config.showReplies ? "message.fill" : "message", tooltip: "Replies", isSelected: configService.config.showReplies, color: .havenPurple) {
+                        configService.config.showReplies.toggle()
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    }
                 }
             }
         }
@@ -892,6 +917,29 @@ struct FeedView: View {
                     feedService.recomputeFilteredNotes()
                 } label: {
                     Label("Replies", systemImage: configService.config.showReplies ? "message.fill" : "message")
+                }
+                if feedService.feedMode == .global {
+                    Button {
+                        configService.config.globalShowsEveryone = false
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    } label: {
+                        Label("Web of Trust", systemImage: configService.config.globalShowsEveryone ? "checkmark.shield" : "checkmark")
+                    }
+                    Button {
+                        if !configService.config.globalShowsEveryone { showingGlobalEveryoneWarning = true }
+                    } label: {
+                        Label("Everyone", systemImage: configService.config.globalShowsEveryone ? "checkmark" : "globe")
+                    }
+                    Menu {
+                        LanguageFilterMenuItems(selected: configService.config.globalFeedLanguages) { codes in
+                            configService.config.globalFeedLanguages = codes
+                            configService.save()
+                            feedService.recomputeFilteredNotes()
+                        }
+                    } label: {
+                        Label("Languages", systemImage: "character.bubble")
+                    }
                 }
             }
         } label: {
@@ -1157,6 +1205,34 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help(configService.config.showReplies ? String(localized: "feed.help.hideReplies") : String(localized: "feed.help.showReplies"))
 
+                if feedService.feedMode == .global {
+                    Button(action: {
+                        configService.config.globalShowsEveryone = false
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    }) {
+                        Image(systemName: configService.config.globalShowsEveryone ? "checkmark.shield" : "checkmark.shield.fill")
+                            .font(.appSystem(size: 15, weight: .semibold))
+                            .foregroundColor(configService.config.globalShowsEveryone ? .secondary : Color.havenPurple)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Web of Trust: people you follow and the people they follow")
+
+                    Button(action: { if !configService.config.globalShowsEveryone { showingGlobalEveryoneWarning = true } }) {
+                        Image(systemName: "globe")
+                            .font(.appSystem(size: 15, weight: .semibold))
+                            .foregroundColor(configService.config.globalShowsEveryone ? Color.havenPurple : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Everyone: unfiltered posts from every relay")
+
+                    LanguageFilterMenu(selected: configService.config.globalFeedLanguages, color: .havenPurple) { codes in
+                        configService.config.globalFeedLanguages = codes
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    }
+                }
+
                 // Divider to separate the layout cycle
                 Divider()
                     .frame(height: 20)
@@ -1361,6 +1437,16 @@ struct FeedView: View {
             .onDisappear {
                 selectedGridMediaNoteId = nil
             }
+        }
+        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalEveryoneWarning) {
+            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
+                configService.config.globalShowsEveryone = true
+                configService.save()
+                feedService.recomputeFilteredNotes()
+            }
+            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
+        } message: {
+            Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
         }
         .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalMediaWarning) {
             Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
