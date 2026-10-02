@@ -3399,7 +3399,14 @@ struct FeedNoteRow: View {
                         let sent = await actions.zapNote(note, lud16, amount)
                         if sent { Motion.firePulse($zapPulse) }
                     }
-                    showLightning = true
+                    // Same strike as a tap, once the amount sheet has slid
+                    // away — launched under it, the bolt would cross a
+                    // screen the sheet still covers.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        if !ZapFlightCoordinator.shared.launch(to: zapBoltAnchor, onArrive: { showLightning = true }) {
+                            showLightning = true
+                        }
+                    }
                 }
             }
             #if os(iOS)
