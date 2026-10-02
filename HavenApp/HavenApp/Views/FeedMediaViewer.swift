@@ -216,6 +216,8 @@ struct FeedMediaViewer: View {
                                             .font(.appSystem(size: 16, weight: .semibold))
                                         Text("Mirrored to Blossom")
                                             .font(.appSystem(size: 12, weight: .bold, design: .rounded))
+                                            .lineLimit(1)
+                                            .fixedSize()
                                     }
                                     .foregroundColor(.white.opacity(0.95))
                                     .padding(.vertical, 8)
@@ -246,6 +248,8 @@ struct FeedMediaViewer: View {
                                                 .font(.appSystem(size: 14, weight: .semibold))
                                             Text(isCopied ? "Copied!" : "Copy Link")
                                                 .font(.appSystem(size: 12, weight: .bold, design: .rounded))
+                                                .lineLimit(1)
+                                                .fixedSize()
                                         }
                                         .foregroundColor(.white.opacity(0.95))
                                         .padding(.vertical, 8)
@@ -272,6 +276,8 @@ struct FeedMediaViewer: View {
                                             .font(.appSystem(size: 16, weight: .semibold))
                                         Text("Mirror to Blossom")
                                             .font(.appSystem(size: 12, weight: .bold, design: .rounded))
+                                            .lineLimit(1)
+                                            .fixedSize()
                                     }
                                     .foregroundColor(.white.opacity(0.95))
                                     .padding(.vertical, 8)
@@ -291,8 +297,26 @@ struct FeedMediaViewer: View {
                             }
                         }
                     }
-                    #if os(iOS)
-                    if !isLoadingType {
+                    Spacer()
+                    Button {
+                        performDismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.appSystem(size: 32))
+                            .foregroundColor(.white.opacity(0.8))
+                            .padding(20)
+                            .shadow(radius: 4)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+
+                // Bottom-right, not in the top row: a third capsule there
+                // squeezed Mirrored / Copy Link into one letter per line.
+                #if os(iOS)
+                if !isLoadingType && !isDeleting {
+                    HStack {
+                        Spacer()
                         Button {
                             saveToPhotosTapped()
                         } label: {
@@ -305,6 +329,8 @@ struct FeedMediaViewer: View {
                                 }
                                 Text(photosSave == .saved ? "Saved" : "Save to Photos")
                                     .font(.appSystem(size: 12, weight: .bold, design: .rounded))
+                                    .lineLimit(1)
+                                    .fixedSize()
                             }
                             .foregroundColor(.white.opacity(0.95))
                             .padding(.vertical, 8)
@@ -319,20 +345,10 @@ struct FeedMediaViewer: View {
                         .buttonStyle(.plain)
                         .disabled(photosSave != .idle)
                     }
-                    #endif
-                    Spacer()
-                    Button {
-                        performDismiss()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.appSystem(size: 32))
-                            .foregroundColor(.white.opacity(0.8))
-                            .padding(20)
-                            .shadow(radius: 4)
-                    }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 28)
                 }
-                Spacer()
+                #endif
 
                 if !isLoadingType && isDeleting {
                     HStack(spacing: 16) {
