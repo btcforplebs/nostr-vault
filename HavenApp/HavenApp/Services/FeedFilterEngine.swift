@@ -119,12 +119,13 @@ enum FeedFilterEngine {
         blocked: Set<String>,
         wotPubkeys: Set<String>,
         isGlobalMedia: Bool,
+        globalRequiresTrust: Bool = true,
         throttledPubkeys: [String: Int]
     ) -> [FeedNote] {
         var media = notes.filter { note in
             if blocked.contains(note.pubkey) { return false }
             // Fail closed for the same reason as the Global feed above.
-            if isGlobalMedia && !wotPubkeys.contains(note.pubkey) { return false }
+            if isGlobalMedia && globalRequiresTrust && !wotPubkeys.contains(note.pubkey) { return false }
             return !note.mediaURLs.isEmpty
         }.sorted {
             if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }

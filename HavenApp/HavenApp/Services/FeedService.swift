@@ -165,6 +165,7 @@ class FeedService: ObservableObject {
             blocked: blocked,
             wotPubkeys: wotPubkeys,
             isGlobalMedia: feedMode == .media && mediaFeedMode == .global,
+            globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
             throttledPubkeys: throttled
         )
 
