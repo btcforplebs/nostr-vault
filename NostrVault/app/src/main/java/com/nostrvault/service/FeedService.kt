@@ -317,6 +317,9 @@ class FeedService @Inject constructor(
     // Background accumulator
     private val accumulator = BackgroundAccumulator()
     private val feedScrolling = MutableStateFlow(false)
+    private val pendingInserts = ArrayList<FeedNote>()
+    private val pendingEngagement = ArrayList<BackgroundAccumulator.Snapshot>()
+    private var mergeJob: Job? = null
     private var flushScheduled = false
     private val flushLock = ReentrantLock()
     private var isInitialLoad = false
@@ -1551,7 +1554,8 @@ class FeedService @Inject constructor(
 
         // Apply engagement
         if (batch.reactions.isNotEmpty() || batch.zaps.isNotEmpty()) {
-            scope.launch { applyEngagement(batch) }
+            pendingEngagement.add(batch)
+            startMergeWorker()
         }
 
         // Fetch missing profiles for new note authors
@@ -1566,49 +1570,83 @@ class FeedService @Inject constructor(
      *
      * The merge copies, dedupes and sorts the whole feed (up to MAX_FEED_NOTES),
      * so it runs on [processingDispatcher]; doing it on Main cost a frame per
-     * relay batch. Every other writer of [_notes] runs on Main, so the result is
-     * published there only if [_notes] is still the list it was built from —
-     * otherwise it is rebuilt from the newer one rather than overwriting it.
+     * relay batch. One worker does every merge: batches that land while it is
+     * busy are folded into its next pass instead of racing it (on Global a
+     * batch lands every 50 ms, and parallel merges kept invalidating each
+     * other). Every other writer of [_notes] runs on Main, so a pass publishes
+     * there only if [_notes] is still the list it was built from — otherwise
+     * it is rebuilt from the newer one rather than overwriting it.
+     *
+     * [pendingInserts], [pendingEngagement] and [mergeJob] are Main-confined.
      */
     private fun insertNotesDirect(newNotes: List<FeedNote>) {
-        scope.launch {
-            while (true) {
-                val base = _notes.value
-                val merged = withContext(processingDispatcher) {
-                    val m = (base + newNotes)
-                        .distinctBy { it.id } // LazyColumn keys on id — duplicates crash the UI
-                        .sortedByDescending { it.createdAt }
-                    if (m.size > MAX_FEED_NOTES) m.take(MAX_FEED_NOTES) else m
+        pendingInserts.addAll(newNotes)
+        startMergeWorker()
+    }
+
+    private fun startMergeWorker() {
+        if (mergeJob?.isActive == true) return
+        mergeJob = scope.launch {
+            while (pendingInserts.isNotEmpty() || pendingEngagement.isNotEmpty()) {
+                if (pendingInserts.isNotEmpty()) {
+                    val newNotes = pendingInserts.toList()
+                    pendingInserts.clear()
+                    while (true) {
+                        val base = _notes.value
+                        val merged = withContext(processingDispatcher) {
+                            val m = (base + newNotes)
+                                .distinctBy { it.id } // LazyColumn keys on id — duplicates crash the UI
+                                .sortedByDescending { it.createdAt }
+                            if (m.size > MAX_FEED_NOTES) m.take(MAX_FEED_NOTES) else m
+                        }
+                        if (_notes.value === base) {
+                            _notes.value = merged
+                            break
+                        }
+                    }
                 }
-                if (_notes.value === base) {
-                    _notes.value = merged
-                    break
+                // After the notes, so the stats trim sees the notes this
+                // same batch brought.
+                if (pendingEngagement.isNotEmpty()) {
+                    val batches = pendingEngagement.toList()
+                    pendingEngagement.clear()
+                    applyEngagement(batches)
                 }
             }
             recomputeFilteredNotes()
         }
     }
 
-    /** Fold a batch's reactions and zaps into [_noteStats]; same off-Main pattern as [insertNotesDirect]. */
-    private suspend fun applyEngagement(batch: BackgroundAccumulator.Snapshot) {
+    /** Drop queued merges, e.g. when the feed is cleared for another account. */
+    private fun cancelMergeWorker() {
+        mergeJob?.cancel()
+        mergeJob = null
+        pendingInserts.clear()
+        pendingEngagement.clear()
+    }
+
+    /** Fold batches' reactions and zaps into [_noteStats]; same off-Main pattern as [insertNotesDirect]. */
+    private suspend fun applyEngagement(batches: List<BackgroundAccumulator.Snapshot>) {
         while (true) {
             val base = _noteStats.value
             val notesNow = _notes.value
             val parentIds = _parentNotesCache.value.keys
             val updated = withContext(processingDispatcher) {
                 val currentStats = base.toMutableMap()
-                for ((targetId, _) in batch.reactions) {
-                    val existing = currentStats[targetId] ?: NoteStats()
-                    currentStats[targetId] = existing.copy(
-                        reactionCount = existing.reactionCount + 1
-                    )
-                }
-                for ((targetId, amount) in batch.zaps) {
-                    val existing = currentStats[targetId] ?: NoteStats()
-                    currentStats[targetId] = existing.copy(
-                        zapCount = existing.zapCount + 1,
-                        zapAmountSats = existing.zapAmountSats + amount
-                    )
+                for (batch in batches) {
+                    for ((targetId, _) in batch.reactions) {
+                        val existing = currentStats[targetId] ?: NoteStats()
+                        currentStats[targetId] = existing.copy(
+                            reactionCount = existing.reactionCount + 1
+                        )
+                    }
+                    for ((targetId, amount) in batch.zaps) {
+                        val existing = currentStats[targetId] ?: NoteStats()
+                        currentStats[targetId] = existing.copy(
+                            zapCount = existing.zapCount + 1,
+                            zapAmountSats = existing.zapAmountSats + amount
+                        )
+                    }
                 }
                 // Trim stats to only cover notes still in memory
                 if (currentStats.size > MAX_FEED_NOTES) {
@@ -2433,6 +2471,10 @@ class FeedService @Inject constructor(
                         .sortedByDescending { it.second.createdAt }
                         .take(PARENT_CACHE_TRIM_TO)
                         .toMap()
+                    // Never trim the note just fetched: it counts as arrived,
+                    // so it would not be marked unavailable, and the feed
+                    // would ask for it again on its next change.
+                    if (eventId !in updated) updated = updated + (eventId to note)
                 }
                 val published = withContext(Dispatchers.Main.immediate) {
                     if (_parentNotesCache.value !== base) return@withContext false
@@ -3023,6 +3065,9 @@ class FeedService @Inject constructor(
     }
 
     private fun clearInMemoryFeedState() {
+        // A merge still running would publish the old account's notes and
+        // counts into the cleared feed.
+        cancelMergeWorker()
         _notes.value = emptyList()
         _pendingNotes.value = emptyList()
         _noteStats.value = emptyMap()
