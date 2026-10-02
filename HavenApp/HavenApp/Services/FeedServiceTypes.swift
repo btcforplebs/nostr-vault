@@ -356,6 +356,8 @@ final class BackgroundAccumulator: @unchecked Sendable {
         parentFetchClaims[id] = now
     }
 
+    func forgetParentFetch(_ id: String) { parentFetchClaims[id] = nil }
+
     func resetParentFetchClaims() { parentFetchClaims.removeAll() }
 
     static let flushIntervalFast: TimeInterval = 0.2

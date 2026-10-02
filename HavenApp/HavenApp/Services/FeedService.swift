@@ -1757,6 +1757,8 @@ class FeedService: ObservableObject {
         }
         fetchingNoteIds.insert(id)
         fetchingNoteTimestamps[id] = Date()
+        // Queued ahead of the request, so it runs before any answer to it.
+        forgetParentFetchClaim(id)
 
         if id.hasPrefix(QuoteReference.coordinatePrefix) {
             fetchMissingNoteByNaddr(coordinate: id)
@@ -3632,6 +3634,13 @@ class FeedService: ObservableObject {
         return ev
     }
 
+    /// A verified copy that main then dropped must not block the next fetch
+    /// of the same note: without this, its later copies were discarded as
+    /// duplicates for the whole claim window.
+    private func forgetParentFetchClaim(_ id: String) {
+        processingQueue.async { [bgAccumulator] in bgAccumulator.forgetParentFetch(id) }
+    }
+
     /// Fast-path handler for parent note fetches — inserts directly into notes on the main
     /// thread without going through the batch accumulator or flush timers.
     /// `ev` has already passed `verifiedParentEvent`.
@@ -3646,7 +3655,7 @@ class FeedService: ObservableObject {
 
         // Use findNote rather than seenIds: a note can be in seenIds but evicted from
         // notes[] by the 800-cap flush, in which case we still need it in parentNotesCache.
-        guard findNote(id: id) == nil else { return }
+        guard findNote(id: id) == nil else { forgetParentFetchClaim(id); return }
 
         // Only what was asked for, and only if it is genuine. These come from
         // relay hints and outboxes named in other people's notes, so any of
@@ -3657,7 +3666,7 @@ class FeedService: ObservableObject {
         let coordinate = "\(QuoteReference.coordinatePrefix)\(kind):\(pubkey):\(dTag)"
         guard fetchingNoteIds.contains(id) || unavailableNoteIds.contains(id)
                 || fetchingNoteIds.contains(coordinate) || unavailableNoteIds.contains(coordinate)
-        else { return }
+        else { forgetParentFetchClaim(id); return }
 
         let note = FeedNote(
             id: id,
