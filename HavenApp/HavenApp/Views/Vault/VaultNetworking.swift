@@ -174,7 +174,7 @@ extension VaultView {
     func loadMoreItems() {
         let totalCount: Int
         switch viewMode {
-        case .notes, .media: totalCount = nostrService.events.count
+        case .notes, .media, .followers: totalCount = nostrService.events.count
         case .likes: totalCount = nostrService.events.count
         case .zaps: totalCount = nostrService.events.count
         }

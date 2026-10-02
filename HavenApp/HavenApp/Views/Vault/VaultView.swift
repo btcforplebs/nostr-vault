@@ -23,6 +23,8 @@ struct VaultView: View {
     @State var contentFilter: ContentFilter = .all
     @State var likesFilter: LikesFilter = .onMyNotes
     @State var zapsFilter: ZapsFilter = .onMyNotes
+    @State var followersFilter: FollowersFilter = .new
+    @State var followerSnapshot: FollowerSnapshot?
 
     // Cached display data (computed in background)
     @State var displayNotes: [NostrEvent] = []
@@ -59,6 +61,7 @@ struct VaultView: View {
     @State var hasNewNotes = false
     @State var hasNewLikes = false
     @State var hasNewZaps = false
+    @State var hasNewFollowers = false
     @State var notificationBaseline: [Int: Int] = [:] // event kind -> count
     @State var hasEstablishedNotificationBaseline = false
 
@@ -147,6 +150,11 @@ struct VaultView: View {
             switch zapsFilter {
             case .onMyNotes: return "Zaps on My Notes"
             case .myZaps: return "Notes I've Zapped"
+            }
+        case .followers:
+            switch followersFilter {
+            case .new: return "New Followers"
+            case .all: return "All Followers"
             }
         }
     }
@@ -570,6 +578,8 @@ struct VaultView: View {
                     likesFilterView
                 } else if viewMode == .zaps {
                     zapsFilterView
+                } else if viewMode == .followers {
+                    followersFilterView
                 }
 
                 searchToggleButton
@@ -627,6 +637,10 @@ struct VaultView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             zapsFilterView
                         }
+                    } else if viewMode == .followers {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            followersFilterView
+                        }
                     }
                     searchBar
                 }
@@ -641,6 +655,8 @@ struct VaultView: View {
                             likesFilterView
                         } else if viewMode == .zaps {
                             zapsFilterView
+                        } else if viewMode == .followers {
+                            followersFilterView
                         }
                         refreshButton
                         searchToggleButton
