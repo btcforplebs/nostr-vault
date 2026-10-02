@@ -58,8 +58,7 @@ extension VaultView {
                 IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: zapsFilter == .myZaps, color: .havenPurple, label: "Given") { zapsFilter = .myZaps }
             } else if viewMode == .followers {
                 IconFilterButton(icon: "sparkles", tooltip: "New", isSelected: followersFilter == .new, color: .havenPurple, label: "New") { followersFilter = .new }
-                IconFilterButton(icon: "arrow.left.arrow.right", tooltip: "Mutual", isSelected: followersFilter == .mutual, color: .havenPurple, label: "Mutual") { followersFilter = .mutual }
-                IconFilterButton(icon: "person.3.fill", tooltip: "Others", isSelected: followersFilter == .others, color: .havenPurple, label: "Others") { followersFilter = .others }
+                IconFilterButton(icon: "person.3.fill", tooltip: "All", isSelected: followersFilter == .all, color: .havenPurple, label: "All") { followersFilter = .all }
             }
         }
         .animation(Motion.toggle, value: contentFilter)
@@ -101,11 +100,8 @@ extension VaultView {
                 Button { followersFilter = .new } label: {
                     Label("New", systemImage: "sparkles")
                 }
-                Button { followersFilter = .mutual } label: {
-                    Label("Mutual", systemImage: "arrow.left.arrow.right")
-                }
-                Button { followersFilter = .others } label: {
-                    Label("Others", systemImage: "person.3.fill")
+                Button { followersFilter = .all } label: {
+                    Label("All", systemImage: "person.3.fill")
                 }
             }
         } label: {
@@ -303,11 +299,8 @@ extension VaultView {
             FilterButton(title: "New", icon: "sparkles", color: .havenPurple, isSelected: followersFilter == .new) {
                 followersFilter = .new
             }
-            FilterButton(title: "Mutual", icon: "arrow.left.arrow.right", color: Color.havenVerified, isSelected: followersFilter == .mutual) {
-                followersFilter = .mutual
-            }
-            FilterButton(title: "Others", icon: "person.3.fill", color: .secondary, isSelected: followersFilter == .others) {
-                followersFilter = .others
+            FilterButton(title: "All", icon: "person.3.fill", color: .secondary, isSelected: followersFilter == .all) {
+                followersFilter = .all
             }
         }
         .padding(4)

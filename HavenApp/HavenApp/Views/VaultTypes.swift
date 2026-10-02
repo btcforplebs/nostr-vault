@@ -12,11 +12,10 @@ enum ViewMode {
 }
 
 /// Followers from the relay's follower ledger, spam left out: the latest
-/// first, the ones you follow back, and everyone else.
+/// ones, or everyone.
 enum FollowersFilter {
     case new
-    case mutual
-    case others
+    case all
 }
 
 enum ContentFilter {

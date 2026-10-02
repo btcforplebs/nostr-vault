@@ -43,28 +43,24 @@ struct FollowerSnapshot: Decodable {
     let counts: Counts
     let followers: [Entry]
 
-    /// Mutual = they follow you and you follow them back. `followed` is the
-    /// account's own follow list.
-    func entries(for filter: FollowersFilter, followed: Set<String>) -> [Entry] {
+    /// Current followers, spam left out, newest first: follows we watched
+    /// happen (the relay already sorts them newest first), then everyone who
+    /// followed before tracking began, newest list first.
+    var current: [Entry] {
         let current = followers.filter { $0.following && !$0.isSpam }
+        let watched = current.filter(\.isNews)
+        let earlier = current.filter { !$0.isNews }.sorted { $0.listAt > $1.listAt }
+        return watched + earlier
+    }
+
+    func entries(for filter: FollowersFilter) -> [Entry] {
         switch filter {
-        case .new:
-            // Follows we watched happen come first (the relay already sorts
-            // them newest first). Then everyone who followed before tracking
-            // began, newest list first, so the list is never empty.
-            let watched = current.filter(\.isNews)
-            let earlier = current.filter { !$0.isNews }.sorted { $0.listAt > $1.listAt }
-            return Array((watched + earlier).prefix(Self.newLimit))
-        case .mutual: return current.filter { followed.contains($0.pubkey) }
-        case .others: return current.filter { !followed.contains($0.pubkey) }
+        case .new: return Array(current.prefix(Self.newLimit))
+        case .all: return current
         }
     }
 
     static let newLimit = 100
-
-    func mutualCount(followed: Set<String>) -> Int {
-        followers.filter { $0.following && !$0.isSpam && followed.contains($0.pubkey) }.count
-    }
 
     /// Reads the ledger from the embedded relay. Nil while the relay is
     /// stopped or the ledger hasn't opened yet.
@@ -122,7 +118,7 @@ extension VaultView {
 
     func fetchFollowerProfiles() {
         guard let followerSnapshot else { return }
-        let shown = followerSnapshot.entries(for: followersFilter, followed: Set(FeedService.shared.followedPubkeys)).prefix(300).map(\.pubkey)
+        let shown = followerSnapshot.entries(for: followersFilter).prefix(300).map(\.pubkey)
         nostrService.fetchMissingProfiles(for: Array(shown))
     }
 
@@ -139,10 +135,9 @@ extension VaultView {
     @ViewBuilder
     var followersList: some View {
         if let followerSnapshot {
-            let followed = Set(FeedService.shared.followedPubkeys)
-            let entries = followerSnapshot.entries(for: followersFilter, followed: followed)
+            let entries = followerSnapshot.entries(for: followersFilter)
             LazyVStack(spacing: 0) {
-                followersSummary(followerSnapshot, followed: followed)
+                followersSummary(followerSnapshot)
                 if entries.isEmpty {
                     followersEmptyState
                 } else {
@@ -173,18 +168,13 @@ extension VaultView {
         }
     }
 
-    /// Mutual follows, plus everyone else. Spam is left out on purpose.
-    private func followersSummary(_ snapshot: FollowerSnapshot, followed: Set<String>) -> some View {
-        let mutual = snapshot.mutualCount(followed: followed)
-        let others = snapshot.counts.trusted + snapshot.counts.others - mutual
-        return HStack(spacing: 6) {
-            Image(systemName: "arrow.left.arrow.right")
+    /// One count. Spam is left out on purpose.
+    private func followersSummary(_ snapshot: FollowerSnapshot) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "person.2.fill")
                 .foregroundColor(.havenPurple)
-            Text("Mutual \(mutual)")
+            Text("\(snapshot.counts.trusted + snapshot.counts.others) followers")
                 .font(.appSystem(size: 15, weight: .bold))
-            Text("+\(others) others")
-                .font(.appSystem(size: 14, weight: .regular))
-                .foregroundColor(.secondary)
             Spacer()
         }
         .padding(.horizontal, 16)
