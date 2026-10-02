@@ -1,4 +1,4 @@
-# NostrVault v2.7.2 (Build 18) Release Notes
+# Nostr Vault v2.7.2 (Build 18) Release Notes
 
 A smoother, faster feed on everyday phones, and the Android app catching up with the iPhone. Scrolling on a 4 GB phone no longer stalls while posts and threads load. The feed preloads what is coming, shows photos at their real size with a soft preview, and keeps your place. New in this release: a Followers view, Web of Trust and language filters on Global, a Lightning wallet with history and lightning addresses, and one-tap sign-in with Clave.
 
