@@ -1268,19 +1268,31 @@ struct ComposeView: View {
     /// downloads through its own client so the size cap and the GIF-magic
     /// check stay with the service that knows the host.
     private func attachGif(_ item: GifItem) {
+        // nostr.build GIFs are already hosted: post the link unless the user
+        // asked to keep a copy on their own Blossom servers.
+        if item.source == .nostrBuild && !ConfigService.shared.config.saveGifsToBlossom {
+            let link = item.attachURL.absoluteString
+            content += (content.isEmpty || content.hasSuffix("\n") || content.hasSuffix(" ")) ? link : "\n" + link
+            return
+        }
         guard !isAttachmentLimitReached, !isFetchingGif else { return }
         isFetchingGif = true
         Task {
             do {
                 let data: Data
+                var type: UTType = .gif
                 switch item.source {
+                case .nostrBuild:
+                    let file = try await NostrBuildGifService.download(item.attachURL)
+                    data = file.data
+                    if file.isWebP { type = .webP }
                 case .yarn:
                     data = try await YarnClipService.downloadGIF(uuid: item.sourceID)
                 case .tenor:
                     data = try await TenorGifService.downloadGIF(url: item.attachURL)
                 }
                 await MainActor.run {
-                    appendAttachment(Attachment(data: data, fileURL: nil, type: .gif))
+                    appendAttachment(Attachment(data: data, fileURL: nil, type: type))
                     isFetchingGif = false
                 }
             } catch {

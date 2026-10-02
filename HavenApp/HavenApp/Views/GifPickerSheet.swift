@@ -27,7 +27,8 @@ struct GifPickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @State private var source: GifSource = .yarn
+    @State private var source: GifSource = GifSource.available.first ?? .tenor
+    @ObservedObject private var configService = ConfigService.shared
     @State private var states: [GifSource: SourceState] = [:]
     @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
@@ -57,7 +58,8 @@ struct GifPickerSheet: View {
             VStack(spacing: 0) {
                 header
                 searchField
-                sourcePicker
+                if GifSource.available.count > 1 { sourcePicker }
+                if source == .nostrBuild { saveToBlossomToggle }
                 content
             }
             .background(Color.platformSecondaryGroupedBackground)
@@ -93,6 +95,30 @@ struct GifPickerSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
+        .padding(.bottom, 10)
+    }
+
+    /// nostr.build GIFs are already hosted; this decides whether picking one
+    /// also copies it to your own Blossom servers.
+    private var saveToBlossomToggle: some View {
+        HStack(spacing: 12) {
+            // nostr.build asks for this credit wherever its GIFs are shown.
+            Link("GIFs from nostr.build", destination: URL(string: "https://nostr.build")!)
+                .font(.appCaption)
+                .foregroundColor(.secondary)
+            Spacer()
+            Toggle(isOn: Binding(
+                get: { configService.config.saveGifsToBlossom },
+                set: { configService.config.saveGifsToBlossom = $0; configService.save() }
+            )) {
+                Text("Save to my Blossom")
+                    .font(.appSystem(size: 13, weight: .semibold))
+            }
+            .toggleStyle(.switch)
+            .tint(.havenPurple)
+            .fixedSize()
+        }
+        .padding(.horizontal, 20)
         .padding(.bottom, 10)
     }
 
@@ -146,7 +172,7 @@ struct GifPickerSheet: View {
     /// the 32pt a stock segmented control would give.
     private var sourcePicker: some View {
         HStack(spacing: 0) {
-            ForEach(GifSource.allCases) { candidate in
+            ForEach(GifSource.available) { candidate in
                 Button {
                     switchTo(candidate)
                 } label: {
@@ -378,6 +404,8 @@ struct GifPickerSheet: View {
             do {
                 let items: [GifItem]
                 switch requested {
+                case .nostrBuild:
+                    items = try await NostrBuildGifService.search(text, page: page).map(GifItem.init)
                 case .yarn:
                     items = try await YarnClipService.search(text, page: page).map(GifItem.init)
                 case .tenor:
@@ -391,6 +419,14 @@ struct GifPickerSheet: View {
                     states[requested]?.errorMessage = error.localizedDescription
                     states[requested]?.hasSearched = true
                     if source == requested { isSearching = false }
+                    // nostr.build is the default but answers nothing until the
+                    // app's registration is approved: step to the next source
+                    // so a search still finds something.
+                    if case NostrBuildGifService.ServiceError.notRegistered = error,
+                       source == requested,
+                       let fallback = GifSource.available.first(where: { $0 != requested }) {
+                        switchTo(fallback)
+                    }
                 }
             }
         }
