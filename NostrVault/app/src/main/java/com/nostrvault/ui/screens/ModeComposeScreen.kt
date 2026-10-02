@@ -472,7 +472,7 @@ fun ModeComposeScreen(
                     clip?.let {
                         Text(
                             "${Math.round(it.durationSeconds)}s · ${it.width}×${it.height}" +
-                                if (it.wasTrimmed) " · trimmed to the first ${ModeComposeViewModel.RECORD_LIMIT_SECONDS} seconds" else "",
+                                if (it.wasTrimmed) " · trimmed to fit" else "",
                             color = SecondaryText, fontSize = 12.sp,
                         )
                     }
