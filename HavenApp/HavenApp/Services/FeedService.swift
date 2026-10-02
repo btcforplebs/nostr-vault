@@ -141,6 +141,7 @@ class FeedService: ObservableObject {
             popularNoteScores: popularNoteScores,
             throttledPubkeys: throttled,
             globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
+            globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
             languageOf: { [unowned self] note in self.language(of: note) }
         )
 

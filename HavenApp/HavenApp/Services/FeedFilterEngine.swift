@@ -33,6 +33,7 @@ enum FeedFilterEngine {
         popularNoteScores: [String: Double],
         throttledPubkeys: [String: Int],
         globalLanguages: Set<String> = [],
+        globalRequiresTrust: Bool = true,
         languageOf: (FeedNote) -> String? = { _ in nil }
     ) -> [FeedNote] {
         // Articles: long-form only, from the follow set, one event per
@@ -66,7 +67,8 @@ enum FeedFilterEngine {
                 // The graph is seeded from the starter pack for an owner who
                 // follows nobody, so empty here means "not built yet", not
                 // "this user has no friends".
-                if !wotPubkeys.contains(note.pubkey) { return false }
+                // "Everyone" (opted into behind a warning) skips the graph.
+                if globalRequiresTrust && !wotPubkeys.contains(note.pubkey) { return false }
                 if note.isReply { return false }
                 // Narrowed to chosen languages: notes whose language can't
                 // be told (short, links only) stay. See FeedLanguageDetector.
