@@ -103,17 +103,16 @@ struct ChromeFold<Content: View>: View {
 }
 
 /// The floating "New Posts" button's fold. It leaves with the bars as you
-/// scroll down, rising back up under the top bar, and returns with them.
-/// `isPeeking` holds it out for a moment when posts arrive while folded.
+/// scroll down, rising back up under the top bar, and returns with them;
+/// folded, the small pill in the top bar's row stands in for it.
 /// Its own view for the same reason as `ChromeFold`.
 struct NewPostsFold<Content: View>: View {
     var isEnabled = true
-    var isPeeking = false
     @ViewBuilder var content: Content
 
     var body: some View {
         let p = isEnabled ? ChromeCollapse.shared.progress : 0
-        let visible = isPeeking ? 1 : ChromeCollapse.fadeOut(p)
+        let visible = ChromeCollapse.fadeOut(p)
         content
             .opacity(visible)
             .scaleEffect(0.85 + 0.15 * visible, anchor: .top)
@@ -409,9 +408,6 @@ struct FeedView: View {
     /// Same warning, raised before Recipes switches to the global set.
     @State private var showingGlobalRecipeWarning = false
     @State private var isAtTop: Bool = true
-    /// The folded "New Posts" button is held out while this is set: posts
-    /// that arrive while you read show it for a moment, then it folds away.
-    @State private var newPostsPeek: Task<Void, Never>?
     @State private var scrolledNoteID: String?
     @State private var lastScrollOffset: CGFloat = 0
     @State private var isScrollingDown: Bool = false
@@ -592,25 +588,6 @@ struct FeedView: View {
                             .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 2)
                             .offset(x: -1, y: -1)
                     }
-                    .overlay(alignment: .topTrailing) {
-                        // Folded, the "New Posts" button's count rides here.
-                        if showsNewPostsButton {
-                            ChromeFold(anchor: .bottomLeading, inverted: true, isEnabled: isCompactWidth) {
-                                Text(feedService.pendingNotes.count > 99 ? "99+" : "\(feedService.pendingNotes.count)")
-                                    .font(.appSystem(size: 10, weight: .bold))
-                                    .monospacedDigit()
-                                    .contentTransition(.numericText(value: Double(feedService.pendingNotes.count)))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 4)
-                                    .frame(minWidth: 16, minHeight: 16)
-                                    .background(Capsule().fill(Color.havenPurple))
-                                    // Inside the folded circle: the pill masks anything past it.
-                                    .offset(x: 2, y: -2)
-                                    .animation(Motion.fade, value: feedService.pendingNotes.count)
-                            }
-                            .accessibilityHidden(true)
-                        }
-                    }
 
                 // Always laid out, only faded: removing it would resize the
                 // toolbar item and make the navigation bar relayout mid-fold.
@@ -647,34 +624,65 @@ struct FeedView: View {
         !feedService.pendingNotes.isEmpty && (!configService.config.autoLoadNewPosts || !isAtTop)
     }
 
-    @ViewBuilder
-    private func newPostsFold<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        #if os(iOS)
-        // iPhone only, like the top bar: folded, the count moves onto the
-        // top bar's feed icon, and the iPad top bar never folds.
-        NewPostsFold(isEnabled: isCompactWidth, isPeeking: newPostsPeek != nil) {
-            content()
-        }
-        #else
-        content()
-        #endif
-    }
-
     #if os(iOS)
-    /// New posts arrived while the bars are folded: show the button for a
-    /// moment so the arrival is seen, then let it fold away again.
-    private func peekNewPostsIfFolded() {
-        guard isCompactWidth, ChromeCollapse.shared.progress > 0.5, showsNewPostsButton else { return }
-        newPostsPeek?.cancel()
-        withAnimation(Motion.chrome) {
-            newPostsPeek = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(2))
-                guard !Task.isCancelled else { return }
-                withAnimation(Motion.chrome) { newPostsPeek = nil }
+    /// Folded, the "New Posts" button becomes a small arrow-and-count pill
+    /// centred in the top bar's row, between its two circles.
+    @ViewBuilder
+    private var foldedNewPostsPill: some View {
+        if isCompactWidth && navigationPath.isEmpty && showsNewPostsButton {
+            ChromeFold(inverted: true) {
+                newPostsButton(compact: true) {
+                    NotificationCenter.default.post(name: NSNotification.Name("ScrollToTop"), object: nil)
+                }
             }
+            // Centred on the bar's top edge, then down to its circles' centre.
+            .frame(height: 0)
+            .offset(y: 22)
+            .transition(.opacity)
         }
     }
     #endif
+
+    private func scrollToTopAfterLoad(_ proxy: ScrollViewProxy) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(Motion.scrollJump) {
+                proxy.scrollTo("top", anchor: .top)
+            }
+        }
+    }
+
+    /// The "New Posts" button, full size or as the small folded pill.
+    /// Loads the waiting posts, then `scrollToTop`.
+    private func newPostsButton(compact: Bool, scrollToTop: @escaping () -> Void) -> some View {
+        Button(action: {
+            feedService.applyPendingNotes()
+            scrollToTop()
+        }) {
+            HStack(spacing: compact ? 4 : 8) {
+                Image(systemName: "arrow.up")
+                    .font(.appSystem(size: compact ? 11 : 12, weight: .bold))
+                Text(compact ? (feedService.pendingNotes.count > 99 ? "99+" : "\(feedService.pendingNotes.count)")
+                             : "\(feedService.pendingNotes.count) New Posts")
+                    .font(.appSystem(size: compact ? 12 : 13, weight: .bold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText(value: Double(feedService.pendingNotes.count)))
+            }
+            .padding(.vertical, compact ? 5 : 10)
+            .padding(.horizontal, compact ? 10 : 20)
+            .background(
+                Capsule()
+                    .fill(Color.havenPurple)
+                    .shadow(color: Color.black.opacity(0.4), radius: compact ? 4 : 8, x: 0, y: compact ? 2 : 4)
+            )
+            .foregroundColor(.white)
+            // The small pill's tap target, without growing the pill.
+            .padding(compact ? 8 : 0)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(feedService.pendingNotes.count) new posts, tap to load")
+        .animation(Motion.fade, value: feedService.pendingNotes.count)
+    }
 
     /// Cycles expanded → condensed → threaded. Shared by the full trailing
     /// row and the collapsed top bar, which keeps only this button.
@@ -931,6 +939,9 @@ struct FeedView: View {
                         ArticleReaderView(note: route.note)
                     }
             }
+            // Over the stack, not in the feed: the navigation bar would
+            // take its taps.
+            .overlay(alignment: .top) { foldedNewPostsPill }
         }
         #else
         VStack(spacing: 0) {
@@ -2356,10 +2367,7 @@ struct FeedView: View {
                         }
                     }
                 }
-                .onChange(of: feedService.pendingNotes.count) { old, count in
-                    #if os(iOS)
-                    if count > old { peekNewPostsIfFolded() }
-                    #endif
+                .onChange(of: feedService.pendingNotes.count) { _, count in
                     // Auto-apply pending notes when autoLoad is on, but only
                     // if the user is at the top of the feed to avoid disrupting
                     // their scroll position. Debounced to prevent duplicate calls.
@@ -2401,37 +2409,17 @@ struct FeedView: View {
 
                 // Floating "New Posts" indicator — shown when auto-load is off,
                 // or when auto-load is on but the user has scrolled down.
-                // It folds away with the bars; folded, the count rides on
-                // the top bar's feed icon instead.
+                // It folds away with the bars; folded, `foldedNewPostsPill`
+                // stands in for it in the top bar's row.
                 if showsNewPostsButton {
-                    newPostsFold {
-                    Button(action: {
-                        feedService.applyPendingNotes()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                            withAnimation(Motion.scrollJump) {
-                                proxy.scrollTo("top", anchor: .top)
-                            }
+                    Group {
+                        #if os(iOS)
+                        NewPostsFold(isEnabled: isCompactWidth) {
+                            newPostsButton(compact: false) { scrollToTopAfterLoad(proxy) }
                         }
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.up")
-                                .font(.appSystem(size: 12, weight: .bold))
-                            Text("\(feedService.pendingNotes.count) New Posts")
-                                .font(.appSystem(size: 13, weight: .bold))
-                                .contentTransition(.numericText(value: Double(feedService.pendingNotes.count)))
-                        }
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 20)
-                        .background(
-                            Capsule()
-                                .fill(Color.havenPurple)
-                                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
-                        )
-                        .foregroundColor(.white)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(feedService.pendingNotes.count) new posts, tap to load")
-                    .animation(Motion.fade, value: feedService.pendingNotes.count)
+                        #else
+                        newPostsButton(compact: false) { scrollToTopAfterLoad(proxy) }
+                        #endif
                     }
                     .padding(.top, 12)
                     // Drops out from under the top bar rather than sliding in
