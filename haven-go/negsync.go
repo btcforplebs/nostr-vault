@@ -300,6 +300,7 @@ func (s *inboxNegStore) QueryEvents(ctx context.Context, f nostr.Filter) (chan *
 }
 
 func (s *inboxNegStore) Publish(ctx context.Context, ev nostr.Event) error {
+	observeFollowList(&ev)
 	c := classifyInboxEvent(ctx, &ev)
 	if !c.accept {
 		// Only rejections based on immutable event content are tombstoned.

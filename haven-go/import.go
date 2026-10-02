@@ -733,6 +733,7 @@ func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbCh
 	if ev.Relay != nil {
 		relayURL = ev.Relay.URL
 	}
+	observeFollowList(ev.Event)
 	c := classifyInboxEvent(ctx, ev.Event)
 	if !c.accept {
 		return
