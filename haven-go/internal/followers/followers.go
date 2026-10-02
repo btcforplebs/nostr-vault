@@ -328,8 +328,11 @@ type Entry struct {
 	FollowedAt   int64  `json:"followed_at"`
 	UnfollowedAt int64  `json:"unfollowed_at,omitempty"`
 	Follows      int    `json:"follows"`
-	ListSize     int    `json:"list_size"`
-	Churn24h     int    `json:"churn_24h"`
+	// ListAt is the follower's latest list time: the only "when" there is for
+	// a follow that predates the ledger, so the app can order those by it.
+	ListAt   int64 `json:"list_at"`
+	ListSize int   `json:"list_size"`
+	Churn24h int   `json:"churn_24h"`
 }
 
 // Counts summarises current follows per tier, plus witnessed unfollows.
@@ -386,7 +389,7 @@ func (l *Ledger) Snapshot(owner string, trusted func(string) bool) Snapshot {
 		snap.Followers = append(snap.Followers, Entry{
 			Pubkey: r.Follower, Tier: tier, Following: r.Following(), Existing: r.Existing,
 			FirstSeen: r.FirstSeen, FollowedAt: r.FollowedAt, UnfollowedAt: r.UnfollowedAt,
-			Follows: r.Follows, ListSize: r.ListSize, Churn24h: r.Churn(now),
+			Follows: r.Follows, ListAt: r.ListAt, ListSize: r.ListSize, Churn24h: r.Churn(now),
 		})
 	}
 	sort.Slice(snap.Followers, func(i, j int) bool {
