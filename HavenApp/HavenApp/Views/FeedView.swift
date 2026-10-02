@@ -416,6 +416,12 @@ struct FeedView: View {
     @State private var visibleRows = FeedVisibleRows()
     /// Row to bring back to the top once a layout switch has re-rendered.
     @State private var pendingLayoutAnchor: String?
+    /// How that scroll moves: with the rows when they reshape, instantly
+    /// behind the fade otherwise.
+    @State private var pendingLayoutAnimation: Animation?
+    /// The feed is faded out for an instant while switching to or from
+    /// threaded layout.
+    @State private var layoutFadedOut = false
     @State private var lastScrollOffset: CGFloat = 0
     @State private var isScrollingDown: Bool = false
     @State private var navigationPath = NavigationPath()
@@ -495,6 +501,32 @@ struct FeedView: View {
         let resolved = mode.clamped(supportsThreading: currentFeedSupportsThreading)
         // The note you are looking at, read in the layout you are leaving.
         let readingNoteId = topVisibleNoteId()
+        let threadingChanges = (resolved == .threaded) != isThreadedModeActive
+
+        guard !Motion.isReduced else {
+            applyLayoutMode(resolved, keeping: readingNoteId, animation: nil)
+            return
+        }
+        if threadingChanges {
+            // Rows become whole conversations (or the reverse): nothing to
+            // morph, so fade out, swap with the post held at the top, fade in.
+            withAnimation(.easeOut(duration: 0.1)) { layoutFadedOut = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                applyLayoutMode(resolved, keeping: readingNoteId, animation: nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    withAnimation(.easeIn(duration: 0.18)) { layoutFadedOut = false }
+                }
+            }
+        } else {
+            // Same posts, taller or shorter: each row reshapes in place while
+            // the scroll follows the post you were reading.
+            applyLayoutMode(resolved, keeping: readingNoteId, animation: .smooth(duration: 0.25))
+        }
+    }
+
+    private func applyLayoutMode(_ resolved: FeedLayoutMode, keeping readingNoteId: String?, animation: Animation?) {
+        pendingLayoutAnimation = animation
+        withAnimation(animation) {
         configService.config.feedLayoutModes[feedService.feedMode.rawValue] = resolved.rawValue
         // Keep the legacy key in step so a downgrade still lands somewhere sane.
         configService.config.feedCompactModes[feedService.feedMode.rawValue] = resolved.usesCondensedRows
@@ -512,6 +544,7 @@ struct FeedView: View {
         expandedNoteId = nil
         if needsRefilter { feedService.recomputeFilteredNotes() }
         rebuildThreadsIfNeeded(immediate: true)
+        }
         if let readingNoteId { pendingLayoutAnchor = rowId(showing: readingNoteId) }
     }
 
@@ -760,6 +793,9 @@ struct FeedView: View {
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: feedService.mediaFeedMode == .global, color: .havenPurple) {
                     showingGlobalMediaWarning = true
                 }
+                if feedService.mediaFeedMode == .global {
+                    trustScopeButton
+                }
             } else if feedService.feedMode == .recipes {
                 IconFilterButton(icon: recipeService.scope == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: recipeService.scope == .following, color: .havenPurple) {
                     recipeService.setScope(.following)
@@ -791,16 +827,7 @@ struct FeedView: View {
                     // One button for who Global shows, so the pill keeps its
                     // width: the shield is your Web of Trust, the globe is
                     // everyone (behind a warning).
-                    let everyone = configService.config.globalShowsEveryone
-                    IconFilterButton(icon: everyone ? "globe" : "checkmark.shield.fill", tooltip: everyone ? "Everyone" : "Web of Trust", isSelected: true, color: .havenPurple) {
-                        if everyone {
-                            configService.config.globalShowsEveryone = false
-                            configService.save()
-                            feedService.recomputeFilteredNotes()
-                        } else {
-                            showingGlobalEveryoneWarning = true
-                        }
-                    }
+                    trustScopeButton
                     LanguageFilterMenu(selected: configService.config.globalFeedLanguages, color: .havenPurple) { codes in
                         configService.config.globalFeedLanguages = codes
                         configService.save()
@@ -827,6 +854,61 @@ struct FeedView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Web of Trust / Everyone
+
+    /// Who Global (and Media's Global) shows: the shield is your Web of
+    /// Trust, the globe is everyone. One button so the pill keeps its width.
+    /// Leaving the Web of Trust goes through the sensitive-content warning.
+    @ViewBuilder
+    private var trustScopeButton: some View {
+        let everyone = configService.config.globalShowsEveryone
+        #if os(macOS)
+        Button(action: toggleTrustScope) {
+            Image(systemName: everyone ? "globe" : "checkmark.shield.fill")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(everyone ? Color.orange : Color.havenPurple)
+        }
+        .buttonStyle(.plain)
+        .help(everyone ? "Everyone: unfiltered posts. Click for your Web of Trust" : "Web of Trust: people you follow and the people they follow. Click for everyone")
+        #else
+        IconFilterButton(icon: everyone ? "globe" : "checkmark.shield.fill", tooltip: everyone ? "Everyone" : "Web of Trust", isSelected: true, color: everyone ? .orange : .havenPurple, action: toggleTrustScope)
+        #endif
+    }
+
+    @ViewBuilder
+    private var trustScopeMenuItems: some View {
+        Button {
+            setGlobalShowsEveryone(false)
+        } label: {
+            Label("Web of Trust", systemImage: configService.config.globalShowsEveryone ? "checkmark.shield" : "checkmark")
+        }
+        Button {
+            if !configService.config.globalShowsEveryone { showingGlobalEveryoneWarning = true }
+        } label: {
+            Label("Everyone", systemImage: configService.config.globalShowsEveryone ? "checkmark" : "globe")
+        }
+    }
+
+    /// Reads the setting at tap time rather than from the last render.
+    private func toggleTrustScope() {
+        if configService.config.globalShowsEveryone {
+            setGlobalShowsEveryone(false)
+        } else {
+            showingGlobalEveryoneWarning = true
+        }
+    }
+
+    /// Re-filters straight away, then reloads, so the switch visibly lands
+    /// both ways: back to the Web of Trust the untrusted posts go at once
+    /// instead of lingering in the list and the new-posts count.
+    private func setGlobalShowsEveryone(_ on: Bool) {
+        guard configService.config.globalShowsEveryone != on else { return }
+        configService.config.globalShowsEveryone = on
+        configService.save()
+        feedService.recomputeFilteredNotes()
+        feedService.refresh()
     }
 
     @ViewBuilder
@@ -864,6 +946,10 @@ struct FeedView: View {
                 }
                 Button { showingGlobalMediaWarning = true } label: {
                     Label("Global", systemImage: "globe")
+                }
+                if feedService.mediaFeedMode == .global {
+                    Divider()
+                    trustScopeMenuItems
                 }
             } else if feedService.feedMode == .recipes {
                 Button { recipeService.setScope(.following) } label: {
@@ -919,18 +1005,7 @@ struct FeedView: View {
                     Label("Replies", systemImage: configService.config.showReplies ? "message.fill" : "message")
                 }
                 if feedService.feedMode == .global {
-                    Button {
-                        configService.config.globalShowsEveryone = false
-                        configService.save()
-                        feedService.recomputeFilteredNotes()
-                    } label: {
-                        Label("Web of Trust", systemImage: configService.config.globalShowsEveryone ? "checkmark.shield" : "checkmark")
-                    }
-                    Button {
-                        if !configService.config.globalShowsEveryone { showingGlobalEveryoneWarning = true }
-                    } label: {
-                        Label("Everyone", systemImage: configService.config.globalShowsEveryone ? "checkmark" : "globe")
-                    }
+                    trustScopeMenuItems
                     Menu {
                         LanguageFilterMenuItems(selected: configService.config.globalFeedLanguages) { codes in
                             configService.config.globalFeedLanguages = codes
@@ -1112,6 +1187,10 @@ struct FeedView: View {
                 }
                 .buttonStyle(.plain)
                 .help(String(localized: "feed.help.globalMedia"))
+
+                if feedService.mediaFeedMode == .global {
+                    trustScopeButton
+                }
             } else if feedService.feedMode == .recipes {
                 Button(action: { recipeService.setScope(.following) }) {
                     Image(systemName: recipeService.scope == .following ? "person.2.fill" : "person.2")
@@ -1206,25 +1285,7 @@ struct FeedView: View {
                 .help(configService.config.showReplies ? String(localized: "feed.help.hideReplies") : String(localized: "feed.help.showReplies"))
 
                 if feedService.feedMode == .global {
-                    Button(action: {
-                        configService.config.globalShowsEveryone = false
-                        configService.save()
-                        feedService.recomputeFilteredNotes()
-                    }) {
-                        Image(systemName: configService.config.globalShowsEveryone ? "checkmark.shield" : "checkmark.shield.fill")
-                            .font(.appSystem(size: 15, weight: .semibold))
-                            .foregroundColor(configService.config.globalShowsEveryone ? .secondary : Color.havenPurple)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Web of Trust: people you follow and the people they follow")
-
-                    Button(action: { if !configService.config.globalShowsEveryone { showingGlobalEveryoneWarning = true } }) {
-                        Image(systemName: "globe")
-                            .font(.appSystem(size: 15, weight: .semibold))
-                            .foregroundColor(configService.config.globalShowsEveryone ? Color.havenPurple : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Everyone: unfiltered posts from every relay")
+                    trustScopeButton
 
                     LanguageFilterMenu(selected: configService.config.globalFeedLanguages, color: .havenPurple) { codes in
                         configService.config.globalFeedLanguages = codes
@@ -1440,9 +1501,7 @@ struct FeedView: View {
         }
         .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalEveryoneWarning) {
             Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
-                configService.config.globalShowsEveryone = true
-                configService.save()
-                feedService.recomputeFilteredNotes()
+                setGlobalShowsEveryone(true)
             }
             Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
         } message: {
@@ -2475,13 +2534,16 @@ struct FeedView: View {
                     isRefreshing = false
                 }
                 .tint(Color.secondary.opacity(0.6))
+                .opacity(layoutFadedOut ? 0 : 1)
                 .scrollPosition(id: $scrolledNoteID)
                 .onChange(of: pendingLayoutAnchor) { _, anchor in
                     guard let anchor else { return }
                     // Next runloop turn, once the new layout's rows exist.
+                    let animation = pendingLayoutAnimation
                     DispatchQueue.main.async {
-                        proxy.scrollTo(anchor, anchor: .top)
+                        withAnimation(animation) { proxy.scrollTo(anchor, anchor: .top) }
                         pendingLayoutAnchor = nil
+                        pendingLayoutAnimation = nil
                     }
                 }
                 .scrollDirectionTracking(feedService: feedService, isAtTop: $isAtTop)
@@ -2629,6 +2691,7 @@ struct FeedView: View {
                     )
                 }
                 .accessibilityLabel("Compose new post")
+                .buttonStyle(PressScaleButtonStyle())
                 .padding(.trailing, 20)
                 .floatingActionBottomPadding()
                 .hoverEffect(.lift)

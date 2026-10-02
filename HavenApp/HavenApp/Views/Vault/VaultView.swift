@@ -23,6 +23,8 @@ struct VaultView: View {
     @State var contentFilter: ContentFilter = .all
     @State var likesFilter: LikesFilter = .onMyNotes
     @State var zapsFilter: ZapsFilter = .onMyNotes
+    @State var followersFilter: FollowersFilter = .new
+    @State var followerSnapshot: FollowerSnapshot?
 
     // Cached display data (computed in background)
     @State var displayNotes: [NostrEvent] = []
@@ -59,6 +61,7 @@ struct VaultView: View {
     @State var hasNewNotes = false
     @State var hasNewLikes = false
     @State var hasNewZaps = false
+    @State var hasNewFollowers = false
     @State var notificationBaseline: [Int: Int] = [:] // event kind -> count
     @State var hasEstablishedNotificationBaseline = false
 
@@ -95,6 +98,17 @@ struct VaultView: View {
     enum NoteLayoutMode: String {
         case expanded
         case compact
+    }
+
+    /// The phone's Relay tab has no layout switch, so it always shows full
+    /// rows; a "compact" left in storage from the old toggle would otherwise
+    /// be stuck on with no way off. The Mac keeps its toggle.
+    var rowLayoutMode: NoteLayoutMode {
+        #if os(iOS)
+        return .expanded
+        #else
+        return noteLayoutMode
+        #endif
     }
 
     // Debounce mechanism for updateDisplayData
@@ -137,6 +151,11 @@ struct VaultView: View {
             case .onMyNotes: return "Zaps on My Notes"
             case .myZaps: return "Notes I've Zapped"
             }
+        case .followers:
+            switch followersFilter {
+            case .new: return "New Followers"
+            case .all: return "All Followers"
+            }
         }
     }
 
@@ -178,13 +197,8 @@ struct VaultView: View {
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
-                ViewThatFits {
-                    // Preferred: full inline icon buttons
-                    trailingToolbarInline
-                    // Fallback: compact menu with labeled items
-                    trailingToolbarMenu
-                }
-                .animation(Motion.toggle, value: viewMode)
+                trailingToolbarInline
+                    .animation(Motion.toggle, value: viewMode)
             }
             #endif
         }
@@ -564,6 +578,8 @@ struct VaultView: View {
                     likesFilterView
                 } else if viewMode == .zaps {
                     zapsFilterView
+                } else if viewMode == .followers {
+                    followersFilterView
                 }
 
                 searchToggleButton
@@ -621,6 +637,10 @@ struct VaultView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             zapsFilterView
                         }
+                    } else if viewMode == .followers {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            followersFilterView
+                        }
                     }
                     searchBar
                 }
@@ -635,6 +655,8 @@ struct VaultView: View {
                             likesFilterView
                         } else if viewMode == .zaps {
                             zapsFilterView
+                        } else if viewMode == .followers {
+                            followersFilterView
                         }
                         refreshButton
                         searchToggleButton

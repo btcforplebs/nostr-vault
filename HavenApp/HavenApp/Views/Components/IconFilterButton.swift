@@ -5,6 +5,9 @@ struct IconFilterButton: View {
     let tooltip: String
     let isSelected: Bool
     let color: Color
+    /// Shown beside the icon while selected, so a row of bare icons still
+    /// says which filter is on.
+    var label: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -20,13 +23,26 @@ struct IconFilterButton: View {
                             RoundedRectangle(cornerRadius: 4)
                                 .stroke(isSelected ? color : Color.secondary, lineWidth: 1.5)
                         )
+                } else if isSelected, let label {
+                    HStack(spacing: 5) {
+                        Image(systemName: icon)
+                            .font(.appSystem(size: 15, weight: .semibold))
+                        Text(label)
+                            .font(.appSystem(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    .foregroundColor(color)
+                    .padding(.horizontal, 10)
+                    .frame(height: 32)
+                    .background(Capsule().fill(color.opacity(0.16)))
                 } else {
                     Image(systemName: icon)
                         .font(.appSystem(size: 15, weight: .semibold))
                         .foregroundColor(isSelected ? color : .secondary)
                 }
             }
-            .frame(width: 36, height: 36)
+            .frame(minWidth: 36, minHeight: 36)
             .contentShape(Rectangle())
             .animation(Motion.toggle, value: isSelected)
         }
