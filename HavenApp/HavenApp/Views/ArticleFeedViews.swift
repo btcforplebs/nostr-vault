@@ -198,6 +198,7 @@ struct ArticleReaderView: View {
     let note: FeedNote
     @EnvironmentObject var nostrService: NostrService
     @State private var showingMediaUrl: IdentifiableURL?
+    @Namespace private var mediaZoom
 
     private var metadata: LongFormMetadata { note.longFormMetadata }
     private var profile: FeedProfile? { nostrService.profiles[note.pubkey] }
@@ -251,9 +252,7 @@ struct ArticleReaderView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color.platformWindowBackground)
-        .sheet(item: $showingMediaUrl) { media in
-            FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { showingMediaUrl = nil })
-        }
+        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
     }
 }
 

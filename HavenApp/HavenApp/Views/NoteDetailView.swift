@@ -19,6 +19,7 @@ struct NoteDetailView: View {
     @State private var showingProfilePubkey: String?
     @State private var showingNoteId: String?
     @State private var showingMediaUrl: IdentifiableURL?
+    @Namespace private var mediaZoom
     @State private var showingReportDialog = false
     @State private var showingDeleteConfirm = false
     @State private var showingEmojiPicker = false
@@ -278,9 +279,7 @@ struct NoteDetailView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
-        .sheet(item: $showingMediaUrl) { media in
-            FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { showingMediaUrl = nil })
-        }
+        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .sheet(isPresented: $showingBroadcastSheet) {
             // Broadcast follows focus for the same reason Reply does: the
             // toolbar acts on the note you are looking at, not the one you

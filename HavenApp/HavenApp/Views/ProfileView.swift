@@ -19,6 +19,7 @@ struct ProfileView: View {
     @State private var showingNoteDetail: FeedNote?
     @State private var showingProfileKey: IdentifiableString?
     @State private var showingMediaUrl: IdentifiableURL?
+    @Namespace private var mediaZoom
     @State private var selectedMedia: MediaItem? = nil
     @State private var dragOffset: CGSize = .zero
     #if os(iOS)
@@ -307,9 +308,7 @@ struct ProfileView: View {
                 .frame(minWidth: 520, minHeight: 560)
                 #endif
         }
-        .sheet(item: $showingMediaUrl) { media in
-            FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { showingMediaUrl = nil })
-        }
+        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .sheet(isPresented: $showSweep) {
             BitcoinSweepDisclaimerView(onDismiss: { showSweep = false })
                 .environmentObject(ConfigService.shared)

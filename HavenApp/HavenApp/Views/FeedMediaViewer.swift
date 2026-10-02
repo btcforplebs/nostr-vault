@@ -70,6 +70,7 @@ struct FeedMediaViewer: View {
     var enableDragDismiss: Bool = true
     var onDismiss: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.mediaZoomPresented) private var zoomPresented
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
 
@@ -160,16 +161,17 @@ struct FeedMediaViewer: View {
                                 width: lastOffset.width + value.translation.width,
                                 height: lastOffset.height + value.translation.height
                             )
-                        } else {
+                        } else if !zoomPresented {
                             // Swipe to dismiss tracking - ONLY vertical when not zoomed
                             // This allows simultaneous gesture in parent TabView to handle horizontal page swiping.
+                            // Under the zoom transition the system swipe does this.
                             offset = CGSize(width: 0, height: value.translation.height)
                         }
                     }
                     .onEnded { value in
                         if scale > 1.0 {
                             lastOffset = offset
-                        } else {
+                        } else if !zoomPresented {
                             // Check height for dismissal
                             if abs(value.translation.height) > 100 {
                                 performDismiss()
@@ -913,6 +915,83 @@ extension View {
             self.simultaneousGesture(gesture)
         } else {
             self
+        }
+    }
+}
+
+// MARK: - Zoom presentation
+
+/// Namespace the tapped thumbnail and the full-screen viewer share, so the
+/// viewer grows out of the photo's spot on screen and shrinks back into it.
+private struct MediaZoomNamespaceKey: EnvironmentKey {
+    static let defaultValue: Namespace.ID? = nil
+}
+
+/// True inside a viewer presented with the zoom transition: the system then
+/// owns swipe-down-to-dismiss, so the viewer's own drag must not fight it.
+private struct MediaZoomPresentedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var mediaZoomNamespace: Namespace.ID? {
+        get { self[MediaZoomNamespaceKey.self] }
+        set { self[MediaZoomNamespaceKey.self] = newValue }
+    }
+    var mediaZoomPresented: Bool {
+        get { self[MediaZoomPresentedKey.self] }
+        set { self[MediaZoomPresentedKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Marks a tappable thumbnail as the place the viewer zooms out of.
+    @ViewBuilder
+    func mediaZoomSource(_ url: URL, namespace: Namespace.ID?) -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *), let namespace {
+            self.matchedTransitionSource(id: url.absoluteString, in: namespace)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// Presents the media viewer for `item`. On iOS 18+ it zooms out of the
+    /// tapped photo and swipes back down into it; earlier iOS and macOS keep
+    /// the sheet.
+    func mediaViewer(item: Binding<IdentifiableURL?>, namespace: Namespace.ID) -> some View {
+        modifier(MediaViewerPresentation(item: item, namespace: namespace))
+    }
+}
+
+private struct MediaViewerPresentation: ViewModifier {
+    @Binding var item: IdentifiableURL?
+    let namespace: Namespace.ID
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *) {
+            content
+                .environment(\.mediaZoomNamespace, namespace)
+                .fullScreenCover(item: $item) { media in
+                    FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil })
+                        .environment(\.mediaZoomPresented, true)
+                        .navigationTransition(.zoom(sourceID: media.url.absoluteString, in: namespace))
+                }
+        } else {
+            sheetFallback(content)
+        }
+        #else
+        sheetFallback(content)
+        #endif
+    }
+
+    private func sheetFallback(_ content: Content) -> some View {
+        content.sheet(item: $item) { media in
+            FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil })
         }
     }
 }

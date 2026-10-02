@@ -370,6 +370,7 @@ struct FeedView: View {
     @State private var showingNoteId: String?
     @State private var showingProfileKey: IdentifiableString?
     @State private var showingMediaUrl: IdentifiableURL?
+    @Namespace private var mediaZoom
     /// macOS presents the article reader as a sheet; iOS pushes it.
     @State private var showingArticle: ArticleRoute?
     @StateObject private var recipeService = RecipeFeedService.shared
@@ -1192,9 +1193,7 @@ struct FeedView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
-        .sheet(item: $showingMediaUrl) { media in
-            FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { showingMediaUrl = nil })
-        }
+        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .sheet(item: $showingArticle) { route in
             ArticleReaderView(note: route.note)
                 .environmentObject(nostrService)

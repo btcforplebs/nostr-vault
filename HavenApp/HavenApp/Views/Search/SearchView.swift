@@ -17,6 +17,7 @@ struct SearchView: View {
     @State private var showingNoteDetail: FeedNote?
     @State private var showingProfile: String?
     @State private var showingMediaUrl: IdentifiableURL?
+    @Namespace private var mediaZoom
     @State private var pendingDirectNoteId: String?
     @State private var showingCompose = false
     @State private var recentSearches: [String] = UserDefaults.standard.stringArray(forKey: "recentSearches") ?? []
@@ -423,9 +424,7 @@ struct SearchView: View {
             .frame(minWidth: 520, minHeight: 560)
             #endif
         }
-        .sheet(item: $showingMediaUrl) { media in
-            FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { showingMediaUrl = nil })
-        }
+        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .onAppear {
             refreshDiscovery(force: true)
             #if os(macOS)
