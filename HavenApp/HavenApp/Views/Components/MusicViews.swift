@@ -46,6 +46,7 @@ struct MusicBrowserView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 30)
                     .contentShape(Rectangle())
+                    .accessibilityAddTraits(query.isEmpty && opened == nil ? .isButton : [])
                     .onTapGesture {
                         if query.isEmpty && opened == nil { Task { await loadTrending() } }
                     }
@@ -102,6 +103,9 @@ struct MusicBrowserView: View {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { offset, track in
                 MusicTrackRow(track: track, isCurrent: player.current?.id == track.id, isPlaying: player.isPlaying)
                     .contentShape(Rectangle())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint(player.current?.id == track.id && player.isPlaying ? "Pauses the song" : "Plays the song")
                     .onTapGesture {
                         if player.current?.id == track.id {
                             player.togglePlayPause()
@@ -178,7 +182,7 @@ struct MusicBrowserView: View {
         searchTask?.cancel()
         opened = nil
         let term = query.trimmingCharacters(in: .whitespaces)
-        guard !term.isEmpty else { results = []; errorText = nil; return }
+        guard !term.isEmpty else { results = []; errorText = nil; isLoading = false; return }
         searchTask = Task {
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled else { return }
@@ -217,7 +221,7 @@ struct MusicTrackRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.45)).frame(width: 48, height: 48)
-                    Image(systemName: isPlaying ? "waveform" : "pause.fill")
+                    Image(systemName: isPlaying ? "waveform" : "play.fill")
                         .font(.appSystem(size: 18, weight: .bold))
                         .foregroundColor(.white)
                 }
@@ -307,6 +311,10 @@ struct MiniPlayerBar: View {
                             Text(track.artist).font(.appSystem(size: 12)).foregroundColor(.secondary).lineLimit(1)
                         }
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint("Opens the player")
+                    .accessibilityAction { showingFull = true }
                     Spacer(minLength: 4)
                     if player.isBuffering && player.isPlaying {
                         ProgressView().controlSize(.small).frame(width: 34, height: 34)
@@ -358,9 +366,9 @@ struct MiniPlayerBar: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12), lineWidth: 1))
             .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
-            .padding(.horizontal, 12)
-            .contentShape(Rectangle())
+            .contentShape(RoundedRectangle(cornerRadius: 16))
             .onTapGesture { showingFull = true }
+            .padding(.horizontal, 12)
             .sheet(isPresented: $showingFull) { NowPlayingView() }
         }
     }

@@ -1326,7 +1326,6 @@ struct FeedView: View {
     }
     #endif
 
-    @ViewBuilder
     /// The feed, with the music mini player docked at the bottom where
     /// there's no iPhone tab bar to carry it (iPad, Mac).
     private var rootContent: some View {

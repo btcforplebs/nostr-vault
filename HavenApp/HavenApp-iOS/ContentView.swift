@@ -435,19 +435,19 @@ struct iPhoneTabView: View {
             // The music mini player rides above the tab bar on every tab.
             // Measured together, so screens inset for both.
             VStack(spacing: 6) {
-            MiniPlayerBar()
-            BottomTabBar(
-                selectedTab: $selectedTab,
-                searchPath: $searchPath,
-                profilePath: $profilePath,
-                mediaPath: $mediaPath,
-                relayPath: $relayPath,
-                configService: configService,
-                relayManager: relayManager,
-                nostrService: nostrService,
-                dmService: dmService,
-                feedService: feedService
-            )
+                MiniPlayerBar()
+                BottomTabBar(
+                    selectedTab: $selectedTab,
+                    searchPath: $searchPath,
+                    profilePath: $profilePath,
+                    mediaPath: $mediaPath,
+                    relayPath: $relayPath,
+                    configService: configService,
+                    relayManager: relayManager,
+                    nostrService: nostrService,
+                    dmService: dmService,
+                    feedService: feedService
+                )
             }
             .background(
                 GeometryReader { geo in

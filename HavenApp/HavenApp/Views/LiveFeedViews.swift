@@ -348,8 +348,6 @@ struct LiveStreamPlayerView: View {
         }
     }
 
-    /// A stream zap pays the host named in the event, and carries the stream's
-    /// address so the receipt lands in this chat rather than nowhere.
     private func listenInBackground() {
         MusicPlayerService.shared.playLive(PlayerTrack(
             id: "live:\(stream.address)",
@@ -364,6 +362,8 @@ struct LiveStreamPlayerView: View {
         dismiss()
     }
 
+    /// A stream zap pays the host named in the event, and carries the stream's
+    /// address so the receipt lands in this chat rather than nowhere.
     private func sendZap(amountSats: Int) {
         guard let lud16 = lightningAddress(for: stream.zapPubkey) else {
             noLightningAddress = true
