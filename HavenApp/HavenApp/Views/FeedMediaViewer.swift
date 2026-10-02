@@ -85,6 +85,23 @@ struct FeedMediaViewer: View {
     @State private var isVideo: Bool = false
     @State private var isGIF: Bool = false
     @State private var isLoadingType: Bool = true
+    /// Set as the swipe lets go to close: the photo glides home while the
+    /// black and the buttons stay gone, instead of coming back as `offset`
+    /// animates to zero.
+    @State private var isClosing = false
+
+    init(url: URL, enableDragDismiss: Bool = true, onDismiss: (() -> Void)? = nil) {
+        self.url = url
+        self.enableDragDismiss = enableDragDismiss
+        self.onDismiss = onDismiss
+        // A kind the feed already resolved is known before the first frame,
+        // so the zoom never catches a spinner.
+        if let kind = MediaKindResolver.cachedKind(for: url) {
+            _isVideo = State(initialValue: kind == .video)
+            _isGIF = State(initialValue: kind == .gif)
+            _isLoadingType = State(initialValue: false)
+        }
+    }
 
     @State private var isMirroring: Bool = false
     @State private var mirrorStatus: MirrorStatus? = nil
@@ -124,7 +141,8 @@ struct FeedMediaViewer: View {
     }
 
     private var controlsOpacity: Double {
-        scale > 1 ? 1 : max(0, 1 - abs(offset.height) / 150)
+        if isClosing { return 0 }
+        return scale > 1 ? 1 : max(0, 1 - abs(offset.height) / 150)
     }
 
     /// Which way a drag at rest scale is going, decided on its first ~10pt
@@ -137,7 +155,7 @@ struct FeedMediaViewer: View {
             Color.black
                 // Under the zoom the cover is see-through, so the post shows
                 // through as you pull the photo away.
-                .opacity(max(zoomPresented ? 0 : 0.1, 1.0 - (abs(offset.height) / 500.0)))
+                .opacity(isClosing ? 0 : max(zoomPresented ? 0 : 0.1, 1.0 - (abs(offset.height) / 500.0)))
                 .ignoresSafeArea()
             
             Group {
@@ -211,6 +229,7 @@ struct FeedMediaViewer: View {
                                 // zoom carries the screen into the post, so it
                                 // lands on its spot instead of short and low.
                                 withAnimation(.smooth(duration: 0.3)) {
+                                    isClosing = true
                                     offset = .zero
                                     lastOffset = .zero
                                 }
