@@ -1327,6 +1327,9 @@ class NostrService @Inject constructor(
         }
     }
 
+    /** Also send [event] to [relayUrl], e.g. diVine's relay for a diVine. */
+    fun publishTo(event: NostrEvent, relayUrl: String) = fireAndForgetPublish(serializeEvent(event), relayUrl)
+
     private fun fireAndForgetPublish(eventJson: String, relayUrl: String) {
         if (!isValidRelayUrl(relayUrl)) return
         scope.launch(Dispatchers.IO) {

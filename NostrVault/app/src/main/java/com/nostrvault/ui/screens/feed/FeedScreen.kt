@@ -110,12 +110,23 @@ fun FeedScreen(
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
     onCompose: () -> Unit,
+    /** Opens the diVine, article or recipe composer. */
+    onComposeMode: (com.nostrvault.ui.screens.ModeComposerKind) -> Unit = {},
     onReply: ((String) -> Unit)? = null,
     onQuote: ((String) -> Unit)? = null,
     onNavigateToSettings: () -> Unit,
     viewModel: FeedViewModel = hiltViewModel(),
 ) {
     val feedMode by viewModel.feedMode.collectAsState()
+    // The post button writes what the feed shows: a diVine in diVines, an
+    // article in Articles, a recipe in Recipes, a note everywhere else.
+    val modeComposer = when (feedMode) {
+        FeedMode.REELS -> com.nostrvault.ui.screens.ModeComposerKind.DIVINE
+        FeedMode.ARTICLES -> com.nostrvault.ui.screens.ModeComposerKind.ARTICLE
+        FeedMode.RECIPES -> com.nostrvault.ui.screens.ModeComposerKind.RECIPE
+        else -> null
+    }
+    val postAction: () -> Unit = { modeComposer?.let(onComposeMode) ?: onCompose() }
     val liveStreams by viewModel.liveStreams.collectAsState()
     val liveLoading by viewModel.liveLoading.collectAsState()
     // The tapped stream is held rather than looked up again by id: a kind-30311
@@ -479,7 +490,7 @@ fun FeedScreen(
                 // iOS-style gradient "Post" capsule (FeedView compose FAB)
                 val colors = LocalNostrVaultColors.current
                 Surface(
-                    onClick = onCompose,
+                    onClick = postAction,
                     shape = RoundedCornerShape(50),
                     color = Color.Transparent,
                     modifier = Modifier
@@ -505,13 +516,17 @@ fun FeedScreen(
                             .padding(horizontal = 18.dp),
                     ) {
                         Icon(
-                            NostrVaultIcons.Create,
+                            when (modeComposer) {
+                                com.nostrvault.ui.screens.ModeComposerKind.ARTICLE -> NostrVaultIcons.Articles
+                                com.nostrvault.ui.screens.ModeComposerKind.RECIPE -> NostrVaultIcons.Recipes
+                                else -> NostrVaultIcons.Create
+                            },
                             contentDescription = "Compose",
                             tint = Color.White,
                             modifier = Modifier.size(18.dp),
                         )
                         Text(
-                            text = "Post",
+                            text = modeComposer?.buttonTitle ?: "Post",
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
@@ -544,6 +559,7 @@ fun FeedScreen(
                         viewModel.cacheNote(note)
                         onNoteClick(note.id)
                     },
+                    onPost = { onComposeMode(com.nostrvault.ui.screens.ModeComposerKind.DIVINE) },
                     onShowGlobal = { showGlobalReelsWarning = true },
                 )
             } else if (feedMode == FeedMode.LIVE) {

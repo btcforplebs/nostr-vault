@@ -115,6 +115,8 @@ internal fun ReelsFeed(
     onProfile: (String) -> Unit,
     onReply: (FeedNote) -> Unit,
     onOpenNote: (FeedNote) -> Unit,
+    /** Opens the diVine composer. */
+    onPost: () -> Unit,
     onShowGlobal: () -> Unit,
 ) {
     val reels by viewModel.reels.collectAsState()
@@ -221,6 +223,7 @@ internal fun ReelsFeed(
                     onOpenNote = { onOpenNote(reel.note) },
                     onLike = { viewModel.likeNote(reel.id) },
                     onShare = { shareNote(context, reel.note) },
+                    onPost = onPost,
                 )
             }
 
@@ -261,6 +264,7 @@ private fun ReelPage(
     onOpenNote: () -> Unit,
     onLike: () -> Unit,
     onShare: () -> Unit,
+    onPost: () -> Unit,
 ) {
     val context = LocalContext.current
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
@@ -479,6 +483,7 @@ private fun ReelPage(
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        RailButton(NostrVaultIcons.Create, label = "Post a diVine", onClick = onPost)
                         RailButton(
                             icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
                             tint = if (isLiked) Color(0xFFFF3B30) else Color.White,
