@@ -30,6 +30,7 @@ struct FeedMediaPager: View {
     var onDismiss: (() -> Void)? = nil
 
     @State private var selection: URL
+    @Environment(\.mediaZoomPresented) private var zoomPresented
 
     init(urls: [URL], selected: URL, onDismiss: (() -> Void)? = nil) {
         self.urls = urls.isEmpty ? [selected] : urls
@@ -44,7 +45,9 @@ struct FeedMediaPager: View {
             FeedMediaViewer(url: selected, onDismiss: onDismiss)
         } else {
             ZStack {
-                Color.black.ignoresSafeArea()
+                // Each page draws its own black, which fades as it is pulled
+                // away; a fixed black here would hide the post behind it.
+                if !zoomPresented { Color.black.ignoresSafeArea() }
                 TabView(selection: $selection) {
                     ForEach(urls, id: \.absoluteString) { url in
                         FeedMediaViewer(url: url, enableDragDismiss: true, onDismiss: onDismiss)
@@ -115,10 +118,17 @@ struct FeedMediaViewer: View {
         BlossomService(configService: configService, nostrService: nostrService)
     }
     
+    /// The photo shrinks as you pull it down, so it reads as being put back.
+    private var dragShrink: CGFloat {
+        scale > 1 ? 1 : max(0.6, 1 - abs(offset.height) / 900)
+    }
+
     var body: some View {
         ZStack {
             Color.black
-                .opacity(max(0.1, 1.0 - (abs(offset.height) / 500.0)))
+                // Under the zoom the cover is see-through, so the post shows
+                // through as you pull the photo away.
+                .opacity(max(zoomPresented ? 0 : 0.1, 1.0 - (abs(offset.height) / 500.0)))
                 .ignoresSafeArea()
             
             Group {
@@ -133,7 +143,7 @@ struct FeedMediaViewer: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scaleEffect(scale)
+            .scaleEffect(scale * dragShrink)
             .offset(offset)
             .gesture(
                 MagnificationGesture()
@@ -161,19 +171,22 @@ struct FeedMediaViewer: View {
                                 width: lastOffset.width + value.translation.width,
                                 height: lastOffset.height + value.translation.height
                             )
-                        } else if !zoomPresented {
+                        } else {
                             // Swipe to dismiss tracking - ONLY vertical when not zoomed
                             // This allows simultaneous gesture in parent TabView to handle horizontal page swiping.
-                            // Under the zoom transition the system swipe does this.
+                            // Under the zoom transition the system does not
+                            // dismiss a full-screen cover on a swipe, so this
+                            // stays the only way to swipe the viewer away.
                             offset = CGSize(width: 0, height: value.translation.height)
                         }
                     }
                     .onEnded { value in
                         if scale > 1.0 {
                             lastOffset = offset
-                        } else if !zoomPresented {
-                            // Check height for dismissal
-                            if abs(value.translation.height) > 100 {
+                        } else {
+                            // Check height for dismissal: far enough, or a
+                            // quick flick that would carry it there.
+                            if abs(value.translation.height) > 100 || abs(value.predictedEndTranslation.height) > 260 {
                                 performDismiss()
                             } else {
                                 withAnimation(Motion.snapBack) {
@@ -950,6 +963,7 @@ private struct MediaViewerPresentation: ViewModifier {
                 .fullScreenCover(item: $item) { media in
                     FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil })
                         .environment(\.mediaZoomPresented, true)
+                        .presentationBackground(.clear)
                         .navigationTransition(.zoom(sourceID: media.url.absoluteString, in: namespace))
                 }
         } else {
