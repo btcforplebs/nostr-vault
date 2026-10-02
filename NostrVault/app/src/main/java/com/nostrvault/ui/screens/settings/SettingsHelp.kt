@@ -241,7 +241,7 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
     ADV_LOG_LEVEL(
         "adv.logLevel",
         "Log Level",
-        "How much detail your relay writes to its logs. Takes effect after restart.",
+        "How much detail your relay writes to its logs. Changing it restarts the relay automatically.",
     ),
     ADV_FACTORY_RESET(
         "adv.factoryReset",

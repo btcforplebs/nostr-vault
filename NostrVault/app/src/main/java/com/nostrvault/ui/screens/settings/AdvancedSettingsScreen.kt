@@ -43,6 +43,8 @@ class AdvancedSettingsViewModel @Inject constructor(
     private val mediaCacheService: MediaCacheService,
 ) : ViewModel() {
     val config: StateFlow<HavenConfig> = configStore.config
+    /** True while a saved change is restarting the relay onto it. */
+    val isRestartingRelay: StateFlow<Boolean> = configStore.relayApplier.isRestarting
 
     fun setMaxEvents(v: Int) = save { it.copy(outboxMaxEventsPerMinute = v.coerceIn(10, 1000)) }
     fun setMaxConnections(v: Int) = save { it.copy(outboxMaxConnectionsPerMinute = v.coerceIn(1, 100)) }
@@ -95,6 +97,7 @@ fun AdvancedSettingsScreen(
     viewModel: AdvancedSettingsViewModel = hiltViewModel(),
 ) {
     val config by viewModel.config.collectAsState()
+    val isRestartingRelay by viewModel.isRestartingRelay.collectAsState()
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
     var showResetDialog by remember { mutableStateOf(false) }
@@ -132,7 +135,8 @@ fun AdvancedSettingsScreen(
             StepperRow("Max Connections / min", config.outboxMaxConnectionsPerMinute, 1..100, 1) {
                 viewModel.setMaxConnections(it)
             }
-            Caption("Protects your relay from spam and abuse. Restart the relay to apply.")
+            Caption("Protects your relay from spam and abuse. Changes restart the relay automatically.")
+            if (isRestartingRelay) Caption("Restarting relay…")
 
             Spacer(Modifier.height(20.dp))
 
@@ -166,18 +170,9 @@ fun AdvancedSettingsScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // ── Diagnostics & Startup ─────────────────────────────
-            SectionLabel("Diagnostics & Startup")
+            // ── Startup ───────────────────────────────────────────
+            SectionLabel("Startup")
             ToggleRow("Auto-start Relay", config.autoStartRelay, viewModel::setAutoStartRelay)
-            if (!config.useExternalRelay) {
-                OutlinedButton(
-                    onClick = {
-                        RelayForegroundService.stop(context)
-                        RelayForegroundService.start(context)
-                    },
-                    modifier = Modifier.padding(top = 8.dp),
-                ) { Text("Restart Relay") }
-            }
 
             Spacer(Modifier.height(20.dp))
 

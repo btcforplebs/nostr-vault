@@ -146,7 +146,7 @@ object RelayConfiguration {
             "IMPORT_TAGGED_NOTES_FETCH_TIMEOUT_SECONDS" to "600",
 
             // DM Relays
-            "DM_RELAYS_FILE" to "relays_dm.json",
+            "DM_RELAYS_FILE" to DM_RELAYS_FILE_NAME,
 
             // Backup
             "BACKUP_PROVIDER" to config.backupProvider,
@@ -167,6 +167,32 @@ object RelayConfiguration {
             "HAVEN_ENABLE_TLS" to enableTLS,
         )
     }
+
+    /**
+     * Everything the relay reads when it starts: its environment plus the
+     * list files written beside it. Two configs with equal inputs run an
+     * identical relay, so this is what decides whether a saved settings
+     * change needs a restart (see [RelayConfigApplier]). The service writes
+     * the list files from this same struct, so the restart check cannot drift
+     * from what the relay actually reads. Port of iOS
+     * RelayConfiguration.LaunchInputs.
+     */
+    data class LaunchInputs(
+        val env: Map<String, String>,
+        val importSeedRelays: List<String>,
+        val blastrRelays: List<String>,
+        val dmRelays: List<String>,
+    )
+
+    /** Name of the DM relay list file the relay reads (DM_RELAYS_FILE). */
+    const val DM_RELAYS_FILE_NAME = "relays_dm.json"
+
+    fun launchInputs(config: HavenConfig, relayDataDir: File): LaunchInputs = LaunchInputs(
+        env = generateEnvDictionary(config, relayDataDir),
+        importSeedRelays = config.importSeedRelays,
+        blastrRelays = config.blastrRelays,
+        dmRelays = config.dmRelays,
+    )
 
     /** Format an environment dictionary as a .env file string. */
     fun formatEnvFile(envDict: Map<String, String>): String = buildString {
