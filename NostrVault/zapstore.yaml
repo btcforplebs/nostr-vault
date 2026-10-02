@@ -1,9 +1,9 @@
-name: NostrVault
+name: Nostr Vault
 summary: A Nostr client with a built-in Haven relay and Blossom server
 description: |
-  NostrVault is a self-custodial Android Nostr client with your own relay and media server running directly on your device.
+  Nostr Vault is a self-custodial Android Nostr client with your own relay and media server running directly on your device.
 
-  Most Nostr clients are a window onto someone else's relay. NostrVault is the relay. A full Haven relay runs on your phone, so every note you write and every note you receive is written to storage you own before it goes anywhere else. If every relay you use disappeared tomorrow, your copy would still be on your device.
+  Most Nostr clients are a window onto someone else's relay. Nostr Vault is the relay. A full Haven relay runs on your phone, so every note you write and every note you receive is written to storage you own before it goes anywhere else. If every relay you use disappeared tomorrow, your copy would still be on your device.
 
   HOW IT WORKS
 
