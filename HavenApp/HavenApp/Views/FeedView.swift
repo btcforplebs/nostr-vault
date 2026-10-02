@@ -415,6 +415,12 @@ struct FeedView: View {
     @State private var visibleRows = FeedVisibleRows()
     /// Row to bring back to the top once a layout switch has re-rendered.
     @State private var pendingLayoutAnchor: String?
+    /// How that scroll moves: with the rows when they reshape, instantly
+    /// behind the fade otherwise.
+    @State private var pendingLayoutAnimation: Animation?
+    /// The feed is faded out for an instant while switching to or from
+    /// threaded layout.
+    @State private var layoutFadedOut = false
     @State private var lastScrollOffset: CGFloat = 0
     @State private var isScrollingDown: Bool = false
     @State private var navigationPath = NavigationPath()
@@ -494,6 +500,32 @@ struct FeedView: View {
         let resolved = mode.clamped(supportsThreading: currentFeedSupportsThreading)
         // The note you are looking at, read in the layout you are leaving.
         let readingNoteId = topVisibleNoteId()
+        let threadingChanges = (resolved == .threaded) != isThreadedModeActive
+
+        guard !Motion.isReduced else {
+            applyLayoutMode(resolved, keeping: readingNoteId, animation: nil)
+            return
+        }
+        if threadingChanges {
+            // Rows become whole conversations (or the reverse): nothing to
+            // morph, so fade out, swap with the post held at the top, fade in.
+            withAnimation(.easeOut(duration: 0.1)) { layoutFadedOut = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                applyLayoutMode(resolved, keeping: readingNoteId, animation: nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    withAnimation(.easeIn(duration: 0.18)) { layoutFadedOut = false }
+                }
+            }
+        } else {
+            // Same posts, taller or shorter: each row reshapes in place while
+            // the scroll follows the post you were reading.
+            applyLayoutMode(resolved, keeping: readingNoteId, animation: .smooth(duration: 0.25))
+        }
+    }
+
+    private func applyLayoutMode(_ resolved: FeedLayoutMode, keeping readingNoteId: String?, animation: Animation?) {
+        pendingLayoutAnimation = animation
+        withAnimation(animation) {
         configService.config.feedLayoutModes[feedService.feedMode.rawValue] = resolved.rawValue
         // Keep the legacy key in step so a downgrade still lands somewhere sane.
         configService.config.feedCompactModes[feedService.feedMode.rawValue] = resolved.usesCondensedRows
@@ -511,6 +543,7 @@ struct FeedView: View {
         expandedNoteId = nil
         if needsRefilter { feedService.recomputeFilteredNotes() }
         rebuildThreadsIfNeeded(immediate: true)
+        }
         if let readingNoteId { pendingLayoutAnchor = rowId(showing: readingNoteId) }
     }
 
@@ -2389,13 +2422,16 @@ struct FeedView: View {
                     isRefreshing = false
                 }
                 .tint(Color.secondary.opacity(0.6))
+                .opacity(layoutFadedOut ? 0 : 1)
                 .scrollPosition(id: $scrolledNoteID)
                 .onChange(of: pendingLayoutAnchor) { _, anchor in
                     guard let anchor else { return }
                     // Next runloop turn, once the new layout's rows exist.
+                    let animation = pendingLayoutAnimation
                     DispatchQueue.main.async {
-                        proxy.scrollTo(anchor, anchor: .top)
+                        withAnimation(animation) { proxy.scrollTo(anchor, anchor: .top) }
                         pendingLayoutAnchor = nil
+                        pendingLayoutAnimation = nil
                     }
                 }
                 .scrollDirectionTracking(feedService: feedService, isAtTop: $isAtTop)
