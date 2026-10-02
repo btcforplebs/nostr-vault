@@ -90,6 +90,9 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.OfflineBolt
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
@@ -188,6 +191,9 @@ object NostrVaultIcons {
     val Globe: ImageVector = Icons.Filled.Public                 // globe (alias for filter context)
     val GlobeOutline: ImageVector = Icons.Outlined.Public        // globe.americas
     val BarChart: ImageVector = Icons.Filled.BarChart            // chart.bar.fill
+    val TrustShield: ImageVector = Icons.Filled.VerifiedUser     // checkmark.shield.fill (Web of Trust)
+    val Languages: ImageVector = Icons.Filled.Translate          // character.bubble.fill
+    val LanguagesOutline: ImageVector = Icons.Outlined.Translate // character.bubble
 
     // Search / vault filters
     val Layers: ImageVector = Icons.Filled.Layers                // square.stack
