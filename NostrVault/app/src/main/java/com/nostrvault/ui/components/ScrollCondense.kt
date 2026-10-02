@@ -17,6 +17,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -24,7 +25,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.dp
 import com.nostrvault.ui.theme.Motion
 import kotlinx.coroutines.CoroutineScope
@@ -194,19 +197,25 @@ fun ScrollCondenseEffect(
  * Folds a piece of chrome away with [ScrollChrome]: its width shrinks to
  * nothing and it fades out a little ahead of that. Layout-phase only, so a
  * drag re-lays-out the bar without recomposing it.
+ *
+ * [leadingGap] is the space between this piece and the one it folds into.
+ * It folds away with the piece, so a pill left with one button closes into
+ * a circle around it instead of keeping the gap as a stub.
  */
-fun Modifier.chromeFold(): Modifier = this
+fun Modifier.chromeFold(leadingGap: Dp = 0.dp): Modifier = this
     .clipToBounds()
     .layout { measurable, constraints ->
-        val placeable = measurable.measure(constraints)
+        val gap = leadingGap.roundToPx()
+        val placeable = measurable.measure(constraints.offset(horizontal = -gap))
         val p = ScrollChrome.progress
-        layout((placeable.width * (1f - p)).roundToInt(), placeable.height) {
-            placeable.placeRelativeWithLayer(0, 0) { alpha = (1f - p * 1.6f).coerceAtLeast(0f) }
+        layout(((placeable.width + gap) * (1f - p)).roundToInt(), placeable.height) {
+            placeable.placeRelativeWithLayer(gap, 0) { alpha = (1f - p * 1.6f).coerceAtLeast(0f) }
         }
     }
 
 /**
- * A FAB that folds with the chrome: it shrinks and fades as the bars fold.
+ * A FAB that folds with the chrome: it shrinks into its corner and fades as
+ * the bars fold, the way the iPhone's Post button does.
  */
 fun Modifier.chromeFab(): Modifier = this.layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
@@ -216,6 +225,7 @@ fun Modifier.chromeFab(): Modifier = this.layout { measurable, constraints ->
         // Faded out entirely: not placed, so it takes no taps meant for the feed.
         if (fabAlpha > 0f) placeable.placeRelativeWithLayer(0, 0) {
             alpha = fabAlpha
+            transformOrigin = TransformOrigin(1f, 1f)
             scaleX = 1f - 0.5f * p
             scaleY = 1f - 0.5f * p
         }

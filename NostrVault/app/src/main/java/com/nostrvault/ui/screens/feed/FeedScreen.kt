@@ -1250,7 +1250,9 @@ private fun FeedTopBar(
             .heightIn(min = 48.dp),
     ) {
         // ── Leading pill: connection dot (clickable for dashboard) + feed mode dropdown
-        GlassPill(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // No arrangement spacing: each folding piece carries its own gap, so the
+        // folded pill closes into a circle around what it keeps.
+        GlassPill(horizontalArrangement = Arrangement.Start) {
             // Connection status dot - clickable to open Feed Dashboard (matches iOS)
             Box(
                 modifier = Modifier
@@ -1269,7 +1271,7 @@ private fun FeedTopBar(
             }
 
             // Feed mode dropdown
-            Box(Modifier.chromeFold().blockedWhen(collapsed)) { Box {
+            Box(Modifier.chromeFold(leadingGap = 8.dp).blockedWhen(collapsed)) { Box {
                 TextButton(
                     onClick = { feedModeExpanded = true },
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
@@ -1321,7 +1323,7 @@ private fun FeedTopBar(
             visible = !(collapsed && feedMode == FeedMode.REELS),
             enter = fadeIn(Motion.chrome()),
             exit = fadeOut(Motion.chrome()),
-        ) { GlassPill {
+        ) { GlassPill(horizontalArrangement = Arrangement.Start) {
             // Layout mode toggle: expanded -> condensed -> threaded -> expanded.
             // Reels is one video per screen — there is no layout to switch.
             if (feedMode != FeedMode.REELS) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
@@ -1341,7 +1343,7 @@ private fun FeedTopBar(
             // Mode-dependent filter buttons. Articles has none: reposts,
             // replies and auto-load are all about kind-1 traffic, and a
             // long-form list is short enough not to need them.
-            Box(Modifier.chromeFold().blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
+            Box(Modifier.chromeFold(leadingGap = 4.dp).blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
                 FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE -> Unit
                 FeedMode.REELS -> {
                     // Following, or everyone behind the sensitive-content warning.
