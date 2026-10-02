@@ -2422,6 +2422,7 @@ struct FeedView: View {
                     )
                 }
                 .accessibilityLabel("Compose new post")
+                .buttonStyle(PressScaleButtonStyle())
                 .padding(.trailing, 20)
                 .padding(.bottom, 90)
                 .hoverEffect(.lift)

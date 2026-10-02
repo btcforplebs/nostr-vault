@@ -520,6 +520,7 @@ struct ProfileView: View {
                                 .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
                         )
                     }
+                    .buttonStyle(PressScaleButtonStyle())
                     .padding(.trailing, 20)
                     .padding(.bottom, 90)
                     .hoverEffect(.lift)
