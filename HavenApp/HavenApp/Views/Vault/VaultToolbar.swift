@@ -6,7 +6,7 @@ extension VaultView {
 
     @ViewBuilder
     var leadingToolbarInline: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 4) {
             IconFilterButton(icon: "doc.text", tooltip: "Notes", isSelected: viewMode == .notes, color: .havenPurple) {
                 withAnimation(Motion.toggle) { viewMode = .notes }
             }
@@ -29,63 +29,34 @@ extension VaultView {
     // to mean "my notes only" under Notes but "on my notes" under Likes and
     // Zaps. Whitelisted notes already show in All, and the phone has no
     // layout switch (`rowLayoutMode`).
-    @ViewBuilder
+    /// Words first; when the bar can't fit them, the selected filter drops
+    /// its word, never the icons. (This used to fall back to a filter menu,
+    /// which hid every option behind one button.)
     var trailingToolbarInline: some View {
+        ViewThatFits(in: .horizontal) {
+            trailingFilters(labelled: true)
+            trailingFilters(labelled: false)
+        }
+    }
+
+    @ViewBuilder
+    func trailingFilters(labelled: Bool) -> some View {
         HStack(spacing: 4) {
             if viewMode == .notes {
-                IconFilterButton(icon: "square.stack", tooltip: "All", isSelected: contentFilter == .all, color: .havenPurple, label: "All") { contentFilter = .all }
-                IconFilterButton(icon: "person.fill", tooltip: "Mine", isSelected: contentFilter == .mine, color: .havenPurple, label: "Mine") { contentFilter = .mine }
-                IconFilterButton(icon: "at", tooltip: "Mentions", isSelected: contentFilter == .tagged, color: .havenPurple, label: "Mentions") { contentFilter = .tagged }
+                IconFilterButton(icon: "square.stack", tooltip: "All", isSelected: contentFilter == .all, color: .havenPurple, label: labelled ? "All" : nil) { contentFilter = .all }
+                IconFilterButton(icon: "person.fill", tooltip: "Mine", isSelected: contentFilter == .mine, color: .havenPurple, label: labelled ? "Mine" : nil) { contentFilter = .mine }
+                IconFilterButton(icon: "at", tooltip: "Mentions", isSelected: contentFilter == .tagged, color: .havenPurple, label: labelled ? "Mentions" : nil) { contentFilter = .tagged }
             } else if viewMode == .likes {
-                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: likesFilter == .onMyNotes, color: .havenPurple, label: "Received") { likesFilter = .onMyNotes }
-                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: likesFilter == .myLikes, color: .havenPurple, label: "Given") { likesFilter = .myLikes }
+                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: likesFilter == .onMyNotes, color: .havenPurple, label: labelled ? "Received" : nil) { likesFilter = .onMyNotes }
+                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: likesFilter == .myLikes, color: .havenPurple, label: labelled ? "Given" : nil) { likesFilter = .myLikes }
             } else if viewMode == .zaps {
-                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: zapsFilter == .onMyNotes, color: .havenPurple, label: "Received") { zapsFilter = .onMyNotes }
-                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: zapsFilter == .myZaps, color: .havenPurple, label: "Given") { zapsFilter = .myZaps }
+                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: zapsFilter == .onMyNotes, color: .havenPurple, label: labelled ? "Received" : nil) { zapsFilter = .onMyNotes }
+                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: zapsFilter == .myZaps, color: .havenPurple, label: labelled ? "Given" : nil) { zapsFilter = .myZaps }
             }
         }
         .animation(Motion.toggle, value: contentFilter)
         .animation(Motion.toggle, value: likesFilter)
         .animation(Motion.toggle, value: zapsFilter)
-    }
-
-    // MARK: - Trailing Toolbar (compact menu)
-
-    @ViewBuilder
-    var trailingToolbarMenu: some View {
-        Menu {
-            if viewMode == .notes {
-                Button { contentFilter = .all } label: {
-                    Label("All", systemImage: "square.stack")
-                }
-                Button { contentFilter = .mine } label: {
-                    Label("Mine", systemImage: "person.fill")
-                }
-                Button { contentFilter = .tagged } label: {
-                    Label("Mentions", systemImage: "at")
-                }
-            } else if viewMode == .likes {
-                Button { likesFilter = .onMyNotes } label: {
-                    Label("Received", systemImage: "tray.and.arrow.down.fill")
-                }
-                Button { likesFilter = .myLikes } label: {
-                    Label("Given", systemImage: "tray.and.arrow.up.fill")
-                }
-            } else if viewMode == .zaps {
-                Button { zapsFilter = .onMyNotes } label: {
-                    Label("Received", systemImage: "tray.and.arrow.down.fill")
-                }
-                Button { zapsFilter = .myZaps } label: {
-                    Label("Given", systemImage: "tray.and.arrow.up.fill")
-                }
-            }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.appSystem(size: 15, weight: .semibold))
-                .foregroundColor(.havenPurple)
-                .frame(width: 36, height: 36)
-                .contentShape(Rectangle())
-        }
     }
 
     // MARK: - Mode / Filter Helper Views
