@@ -79,8 +79,6 @@ class FeedService: ObservableObject {
     @Published var popularFilter: PopularFilter = .all
     @Published var showPopularEngagement = false
     @Published var isLoadingFeed    = false
-    /// Set by FeedView scroll tracking — true when user is scrolling down, used to collapse tab bar.
-    @Published var feedScrollingDown = false
     @Published var connectionStatus = "Disconnected"
 
     /// Three-state connection indicator color

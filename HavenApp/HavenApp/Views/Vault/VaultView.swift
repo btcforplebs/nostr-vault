@@ -397,7 +397,7 @@ struct VaultView: View {
             .scrollDirectionTracking(feedService: feedService)
         }
         .overlay(alignment: .bottomTrailing) {
-            if !feedService.feedScrollingDown {
+            ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingRelayDashboard = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "antenna.radiowaves.left.and.right")
@@ -417,10 +417,8 @@ struct VaultView: View {
                 .padding(.trailing, 20)
                 .padding(.bottom, 90)
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
         #else
         GeometryReader { geometry in
             ZStack {
@@ -523,7 +521,7 @@ struct VaultView: View {
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
-            if !feedService.feedScrollingDown {
+            ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingRelayDashboard = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "antenna.radiowaves.left.and.right")
@@ -543,10 +541,8 @@ struct VaultView: View {
                 .padding(.trailing, 20)
                 .padding(.bottom, 90)
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
         #endif
     }
 

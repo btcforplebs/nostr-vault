@@ -211,7 +211,7 @@ struct MediaGalleryView: View {
             .scrollDirectionTracking(feedService: feedService)
         }
         .overlay(alignment: .bottomTrailing) {
-            if !feedService.feedScrollingDown {
+            ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingBlossomMediaList = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "camera.macro")
@@ -231,10 +231,8 @@ struct MediaGalleryView: View {
                 .padding(.trailing, 20)
                 .padding(.bottom, 90)
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
         #else
         // The GeometryReader here existed only to compute an `isNarrow` flag the
         // content never read.
@@ -330,7 +328,7 @@ struct MediaGalleryView: View {
         }
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
-            if !feedService.feedScrollingDown {
+            ChromeFold(anchor: .bottomTrailing) {
                 Button(action: { showingBlossomMediaList = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "camera.macro")
@@ -350,10 +348,8 @@ struct MediaGalleryView: View {
                 .padding(.trailing, 20)
                 .padding(.bottom, 90)
                 .hoverEffect(.lift)
-                .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
-        .animation(Motion.chrome, value: feedService.feedScrollingDown)
         #endif
     }
 
