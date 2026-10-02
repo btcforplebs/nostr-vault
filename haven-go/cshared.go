@@ -274,6 +274,7 @@ func StartRelayC(importMode bool) {
 			}
 
 			cycle.spawn("subscribeInboxAndChat", func() { subscribeInboxAndChat(cycle.ctx) })
+			cycle.spawn("followerLedger", func() { runFollowerLedger(cycle.ctx) })
 			cycle.spawn("syncFeed", func() { syncFeed(cycle.ctx) })
 			cycle.spawn("ingestPopularEngagement", func() { ingestPopularEngagement(cycle.ctx) })
 			cycle.spawn("periodicCloudBackups", func() { startPeriodicCloudBackups(cycle.ctx) })
@@ -1589,6 +1590,39 @@ func ComputePopularNotesC() *C.char {
 	}
 
 	result, err := json.Marshal(notes)
+	if err != nil {
+		result, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return C.CString(string(result))
+	}
+	return C.CString(string(result))
+}
+
+// ---------------------------------------------------------------------------
+// Follower ledger
+// ---------------------------------------------------------------------------
+
+// GetFollowersC returns the follower ledger for owner (hex pubkey) as JSON:
+// a followers.Snapshot (counts per trust tier + one entry per follower,
+// newest follow first), or {"error": ...} when the relay isn't running.
+//
+//export GetFollowersC
+func GetFollowersC(owner *C.char) *C.char {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("GetFollowersC: recovered from panic: %v", r)
+		}
+	}()
+	c := relayLC.current.Load()
+	if c == nil || c.server == nil {
+		result, _ := json.Marshal(map[string]string{"error": "relay not running"})
+		return C.CString(string(result))
+	}
+	snap, ok := followersSnapshot(c.ctx, C.GoString(owner))
+	if !ok {
+		result, _ := json.Marshal(map[string]string{"error": "follower ledger unavailable"})
+		return C.CString(string(result))
+	}
+	result, err := json.Marshal(snap)
 	if err != nil {
 		result, _ := json.Marshal(map[string]string{"error": err.Error()})
 		return C.CString(string(result))
