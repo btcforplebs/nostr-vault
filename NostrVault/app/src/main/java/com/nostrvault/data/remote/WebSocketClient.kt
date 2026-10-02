@@ -37,7 +37,14 @@ class WebSocketClient(
     private val url: String,
     private val scope: CoroutineScope,
     private val trustLocalhost: Boolean = false,
-) {
+    /**
+     * False for pooled lookup sockets: a failure there is final, and
+     * [LookupSocketPool] decides when to dial the relay again.
+     */
+    private val autoReconnect: Boolean = true,
+    /** Frames held for a slow collector before new ones are dropped. */
+    messageBuffer: Int = 256,
+) : RelayConnection {
     companion object {
         private const val TAG = "WebSocketClient"
         private const val MAX_RECONNECT_ATTEMPTS = 10
@@ -79,11 +86,11 @@ class WebSocketClient(
         DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING
     }
 
-    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 256)
-    val messages: SharedFlow<String> = _messages.asSharedFlow()
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = messageBuffer)
+    override val messages: SharedFlow<String> = _messages.asSharedFlow()
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
-    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+    override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
     /** Last WebSocket error message (for diagnostics). */
     @Volatile var lastError: String? = null
@@ -98,13 +105,13 @@ class WebSocketClient(
     private val client: OkHttpClient
         get() = if (trustLocalhost) sharedLocalhostClient else sharedClient
 
-    fun connect() {
+    override fun connect() {
         shouldReconnect = true
         reconnectAttempts = 0
         doConnect()
     }
 
-    fun disconnect() {
+    override fun disconnect() {
         shouldReconnect = false
         reconnectJob?.cancel()
         synchronized(socketLock) {
@@ -114,7 +121,7 @@ class WebSocketClient(
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
-    fun send(message: String): Boolean {
+    override fun send(message: String): Boolean {
         synchronized(socketLock) {
             return webSocket?.send(message) ?: false
         }
@@ -187,7 +194,7 @@ class WebSocketClient(
     }
 
     private fun scheduleReconnect() {
-        if (!shouldReconnect) return
+        if (!shouldReconnect || !autoReconnect) return
 
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
             // Instead of giving up permanently, back off to a slow periodic retry
@@ -213,4 +220,13 @@ class WebSocketClient(
         }
     }
 
+}
+
+/** What [LookupSocketPool] needs from a relay socket; [WebSocketClient] in the app, a fake in tests. */
+interface RelayConnection {
+    val messages: SharedFlow<String>
+    val connectionState: StateFlow<WebSocketClient.ConnectionState>
+    fun connect()
+    fun send(message: String): Boolean
+    fun disconnect()
 }
