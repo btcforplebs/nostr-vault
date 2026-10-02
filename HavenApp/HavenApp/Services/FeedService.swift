@@ -87,7 +87,9 @@ class FeedService: ObservableObject {
         case "Live":
             return Color(red: 0.2, green: 0.8, blue: 0.6) // Green
         case "Disconnected", "No contacts found":
-            return Color.red.opacity(0.8) // Red
+            // Grey, not red: the app starts out "Disconnected", and a red
+            // dot on launch reads as a notification.
+            return Color(white: 0.6) // Grey
         default:
             return Color(red: 1, green: 0.6, blue: 0.1) // Orange (loading/connecting)
         }
