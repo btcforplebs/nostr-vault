@@ -331,6 +331,33 @@ final class BackgroundAccumulator: @unchecked Sendable {
     var seenEngagementIds = Set<String>()
     private static let maxEngagementIds = 20_000
 
+    /// When each lookup response id was last verified. Every relay asked
+    /// answers with the same note; only the first valid copy is worth a
+    /// signature check. Entries lapse after a few seconds so a later re-fetch of the
+    /// same note (after a cache trim or feed switch) is verified again.
+    private var parentFetchClaims: [String: Date] = [:]
+    private static let parentFetchClaimWindow: TimeInterval = 10
+
+    /// True if a copy of `id` already passed verification within the window.
+    func parentFetchRecentlyVerified(_ id: String, now: Date = Date()) -> Bool {
+        guard let at = parentFetchClaims[id] else { return false }
+        return now.timeIntervalSince(at) < Self.parentFetchClaimWindow
+    }
+
+    /// Record that a copy of `id` passed verification. Only valid copies are
+    /// recorded, so a relay answering first with a forgery cannot shadow the
+    /// genuine note.
+    func markParentFetchVerified(_ id: String, now: Date = Date()) {
+        if parentFetchClaims.count > 2_000 {
+            parentFetchClaims = parentFetchClaims.filter {
+                now.timeIntervalSince($0.value) < Self.parentFetchClaimWindow
+            }
+        }
+        parentFetchClaims[id] = now
+    }
+
+    func resetParentFetchClaims() { parentFetchClaims.removeAll() }
+
     static let flushIntervalFast: TimeInterval = 0.2
     static let flushIntervalNormal: TimeInterval = 0.5
     static let flushIntervalRealtime: TimeInterval = 0.05
