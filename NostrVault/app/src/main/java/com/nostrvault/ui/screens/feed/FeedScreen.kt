@@ -25,6 +25,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +75,10 @@ import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.components.threadLink
 import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.components.ScrollCondenseEffect
+import com.nostrvault.ui.components.blockedWhen
+import com.nostrvault.ui.components.chromeFab
+import com.nostrvault.ui.components.chromeFold
+import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.service.ScrollPosition
 import com.nostrvault.ui.theme.*
@@ -238,12 +245,11 @@ fun FeedScreen(
         }
     }
 
-    // Scroll-direction detection → drives the bottom-bar + FAB condense animation.
+    // Where the list is relative to its top: the chrome always shows near it.
     ScrollCondenseEffect(
         scrollKey = listState,
         firstVisibleItemIndex = { listState.firstVisibleItemIndex },
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
-        setScrollingDown = viewModel::setFeedScrollingDown,
     )
 
     // Save scroll position for snapshot persistence (debounced on scroll stop)
@@ -376,15 +382,10 @@ fun FeedScreen(
         floatingActionButton = {
             // Reading the flag inside this slot keeps recomposition scoped to the
             // FAB — the feed list never re-renders when it shows/hides.
-            val scrollingDown by viewModel.feedScrollingDown.collectAsState()
-            // The FAB hides and shows with the scroll, so it is chrome.
-            val fabSpring = Motion.chrome<Float>()
-            AnimatedVisibility(
-                // Reels has its own reply button, and the rail sits where the FAB would.
-                visible = !scrollingDown && feedMode != FeedMode.REELS,
-                enter = scaleIn(animationSpec = fabSpring, initialScale = 0.5f) + fadeIn(fabSpring),
-                exit = scaleOut(animationSpec = fabSpring, targetScale = 0.5f) + fadeOut(fabSpring),
-            ) {
+            // The FAB folds with the bars, following the finger.
+            val folded by rememberChromeFolded()
+            // Reels has its own reply button, and the rail sits where the FAB would.
+            if (feedMode != FeedMode.REELS) Box(Modifier.chromeFab().blockedWhen(folded)) {
                 // iOS-style gradient "Post" capsule (FeedView compose FAB)
                 val colors = LocalNostrVaultColors.current
                 Surface(
@@ -1204,8 +1205,9 @@ private fun FeedFullNoteRow(
 @Composable
 private fun FeedTopBar(
     feedMode: FeedMode,
-    /// Folds with the bottom bar while the feed scrolls down: only the
-    /// connection dot and the layout button stay, like the iOS top bar.
+    /// Folded past halfway with the bottom bar (the pieces fold continuously
+    /// with the finger, via chromeFold): only the connection dot and the
+    /// layout button stay, like the iOS top bar. Folded pieces take no taps.
     collapsed: Boolean,
     connectionStatus: String,
     connectionColor: String,
@@ -1250,72 +1252,112 @@ private fun FeedTopBar(
             // the pills fold keeps the feed from jumping under your thumb.
             .heightIn(min = 48.dp),
     ) {
-        // ── Leading pill: connection dot (clickable for dashboard) + feed mode dropdown
-        GlassPill(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // Connection status dot - clickable to open Feed Dashboard (matches iOS)
-            Box(
+        // ── Leading pill: one tap target. The icon names the current feed and
+        // its corner dot carries the connection status; tapping anywhere on the
+        // pill opens the feed list, with Feed Dashboard at the bottom of it
+        // (the old separate dot opened the dashboard, and sat so close to the
+        // feed menu that it was easy to hit by mistake). Folded, only the
+        // icon is left, and it opens the same list.
+        // No arrangement spacing: each folding piece carries its own gap, so the
+        // folded pill closes into a circle around what it keeps.
+        Box {
+            GlassPill(
+                horizontalArrangement = Arrangement.Start,
                 modifier = Modifier
-                    .size(30.dp)
                     .clip(CircleShape)
-                    .clickable(onClick = onOpenFeedDashboard)
-                    .wrapContentSize(Alignment.Center),
+                    .clickable(onClickLabel = "Switch feeds or open the feed dashboard") { feedModeExpanded = true }
+                    .semantics { contentDescription = "Feed: ${feedMode.displayName}, $connectionStatus" },
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .shadow(4.dp, CircleShape)
-                        .clip(CircleShape)
-                        .background(dotColor),
-                )
-            }
-
-            // Feed mode dropdown
-            AnimatedVisibility(
-                visible = !collapsed,
-                enter = topBarEnter(),
-                exit = topBarExit(),
-            ) { Box {
-                TextButton(
-                    onClick = { feedModeExpanded = true },
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                    modifier = Modifier.size(30.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = feedMode.displayName,
-                        color = PrimaryText,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(Modifier.width(2.dp))
                     Icon(
-                        imageVector = NostrVaultIcons.ChevronDown,
-                        contentDescription = "Switch feed mode",
+                        imageVector = feedMode.icon,
+                        contentDescription = null,
                         tint = PrimaryText,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = (-1).dp, y = (-1).dp)
+                            .size(8.dp)
+                            .shadow(3.dp, CircleShape)
+                            .clip(CircleShape)
+                            .background(dotColor),
                     )
                 }
-                DropdownMenu(
-                    expanded = feedModeExpanded,
-                    onDismissRequest = { feedModeExpanded = false },
-                ) {
-                    FeedMode.entries.forEach { mode ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = mode.displayName,
-                                    fontWeight = if (mode == feedMode) FontWeight.SemiBold else FontWeight.Normal,
-                                )
-                            },
-                            leadingIcon = if (mode == feedMode) {
-                                { Icon(NostrVaultIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                            } else null,
-                            onClick = {
-                                onModeChange(mode)
-                                feedModeExpanded = false
-                            },
+
+                Box(Modifier.chromeFold(leadingGap = 6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = feedMode.displayName,
+                            color = PrimaryText,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
                         )
+                        Spacer(Modifier.width(2.dp))
+                        Icon(
+                            imageVector = NostrVaultIcons.ChevronDown,
+                            contentDescription = null,
+                            tint = PrimaryText,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
                     }
                 }
-            } }
+            }
+
+            DropdownMenu(
+                expanded = feedModeExpanded,
+                onDismissRequest = { feedModeExpanded = false },
+            ) {
+                FeedMode.entries.forEach { mode ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = mode.displayName,
+                                fontWeight = if (mode == feedMode) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        },
+                        leadingIcon = { Icon(mode.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = if (mode == feedMode) {
+                            { Icon(NostrVaultIcons.Check, contentDescription = "Current feed", modifier = Modifier.size(16.dp)) }
+                        } else null,
+                        onClick = {
+                            onModeChange(mode)
+                            feedModeExpanded = false
+                        },
+                    )
+                }
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text("Feed Dashboard")
+                            Text(connectionStatus, fontSize = 12.sp, color = SecondaryText)
+                        }
+                    },
+                    leadingIcon = {
+                        Box {
+                            Icon(NostrVaultIcons.Relay, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Box(
+                                Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(dotColor),
+                            )
+                        }
+                    },
+                    onClick = {
+                        feedModeExpanded = false
+                        onOpenFeedDashboard()
+                    },
+                )
+            }
         }
 
         Spacer(Modifier.weight(1f))
@@ -1326,7 +1368,7 @@ private fun FeedTopBar(
             visible = !(collapsed && feedMode == FeedMode.REELS),
             enter = fadeIn(Motion.chrome()),
             exit = fadeOut(Motion.chrome()),
-        ) { GlassPill {
+        ) { GlassPill(horizontalArrangement = Arrangement.Start) {
             // Layout mode toggle: expanded -> condensed -> threaded -> expanded.
             // Reels is one video per screen — there is no layout to switch.
             if (feedMode != FeedMode.REELS) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
@@ -1346,11 +1388,7 @@ private fun FeedTopBar(
             // Mode-dependent filter buttons. Articles has none: reposts,
             // replies and auto-load are all about kind-1 traffic, and a
             // long-form list is short enough not to need them.
-            AnimatedVisibility(
-                visible = !collapsed,
-                enter = topBarEnter(),
-                exit = topBarExit(),
-            ) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
+            Box(Modifier.chromeFold(leadingGap = 4.dp).blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
                 FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE -> Unit
                 FeedMode.REELS -> {
                     // Following, or everyone behind the sensitive-content warning.
@@ -1467,10 +1505,6 @@ private fun FeedTopBar(
         } }
     }
 }
-
-// The pills shrink toward the button they keep rather than popping.
-private fun topBarEnter() = expandHorizontally(Motion.chrome()) + fadeIn(Motion.chrome())
-private fun topBarExit() = shrinkHorizontally(Motion.chrome()) + fadeOut(Motion.chrome())
 
 // ── Empty state ──────────────────────────────────────────────────
 
@@ -1630,3 +1664,17 @@ private fun List<String>.resolveAgainst(
     for (pubkey in this) profiles[pubkey]?.let { resolved[pubkey] = it }
     return resolved
 }
+
+/** Icon for the feed picker and the top bar; matches the iPhone's. */
+private val FeedMode.icon: ImageVector
+    get() = when (this) {
+        FeedMode.FOLLOWING -> NostrVaultIcons.People
+        FeedMode.DISCOVERY -> NostrVaultIcons.Discover
+        FeedMode.GLOBAL -> NostrVaultIcons.Globe
+        FeedMode.POPULAR -> NostrVaultIcons.Popular
+        FeedMode.MEDIA -> NostrVaultIcons.Media
+        FeedMode.REELS -> NostrVaultIcons.Reels
+        FeedMode.ARTICLES -> NostrVaultIcons.Articles
+        FeedMode.RECIPES -> NostrVaultIcons.Recipes
+        FeedMode.LIVE -> NostrVaultIcons.Live
+    }

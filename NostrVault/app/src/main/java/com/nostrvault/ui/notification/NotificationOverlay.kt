@@ -37,7 +37,10 @@ fun NotificationOverlay(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(top = 12.dp),
+            // Below the top bar (8dp + a 48dp pill row + 8dp), not over its
+            // pills: the feed's filter buttons stay readable and tappable while
+            // a zap, upload or error pill is showing. iOS parity: #113.
+            .padding(top = 64.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

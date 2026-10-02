@@ -48,6 +48,9 @@ import com.nostrvault.service.*
 import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.ScrollCondenseEffect
+import com.nostrvault.ui.components.blockedWhen
+import com.nostrvault.ui.components.chromeFab
+import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -336,7 +339,7 @@ fun MediaGalleryScreen(
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
 
-    // Scroll-direction detection → condense the bottom bar + Blossom FAB. Tracks
+    // Where the list is relative to its top: the chrome always shows near it. Tracks
     // whichever container is currently shown (re-armed on the grid/list toggle).
     val isGrid = layoutMode == MediaLayoutMode.GRID
     ScrollCondenseEffect(
@@ -347,7 +350,6 @@ fun MediaGalleryScreen(
         firstVisibleItemScrollOffset = {
             if (isGrid) gridState.firstVisibleItemScrollOffset else listState.firstVisibleItemScrollOffset
         },
-        setScrollingDown = feedService::setFeedScrollingDown,
     )
     var contextMenuTarget by remember { mutableStateOf<Int?>(null) }
     val colors = LocalNostrVaultColors.current
@@ -476,14 +478,9 @@ fun MediaGalleryScreen(
             }
         },
         floatingActionButton = {
-            val scrollingDown by feedService.feedScrollingDown.collectAsState()
-            // The FAB hides and shows with the scroll, so it is chrome.
-            val fabSpring = Motion.chrome<Float>()
-            AnimatedVisibility(
-                visible = !scrollingDown,
-                enter = scaleIn(animationSpec = fabSpring, initialScale = 0.5f) + fadeIn(fabSpring),
-                exit = scaleOut(animationSpec = fabSpring, targetScale = 0.5f) + fadeOut(fabSpring),
-            ) {
+            // The FAB folds with the bars, following the finger.
+            val folded by rememberChromeFolded()
+            Box(Modifier.chromeFab().blockedWhen(folded)) {
                 Surface(
                     onClick = onBlossomClick,
                     modifier = Modifier.padding(bottom = 88.dp),

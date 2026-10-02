@@ -1,6 +1,9 @@
 package com.nostrvault.ui.navigation
 
 import com.nostrvault.ui.components.ZapFlightStage
+import com.nostrvault.ui.components.ScrollChrome
+import com.nostrvault.ui.components.rememberScrollChromeConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.animation.*
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.layout.*
@@ -154,11 +157,26 @@ fun NostrVaultNavHost(
         navController.navigate(target.route) { launchSingleTop = true }
     }
 
+    // The bars fold with the scroll on the list tabs (Feed/Media/Relay), following
+    // the finger; tabs without that wiring, and "disable tab bar animation",
+    // keep them shown.
+    val chromeFolds = currentRoute == Screen.Feed.route ||
+        currentRoute == Screen.MediaGallery.route ||
+        currentRoute == Screen.Dashboard.route
+    val chromeConnection = rememberScrollChromeConnection(
+        enabled = chromeFolds && !config.disableTabBarAnimation,
+    )
+    // The FABs and the feed's top bar still read the old boolean for which
+    // controls take taps; it flips once, halfway through the fold.
+    LaunchedEffect(Unit) {
+        snapshotFlow { ScrollChrome.isFolded }.collect { feedService.setFeedScrollingDown(it) }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().nestedScroll(chromeConnection),
             // Motion matched to the navigation type: lateral tab switches use a
             // Material "fade-through" (fade + subtle scale), hierarchical pushes use
             // "shared-axis Z" (zoom into/out of depth). See navMotion() below.
@@ -657,15 +675,9 @@ fun NostrVaultNavHost(
 
         // Floating bottom nav pill overlay
         if (showBottomBar) {
-            // Reading the flag here scopes recomposition to the overlay — the
-            // tab content (inside the NavHost) never re-renders on a flip. The
-            // bar condenses on the scrollable list tabs (Feed/Media/Relay), so
-            // tabs without scroll wiring stay expanded.
-            val feedScrollingDown by feedService.feedScrollingDown.collectAsState()
-            val condenseTab = currentRoute == Screen.Feed.route ||
-                currentRoute == Screen.MediaGallery.route ||
-                currentRoute == Screen.Dashboard.route
-            val condensed = feedScrollingDown && condenseTab
+            // The bar reads the fold progress in layout and draw only, so a drag
+            // never recomposes it or the tab content under it.
+            val condenseTab = chromeFolds
 
             // Contextual condensed action (icon + tint + click), matching iOS:
             // compose on Feed, Blossom upload on Media, relay dashboard on Relay
@@ -707,7 +719,7 @@ fun NostrVaultNavHost(
                     activeAvatarUrl = activeProfile?.pictureURL,
                     activeDisplayName = activeProfile?.bestName,
                     isOwner = isOwner,
-                    condensed = condensed,
+                    foldProgress = { if (condenseTab) ScrollChrome.progress else 0f },
                     hasUnreadDMs = unreadDMs > 0,
                     hasNewRelayActivity = relayActivity,
                     onNavigate = { screen ->
@@ -738,7 +750,7 @@ fun NostrVaultNavHost(
                     condensedActionIcon = condensedActionIcon,
                     condensedActionTint = condensedActionTint,
                     onCondensedAction = onCondensedAction,
-                    onExpand = { feedService.setFeedScrollingDown(false) },
+                    onExpand = { ScrollChrome.expand(scope) },
                 )
             }
         }
