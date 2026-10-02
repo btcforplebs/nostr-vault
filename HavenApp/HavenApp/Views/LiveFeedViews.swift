@@ -113,6 +113,24 @@ struct LiveStreamPlayerView: View {
                 // while you browse the rest of the app.
                 FullScreenVideoPlayer(url: url, onPiPStart: { dismiss() })
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .overlay(alignment: .topLeading) {
+                        // Minimize: the stream's sound carries on in the mini
+                        // player and on the lock screen while you browse; tap
+                        // Watch in the player to get the video back.
+                        Button(action: listenInBackground) {
+                            Image(systemName: "chevron.down")
+                                .font(.appSystem(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Circle().fill(Color.black.opacity(0.45)))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(6)
+                        .accessibilityLabel("Minimize")
+                        .accessibilityHint("Keeps playing the sound while you browse")
+                    }
                     // A 16:9 video sized to the width of a phone in landscape
                     // is taller than the screen, and a VStack that cannot fit
                     // its children pushes the last one — the composer — off the
@@ -214,21 +232,6 @@ struct LiveStreamPlayerView: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer(minLength: 0)
-                if stream.streamingURL != nil {
-                    // Hands the stream's sound to the app-wide player: it keeps
-                    // going in the mini player and on the lock screen while
-                    // you browse, like a Wavlake song.
-                    Button(action: listenInBackground) {
-                        Label("Listen", systemImage: "headphones")
-                            .font(.appSystem(size: 12, weight: .semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(Color.havenPurple.opacity(0.15)))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.havenPurple)
-                    .accessibilityHint("Keeps playing the sound while you browse")
-                }
                 Menu {
                     Button {
                         showingReportDialog = true
@@ -349,7 +352,7 @@ struct LiveStreamPlayerView: View {
     }
 
     private func listenInBackground() {
-        MusicPlayerService.shared.playLive(PlayerTrack(
+        MusicPlayerService.shared.playLive(stream: stream, item: PlayerTrack(
             id: "live:\(stream.address)",
             title: stream.title ?? "Live stream",
             artist: hostName,

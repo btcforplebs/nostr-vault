@@ -2708,8 +2708,8 @@ struct FeedView: View {
                 }
                 .accessibilityLabel("Compose new post")
                 .buttonStyle(PressScaleButtonStyle())
-                .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
             }
             #endif

@@ -296,81 +296,155 @@ enum MusicTime {
 /// full controls; the ✕ stops the music and hides it.
 struct MiniPlayerBar: View {
     @ObservedObject private var player = MusicPlayerService.shared
+    @ObservedObject private var row = FloatingButtonRow.shared
     @State private var showingFull = false
+
+    /// Same height as the floating Post / Blossom / Relay capsule, so the
+    /// two read as one row.
+    static let height: CGFloat = FloatingButtonRow.buttonHeight
 
     var body: some View {
         if let track = player.current {
-            VStack(spacing: 0) {
-                HStack(spacing: 10) {
-                    MusicArtwork(url: track.artworkURL, size: 38)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(track.title).font(.appSystem(size: 14, weight: .semibold)).lineLimit(1)
-                        HStack(spacing: 5) {
-                            if track.isLive { LiveBadge() }
-                            Text(track.artist).font(.appSystem(size: 12)).foregroundColor(.secondary).lineLimit(1)
-                        }
+            // Sharing the row with a floating button leaves no room for skip;
+            // play and ✕ stay, and skip lives in the full player.
+            let compact = row.reservedWidth > 0
+            HStack(spacing: 8) {
+                // Round, so it sits inside the capsule's end instead of
+                // poking its corners out of the curve.
+                MusicArtwork(url: track.artworkURL, size: 40)
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(track.title).font(.appSystem(size: 14, weight: .semibold)).lineLimit(1)
+                    HStack(spacing: 5) {
+                        if track.isLive { LiveBadge() }
+                        Text(track.artist).font(.appSystem(size: 12)).foregroundColor(.secondary).lineLimit(1)
                     }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityHint("Opens the player")
-                    .accessibilityAction { showingFull = true }
-                    Spacer(minLength: 4)
-                    if player.isBuffering && player.isPlaying {
-                        ProgressView().controlSize(.small).frame(width: 34, height: 34)
-                    } else {
-                        Button(action: player.togglePlayPause) {
-                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.appSystem(size: 18, weight: .bold))
-                                .frame(width: 34, height: 34)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
-                    }
-                    if !track.isLive {
-                        Button(action: player.next) {
-                            Image(systemName: "forward.fill")
-                                .font(.appSystem(size: 15, weight: .bold))
-                                .frame(width: 30, height: 34)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!player.hasNext)
-                        .opacity(player.hasNext ? 1 : 0.35)
-                        .accessibilityLabel("Next song")
-                    }
-                    Button(action: player.stop) {
-                        Image(systemName: "xmark")
-                            .font(.appSystem(size: 13, weight: .bold))
-                            .foregroundColor(.secondary)
-                            .frame(width: 26, height: 34)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Opens the player")
+                .accessibilityAction { showingFull = true }
+                if player.isBuffering && player.isPlaying {
+                    ProgressView().controlSize(.small).frame(width: 44, height: 44)
+                } else {
+                    Button(action: player.togglePlayPause) {
+                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.appSystem(size: 18, weight: .bold))
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Stop music")
+                    .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-
+                if !track.isLive && !compact {
+                    Button(action: player.next) {
+                        Image(systemName: "forward.fill")
+                            .font(.appSystem(size: 15, weight: .bold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!player.hasNext)
+                    .opacity(player.hasNext ? 1 : 0.35)
+                    .accessibilityLabel("Next song")
+                }
+                Button(action: player.stop) {
+                    Image(systemName: "xmark")
+                        .font(.appSystem(size: 13, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Stop music")
+            }
+            .padding(.leading, 4)
+            .frame(height: Self.height)
+            .overlay(alignment: .bottom) {
+                // Progress along the bottom edge, inside the bar.
                 GeometryReader { geo in
                     Capsule()
                         .fill(Color.havenPurple)
                         .frame(width: !track.isLive && player.duration > 0 ? geo.size.width * min(1, player.elapsed / player.duration) : 0)
                 }
                 .frame(height: 2)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 4)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 2)
             }
             .foregroundColor(.primary)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12), lineWidth: 1))
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
             .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
-            .contentShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(Capsule())
             .onTapGesture { showingFull = true }
-            .padding(.horizontal, 12)
             .sheet(isPresented: $showingFull) { NowPlayingView() }
         }
+    }
+}
+
+// MARK: - Floating button row
+
+/// Shares the row above the iPhone tab bar between the mini player and the
+/// screen's floating button (Post, Blossom, Relay). Each floating button
+/// reports its width here; the mini player stops short of it, with a gap,
+/// and the button drops level with the mini player. With nothing playing the
+/// button stays exactly where it always was.
+@MainActor
+final class FloatingButtonRow: ObservableObject {
+    static let shared = FloatingButtonRow()
+    static let buttonHeight: CGFloat = 48
+    /// Where a floating button sits when no music is playing.
+    static let defaultBottom: CGFloat = 90
+    static let trailingInset: CGFloat = 20
+    static let gap: CGFloat = 10
+
+    /// Space the mini player leaves on its right: the visible button's
+    /// width, its trailing inset and the gap. Zero when no button is showing.
+    @Published private(set) var reservedWidth: CGFloat = 0
+    /// Bottom padding for floating buttons, from the bottom safe area:
+    /// level with the mini player while it's showing.
+    @Published private(set) var buttonBottom: CGFloat = defaultBottom
+
+    private var widths: [UUID: CGFloat] = [:]
+    private var tabBarOnlyHeight: CGFloat = 0
+    private var miniPlayerShowing = false
+
+    func report(_ id: UUID, width: CGFloat?) {
+        widths[id] = width
+        let widest = widths.values.max() ?? 0
+        reservedWidth = widest > 0 ? widest + Self.trailingInset + Self.gap : 0
+    }
+
+    func update(tabBarOnlyHeight: CGFloat, miniPlayerShowing: Bool) {
+        self.tabBarOnlyHeight = tabBarOnlyHeight
+        self.miniPlayerShowing = miniPlayerShowing
+        // The mini player sits 6pt above the tab bar (the inset's spacing).
+        buttonBottom = miniPlayerShowing && tabBarOnlyHeight > 0
+            ? tabBarOnlyHeight + 6
+            : Self.defaultBottom
+    }
+}
+
+/// Places a floating button (Post, Blossom, Relay) in the row above the tab
+/// bar and reports its width so the mini player can make room for it.
+struct FloatingButtonSlot: ViewModifier {
+    @ObservedObject private var row = FloatingButtonRow.shared
+    @State private var id = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { row.report(id, width: geo.size.width) }
+                        .onChange(of: geo.size.width) { _, width in row.report(id, width: width) }
+                }
+            )
+            .onDisappear { row.report(id, width: nil) }
+            .padding(.trailing, FloatingButtonRow.trailingInset)
+            .padding(.bottom, row.buttonBottom)
+            .animation(Motion.chrome, value: row.buttonBottom)
     }
 }
 
@@ -464,6 +538,9 @@ struct NowPlayingView: View {
                             actionButton("Artist", icon: "person.crop.circle") { sheet = .profile(hex) }
                         }
                     } else if let host = track.hostPubkey {
+                        if let stream = player.liveStream {
+                            actionButton("Watch", icon: "play.rectangle") { sheet = .live(stream) }
+                        }
                         actionButton("Host", icon: "person.crop.circle") { sheet = .profile(host) }
                     }
                 }
@@ -517,11 +594,13 @@ struct LiveBadge: View {
 enum MusicSheet: Identifiable {
     case share(String)
     case profile(String)
+    case live(LiveStream)
 
     var id: String {
         switch self {
         case .share(let text): return "share:\(text)"
         case .profile(let hex): return "profile:\(hex)"
+        case .live(let stream): return "live:\(stream.id)"
         }
     }
 
@@ -545,6 +624,10 @@ struct MusicSheetHost: ViewModifier {
                     .environmentObject(nostrService)
                     .environmentObject(configService)
                     .environmentObject(relayManager)
+            case .live(let stream):
+                LiveStreamPlayerView(stream: stream)
+                    .environmentObject(nostrService)
+                    .environmentObject(configService)
             case .profile(let hex):
                 ProfileView(pubkey: hex, onDismiss: { sheet = nil })
                     .environmentObject(nostrService)

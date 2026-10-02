@@ -428,8 +428,8 @@ struct VaultView: View {
                             .shadow(color: statusColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
             }
         }
@@ -552,8 +552,8 @@ struct VaultView: View {
                             .shadow(color: statusColor.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
             }
         }

@@ -50,6 +50,10 @@ final class MusicPlayerService: ObservableObject {
     @Published private(set) var elapsed: Double = 0
     @Published private(set) var duration: Double = 0
 
+    /// The stream behind a minimized live item, so the full player can
+    /// bring its video back.
+    @Published private(set) var liveStream: LiveStream?
+
     var current: PlayerTrack? { queue.indices.contains(index) ? queue[index] : nil }
     var hasNext: Bool { index + 1 < queue.count }
 
@@ -92,12 +96,14 @@ final class MusicPlayerService: ObservableObject {
 
     /// Listens to a live stream: sound only, in the mini player and on the
     /// lock screen. Replaces whatever was queued.
-    func playLive(_ item: PlayerTrack) {
+    func playLive(stream: LiveStream, item: PlayerTrack) {
         play(tracks: [item], startAt: 0)
+        liveStream = stream
     }
 
     func play(tracks: [PlayerTrack], startAt startIndex: Int = 0) {
         guard tracks.indices.contains(startIndex) else { return }
+        liveStream = nil
         queue = tracks
         index = startIndex
         loadCurrent(autoplay: true)
@@ -150,6 +156,7 @@ final class MusicPlayerService: ObservableObject {
         player.pause()
         player.replaceCurrentItem(with: nil)
         queue = []
+        liveStream = nil
         index = 0
         isPlaying = false
         elapsed = 0

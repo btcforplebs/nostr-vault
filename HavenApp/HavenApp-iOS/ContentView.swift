@@ -386,8 +386,16 @@ struct iPhoneTabView: View {
     @State private var mediaPath = NavigationPath()
     @State private var relayPath = NavigationPath()
     @State private var tabBarHeight: CGFloat = 0
+    /// The tab bar alone, without the mini player above it.
+    @State private var tabBarOnlyHeight: CGFloat = 0
+    @ObservedObject private var buttonRow = FloatingButtonRow.shared
+    @ObservedObject private var musicPlayer = MusicPlayerService.shared
 
     private var activeHex: String { configService.activeAccountHexPubkey }
+
+    private func syncButtonRow() {
+        buttonRow.update(tabBarOnlyHeight: tabBarOnlyHeight, miniPlayerShowing: musicPlayer.current != nil)
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -435,7 +443,11 @@ struct iPhoneTabView: View {
             // The music mini player rides above the tab bar on every tab.
             // Measured together, so screens inset for both.
             VStack(spacing: 6) {
+                // Leaves room on the right for the screen's floating button
+                // (Post, Blossom, Relay), which drops level with it.
                 MiniPlayerBar()
+                    .padding(.leading, 12)
+                    .padding(.trailing, max(12, buttonRow.reservedWidth))
                 BottomTabBar(
                     selectedTab: $selectedTab,
                     searchPath: $searchPath,
@@ -448,7 +460,17 @@ struct iPhoneTabView: View {
                     dmService: dmService,
                     feedService: feedService
                 )
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { tabBarOnlyHeight = geo.size.height }
+                            .onChange(of: geo.size.height) { _, height in tabBarOnlyHeight = height }
+                    }
+                )
             }
+            .onChange(of: tabBarOnlyHeight) { _, _ in syncButtonRow() }
+            .onChange(of: musicPlayer.current?.id) { _, _ in syncButtonRow() }
+            .onAppear { syncButtonRow() }
             .background(
                 GeometryReader { geo in
                     Color.clear
