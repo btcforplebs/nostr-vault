@@ -25,6 +25,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1249,70 +1252,112 @@ private fun FeedTopBar(
             // the pills fold keeps the feed from jumping under your thumb.
             .heightIn(min = 48.dp),
     ) {
-        // ── Leading pill: connection dot (clickable for dashboard) + feed mode dropdown
+        // ── Leading pill: one tap target. The icon names the current feed and
+        // its corner dot carries the connection status; tapping anywhere on the
+        // pill opens the feed list, with Feed Dashboard at the bottom of it
+        // (the old separate dot opened the dashboard, and sat so close to the
+        // feed menu that it was easy to hit by mistake). Folded, only the
+        // icon is left, and it opens the same list.
         // No arrangement spacing: each folding piece carries its own gap, so the
         // folded pill closes into a circle around what it keeps.
-        GlassPill(horizontalArrangement = Arrangement.Start) {
-            // Connection status dot - clickable to open Feed Dashboard (matches iOS)
-            Box(
+        Box {
+            GlassPill(
+                horizontalArrangement = Arrangement.Start,
                 modifier = Modifier
-                    .size(30.dp)
                     .clip(CircleShape)
-                    .clickable(onClick = onOpenFeedDashboard)
-                    .wrapContentSize(Alignment.Center),
+                    .clickable(onClickLabel = "Switch feeds or open the feed dashboard") { feedModeExpanded = true }
+                    .semantics { contentDescription = "Feed: ${feedMode.displayName}, $connectionStatus" },
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .shadow(4.dp, CircleShape)
-                        .clip(CircleShape)
-                        .background(dotColor),
-                )
-            }
-
-            // Feed mode dropdown
-            Box(Modifier.chromeFold(leadingGap = 8.dp).blockedWhen(collapsed)) { Box {
-                TextButton(
-                    onClick = { feedModeExpanded = true },
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                    modifier = Modifier.size(30.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = feedMode.displayName,
-                        color = PrimaryText,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(Modifier.width(2.dp))
                     Icon(
-                        imageVector = NostrVaultIcons.ChevronDown,
-                        contentDescription = "Switch feed mode",
+                        imageVector = feedMode.icon,
+                        contentDescription = null,
                         tint = PrimaryText,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = (-1).dp, y = (-1).dp)
+                            .size(8.dp)
+                            .shadow(3.dp, CircleShape)
+                            .clip(CircleShape)
+                            .background(dotColor),
                     )
                 }
-                DropdownMenu(
-                    expanded = feedModeExpanded,
-                    onDismissRequest = { feedModeExpanded = false },
-                ) {
-                    FeedMode.entries.forEach { mode ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = mode.displayName,
-                                    fontWeight = if (mode == feedMode) FontWeight.SemiBold else FontWeight.Normal,
-                                )
-                            },
-                            leadingIcon = if (mode == feedMode) {
-                                { Icon(NostrVaultIcons.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                            } else null,
-                            onClick = {
-                                onModeChange(mode)
-                                feedModeExpanded = false
-                            },
+
+                Box(Modifier.chromeFold(leadingGap = 6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = feedMode.displayName,
+                            color = PrimaryText,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
                         )
+                        Spacer(Modifier.width(2.dp))
+                        Icon(
+                            imageVector = NostrVaultIcons.ChevronDown,
+                            contentDescription = null,
+                            tint = PrimaryText,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
                     }
                 }
-            } }
+            }
+
+            DropdownMenu(
+                expanded = feedModeExpanded,
+                onDismissRequest = { feedModeExpanded = false },
+            ) {
+                FeedMode.entries.forEach { mode ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = mode.displayName,
+                                fontWeight = if (mode == feedMode) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        },
+                        leadingIcon = { Icon(mode.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = if (mode == feedMode) {
+                            { Icon(NostrVaultIcons.Check, contentDescription = "Current feed", modifier = Modifier.size(16.dp)) }
+                        } else null,
+                        onClick = {
+                            onModeChange(mode)
+                            feedModeExpanded = false
+                        },
+                    )
+                }
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text("Feed Dashboard")
+                            Text(connectionStatus, fontSize = 12.sp, color = SecondaryText)
+                        }
+                    },
+                    leadingIcon = {
+                        Box {
+                            Icon(NostrVaultIcons.Relay, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Box(
+                                Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(dotColor),
+                            )
+                        }
+                    },
+                    onClick = {
+                        feedModeExpanded = false
+                        onOpenFeedDashboard()
+                    },
+                )
+            }
         }
 
         Spacer(Modifier.weight(1f))
@@ -1619,3 +1664,17 @@ private fun List<String>.resolveAgainst(
     for (pubkey in this) profiles[pubkey]?.let { resolved[pubkey] = it }
     return resolved
 }
+
+/** Icon for the feed picker and the top bar; matches the iPhone's. */
+private val FeedMode.icon: ImageVector
+    get() = when (this) {
+        FeedMode.FOLLOWING -> NostrVaultIcons.People
+        FeedMode.DISCOVERY -> NostrVaultIcons.Discover
+        FeedMode.GLOBAL -> NostrVaultIcons.Globe
+        FeedMode.POPULAR -> NostrVaultIcons.Popular
+        FeedMode.MEDIA -> NostrVaultIcons.Media
+        FeedMode.REELS -> NostrVaultIcons.Reels
+        FeedMode.ARTICLES -> NostrVaultIcons.Articles
+        FeedMode.RECIPES -> NostrVaultIcons.Recipes
+        FeedMode.LIVE -> NostrVaultIcons.Live
+    }
