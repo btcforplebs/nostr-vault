@@ -2074,8 +2074,26 @@ class FeedService @Inject constructor(
         _scrollToTopRequest.tryEmit(Unit)
     }
 
+    // Thread grouping resolves every missing ancestor through findNote, so a
+    // scan of the whole feed per lookup kept the UI thread busy for seconds.
+    // Rebuilt once per notes list; the first note matching by id or
+    // effectiveEventId wins, as the scan did.
+    @Volatile private var noteIndex: Pair<List<FeedNote>, Map<String, FeedNote>>? = null
+
+    private fun noteIndex(): Map<String, FeedNote> {
+        val notes = _notes.value
+        noteIndex?.let { (list, map) -> if (list === notes) return map }
+        val map = HashMap<String, FeedNote>(notes.size * 2)
+        for (note in notes) {
+            map.putIfAbsent(note.id, note)
+            map.putIfAbsent(note.effectiveEventId, note)
+        }
+        noteIndex = notes to map
+        return map
+    }
+
     fun findNote(id: String): FeedNote? {
-        return _notes.value.firstOrNull { it.id == id || it.effectiveEventId == id }
+        return noteIndex()[id]
             ?: _parentNotesCache.value[id]
             // Quoted addressable events are keyed by coordinate, so a lookup by
             // id has to scan them — without this, opening a quoted article

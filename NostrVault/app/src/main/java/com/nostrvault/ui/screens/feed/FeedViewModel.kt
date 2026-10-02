@@ -320,6 +320,7 @@ class FeedViewModel @Inject constructor(
         }
         cache.keys.intersect(gaps)
     }.distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
 
     val feedThreads: StateFlow<List<FeedThread>> = combine(
         filteredNotes,
@@ -327,7 +328,8 @@ class FeedViewModel @Inject constructor(
         resolvedAncestorIds,
     ) { notes, threaded, _ ->
         if (!threaded) emptyList() else FeedThreadGrouping.build(notes) { id -> feedService.findNote(id) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun fetchMissingNote(id: String) = feedService.fetchMissingNote(id)
 
