@@ -109,6 +109,49 @@ struct ChromeFold<Content: View>: View {
     }
 }
 
+/// The feed top bar's glass pill. With the fold it narrows from its content's
+/// full width to a circle on `alignment`'s edge, the same morph the bottom
+/// tab bar makes.
+///
+/// Only the glass and the clip move. The content keeps its layout, so the
+/// navigation bar hosting it never relayouts mid-drag. The system's own
+/// toolbar glass must be hidden (`hidingSharedToolbarBackground()`): UIKit
+/// animates that platter on its own clock and leaves it behind.
+struct ChromeMorphCapsule<Content: View>: View {
+    var alignment: Alignment
+    var isEnabled = true
+    @ViewBuilder var content: Content
+
+    @State private var size: CGSize = .zero
+
+    var body: some View {
+        let p = isEnabled ? ChromeCollapse.shared.progress : 0
+        // Unmeasured on the first pass: draw at the content's own size.
+        let width: CGFloat? = size == .zero ? nil : size.width + (size.height - size.width) * p
+        content
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+            .mask(alignment: alignment) { Capsule().frame(width: width) }
+            .background(alignment: alignment) {
+                Color.clear
+                    .frame(width: width)
+                    .applyGlassCapsule()
+            }
+    }
+}
+
+extension ToolbarContent {
+    /// Drops the Liquid Glass platter iOS 26 draws behind toolbar items, for
+    /// items that draw their own glass.
+    @ToolbarContentBuilder
+    func hidingSharedToolbarBackground() -> some ToolbarContent {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
+    }
+}
+
 @available(macOS 15.0, iOS 18.0, *)
 private struct ScrollChromeModifier: ViewModifier {
     var isAtTopBinding: Binding<Bool>?
@@ -457,14 +500,6 @@ struct FeedView: View {
     /// instead of the bottom bar this pairs with.
     private var isCompactWidth: Bool { horizontalSizeClass == .compact }
 
-    /// Structural fold: the pills are removed only once the bars are fully
-    /// folded (and invisible). In between, `ChromeFold` fades them with the
-    /// finger. Reads only `isFolded`, never the per-frame `progress`, so
-    /// this large view is not re-evaluated on every frame of a drag.
-    private var isTopBarCollapsed: Bool {
-        isCompactWidth && ChromeCollapse.shared.isFolded
-    }
-
     private var feedLeadingToolbar: some View {
         HStack(spacing: 12) {
             Button(action: { showingRelayStatus = true }) {
@@ -475,10 +510,17 @@ struct FeedView: View {
             }
             .buttonStyle(.plain)
             .frame(width: 30, height: 30)
-            .applyGlassCircle()
+            // The dot's own ring melts into the pill as it becomes a circle,
+            // so the folded dot sits in one ring, not two.
+            .background {
+                ChromeFold(isEnabled: isCompactWidth) {
+                    Color.clear.applyGlassCircle()
+                }
+            }
 
-            if !isTopBarCollapsed {
-                ChromeFold(anchor: .leading, isEnabled: isCompactWidth) {
+            // Always laid out, only faded: removing it would resize the
+            // toolbar item and make the navigation bar relayout mid-fold.
+            ChromeFold(anchor: .leading, isEnabled: isCompactWidth) {
                 Menu {
                     ForEach(FeedMode.allCases, id: \.self) { mode in
                         Button(action: { feedService.switchMode(mode) }) {
@@ -500,10 +542,11 @@ struct FeedView: View {
                     }
                     .foregroundColor(.white)
                 }
-                }
-                .transition(.opacity)
             }
         }
+        .padding(.leading, 7)
+        .padding(.trailing, 14)
+        .padding(.vertical, 7)
     }
     #endif
 
@@ -1019,33 +1062,37 @@ struct FeedView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                feedLeadingToolbar
-                    .animation(Motion.chrome, value: isTopBarCollapsed)
+                ChromeMorphCapsule(alignment: .leading, isEnabled: isCompactWidth) {
+                    feedLeadingToolbar
+                }
             }
+            .hidingSharedToolbarBackground()
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                ZStack(alignment: .trailing) {
-                    if !isTopBarCollapsed {
+                ChromeMorphCapsule(alignment: .trailing, isEnabled: isCompactWidth) {
+                    ZStack(alignment: .trailing) {
                         ChromeFold(anchor: .trailing, isEnabled: isCompactWidth) {
-                            ViewThatFits {
+                            // Width only: the pill's vertical padding makes it
+                            // taller than the bar's proposal, which must not
+                            // demote the row to the menu.
+                            ViewThatFits(in: .horizontal) {
                                 feedTrailingToolbarInline
                                 feedTrailingToolbarMenu
                             }
                         }
-                        .transition(.opacity)
-                    }
-                    // The lone layout button fades in as the full row fades
-                    // out, so the trailing corner is never empty mid-fold.
-                    if isCompactWidth && feedService.feedMode != .reels {
-                        ChromeFold(anchor: .trailing, inverted: true) {
-                            layoutModeButton
-                                .padding(4)
-                                .applyGlassCapsule()
+                        // The lone layout button fades in as the full row
+                        // fades out, centred in the circle the pill folds to.
+                        if isCompactWidth && feedService.feedMode != .reels {
+                            ChromeFold(anchor: .trailing, inverted: true) {
+                                layoutModeButton
+                                    .padding(.horizontal, 4)
+                            }
                         }
                     }
+                    .padding(.vertical, 4)
                 }
-                .animation(Motion.chrome, value: isTopBarCollapsed)
             }
+            .hidingSharedToolbarBackground()
         }
         #endif
         .onAppear {
