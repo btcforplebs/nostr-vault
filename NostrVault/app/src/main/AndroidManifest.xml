@@ -18,6 +18,10 @@
     <!-- Battery optimization exemption -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Haptics: the zap strike's crack and rumble (ZapHaptics). Normal
+         permission, granted at install. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

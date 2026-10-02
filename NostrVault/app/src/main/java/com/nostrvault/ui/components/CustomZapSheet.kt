@@ -142,6 +142,7 @@ fun CustomZapSheet(
             Button(
                 onClick = {
                     if (effectiveAmount > 0) {
+                        ZapFlight.sheetConfirmed()
                         onZap(effectiveAmount)
                         onDismiss()
                     }
