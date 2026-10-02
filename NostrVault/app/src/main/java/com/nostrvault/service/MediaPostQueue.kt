@@ -182,7 +182,8 @@ class MediaPostQueue @Inject constructor(
             log("waiting post ${id.take(8)}: account changed during upload — holding it")
             return false
         }
-        val event = nostrService.signEventAsync(kind = 1, content = assembled.content, tags = assembled.tags)
+        val kind = post.kind ?: 1
+        val event = nostrService.signEventAsync(kind = kind, content = assembled.content, tags = assembled.tags)
         if (event == null) {
             log("waiting post ${id.take(8)}: media is hosted but signing failed — will retry", Log.ERROR)
             return false
@@ -197,7 +198,7 @@ class MediaPostQueue @Inject constructor(
                 content = assembled.content,
                 tags = assembled.tags,
                 createdAt = event.createdAt,
-                kind = 1,
+                kind = kind,
             )
         )
         nostrService.postEvent(event)

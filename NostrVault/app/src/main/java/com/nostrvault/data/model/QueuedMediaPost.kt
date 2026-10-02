@@ -41,6 +41,11 @@ data class QueuedMediaPost(
     val quoteSuffix: String? = null,
     /** Reply, quote and mention tags. Hashtags and `imeta` are added by [assembled]. */
     val baseTags: List<List<String>>,
+    /**
+     * 1 for a note or kind 1 reply, 1111 for a NIP-22 comment. Nullable so
+     * posts queued by older builds still decode; null means 1.
+     */
+    val kind: Int? = null,
     val attempts: Int = 0,
     /** Epoch milliseconds of the last retry, if any. */
     val lastAttempt: Long? = null,

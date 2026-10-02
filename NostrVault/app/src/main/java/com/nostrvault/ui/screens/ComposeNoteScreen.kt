@@ -52,6 +52,7 @@ import com.nostrvault.data.model.Draft
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.MediaUploadOutcomeMessage
+import com.nostrvault.data.model.NIP10Thread
 import com.nostrvault.data.model.NoteTagging
 import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.data.local.ConfigStore
@@ -736,8 +737,10 @@ class ComposeNoteViewModel @Inject constructor(
                     }
                 }
 
-                // 2. Build tags
-                val tags = buildReplyTags().toMutableList()
+                // 2. Build tags. A reply to a NIP-22 comment is itself a
+                // comment (kind 1111); everything else stays kind 1.
+                val (replyTags, eventKind) = buildReplyTags()
+                val tags = replyTags.toMutableList()
                 var quoteSuffix: String? = null
                 if (quoteToNoteId != null) {
                     val relayHint = configStore.config.value.nostrURL ?: ""
@@ -768,6 +771,7 @@ class ComposeNoteViewModel @Inject constructor(
                         media = queuedMedia,
                         quoteSuffix = quoteSuffix,
                         baseTags = tags,
+                        kind = eventKind,
                     )
                     mediaPostQueue.enqueue(queued)
                     // The queue now holds the post on disk; a draft too would
@@ -802,7 +806,7 @@ class ComposeNoteViewModel @Inject constructor(
                 tags.addAll(NoteTagging.imetaTags(mediaDescriptors))
 
                 // 3. Sign and publish
-                val event = nostrService.signEventAsync(kind = 1, content = finalContent, tags = tags)
+                val event = nostrService.signEventAsync(kind = eventKind, content = finalContent, tags = tags)
                 if (event != null) {
                     // Optimistic insert: inject the note immediately so the thread
                     // view shows it before relay confirmation (mirrors iOS behavior).
@@ -813,7 +817,7 @@ class ComposeNoteViewModel @Inject constructor(
                             content = finalContent,
                             tags = tags,
                             createdAt = event.createdAt,
-                            kind = 1,
+                            kind = eventKind,
                         )
                     )
                     val replyNote = replyToNoteId?.let { feedService.findNote(it) }
@@ -831,7 +835,7 @@ class ComposeNoteViewModel @Inject constructor(
                     draftService.deleteDraft(draftId)
                     onPublished()
                 } else {
-                    Log.e("ComposeNote", "signEventAsync returned null for kind=1")
+                    Log.e("ComposeNote", "signEventAsync returned null for kind=$eventKind")
                     _error.value = "Failed to sign note"
                 }
             } catch (e: Exception) {
@@ -987,14 +991,44 @@ class ComposeNoteViewModel @Inject constructor(
     }
 
     /**
-     * Build NIP-10 reply tags (e-tags with root/reply markers + p-tag for author).
-     * Returns empty list for new top-level notes.
+     * Build reply tags and the kind to sign them with. Answering a NIP-22
+     * comment (kind 1111) sends a comment scoped to the same root
+     * ([NIP10Thread.commentReplyTags]); everything else is a kind 1 reply
+     * with NIP-10 e-tags (root/reply markers) + p-tag for the author.
+     * Returns an empty list and kind 1 for new top-level notes.
      */
-    private fun buildReplyTags(): List<List<String>> {
-        val parentId = replyToNoteId ?: return emptyList()
-        val parentNote = feedService.findNote(parentId) ?: return emptyList()
+    private fun buildReplyTags(): Pair<List<List<String>>, Int> {
+        val parentId = replyToNoteId ?: return emptyList<List<String>>() to 1
+        val parentNote = feedService.findNote(parentId) ?: return emptyList<List<String>>() to 1
 
         val tags = mutableListOf<List<String>>()
+
+        // The effective parent of a kind 6 repost is the original. Its
+        // FeedNote already carries the original's pubkey and tags; the kind
+        // comes from the original if it is cached, else 1 (iOS parity).
+        val effectiveParentKind = if (parentNote.kind == 6) {
+            parentNote.repostedEventId?.let { feedService.findNote(it)?.kind } ?: 1
+        } else parentNote.kind
+        val eventKind = NIP10Thread.replyKind(effectiveParentKind)
+        if (eventKind == NIP10Thread.COMMENT_KIND) {
+            // NIP-22: answering a comment sends a comment, scoped to the same
+            // root. commentReplyTags already tags the parent author.
+            tags.addAll(NIP10Thread.commentReplyTags(
+                parentId = parentNote.effectiveEventId,
+                parentPubkey = parentNote.pubkey,
+                parentTags = parentNote.tags,
+                relayHint = configStore.config.value.nostrURL ?: "",
+            ))
+            // NIP-10 still holds for notification fan-out: carry the parent's
+            // p tags (thread participants), deduplicated.
+            val seen = mutableSetOf(parentNote.pubkey)
+            for (tag in parentNote.tags) {
+                if (tag.size >= 2 && tag[0] == "p" && seen.add(tag[1])) {
+                    tags.add(listOf("p", tag[1]))
+                }
+            }
+            return tags to eventKind
+        }
 
         // Determine thread structure from parent's tags
         val parentETags = parentNote.tags.filter { it.size >= 2 && it[0] == "e" }
@@ -1058,7 +1092,7 @@ class ComposeNoteViewModel @Inject constructor(
             }
         }
 
-        return tags
+        return tags to eventKind
     }
 
     /**
