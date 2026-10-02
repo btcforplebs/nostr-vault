@@ -132,6 +132,9 @@ struct HavenConfig: Codable, Equatable {
     // Blossom Mirrors
     var blossomMirrors: [String] = []
     var autoMirrorMedia: Bool = false
+    /// Picking a nostr.build GIF downloads it and uploads it to your own
+    /// Blossom servers, instead of posting nostr.build's link.
+    var saveGifsToBlossom: Bool = false
 
     /// Former default mirrors that no longer exist (kylezien is NXDOMAIN,
     /// satellite's CDN is dead — verified 2026-07). Configs written by old
@@ -253,7 +256,7 @@ struct HavenConfig: Codable, Equatable {
         case outboxRelayName, outboxRelayDescription, outboxRelayIcon, outboxMaxEventsPerMinute, outboxMaxConnectionsPerMinute
         case inboxRelayName, inboxRelayDescription, inboxRelayIcon, inboxPullIntervalSeconds
         case importStartDate, importSeedRelaysFile, importSeedRelays, importOwnerNotesFetchTimeoutSeconds, importTaggedNotesFetchTimeoutSeconds
-        case blossomMirrors, autoMirrorMedia
+        case blossomMirrors, autoMirrorMedia, saveGifsToBlossom
         case fipsPublishEnabled, fipsAddressSource, fipsCustomNpub
         case blastrRelaysFile, blastrRelays
         case feedRelays, dmRelays
@@ -385,6 +388,7 @@ struct HavenConfig: Codable, Equatable {
         blossomMirrors = (try container.decodeIfPresent([String].self, forKey: .blossomMirrors) ?? defaults.blossomMirrors)
             .filter { !HavenConfig.isDefunctMirror($0) }
         autoMirrorMedia = try container.decodeIfPresent(Bool.self, forKey: .autoMirrorMedia) ?? defaults.autoMirrorMedia
+        saveGifsToBlossom = try container.decodeIfPresent(Bool.self, forKey: .saveGifsToBlossom) ?? defaults.saveGifsToBlossom
 
         fipsPublishEnabled = try container.decodeIfPresent(Bool.self, forKey: .fipsPublishEnabled) ?? defaults.fipsPublishEnabled
         fipsAddressSource = try container.decodeIfPresent(String.self, forKey: .fipsAddressSource) ?? defaults.fipsAddressSource

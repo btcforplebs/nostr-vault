@@ -230,9 +230,12 @@ IOS_ARCHIVE="$DIST/xcarchive/HavenApp-iOS-b${BUILD}.xcarchive"
 if [ "$SKIP_IOS" = 0 ]; then
     log "iOS: archiving HavenApp-iOS"
     rm -rf "$IOS_ARCHIVE"
+    # APPSTORE leaves out GIF sources read from a website without the
+    # service's permission (getyarn, Tenor's search page) -- see GifSource.available.
     xcodebuild archive -project "$XCODE_DIR/HavenApp.xcodeproj" -scheme HavenApp-iOS \
         -configuration Release -destination 'generic/platform=iOS' \
-        -archivePath "$IOS_ARCHIVE" -allowProvisioningUpdates -quiet
+        -archivePath "$IOS_ARCHIVE" -allowProvisioningUpdates -quiet \
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) APPSTORE'
     echo "  Archive: $IOS_ARCHIVE"
 else
     warn "Skipping iOS build"
