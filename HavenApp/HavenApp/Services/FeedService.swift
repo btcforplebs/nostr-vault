@@ -139,7 +139,9 @@ class FeedService: ObservableObject {
             wotPubkeys: wotPubkeys,
             popularFilter: popularFilter,
             popularNoteScores: popularNoteScores,
-            throttledPubkeys: throttled
+            throttledPubkeys: throttled,
+            globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
+            languageOf: { [unowned self] note in self.language(of: note) }
         )
 
         // Only publish a change when the visible list actually differs.
@@ -167,6 +169,19 @@ class FeedService: ObservableObject {
             !zip(newMedia, filteredMediaNotes).allSatisfy({ $0.id == $1.id }) {
             filteredMediaNotes = newMedia
         }
+    }
+
+    /// Detected language per note id (nil inner value: could not be told).
+    /// Only filled while the Global feed is narrowed to some languages.
+    private var noteLanguageCache: [String: String?] = [:]
+
+    private func language(of note: FeedNote) -> String? {
+        if let cached = noteLanguageCache[note.id] { return cached }
+        // Bounded well above the 800-note feed cap; a reset just re-detects.
+        if noteLanguageCache.count > 4000 { noteLanguageCache.removeAll(keepingCapacity: true) }
+        let detected = FeedLanguageDetector.detect(FeedLanguageDetector.text(of: note.content, kind: note.kind))
+        noteLanguageCache[note.id] = .some(detected)
+        return detected
     }
 
     /// Cache of raw event JSON strings for NIP-18 repost embedding.

@@ -682,6 +682,13 @@ struct FeedView: View {
                     configService.save()
                     feedService.recomputeFilteredNotes()
                 }
+                if feedService.feedMode == .global {
+                    LanguageFilterMenu(selected: configService.config.globalFeedLanguages, color: .havenPurple) { codes in
+                    configService.config.globalFeedLanguages = codes
+                    configService.save()
+                    feedService.recomputeFilteredNotes()
+                }
+                }
             }
         }
     }
@@ -774,6 +781,17 @@ struct FeedView: View {
                     feedService.recomputeFilteredNotes()
                 } label: {
                     Label("Replies", systemImage: configService.config.showReplies ? "message.fill" : "message")
+                }
+                if feedService.feedMode == .global {
+                    Menu {
+                        LanguageFilterMenuItems(selected: configService.config.globalFeedLanguages) { codes in
+                        configService.config.globalFeedLanguages = codes
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    }
+                    } label: {
+                        Label("Languages", systemImage: "character.bubble")
+                    }
                 }
             }
         } label: {
@@ -1035,6 +1053,14 @@ struct FeedView: View {
                 }
                 .buttonStyle(.plain)
                 .help(configService.config.showReplies ? String(localized: "feed.help.hideReplies") : String(localized: "feed.help.showReplies"))
+
+                if feedService.feedMode == .global {
+                    LanguageFilterMenu(selected: configService.config.globalFeedLanguages, color: .havenPurple) { codes in
+                    configService.config.globalFeedLanguages = codes
+                    configService.save()
+                    feedService.recomputeFilteredNotes()
+                }
+                }
 
                 // Divider to separate the layout cycle
                 Divider()

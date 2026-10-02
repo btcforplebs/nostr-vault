@@ -51,6 +51,8 @@ struct HavenConfig: Codable, Equatable {
     var appIcon: String = "Default" // Selected app icon name
     var zapsOnlyMode: Bool = false // When true, likes/reactions are removed from the UI entirely; zaps become the primary engagement + notification signal
     var disableTabBarAnimation: Bool = false // When true, the bottom tab bar stays fully expanded and never shrinks/hides on scroll
+    /// ISO 639-1 codes the Global feed is narrowed to. Empty shows every language.
+    var globalFeedLanguages: [String] = []
 
     // Mac relay (iOS only)
     var macRelayURL: String = "" // wss:// URL to a remote Mac Haven relay to sync missed notes
@@ -240,7 +242,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation
+        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, globalFeedLanguages
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications
         case macRelayURL
@@ -316,6 +318,7 @@ struct HavenConfig: Codable, Equatable {
         appIcon = try container.decodeIfPresent(String.self, forKey: .appIcon) ?? defaults.appIcon
         zapsOnlyMode = try container.decodeIfPresent(Bool.self, forKey: .zapsOnlyMode) ?? defaults.zapsOnlyMode
         disableTabBarAnimation = try container.decodeIfPresent(Bool.self, forKey: .disableTabBarAnimation) ?? defaults.disableTabBarAnimation
+        globalFeedLanguages = try container.decodeIfPresent([String].self, forKey: .globalFeedLanguages) ?? defaults.globalFeedLanguages
 
         signingMode = try container.decodeIfPresent(String.self, forKey: .signingMode) ?? defaults.signingMode
         nip46BunkerURI = try container.decodeIfPresent(String.self, forKey: .nip46BunkerURI) ?? defaults.nip46BunkerURI
