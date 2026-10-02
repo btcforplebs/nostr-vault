@@ -704,7 +704,7 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 // event. These exact phrases also drive the clients' relay-activity red dot.
 func logInboxImport(ev *nostr.Event) {
 	switch ev.Kind {
-	case nostr.KindTextNote:
+	case nostr.KindTextNote, nostr.KindComment:
 		log.Println("📰 new note in your inbox")
 	case nostr.KindReaction:
 		log.Println(ev.Content, "new reaction in your inbox")
@@ -846,6 +846,9 @@ func emitInboxNotify(ev *nostr.Event, recipient string) {
 				break
 			}
 		}
+		preview = sanitizeNotifyPreview(ev.Content)
+	case nostr.KindComment:
+		typ = "reply" // NIP-22: a comment always answers something
 		preview = sanitizeNotifyPreview(ev.Content)
 	case nostr.KindReaction:
 		typ = "reaction"
