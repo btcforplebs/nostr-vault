@@ -199,104 +199,15 @@ struct FeedMediaViewer: View {
             
             VStack {
                 HStack {
-                    if !isLoadingType && !isMirroring {
-                        let hash = extractSHA256FromURL()
-                        let port = configService.config.relayPort
-                        #if os(macOS)
-                        let localURL = URL(string: "http://127.0.0.1:\(port)/\(hash)")
-                        #else
-                        let localURL = URL(string: "https://localhost:\(port)/\(hash)")
-                        #endif
-                        
-                        if let localURL = localURL, configService.hasExternalShareURL(for: localURL) {
-                            if isOnMirror {
-                                HStack(spacing: 8) {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.appSystem(size: 16, weight: .semibold))
-                                        Text("Mirrored to Blossom")
-                                            .font(.appSystem(size: 12, weight: .bold, design: .rounded))
-                                            .lineLimit(1)
-                                            .fixedSize()
-                                    }
-                                    .foregroundColor(.white.opacity(0.95))
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 14)
-                                    .background(
-                                        Capsule()
-                                            .fill(Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8))
-                                            .overlay(
-                                                Capsule()
-                                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                                            )
-                                    )
-
-                                    Button(action: {
-                                        let link = getMirroredLink()
-                                        PlatformClipboard.copy(link)
-                                        withAnimation(Motion.pop) {
-                                            isCopied = true
-                                        }
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                                            withAnimation(Motion.fade) {
-                                                isCopied = false
-                                            }
-                                        }
-                                    }) {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: isCopied ? "checkmark.circle.fill" : "doc.on.doc.fill")
-                                                .font(.appSystem(size: 14, weight: .semibold))
-                                            Text(isCopied ? "Copied!" : "Copy Link")
-                                                .font(.appSystem(size: 12, weight: .bold, design: .rounded))
-                                                .lineLimit(1)
-                                                .fixedSize()
-                                        }
-                                        .foregroundColor(.white.opacity(0.95))
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 14)
-                                        .background(
-                                            Capsule()
-                                                .fill(isCopied ? Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8) : Color.white.opacity(0.2))
-                                                .overlay(
-                                                    Capsule()
-                                                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                                                )
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                .shadow(color: Color.black.opacity(0.3), radius: 4)
-                                .padding(20)
-                            } else {
-                                Button {
-                                    mirrorToBlossomTapped()
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "arrow.down.circle.fill")
-                                            .font(.appSystem(size: 16, weight: .semibold))
-                                        Text("Mirror to Blossom")
-                                            .font(.appSystem(size: 12, weight: .bold, design: .rounded))
-                                            .lineLimit(1)
-                                            .fixedSize()
-                                    }
-                                    .foregroundColor(.white.opacity(0.95))
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 14)
-                                    .background(
-                                        Capsule()
-                                            .fill(Color.black.opacity(0.6))
-                                            .overlay(
-                                                Capsule()
-                                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                                            )
-                                    )
-                                    .shadow(color: Color.black.opacity(0.3), radius: 4)
-                                    .padding(20)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
+                    // Short labels, and icons only when even those don't fit
+                    // (larger text, narrow phones): a squeezed capsule wraps
+                    // its label one letter per line.
+                    ViewThatFits(in: .horizontal) {
+                        topActions(showLabels: true)
+                        topActions(showLabels: false)
                     }
+                    .padding(.leading, 16)
+                    .padding(.vertical, 20)
                     Spacer()
                     Button {
                         performDismiss()
@@ -304,51 +215,13 @@ struct FeedMediaViewer: View {
                         Image(systemName: "xmark.circle.fill")
                             .font(.appSystem(size: 32))
                             .foregroundColor(.white.opacity(0.8))
-                            .padding(20)
+                            .padding(.vertical, 20)
+                            .padding(.horizontal, 16)
                             .shadow(radius: 4)
                     }
                     .buttonStyle(.plain)
                 }
                 Spacer()
-
-                // Bottom-right, not in the top row: a third capsule there
-                // squeezed Mirrored / Copy Link into one letter per line.
-                #if os(iOS)
-                if !isLoadingType && !isDeleting {
-                    HStack {
-                        Spacer()
-                        Button {
-                            saveToPhotosTapped()
-                        } label: {
-                            HStack(spacing: 6) {
-                                if photosSave == .saving {
-                                    ProgressView().controlSize(.small).tint(.white)
-                                } else {
-                                    Image(systemName: photosSave == .saved ? "checkmark.circle.fill" : "square.and.arrow.down")
-                                        .font(.appSystem(size: 16, weight: .semibold))
-                                }
-                                Text(photosSave == .saved ? "Saved" : "Save to Photos")
-                                    .font(.appSystem(size: 12, weight: .bold, design: .rounded))
-                                    .lineLimit(1)
-                                    .fixedSize()
-                            }
-                            .foregroundColor(.white.opacity(0.95))
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 14)
-                            .background(
-                                Capsule()
-                                    .fill(photosSave == .saved ? Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8) : Color.black.opacity(0.6))
-                                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
-                            )
-                            .shadow(color: Color.black.opacity(0.3), radius: 4)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(photosSave != .idle)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 28)
-                }
-                #endif
 
                 if !isLoadingType && isDeleting {
                     HStack(spacing: 16) {
@@ -501,6 +374,104 @@ struct FeedMediaViewer: View {
         }
     }
     #endif
+
+    // MARK: - Top-row actions
+
+    private static let doneGreen = Color(red: 0.2, green: 0.8, blue: 0.6).opacity(0.8)
+
+    /// Save, then Mirror (or Mirrored + Copy). Labels drop out when
+    /// [showLabels] is false, leaving the icon in each capsule.
+    @ViewBuilder
+    private func topActions(showLabels: Bool) -> some View {
+        HStack(spacing: 6) {
+            #if os(iOS)
+            if !isLoadingType && !isDeleting {
+                Button {
+                    saveToPhotosTapped()
+                } label: {
+                    actionCapsule(
+                        icon: photosSave == .saved ? "checkmark.circle.fill" : "square.and.arrow.down",
+                        label: photosSave == .saved ? "Saved" : "Save",
+                        showLabel: showLabels,
+                        fill: photosSave == .saved ? Self.doneGreen : Color.black.opacity(0.6),
+                        busy: photosSave == .saving
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(photosSave != .idle)
+                .accessibilityLabel(photosSave == .saved ? "Saved to Photos" : "Save to Photos")
+            }
+            #endif
+            if !isLoadingType && !isMirroring, let localURL = viewerLocalURL(),
+               configService.hasExternalShareURL(for: localURL) {
+                if isOnMirror {
+                    actionCapsule(icon: "checkmark.circle.fill", label: "Mirrored", showLabel: showLabels, fill: Self.doneGreen)
+                        .accessibilityLabel("Mirrored to Blossom")
+                    Button {
+                        PlatformClipboard.copy(getMirroredLink())
+                        withAnimation(Motion.pop) { isCopied = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            withAnimation(Motion.fade) { isCopied = false }
+                        }
+                    } label: {
+                        actionCapsule(
+                            icon: isCopied ? "checkmark.circle.fill" : "doc.on.doc.fill",
+                            label: isCopied ? "Copied" : "Copy",
+                            showLabel: showLabels,
+                            fill: isCopied ? Self.doneGreen : Color.white.opacity(0.2)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isCopied ? "Link copied" : "Copy link")
+                } else {
+                    Button {
+                        mirrorToBlossomTapped()
+                    } label: {
+                        actionCapsule(icon: "arrow.down.circle.fill", label: "Mirror", showLabel: showLabels, fill: Color.black.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Mirror to Blossom")
+                }
+            }
+        }
+        .shadow(color: Color.black.opacity(0.3), radius: 4)
+    }
+
+    private func actionCapsule(icon: String, label: String, showLabel: Bool, fill: Color, busy: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            if busy {
+                ProgressView().controlSize(.small).tint(.white)
+            } else {
+                Image(systemName: icon)
+                    .font(.appSystem(size: 15, weight: .semibold))
+            }
+            if showLabel {
+                Text(label)
+                    .font(.appSystem(size: 12, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .foregroundColor(.white.opacity(0.95))
+        .padding(.vertical, 8)
+        .padding(.horizontal, showLabel ? 11 : 9)
+        .background(
+            Capsule()
+                .fill(fill)
+                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+        )
+    }
+
+    /// The vault's own URL for this blob, which is what the mirror check keys on.
+    private func viewerLocalURL() -> URL? {
+        let hash = extractSHA256FromURL()
+        let port = configService.config.relayPort
+        #if os(macOS)
+        return URL(string: "http://127.0.0.1:\(port)/\(hash)")
+        #else
+        return URL(string: "https://localhost:\(port)/\(hash)")
+        #endif
+    }
 
     private func mirrorToBlossomTapped() {
         isMirroring = true
