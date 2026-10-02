@@ -410,6 +410,29 @@ enum FeedMode: String, CaseIterable {
     case live = "Live"
 }
 
+extension FeedMode {
+    /// Name shown in the feed picker and the top bar.
+    var displayName: String {
+        self == .discovery ? "Discover" : rawValue
+    }
+
+    /// Icon for the feed picker and the top bar. Popular, Articles, Recipes
+    /// and Live match their empty-state icons.
+    var symbolName: String {
+        switch self {
+        case .following: return "person.2"
+        case .discovery: return "sparkles"
+        case .global: return "globe"
+        case .popular: return "flame"
+        case .media: return "photo.on.rectangle"
+        case .reels: return "play.rectangle"
+        case .articles: return "doc.richtext"
+        case .recipes: return "fork.knife"
+        case .live: return "dot.radiowaves.left.and.right"
+        }
+    }
+}
+
 /// Per-account, in-memory snapshot of the feed state. Captured before switching
 /// accounts and restored on switch-back so the feed reappears instantly instead
 /// of going through a full cold reload. Engagement state (likes/zaps) is also

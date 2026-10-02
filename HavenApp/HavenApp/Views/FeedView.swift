@@ -124,11 +124,31 @@ struct ChromeMorphCapsule<Content: View>: View {
         content
             .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
             .mask(alignment: alignment) { Capsule().frame(width: width) }
+            // Taps land only inside the glass: folded, the empty bar where
+            // the pill's content used to be does not open it.
+            .contentShape(AlignedCapsule(width: width, alignment: alignment))
             .background(alignment: alignment) {
                 Color.clear
                     .frame(width: width)
                     .applyGlassCapsule()
             }
+    }
+}
+
+/// A capsule `width` wide, pinned to `alignment`'s edge of its rect.
+private struct AlignedCapsule: Shape {
+    var width: CGFloat?
+    var alignment: Alignment
+
+    func path(in rect: CGRect) -> Path {
+        let w = min(width ?? rect.width, rect.width)
+        let x: CGFloat
+        switch alignment.horizontal {
+        case .leading: x = rect.minX
+        case .trailing: x = rect.maxX - w
+        default: x = rect.midX - w / 2
+        }
+        return Capsule().path(in: CGRect(x: x, y: rect.minY, width: w, height: rect.height))
     }
 }
 
@@ -507,55 +527,74 @@ struct FeedView: View {
     /// instead of the bottom bar this pairs with.
     private var isCompactWidth: Bool { horizontalSizeClass == .compact }
 
+    /// One tap target: the whole pill opens the feed picker, with the feed
+    /// dashboard at the bottom of it. The icon names the current feed and its
+    /// corner dot carries the connection status the old separate dot showed.
+    /// Folded, only the icon's circle is left.
     private var feedLeadingToolbar: some View {
-        // No spacing or trailing padding of our own: the toolbar Menu already
-        // insets its label ~11 pt before and ~13 pt after, which on top of
-        // ours left this pill far roomier than the icon pill beside it.
-        HStack(spacing: 0) {
-            Button(action: { showingRelayStatus = true }) {
-                Circle()
-                    .fill(feedService.connectionDotColor)
-                    .frame(width: 10, height: 10)
-                    .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 3)
-            }
-            .buttonStyle(.plain)
-            .frame(width: 30, height: 30)
-            // The dot's own ring melts into the pill as it becomes a circle,
-            // so the folded dot sits in one ring, not two.
-            .background {
-                ChromeFold(isEnabled: isCompactWidth) {
-                    Color.clear.applyGlassCircle()
+        Menu {
+            Picker(selection: Binding(
+                get: { feedService.feedMode },
+                set: { feedService.switchMode($0) }
+            )) {
+                ForEach(FeedMode.allCases, id: \.self) { mode in
+                    Label(mode.displayName, systemImage: mode.symbolName)
+                        .tag(mode)
                 }
+            } label: {
+                EmptyView()
             }
+            .pickerStyle(.inline)
 
-            // Always laid out, only faded: removing it would resize the
-            // toolbar item and make the navigation bar relayout mid-fold.
-            ChromeFold(anchor: .leading, isEnabled: isCompactWidth) {
-                Menu {
-                    ForEach(FeedMode.allCases, id: \.self) { mode in
-                        Button(action: { feedService.switchMode(mode) }) {
-                            let displayName = mode == .discovery ? "Discover" : mode.rawValue
-                            if feedService.feedMode == mode {
-                                Label(displayName, systemImage: "checkmark")
-                            } else {
-                                Text(displayName)
-                            }
-                        }
+            Divider()
+
+            Button(action: { showingRelayStatus = true }) {
+                Label("Feed Dashboard", systemImage: "antenna.radiowaves.left.and.right")
+                Text(feedService.connectionStatus)
+            }
+        } label: {
+            HStack(spacing: 0) {
+                // No glass ring of its own: glassEffect takes touches even
+                // with hit testing off, which left the icon the one spot that
+                // did not open the menu. Folded, the pill itself is the ring.
+                Image(systemName: feedService.feedMode.symbolName)
+                    .font(.appSystem(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 30, height: 30)
+                    .overlay(alignment: .bottomTrailing) {
+                        Circle()
+                            .fill(feedService.connectionDotColor)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 2)
+                            .offset(x: -1, y: -1)
                     }
-                } label: {
+
+                // Always laid out, only faded: removing it would resize the
+                // toolbar item and make the navigation bar relayout mid-fold.
+                ChromeFold(anchor: .leading, isEnabled: isCompactWidth) {
                     HStack(spacing: 3) {
-                        let displayName = feedService.feedMode == .discovery ? "Discover" : feedService.feedMode.rawValue
-                        Text(displayName)
+                        Text(feedService.feedMode.displayName)
                             .font(.appSystem(size: 17, weight: .bold))
                         Image(systemName: "chevron.down")
                             .font(.appSystem(size: 9, weight: .bold))
                     }
                     .foregroundColor(.white)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 12)
                 }
             }
+            .padding(.leading, 7)
+            .padding(.vertical, 7)
+            // The toolbar proposes a narrow width; without this the feed
+            // name truncates away and only the icon and chevron are left.
+            .fixedSize()
+            .contentShape(Rectangle())
         }
-        .padding(.leading, 7)
-        .padding(.vertical, 7)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Feed: \(feedService.feedMode.displayName)")
+        .accessibilityValue(feedService.connectionStatus)
+        .accessibilityHint("Switch feeds or open the feed dashboard")
     }
     #endif
 
