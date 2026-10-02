@@ -15,6 +15,8 @@ struct SearchView: View {
     @State private var isSearching = false
     @State private var searchDebounceTask: Task<Void, Never>?
     @State private var showingNoteDetail: FeedNote?
+    /// Non-nil when an iPad split pane owns the note detail column.
+    @Environment(\.noteDetailSelection) private var noteDetailSelection
     @State private var showingProfile: String?
     @State private var showingMediaUrl: IdentifiableURL?
     @Namespace private var mediaZoom
@@ -163,6 +165,16 @@ struct SearchView: View {
         lastDiscoveryRefresh = now
         cachedTrending = computeTrendingHashtags()
         cachedSuggested = computeSuggestedProfiles()
+    }
+
+    /// Opens a note in the split pane's detail column when there is one, and
+    /// falls back to the sheet everywhere else.
+    private func openNote(_ note: FeedNote) {
+        if let noteDetailSelection {
+            noteDetailSelection.select(note)
+        } else {
+            showingNoteDetail = note
+        }
     }
 
     var body: some View {
@@ -332,7 +344,7 @@ struct SearchView: View {
                     )
                 }
                 .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                .floatingActionBottomPadding()
                 .hoverEffect(.lift)
             }
         }
@@ -441,7 +453,7 @@ struct SearchView: View {
             if let note = notes.first(where: { $0.id == noteId }) {
                 pendingDirectNoteId = nil
                 isSearching = false
-                showingNoteDetail = note
+                openNote(note)
             }
         }
         .onReceive(feedService.$parentNotesCache) { cache in
@@ -449,7 +461,7 @@ struct SearchView: View {
             if let note = cache[noteId] {
                 pendingDirectNoteId = nil
                 isSearching = false
-                showingNoteDetail = note
+                openNote(note)
             }
         }
     }
@@ -771,7 +783,7 @@ struct SearchView: View {
                                )
                                     .contentShape(Rectangle())
                                     .onTapGesture {
-                                        showingNoteDetail = note
+                                        openNote(note)
                                     }
                             }
                         }
@@ -1042,7 +1054,7 @@ struct SearchView: View {
         if lower.hasPrefix("note1") || lower.hasPrefix("nevent1") {
             if let eventId = decodeNostrNoteId(trimmed) {
                 if let note = feedService.findNote(id: eventId) {
-                    showingNoteDetail = note
+                    openNote(note)
                 } else {
                     pendingDirectNoteId = eventId
                     isSearching = true

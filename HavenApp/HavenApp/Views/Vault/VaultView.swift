@@ -415,7 +415,7 @@ struct VaultView: View {
                     )
                 }
                 .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                .floatingActionBottomPadding()
                 .hoverEffect(.lift)
             }
         }
@@ -539,7 +539,7 @@ struct VaultView: View {
                     )
                 }
                 .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                .floatingActionBottomPadding()
                 .hoverEffect(.lift)
             }
         }

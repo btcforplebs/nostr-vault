@@ -229,7 +229,7 @@ struct MediaGalleryView: View {
                     )
                 }
                 .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                .floatingActionBottomPadding()
                 .hoverEffect(.lift)
             }
         }
@@ -346,7 +346,7 @@ struct MediaGalleryView: View {
                     )
                 }
                 .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                .floatingActionBottomPadding()
                 .hoverEffect(.lift)
             }
         }

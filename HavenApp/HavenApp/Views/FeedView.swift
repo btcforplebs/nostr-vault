@@ -2630,7 +2630,7 @@ struct FeedView: View {
                 }
                 .accessibilityLabel("Compose new post")
                 .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                .floatingActionBottomPadding()
                 .hoverEffect(.lift)
             }
             #endif
