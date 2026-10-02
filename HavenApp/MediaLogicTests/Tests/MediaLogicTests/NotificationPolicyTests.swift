@@ -96,7 +96,7 @@ final class NotificationPolicyTests: XCTestCase {
     func testKindsFollowThePreferences() {
         XCTAssertEqual(
             NotificationPolicy.notifyKinds(mentionsOrReplies: true, dms: true, zaps: true, reactions: false, reposts: false),
-            [1, 4, 1059, 9735]
+            [1, 4, 1059, 1111, 9735]
         )
         XCTAssertEqual(
             NotificationPolicy.notifyKinds(mentionsOrReplies: false, dms: false, zaps: false, reactions: true, reposts: true),

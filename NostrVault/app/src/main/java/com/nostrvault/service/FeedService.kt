@@ -1160,6 +1160,16 @@ class FeedService @Inject constructor(
         }
     }
 
+    /**
+     * Kinds the primary feed REQ asks for, as a JSON array body. NIP-22
+     * comments (1111) ride along so replies from Ditto, Coracle, Snort and
+     * Amethyst reach the timeline; accumulateEvent keeps only those on kind 1
+     * notes. Articles mode gains nothing from them, so it does not ask.
+     */
+    private fun primaryFeedKinds(): String =
+        if (_feedMode.value == FeedMode.ARTICLES) "1,6,30023"
+        else "1,6,30023,${NIP10Thread.COMMENT_KIND}"
+
     private fun sendPrimaryFeedSubscription(relayUrl: String, subId: String) {
         // Reels runs its own queries (ReelsFeedService). The feed connections
         // stay up for mentions, but the note timeline idles underneath the
@@ -1169,7 +1179,7 @@ class FeedService @Inject constructor(
         val ownerHex = nostrService.activeHexPubkey
 
         val filter = buildString {
-            append("{\"kinds\":[1,6,30023]")
+            append("{\"kinds\":[${primaryFeedKinds()}]")
             when (_feedMode.value) {
                 FeedMode.FOLLOWING -> {
                     // Send the full follow list (iOS does not cap); capping at
@@ -1337,6 +1347,9 @@ class FeedService @Inject constructor(
         val nowSecs = System.currentTimeMillis() / 1000
         if (createdAt > nowSecs + 60) return
 
+        // Comments on videos, articles and other kinds are not note threads.
+        if (kind == NIP10Thread.COMMENT_KIND && !NIP10Thread.isNoteComment(kind, tags)) return
+
         when (kind) {
             7 -> {
                 // Reaction event — track engagement
@@ -1416,7 +1429,7 @@ class FeedService @Inject constructor(
         val client = feedClients[relayUrl] ?: return
         val ownerHex = nostrService.activeHexPubkey
         if (ownerHex.isEmpty()) return
-        val mentionFilter = """{"kinds":[1,6,30023],"#p":["$ownerHex"],"limit":50}"""
+        val mentionFilter = """{"kinds":[1,6,30023,${NIP10Thread.COMMENT_KIND}],"#p":["$ownerHex"],"limit":50}"""
         client.send("[\"REQ\",\"feed-mentions\",$mentionFilter]")
     }
 
@@ -1949,7 +1962,7 @@ class FeedService @Inject constructor(
                     client.connect()
 
                     val filter = buildString {
-                        append("{\"kinds\":[1,6,30023]")
+                        append("{\"kinds\":[${primaryFeedKinds()}]")
                         if (_feedMode.value == FeedMode.FOLLOWING) {
                             // Full follow list (matches the live feed; iOS uncapped).
                             val authors = _followedPubkeys.value

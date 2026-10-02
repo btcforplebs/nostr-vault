@@ -31,14 +31,16 @@ import (
 	"github.com/barrydeen/haven/pkg/runsafe"
 )
 
-var feedKinds = []int{nostr.KindTextNote, nostr.KindRepost, nostr.KindArticle}
+// KindComment (NIP-22) carries replies from clients that have moved off kind 1
+// replies; the apps only show the ones on kind 1 notes.
+var feedKinds = []int{nostr.KindTextNote, nostr.KindRepost, nostr.KindArticle, nostr.KindComment}
 
 // OnlyFeedKinds restricts writes on the /feed route to feed note kinds.
 func OnlyFeedKinds(ctx context.Context, event *nostr.Event) (bool, string) {
 	if slices.Contains(feedKinds, event.Kind) {
 		return false, ""
 	}
-	return true, "restricted: this relay only accepts feed notes (kinds 1, 6, 30023)"
+	return true, "restricted: this relay only accepts feed notes (kinds 1, 6, 30023, 1111)"
 }
 
 // feedSyncCh triggers an immediate feed sync round (pull-to-refresh).

@@ -5,6 +5,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.local.ProfileRepository
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.NIP10Thread
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.GlobalSearchResults
 import com.nostrvault.data.model.SearchTermMatcher
@@ -1904,6 +1905,8 @@ class NostrService @Inject constructor(
      * [ancestorIds] by id so missing parents are filled in from the network.
      * Mirrors iOS NoteDetailView (fetchReplies by root + fetchParents by ids).
      */
+    private val COMMENT = NIP10Thread.COMMENT_KIND
+
     fun fetchThread(
         rootId: String,
         focusedId: String,
@@ -1916,11 +1919,16 @@ class NostrService @Inject constructor(
         // #e by root + focused note + all ancestors so legacy replies that only
         // tag their direct parent (not the thread root) are still fetched.
         val eIds = (listOf(rootId, focusedId) + ancestorIds).distinct()
-        val eFilter = """{"kinds":[1],"#e":[${jsonArr(eIds)}],"limit":200}"""
-        // Root note itself + ancestors are not replies, so fetch by id.
+        // NIP-22 comments (1111) tag their direct parent in lowercase e too.
+        val eFilter = """{"kinds":[1,$COMMENT],"#e":[${jsonArr(eIds)}],"limit":200}"""
+        // NIP-22 comments name the thread root in uppercase E, so one filter
+        // reaches them at any depth (iOS NoteDetailView commentsFilter).
+        val commentsFilter = """{"kinds":[$COMMENT],"#E":[${jsonArr(listOf(rootId))}],"limit":150}"""
+        // Root note itself + ancestors are not replies, so fetch by id. An
+        // ancestor of a comment is usually itself a comment.
         val idValues = (listOf(rootId) + ancestorIds).distinct()
-        val idFilter = """{"kinds":[1],"ids":[${jsonArr(idValues)}]}"""
-        queryDetailRelays(listOf(eFilter, idFilter), onRawEvent, onResult)
+        val idFilter = """{"kinds":[1,$COMMENT],"ids":[${jsonArr(idValues)}]}"""
+        queryDetailRelays(listOf(eFilter, commentsFilter, idFilter), onRawEvent, onResult)
     }
 
     /**
@@ -1936,7 +1944,7 @@ class NostrService @Inject constructor(
         onResult: (FeedNote?) -> Unit,
     ) {
         val delivered = java.util.concurrent.atomic.AtomicBoolean(false)
-        queryDetailRelays(listOf("""{"kinds":[1],"ids":["$id"]}"""), onRawEvent) { notes ->
+        queryDetailRelays(listOf("""{"kinds":[1,$COMMENT],"ids":["$id"]}"""), onRawEvent) { notes ->
             val match = notes.firstOrNull { it.id == id }
             if (match != null && delivered.compareAndSet(false, true)) onResult(match)
         }
@@ -1963,7 +1971,7 @@ class NostrService @Inject constructor(
         if (noteIds.isEmpty()) { onResult(emptyList()); return }
         val idArr = noteIds.distinct().joinToString(",") { "\"$it\"" }
         queryDetailRelays(
-            listOf("""{"kinds":[1],"#e":[$idArr],"limit":150}"""),
+            listOf("""{"kinds":[1,$COMMENT],"#e":[$idArr],"limit":150}"""),
             onRawEvent,
             onResult,
         )
@@ -2031,7 +2039,7 @@ class NostrService @Inject constructor(
                                         ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
                                     } catch (_: Exception) { emptyList() }
 
-                                    if (kind == 1) {
+                                    if (kind == 1 || kind == COMMENT) {
                                         collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
                                         onRawEvent?.invoke(id, ev.toString())
                                     }

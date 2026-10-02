@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import android.util.Log
+import com.nostrvault.data.model.NIP10Thread
 import com.nostrvault.relay.HavenBridge
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -69,10 +70,10 @@ object EventPublisher {
     }.toString()
 
     /**
-     * Append the client identification tag for kind-1 notes.
+     * Append the client identification tag for kind-1 notes and NIP-22 comments.
      */
     fun appendClientTag(tags: List<List<String>>, kind: Int): List<List<String>> {
-        if (kind != 1) return tags
+        if (kind != 1 && kind != NIP10Thread.COMMENT_KIND) return tags
         if (tags.any { it.firstOrNull() == "client" }) return tags
         return tags + listOf(listOf("client", "Nostr Vault on Android"))
     }

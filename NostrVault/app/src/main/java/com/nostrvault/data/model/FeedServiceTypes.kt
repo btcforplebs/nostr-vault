@@ -122,18 +122,15 @@ data class FeedNote(
     fun isNoiseOrSpam(): Boolean = Companion.isNoiseOrSpam(content, tags)
 
     /**
-     * NIP-10 thread root id: an explicit "root"-marked e-tag, else the first
-     * e-tag, else this note's own id (a top-level note is its own root). This
-     * is the symmetric reader for the root tag ComposeNoteScreen writes, and
-     * mirrors iOS NoteDetailView.threadRootId. Used to fetch the whole thread
-     * subtree when a mid-thread reply is opened.
+     * Thread root id, read by [NIP10Thread.rootEventId]: a NIP-22 comment's
+     * uppercase `E`; for NIP-10 an explicit "root"-marked e-tag, else the
+     * first non-mention e-tag; else this note's own id (a top-level note is
+     * its own root). This is the symmetric reader for the root tag
+     * ComposeNoteScreen writes, and mirrors iOS NoteDetailView.threadRootId.
+     * Used to fetch the whole thread subtree when a mid-thread reply is opened.
      */
     val threadRootId: String
-        get() {
-            val eTags = tags.filter { it.size >= 2 && it[0] == "e" }
-            eTags.firstOrNull { it.size >= 4 && it[3] == "root" }?.let { return it[1] }
-            return eTags.firstOrNull()?.get(1) ?: effectiveEventId
-        }
+        get() = NIP10Thread.rootEventId(kind, tags) ?: effectiveEventId
 
     /**
      * The event id engagement and replies actually target: for a kind-6
@@ -233,7 +230,7 @@ data class FeedNote(
                 resolvedTags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
             } else null
             val parentEventId = if (kind != 6) {
-                NIP10Thread.parentEventId(resolvedTags)
+                NIP10Thread.parentEventId(kind, resolvedTags)
             } else null
 
             // Parse media URLs from content + imeta tags

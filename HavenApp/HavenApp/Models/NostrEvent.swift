@@ -68,7 +68,7 @@ struct NostrEvent: Codable, Identifiable {
     }
     
     var parentEventId: String? {
-        NIP10Thread.parentEventId(tags: tags)
+        NIP10Thread.parentEventId(kind: kind, tags: tags)
     }
 
     /// A kind 6 repost always carries an `e` tag pointing at what it repeats, and a

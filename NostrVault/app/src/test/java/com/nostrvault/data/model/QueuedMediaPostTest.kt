@@ -120,6 +120,19 @@ class QueuedMediaPostTest {
         assertEquals(queued, decoded)
     }
 
+    @Test
+    fun `comment kind round trips and older posts decode without one`() {
+        val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        val comment = post(media = listOf(QueuedMediaPost.Media(hashA))).copy(kind = 1111)
+        val serializer = QueuedMediaPost.serializer()
+        assertEquals(1111, json.decodeFromString(serializer, json.encodeToString(serializer, comment)).kind)
+
+        // Saved by a build that predates the kind field.
+        val old = """{"id":"x","createdAt":1,"accountNpub":"npub1me","body":"gm",""" +
+            """"media":[{"sha256":"$hashA"}],"baseTags":[["p","abc"]],"attempts":0}"""
+        assertNull(json.decodeFromString(serializer, old).kind)
+    }
+
     // endregion
 
     // region Wording

@@ -45,7 +45,8 @@ enum NotificationPolicy {
     /// an individual marker for a kind, but "N more new items" is one number and
     /// nothing can filter it after the fact.
     ///
-    /// Mentions and replies are both kind 1, so either one enables it. The set is
+    /// Mentions and replies are kind 1, and replies may also be NIP-22 comments
+    /// (kind 1111), so either one enables both. The set is
     /// the union across accounts; the client still applies each account's own
     /// preferences to the individual markers.
     ///
@@ -59,7 +60,7 @@ enum NotificationPolicy {
         reposts: Bool
     ) -> [Int] {
         var kinds: [Int] = []
-        if mentionsOrReplies { kinds.append(1) }
+        if mentionsOrReplies { kinds.append(contentsOf: [1, 1111]) }
         if dms { kinds.append(contentsOf: [4, 1059]) }
         if reposts { kinds.append(6) }
         if reactions { kinds.append(7) }
