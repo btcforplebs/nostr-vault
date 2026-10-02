@@ -1311,11 +1311,16 @@ class DashboardViewModel @Inject constructor(
         val owner = nostrService.activeHexPubkey
         val whitelist = resolveWhitelistedHexPubkeys()
 
-        // Partition once instead of re-scanning the full list per kind
+        // Partition once instead of re-scanning the full list per kind.
+        // allEvents can hold one event twice (history pages query outbox and
+        // inbox, and the snapshot is saved from allEvents); the lists key on
+        // id, and a duplicate key crashes the LazyColumn.
         val noteEvents = ArrayList<NostrEvent>(events.size)
         val reactionEvents = ArrayList<NostrEvent>()
         val zapEvents = ArrayList<NostrEvent>()
+        val partitionedIds = HashSet<String>(events.size * 2)
         for (event in events) {
+            if (!partitionedIds.add(event.id)) continue
             when (event.kind) {
                 1, 6, 30023 -> noteEvents.add(event)
                 7 -> reactionEvents.add(event)
@@ -1637,9 +1642,11 @@ class DashboardViewModel @Inject constructor(
         allEventsMutex.withLock {
             val existingIds = allEvents.map { it.id }.toHashSet()
             for (event in serviceEvents) {
-                if (event.kind in listOf(1, 6, 7, 30023, 9735) && existingIds.add(event.id)) {
+                // seenIds too: the live subscription marks an event seen before
+                // it reaches allEvents, so checking allEvents alone let one
+                // arriving on both paths be added twice.
+                if (event.kind in listOf(1, 6, 7, 30023, 9735) && existingIds.add(event.id) && seenIds.add(event.id)) {
                     allEvents.add(event)
-                    seenIds.add(event.id)
                 }
             }
             trimAllEventsLocked()
