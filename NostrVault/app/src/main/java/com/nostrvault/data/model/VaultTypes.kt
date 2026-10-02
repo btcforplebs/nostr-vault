@@ -8,27 +8,32 @@ enum class VaultViewMode(val displayName: String) {
     NOTES("Notes"),
     LIKES("Likes"),
     ZAPS("Zaps"),
+    FOLLOWERS("Followers"),
 }
 
+/** Whitelisted notes already show in All, so it has no filter of its own (iOS #135). */
 enum class VaultContentFilter(val displayName: String) {
     ALL("All"),
-    MINE("My Notes"),
-    TAGGED("Tagged"),
-    WHITELIST("Whitelisted"),
+    MINE("Mine"),
+    TAGGED("Mentions"),
 }
 
+/** Received = reactions others left on my notes; Given = notes I reacted to. */
 enum class VaultLikesFilter(val displayName: String) {
-    ON_MY_NOTES("My Notes"),
-    ON_TAGGED("Tagged"),
-    ON_WHITELISTED("Whitelisted"),
-    MY_LIKES("My Likes"),
+    ON_MY_NOTES("Received"),
+    MY_LIKES("Given"),
 }
 
+/** Received = zaps on my notes; Given = notes I zapped. */
 enum class VaultZapsFilter(val displayName: String) {
-    ON_MY_NOTES("My Notes"),
-    ON_TAGGED("Tagged"),
-    ON_WHITELISTED("Whitelisted"),
-    MY_ZAPS("My Zaps"),
+    ON_MY_NOTES("Received"),
+    MY_ZAPS("Given"),
+}
+
+/** Followers from the relay's follower ledger, spam left out: the latest ones, or everyone. */
+enum class VaultFollowersFilter(val displayName: String) {
+    NEW("New"),
+    ALL("All"),
 }
 
 data class ParsedZapReceipt(

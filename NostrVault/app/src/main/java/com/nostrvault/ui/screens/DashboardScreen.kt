@@ -12,6 +12,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -39,6 +40,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.nostrvault.data.local.ConfigStore
@@ -62,6 +64,8 @@ import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.ui.components.VaultNoteCard
 import com.nostrvault.ui.components.VaultNoteLayoutMode
 import com.nostrvault.ui.components.VaultNoteType
+import com.nostrvault.ui.components.AvatarImage
+import com.nostrvault.ui.components.formatTimestamp
 import com.nostrvault.ui.navigation.NotificationTarget
 import com.nostrvault.ui.navigation.RelayFocus
 import com.nostrvault.ui.navigation.RelayFocusRequest
@@ -99,6 +103,7 @@ class DashboardViewModel @Inject constructor(
     val statsService: StatsService,
     val configStore: ConfigStore,
     val nostrService: NostrService,
+    private val followersSeenStore: com.nostrvault.data.local.FollowersSeenStore,
 ) : ViewModel() {
 
     companion object {
@@ -114,6 +119,7 @@ class DashboardViewModel @Inject constructor(
         private const val SNAPSHOT_MAX_EVENTS = 500
         private const val SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000L // 24 hours
         private const val SNAPSHOT_FILE = "vault_snapshot.json"
+        private const val FOLLOWERS_POLL_MS = 60_000L
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -182,6 +188,19 @@ class DashboardViewModel @Inject constructor(
     private val _zapsFilter = MutableStateFlow(VaultZapsFilter.ON_MY_NOTES)
     val zapsFilter: StateFlow<VaultZapsFilter> = _zapsFilter.asStateFlow()
 
+    private val _followersFilter = MutableStateFlow(VaultFollowersFilter.NEW)
+    val followersFilter: StateFlow<VaultFollowersFilter> = _followersFilter.asStateFlow()
+
+    // ── Followers (relay follower ledger, iOS #136) ──────────────
+
+    /** Null while the relay is stopped or the ledger hasn't opened yet. */
+    private val _followerSnapshot = MutableStateFlow<FollowerSnapshot?>(null)
+    val followerSnapshot: StateFlow<FollowerSnapshot?> = _followerSnapshot.asStateFlow()
+
+    /** Red dot on the Followers mode button: follows since the owner last looked. */
+    private val _hasNewFollowers = MutableStateFlow(false)
+    val hasNewFollowers: StateFlow<Boolean> = _hasNewFollowers.asStateFlow()
+
     // ── Display data ─────────────────────────────────────────────
 
     private val _displayNotes = MutableStateFlow<List<FeedNote>>(emptyList())
@@ -226,9 +245,6 @@ class DashboardViewModel @Inject constructor(
 
     private val _connectionColor = MutableStateFlow("yellow")
     val connectionColor: StateFlow<String> = _connectionColor.asStateFlow()
-
-    private val _isCompact = MutableStateFlow(false)
-    val isCompact: StateFlow<Boolean> = _isCompact.asStateFlow()
 
     private val _notesHasLoadedOnce = MutableStateFlow(false)
     val notesHasLoadedOnce: StateFlow<Boolean> = _notesHasLoadedOnce.asStateFlow()
@@ -390,6 +406,9 @@ class DashboardViewModel @Inject constructor(
             _zapMap.value = emptyMap()
             _repostMap.value = emptyMap()
             _quoteMap.value = emptyMap()
+            _followerSnapshot.value = null
+            _hasNewFollowers.value = false
+            refreshFollowers()
             connectToLocalRelay()
         }
     }
@@ -1121,6 +1140,10 @@ class DashboardViewModel @Inject constructor(
                 fetchMoreZapReceipts()
                 fetchMissingZappedNotes()
             }
+            VaultViewMode.FOLLOWERS -> {
+                markFollowersSeen()
+                viewModelScope.launch { refreshFollowers() }
+            }
             else -> {}
         }
     }
@@ -1149,7 +1172,51 @@ class DashboardViewModel @Inject constructor(
         if (filter == VaultZapsFilter.MY_ZAPS) fetchMissingZappedNotes()
     }
 
-    fun toggleCompact() { _isCompact.value = !_isCompact.value }
+    fun setFollowersFilter(filter: VaultFollowersFilter) {
+        _followersFilter.value = filter
+        fetchFollowerProfiles()
+    }
+
+    // ── Followers ────────────────────────────────────────────────
+
+    /**
+     * Re-reads the ledger every minute while the Relay tab is on screen. A new
+     * follow reaches the relay's ledger live, so this is what keeps the list
+     * and the red dot semi-realtime. Cancelled by the caller.
+     */
+    suspend fun pollFollowers() {
+        while (currentCoroutineContext().isActive) {
+            refreshFollowers()
+            delay(FOLLOWERS_POLL_MS)
+        }
+    }
+
+    /** Reloads the ledger, refreshes the red dot and asks for the profiles the list shows. */
+    suspend fun refreshFollowers() {
+        val owner = nostrService.activeHexPubkey
+        val snapshot = withContext(Dispatchers.IO) {
+            FollowerSnapshot.parse(com.nostrvault.relay.HavenBridge.getFollowers(owner))
+        } ?: return
+        if (owner != nostrService.activeHexPubkey) return
+        _followerSnapshot.value = snapshot
+        if (_viewMode.value == VaultViewMode.FOLLOWERS) {
+            markFollowersSeen()
+        } else {
+            _hasNewFollowers.value = snapshot.hasNewSince(followersSeenStore.seenAt(owner))
+        }
+        fetchFollowerProfiles()
+    }
+
+    private fun markFollowersSeen() {
+        followersSeenStore.markSeen(nostrService.activeHexPubkey)
+        _hasNewFollowers.value = false
+    }
+
+    private fun fetchFollowerProfiles() {
+        val snapshot = _followerSnapshot.value ?: return
+        val shown = snapshot.entries(_followersFilter.value).take(300).map { it.pubkey }
+        if (shown.isNotEmpty()) nostrService.fetchMissingProfiles(shown)
+    }
 
     // ── Notification focus (port of iOS consumeRelayFocus, PR #95) ──
 
@@ -1174,6 +1241,9 @@ class DashboardViewModel @Inject constructor(
             VaultViewMode.NOTES -> {
                 if (_contentFilter.value != VaultContentFilter.ALL) setContentFilter(VaultContentFilter.ALL)
                 if (_viewMode.value != VaultViewMode.NOTES) setViewMode(VaultViewMode.NOTES)
+            }
+            VaultViewMode.FOLLOWERS -> {
+                if (_viewMode.value != VaultViewMode.FOLLOWERS) setViewMode(VaultViewMode.FOLLOWERS)
             }
         }
         fetchFocusEventIfMissing(request.eventId)
@@ -1254,6 +1324,8 @@ class DashboardViewModel @Inject constructor(
         }
 
         when (currentMode) {
+            // Followers come from the relay's follower ledger, not these events.
+            VaultViewMode.FOLLOWERS -> Unit
             VaultViewMode.NOTES -> {
                 val currentFilter = _contentFilter.value
 
@@ -1285,9 +1357,6 @@ class DashboardViewModel @Inject constructor(
                                 Log.d(TAG, "TAGGED note included: id=${event.id.take(8)}, from=${event.pubkey.take(8)}, kind=${event.kind}")
                             }
                             tagged
-                        }
-                        VaultContentFilter.WHITELIST -> {
-                            whitelist.contains(event.pubkey) && event.pubkey != owner
                         }
                     }
                 }.sortedByDescending { it.createdAt }
@@ -1394,25 +1463,15 @@ class DashboardViewModel @Inject constructor(
                     }
                 } else {
                     // Incoming reactions on target note sets
-                    val targetNoteIds: Set<String> = when (currentLikesFilter) {
-                        VaultLikesFilter.ON_MY_NOTES ->
-                            noteEvents.filter { it.pubkey == owner }.map { it.id }.toSet()
-                        VaultLikesFilter.ON_TAGGED ->
-                            noteEvents.filter {
-                                it.pubkey != owner &&
-                                    it.tags.any { t -> t.size >= 2 && t[0] == "p" && t[1] == owner }
-                            }.map { it.id }.toSet()
-                        VaultLikesFilter.ON_WHITELISTED ->
-                            noteEvents.filter { whitelist.contains(it.pubkey) }.map { it.id }.toSet()
-                        else -> emptySet()
-                    }
+                    // Received: reactions others left on my notes.
+                    val targetNoteIds: Set<String> =
+                        noteEvents.filter { it.pubkey == owner }.map { it.id }.toSet()
 
-                    val excludeSelf = currentLikesFilter == VaultLikesFilter.ON_MY_NOTES
                     val rxMap = mutableMapOf<String, MutableList<Pair<String, String>>>()
                     val latestReaction = mutableMapOf<String, Long>()
 
                     for (event in reactionEvents) {
-                        if (excludeSelf && event.pubkey == owner) continue
+                        if (event.pubkey == owner) continue
                         val targetId = event.tags.firstOrNull {
                             it.size >= 2 && it[0] == "e" && targetNoteIds.contains(it[1])
                         }?.get(1) ?: continue
@@ -1474,26 +1533,16 @@ class DashboardViewModel @Inject constructor(
                     }
                 } else {
                     // Incoming zaps on target note sets
-                    val targetNoteIds: Set<String> = when (currentZapsFilter) {
-                        VaultZapsFilter.ON_MY_NOTES ->
-                            noteEvents.filter { it.pubkey == owner }.map { it.id }.toSet()
-                        VaultZapsFilter.ON_TAGGED ->
-                            noteEvents.filter {
-                                it.pubkey != owner &&
-                                    it.tags.any { t -> t.size >= 2 && t[0] == "p" && t[1] == owner }
-                            }.map { it.id }.toSet()
-                        VaultZapsFilter.ON_WHITELISTED ->
-                            noteEvents.filter { whitelist.contains(it.pubkey) }.map { it.id }.toSet()
-                        else -> emptySet()
-                    }
+                    // Received: zaps others sent to my notes.
+                    val targetNoteIds: Set<String> =
+                        noteEvents.filter { it.pubkey == owner }.map { it.id }.toSet()
 
-                    val excludeSelf = currentZapsFilter == VaultZapsFilter.ON_MY_NOTES
                     val zMap = mutableMapOf<String, MutableList<Pair<String, Long>>>()
 
                     for (item in parsedReceipts) {
                         val targetId = item.parsed.targetNoteId ?: continue
                         if (!targetNoteIds.contains(targetId)) continue
-                        if (excludeSelf && item.parsed.senderPubkey == owner) continue
+                        if (item.parsed.senderPubkey == owner) continue
                         zMap.getOrPut(targetId) { mutableListOf() }.add(Pair(item.parsed.senderPubkey, item.parsed.amountSats))
                     }
 
@@ -1762,6 +1811,11 @@ class DashboardViewModel @Inject constructor(
 // IconFilterButton composable
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * Icon toggle for the Relay tab's pills. With a [label], the selected button
+ * also says its word (iOS #135), so a row of icons still tells you which
+ * filter is on. [showDot] puts a red dot on its corner.
+ */
 @Composable
 private fun IconFilterButton(
     icon: ImageVector,
@@ -1769,6 +1823,8 @@ private fun IconFilterButton(
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    label: String? = null,
+    showDot: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
     val tint by animateColorAsState(
@@ -1776,16 +1832,142 @@ private fun IconFilterButton(
         animationSpec = Motion.control(),
         label = "filterTint",
     )
-    IconButton(
-        onClick = onClick,
-        modifier = modifier.size(36.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(20.dp),
-        )
+    Box(modifier = modifier.defaultMinSize(minWidth = 36.dp, minHeight = 36.dp)) {
+        if (isSelected && label != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .height(32.dp)
+                    .clip(CircleShape)
+                    .background(colors.primary.copy(alpha = 0.16f))
+                    .clickable(onClickLabel = contentDescription, onClick = onClick)
+                    .padding(horizontal = 10.dp),
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = label,
+                    color = tint,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
+        } else {
+            IconButton(
+                onClick = onClick,
+                modifier = Modifier.size(36.dp).align(Alignment.Center),
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = tint,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = showDot,
+            enter = scaleIn() + fadeIn(),
+            exit = scaleOut() + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = (-5).dp, y = 6.dp),
+        ) {
+            Box(Modifier.size(8.dp).background(ErrorRed, CircleShape))
+        }
+    }
+}
+
+/**
+ * The trailing pill's filters for [viewMode]. Notes: All · Mine · Mentions.
+ * Likes and Zaps: Received · Given. Followers: New · All.
+ */
+@Composable
+private fun RelayFilterPill(
+    viewMode: VaultViewMode,
+    contentFilter: VaultContentFilter,
+    likesFilter: VaultLikesFilter,
+    zapsFilter: VaultZapsFilter,
+    followersFilter: VaultFollowersFilter,
+    viewModel: DashboardViewModel,
+    labelled: Boolean,
+) {
+    GlassPill {
+        @Composable
+        fun filter(icon: ImageVector, name: String, selected: Boolean, onClick: () -> Unit) =
+            IconFilterButton(
+                icon = icon,
+                contentDescription = name,
+                isSelected = selected,
+                onClick = onClick,
+                label = if (labelled) name else null,
+            )
+        when (viewMode) {
+            VaultViewMode.NOTES -> {
+                filter(NostrVaultIcons.Layers, VaultContentFilter.ALL.displayName, contentFilter == VaultContentFilter.ALL) {
+                    viewModel.setContentFilter(VaultContentFilter.ALL)
+                }
+                filter(NostrVaultIcons.Profile, VaultContentFilter.MINE.displayName, contentFilter == VaultContentFilter.MINE) {
+                    viewModel.setContentFilter(VaultContentFilter.MINE)
+                }
+                filter(NostrVaultIcons.At, VaultContentFilter.TAGGED.displayName, contentFilter == VaultContentFilter.TAGGED) {
+                    viewModel.setContentFilter(VaultContentFilter.TAGGED)
+                }
+            }
+            VaultViewMode.LIKES -> {
+                filter(NostrVaultIcons.Received, VaultLikesFilter.ON_MY_NOTES.displayName, likesFilter == VaultLikesFilter.ON_MY_NOTES) {
+                    viewModel.setLikesFilter(VaultLikesFilter.ON_MY_NOTES)
+                }
+                filter(NostrVaultIcons.Given, VaultLikesFilter.MY_LIKES.displayName, likesFilter == VaultLikesFilter.MY_LIKES) {
+                    viewModel.setLikesFilter(VaultLikesFilter.MY_LIKES)
+                }
+            }
+            VaultViewMode.ZAPS -> {
+                filter(NostrVaultIcons.Received, VaultZapsFilter.ON_MY_NOTES.displayName, zapsFilter == VaultZapsFilter.ON_MY_NOTES) {
+                    viewModel.setZapsFilter(VaultZapsFilter.ON_MY_NOTES)
+                }
+                filter(NostrVaultIcons.Given, VaultZapsFilter.MY_ZAPS.displayName, zapsFilter == VaultZapsFilter.MY_ZAPS) {
+                    viewModel.setZapsFilter(VaultZapsFilter.MY_ZAPS)
+                }
+            }
+            VaultViewMode.FOLLOWERS -> {
+                filter(NostrVaultIcons.Discover, VaultFollowersFilter.NEW.displayName, followersFilter == VaultFollowersFilter.NEW) {
+                    viewModel.setFollowersFilter(VaultFollowersFilter.NEW)
+                }
+                filter(NostrVaultIcons.Groups, VaultFollowersFilter.ALL.displayName, followersFilter == VaultFollowersFilter.ALL) {
+                    viewModel.setFollowersFilter(VaultFollowersFilter.ALL)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Lays out the first of [variants] whose natural width fits, else the last —
+ * SwiftUI's `ViewThatFits(in: .horizontal)`.
+ */
+@Composable
+private fun FirstThatFits(vararg variants: @Composable () -> Unit) {
+    androidx.compose.ui.layout.SubcomposeLayout { constraints ->
+        val loose = constraints.copy(minWidth = 0, maxWidth = androidx.compose.ui.unit.Constraints.Infinity)
+        var chosen: List<androidx.compose.ui.layout.Placeable> = emptyList()
+        for ((index, variant) in variants.withIndex()) {
+            chosen = subcompose(index, variant).map { it.measure(loose) }
+            if ((chosen.maxOfOrNull { it.width } ?: 0) <= constraints.maxWidth) break
+        }
+        val width = (chosen.maxOfOrNull { it.width } ?: 0).coerceAtMost(constraints.maxWidth)
+        val height = chosen.maxOfOrNull { it.height } ?: 0
+        layout(width, height) {
+            chosen.forEach { it.placeRelative(0, 0) }
+        }
     }
 }
 
@@ -1826,6 +2008,18 @@ fun DashboardScreen(
     val contentFilter by viewModel.contentFilter.collectAsState()
     val likesFilter by viewModel.likesFilter.collectAsState()
     val zapsFilter by viewModel.zapsFilter.collectAsState()
+    val followersFilter by viewModel.followersFilter.collectAsState()
+    val followerSnapshot by viewModel.followerSnapshot.collectAsState()
+    val hasNewFollowers by viewModel.hasNewFollowers.collectAsState()
+
+    // Re-read the follower ledger every minute while this tab is on screen and
+    // the app is in front — feeds both the Followers list and its red dot.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.pollFollowers()
+        }
+    }
 
     // Display data
     val displayNotes by viewModel.displayNotes.collectAsState()
@@ -1860,7 +2054,6 @@ fun DashboardScreen(
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val connectionColor by viewModel.connectionColor.collectAsState()
     val allProfiles by viewModel.profiles.collectAsState()
-    val isCompact by viewModel.isCompact.collectAsState()
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val colors = LocalNostrVaultColors.current
@@ -1975,7 +2168,7 @@ fun DashboardScreen(
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                // Leading pill: mode switcher (Notes / Likes / Zaps)
+                // Leading pill: mode switcher (Notes / Likes / Zaps / Followers)
                 GlassPill(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     IconFilterButton(
                         icon = NostrVaultIcons.Document,
@@ -1997,99 +2190,26 @@ fun DashboardScreen(
                         isSelected = viewMode == VaultViewMode.ZAPS,
                         onClick = { viewModel.setViewMode(VaultViewMode.ZAPS) },
                     )
+                    IconFilterButton(
+                        icon = NostrVaultIcons.People,
+                        contentDescription = if (hasNewFollowers) "Followers, new followers" else "Followers",
+                        isSelected = viewMode == VaultViewMode.FOLLOWERS,
+                        onClick = { viewModel.setViewMode(VaultViewMode.FOLLOWERS) },
+                        showDot = hasNewFollowers,
+                    )
                 }
 
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
 
-                // Trailing pill: compact toggle + context-sensitive filters
-                GlassPill {
-                    IconFilterButton(
-                        icon = if (isCompact) NostrVaultIcons.CompactView else NostrVaultIcons.ExpandedView,
-                        contentDescription = if (isCompact) "Switch to expanded" else "Switch to compact",
-                        isSelected = isCompact,
-                        onClick = viewModel::toggleCompact,
+                // Trailing pill: the current mode's filters. Each icon means one
+                // thing in every mode (tray in = others gave you, tray out = you
+                // gave), and the selected one says its word. They never collapse
+                // into a menu: when the bar is tight the word goes, not the icons.
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                    FirstThatFits(
+                        { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, viewModel, labelled = true) },
+                        { RelayFilterPill(viewMode, contentFilter, likesFilter, zapsFilter, followersFilter, viewModel, labelled = false) },
                     )
-
-                    when (viewMode) {
-                        VaultViewMode.NOTES -> {
-                            IconFilterButton(
-                                icon = NostrVaultIcons.Layers,
-                                contentDescription = "All",
-                                isSelected = contentFilter == VaultContentFilter.ALL,
-                                onClick = { viewModel.setContentFilter(VaultContentFilter.ALL) },
-                            )
-                            IconFilterButton(
-                                icon = NostrVaultIcons.Profile,
-                                contentDescription = "My Notes",
-                                isSelected = contentFilter == VaultContentFilter.MINE,
-                                onClick = { viewModel.setContentFilter(VaultContentFilter.MINE) },
-                            )
-                            IconFilterButton(
-                                icon = NostrVaultIcons.At,
-                                contentDescription = "Tagged",
-                                isSelected = contentFilter == VaultContentFilter.TAGGED,
-                                onClick = { viewModel.setContentFilter(VaultContentFilter.TAGGED) },
-                            )
-                            IconFilterButton(
-                                icon = NostrVaultIcons.Verified,
-                                contentDescription = "Whitelisted",
-                                isSelected = contentFilter == VaultContentFilter.WHITELIST,
-                                onClick = { viewModel.setContentFilter(VaultContentFilter.WHITELIST) },
-                            )
-                        }
-                        VaultViewMode.LIKES -> {
-                            IconFilterButton(
-                                icon = NostrVaultIcons.Profile,
-                                contentDescription = "My Notes",
-                                isSelected = likesFilter == VaultLikesFilter.ON_MY_NOTES,
-                                onClick = { viewModel.setLikesFilter(VaultLikesFilter.ON_MY_NOTES) },
-                            )
-                            IconFilterButton(
-                                icon = NostrVaultIcons.At,
-                                contentDescription = "Tagged",
-                                isSelected = likesFilter == VaultLikesFilter.ON_TAGGED,
-                                onClick = { viewModel.setLikesFilter(VaultLikesFilter.ON_TAGGED) },
-                            )
-                            IconFilterButton(
-                                icon = NostrVaultIcons.Verified,
-                                contentDescription = "Whitelisted",
-                                isSelected = likesFilter == VaultLikesFilter.ON_WHITELISTED,
-                                onClick = { viewModel.setLikesFilter(VaultLikesFilter.ON_WHITELISTED) },
-                            )
-                            IconFilterButton(
-                                icon = NostrVaultIcons.Heart,
-                                contentDescription = "My Likes",
-                                isSelected = likesFilter == VaultLikesFilter.MY_LIKES,
-                                onClick = { viewModel.setLikesFilter(VaultLikesFilter.MY_LIKES) },
-                            )
-                        }
-                        VaultViewMode.ZAPS -> {
-                            IconFilterButton(
-                                icon = NostrVaultIcons.Profile,
-                                contentDescription = "My Notes",
-                                isSelected = zapsFilter == VaultZapsFilter.ON_MY_NOTES,
-                                onClick = { viewModel.setZapsFilter(VaultZapsFilter.ON_MY_NOTES) },
-                            )
-                            IconFilterButton(
-                                icon = NostrVaultIcons.At,
-                                contentDescription = "Tagged",
-                                isSelected = zapsFilter == VaultZapsFilter.ON_TAGGED,
-                                onClick = { viewModel.setZapsFilter(VaultZapsFilter.ON_TAGGED) },
-                            )
-                            IconFilterButton(
-                                icon = NostrVaultIcons.Verified,
-                                contentDescription = "Whitelisted",
-                                isSelected = zapsFilter == VaultZapsFilter.ON_WHITELISTED,
-                                onClick = { viewModel.setZapsFilter(VaultZapsFilter.ON_WHITELISTED) },
-                            )
-                            IconFilterButton(
-                                icon = NostrVaultIcons.Zap,
-                                contentDescription = "My Zaps",
-                                isSelected = zapsFilter == VaultZapsFilter.MY_ZAPS,
-                                onClick = { viewModel.setZapsFilter(VaultZapsFilter.MY_ZAPS) },
-                            )
-                        }
-                    }
                 }
             }
         },
@@ -2137,6 +2257,7 @@ fun DashboardScreen(
             VaultViewMode.NOTES -> displayNotes
             VaultViewMode.LIKES -> displayLikedNotes
             VaultViewMode.ZAPS -> displayZappedNotes
+            VaultViewMode.FOLLOWERS -> emptyList()
         }
         val quotedIds = remember(visibleNotes) {
             visibleNotes.flatMap { it.quotedEventIds }.distinct()
@@ -2167,7 +2288,6 @@ fun DashboardScreen(
                     quoteMap = quoteMap,
                     isRefreshing = isRefreshing,
                     hasLoadedOnce = notesHasLoadedOnce,
-                    isCompact = isCompact,
                     isLoadingMore = isLoadingMore,
                     listState = listState,
                     allProfiles = allProfiles,
@@ -2184,7 +2304,6 @@ fun DashboardScreen(
                     reactionMap = reactionMap,
                     hasLoadedOnce = likesHasLoadedOnce,
                     isRefreshing = isRefreshing,
-                    isCompact = isCompact,
                     likesFilter = likesFilter,
                     listState = listState,
                     allProfiles = allProfiles,
@@ -2201,7 +2320,6 @@ fun DashboardScreen(
                     zapMap = zapMap,
                     hasLoadedOnce = zapsHasLoadedOnce,
                     isRefreshing = isRefreshing,
-                    isCompact = isCompact,
                     zapsFilter = zapsFilter,
                     listState = listState,
                     allProfiles = allProfiles,
@@ -2211,6 +2329,14 @@ fun DashboardScreen(
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
                     focusedEventId = focusedEventId,
+                )
+                VaultViewMode.FOLLOWERS -> FollowersContent(
+                    snapshot = followerSnapshot,
+                    filter = followersFilter,
+                    listState = listState,
+                    allProfiles = allProfiles,
+                    padding = padding,
+                    onProfileClick = onProfileClick,
                 )
             }
         }
@@ -2331,7 +2457,6 @@ private fun NotesContent(
     quoteMap: Map<String, List<String>>,
     isRefreshing: Boolean,
     hasLoadedOnce: Boolean,
-    isCompact: Boolean,
     isLoadingMore: Boolean,
     listState: androidx.compose.foundation.lazy.LazyListState,
     allProfiles: Map<String, FeedProfile>,
@@ -2402,13 +2527,13 @@ private fun NotesContent(
                     quoterPubkeys = quoteMap[note.id] ?: emptyList(),
                     zappers = zapMap[note.id] ?: emptyList(),
                     noteType = noteType,
-                    layoutMode = if (isCompact) VaultNoteLayoutMode.COMPACT else VaultNoteLayoutMode.EXPANDED,
+                    layoutMode = VaultNoteLayoutMode.EXPANDED,
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
                     modifier = Modifier
-                        .padding(horizontal = 10.dp, vertical = if (isCompact) 2.dp else 4.dp)
-                        .relayFocusOutline(note.id == focusedEventId, isCompact),
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .relayFocusOutline(note.id == focusedEventId),
                 )
             }
 
@@ -2442,7 +2567,6 @@ private fun LikesContent(
     reactionMap: Map<String, List<Pair<String, String>>>,
     hasLoadedOnce: Boolean,
     isRefreshing: Boolean,
-    isCompact: Boolean,
     likesFilter: VaultLikesFilter,
     listState: androidx.compose.foundation.lazy.LazyListState,
     allProfiles: Map<String, FeedProfile>,
@@ -2534,13 +2658,13 @@ private fun LikesContent(
                     reactors = reactionMap[note.id] ?: emptyList(),
                     latestReactionDate = latestReactionDates[note.id]?.let { java.util.Date(it * 1000) },
                     noteType = noteType,
-                    layoutMode = if (isCompact) VaultNoteLayoutMode.COMPACT else VaultNoteLayoutMode.EXPANDED,
+                    layoutMode = VaultNoteLayoutMode.EXPANDED,
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
                     modifier = Modifier
-                        .padding(horizontal = 10.dp, vertical = if (isCompact) 2.dp else 4.dp)
-                        .relayFocusOutline(note.id == focusedEventId, isCompact),
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .relayFocusOutline(note.id == focusedEventId),
                 )
             }
         }
@@ -2558,7 +2682,6 @@ private fun ZapsContent(
     zapMap: Map<String, List<Pair<String, Long>>>,
     hasLoadedOnce: Boolean,
     isRefreshing: Boolean,
-    isCompact: Boolean,
     zapsFilter: VaultZapsFilter,
     listState: androidx.compose.foundation.lazy.LazyListState,
     allProfiles: Map<String, FeedProfile>,
@@ -2651,13 +2774,13 @@ private fun ZapsContent(
                     profiles = allProfiles,
                     zappers = zapMap[note.id] ?: emptyList(),
                     noteType = noteType,
-                    layoutMode = if (isCompact) VaultNoteLayoutMode.COMPACT else VaultNoteLayoutMode.EXPANDED,
+                    layoutMode = VaultNoteLayoutMode.EXPANDED,
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
                     modifier = Modifier
-                        .padding(horizontal = 10.dp, vertical = if (isCompact) 2.dp else 4.dp)
-                        .relayFocusOutline(note.id == focusedEventId, isCompact),
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .relayFocusOutline(note.id == focusedEventId),
                 )
             }
         }
@@ -3142,19 +3265,186 @@ data class DiskVaultSnapshot(
     val savedAt: Long,
 )
 
+// ═══════════════════════════════════════════════════════════════════
+// Followers content (relay follower ledger, iOS #136)
+// ═══════════════════════════════════════════════════════════════════
+
+@Composable
+private fun FollowersContent(
+    snapshot: FollowerSnapshot?,
+    filter: VaultFollowersFilter,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    allProfiles: Map<String, FeedProfile>,
+    padding: PaddingValues,
+    onProfileClick: (String) -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
+    if (snapshot == null) {
+        val relayStatus by RelayForegroundService.relayStatus.collectAsState()
+        val running = relayStatus == RelayForegroundService.RelayStatus.RUNNING
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = padding.calculateTopPadding()),
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = colors.primary, modifier = Modifier.size(32.dp))
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = if (running) "Loading followers..." else "Followers show once the relay is running",
+                    color = SecondaryText,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        return
+    }
+    val entries = remember(snapshot, filter) { snapshot.entries(filter) }
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(
+            top = padding.calculateTopPadding(),
+            bottom = padding.calculateBottomPadding() + 88.dp,
+        ),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        item(key = "followers-summary") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
+            ) {
+                Icon(
+                    imageVector = NostrVaultIcons.People,
+                    contentDescription = null,
+                    tint = colors.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "${snapshot.counts.total} followers",
+                    color = PrimaryText,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        if (entries.isEmpty()) {
+            item(key = "followers-empty") {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().padding(top = 60.dp),
+                ) {
+                    Icon(
+                        imageVector = NostrVaultIcons.PeopleOutline,
+                        contentDescription = null,
+                        tint = colors.primary,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "No followers here yet",
+                        color = PrimaryText,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        } else {
+            items(entries, key = { it.pubkey }) { entry ->
+                FollowerRow(
+                    entry = entry,
+                    profile = allProfiles[entry.pubkey],
+                    onClick = { onProfileClick(entry.pubkey) },
+                )
+                HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FollowerRow(
+    entry: FollowerSnapshot.Entry,
+    profile: FeedProfile?,
+    onClick: () -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
+    val name = profile?.bestName
+        ?: remember(entry.pubkey) {
+            (com.nostrvault.relay.HavenBridge.encodeNpub(entry.pubkey) ?: entry.pubkey).take(16) + "…"
+        }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    ) {
+        AvatarImage(
+            url = profile?.pictureURL,
+            pubkey = entry.pubkey,
+            size = 40.dp,
+            displayName = profile?.bestName,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = name,
+                color = PrimaryText,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            profile?.nip05?.takeIf { it.isNotBlank() }?.let { nip05 ->
+                Text(
+                    text = nip05,
+                    color = SecondaryText,
+                    fontSize = 12.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (entry.isNews) {
+            Spacer(Modifier.width(8.dp))
+            val tagColor = if (entry.isReturning) ZapOrange else colors.primary
+            Text(
+                text = if (entry.isReturning) "Returning" else "New",
+                color = tagColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .background(tagColor.copy(alpha = 0.16f), CircleShape)
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = formatTimestamp(entry.followedAt),
+                color = SecondaryText,
+                fontSize = 12.sp,
+            )
+        }
+    }
+}
+
 /** The list on screen for the current view mode. */
 private fun focusShownNotes(viewModel: DashboardViewModel): List<FeedNote> =
     when (viewModel.viewMode.value) {
         VaultViewMode.NOTES -> viewModel.displayNotes.value
         VaultViewMode.LIKES -> viewModel.displayLikedNotes.value
         VaultViewMode.ZAPS -> viewModel.displayZappedNotes.value
+        VaultViewMode.FOLLOWERS -> emptyList()
     }
 
 /**
  * Outlines the row a notification tap landed on, in the card's own shape, and
  * fades it out when cleared. Port of iOS `relayFocusOutline`.
  */
-private fun Modifier.relayFocusOutline(isFocused: Boolean, isCompact: Boolean): Modifier = composed {
+private fun Modifier.relayFocusOutline(isFocused: Boolean): Modifier = composed {
     val colors = LocalNostrVaultColors.current
     val alpha by animateFloatAsState(
         targetValue = if (isFocused) 1f else 0f,
@@ -3167,7 +3457,7 @@ private fun Modifier.relayFocusOutline(isFocused: Boolean, isCompact: Boolean): 
         Modifier.border(
             width = 2.dp,
             color = colors.primary.copy(alpha = alpha),
-            shape = RoundedCornerShape(if (isCompact) 10.dp else 12.dp),
+            shape = RoundedCornerShape(12.dp),
         )
     }
 }
