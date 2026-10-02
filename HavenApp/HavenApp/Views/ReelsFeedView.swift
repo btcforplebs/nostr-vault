@@ -17,6 +17,8 @@ struct ReelsFeedView: View {
     let onOpenNote: (FeedNote) -> Void
     let onLike: (FeedNote) -> Void
     let onShowGlobal: () -> Void
+    /// Opens the diVine composer.
+    var onPost: () -> Void = {}
     /// A sheet (reply, profile, thread) is over the feed. The reel under it
     /// must go quiet: a sheet does not end the page's appearance.
     var isCovered: Bool = false
@@ -119,7 +121,8 @@ struct ReelsFeedView: View {
                         onProfile: { onProfile(reel.note.pubkey) },
                         onReply: { onReply(reel.note) },
                         onOpenNote: { onOpenNote(reel.note) },
-                        onLike: { onLike(reel.note) }
+                        onLike: { onLike(reel.note) },
+                        onPost: onPost
                     )
                     .containerRelativeFrame([.horizontal, .vertical])
                 }
@@ -218,6 +221,7 @@ private struct ReelPageView: View {
     let onReply: () -> Void
     let onOpenNote: () -> Void
     let onLike: () -> Void
+    let onPost: () -> Void
 
     @ObservedObject private var failures = VideoPlaybackFailures.shared
     @State private var player: AVPlayer?
@@ -527,6 +531,8 @@ private struct ReelPageView: View {
 
     private var actionRail: some View {
         VStack(spacing: 18) {
+            railButton(icon: "plus.app", label: "Post a diVine", action: onPost)
+
             railButton(
                 icon: isLiked ? "heart.fill" : "heart",
                 tint: isLiked ? .red : .white,
