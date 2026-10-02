@@ -198,13 +198,8 @@ struct VaultView: View {
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
-                ViewThatFits {
-                    // Preferred: full inline icon buttons
-                    trailingToolbarInline
-                    // Fallback: compact menu with labeled items
-                    trailingToolbarMenu
-                }
-                .animation(Motion.toggle, value: viewMode)
+                trailingToolbarInline
+                    .animation(Motion.toggle, value: viewMode)
             }
             #endif
         }
