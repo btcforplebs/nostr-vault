@@ -45,7 +45,7 @@ object FeedFilterEngine {
             if (!showReplies && note.isReply) return@filter false
 
             // Spam filter
-            if (FeedNote.isNoiseOrSpam(note.content, note.tags)) return@filter false
+            if (note.isNoise) return@filter false
 
             // For reposts, membership is judged by the reposter (the follow who
             // boosted it), not the original author -- otherwise a repost of
@@ -130,7 +130,7 @@ object FeedFilterEngine {
             // "Everyone" lifts it, as on iOS (#133).
             if (isGlobalMedia && globalRequiresTrust && wotPubkeys.isNotEmpty() && note.pubkey !in wotPubkeys) return@filter false
             if (note.mediaURLs.isEmpty()) return@filter false
-            if (FeedNote.isNoiseOrSpam(note.content, note.tags)) return@filter false
+            if (note.isNoise) return@filter false
             true
         }.sortedByDescending { it.createdAt }
 

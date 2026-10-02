@@ -388,7 +388,8 @@ class NostrService @Inject constructor(
 
         clients[normalizedUrl] = client
 
-        scope.launch {
+        // Collected on Default so a message does not hop through Main on its way there.
+        scope.launch(Dispatchers.Default) {
             client.messages.collect { message ->
                 launch(Dispatchers.Default) { onMessage(message) }
             }
@@ -859,7 +860,7 @@ class NostrService @Inject constructor(
     /** Open a long-lived metadata-pool connection that survives across flushes. */
     private fun createMetadataClient(relayUrl: String): WebSocketClient {
         val client = WebSocketClient(url = relayUrl, scope = scope)
-        scope.launch {
+        scope.launch(Dispatchers.Default) {
             client.messages.collect { msg ->
                 launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
             }
@@ -2097,7 +2098,7 @@ class NostrService @Inject constructor(
                 val client = WebSocketClient(url = relayUrl, scope = scope)
                 tempClientsLock.withLock { temporaryClients.add(client) }
 
-                scope.launch {
+                scope.launch(Dispatchers.Default) {
                     client.messages.collect { msg ->
                         launch(Dispatchers.Default) {
                             processRelayMessage(msg, relayUrl)

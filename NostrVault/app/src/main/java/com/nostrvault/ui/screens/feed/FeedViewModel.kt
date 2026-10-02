@@ -508,6 +508,10 @@ class FeedViewModel @Inject constructor(
         feedService.updateScrollPosition(index, offset)
     }
 
+    fun setFeedScrolling(active: Boolean) {
+        feedService.setFeedScrolling(active)
+    }
+
     fun clearRestoredPosition() {
         feedService.clearRestoredScrollPosition()
     }
