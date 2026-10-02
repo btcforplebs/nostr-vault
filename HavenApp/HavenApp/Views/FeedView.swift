@@ -453,6 +453,8 @@ struct FeedView: View {
     /// layouts so nothing is grouped that will never be drawn.
     @State private var feedThreads: [FeedThread<FeedNote>] = []
     @State private var threadRebuildWork: DispatchWorkItem?
+    /// A gap-fill regroup is already queued; see regroupIfGapFilled.
+    @State private var gapRegroupScheduled = false
 
     // MARK: - Helper Properties
 
@@ -2089,7 +2091,16 @@ struct FeedView: View {
             if let parentId = note.parentEventId { gapIds.insert(parentId) }
         }
         guard !arrivedIds.isDisjoint(with: gapIds) else { return }
-        rebuildThreadsIfNeeded()
+        // Roots stream in every ~0.1 s while a feed fills, and each rebuild
+        // regroups the whole feed on the main thread; per batch, that kept
+        // the phone hot. Regroup at most every 0.4 s. A throttle, not a
+        // debounce: a steady stream must not postpone the regroup forever.
+        guard !gapRegroupScheduled else { return }
+        gapRegroupScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            gapRegroupScheduled = false
+            rebuildThreadsIfNeeded(immediate: true)
+        }
     }
 
     /// noteStats changed — re-resolve rows whose stats actually differ.
