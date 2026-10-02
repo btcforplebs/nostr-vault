@@ -10,7 +10,6 @@ struct ReelsFeedView: View {
     @ObservedObject private var service = ReelsFeedService.shared
     @ObservedObject var feedService: FeedService
     @EnvironmentObject var nostrService: NostrService
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
 
     let onProfile: (String) -> Void
@@ -23,6 +22,9 @@ struct ReelsFeedView: View {
     var isCovered: Bool = false
 
     @State private var currentId: String?
+    /// The app is in the foreground. Not `scenePhase`: the iOS app hosts
+    /// SwiftUI from a UIKit scene delegate, where it never reports `.active`.
+    @State private var appIsActive = true
     /// Sound follows the viewer from reel to reel and across launches.
     @AppStorage("reelsMuted") private var isMuted = false
 
@@ -57,8 +59,11 @@ struct ReelsFeedView: View {
                 AudioSessionManager.shared.enableMixingWithOthers()
             }
         }
-        .onChange(of: service.reels) { _, reels in
-            if currentId == nil || !reels.contains(where: { $0.id == currentId }) {
+        .onChange(of: service.reels) { old, reels in
+            // Until the viewer swipes, newer videos land above the first one
+            // and the pager stays at the top, so the top one is on screen.
+            if currentId == nil || currentId == old.first?.id
+                || !reels.contains(where: { $0.id == currentId }) {
                 currentId = reels.first?.id
             }
             nostrService.fetchMissingProfiles(for: Array(Set(reels.prefix(60).map(\.note.pubkey))))
@@ -73,6 +78,12 @@ struct ReelsFeedView: View {
         // A profile sheet can block its author; drop their reels on the way back.
         .onChange(of: isCovered) { _, covered in
             if !covered { service.pruneBlocked() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppActivity.didBecomeActive)) { _ in
+            appIsActive = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppActivity.willResignActive)) { _ in
+            appIsActive = false
         }
         .onChange(of: currentId) { _, id in
             guard let id else { return }
@@ -100,7 +111,7 @@ struct ReelsFeedView: View {
                     ReelPageView(
                         reel: reel,
                         profile: nostrService.profiles[reel.note.pubkey],
-                        isActive: index == currentIndex && scenePhase == .active && !isCovered,
+                        isActive: index == currentIndex && appIsActive && !isCovered,
                         shouldPrepare: abs(index - currentIndex) <= 1,
                         isLiked: feedService.likedEventIds.contains(reel.id),
                         insets: insets,
@@ -125,6 +136,7 @@ struct ReelsFeedView: View {
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $currentId)
         .scrollIndicators(.hidden)
+        .hiddenTopScrollEdge()
     }
 
     private var emptyState: some View {
@@ -166,6 +178,29 @@ struct ReelsFeedView: View {
         return service.scope == .following
             ? "Nobody you follow has posted a diVine video recently."
             : "No diVine videos came back from the relays."
+    }
+}
+
+private enum AppActivity {
+    #if os(iOS)
+    static let didBecomeActive = UIApplication.didBecomeActiveNotification
+    static let willResignActive = UIApplication.willResignActiveNotification
+    #else
+    static let didBecomeActive = NSApplication.didBecomeActiveNotification
+    static let willResignActive = NSApplication.willResignActiveNotification
+    #endif
+}
+
+private extension View {
+    /// The video runs under the top bar, and the page draws its own fade
+    /// there; the system scroll edge would lay a grey band over it.
+    @ViewBuilder
+    func hiddenTopScrollEdge() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            self
+        }
     }
 }
 
