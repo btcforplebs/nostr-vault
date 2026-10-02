@@ -11,11 +11,11 @@ enum ViewMode {
     case followers
 }
 
-/// Followers from the relay's follower ledger: follows we watched happen,
-/// your web of trust, and everyone else who isn't spam.
+/// Followers from the relay's follower ledger, spam left out: the latest
+/// first, the ones you follow back, and everyone else.
 enum FollowersFilter {
     case new
-    case trusted
+    case mutual
     case others
 }
 

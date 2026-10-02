@@ -58,7 +58,7 @@ extension VaultView {
                 IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: zapsFilter == .myZaps, color: .havenPurple, label: "Given") { zapsFilter = .myZaps }
             } else if viewMode == .followers {
                 IconFilterButton(icon: "sparkles", tooltip: "New", isSelected: followersFilter == .new, color: .havenPurple, label: "New") { followersFilter = .new }
-                IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Trusted", isSelected: followersFilter == .trusted, color: .havenPurple, label: "Trusted") { followersFilter = .trusted }
+                IconFilterButton(icon: "arrow.left.arrow.right", tooltip: "Mutual", isSelected: followersFilter == .mutual, color: .havenPurple, label: "Mutual") { followersFilter = .mutual }
                 IconFilterButton(icon: "person.3.fill", tooltip: "Others", isSelected: followersFilter == .others, color: .havenPurple, label: "Others") { followersFilter = .others }
             }
         }
@@ -101,8 +101,8 @@ extension VaultView {
                 Button { followersFilter = .new } label: {
                     Label("New", systemImage: "sparkles")
                 }
-                Button { followersFilter = .trusted } label: {
-                    Label("Trusted", systemImage: "checkmark.seal.fill")
+                Button { followersFilter = .mutual } label: {
+                    Label("Mutual", systemImage: "arrow.left.arrow.right")
                 }
                 Button { followersFilter = .others } label: {
                     Label("Others", systemImage: "person.3.fill")
@@ -303,8 +303,8 @@ extension VaultView {
             FilterButton(title: "New", icon: "sparkles", color: .havenPurple, isSelected: followersFilter == .new) {
                 followersFilter = .new
             }
-            FilterButton(title: "Trusted", icon: "checkmark.seal.fill", color: Color.havenVerified, isSelected: followersFilter == .trusted) {
-                followersFilter = .trusted
+            FilterButton(title: "Mutual", icon: "arrow.left.arrow.right", color: Color.havenVerified, isSelected: followersFilter == .mutual) {
+                followersFilter = .mutual
             }
             FilterButton(title: "Others", icon: "person.3.fill", color: .secondary, isSelected: followersFilter == .others) {
                 followersFilter = .others

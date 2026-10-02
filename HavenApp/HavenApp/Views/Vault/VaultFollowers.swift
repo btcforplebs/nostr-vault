@@ -21,6 +21,9 @@ struct FollowerSnapshot: Decodable {
         let followedAt: Int64
         /// Follow starts we saw; more than one means they left and came back.
         let follows: Int
+        /// Their latest list time. For a follow that predates the ledger it is
+        /// the only "when" there is, so it orders those.
+        let listAt: Int64
 
         var id: String { pubkey }
         var isSpam: Bool { tier == "spam" }
@@ -33,18 +36,34 @@ struct FollowerSnapshot: Decodable {
         enum CodingKeys: String, CodingKey {
             case pubkey, tier, following, existing, follows
             case followedAt = "followed_at"
+            case listAt = "list_at"
         }
     }
 
     let counts: Counts
     let followers: [Entry]
 
-    func entries(for filter: FollowersFilter) -> [Entry] {
+    /// Mutual = they follow you and you follow them back. `followed` is the
+    /// account's own follow list.
+    func entries(for filter: FollowersFilter, followed: Set<String>) -> [Entry] {
+        let current = followers.filter { $0.following && !$0.isSpam }
         switch filter {
-        case .new: return followers.filter(\.isNews)
-        case .trusted: return followers.filter { $0.following && $0.tier == "trusted" }
-        case .others: return followers.filter { $0.following && $0.tier == "other" }
+        case .new:
+            // Follows we watched happen come first (the relay already sorts
+            // them newest first). Then everyone who followed before tracking
+            // began, newest list first, so the list is never empty.
+            let watched = current.filter(\.isNews)
+            let earlier = current.filter { !$0.isNews }.sorted { $0.listAt > $1.listAt }
+            return Array((watched + earlier).prefix(Self.newLimit))
+        case .mutual: return current.filter { followed.contains($0.pubkey) }
+        case .others: return current.filter { !followed.contains($0.pubkey) }
         }
+    }
+
+    static let newLimit = 100
+
+    func mutualCount(followed: Set<String>) -> Int {
+        followers.filter { $0.following && !$0.isSpam && followed.contains($0.pubkey) }.count
     }
 
     /// Reads the ledger from the embedded relay. Nil while the relay is
@@ -103,7 +122,7 @@ extension VaultView {
 
     func fetchFollowerProfiles() {
         guard let followerSnapshot else { return }
-        let shown = followerSnapshot.entries(for: followersFilter).prefix(300).map(\.pubkey)
+        let shown = followerSnapshot.entries(for: followersFilter, followed: Set(FeedService.shared.followedPubkeys)).prefix(300).map(\.pubkey)
         nostrService.fetchMissingProfiles(for: Array(shown))
     }
 
@@ -120,9 +139,10 @@ extension VaultView {
     @ViewBuilder
     var followersList: some View {
         if let followerSnapshot {
-            let entries = followerSnapshot.entries(for: followersFilter)
+            let followed = Set(FeedService.shared.followedPubkeys)
+            let entries = followerSnapshot.entries(for: followersFilter, followed: followed)
             LazyVStack(spacing: 0) {
-                followersSummary(followerSnapshot.counts)
+                followersSummary(followerSnapshot, followed: followed)
                 if entries.isEmpty {
                     followersEmptyState
                 } else {
@@ -153,14 +173,16 @@ extension VaultView {
         }
     }
 
-    /// One number you can trust, plus the rest. Spam is left out on purpose.
-    private func followersSummary(_ counts: FollowerSnapshot.Counts) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark.seal.fill")
+    /// Mutual follows, plus everyone else. Spam is left out on purpose.
+    private func followersSummary(_ snapshot: FollowerSnapshot, followed: Set<String>) -> some View {
+        let mutual = snapshot.mutualCount(followed: followed)
+        let others = snapshot.counts.trusted + snapshot.counts.others - mutual
+        return HStack(spacing: 6) {
+            Image(systemName: "arrow.left.arrow.right")
                 .foregroundColor(.havenPurple)
-            Text("Trusted \(counts.trusted)")
+            Text("Mutual \(mutual)")
                 .font(.appSystem(size: 15, weight: .bold))
-            Text("+\(counts.others) others")
+            Text("+\(others) others")
                 .font(.appSystem(size: 14, weight: .regular))
                 .foregroundColor(.secondary)
             Spacer()
@@ -174,13 +196,8 @@ extension VaultView {
             Image(systemName: "person.2")
                 .font(.appSystem(size: 40, weight: .thin))
                 .foregroundColor(.havenPurple)
-            Text(followersFilter == .new ? "No new followers yet" : "No followers here yet")
+            Text("No followers here yet")
                 .font(.appSystem(size: 17, weight: .bold))
-            if followersFilter == .new {
-                Text("New follows show up here as they happen")
-                    .font(.appSystem(size: 13))
-                    .foregroundColor(.secondary)
-            }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 60)

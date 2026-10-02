@@ -154,7 +154,7 @@ struct VaultView: View {
         case .followers:
             switch followersFilter {
             case .new: return "New Followers"
-            case .trusted: return "Trusted Followers"
+            case .mutual: return "Mutual Followers"
             case .others: return "Other Followers"
             }
         }
