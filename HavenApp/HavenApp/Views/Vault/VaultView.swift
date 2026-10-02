@@ -97,6 +97,17 @@ struct VaultView: View {
         case compact
     }
 
+    /// The phone's Relay tab has no layout switch, so it always shows full
+    /// rows; a "compact" left in storage from the old toggle would otherwise
+    /// be stuck on with no way off. The Mac keeps its toggle.
+    var rowLayoutMode: NoteLayoutMode {
+        #if os(iOS)
+        return .expanded
+        #else
+        return noteLayoutMode
+        #endif
+    }
+
     // Debounce mechanism for updateDisplayData
     @State var updateTask: Task<Void, Never>?
     @State var updateGeneration: Int = 0
@@ -178,13 +189,8 @@ struct VaultView: View {
             }
             #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
-                ViewThatFits {
-                    // Preferred: full inline icon buttons
-                    trailingToolbarInline
-                    // Fallback: compact menu with labeled items
-                    trailingToolbarMenu
-                }
-                .animation(Motion.toggle, value: viewMode)
+                trailingToolbarInline
+                    .animation(Motion.toggle, value: viewMode)
             }
             #endif
         }
