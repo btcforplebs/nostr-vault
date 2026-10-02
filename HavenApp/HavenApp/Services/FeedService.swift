@@ -1032,6 +1032,8 @@ class FeedService: ObservableObject {
 
     func refresh() {
         guard !isLoadingContacts, !isPaused else { return }
+        // Music has no relay feed to reload.
+        if feedMode == .music { return }
 
         // Ask the embedded relay to catch up its inbox/outbox from external
         // relays too, so a feed pull-to-refresh also freshens the Relay tab,
@@ -1228,7 +1230,10 @@ class FeedService: ObservableObject {
             self?.bgAccumulator.isGlobalMode = isGlobal
         }
 
-        if mode == .live {
+        if mode == .music {
+            // Wavlake, not relays: MusicBrowserView loads its own catalogue,
+            // and the note pipeline stays idle underneath it.
+        } else if mode == .live {
             // Same reasoning as Recipes: LiveFeedService owns this one.
             LiveFeedService.shared.loadIfNeeded()
         } else if mode == .reels {
@@ -1349,7 +1354,7 @@ class FeedService: ObservableObject {
         switch feedMode {
         case .following, .discovery, .articles: return true
         case .media: return mediaFeedMode == .following
-        case .global, .popular, .recipes, .live, .reels: return false
+        case .global, .popular, .recipes, .live, .reels, .music: return false
         }
     }
 
@@ -1375,7 +1380,7 @@ class FeedService: ObservableObject {
         case .following, .articles: return followedPubkeys
         case .media: return mediaFeedMode == .following ? followedPubkeys : []
         case .discovery: return extendedNetworkPubkeys
-        case .global, .popular, .recipes, .live, .reels: return []
+        case .global, .popular, .recipes, .live, .reels, .music: return []
         }
     }
 
@@ -1592,7 +1597,7 @@ class FeedService: ObservableObject {
         switch feedMode {
         case .following, .articles: searchAuthors = followedPubkeys
         case .discovery: searchAuthors = extendedNetworkPubkeys
-        case .global, .popular, .media, .recipes, .live, .reels: searchAuthors = nil
+        case .global, .popular, .media, .recipes, .live, .reels, .music: searchAuthors = nil
         }
         if let searchAuthors, searchAuthors.isEmpty {
             searchCancellable?.cancel()

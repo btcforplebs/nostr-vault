@@ -408,6 +408,7 @@ enum FeedMode: String, CaseIterable {
     case articles = "Articles"
     case recipes = "Recipes"
     case live = "Live"
+    case music = "Music"
 }
 
 extension FeedMode {
@@ -429,6 +430,7 @@ extension FeedMode {
         case .articles: return "doc.richtext"
         case .recipes: return "fork.knife"
         case .live: return "dot.radiowaves.left.and.right"
+        case .music: return "music.note"
         }
     }
 }

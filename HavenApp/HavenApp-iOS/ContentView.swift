@@ -432,6 +432,10 @@ struct iPhoneTabView: View {
         .toolbar(.hidden, for: .tabBar)
         .environment(\.floatingTabBarHeight, tabBarHeight)
         .safeAreaInset(edge: .bottom, spacing: 0) {
+            // The music mini player rides above the tab bar on every tab.
+            // Measured together, so screens inset for both.
+            VStack(spacing: 6) {
+            MiniPlayerBar()
             BottomTabBar(
                 selectedTab: $selectedTab,
                 searchPath: $searchPath,
@@ -444,6 +448,7 @@ struct iPhoneTabView: View {
                 dmService: dmService,
                 feedService: feedService
             )
+            }
             .background(
                 GeometryReader { geo in
                     Color.clear
