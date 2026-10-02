@@ -174,7 +174,7 @@ struct ReelsFeedView: View {
 
     private var emptyMessage: String {
         if service.followSetIsEmpty { return "Switch to Global to see everyone's videos." }
-        if service.loadFailed { return "Reels come from relays, so this one needs a connection." }
+        if service.loadFailed { return "diVines come from relays, so this one needs a connection." }
         return service.scope == .following
             ? "Nobody you follow has posted a diVine video recently."
             : "No diVine videos came back from the relays."

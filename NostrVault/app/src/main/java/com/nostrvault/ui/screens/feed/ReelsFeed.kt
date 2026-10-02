@@ -620,7 +620,7 @@ private fun ReelsEmptyState(
     }
     val message = when {
         followSetIsEmpty -> "Switch to Global to see everyone's videos."
-        loadFailed -> "Reels come from relays, so this one needs a connection."
+        loadFailed -> "diVines come from relays, so this one needs a connection."
         following -> "Nobody you follow has posted a diVine video recently."
         else -> "No diVine videos came back from the relays."
     }
