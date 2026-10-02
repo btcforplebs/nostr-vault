@@ -152,6 +152,20 @@ extension ToolbarContent {
     }
 }
 
+extension View {
+    /// With the system toolbar glass hidden, iOS 26 switches the scroll edge
+    /// under the top bar to its hard style: a dark band with a cut edge.
+    /// Keep the soft fade the bar had with the system glass.
+    @ViewBuilder
+    func softTopScrollEdge() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            self
+        }
+    }
+}
+
 @available(macOS 15.0, iOS 18.0, *)
 private struct ScrollChromeModifier: ViewModifier {
     var isAtTopBinding: Binding<Bool>?
@@ -2220,6 +2234,7 @@ struct FeedView: View {
                 .tint(Color.secondary.opacity(0.6))
                 .scrollPosition(id: $scrolledNoteID)
                 .scrollDirectionTracking(feedService: feedService, isAtTop: $isAtTop)
+                .softTopScrollEdge()
                 .onChange(of: feedService.isLoadingFeed) { _, isLoading in
                     if !isLoading && feedService.shouldScrollToTopOnLoad {
                         feedService.shouldScrollToTopOnLoad = false
