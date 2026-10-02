@@ -1897,6 +1897,18 @@ class FeedService @Inject constructor(
     }
 
     /**
+     * The note a quote of [id] should cite: the original when [id] names a
+     * kind-6 repost or the original it carries. See [FeedNote.quoteTarget].
+     */
+    fun quoteTarget(id: String): FeedNote? {
+        val note = findNote(id) ?: return null
+        return FeedNote.quoteTarget(note) { ref ->
+            _notes.value.firstOrNull { it.id == ref && it.kind != 6 }
+                ?: _parentNotesCache.value[ref]?.takeIf { it.id == ref && it.kind != 6 }
+        }
+    }
+
+    /**
      * Register a note in the supplementary cache so that [findNote] can locate
      * it even when the note isn't part of the main feed list. Called by
      * ProfileViewModel and NoteDetailViewModel so ComposeNoteScreen can resolve

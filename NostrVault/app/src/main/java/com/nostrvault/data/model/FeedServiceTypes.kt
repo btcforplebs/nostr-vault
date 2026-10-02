@@ -164,6 +164,48 @@ data class FeedNote(
             }
         }
 
+        /**
+         * The note a quote of [note] should cite. Quoting a kind-6 repost has
+         * to cite the note it carries, by id *and* author: the composer gets
+         * the original's id ([effectiveEventId]) but used to read the author
+         * off the repost, so a bare repost's `q`/`p` tags and preview named
+         * the reposter.
+         *
+         * Uses the loaded original when [loadedOriginal] has it. Otherwise
+         * rebuilds it from the repost, trusting the author/body/tags only if
+         * the constructor really unpacked the NIP-18 embedded event. That is
+         * read from the tags, not the content: a repost's own tags always hold
+         * `["e", repostedEventId]` and no event can tag its own id, so a note
+         * still holding that tag was not unpacked and carries the reposter's
+         * identity — the author then comes from the repost's `p` tag.
+         * Mirrors iOS `FeedService.quoteTarget(for:)` (#66, #67).
+         */
+        fun quoteTarget(note: FeedNote, loadedOriginal: (String) -> FeedNote?): FeedNote {
+            if (note.kind != 6) return note
+            val refId = note.repostedEventId ?: return note
+            loadedOriginal(refId)?.takeIf { it.id == refId && it.kind != 6 }?.let { return it }
+            val stillWrapped = note.tags.any { it.size >= 2 && it[0] == "e" && it[1] == refId }
+            if (!stillWrapped) {
+                return FeedNote(
+                    id = refId,
+                    pubkey = note.pubkey,
+                    content = note.content,
+                    createdAt = note.createdAt,
+                    tags = note.tags,
+                    kind = 1,
+                )
+            }
+            val author = note.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: note.pubkey
+            return FeedNote(
+                id = refId,
+                pubkey = author,
+                content = "",
+                createdAt = note.createdAt,
+                tags = emptyList(),
+                kind = 1,
+            )
+        }
+
         // Regex patterns (compiled once)
         private val MEDIA_REGEX = Regex(
             """https?://[^\s<>")\]]*\.(?:jpg|jpeg|png|gif|webp|svg|bmp|tiff|avif|mp4|mov|webm|avi|mkv|m4v|mp3|m4a|wav|ogg|aac|flac|opus)(?:[?#][^\s<>")\]]*[^\s<>")\].,;:!?'"])?""",
@@ -208,10 +250,14 @@ data class FeedNote(
                     if (innerContent != null && innerPubkey != null) {
                         resolvedPubkey = innerPubkey
                         resolvedContent = innerContent
-                        // Parse inner tags if present
+                        // The inner event's tags, never the repost's: keeping the
+                        // outer `e`/`p` here would make an unpacked repost look
+                        // bare to [quoteTarget], which tells them apart by tags.
                         val innerTags = inner["tags"]
-                        if (innerTags != null) {
-                            resolvedTags = Json.decodeFromString(innerTags.toString())
+                        resolvedTags = if (innerTags != null) {
+                            Json.decodeFromString(innerTags.toString())
+                        } else {
+                            emptyList()
                         }
                         if (resolvedRepostedBy == null) resolvedRepostedBy = pubkey
                     }
