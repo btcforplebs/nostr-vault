@@ -515,49 +515,116 @@ class BlossomService @Inject constructor(
     }
 
     /**
-     * Push a local blob to all external mirrors.
+     * What pushing one blob from this device's relay to the outside servers
+     * did. "Pushed to mirrors" used to be shown whatever happened, including
+     * when every server refused the upload.
      */
-    suspend fun pushLocalToMirrors(sha256: String) = withContext(Dispatchers.IO) {
-        val localUrl = localBlossomURL() ?: return@withContext
+    sealed class MirrorPushResult {
+        /** Every server tried accepted the blob. */
+        data class AllAccepted(val count: Int) : MirrorPushResult()
 
-        // Download from local
-        val data = try {
-            val request = Request.Builder().url("$localUrl/$sha256").get().build()
-            val response = localClient.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext
-            readBodyCapped(response, MAX_BLOB_BYTES) ?: return@withContext
-        } catch (e: Exception) {
-            Log.w(TAG, "Local download failed: ${e.message}")
-            return@withContext
-        }
+        /** Some servers accepted it, some did not. */
+        data class Partial(val accepted: Int, val attempted: Int) : MirrorPushResult()
 
-        // Sign once and reuse across all mirrors (external signers fail on
-        // concurrent signing requests).
-        val authHeader = createAuthHeader("upload", sha256)
-        if (authHeader.isEmpty()) {
-            Log.e(TAG, "Push aborted: could not create Blossom auth event (signer unavailable)")
-            return@withContext
-        }
+        /** Every server tried refused it or could not be reached. */
+        data class AllFailed(val attempted: Int) : MirrorPushResult()
 
-        val mirrors = configStore.config.value.activeBlossomMirrors
-        val jobs = mirrors.map { mirror ->
-            async {
-                try {
-                    uploadToServer(
-                        source = UploadSource.Data(data),
-                        serverUrl = mirror,
-                        sha256 = sha256,
-                        contentType = "application/octet-stream",
-                        authHeader = authHeader,
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "Push to mirror $mirror failed: ${e.message}")
-                    null
-                }
+        /** No outside server is configured (or none of the requested ones is). */
+        data object NoOutsideServer : MirrorPushResult()
+
+        /** The blob could not be read from this device's relay. */
+        data object NotOnDevice : MirrorPushResult()
+
+        /** The upload could not be signed. */
+        data object SignerUnavailable : MirrorPushResult()
+
+        /** At least one outside server now holds the blob. */
+        val anyAccepted: Boolean get() = this is AllAccepted || this is Partial
+
+        /** One short line for a toast. Wording follows iOS (PR #109). */
+        val message: String
+            get() = when (this) {
+                is AllAccepted -> "Pushed to mirrors"
+                is Partial -> "Mirrored to $accepted of $attempted Blossom servers"
+                is AllFailed -> "Could not push to mirrors"
+                NoOutsideServer -> "No Blossom mirrors configured"
+                NotOnDevice -> "Could not read this file from your vault"
+                SignerUnavailable -> "Could not sign the upload"
+            }
+
+        companion object {
+            fun of(accepted: Int, attempted: Int): MirrorPushResult = when {
+                attempted <= 0 -> NoOutsideServer
+                accepted >= attempted -> AllAccepted(attempted)
+                accepted > 0 -> Partial(accepted, attempted)
+                else -> AllFailed(attempted)
             }
         }
-        jobs.awaitAll()
     }
+
+    /**
+     * Push a blob that is already in this device's relay to the outside
+     * servers. [only] limits the upload to those servers (the ones missing the
+     * blob); null means every configured server. Port of iOS
+     * `pushLocalToMirrors(sha256:only:)`.
+     */
+    suspend fun pushLocalToMirrors(sha256: String, only: Collection<String>? = null): MirrorPushResult =
+        withContext(Dispatchers.IO) {
+            val configured = configStore.config.value.activeBlossomMirrors
+            val mirrors = if (only == null) configured else configured.filter { it in only }
+            if (mirrors.isEmpty()) {
+                Log.w(TAG, "Push of ${sha256.take(8)}: no outside Blossom server to push to")
+                return@withContext MirrorPushResult.NoOutsideServer
+            }
+
+            val localUrl = localBlossomURL() ?: return@withContext MirrorPushResult.NotOnDevice
+
+            // Read from this device's relay.
+            var contentType = "application/octet-stream"
+            val data = try {
+                val request = Request.Builder().url("$localUrl/$sha256").get().build()
+                localClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.w(TAG, "Push of ${sha256.take(8)}: local read HTTP ${response.code}")
+                        return@withContext MirrorPushResult.NotOnDevice
+                    }
+                    response.header("Content-Type")?.takeIf { it.isNotBlank() }?.let { contentType = it }
+                    readBodyCapped(response, MAX_BLOB_BYTES)
+                } ?: return@withContext MirrorPushResult.NotOnDevice
+            } catch (e: Exception) {
+                Log.w(TAG, "Local download failed: ${e.message}")
+                return@withContext MirrorPushResult.NotOnDevice
+            }
+
+            // Sign once and reuse across all mirrors (external signers fail on
+            // concurrent signing requests).
+            val authHeader = createAuthHeader("upload", sha256)
+            if (authHeader.isEmpty()) {
+                Log.e(TAG, "Push aborted: could not create Blossom auth event (signer unavailable)")
+                return@withContext MirrorPushResult.SignerUnavailable
+            }
+
+            val accepted = mirrors.map { mirror ->
+                async {
+                    try {
+                        uploadToServer(
+                            source = UploadSource.Data(data),
+                            serverUrl = mirror,
+                            sha256 = sha256,
+                            contentType = contentType,
+                            authHeader = authHeader,
+                        ) != null
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Push to mirror $mirror failed: ${e.message}")
+                        false
+                    }
+                }
+            }.awaitAll().count { it }
+
+            MirrorPushResult.of(accepted, mirrors.size).also {
+                Log.i(TAG, "Push of ${sha256.take(8)}: $accepted of ${mirrors.size} servers accepted")
+            }
+        }
 
     /**
      * Mirror all blobs from external to local.

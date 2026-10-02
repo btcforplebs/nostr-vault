@@ -53,6 +53,9 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.NoteStats
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
+import com.nostrvault.service.MediaSaveService
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -765,6 +768,8 @@ internal fun FullScreenMediaPager(
     viewModel: FeedMediaMirrorViewModel = hiltViewModel(),
 ) {
     val mirrorState by viewModel.state.collectAsState()
+    val saveState by viewModel.saveState.collectAsState()
+    val context = LocalContext.current
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -869,16 +874,34 @@ internal fun FullScreenMediaPager(
                 }
             }
 
-            if (!isInPiP && viewModel.canMirror) {
-                MirrorToBlossomPill(
-                    state = mirrorState,
-                    onMirror = { viewModel.mirror(currentUrl) },
+            // Top row, like iOS (PR #120): Save, then Mirror / Mirrored, one-word
+            // labels. Messages go out as system toasts: the in-app pills draw
+            // under this overlay.
+            if (!isInPiP) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .statusBarsPadding()
                         .padding(8.dp)
                         .graphicsLayer { alpha = overlayAlpha },
-                )
+                ) {
+                    SaveToGalleryPill(
+                        state = saveState,
+                        onSave = {
+                            viewModel.saveToGallery(currentUrl) { message ->
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
+                    if (viewModel.canMirror) {
+                        MirrorToBlossomPill(
+                            state = mirrorState,
+                            onMirror = { viewModel.mirror(currentUrl) },
+                        )
+                    }
+                }
             }
 
             // Page-position dots, only when the note carries more than one item.
@@ -927,13 +950,21 @@ private fun MirrorToBlossomPill(
     val clickable = state is FeedMediaMirrorViewModel.MirrorState.Idle ||
         state is FeedMediaMirrorViewModel.MirrorState.Failed
 
+    val spoken = when (state) {
+        FeedMediaMirrorViewModel.MirrorState.Mirroring -> "Mirroring to Blossom"
+        FeedMediaMirrorViewModel.MirrorState.Mirrored -> "Mirrored to Blossom"
+        is FeedMediaMirrorViewModel.MirrorState.Failed -> "Mirror failed, retry"
+        FeedMediaMirrorViewModel.MirrorState.Idle -> "Mirror to Blossom"
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .clip(CircleShape)
             .background(bg)
             .then(if (clickable) Modifier.clickable(onClick = onMirror) else Modifier)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .semantics(mergeDescendants = true) { contentDescription = spoken }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         when (state) {
             FeedMediaMirrorViewModel.MirrorState.Mirroring -> {
@@ -948,19 +979,71 @@ private fun MirrorToBlossomPill(
             FeedMediaMirrorViewModel.MirrorState.Mirrored -> {
                 Icon(NostrVaultIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Mirrored to Blossom", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Mirrored", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             is FeedMediaMirrorViewModel.MirrorState.Failed -> {
                 Icon(NostrVaultIcons.Dismiss, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Mirror failed — retry", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Retry", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             FeedMediaMirrorViewModel.MirrorState.Idle -> {
                 Icon(NostrVaultIcons.Backup, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Mirror to Blossom", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Mirror", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+/** Capsule that saves the viewed photo or video to the device gallery. */
+@Composable
+private fun SaveToGalleryPill(
+    state: FeedMediaMirrorViewModel.SaveState,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val saved = state == FeedMediaMirrorViewModel.SaveState.Saved
+    val bg = if (saved) Color(0xFF33CC99).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.6f)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(CircleShape)
+            .background(bg)
+            .then(
+                if (state == FeedMediaMirrorViewModel.SaveState.Idle) Modifier.clickable(onClick = onSave)
+                else Modifier,
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (saved) "Saved to gallery" else "Save to gallery"
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        if (state == FeedMediaMirrorViewModel.SaveState.Saving) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                color = Color.White,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                imageVector = if (saved) NostrVaultIcons.Check else NostrVaultIcons.Import,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = when (state) {
+                FeedMediaMirrorViewModel.SaveState.Saving -> "Saving…"
+                FeedMediaMirrorViewModel.SaveState.Saved -> "Saved"
+                FeedMediaMirrorViewModel.SaveState.Idle -> "Save"
+            },
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
     }
 }
 
@@ -968,7 +1051,36 @@ private fun MirrorToBlossomPill(
 class FeedMediaMirrorViewModel @Inject constructor(
     private val blossomService: BlossomService,
     private val mediaCacheService: MediaCacheService,
+    private val mediaSaveService: MediaSaveService,
 ) : ViewModel() {
+
+    enum class SaveState { Idle, Saving, Saved }
+
+    private val _saveState = MutableStateFlow(SaveState.Idle)
+    val saveState = _saveState.asStateFlow()
+
+    /** The URL on screen; a save that finishes after the user paged away leaves the new page's state alone. */
+    private var openUrl: String? = null
+
+    /**
+     * Save the media on screen to the device gallery (MediaStore, no storage
+     * permission on Android 10+). [onMessage] gets one short line for a toast.
+     * Port of iOS FeedMediaViewer.saveToPhotosTapped().
+     */
+    fun saveToGallery(url: String, onMessage: (String) -> Unit) {
+        if (_saveState.value != SaveState.Idle) return
+        viewModelScope.launch {
+            _saveState.value = SaveState.Saving
+            // Feed videos are recognised by extension, so that names the type
+            // when the server only says application/octet-stream.
+            val hint = if (isVideoUrl(url)) MediaSaveService.mimeTypeForExtension(url) else null
+            val result = mediaSaveService.saveToGallery(url, hint)
+            if (openUrl == url) {
+                _saveState.value = if (result.isSuccess) SaveState.Saved else SaveState.Idle
+            }
+            onMessage(if (result.isSuccess) "Saved to gallery" else "Couldn't save to gallery")
+        }
+    }
 
     sealed interface MirrorState {
         data object Idle : MirrorState
@@ -989,6 +1101,8 @@ class FeedMediaMirrorViewModel @Inject constructor(
      * otherwise offer the mirror action. Mirrors iOS FeedMediaViewer.updateMirrorStatus().
      */
     fun onOpen(url: String) {
+        openUrl = url
+        _saveState.value = SaveState.Idle
         val hash = extractSha256(url)
         _state.value = if (hash != null && mediaCacheService.isInLocalBlossom(hash)) {
             MirrorState.Mirrored
