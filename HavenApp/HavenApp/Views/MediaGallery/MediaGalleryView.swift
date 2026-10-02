@@ -510,6 +510,9 @@ struct MediaGalleryChangeHandlers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .blossomDirectoryChanged)) { _ in
                 onBlossomDirectoryChanged()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .havenMediaCacheCleared)) { _ in
+                onScheduleUpdate()
+            }
     }
 }
 

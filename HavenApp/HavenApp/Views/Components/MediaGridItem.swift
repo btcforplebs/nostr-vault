@@ -15,6 +15,8 @@ struct MediaGridItem: View {
     @State private var showingReportDialog = false
     @State private var isMirroringToLocal = false
     @State private var isPushingToMirrors = false
+    @State private var onPhone = false
+    @ObservedObject private var backupStore = BlossomBackupStore.shared
 
     var body: some View {
         Color.clear
@@ -57,12 +59,28 @@ struct MediaGridItem: View {
             )
             .background(Color.black.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .bottomTrailing) {
+                // How many of your Blossom servers hold it, so you can spot
+                // what is not backed up without opening it.
+                if let hash, !configService.config.activeBlossomMirrors.isEmpty {
+                    BlossomBackupBadge(hash: hash, compact: true)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.black.opacity(0.55)))
+                        .padding(4)
+                        .allowsHitTesting(false)
+                }
+            }
             .contentShape(Rectangle())
             .scaleEffect(isHovered ? 1.04 : 1.0)
             .zIndex(isHovered ? 1.0 : 0.0)
             .animation(Motion.control, value: isHovered)
             .onHover { hovering in isHovered = hovering }
             .onTapGesture { onSelect() }
+            .task(id: item.id) { refreshOnPhone() }
+            .onReceive(NotificationCenter.default.publisher(for: .havenMediaCacheCleared)) { _ in
+                refreshOnPhone()
+            }
         .contextMenu {
             Button(action: {
                 PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
@@ -79,21 +97,21 @@ struct MediaGridItem: View {
             }
             #endif
 
-            if !isOnMirror && configService.hasExternalShareURL(for: URL(string: "https://localhost")!) {
+            if !onPhone {
                 Button(action: {
                     mirrorToLocalRelay()
                 }) {
-                    Label(isMirroringToLocal ? "Mirroring..." : "Mirror to Blossom", systemImage: "arrow.down.circle")
+                    Label(isMirroringToLocal ? "Saving..." : "Save to Vault", systemImage: "internaldrive")
                 }
                 .disabled(isMirroringToLocal)
             }
 
-            // Push local-only items to external mirrors
-            if !isRemoteMedia && !configService.config.activeBlossomMirrors.isEmpty {
+            // On the phone, and some Blossom server does not have it yet
+            if needsMirror {
                 Button(action: {
                     pushToMirrors()
                 }) {
-                    Label(isPushingToMirrors ? "Pushing..." : "Push to Mirrors", systemImage: "arrow.up.circle")
+                    Label(isPushingToMirrors ? "Mirroring..." : "Mirror to Blossom", systemImage: "arrow.up.circle")
                 }
                 .disabled(isPushingToMirrors)
             }
@@ -161,79 +179,43 @@ struct MediaGridItem: View {
         }
     }
 
-    private var isRemoteMedia: Bool {
-        let host = item.url.host?.lowercased() ?? ""
-        return host != "localhost" && host != "127.0.0.1" && host != "0.0.0.0"
+    private var hash: String? { MediaCacheService.blossomHash(in: item.url) }
+
+    /// On the phone and at least one Blossom server is not known to have it.
+    private var needsMirror: Bool {
+        guard onPhone, let hash else { return false }
+        return backupStore.summary(hash: hash, mirrors: configService.config.activeBlossomMirrors)?.needsMirror == true
     }
 
-    private var isOnMirror: Bool {
-        let currentMirrorHosts: Set<String> = Set(
-            configService.config.activeBlossomMirrors.compactMap {
-                URL(string: $0)?.host?.lowercased()
-            }
-        )
-        guard let host = item.url.host?.lowercased() else { return false }
-        return currentMirrorHosts.contains(host) || host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0"
+    private func refreshOnPhone() {
+        onPhone = MediaCacheService.shared.getSource(for: item.url) == .blossom
     }
 
     private func mirrorToLocalRelay() {
         isMirroringToLocal = true
-        Task {
-            let service = BlossomService(configService: configService, nostrService: nostrService)
-            let success = await service.downloadFromURL(url: item.url)
-            await MainActor.run {
-                isMirroringToLocal = false
-                if success {
-                    ActionToastManager.shared.show(
-                        icon: "internaldrive.fill",
-                        message: String(localized: "media.mirror.saved"),
-                        color: Color.havenVerified
-                    )
-                } else {
-                    ErrorNotificationManager.shared.show(
-                        String(localized: "media.mirror.failed"),
-                        icon: "exclamationmark.icloud.fill"
-                    )
-                }
-                if success {
-                    onMirrorComplete?()
-                }
-            }
+        Task { @MainActor in
+            let outcome = await MediaBackupActions.saveToVault(url: item.url, configService: configService, nostrService: nostrService)
+            isMirroringToLocal = false
+            refreshOnPhone()
+            MediaBackupActions.announce(outcome)
+            if outcome != .failed { onMirrorComplete?() }
         }
     }
 
     private func pushToMirrors() {
+        guard let hash else {
+            ErrorNotificationManager.shared.show(
+                String(localized: "media.push.error.noHash"),
+                icon: "exclamationmark.icloud.fill",
+                style: .warning
+            )
+            return
+        }
         isPushingToMirrors = true
-        Task {
-            let service = BlossomService(configService: configService, nostrService: nostrService)
-            let sha256 = item.url.deletingPathExtension().lastPathComponent
-            guard sha256.count == 64 && sha256.allSatisfy({ $0.isHexDigit }) else {
-                await MainActor.run {
-                    isPushingToMirrors = false
-                    ErrorNotificationManager.shared.show(
-                        String(localized: "media.push.error.noHash"),
-                        icon: "exclamationmark.icloud.fill",
-                        style: .warning
-                    )
-                }
-                return
-            }
-            let success = await service.pushLocalToMirrors(sha256: sha256)
-            await MainActor.run {
-                isPushingToMirrors = false
-                if success {
-                    ActionToastManager.shared.show(
-                        icon: "icloud.and.arrow.up.fill",
-                        message: String(localized: "media.push.succeeded"),
-                        color: Color.havenVerified
-                    )
-                } else {
-                    ErrorNotificationManager.shared.show(
-                        String(localized: "media.push.failed"),
-                        icon: "exclamationmark.icloud.fill"
-                    )
-                }
-            }
+        Task { @MainActor in
+            let ok = await MediaBackupActions.mirrorMissing(hash: hash, configService: configService, nostrService: nostrService)
+            isPushingToMirrors = false
+            MediaBackupActions.announceMirror(ok)
         }
     }
 

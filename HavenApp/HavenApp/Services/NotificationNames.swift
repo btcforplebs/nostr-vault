@@ -1,6 +1,8 @@
 import Foundation
 
 extension Notification.Name {
+    /// Posted after the media cache is cleared, so open views re-read where each file lives.
+    static let havenMediaCacheCleared = Notification.Name("com.haven.mediaCacheCleared")
     /// Posted when the user taps a push notification about a relay event — navigates to Viewer tab.
     static let havenOpenViewer = Notification.Name("com.haven.openViewer")
     /// Posted when the user taps a push notification about a following feed note — navigates to Feed tab.
