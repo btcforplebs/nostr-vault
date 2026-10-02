@@ -240,14 +240,14 @@ struct DashboardView: View {
                 .frame(minHeight: 350, maxHeight: .infinity, alignment: .top)
             }
             .refreshable {
+                // A light top-up, never a full import. Pull-down used to run
+                // Import Notes, which stops the relay and re-downloads
+                // everything: one stray pull while scrolling (now easy, with
+                // the bars folding on scroll) started it without anyone
+                // asking, and it heated the phone. Import Notes is the button.
                 guard relayManager.isRunning && !relayManager.isImporting else { return }
-                isPreparingImport = true
-                relayManager.importNotes(config: configService.config)
-
-                while relayManager.isImporting {
-                    try? await Task.sleep(nanoseconds: 100_000_000)
-                }
-                isPreparingImport = false
+                RequestRelaySyncC()
+                statsService.refreshStats()
             }
         }
         .background(Color.platformWindowBackground.ignoresSafeArea())
