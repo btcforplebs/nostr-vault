@@ -28,6 +28,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,6 +83,7 @@ import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.service.ScrollPosition
 import com.nostrvault.ui.theme.*
+import com.nostrvault.service.FeedLanguage
 import java.text.DateFormat
 
 /**
@@ -129,6 +131,9 @@ fun FeedScreen(
     val showReplies by viewModel.showReplies.collectAsState()
     val mediaFollowingOnly by viewModel.mediaFollowingOnly.collectAsState()
     val popularFilter by viewModel.popularFilter.collectAsState()
+    val globalShowsEveryone by viewModel.globalShowsEveryone.collectAsState()
+    val globalFeedLanguages by viewModel.globalFeedLanguages.collectAsState()
+    val trustGraphReady by viewModel.trustGraphReady.collectAsState()
     val showEngagementStats by viewModel.showEngagementStats.collectAsState()
     val pendingCount by viewModel.pendingNoteCount.collectAsState()
     val parentNotes by viewModel.parentNotesCache.collectAsState()
@@ -214,6 +219,8 @@ fun FeedScreen(
     // Reels' Global scope is unmoderated video from the whole network; it sits
     // behind a warning (iOS parity: the same one Media's Global uses there).
     var showGlobalReelsWarning by remember { mutableStateOf(false) }
+    // Global's Everyone scope sits behind the same warning (iOS parity).
+    var showGlobalEveryoneWarning by remember { mutableStateOf(false) }
     val reelsScope by viewModel.reelsScope.collectAsState()
 
     // Trigger load-more when near bottom
@@ -365,6 +372,15 @@ fun FeedScreen(
                 mediaFollowingOnly = mediaFollowingOnly,
                 popularFilter = popularFilter,
                 showEngagementStats = showEngagementStats,
+                globalShowsEveryone = globalShowsEveryone,
+                globalFeedLanguages = globalFeedLanguages,
+                // Reads the setting at tap time; leaving the Web of Trust
+                // goes through the warning, coming back does not.
+                onToggleTrustScope = {
+                    if (viewModel.globalShowsEveryone.value) viewModel.setGlobalShowsEveryone(false)
+                    else showGlobalEveryoneWarning = true
+                },
+                onSetGlobalLanguages = viewModel::setGlobalFeedLanguages,
                 reelsGlobal = reelsScope == ReelsScope.GLOBAL,
                 onReelsFollowing = { viewModel.setReelsScope(ReelsScope.FOLLOWING) },
                 onReelsGlobal = { showGlobalReelsWarning = true },
@@ -503,6 +519,12 @@ fun FeedScreen(
                         } else {
                             "No follow lists came back from your relays \u2014 try refreshing"
                         }
+                    } else if (feedMode == FeedMode.GLOBAL && !globalShowsEveryone && !trustGraphReady) {
+                        // Global fails closed without the trust graph; say so
+                        // rather than "waiting for notes" over a full inbox.
+                        "Building your Web of Trust\u2026 Tap the shield to see everyone"
+                    } else if (feedMode == FeedMode.GLOBAL && globalFeedLanguages.isNotEmpty()) {
+                        "Nothing in ${FeedLanguage.summary(globalFeedLanguages)} yet"
                     } else {
                         null
                     },
@@ -659,6 +681,27 @@ fun FeedScreen(
                 )
             }
         }
+    }
+
+    if (showGlobalEveryoneWarning) {
+        AlertDialog(
+            onDismissRequest = { showGlobalEveryoneWarning = false },
+            title = { Text("Sensitive Content Warning") },
+            text = {
+                Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.setGlobalShowsEveryone(true)
+                        showGlobalEveryoneWarning = false
+                    },
+                ) { Text("Proceed", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGlobalEveryoneWarning = false }) { Text("Cancel") }
+            },
+        )
     }
 
     if (showGlobalReelsWarning) {
@@ -1218,6 +1261,10 @@ private fun FeedTopBar(
     mediaFollowingOnly: Boolean,
     popularFilter: PopularFilter,
     showEngagementStats: Boolean,
+    globalShowsEveryone: Boolean,
+    globalFeedLanguages: List<String>,
+    onToggleTrustScope: () -> Unit,
+    onSetGlobalLanguages: (List<String>) -> Unit,
     reelsGlobal: Boolean,
     onReelsFollowing: () -> Unit,
     onReelsGlobal: () -> Unit,
@@ -1410,6 +1457,11 @@ private fun FeedTopBar(
                     }
                 }
                 FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL -> {
+                    if (feedMode == FeedMode.GLOBAL) {
+                        // Who Global shows, and in which languages (iOS #128/#133).
+                        TrustScopeButton(everyone = globalShowsEveryone, onClick = onToggleTrustScope)
+                        LanguageFilterButton(selected = globalFeedLanguages, onChange = onSetGlobalLanguages)
+                    }
                     // Auto-load posts
                     IconButton(onClick = onToggleAutoLoad, modifier = Modifier.size(32.dp)) {
                         Icon(
@@ -1457,6 +1509,10 @@ private fun FeedTopBar(
                             modifier = Modifier.size(18.dp),
                         )
                     }
+                    // Media's Global gets the same Web of Trust / Everyone shield.
+                    if (!mediaFollowingOnly) {
+                        TrustScopeButton(everyone = globalShowsEveryone, onClick = onToggleTrustScope)
+                    }
                 }
                 FeedMode.POPULAR -> {
                     // Follows filter
@@ -1503,6 +1559,98 @@ private fun FeedTopBar(
                 }
             } } }
         } }
+    }
+}
+
+/**
+ * Who Global (and Media's Global) shows: the shield is your Web of Trust, the
+ * globe (in orange) is everyone. One button, so the pill keeps its width.
+ */
+@Composable
+private fun TrustScopeButton(everyone: Boolean, onClick: () -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(32.dp)
+            .semantics {
+                stateDescription = if (everyone) "Everyone" else "Web of Trust"
+            },
+    ) {
+        Icon(
+            imageVector = if (everyone) NostrVaultIcons.Globe else NostrVaultIcons.TrustShield,
+            contentDescription = if (everyone) {
+                "Everyone: unfiltered posts. Tap for your Web of Trust"
+            } else {
+                "Web of Trust: people you follow and the people they follow. Tap for everyone"
+            },
+            tint = if (everyone) ZapOrange else colors.primary,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+/**
+ * Global's language picker. Pick any number of languages; none picked shows
+ * every language. The menu stays open between picks so several can be
+ * chosen in one go, as on iOS. The device's own languages come first.
+ */
+@Composable
+private fun LanguageFilterButton(selected: List<String>, onChange: (List<String>) -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    var expanded by remember { mutableStateOf(false) }
+    val languages = remember {
+        val locales = android.os.LocaleList.getDefault()
+        FeedLanguage.pickerList((0 until locales.size()).map { locales[it].toLanguageTag() })
+    }
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .size(32.dp)
+                .semantics { stateDescription = FeedLanguage.summary(selected) },
+        ) {
+            Icon(
+                imageVector = if (selected.isEmpty()) NostrVaultIcons.LanguagesOutline else NostrVaultIcons.Languages,
+                contentDescription = "Languages",
+                tint = if (selected.isEmpty()) SecondaryText else colors.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 420.dp),
+        ) {
+            DropdownMenuItem(
+                text = { Text("All languages") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (selected.isEmpty()) NostrVaultIcons.Check else NostrVaultIcons.GlobeOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                onClick = { onChange(emptyList()) },
+            )
+            HorizontalDivider()
+            languages.forEach { language ->
+                val isOn = language.code in selected
+                DropdownMenuItem(
+                    text = { Text(language.displayName()) },
+                    leadingIcon = {
+                        if (isOn) {
+                            Icon(NostrVaultIcons.Check, contentDescription = "Selected", modifier = Modifier.size(18.dp))
+                        } else {
+                            Spacer(Modifier.size(18.dp))
+                        }
+                    },
+                    onClick = {
+                        onChange(if (isOn) selected - language.code else selected + language.code)
+                    },
+                )
+            }
+        }
     }
 }
 

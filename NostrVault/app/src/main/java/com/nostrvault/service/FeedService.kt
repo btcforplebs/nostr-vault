@@ -11,6 +11,7 @@ import com.nostrvault.data.local.EngagementTracker
 import com.nostrvault.data.model.*
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.relay.HavenConfig
 import com.nostrvault.ui.notification.FollowKind
 import com.nostrvault.ui.notification.NotificationManager
 import kotlinx.coroutines.*
@@ -426,6 +427,10 @@ class FeedService @Inject constructor(
             _connectionColor.value = "yellow"
 
             loadContactList()
+
+            // Global is filtered against the trust graph; pick up one the relay
+            // has written since the last read.
+            if (isGlobalLikeMode()) loadWotPubkeys()
 
             when (_feedMode.value) {
                 FeedMode.DISCOVERY -> {
@@ -1220,7 +1225,10 @@ class FeedService @Inject constructor(
                 FeedMode.MEDIA -> {
                     val authors = when (_mediaFeedMode.value) {
                         MediaFeedMode.FOLLOWING -> _followedPubkeys.value.take(500)
-                        MediaFeedMode.GLOBAL -> _wotPubkeys.value.take(500).toList()
+                        // "Everyone" lifts the Web of Trust scope, like Global notes.
+                        MediaFeedMode.GLOBAL ->
+                            if (configStore.config.value.globalShowsEveryone) emptyList()
+                            else _wotPubkeys.value.take(500).toList()
                     }
                     if (authors.isNotEmpty()) {
                         append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
@@ -1598,28 +1606,102 @@ class FeedService @Inject constructor(
             .mapNotNull { (npub, max) -> nostrService.npubToHex(npub)?.let { it to max } }
             .toMap()
 
-        _filteredNotes.value = feedFilterEngine.filterFeedNotes(
-            notes = _notes.value,
-            mode = _feedMode.value,
-            blocked = blockedPubkeys,
-            showReposts = _showReposts.value,
-            showReplies = _showReplies.value,
-            followedPubkeys = _followedPubkeys.value.toSet(),
-            wotPubkeys = _wotPubkeys.value,
-            popularFilter = _popularFilter.value,
-            popularNoteScores = _popularNoteScores.value,
-            throttledPubkeys = throttledPubkeys,
-        )
+        _filteredNotes.value = filterForCurrentFeed(_notes.value, config, blockedPubkeys, throttledPubkeys)
 
         _filteredMediaNotes.value = feedFilterEngine.filterMediaNotes(
             notes = _notes.value,
             blocked = blockedPubkeys,
             wotPubkeys = _wotPubkeys.value,
             isGlobalMedia = _mediaFeedMode.value == MediaFeedMode.GLOBAL,
+            globalRequiresTrust = !config.globalShowsEveryone,
             throttledPubkeys = throttledPubkeys,
         )
 
         _parentIsNextNote.value = feedFilterEngine.computeParentIsNext(_filteredNotes.value)
+    }
+
+    private fun filterForCurrentFeed(
+        notes: List<FeedNote>,
+        config: HavenConfig,
+        blockedPubkeys: Set<String>,
+        throttledPubkeys: Map<String, Int>,
+    ): List<FeedNote> = feedFilterEngine.filterFeedNotes(
+        notes = notes,
+        mode = _feedMode.value,
+        blocked = blockedPubkeys,
+        showReposts = _showReposts.value,
+        showReplies = _showReplies.value,
+        followedPubkeys = _followedPubkeys.value.toSet(),
+        wotPubkeys = _wotPubkeys.value,
+        popularFilter = _popularFilter.value,
+        popularNoteScores = _popularNoteScores.value,
+        throttledPubkeys = throttledPubkeys,
+        globalLanguages = config.globalFeedLanguages.toSet(),
+        globalRequiresTrust = !config.globalShowsEveryone,
+        languageOf = ::languageOf,
+    )
+
+    /**
+     * How many staged new posts the current feed would actually show. The raw
+     * pending list is unfiltered, and in Global with the Web of Trust on most
+     * of it is filtered out: counting it raw put "50 new posts" on a pill that
+     * revealed nothing.
+     */
+    fun visiblePendingCount(pending: List<FeedNote>): Int {
+        if (pending.isEmpty()) return 0
+        val config = configStore.config.value
+        val blockedPubkeys = config.blockedForActiveAccount()
+            .mapNotNull { nostrService.npubToHex(it) }.toSet()
+        return if (_feedMode.value == FeedMode.MEDIA) {
+            feedFilterEngine.filterMediaNotes(
+                notes = pending,
+                blocked = blockedPubkeys,
+                wotPubkeys = _wotPubkeys.value,
+                isGlobalMedia = _mediaFeedMode.value == MediaFeedMode.GLOBAL,
+                globalRequiresTrust = !config.globalShowsEveryone,
+            ).size
+        } else {
+            filterForCurrentFeed(pending, config, blockedPubkeys, emptyMap()).size
+        }
+    }
+
+    /**
+     * Detected language per note id ("" = could not be told). Only filled
+     * while the Global feed is narrowed to some languages. Concurrent because
+     * a cancelled recompute can still be finishing on another thread.
+     */
+    private val noteLanguageCache = ConcurrentHashMap<String, String>()
+
+    private fun languageOf(note: FeedNote): String? {
+        noteLanguageCache[note.id]?.let { return it.ifEmpty { null } }
+        // Bounded well above the feed cap; a reset just re-detects.
+        if (noteLanguageCache.size > 4000) noteLanguageCache.clear()
+        val detected = FeedLanguageDetector.detect(FeedLanguageDetector.text(note.content, note.kind))
+        noteLanguageCache[note.id] = detected ?: ""
+        return detected
+    }
+
+    private fun isGlobalLikeMode(): Boolean =
+        _feedMode.value == FeedMode.GLOBAL ||
+            (_feedMode.value == FeedMode.MEDIA && _mediaFeedMode.value == MediaFeedMode.GLOBAL)
+
+    /**
+     * Web of Trust / Everyone for Global and Media's Global. Re-filters
+     * straight away, then reloads, so the switch visibly lands both ways:
+     * back to the Web of Trust the untrusted posts go at once instead of
+     * lingering in the list and the new-posts count (iOS #133).
+     */
+    fun setGlobalShowsEveryone(on: Boolean) {
+        if (configStore.config.value.globalShowsEveryone == on) return
+        configStore.update { it.copy(globalShowsEveryone = on) }
+        recomputeFilteredNotes()
+        refresh()
+    }
+
+    /** Narrow Global to these ISO 639-1 codes; empty shows every language. */
+    fun setGlobalFeedLanguages(codes: List<String>) {
+        configStore.update { it.copy(globalFeedLanguages = codes.distinct()) }
+        recomputeFilteredNotes()
     }
 
     fun setShowReposts(show: Boolean) {
@@ -1647,8 +1729,14 @@ class FeedService @Inject constructor(
                     if (file.exists()) {
                         val content = file.readText()
                         val pubkeys = json.decodeFromString<List<String>>(content)
+                        val loaded = pubkeys.toSet()
                         withContext(Dispatchers.Main.immediate) {
-                            _wotPubkeys.value = pubkeys.toSet()
+                            if (loaded != _wotPubkeys.value) {
+                                _wotPubkeys.value = loaded
+                                // Global is filtered against this set; notes
+                                // already on screen have to be re-judged.
+                                recomputeFilteredNotes()
+                            }
                         }
                     }
                 }

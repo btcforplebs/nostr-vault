@@ -355,6 +355,10 @@ data class HavenConfig(
     // on scroll. Mirrors iOS HavenConfig.disableTabBarAnimation.
     val disableTabBarAnimation: Boolean = false,
     val autoplayVideos: Boolean = true,
+    /** ISO 639-1 codes the Global feed is narrowed to. Empty shows every language. Mirrors iOS. */
+    val globalFeedLanguages: List<String> = emptyList(),
+    /** Global (and Media's Global) shows everyone, not only your Web of Trust. Off by default. Mirrors iOS. */
+    val globalShowsEveryone: Boolean = false,
 
     // Performance
     val prefetchAvatars: Boolean = true,
