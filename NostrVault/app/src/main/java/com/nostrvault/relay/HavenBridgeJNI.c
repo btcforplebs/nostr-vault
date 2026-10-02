@@ -87,6 +87,7 @@ extern char* NIP46NIP04DecryptC(const char* targetPubkey, const char* ciphertext
 extern int NIP46PingC(void);
 extern char* NIP46GetPendingAuthURLC(void);
 extern char* ComputePopularNotesC(void);
+extern char* GetFollowersC(const char* owner);
 extern char* GetImportLogC(void);
 extern char* GetNotifyLogC(void);
 
@@ -417,6 +418,17 @@ Java_com_nostrvault_relay_HavenBridge_nip46GetPendingAuthUrl(JNIEnv *env, jobjec
 JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_computePopularNotes(JNIEnv *env, jobject thiz) {
     return goStringToJstring(env, ComputePopularNotesC());
+}
+
+// ---- Follower ledger ----
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_getFollowersNative(JNIEnv *env, jobject thiz, jstring owner) {
+    const char *cOwner = GET_CSTR(env, owner);
+    if (cOwner == NULL) return NULL;
+    char *result = GetFollowersC((char*)cOwner);
+    REL_CSTR(env, owner, cOwner);
+    return goStringToJstring(env, result);
 }
 
 // ---- Import log bridge ----

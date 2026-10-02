@@ -227,6 +227,26 @@ object HavenBridge {
     /** Compute popular notes from the local relay. Returns JSON array. */
     external fun computePopularNotes(): String?
 
+    // -----------------------------------------------------------------------
+    // Follower ledger
+    // -----------------------------------------------------------------------
+
+    private external fun getFollowersNative(ownerHex: String): String?
+
+    /**
+     * The relay's follower ledger for [ownerHex] as JSON (a followers.Snapshot),
+     * or `{"error": ...}` while the relay is stopped. Null when the native
+     * library is absent or predates GetFollowersC.
+     */
+    fun getFollowers(ownerHex: String): String? =
+        if (!isLoaded || ownerHex.isEmpty()) null
+        else try {
+            getFollowersNative(ownerHex)
+        } catch (e: UnsatisfiedLinkError) {
+            Log.w(TAG, "getFollowers unavailable: ${e.message}")
+            null
+        }
+
     /**
      * Poll the latest Go log message from the import process.
      * Returns the most recent log line, or null if nothing new.
