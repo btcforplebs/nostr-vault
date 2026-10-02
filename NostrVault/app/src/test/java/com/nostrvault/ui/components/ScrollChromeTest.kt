@@ -56,6 +56,18 @@ class ScrollChromeTest {
         assertEquals(1f, ScrollChrome.settleTarget(0.7f, 0f, topCap = 3f))
     }
 
+    @Test fun `fold curves never sit at similar strengths`() {
+        // What folds away is gone by 60%; what the fold reveals starts at 40%.
+        assertEquals(1f, ScrollChrome.fadeOut(0f), 0f)
+        assertEquals(0.5f, ScrollChrome.fadeOut(0.3f), 1e-4f)
+        assertEquals(0f, ScrollChrome.fadeOut(0.6f), 0f)
+        assertEquals(0f, ScrollChrome.fadeOut(1f), 0f)
+        assertEquals(0f, ScrollChrome.fadeIn(0f), 0f)
+        assertEquals(0f, ScrollChrome.fadeIn(0.4f), 0f)
+        assertEquals(0.5f, ScrollChrome.fadeIn(0.7f), 1e-4f)
+        assertEquals(1f, ScrollChrome.fadeIn(1f), 0f)
+    }
+
     @Test fun `reset shows the chrome`() {
         scrolledFarDown()
         ScrollChrome.drag(80f, travel)

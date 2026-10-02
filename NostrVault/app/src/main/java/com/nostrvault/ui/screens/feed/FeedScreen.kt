@@ -10,6 +10,9 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -47,6 +50,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
@@ -78,6 +84,8 @@ import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFab
 import com.nostrvault.ui.components.chromeFold
+import com.nostrvault.ui.components.chromeReveal
+import com.nostrvault.ui.components.newPostsFold
 import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.service.ScrollPosition
@@ -331,6 +339,38 @@ fun FeedScreen(
             }
     }
 
+    // Keep your place when switching layouts (iOS PR #130). Expanded and
+    // condensed rows are keyed by note id, threaded cards by thread root, so
+    // the LazyColumn's own key anchoring loses the post on any switch to or
+    // from threaded. The switch reads the topmost visible row in the layout
+    // being left; once the new layout's rows exist, the row that shows the
+    // same note (its thread card, or the note itself) is brought to the top.
+    var layoutAnchor by remember { mutableStateOf<Pair<FeedLayoutAnchor, FeedLayoutMode>?>(null) }
+    val captureLayoutAnchor: () -> FeedLayoutAnchor? = {
+        val rows = listState.layoutInfo.visibleItemsInfo.map { Triple(it.index, it.offset, it.size) }
+        FeedLayoutAnchor.topRowIndex(rows)?.let { row ->
+            if (isThreaded) feedThreads.getOrNull(row)?.let(FeedLayoutAnchor::thread)
+            else notes.getOrNull(row)?.let { FeedLayoutAnchor.note(it.id) }
+        }
+    }
+    LaunchedEffect(layoutAnchor) {
+        val (anchor, from) = layoutAnchor ?: return@LaunchedEffect
+        // The new rows arrive a frame or two later (and a thread grouping
+        // after that); give up quietly if the note has left the feed.
+        val row = withTimeoutOrNull(2_000) {
+            snapshotFlow {
+                when {
+                    layoutMode == from -> null
+                    isThreaded != (layoutMode == FeedLayoutMode.THREADED) -> null
+                    isThreaded -> anchor.indexInThreads(feedThreads)
+                    else -> anchor.indexInNotes(notes.map { it.id })
+                }
+            }.filterNotNull().first()
+        }
+        if (row != null) listState.requestScrollToItem(row)
+        layoutAnchor = null
+    }
+
     // Handle tab re-selection: scroll to top or refresh if already at top
     LaunchedEffect(Unit) {
         viewModel.scrollToTopRequest.collect {
@@ -344,6 +384,17 @@ fun FeedScreen(
                 listState.scrollToItem(0) // Instant scroll for better performance
             }
         }
+    }
+
+    // Posts are waiting and either auto-load is off or the user has scrolled
+    // away from the top.
+    val showNewPosts = pendingCount > 0 && (!autoLoad || !isAtTop) && feedMode != FeedMode.REELS
+    val loadNewPosts: () -> Unit = {
+        viewModel.applyPendingNotes()
+        // Scroll toward the top right away; if the animation
+        // outruns the prepend, the reveal effect snaps the
+        // last bit once the new first note composes.
+        scope.launch { listState.animateScrollToItem(0) }
     }
 
     GlassScaffold(
@@ -369,7 +420,10 @@ fun FeedScreen(
                 onReelsFollowing = { viewModel.setReelsScope(ReelsScope.FOLLOWING) },
                 onReelsGlobal = { showGlobalReelsWarning = true },
                 onModeChange = viewModel::setFeedMode,
-                onCycleLayoutMode = viewModel::cycleLayoutMode,
+                onCycleLayoutMode = {
+                    layoutAnchor = captureLayoutAnchor()?.let { it to layoutMode }
+                    viewModel.cycleLayoutMode()
+                },
                 onToggleAutoLoad = viewModel::toggleAutoLoad,
                 onToggleReposts = viewModel::toggleShowReposts,
                 onToggleReplies = viewModel::toggleShowReplies,
@@ -377,6 +431,8 @@ fun FeedScreen(
                 onSetPopularFilter = viewModel::setPopularFilter,
                 onToggleEngagementStats = viewModel::toggleShowEngagementStats,
                 onOpenFeedDashboard = { showFeedConfig = true },
+                newPostsCount = if (showNewPosts) pendingCount else 0,
+                onLoadNewPosts = loadNewPosts,
             )
         },
         floatingActionButton = {
@@ -640,22 +696,20 @@ fun FeedScreen(
             }
         }
 
-            // Floating "New Posts" pill
-            // Remove AnimatedVisibility for better performance
-            if (pendingCount > 0 && (!autoLoad || !isAtTop) && feedMode != FeedMode.REELS) {
+            // Floating "New Posts" pill. It folds away with the bars, rising
+            // back under the top bar; folded, the small pill in the top bar's
+            // row stands in for it (iOS `NewPostsFold`).
+            if (showNewPosts) {
+                val folded by rememberChromeFolded()
                 NewPostsPill(
                     count = pendingCount,
-                    onClick = {
-                        viewModel.applyPendingNotes()
-                        // Scroll toward the top right away; if the animation
-                        // outruns the prepend, the reveal effect snaps the
-                        // last bit once the new first note composes.
-                        scope.launch { listState.animateScrollToItem(0) }
-                    },
+                    onClick = loadNewPosts,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = padding.calculateTopPadding() + 12.dp)
                         .zIndex(1f)
+                        .newPostsFold()
+                        .blockedWhen(folded)
                 )
             }
         }
@@ -1230,6 +1284,9 @@ private fun FeedTopBar(
     onSetPopularFilter: (PopularFilter) -> Unit,
     onToggleEngagementStats: () -> Unit,
     onOpenFeedDashboard: () -> Unit,
+    /** Posts are waiting and the floating "New Posts" button is up. */
+    newPostsCount: Int,
+    onLoadNewPosts: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
     var feedModeExpanded by remember { mutableStateOf(false) }
@@ -1254,7 +1311,7 @@ private fun FeedTopBar(
     ) {
         // ── Leading pill: one tap target. The icon names the current feed and
         // its corner dot carries the connection status; tapping anywhere on the
-        // pill opens the feed list, with Feed Dashboard at the bottom of it
+        // pill opens the feed list, with Dashboard at the bottom of it
         // (the old separate dot opened the dashboard, and sat so close to the
         // feed menu that it was easy to hit by mistake). Folded, only the
         // icon is left, and it opens the same list.
@@ -1334,12 +1391,7 @@ private fun FeedTopBar(
                 }
                 HorizontalDivider()
                 DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text("Feed Dashboard")
-                            Text(connectionStatus, fontSize = 12.sp, color = SecondaryText)
-                        }
-                    },
+                    text = { Text("Dashboard") },
                     leadingIcon = {
                         Box {
                             Icon(NostrVaultIcons.Relay, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1360,7 +1412,19 @@ private fun FeedTopBar(
             }
         }
 
-        Spacer(Modifier.weight(1f))
+        // Folded, the floating "New Posts" button becomes a small pill centred
+        // in this row, between the two circles (iOS `foldedNewPostsPill`).
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            if (newPostsCount > 0) {
+                val folded by rememberChromeFolded()
+                NewPostsPill(
+                    count = newPostsCount,
+                    compact = true,
+                    onClick = onLoadNewPosts,
+                    modifier = Modifier.chromeReveal().blockedWhen(!folded),
+                )
+            }
+        }
 
         // ── Trailing pill: compact toggle + mode-dependent filters.
         // Reels has no layout button, so collapsed there leaves nothing to show.
@@ -1614,39 +1678,59 @@ private fun EmptyFeedPlaceholder(
 // ── New posts pill ──────────────────────────────────────────────
 
 @Composable
-private fun NewPostsPill(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun NewPostsPill(
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** The small "↑ N" pill the folded top bar shows in the button's place. */
+    compact: Boolean = false,
+) {
     val colors = LocalNostrVaultColors.current
     // Mirrors iOS: Capsule fill(havenPurple/theme primary), white content,
     // soft offset drop shadow (black 40%, radius 8, y+4), 10/20 padding,
-    // arrow.up size 12 bold + "N New Posts" size 13 bold.
+    // arrow.up size 12 bold + "N New Posts" size 13 bold. Compact: 5/10
+    // padding, radius 4 / y+2 shadow, arrow 11 + count 12 (99+ at most).
     val shape = RoundedCornerShape(50)
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    // Tapped anywhere in the box, rippled on the capsule.
+    val interaction = remember { MutableInteractionSource() }
+    Box(
         modifier = modifier
-            .shadow(
-                elevation = 8.dp,
-                shape = shape,
-                ambientColor = Color.Black.copy(alpha = 0.4f),
-                spotColor = Color.Black.copy(alpha = 0.4f),
-            )
-            .clip(shape)
-            .background(colors.primary)
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 20.dp),
+            .semantics(mergeDescendants = true) { contentDescription = "$count new posts, tap to load" }
+            // The small pill's tap target, without growing the pill.
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(if (compact) 8.dp else 0.dp),
     ) {
-        Icon(
-            imageVector = NostrVaultIcons.ArrowUp,
-            contentDescription = null,
-            tint = PrimaryText,
-            modifier = Modifier.size(12.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = "$count New Posts",
-            fontWeight = FontWeight.Bold,
-            fontSize = 13.sp,
-            color = PrimaryText,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .shadow(
+                    elevation = if (compact) 4.dp else 8.dp,
+                    shape = shape,
+                    ambientColor = Color.Black.copy(alpha = 0.4f),
+                    spotColor = Color.Black.copy(alpha = 0.4f),
+                )
+                .clip(shape)
+                .background(colors.primary)
+                .indication(interaction, LocalIndication.current)
+                .padding(
+                    vertical = if (compact) 5.dp else 10.dp,
+                    horizontal = if (compact) 10.dp else 20.dp,
+                ),
+        ) {
+            Icon(
+                imageVector = NostrVaultIcons.ArrowUp,
+                contentDescription = null,
+                tint = PrimaryText,
+                modifier = Modifier.size(if (compact) 11.dp else 12.dp),
+            )
+            Spacer(Modifier.width(if (compact) 4.dp else 8.dp))
+            Text(
+                text = if (compact) (if (count > 99) "99+" else "$count") else "$count New Posts",
+                fontWeight = FontWeight.Bold,
+                fontSize = if (compact) 12.sp else 13.sp,
+                color = PrimaryText,
+            )
+        }
     }
 }
 
