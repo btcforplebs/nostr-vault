@@ -122,6 +122,17 @@ data class FeedNote(
     fun isNoiseOrSpam(): Boolean = Companion.isNoiseOrSpam(content, tags)
 
     /**
+     * [isNoiseOrSpam], computed once per note. The feed filter re-checks every
+     * note (up to MAX_FEED_NOTES) twice per relay batch, and each check copies
+     * and lowercases the whole content — garbage the GC then collected while
+     * the user scrolled. A delegated property has no backing field, so it is
+     * not serialized into the snapshot.
+     */
+    val isNoise: Boolean by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        Companion.isNoiseOrSpam(content, tags)
+    }
+
+    /**
      * Thread root id, read by [NIP10Thread.rootEventId]: a NIP-22 comment's
      * uppercase `E`; for NIP-10 an explicit "root"-marked e-tag, else the
      * first non-mention e-tag; else this note's own id (a top-level note is

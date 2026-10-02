@@ -50,11 +50,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
 import com.nostrvault.relay.HavenBridge
@@ -147,11 +149,11 @@ fun FeedScreen(
     val trustGraphReady by viewModel.trustGraphReady.collectAsState()
     val showEngagementStats by viewModel.showEngagementStats.collectAsState()
     val pendingCount by viewModel.pendingNoteCount.collectAsState()
-    val parentNotes by viewModel.parentNotesCache.collectAsState()
-    val quotedNotes by viewModel.quotedNotesCache.collectAsState()
-    // Collected so the repost button re-highlights instantly after you repost.
-    val repostedIds by viewModel.repostedEventIds.collectAsState()
-    val parentIsNext by viewModel.parentIsNextNote.collectAsState()
+    // The parent, quote and repost caches are not collected here. Every parent
+    // or quote that resolves replaces those maps, and a read at this level
+    // re-ran this whole screen and handed every visible row a new map to
+    // compare — dozens of times while a page of replies streams in. Each row
+    // subscribes to just its own entries in FeedFullNoteRow instead.
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -173,11 +175,15 @@ fun FeedScreen(
     }
 
     // Batch-fetch all missing parent notes whenever the visible notes list changes.
-    // One REQ with all IDs instead of one REQ per item.
+    // One REQ with all IDs instead of one REQ per item. The scan walks the
+    // whole feed (up to MAX_FEED_NOTES), so it runs off the main thread;
+    // only the fetch call comes back to it.
     LaunchedEffect(notes) {
-        val missingIds = notes.mapNotNull { note ->
-            note.parentEventId?.takeIf { viewModel.parentNoteFor(it) == null }
-        }.distinct()
+        val missingIds = withContext(Dispatchers.Default) {
+            notes.mapNotNull { note ->
+                note.parentEventId?.takeIf { viewModel.parentNoteFor(it) == null }
+            }.distinct()
+        }
         if (missingIds.isNotEmpty()) {
             viewModel.fetchMissingParentNotes(missingIds)
         }
@@ -185,17 +191,16 @@ fun FeedScreen(
 
     // Batch-fetch any embedded quoted notes (nostr:note1.../nevent1...) referenced
     // by the visible notes. Decoded to hex and fetched via the same path as parents.
+    // Once they resolve, fetch their authors' profiles if not already cached —
+    // collected here rather than keyed on the cache, so a resolving quote does
+    // not recompose the screen.
     LaunchedEffect(notes) {
-        val quotedIds = notes.flatMap { it.quotedEventIds }.distinct()
-        if (quotedIds.isNotEmpty()) {
-            viewModel.fetchMissingQuotedNotes(quotedIds)
+        val quotedIds = withContext(Dispatchers.Default) {
+            notes.flatMap { it.quotedEventIds }.distinct()
         }
-    }
-
-    // Once quoted notes resolve, fetch their authors' profiles if not already cached.
-    LaunchedEffect(notes, parentNotes) {
-        val quotedIds = notes.flatMap { it.quotedEventIds }.distinct()
-        if (quotedIds.isNotEmpty()) {
+        if (quotedIds.isEmpty()) return@LaunchedEffect
+        viewModel.fetchMissingQuotedNotes(quotedIds)
+        viewModel.parentNotesCache.collect {
             viewModel.fetchMissingQuotedProfiles(quotedIds)
         }
     }
@@ -270,14 +275,24 @@ fun FeedScreen(
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
     )
 
-    // Save scroll position for snapshot persistence (debounced on scroll stop)
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (!listState.isScrollInProgress) {
-            viewModel.saveScrollPosition(
-                listState.firstVisibleItemIndex,
-                listState.firstVisibleItemScrollOffset,
-            )
+    // Tell the feed when a drag or fling is moving the list, so incoming
+    // relay batches wait for it to settle instead of reshaping the list under
+    // the finger; and save the scroll position for snapshot persistence when
+    // it stops. Read through snapshotFlow, not as an effect key: a key read
+    // here recomposed the whole screen at the start and end of every fling.
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+            viewModel.setFeedScrolling(scrolling)
+            if (!scrolling) {
+                viewModel.saveScrollPosition(
+                    listState.firstVisibleItemIndex,
+                    listState.firstVisibleItemScrollOffset,
+                )
+            }
         }
+    }
+    DisposableEffect(Unit) {
+        onDispose { viewModel.setFeedScrolling(false) }
     }
 
     // Restore scroll position from disk snapshot on cold boot
@@ -617,8 +632,6 @@ fun FeedScreen(
                                         note = note,
                                         viewModel = viewModel,
                                         allProfiles = allProfiles,
-                                        quotedNotes = quotedNotes,
-                                        repostedIds = repostedIds,
                                         onNoteClick = onNoteClick,
                                         onArticleClick = onArticleClick,
                                         onProfileClick = onProfileClick,
@@ -683,8 +696,6 @@ fun FeedScreen(
                                 note = note,
                                 viewModel = viewModel,
                                 allProfiles = allProfiles,
-                                quotedNotes = quotedNotes,
-                                repostedIds = repostedIds,
                                 onNoteClick = onNoteClick,
                                 onArticleClick = onArticleClick,
                                 onProfileClick = onProfileClick,
@@ -1208,8 +1219,6 @@ private fun FeedFullNoteRow(
     note: FeedNote,
     viewModel: FeedViewModel,
     allProfiles: Map<String, FeedProfile>,
-    quotedNotes: Map<String, FeedNote>,
-    repostedIds: Set<String>,
     onNoteClick: (String) -> Unit,
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
@@ -1241,6 +1250,8 @@ private fun FeedFullNoteRow(
     val statsState = viewModel.noteStats.collectAsState()
     val parentsState = viewModel.parentNotesCache.collectAsState()
     val parentNextState = viewModel.parentIsNextNote.collectAsState()
+    val quotedState = viewModel.quotedNotesCache.collectAsState()
+    val repostedState = viewModel.repostedEventIds.collectAsState()
     // Likes and zaps are recorded against effectiveEventId (EngagementBar
     // sends it) and reactions are counted against the e-tag target, so a
     // repost is looked up by the note it reposts.
@@ -1253,11 +1264,18 @@ private fun FeedFullNoteRow(
         derivedStateOf { parentEventId != null && note.id in parentNextState.value }
     }
 
-    val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotes) {
-        if (note.quotedEventIds.isEmpty()) {
-            emptyMap()
-        } else {
-            note.quotedEventIds.mapNotNull { qid -> viewModel.quotedNoteFor(qid)?.let { qid to it } }.toMap()
+    val isReposted by remember(note.id) { derivedStateOf { note.effectiveEventId in repostedState.value } }
+    // The read of quotedState is what subscribes; quotedNoteFor resolves against
+    // the same caches. A parent landing for some other note recomputes this
+    // but compares equal, so this row does not redraw.
+    val quotedNotesMap by remember(note.id) {
+        derivedStateOf {
+            quotedState.value
+            if (note.quotedEventIds.isEmpty()) {
+                emptyMap()
+            } else {
+                note.quotedEventIds.mapNotNull { qid -> viewModel.quotedNoteFor(qid)?.let { qid to it } }.toMap()
+            }
         }
     }
 
@@ -1276,7 +1294,7 @@ private fun FeedFullNoteRow(
         quotedNotes = quotedNotesMap,
         isLiked = isLiked,
         isZapped = isZapped,
-        isReposted = note.effectiveEventId in repostedIds,
+        isReposted = isReposted,
         repostedByProfile = note.repostedBy?.let { cardProfiles[it] },
         replyToProfile = note.replyToPubkey?.let { cardProfiles[it] },
         parentNote = parentNote,

@@ -90,6 +90,11 @@ class FeedService @Inject constructor(
         private const val INTERACTION_SAVE_THROTTLE_MS = 2_000L
         private const val FLUSH_INTERVAL_STANDARD_MS = 800L
         private const val FLUSH_INTERVAL_GLOBAL_MS = 50L
+        // Longest a batch waits for a drag or fling to settle. Past this it
+        // lands anyway, so a long slow drag still sees new pages.
+        private const val SCROLL_FLUSH_HOLD_MS = 1_500L
+        private const val PARENT_CACHE_MAX = 500
+        private const val PARENT_CACHE_TRIM_TO = 400
         private const val NOTE_BATCH_DELAY_MS = 150L
         private const val STAGGER_RELAY_MS = 200L
         private const val SNAPSHOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000L // 7 days (matches iOS)
@@ -145,8 +150,9 @@ class FeedService @Inject constructor(
         }
         // Every note that reaches the feed contributes its blob hashes to the
         // persistent index. `record` skips note ids it has already folded in, so
-        // re-emissions of the same list cost a set lookup per note.
-        scope.launch {
+        // re-emissions of the same list cost a set lookup per note — up to
+        // MAX_FEED_NOTES of them, so on Default rather than Main.
+        scope.launch(processingDispatcher) {
             _notes.collect { blobNoteIndexStore.record(it) }
         }
         scope.launch {
@@ -310,6 +316,10 @@ class FeedService @Inject constructor(
 
     // Background accumulator
     private val accumulator = BackgroundAccumulator()
+    private val feedScrolling = MutableStateFlow(false)
+    private val pendingInserts = ArrayList<FeedNote>()
+    private val pendingEngagement = ArrayList<BackgroundAccumulator.Snapshot>()
+    private var mergeJob: Job? = null
     private var flushScheduled = false
     private val flushLock = ReentrantLock()
     private var isInitialLoad = false
@@ -697,7 +707,9 @@ class FeedService @Inject constructor(
 
                     // Tracked so it can be cancelled after disconnect — messages is a
                     // SharedFlow that never completes, so this would otherwise leak.
-                    val collector = scope.launch {
+                    // Parsed on Default: a kind-3 can be hundreds of KB of JSON.
+                    // Shared state below is behind `lock`.
+                    val collector = scope.launch(processingDispatcher) {
                         client.messages.collect { msg ->
                             try {
                                 val parsed = json.parseToJsonElement(msg).jsonArray
@@ -782,7 +794,8 @@ class FeedService @Inject constructor(
                         trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"),
                     )
                     val subId = "k3scan-${UUID.randomUUID().toString().take(8)}"
-                    val collector = scope.launch {
+                    // Parsed off Main (kind-3s are large); `collected` is concurrent.
+                    val collector = scope.launch(processingDispatcher) {
                         client.messages.collect { msg ->
                             try {
                                 val parsed = json.parseToJsonElement(msg).jsonArray
@@ -876,7 +889,11 @@ class FeedService @Inject constructor(
                         // follows lost most of its lists.
                         val answered = CompletableDeferred<Unit>()
                         var eoseSeen = 0
-                        val collector = scope.launch {
+                        // One kind-3 per follow, each up to thousands of tags:
+                        // parsing these on Main stalled the feed for seconds
+                        // while it loaded. `followLists` is concurrent and
+                        // `eoseSeen` is only touched by this one collector.
+                        val collector = scope.launch(processingDispatcher) {
                             client.messages.collect { msg ->
                                 try {
                                     val parsed = json.parseToJsonElement(msg).jsonArray
@@ -1104,7 +1121,9 @@ class FeedService @Inject constructor(
         teardownFeedClient(relayUrl)
         feedClients[relayUrl] = client
 
-        val messagesJob = scope.launch {
+        // Collected on Default, not Main: each message used to cost a Main
+        // dispatch just to be handed on to Default.
+        val messagesJob = scope.launch(processingDispatcher) {
             client.messages.collect { msg ->
                 launch(processingDispatcher) {
                     processAccumulatorMessage(msg, relayUrl)
@@ -1383,7 +1402,7 @@ class FeedService @Inject constructor(
             else -> {
                 // Content note
                 val note = FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)
-                if (note.isNoiseOrSpam()) return
+                if (note.isNoise) return
 
                 accumulator.addNote(note)
 
@@ -1474,9 +1493,19 @@ class FeedService @Inject constructor(
 
         scope.launch {
             delay(interval)
+            // Inserting rows mid-fling makes the list re-measure and shift under
+            // the finger, which on a low-RAM phone is a dropped frame per batch
+            // (Global flushes every 50 ms). Events keep accumulating meanwhile
+            // and land together when the list stops.
+            withTimeoutOrNull(SCROLL_FLUSH_HOLD_MS) { feedScrolling.first { !it } }
             flushLock.withLock { flushScheduled = false }
             flushAccumulator()
         }
+    }
+
+    /** Set by the feed list while a drag or fling is in progress. */
+    fun setFeedScrolling(active: Boolean) {
+        feedScrolling.value = active
     }
 
     private fun flushAccumulator() {
@@ -1524,27 +1553,10 @@ class FeedService @Inject constructor(
         }
 
         // Apply engagement
-        val currentStats = _noteStats.value.toMutableMap()
-        for ((targetId, pubkey) in batch.reactions) {
-            val existing = currentStats[targetId] ?: NoteStats()
-            currentStats[targetId] = existing.copy(
-                reactionCount = existing.reactionCount + 1
-            )
+        if (batch.reactions.isNotEmpty() || batch.zaps.isNotEmpty()) {
+            pendingEngagement.add(batch)
+            startMergeWorker()
         }
-        for ((targetId, amount) in batch.zaps) {
-            val existing = currentStats[targetId] ?: NoteStats()
-            currentStats[targetId] = existing.copy(
-                zapCount = existing.zapCount + 1,
-                zapAmountSats = existing.zapAmountSats + amount
-            )
-        }
-        // Trim stats to only cover notes still in memory
-        if (currentStats.size > MAX_FEED_NOTES) {
-            val activeIds = _notes.value.map { it.id }.toSet() +
-                _parentNotesCache.value.keys
-            currentStats.keys.retainAll(activeIds)
-        }
-        _noteStats.value = currentStats
 
         // Fetch missing profiles for new note authors
         val newPubkeys = batch.notes.map { it.pubkey }.distinct()
@@ -1553,12 +1565,101 @@ class FeedService @Inject constructor(
         recomputeFilteredNotes()
     }
 
-    /** Insert notes directly into the visible feed, re-sorting newest-first and capping size. */
+    /**
+     * Insert notes directly into the visible feed, re-sorting newest-first and capping size.
+     *
+     * The merge copies, dedupes and sorts the whole feed (up to MAX_FEED_NOTES),
+     * so it runs on [processingDispatcher]; doing it on Main cost a frame per
+     * relay batch. One worker does every merge: batches that land while it is
+     * busy are folded into its next pass instead of racing it (on Global a
+     * batch lands every 50 ms, and parallel merges kept invalidating each
+     * other). Every other writer of [_notes] runs on Main, so a pass publishes
+     * there only if [_notes] is still the list it was built from — otherwise
+     * it is rebuilt from the newer one rather than overwriting it.
+     *
+     * [pendingInserts], [pendingEngagement] and [mergeJob] are Main-confined.
+     */
     private fun insertNotesDirect(newNotes: List<FeedNote>) {
-        val merged = (_notes.value + newNotes)
-            .distinctBy { it.id } // LazyColumn keys on id — duplicates crash the UI
-            .sortedByDescending { it.createdAt }
-        _notes.value = if (merged.size > MAX_FEED_NOTES) merged.take(MAX_FEED_NOTES) else merged
+        pendingInserts.addAll(newNotes)
+        startMergeWorker()
+    }
+
+    private fun startMergeWorker() {
+        if (mergeJob?.isActive == true) return
+        mergeJob = scope.launch {
+            while (pendingInserts.isNotEmpty() || pendingEngagement.isNotEmpty()) {
+                if (pendingInserts.isNotEmpty()) {
+                    val newNotes = pendingInserts.toList()
+                    pendingInserts.clear()
+                    while (true) {
+                        val base = _notes.value
+                        val merged = withContext(processingDispatcher) {
+                            val m = (base + newNotes)
+                                .distinctBy { it.id } // LazyColumn keys on id — duplicates crash the UI
+                                .sortedByDescending { it.createdAt }
+                            if (m.size > MAX_FEED_NOTES) m.take(MAX_FEED_NOTES) else m
+                        }
+                        if (_notes.value === base) {
+                            _notes.value = merged
+                            break
+                        }
+                    }
+                }
+                // After the notes, so the stats trim sees the notes this
+                // same batch brought.
+                if (pendingEngagement.isNotEmpty()) {
+                    val batches = pendingEngagement.toList()
+                    pendingEngagement.clear()
+                    applyEngagement(batches)
+                }
+            }
+            recomputeFilteredNotes()
+        }
+    }
+
+    /** Drop queued merges, e.g. when the feed is cleared for another account. */
+    private fun cancelMergeWorker() {
+        mergeJob?.cancel()
+        mergeJob = null
+        pendingInserts.clear()
+        pendingEngagement.clear()
+    }
+
+    /** Fold batches' reactions and zaps into [_noteStats]; same off-Main pattern as [insertNotesDirect]. */
+    private suspend fun applyEngagement(batches: List<BackgroundAccumulator.Snapshot>) {
+        while (true) {
+            val base = _noteStats.value
+            val notesNow = _notes.value
+            val parentIds = _parentNotesCache.value.keys
+            val updated = withContext(processingDispatcher) {
+                val currentStats = base.toMutableMap()
+                for (batch in batches) {
+                    for ((targetId, _) in batch.reactions) {
+                        val existing = currentStats[targetId] ?: NoteStats()
+                        currentStats[targetId] = existing.copy(
+                            reactionCount = existing.reactionCount + 1
+                        )
+                    }
+                    for ((targetId, amount) in batch.zaps) {
+                        val existing = currentStats[targetId] ?: NoteStats()
+                        currentStats[targetId] = existing.copy(
+                            zapCount = existing.zapCount + 1,
+                            zapAmountSats = existing.zapAmountSats + amount
+                        )
+                    }
+                }
+                // Trim stats to only cover notes still in memory
+                if (currentStats.size > MAX_FEED_NOTES) {
+                    val activeIds = notesNow.mapTo(HashSet()) { it.id } + parentIds
+                    currentStats.keys.retainAll(activeIds)
+                }
+                currentStats
+            }
+            if (_noteStats.value === base) {
+                _noteStats.value = updated
+                return
+            }
+        }
     }
 
     /**
@@ -1973,8 +2074,26 @@ class FeedService @Inject constructor(
         _scrollToTopRequest.tryEmit(Unit)
     }
 
+    // Thread grouping resolves every missing ancestor through findNote, so a
+    // scan of the whole feed per lookup kept the UI thread busy for seconds.
+    // Rebuilt once per notes list; the first note matching by id or
+    // effectiveEventId wins, as the scan did.
+    @Volatile private var noteIndex: Pair<List<FeedNote>, Map<String, FeedNote>>? = null
+
+    private fun noteIndex(): Map<String, FeedNote> {
+        val notes = _notes.value
+        noteIndex?.let { (list, map) -> if (list === notes) return map }
+        val map = HashMap<String, FeedNote>(notes.size * 2)
+        for (note in notes) {
+            map.putIfAbsent(note.id, note)
+            map.putIfAbsent(note.effectiveEventId, note)
+        }
+        noteIndex = notes to map
+        return map
+    }
+
     fun findNote(id: String): FeedNote? {
-        return _notes.value.firstOrNull { it.id == id || it.effectiveEventId == id }
+        return noteIndex()[id]
             ?: _parentNotesCache.value[id]
             // Quoted addressable events are keyed by coordinate, so a lookup by
             // id has to scan them — without this, opening a quoted article
@@ -2049,7 +2168,7 @@ class FeedService @Inject constructor(
                     // WebSocketClient.messages is a SharedFlow that never completes,
                     // so disconnect() alone leaves this coroutine (and the client)
                     // pinned in memory forever.
-                    collectors.add(scope.launch {
+                    collectors.add(scope.launch(processingDispatcher) {
                         client.messages.collect { msg ->
                             launch(processingDispatcher) {
                                 processAccumulatorMessage(msg, relayUrl)
@@ -2355,20 +2474,34 @@ class FeedService @Inject constructor(
             val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return null
 
             val note = FeedNote.fromEvent(eventId, pubkey, content, tags, createdAt, kind)
-            withContext(Dispatchers.Main.immediate) {
-                var updated = _parentNotesCache.value + (eventId to note)
-                if (updated.size > 500) {
+            // The trim walks every feed note (up to MAX_FEED_NOTES), so it is
+            // built here, off Main, and published on Main only if the cache is
+            // still the map it was built from. It trims to 400, not 500: at
+            // exactly the cap, every later arrival paid the full walk again.
+            while (true) {
+                val base = _parentNotesCache.value
+                var updated = base + (eventId to note)
+                if (updated.size > PARENT_CACHE_MAX) {
                     val referencedIds = FeedNote.referencedIds(_notes.value)
                     // Keep the most recently created referenced notes.
                     updated = updated.filter { it.key in referencedIds }
                         .toList()
                         .sortedByDescending { it.second.createdAt }
-                        .take(500)
+                        .take(PARENT_CACHE_TRIM_TO)
                         .toMap()
+                    // Never trim the note just fetched: it counts as arrived,
+                    // so it would not be marked unavailable, and the feed
+                    // would ask for it again on its next change.
+                    if (eventId !in updated) updated = updated + (eventId to note)
                 }
-                _parentNotesCache.value = updated
-                unavailableSince.remove(eventId)
-                if (eventId in _unavailableNoteIds.value) _unavailableNoteIds.update { it - eventId }
+                val published = withContext(Dispatchers.Main.immediate) {
+                    if (_parentNotesCache.value !== base) return@withContext false
+                    _parentNotesCache.value = updated
+                    unavailableSince.remove(eventId)
+                    if (eventId in _unavailableNoteIds.value) _unavailableNoteIds.update { it - eventId }
+                    true
+                }
+                if (published) break
             }
             return eventId
         } catch (_: Exception) {
@@ -2950,6 +3083,9 @@ class FeedService @Inject constructor(
     }
 
     private fun clearInMemoryFeedState() {
+        // A merge still running would publish the old account's notes and
+        // counts into the cleared feed.
+        cancelMergeWorker()
         _notes.value = emptyList()
         _pendingNotes.value = emptyList()
         _noteStats.value = emptyMap()
