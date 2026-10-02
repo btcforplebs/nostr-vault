@@ -30,6 +30,7 @@ struct FeedMediaPager: View {
     var onDismiss: (() -> Void)? = nil
 
     @State private var selection: URL
+    @Environment(\.mediaZoomPresented) private var zoomPresented
 
     init(urls: [URL], selected: URL, onDismiss: (() -> Void)? = nil) {
         self.urls = urls.isEmpty ? [selected] : urls
@@ -44,7 +45,9 @@ struct FeedMediaPager: View {
             FeedMediaViewer(url: selected, onDismiss: onDismiss)
         } else {
             ZStack {
-                Color.black.ignoresSafeArea()
+                // Each page draws its own black, which fades as it is pulled
+                // away; a fixed black here would hide the post behind it.
+                if !zoomPresented { Color.black.ignoresSafeArea() }
                 TabView(selection: $selection) {
                     ForEach(urls, id: \.absoluteString) { url in
                         FeedMediaViewer(url: url, enableDragDismiss: true, onDismiss: onDismiss)
@@ -82,6 +85,23 @@ struct FeedMediaViewer: View {
     @State private var isVideo: Bool = false
     @State private var isGIF: Bool = false
     @State private var isLoadingType: Bool = true
+    /// Set as the swipe lets go to close: the photo glides home while the
+    /// black and the buttons stay gone, instead of coming back as `offset`
+    /// animates to zero.
+    @State private var isClosing = false
+
+    init(url: URL, enableDragDismiss: Bool = true, onDismiss: (() -> Void)? = nil) {
+        self.url = url
+        self.enableDragDismiss = enableDragDismiss
+        self.onDismiss = onDismiss
+        // A kind the feed already resolved is known before the first frame,
+        // so the zoom never catches a spinner.
+        if let kind = MediaKindResolver.cachedKind(for: url) {
+            _isVideo = State(initialValue: kind == .video)
+            _isGIF = State(initialValue: kind == .gif)
+            _isLoadingType = State(initialValue: false)
+        }
+    }
 
     @State private var isMirroring: Bool = false
     @State private var mirrorStatus: MirrorStatus? = nil
@@ -115,10 +135,27 @@ struct FeedMediaViewer: View {
         BlossomService(configService: configService, nostrService: nostrService)
     }
     
+    /// The photo shrinks as you pull it down, so it reads as being put back.
+    private var dragShrink: CGFloat {
+        scale > 1 ? 1 : max(0.6, 1 - abs(offset.height) / 900)
+    }
+
+    private var controlsOpacity: Double {
+        if isClosing { return 0 }
+        return scale > 1 ? 1 : max(0, 1 - abs(offset.height) / 150)
+    }
+
+    /// Which way a drag at rest scale is going, decided on its first ~10pt
+    /// and kept: a sideways page swipe that drifts must not move the photo.
+    private enum DragAxis { case undecided, vertical, horizontal }
+    @State private var dragAxis: DragAxis = .undecided
+
     var body: some View {
         ZStack {
             Color.black
-                .opacity(max(0.1, 1.0 - (abs(offset.height) / 500.0)))
+                // Under the zoom the cover is see-through, so the post shows
+                // through as you pull the photo away.
+                .opacity(isClosing ? 0 : max(zoomPresented ? 0 : 0.1, 1.0 - (abs(offset.height) / 500.0)))
                 .ignoresSafeArea()
             
             Group {
@@ -133,7 +170,7 @@ struct FeedMediaViewer: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scaleEffect(scale)
+            .scaleEffect(scale * dragShrink)
             .offset(offset)
             .gesture(
                 MagnificationGesture()
@@ -161,22 +198,50 @@ struct FeedMediaViewer: View {
                                 width: lastOffset.width + value.translation.width,
                                 height: lastOffset.height + value.translation.height
                             )
-                        } else if !zoomPresented {
+                        } else {
                             // Swipe to dismiss tracking - ONLY vertical when not zoomed
                             // This allows simultaneous gesture in parent TabView to handle horizontal page swiping.
-                            // Under the zoom transition the system swipe does this.
-                            offset = CGSize(width: 0, height: value.translation.height)
+                            // Under the zoom transition the system does not
+                            // dismiss a full-screen cover on a swipe, so this
+                            // stays the only way to swipe the viewer away.
+                            let t = value.translation
+                            if dragAxis == .undecided, hypot(t.width, t.height) > 10 {
+                                dragAxis = abs(t.height) > abs(t.width) ? .vertical : .horizontal
+                            }
+                            if dragAxis == .vertical {
+                                offset = CGSize(width: 0, height: t.height)
+                            }
                         }
                     }
                     .onEnded { value in
+                        defer { dragAxis = .undecided }
                         if scale > 1.0 {
                             lastOffset = offset
-                        } else if !zoomPresented {
-                            // Check height for dismissal
-                            if abs(value.translation.height) > 100 {
+                        } else if dragAxis == .vertical {
+                            // Close when it is pulled far enough, or flicked
+                            // on in the same direction — pulling down and
+                            // pushing back up does not close it.
+                            let pulled = value.translation.height
+                            let carried = value.predictedEndTranslation.height
+                            let sameWay = (pulled >= 0) == (carried >= 0)
+                            if sameWay && (abs(pulled) > 100 || abs(carried) > 260) {
+                                // Glide the photo back to the centre while the
+                                // zoom carries the screen into the post, so it
+                                // lands on its spot instead of short and low.
+                                withAnimation(.smooth(duration: 0.3)) {
+                                    isClosing = true
+                                    offset = .zero
+                                    lastOffset = .zero
+                                }
                                 performDismiss()
                             } else {
-                                withAnimation(Motion.snapBack) {
+                                // Spring back carrying the finger's speed.
+                                // initialVelocity is in "whole distance per
+                                // second" toward zero, so divide by the signed
+                                // distance still to travel.
+                                let distance = offset.height == 0 ? 1 : offset.height
+                                let release = -value.velocity.height / distance
+                                withAnimation(.interpolatingSpring(stiffness: 260, damping: 26, initialVelocity: release)) {
                                     offset = .zero
                                     lastOffset = .zero
                                 }
@@ -252,6 +317,9 @@ struct FeedMediaViewer: View {
                     .padding(16)
                 }
             }
+            // The buttons get out of the way as soon as you pull, like Photos.
+            .opacity(controlsOpacity)
+            .allowsHitTesting(offset == .zero || scale > 1.0)
             .onLongPressGesture {
                 if !isLoadingType && !isMirroring {
                     withAnimation(Motion.fade) {
@@ -830,8 +898,17 @@ struct FeedMediaViewer: View {
 /// Uses MediaCacheService instead of AsyncImage to avoid re-downloads.
 struct MediaViewerPhoto: View {
     let url: URL
+    /// Starts with the copy the feed already decoded, so the zoom grows out
+    /// of the photo rather than an empty frame; the full-size one replaces it
+    /// once loaded.
     @State private var image: PlatformImage?
     @State private var loadFailed = false
+    @State private var loadedFull = false
+
+    init(url: URL) {
+        self.url = url
+        _image = State(initialValue: MediaCacheService.shared.cachedImage(for: url))
+    }
 
     var body: some View {
         ZStack {
@@ -861,19 +938,20 @@ struct MediaViewerPhoto: View {
     }
 
     private func loadImage() {
-        guard image == nil, !loadFailed else { return }
+        guard !loadedFull, !loadFailed else { return }
         Task {
             guard let data = await MediaCacheService.shared.fetchData(url: url) else {
-                await MainActor.run { self.loadFailed = true }
+                // Keep the feed's copy on screen if there is one.
+                await MainActor.run { if self.image == nil { self.loadFailed = true } }
                 return
             }
             // Screen-bounded decode: the pager keeps neighbor pages alive, so
             // full-resolution originals (50-190 MB decoded) stack up fast.
             let downsampled = await ImageDownsampler.downsampleToScreen(data: data)
             if let img = downsampled ?? PlatformImage(data: data) {
-                await MainActor.run { self.image = img }
+                await MainActor.run { self.image = img; self.loadedFull = true }
             } else {
-                await MainActor.run { self.loadFailed = true }
+                await MainActor.run { if self.image == nil { self.loadFailed = true } }
             }
         }
     }
@@ -950,6 +1028,7 @@ private struct MediaViewerPresentation: ViewModifier {
                 .fullScreenCover(item: $item) { media in
                     FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil })
                         .environment(\.mediaZoomPresented, true)
+                        .presentationBackground(.clear)
                         .navigationTransition(.zoom(sourceID: media.url.absoluteString, in: namespace))
                 }
         } else {
