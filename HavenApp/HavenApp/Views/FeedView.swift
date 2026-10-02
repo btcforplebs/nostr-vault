@@ -102,6 +102,27 @@ struct ChromeFold<Content: View>: View {
     }
 }
 
+/// The floating "New Posts" button's fold. It leaves with the bars as you
+/// scroll down, rising back up under the top bar, and returns with them.
+/// `isPeeking` holds it out for a moment when posts arrive while folded.
+/// Its own view for the same reason as `ChromeFold`.
+struct NewPostsFold<Content: View>: View {
+    var isEnabled = true
+    var isPeeking = false
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        let p = isEnabled ? ChromeCollapse.shared.progress : 0
+        let visible = isPeeking ? 1 : ChromeCollapse.fadeOut(p)
+        content
+            .opacity(visible)
+            .scaleEffect(0.85 + 0.15 * visible, anchor: .top)
+            .offset(y: -16 * (1 - visible))
+            .allowsHitTesting(visible > 0.5)
+            .accessibilityHidden(visible <= 0.5)
+    }
+}
+
 /// The feed top bar's glass pill. With the fold it narrows from its content's
 /// full width to a circle on `alignment`'s edge, the same morph the bottom
 /// tab bar makes.
@@ -388,6 +409,9 @@ struct FeedView: View {
     /// Same warning, raised before Recipes switches to the global set.
     @State private var showingGlobalRecipeWarning = false
     @State private var isAtTop: Bool = true
+    /// The folded "New Posts" button is held out while this is set: posts
+    /// that arrive while you read show it for a moment, then it folds away.
+    @State private var newPostsPeek: Task<Void, Never>?
     @State private var scrolledNoteID: String?
     @State private var lastScrollOffset: CGFloat = 0
     @State private var isScrollingDown: Bool = false
@@ -550,8 +574,7 @@ struct FeedView: View {
             Divider()
 
             Button(action: { showingRelayStatus = true }) {
-                Label("Feed Dashboard", systemImage: "antenna.radiowaves.left.and.right")
-                Text(feedService.connectionStatus)
+                Label("Dashboard", systemImage: "antenna.radiowaves.left.and.right")
             }
         } label: {
             HStack(spacing: 0) {
@@ -568,6 +591,25 @@ struct FeedView: View {
                             .frame(width: 8, height: 8)
                             .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 2)
                             .offset(x: -1, y: -1)
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        // Folded, the "New Posts" button's count rides here.
+                        if showsNewPostsButton {
+                            ChromeFold(anchor: .bottomLeading, inverted: true, isEnabled: isCompactWidth) {
+                                Text(feedService.pendingNotes.count > 99 ? "99+" : "\(feedService.pendingNotes.count)")
+                                    .font(.appSystem(size: 10, weight: .bold))
+                                    .monospacedDigit()
+                                    .contentTransition(.numericText(value: Double(feedService.pendingNotes.count)))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 4)
+                                    .frame(minWidth: 16, minHeight: 16)
+                                    .background(Capsule().fill(Color.havenPurple))
+                                    // Inside the folded circle: the pill masks anything past it.
+                                    .offset(x: 2, y: -2)
+                                    .animation(Motion.fade, value: feedService.pendingNotes.count)
+                            }
+                            .accessibilityHidden(true)
+                        }
                     }
 
                 // Always laid out, only faded: removing it would resize the
@@ -596,6 +638,41 @@ struct FeedView: View {
         .accessibilityLabel("Feed: \(feedService.feedMode.displayName)")
         .accessibilityValue(feedService.connectionStatus)
         .accessibilityHint("Switch feeds or open the feed dashboard")
+    }
+    #endif
+
+    /// The floating "New Posts" button is up: unloaded posts, and either
+    /// auto-load is off or the user has scrolled away from the top.
+    private var showsNewPostsButton: Bool {
+        !feedService.pendingNotes.isEmpty && (!configService.config.autoLoadNewPosts || !isAtTop)
+    }
+
+    @ViewBuilder
+    private func newPostsFold<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        #if os(iOS)
+        // iPhone only, like the top bar: folded, the count moves onto the
+        // top bar's feed icon, and the iPad top bar never folds.
+        NewPostsFold(isEnabled: isCompactWidth, isPeeking: newPostsPeek != nil) {
+            content()
+        }
+        #else
+        content()
+        #endif
+    }
+
+    #if os(iOS)
+    /// New posts arrived while the bars are folded: show the button for a
+    /// moment so the arrival is seen, then let it fold away again.
+    private func peekNewPostsIfFolded() {
+        guard isCompactWidth, ChromeCollapse.shared.progress > 0.5, showsNewPostsButton else { return }
+        newPostsPeek?.cancel()
+        withAnimation(Motion.chrome) {
+            newPostsPeek = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                withAnimation(Motion.chrome) { newPostsPeek = nil }
+            }
+        }
     }
     #endif
 
@@ -2279,7 +2356,10 @@ struct FeedView: View {
                         }
                     }
                 }
-                .onChange(of: feedService.pendingNotes.count) { _, count in
+                .onChange(of: feedService.pendingNotes.count) { old, count in
+                    #if os(iOS)
+                    if count > old { peekNewPostsIfFolded() }
+                    #endif
                     // Auto-apply pending notes when autoLoad is on, but only
                     // if the user is at the top of the feed to avoid disrupting
                     // their scroll position. Debounced to prevent duplicate calls.
@@ -2321,7 +2401,10 @@ struct FeedView: View {
 
                 // Floating "New Posts" indicator — shown when auto-load is off,
                 // or when auto-load is on but the user has scrolled down.
-                if !feedService.pendingNotes.isEmpty && (!configService.config.autoLoadNewPosts || !isAtTop) {
+                // It folds away with the bars; folded, the count rides on
+                // the top bar's feed icon instead.
+                if showsNewPostsButton {
+                    newPostsFold {
                     Button(action: {
                         feedService.applyPendingNotes()
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -2335,6 +2418,7 @@ struct FeedView: View {
                                 .font(.appSystem(size: 12, weight: .bold))
                             Text("\(feedService.pendingNotes.count) New Posts")
                                 .font(.appSystem(size: 13, weight: .bold))
+                                .contentTransition(.numericText(value: Double(feedService.pendingNotes.count)))
                         }
                         .padding(.vertical, 10)
                         .padding(.horizontal, 20)
@@ -2347,9 +2431,15 @@ struct FeedView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(feedService.pendingNotes.count) new posts, tap to load")
+                    .animation(Motion.fade, value: feedService.pendingNotes.count)
+                    }
                     .padding(.top, 12)
+                    // Drops out from under the top bar rather than sliding in
+                    // from off-screen above it.
                     .transition(.asymmetric(
-                        insertion: .move(edge: .top).combined(with: .opacity),
+                        insertion: .offset(y: -16)
+                            .combined(with: .scale(scale: 0.85, anchor: .top))
+                            .combined(with: .opacity),
                         removal: .opacity.combined(with: .scale(scale: 0.8))
                     ))
                     .zIndex(1)
