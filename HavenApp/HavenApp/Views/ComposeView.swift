@@ -1577,6 +1577,7 @@ struct ComposeView: View {
 
             // 2. Build Event
             var tags: [[String]] = []
+            var eventKind = 1
             let relayHint = ConfigService.shared.config.nostrURL
 
             if let parent = effectiveReplyTo {
@@ -1584,20 +1585,24 @@ struct ComposeView: View {
                 let effectiveParentId: String
                 let effectiveParentPubkey: String
                 let effectiveParentTags: [[String]]
+                let effectiveParentKind: Int
 
                 if parent.kind == 6, let originalId = parent.repostedEventId {
                     effectiveParentId = originalId
                     if let original = FeedService.shared.notes.first(where: { $0.id == originalId }) {
                         effectiveParentPubkey = original.pubkey
                         effectiveParentTags = original.tags
+                        effectiveParentKind = original.kind
                     } else {
                         effectiveParentPubkey = parent.pubkey
                         effectiveParentTags = parent.tags
+                        effectiveParentKind = 1
                     }
                 } else {
                     effectiveParentId = parent.id
                     effectiveParentPubkey = parent.pubkey
                     effectiveParentTags = parent.tags
+                    effectiveParentKind = parent.kind
                 }
 
                 // NIP-10: Determine the thread root from the parent's e-tags
@@ -1624,7 +1629,15 @@ struct ComposeView: View {
                     return tag[3] != "mention"
                 }
 
-                if parentNonMentionETags.isEmpty {
+                eventKind = NIP10Thread.replyKind(parentKind: effectiveParentKind)
+                if eventKind == NIP10Thread.commentKind {
+                    // NIP-22: answering a comment sends a comment, scoped to
+                    // the same root.
+                    tags.append(contentsOf: NIP10Thread.commentReplyTags(
+                        parentId: effectiveParentId, parentPubkey: effectiveParentPubkey,
+                        parentTags: effectiveParentTags, relayHint: relayHint
+                    ))
+                } else if parentNonMentionETags.isEmpty {
                     // Parent IS the root note — single e-tag with "root" marker.
                     // NIP-10: the optional 5th element is the event author's pubkey,
                     // used by the outbox model to know whose relays to fetch it from.
@@ -1665,8 +1678,10 @@ struct ComposeView: View {
                     }
                 }
 
-                // Always tag the parent author
-                tags.append(["p", effectiveParentPubkey])
+                // Always tag the parent author (commentReplyTags already did)
+                if eventKind != NIP10Thread.commentKind {
+                    tags.append(["p", effectiveParentPubkey])
+                }
 
                 // NIP-10: Accumulate p-tags from parent (thread participants), deduplicated
                 var seenPubkeys = Set<String>([effectiveParentPubkey])
@@ -1710,6 +1725,7 @@ struct ComposeView: View {
                     media: queuedMedia,
                     quoteSuffix: quoteSuffix,
                     baseTags: tags,
+                    kind: eventKind,
                     powDifficulty: powSnap.noteEnabled ? powSnap.noteDifficulty : 0
                 )
                 let macHost = URL(string: configService.config.macRelayHttpsURL)?.host
@@ -1747,7 +1763,7 @@ struct ComposeView: View {
             let powSnap = PowPreferences.snapshot()
             let powDifficulty = powSnap.noteEnabled ? powSnap.noteDifficulty : 0
             print("ComposeView: signing \(isReply ? "reply" : "post") – mode=\(configService.config.activeSigningMode()) nip46connected=\(NIP46Service.shared.isConnected) tags=\(tags.count) pow=\(powDifficulty)")
-            guard let event = await nostrService.mineAndSignEventAsync(kind: 1, content: finalContent, tags: tags, difficulty: powDifficulty) else {
+            guard let event = await nostrService.mineAndSignEventAsync(kind: eventKind, content: finalContent, tags: tags, difficulty: powDifficulty) else {
                 await MainActor.run {
                     let signingMode = configService.config.activeSigningMode()
                     print("ComposeView: sign FAILED – signingMode=\(signingMode) activeNpub=\(configService.config.activeAccountNpub.prefix(20)) isReply=\(isReply)")

@@ -51,11 +51,7 @@ struct NoteDetailView: View {
     @State private var pinnedScrollId: String?
 
     private var threadRootId: String {
-        let eTags = note.tags.filter { $0.count >= 2 && $0[0] == "e" }
-        if let explicitRoot = eTags.first(where: { $0.count >= 4 && $0[3] == "root" }) {
-            return explicitRoot[1]
-        }
-        return eTags.first?[1] ?? note.id
+        NIP10Thread.rootEventId(kind: note.kind, tags: note.tags) ?? note.id
     }
 
     private var focusedNote: FeedNote {
@@ -616,8 +612,11 @@ struct NoteDetailView: View {
                         let activeFocusId = self.focusedNoteId.isEmpty ? self.note.id : self.focusedNoteId
                         
                         let repliesFilter: [String: Any] = ["kinds": [1], "#e": [targetRootId], "limit": 150]
+                        // NIP-22 comments name the thread root in uppercase E,
+                        // so one filter reaches them at any depth.
+                        let commentsFilter: [String: Any] = ["kinds": [NIP10Thread.commentKind], "#E": [targetRootId], "limit": 150]
                         let engagementFilter: [String: Any] = ["kinds": [6, 7, 9735], "#e": [activeFocusId], "limit": 150]
-                        let req = ["REQ", subId, repliesFilter, engagementFilter] as [Any]
+                        let req = ["REQ", subId, repliesFilter, commentsFilter, engagementFilter] as [Any]
                         if let data = try? JSONSerialization.data(withJSONObject: req),
                            let str = String(data: data, encoding: .utf8) {
                             client.send(text: str)
@@ -654,7 +653,7 @@ struct NoteDetailView: View {
            let kind = ev["kind"] as? Int,
            let tags = ev["tags"] as? [[String]] {
 
-            if kind == 1 {
+            if kind == 1 || kind == NIP10Thread.commentKind {
                 let reply = FeedNote(
                     id: id,
                     pubkey: pubkey,
@@ -772,7 +771,7 @@ struct NoteDetailView: View {
                        let createdAt = ev["created_at"] as? Int64,
                        let kind = ev["kind"] as? Int,
                        let tags = ev["tags"] as? [[String]],
-                       kind == 1 {
+                       kind == 1 || kind == NIP10Thread.commentKind {
 
                         let reply = FeedNote(
                             id: id,
@@ -801,7 +800,7 @@ struct NoteDetailView: View {
                 .receive(on: DispatchQueue.main)
                 .sink { state in
                     if state == .connected {
-                        let filter: [String: Any] = ["kinds": [1], "#e": [noteId], "limit": 150]
+                        let filter: [String: Any] = ["kinds": [1, NIP10Thread.commentKind], "#e": [noteId], "limit": 150]
                         let req = ["REQ", subId, filter] as [Any]
                         if let data = try? JSONSerialization.data(withJSONObject: req),
                            let str = String(data: data, encoding: .utf8) {

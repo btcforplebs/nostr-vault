@@ -30,7 +30,7 @@ enum EventPublisher {
     /// Appends the client identification tag for kind-1 notes if not already present.
     /// Returns the updated tags array.
     static func appendClientTag(to tags: [[String]], kind: Int) -> [[String]] {
-        guard kind == 1, !tags.contains(where: { $0.first == "client" }) else { return tags }
+        guard kind == 1 || kind == NIP10Thread.commentKind, !tags.contains(where: { $0.first == "client" }) else { return tags }
         var result = tags
         #if os(iOS)
         let clientName: String

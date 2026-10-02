@@ -1182,7 +1182,7 @@ class NostrService: ObservableObject {
 
         // Cache raw event JSON immediately so rebroadcast + NIP-18 repost embedding
         // work without waiting for the event to echo back from the relay.
-        if event.kind == 1 || event.kind == 6 || event.kind == 30023 {
+        if event.kind == 1 || event.kind == 6 || event.kind == 30023 || event.kind == NIP10Thread.commentKind {
             if let evData = try? JSONSerialization.data(withJSONObject: eventDict, options: []),
                let evJSON = String(data: evData, encoding: .utf8) {
                 FeedService.shared.cacheRawEvent(id: event.id, json: evJSON)
@@ -1223,7 +1223,7 @@ class NostrService: ObservableObject {
         }
 
         // 2. Smart Broadcast: Send to author's inbox relays if it's a reply or reaction
-        if event.kind == 1 || event.kind == 6 || event.kind == 7 {
+        if event.kind == 1 || event.kind == 6 || event.kind == 7 || event.kind == NIP10Thread.commentKind {
             // Find target author's pubkey from 'p' tags (skipping own pubkey)
             let targetPubkey = event.tags.first { $0.count >= 2 && $0[0] == "p" && $0[1] != activeHexPubkey }?[1]
 

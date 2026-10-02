@@ -1338,7 +1338,7 @@ class FeedService: ObservableObject {
     /// feed, so narrowing the REQ stops a page of results from being almost
     /// entirely kind-1 notes the mode is about to discard.
     private var primaryFeedKinds: [Int] {
-        feedMode == .articles ? [30023] : [1, 6, 30023]
+        feedMode == .articles ? [30023] : [1, 6, 30023, NIP10Thread.commentKind]
     }
 
     /// True for the modes whose primary subscription is `authors: followedPubkeys`.
@@ -2765,7 +2765,7 @@ class FeedService: ObservableObject {
 
         // Mentions (#p) of the owner (from anyone)
         let mentionsFilter: [String: Any] = [
-            "kinds": [1, 6, 30023],
+            "kinds": [1, 6, 30023, NIP10Thread.commentKind],
             "since": since,
             "#p": [ownerHex],
             "limit": 50
@@ -2965,6 +2965,11 @@ class FeedService: ObservableObject {
             return
         }
 
+        // Comments on videos, articles and other kinds are not note threads.
+        if kind == NIP10Thread.commentKind && !NIP10Thread.isNoteComment(kind: kind, tags: tags) {
+            return
+        }
+
         // Handle Reactions (Kind 7) — track for self-like detection + per-note counting
         if kind == 7 {
             if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
@@ -3023,7 +3028,7 @@ class FeedService: ObservableObject {
         // For kind 1/30023: serialize the full event dict (includes sig).
         // For kind 6 with embedded content: the content IS the inner event's JSON.
         var rawEntries: [(id: String, json: String)] = []
-        if kind == 1 || kind == 30023 {
+        if kind == 1 || kind == 30023 || kind == NIP10Thread.commentKind {
             if let data = try? JSONSerialization.data(withJSONObject: ev, options: []),
                let json = String(data: data, encoding: .utf8) {
                 rawEntries.append((id: id, json: json))
@@ -3548,7 +3553,7 @@ class FeedService: ObservableObject {
         // card on "Loading the start of this thread…" forever.
 
         // Cache raw event JSON for NIP-18 repost embedding
-        if kind == 1 || kind == 30023 {
+        if kind == 1 || kind == 30023 || kind == NIP10Thread.commentKind {
             if let evData = try? JSONSerialization.data(withJSONObject: ev, options: []),
                let evJSON = String(data: evData, encoding: .utf8) {
                 cacheRawEvent(id: id, json: evJSON)
@@ -3689,7 +3694,7 @@ class FeedService: ObservableObject {
     /// (1, 6, 7, 30023, 9735) and deduplicates via the shared injectedEventIds set.
     nonisolated func injectExternalEvent(_ eventDict: [String: Any], eventId: String) {
         guard let kind = eventDict["kind"] as? Int,
-              [1, 6, 7, 30023, 9735].contains(kind) else { return }
+              [1, 6, 7, 30023, 9735, NIP10Thread.commentKind].contains(kind) else { return }
 
         DispatchQueue.main.async { [weak self] in
             self?.injectIntoLocalRelay(eventDict, eventId: eventId)
@@ -3708,7 +3713,7 @@ class FeedService: ObservableObject {
 
         // Only inject feed-relevant event kinds (notes, reactions, reposts, zaps)
         guard let kind = ev["kind"] as? Int,
-              [1, 6, 7, 30023, 9735].contains(kind) else { return }
+              [1, 6, 7, 30023, 9735, NIP10Thread.commentKind].contains(kind) else { return }
 
         DispatchQueue.main.async { [weak self] in
             self?.injectIntoLocalRelay(ev, eventId: eventId)

@@ -141,7 +141,7 @@ final class MediaPostQueue: ObservableObject {
         }
 
         guard let event = await NostrService.shared.mineAndSignEventAsync(
-            kind: 1, content: content, tags: tags, difficulty: post.powDifficulty
+            kind: post.kind ?? 1, content: content, tags: tags, difficulty: post.powDifficulty
         ) else {
             log("waiting post \(id.prefix(8)): media is hosted but signing failed — will retry", level: "ERROR")
             update(post)

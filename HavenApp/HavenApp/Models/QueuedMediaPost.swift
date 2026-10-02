@@ -43,6 +43,9 @@ struct QueuedMediaPost: Codable, Identifiable, Equatable {
     var quoteSuffix: String?
     /// Reply, mention and quote tags. Hashtags and `imeta` are added by `assembled()`.
     var baseTags: [[String]]
+    /// 1 for a note or kind 1 reply, 1111 for a NIP-22 comment. Optional so
+    /// posts queued by older builds still decode; nil means 1.
+    var kind: Int?
     var powDifficulty: Int = 0
     var attempts: Int = 0
     var lastAttempt: Date?
