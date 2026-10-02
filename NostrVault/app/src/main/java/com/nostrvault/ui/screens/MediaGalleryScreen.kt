@@ -142,7 +142,7 @@ class MediaGalleryViewModel @Inject constructor(
 
                     _mediaItems.value = items.values
                         .filter { it.isImage || it.isVideo || it.mimeType == null }
-                        .sortedByDescending { it.uploaded ?: (it.lastModified?.div(1000)) ?: 0L }
+                        .sortedByDescending { it.sortTime }
                         .toList()
                 }
             } finally {
@@ -304,6 +304,9 @@ data class BlossomMediaItem(
     val isImage: Boolean get() = mimeType?.startsWith("image") == true || mimeType == "image"
     val isAudio: Boolean get() = mimeType?.startsWith("audio") == true
 
+    /** Seconds since epoch the gallery orders by, newest first: upload time, else file mtime. */
+    val sortTime: Long get() = uploaded ?: lastModified?.div(1000) ?: 0L
+
     /** GIF detection by extension or mime type, matching iOS MediaGallery isGif. */
     val isGif: Boolean get() =
         mimeType?.contains("gif", ignoreCase = true) == true ||
@@ -317,7 +320,21 @@ data class MediaItem(val url: String, val noteId: String)
 enum class DeleteScope { MIRRORS, EVERYWHERE }
 
 /** Media type filter matching iOS MediaTypeFilter. */
-enum class MediaTypeFilter { ALL, PHOTO, VIDEO, GIF, OTHER }
+enum class MediaTypeFilter {
+    ALL, PHOTO, VIDEO, GIF, OTHER;
+
+    /**
+     * Whether [item] belongs under this filter. Shared by the Media tab and
+     * the composer's relay picker so the two can't drift.
+     */
+    fun matches(item: BlossomMediaItem): Boolean = when (this) {
+        ALL -> true
+        PHOTO -> item.isImage && !item.isGif
+        VIDEO -> item.isVideo
+        GIF -> item.isGif
+        OTHER -> !item.isImage && !item.isVideo
+    }
+}
 
 /** Gallery layout mode. */
 enum class MediaLayoutMode { GRID, LIST }
@@ -373,16 +390,7 @@ fun MediaGalleryScreen(
     val noteIdByHash by feedService.blobNoteIndex.collectAsState()
 
     val filteredItems = remember(mediaItems, activeFilter) {
-        mediaItems
-            .filter { item ->
-                when (activeFilter) {
-                    MediaTypeFilter.ALL -> true
-                    MediaTypeFilter.PHOTO -> item.isImage && !item.isGif
-                    MediaTypeFilter.VIDEO -> item.isVideo
-                    MediaTypeFilter.GIF -> item.isGif
-                    MediaTypeFilter.OTHER -> !item.isImage && !item.isVideo
-                }
-            }
+        mediaItems.filter { activeFilter.matches(it) }
     }
 
     GlassScaffold(
@@ -399,43 +407,10 @@ fun MediaGalleryScreen(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
                     // Leading: media type filter icons
-                    GlassPill {
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.GridLayout,
-                            label = "All",
-                            selected = activeFilter == MediaTypeFilter.ALL,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.ALL },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Media,
-                            label = "Photos",
-                            selected = activeFilter == MediaTypeFilter.PHOTO,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.PHOTO },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Video,
-                            label = "Videos",
-                            selected = activeFilter == MediaTypeFilter.VIDEO,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.VIDEO },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Gif,
-                            label = "GIFs",
-                            selected = activeFilter == MediaTypeFilter.GIF,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.GIF },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Document,
-                            label = "Other",
-                            selected = activeFilter == MediaTypeFilter.OTHER,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.OTHER },
-                        )
-                    }
+                    MediaTypeFilterPill(
+                        active = activeFilter,
+                        onSelect = { activeFilter = it },
+                    )
 
                     Spacer(Modifier.weight(1f))
 
@@ -871,6 +846,37 @@ private fun MediaItemContextMenu(
                     // Blossom mirror integration point
                     onDismiss()
                 },
+            )
+        }
+    }
+}
+
+/**
+ * The Media tab's type filter buttons. Also used by the composer's relay
+ * picker, which offers only the [filters] it can attach.
+ */
+@Composable
+internal fun MediaTypeFilterPill(
+    active: MediaTypeFilter,
+    onSelect: (MediaTypeFilter) -> Unit,
+    filters: List<MediaTypeFilter> = MediaTypeFilter.entries,
+) {
+    val colors = LocalNostrVaultColors.current
+    GlassPill {
+        for (filter in filters) {
+            val (icon, label) = when (filter) {
+                MediaTypeFilter.ALL -> NostrVaultIcons.GridLayout to "All"
+                MediaTypeFilter.PHOTO -> NostrVaultIcons.Media to "Photos"
+                MediaTypeFilter.VIDEO -> NostrVaultIcons.Video to "Videos"
+                MediaTypeFilter.GIF -> NostrVaultIcons.Gif to "GIFs"
+                MediaTypeFilter.OTHER -> NostrVaultIcons.Document to "Other"
+            }
+            MediaFilterIcon(
+                icon = icon,
+                label = label,
+                selected = active == filter,
+                accentColor = colors.primary,
+                onClick = { onSelect(filter) },
             )
         }
     }

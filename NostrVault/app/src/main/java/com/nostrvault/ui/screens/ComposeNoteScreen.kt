@@ -60,9 +60,8 @@ import com.nostrvault.service.BlobDescriptor
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.DraftService
 import com.nostrvault.service.FeedService
-import com.nostrvault.service.MediaItem
+import com.nostrvault.service.FileType
 import com.nostrvault.service.MediaPostQueue
-import com.nostrvault.service.MediaType
 import com.nostrvault.service.NostrService
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.PendingPostManager
@@ -89,6 +88,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -114,7 +114,39 @@ data class Attachment(
      * Published inside the attachment's `imeta` tag; blank means omitted.
      */
     val altText: String = "",
+    /**
+     * Set when the media is already on a Blossom server (picked from the
+     * relay picker): posting publishes this URL as-is instead of uploading.
+     */
+    val hostedUrl: String? = null,
+    /** The hosted blob's hash, for its `imeta x`. */
+    val sha256: String? = null,
+    /** A local copy of the hosted blob, measured for `imeta dim`. */
+    val localFile: File? = null,
+    /** The hosted blob's size, for `imeta size`. */
+    val byteCount: Long? = null,
 )
+
+/**
+ * A full MIME type for a blob, from the server's `type` when that is one,
+ * else from the file extension; null when neither says. Local blobs are only
+ * classed as "image"/"video", which is not a MIME type and must not reach
+ * `imeta m`.
+ */
+internal fun blobMimeType(serverType: String?, name: String?): String? {
+    if (serverType != null && '/' in serverType && !serverType.endsWith("/*")) return serverType
+    return when (name?.substringBefore('?')?.substringAfterLast('.', "")?.lowercase()) {
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "gif" -> "image/gif"
+        "webp" -> "image/webp"
+        "avif" -> "image/avif"
+        "mp4", "m4v" -> "video/mp4"
+        "mov" -> "video/quicktime"
+        "webm" -> "video/webm"
+        else -> null
+    }
+}
 
 /**
  * How many attachments one note carries. The editor's row, the upload progress
@@ -228,6 +260,15 @@ class ComposeNoteViewModel @Inject constructor(
     val isQuote: Boolean get() = quoteToNoteId != null
 
     /**
+     * The note this quote cites. Resolved through [FeedService.quoteTarget] so
+     * quoting a repost cites the original's id and author, not the reposter.
+     */
+    private fun quoteTarget(): FeedNote? = quoteToNoteId?.let { feedService.quoteTarget(it) }
+
+    /** The event id the quote cites (also what a draft stores). */
+    private fun quoteCitedId(): String? = quoteTarget()?.id ?: quoteToNoteId
+
+    /**
      * Whether this composer was opened to resume an existing draft. When true the
      * draft-picker badge is hidden (matching iOS, which only offers the picker on a
      * fresh compose, not while editing a draft).
@@ -259,13 +300,26 @@ class ComposeNoteViewModel @Inject constructor(
             }
         }
         if (quoteToNoteId != null) {
-            val quoted = feedService.findNote(quoteToNoteId)
-            _quotedNote.value = quoted
-            if (quoted != null) {
-                _quotedProfile.value = nostrService.profiles.value[quoted.pubkey]
+            val quoted = quoteTarget()
+            showQuoted(quoted)
+            // A bare repost carries only the original's id and author: fetch the
+            // original so the preview can show its text.
+            if (quoted != null && quoted.content.isEmpty()) {
+                feedService.fetchMissingNote(quoted.id)
+                viewModelScope.launch {
+                    feedService.parentNotesCache.first { cache ->
+                        cache[quoted.id]?.let { it.id == quoted.id && it.kind != 6 } == true
+                    }
+                    showQuoted(quoteTarget())
+                }
             }
             // nostr: reference is appended to content at publish time, not pre-populated
         }
+    }
+
+    private fun showQuoted(quoted: FeedNote?) {
+        _quotedNote.value = quoted
+        _quotedProfile.value = quoted?.let { nostrService.profiles.value[it.pubkey] }
     }
 
     fun setContent(text: String) {
@@ -506,15 +560,28 @@ class ComposeNoteViewModel @Inject constructor(
         _showBlossomPicker.value = show
     }
 
-    fun addBlossomMedia(url: String) {
-        val currentContent = _content.value
-        val newContent = if (currentContent.isEmpty() || currentContent.endsWith("\n") || currentContent.endsWith(" ")) {
-            currentContent + url
-        } else {
-            "$currentContent $url"
-        }
-        _content.value = newContent
+    /**
+     * Attaches media picked from the relay picker. It shows in the attachment
+     * strip like a fresh upload; posting publishes its existing URL with an
+     * `imeta` and does not upload it again.
+     */
+    fun addBlossomMedia(item: BlossomMediaItem) {
         _showBlossomPicker.value = false
+        if (_attachments.value.any { it.sha256 == item.sha256 }) return
+        if (_attachments.value.size >= MAX_ATTACHMENTS) {
+            _error.value = "A note can carry $MAX_ATTACHMENTS attachments."
+            return
+        }
+        val mime = blobMimeType(item.mimeType, item.localFile?.name ?: item.displayUrl)
+        _attachments.value = _attachments.value + Attachment(
+            uri = item.localFile?.let { Uri.fromFile(it) } ?: Uri.parse(item.displayUrl),
+            mimeType = mime ?: if (item.isVideo) "video/*" else "image/*",
+            isVideo = item.isVideo,
+            hostedUrl = item.displayUrl,
+            sha256 = item.sha256,
+            localFile = item.localFile,
+            byteCount = item.size,
+        )
     }
 
     fun handlePasteFromClipboard() {
@@ -581,52 +648,33 @@ class ComposeNoteViewModel @Inject constructor(
         }
     }
 
-    suspend fun loadBlossomMediaItems(): List<MediaItem> = withContext(Dispatchers.IO) {
+    /**
+     * The owner's media for the relay picker, newest first. Each item's
+     * `displayUrl` is the URL a post publishes, preferring an outside mirror so
+     * the link works for readers; `localFile` is set when the blob is also on
+     * this device.
+     */
+    suspend fun loadBlossomMediaItems(): List<BlossomMediaItem> = withContext(Dispatchers.IO) {
         try {
             val config = configStore.config.value
             val pubkey = nostrService.ownerHexPubkey
             val localBase = blossomService.localBlossomURL()
-            // Prefer an external mirror so the inserted URL is publicly accessible in published notes
+            // Prefer an external mirror so the published URL is publicly accessible
             val externalBase = config.activeBlossomMirrors
                 .firstOrNull { url -> !url.contains("localhost") && !url.contains("127.0.0.1") }
 
             // Dedupe across local files, the local relay, and external mirrors by sha256.
-            val items = linkedMapOf<String, MediaItem>()
+            val items = linkedMapOf<String, BlossomMediaItem>()
 
-            fun mediaTypeFor(mime: String?, url: String?): MediaType {
-                val m = mime?.lowercase()
-                when {
-                    m != null && m.startsWith("image/") -> return MediaType.IMAGE
-                    m != null && m.startsWith("video/") -> return MediaType.VIDEO
-                    m != null && m.startsWith("audio/") -> return MediaType.AUDIO
-                }
-                return when (url?.substringAfterLast('.', "")?.lowercase()) {
-                    "jpg", "jpeg", "png", "gif", "webp" -> MediaType.IMAGE
-                    "mp4", "mov", "webm", "avi" -> MediaType.VIDEO
-                    "mp3", "m4a", "wav", "ogg" -> MediaType.AUDIO
-                    else -> MediaType.UNKNOWN
-                }
-            }
+            fun isHash(s: String) = s.length == 64 && s.all { it in "0123456789abcdef" }
 
-            fun addItem(sha256: String, type: MediaType, fallbackUrl: String?) {
-                if (sha256.length != 64 || !sha256.all { it in "0123456789abcdef" }) return
-                if (type == MediaType.UNKNOWN) return
-                if (items.containsKey(sha256)) return
-                // Use external mirror URL (BUD-01: {server}/{sha256}) so links work in published notes;
-                // fall back to the blob's own URL, then the local relay.
-                val insertUrl = when {
-                    externalBase != null -> "$externalBase/$sha256"
-                    fallbackUrl != null -> fallbackUrl
-                    localBase != null -> "$localBase/$sha256"
-                    else -> return
-                }
-                items[sha256] = MediaItem(
-                    url = insertUrl,
-                    type = type,
-                    pubkey = pubkey,
-                    tags = null,
-                    mimeType = null
-                )
+            // Use external mirror URL (BUD-01: {server}/{sha256}) so links work in published notes;
+            // fall back to the blob's own URL, then the local relay.
+            fun publishUrl(sha256: String, fallbackUrl: String?): String? = when {
+                externalBase != null -> "$externalBase/$sha256"
+                fallbackUrl != null -> fallbackUrl
+                localBase != null -> "$localBase/$sha256"
+                else -> null
             }
 
             // 1. Files cached in the local relay's blossom directory.
@@ -634,9 +682,24 @@ class ComposeNoteViewModel @Inject constructor(
             if (blossomDir != null && blossomDir.exists()) {
                 blossomDir.listFiles()?.forEach { file ->
                     if (!file.isFile) return@forEach
-                    val filename = file.name
-                    if (filename.startsWith(".") || filename == "LOCK") return@forEach
-                    addItem(file.nameWithoutExtension, mediaTypeFor(null, filename), localBase?.let { "$it/$filename" })
+                    val sha = file.nameWithoutExtension
+                    if (!isHash(sha)) return@forEach
+                    val kind = blobMimeType(null, file.name) ?: when (statsService.detectFileType(file)) {
+                        FileType.IMAGE -> "image"
+                        FileType.VIDEO -> "video"
+                        else -> return@forEach
+                    }
+                    val url = publishUrl(sha, localBase?.let { "$it/${file.name}" }) ?: return@forEach
+                    items[sha] = BlossomMediaItem(
+                        sha256 = sha,
+                        displayUrl = url,
+                        localFile = file,
+                        mimeType = kind,
+                        size = file.length(),
+                        uploaded = null,
+                        lastModified = file.lastModified(),
+                        isLocal = true,
+                    )
                 }
             }
 
@@ -660,12 +723,35 @@ class ComposeNoteViewModel @Inject constructor(
                     }.awaitAll()
                 }
                 blobLists.flatten().forEach { blob ->
-                    val sha = blob.sha256 ?: return@forEach
-                    addItem(sha, mediaTypeFor(blob.type, blob.url), blob.url)
+                    val sha = blob.sha256?.lowercase() ?: return@forEach
+                    if (!isHash(sha)) return@forEach
+                    val existing = items[sha]
+                    if (existing != null) {
+                        // A server knows the real type and upload time; the local file doesn't.
+                        items[sha] = existing.copy(
+                            mimeType = blob.type?.takeIf { '/' in it } ?: existing.mimeType,
+                            uploaded = blob.uploaded ?: existing.uploaded,
+                        )
+                        return@forEach
+                    }
+                    val url = publishUrl(sha, blob.url) ?: return@forEach
+                    items[sha] = BlossomMediaItem(
+                        sha256 = sha,
+                        displayUrl = url,
+                        localFile = null,
+                        mimeType = blob.type ?: blobMimeType(null, blob.url),
+                        size = blob.size,
+                        uploaded = blob.uploaded,
+                        lastModified = null,
+                        isLocal = false,
+                    )
                 }
             }
 
-            items.values.sortedByDescending { it.url }
+            // The composer attaches photos and videos only.
+            items.values
+                .filter { it.isImage || it.isVideo }
+                .sortedByDescending { it.sortTime }
         } catch (e: Exception) {
             Log.e("ComposeNote", "Failed to load blossom media items", e)
             emptyList()
@@ -683,7 +769,7 @@ class ComposeNoteViewModel @Inject constructor(
                         id = draftId,
                         content = convertMentionsToNostr(text),
                         replyToId = replyToNoteId,
-                        quoteId = quoteToNoteId,
+                        quoteId = quoteCitedId(),
                     )
                 )
             }
@@ -742,14 +828,15 @@ class ComposeNoteViewModel @Inject constructor(
                 val (replyTags, eventKind) = buildReplyTags()
                 val tags = replyTags.toMutableList()
                 var quoteSuffix: String? = null
-                if (quoteToNoteId != null) {
+                val quotedId = quoteCitedId()
+                if (quotedId != null) {
                     val relayHint = configStore.config.value.nostrURL ?: ""
-                    val quotedPubkey = feedService.findNote(quoteToNoteId)?.pubkey ?: ""
-                    tags.add(listOf("q", quoteToNoteId, relayHint, quotedPubkey))
+                    val quotedPubkey = quoteTarget()?.pubkey ?: ""
+                    tags.add(listOf("q", quotedId, relayHint, quotedPubkey))
                     if (quotedPubkey.isNotEmpty() && tags.none { it.size >= 2 && it[0] == "p" && it[1] == quotedPubkey }) {
                         tags.add(listOf("p", quotedPubkey))
                     }
-                    val note1 = HavenBridge.hexToNote1(quoteToNoteId)
+                    val note1 = HavenBridge.hexToNote1(quotedId)
                     if (note1 != null) {
                         quoteSuffix = "\nnostr:$note1"
                         finalContent += "\nnostr:$note1"
@@ -821,7 +908,7 @@ class ComposeNoteViewModel @Inject constructor(
                         )
                     )
                     val replyNote = replyToNoteId?.let { feedService.findNote(it) }
-                    val quoteNote = quoteToNoteId?.let { feedService.findNote(it) }
+                    val quoteNote = quoteTarget()
                     pendingPostManager.startPost(
                         event = event,
                         content = finalContent,
@@ -870,6 +957,22 @@ class ComposeNoteViewModel @Inject constructor(
         val notSaved = AttachmentUploadResult.Failed(MediaUploadOutcomeMessage.NOT_SAVED_ON_DEVICE)
 
         for ((index, attachment) in _attachments.value.withIndex()) {
+            // Picked from the relay: already hosted, publish its URL as-is.
+            if (attachment.hostedUrl != null) {
+                val pixelSize = attachment.localFile?.takeIf { it.exists() }?.let { pixelSize(it, attachment.isVideo) }
+                uploaded.add(
+                    QueuedMediaPost.Media(
+                        sha256 = attachment.sha256,
+                        mimeType = attachment.mimeType.takeUnless { it.endsWith("/*") },
+                        url = attachment.hostedUrl,
+                        pixelWidth = pixelSize?.first,
+                        pixelHeight = pixelSize?.second,
+                        alt = attachment.altText,
+                        byteCount = attachment.byteCount,
+                    )
+                )
+                continue
+            }
             withContext(Dispatchers.Main) {
                 val mediaType = if (attachment.isVideo) "video" else "image"
                 _uploadMessage.value = "Uploading $mediaType (${index + 1} of ${_attachments.value.size})..."
@@ -1506,7 +1609,7 @@ fun ComposeNoteScreen(
     if (showBlossomPicker) {
         BlossomMediaPickerSheet(
             onDismiss = { viewModel.setShowBlossomPicker(false) },
-            onSelect = { url -> viewModel.addBlossomMedia(url) }
+            onSelect = { item -> viewModel.addBlossomMedia(item) }
         )
     }
 
@@ -1725,13 +1828,17 @@ private fun AltTextSheet(
 @Composable
 private fun BlossomMediaPickerSheet(
     onDismiss: () -> Unit,
-    onSelect: (String) -> Unit,
+    onSelect: (BlossomMediaItem) -> Unit,
     viewModel: ComposeNoteViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val colors = LocalNostrVaultColors.current
-    var blossomMedia by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var blossomMedia by remember { mutableStateOf<List<BlossomMediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var activeFilter by remember { mutableStateOf(MediaTypeFilter.ALL) }
+    val shownMedia = remember(blossomMedia, activeFilter) {
+        blossomMedia.filter { activeFilter.matches(it) }
+    }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -1765,8 +1872,21 @@ private fun BlossomMediaPickerSheet(
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = PrimaryText,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 8.dp)
             )
+            // The Media tab's filter; the composer attaches photos and videos only.
+            Box(modifier = Modifier.padding(bottom = 12.dp)) {
+                MediaTypeFilterPill(
+                    active = activeFilter,
+                    onSelect = { activeFilter = it },
+                    filters = listOf(
+                        MediaTypeFilter.ALL,
+                        MediaTypeFilter.PHOTO,
+                        MediaTypeFilter.VIDEO,
+                        MediaTypeFilter.GIF,
+                    ),
+                )
+            }
 
             if (isLoading) {
                 Box(
@@ -1777,7 +1897,7 @@ private fun BlossomMediaPickerSheet(
                 ) {
                     CircularProgressIndicator(color = colors.primary)
                 }
-            } else if (blossomMedia.isEmpty()) {
+            } else if (shownMedia.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1785,7 +1905,7 @@ private fun BlossomMediaPickerSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No media on Blossom",
+                        text = if (blossomMedia.isEmpty()) "No media on Blossom" else "Nothing of this type",
                         color = SecondaryText,
                         fontSize = 14.sp
                     )
@@ -1797,28 +1917,28 @@ private fun BlossomMediaPickerSheet(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.heightIn(max = 400.dp)
                 ) {
-                    items(blossomMedia) { item ->
+                    items(shownMedia, key = { it.sha256 }) { item ->
                         Box(
                             modifier = Modifier
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(8.dp))
                                 .combinedClickable(
-                                    onClick = { onSelect(item.url) },
+                                    onClick = { onSelect(item) },
                                     onLongClick = {
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        clipboard.setPrimaryClip(ClipData.newPlainText("Blossom URL", item.url))
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Blossom URL", item.displayUrl))
                                         Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
                                     }
                                 )
                         ) {
                             AsyncImage(
-                                model = item.url,
+                                model = item.localFile ?: item.displayUrl,
                                 contentDescription = null,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
                             )
 
-                            if (item.type == MediaType.VIDEO) {
+                            if (item.isVideo) {
                                 Icon(
                                     imageVector = Icons.Default.PlayArrow,
                                     contentDescription = "Video",
