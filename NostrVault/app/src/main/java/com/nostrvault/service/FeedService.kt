@@ -9,6 +9,7 @@ import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.local.BlobNoteIndexStore
 import com.nostrvault.data.local.EngagementTracker
 import com.nostrvault.data.model.*
+import com.nostrvault.data.remote.LookupSocketPool
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.ui.notification.FollowKind
@@ -16,7 +17,6 @@ import com.nostrvault.ui.notification.NotificationManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import java.io.File
@@ -48,6 +48,7 @@ class FeedService @Inject constructor(
     private val imageLoader: ImageLoader,
     private val notificationManager: NotificationManager,
     private val followingBackupService: FollowingBackupService,
+    private val lookupPool: LookupSocketPool,
 ) {
     companion object {
         private const val TAG = "FeedService"
@@ -64,9 +65,6 @@ class FeedService @Inject constructor(
         private const val FEED_LOAD_TIMEOUT_MS = 20_000L
         private const val EXTENDED_NETWORK_TIMEOUT_MS = 15_000L
         private const val NOTE_FETCH_TIMEOUT_MS = 8_000L
-        /** One lookup's widest pass asks about 24 hint relays plus fallbacks. */
-        private const val MAX_NOTE_FETCH_SOCKETS = 32
-        private const val NOTE_FETCH_SOCKET_WAIT_MS = 2_000L
         private const val NOTE_FETCH_BATCH_DELAY_MS = 300L
         private const val UNAVAILABLE_RETRY_MS = 60_000L
 
@@ -2013,9 +2011,6 @@ class FeedService @Inject constructor(
     private val noteFetchLock = Any()
     private var noteFetchFlushJob: Job? = null
 
-    /** Temporary sockets open across all note lookups; see [requestNotes]. */
-    private val noteFetchSockets = Semaphore(MAX_NOTE_FETCH_SOCKETS)
-
     /** Authors whose relay list was already requested, so each is asked once. */
     private val relayListRequested = ConcurrentHashMap.newKeySet<String>()
 
@@ -2173,55 +2168,70 @@ class FeedService @Inject constructor(
 
     private fun normalizeRelay(url: String) = url.trim().trimEnd('/').lowercase()
 
-    /** Sends one REQ per relay for its ids, waits out the fetch window, then cleans up. */
+    /**
+     * Sends one REQ per relay for its ids and waits until each relay is done
+     * (EOSE, CLOSED, refused) or the fetch window runs out.
+     *
+     * A relay with a live feed socket is asked on that; any other goes through
+     * [lookupPool], which keeps one socket per relay across lookups and leaves
+     * a relay that refused one (a 429, say) alone for two minutes. Each lookup
+     * used to open its own socket to every relay and drop it 8 s later.
+     */
     private suspend fun requestNotes(requests: Map<String, List<String>>, arrived: MutableSet<String>) {
         if (requests.isEmpty()) return
-        val tempClients = mutableListOf<WebSocketClient>()
-        val collectors = mutableListOf<Job>()
-        var socketsExhausted = false
-        try {
+        coroutineScope {
             for ((relayUrl, ids) in requests) {
                 if (ids.isEmpty()) continue
                 val idSet = ids.toSet()
                 val subId = "pnbatch-${UUID.randomUUID().toString().take(8)}"
                 val filter = """{"ids":[${ids.joinToString(",") { "\"$it\"" }}]}"""
-                val client = feedClients[relayUrl] ?: run {
-                    // Every chunk's lookup opens its own sockets; the shared cap
-                    // keeps a screenful of thread cards from opening hundreds.
-                    // The wait is bounded: lookups hold sockets while asking for
-                    // more, so an unbounded acquire could leave two waiting on
-                    // each other. Once one wait runs out, the rest of this pass's
-                    // new relays are skipped rather than each waiting in turn.
-                    if (socketsExhausted) return@run null
-                    if (withTimeoutOrNull(NOTE_FETCH_SOCKET_WAIT_MS) { noteFetchSockets.acquire() } == null) {
-                        socketsExhausted = true
-                        return@run null
+                val feedClient = feedClients[relayUrl]
+                launch {
+                    if (feedClient != null) {
+                        askOnFeedClient(feedClient, subId, listOf(filter)) { msg ->
+                            handleFetchedNote(msg, idSet)?.let { arrived.add(it) }
+                        }
+                    } else {
+                        lookupPool.query(relayUrl, subId, listOf(filter), NOTE_FETCH_TIMEOUT_MS) { msg ->
+                            handleFetchedNote(msg, idSet)?.let { arrived.add(it) }
+                        }
                     }
-                    WebSocketClient(
-                        url = relayUrl,
-                        scope = scope,
-                        trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"),
-                    ).also {
-                        tempClients.add(it)
-                        it.connect()
-                    }
-                } ?: continue
+                }
+            }
+        }
+    }
 
-                // Tracked so it is cancelled below. Critical for reused persistent
-                // feed clients: an un-cancelled collector here would re-parse every
-                // future feed message for the life of the app.
-                collectors.add(scope.launch {
-                    client.messages.collect { msg -> handleFetchedNote(msg, idSet)?.let { arrived.add(it) } }
-                })
-                client.send("[\"REQ\",\"$subId\",$filter]")
+    /**
+     * One lookup REQ on a live feed socket: [onMessage] sees every message on
+     * it (the feed's own traffic included, so it must match on content) until
+     * the relay ends this subscription or the fetch window runs out, then the
+     * subscription is CLOSEd.
+     */
+    private suspend fun askOnFeedClient(
+        client: WebSocketClient,
+        subId: String,
+        filters: List<String>,
+        onMessage: suspend (String) -> Unit,
+    ) = coroutineScope {
+        // Cancelled below. Critical: an un-cancelled collector on a feed
+        // client would re-parse every future feed message for the life of
+        // the app.
+        val ended = CompletableDeferred<Unit>()
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            client.messages.collect { msg ->
+                onMessage(msg)
+                val route = LookupSocketPool.route(msg)
+                if (route != null && route.second == subId && (route.first == "EOSE" || route.first == "CLOSED")) {
+                    ended.complete(Unit)
+                }
             }
-            delay(NOTE_FETCH_TIMEOUT_MS)
+        }
+        client.send("[\"REQ\",\"$subId\",${filters.joinToString(",")}]")
+        try {
+            withTimeoutOrNull(NOTE_FETCH_TIMEOUT_MS) { ended.await() }
         } finally {
-            collectors.forEach { it.cancel() }
-            tempClients.forEach {
-                it.disconnect()
-                noteFetchSockets.release()
-            }
+            collector.cancel()
+            client.send("[\"CLOSE\",\"$subId\"]")
         }
     }
 
@@ -2318,66 +2328,57 @@ class FeedService @Inject constructor(
                 addAll(config.activeBlastrRelays)
             }.distinct()
 
-            val tempClients = mutableListOf<WebSocketClient>()
-            val collectors = mutableListOf<Job>()
-
-            for (relayUrl in relayUrls) {
-                val existingClient = feedClients[relayUrl]
-                val client: WebSocketClient
-                if (existingClient != null) {
-                    client = existingClient
-                } else {
-                    client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
-                    tempClients.add(client)
-                    client.connect()
-                }
-
-                collectors.add(scope.launch {
-                    client.messages.collect { msg ->
-                        try {
-                            val parsed = json.parseToJsonElement(msg).jsonArray
-                            if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "EVENT") return@collect
-                            val eventObj = parsed[2].jsonObject
-                            val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                            val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                            val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                            val tags = eventObj["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } } ?: emptyList()
-                            val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return@collect
-                            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-                            val dTag = tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: ""
-
-                            // Match on what was asked for rather than on the
-                            // subscription id: these share connections with the
-                            // live feed, so unrelated events arrive here too.
-                            val raw = QuoteRef.format(QuoteRef.Coordinate(kind, pubkey, dTag))
-                            if (coordinates.none { it.first == raw }) return@collect
-
-                            val note = FeedNote.fromEvent(eventId, pubkey, content, tags, createdAt, kind)
-                            withContext(Dispatchers.Main.immediate) {
-                                // An addressable event is replaceable, so a
-                                // relay may answer with an older revision after
-                                // a newer one. Keep the newest.
-                                val existing = _quotedAddressCache.value[raw]
-                                if (existing == null || existing.createdAt < note.createdAt) {
-                                    _quotedAddressCache.value = _quotedAddressCache.value + (raw to note)
+            coroutineScope {
+                for (relayUrl in relayUrls) {
+                    val feedClient = feedClients[relayUrl]
+                    for ((_, coordinate) in coordinates) {
+                        val subId = "qaddr-${UUID.randomUUID().toString().take(8)}"
+                        val dTagJson = json.encodeToString(JsonPrimitive.serializer(), JsonPrimitive(coordinate.dTag))
+                        val filter = """{"kinds":[${coordinate.kind}],"authors":["${coordinate.pubkey}"],"#d":[$dTagJson],"limit":1}"""
+                        launch {
+                            if (feedClient != null) {
+                                askOnFeedClient(feedClient, subId, listOf(filter)) { handleQuotedAddressEvent(it, coordinates) }
+                            } else {
+                                lookupPool.query(relayUrl, subId, listOf(filter), NOTE_FETCH_TIMEOUT_MS) {
+                                    handleQuotedAddressEvent(it, coordinates)
                                 }
                             }
-                        } catch (_: Exception) {}
+                        }
                     }
-                })
-
-                for ((_, coordinate) in coordinates) {
-                    val subId = "qaddr-${UUID.randomUUID().toString().take(8)}"
-                    val dTagJson = json.encodeToString(JsonPrimitive.serializer(), JsonPrimitive(coordinate.dTag))
-                    val filter = """{"kinds":[${coordinate.kind}],"authors":["${coordinate.pubkey}"],"#d":[$dTagJson],"limit":1}"""
-                    client.send("[\"REQ\",\"$subId\",$filter]")
                 }
             }
-
-            delay(NOTE_FETCH_TIMEOUT_MS)
-            collectors.forEach { it.cancel() }
-            tempClients.forEach { it.disconnect() }
         }
+    }
+
+    private suspend fun handleQuotedAddressEvent(msg: String, coordinates: List<Pair<String, QuoteRef.Coordinate>>) {
+        try {
+            val parsed = json.parseToJsonElement(msg).jsonArray
+            if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "EVENT") return
+            val eventObj = parsed[2].jsonObject
+            val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
+            val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return
+            val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
+            val tags = eventObj["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } } ?: emptyList()
+            val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: return
+            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return
+            val dTag = tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: ""
+
+            // Match on what was asked for rather than on the subscription id:
+            // these share connections with the live feed, so unrelated events
+            // arrive here too.
+            val raw = QuoteRef.format(QuoteRef.Coordinate(kind, pubkey, dTag))
+            if (coordinates.none { it.first == raw }) return
+
+            val note = FeedNote.fromEvent(eventId, pubkey, content, tags, createdAt, kind)
+            withContext(Dispatchers.Main.immediate) {
+                // An addressable event is replaceable, so a relay may answer
+                // with an older revision after a newer one. Keep the newest.
+                val existing = _quotedAddressCache.value[raw]
+                if (existing == null || existing.createdAt < note.createdAt) {
+                    _quotedAddressCache.value = _quotedAddressCache.value + (raw to note)
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     /** Fetch profiles for the authors of resolved quoted notes that lack one. */
@@ -2504,47 +2505,27 @@ class FeedService @Inject constructor(
             val seenZaps = mutableSetOf<String>()
 
             for (relayUrl in relayUrls) {
-                val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
                 val subId = "stats-${UUID.randomUUID().toString().take(8)}"
-
-                val collectedStats = NoteStats()
-
-                scope.launch {
-                    client.messages.collect { msg ->
-                        try {
-                            val parsed = json.parseToJsonElement(msg).jsonArray
-                            if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                                val eventObj = parsed[2].jsonObject
-                                val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-
-                                when (kind) {
-                                    6 -> if (seenReposts.add(id)) collectedStats.repostCount++
-                                    7 -> if (seenReactions.add(id)) collectedStats.reactionCount++
-                                    9735 -> if (seenZaps.add(id)) {
-                                        collectedStats.zapCount++
-                                        // Parse zap amount
-                                        val tags = eventObj["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } } ?: emptyList()
-                                        val bolt11 = tags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }?.get(1)
-                                        // Amount parsing handled elsewhere
-                                    }
-                                }
-                            }
-                        } catch (_: Exception) {}
-                    }
-                }
-
-                client.connect()
-
                 val repostFilter = """{"kinds":[6],"#e":["$noteId"]}"""
                 val reactionFilter = """{"kinds":[7],"#e":["$noteId"]}"""
                 val zapFilter = """{"kinds":[9735],"#e":["$noteId"]}"""
-                client.send("[\"REQ\",\"$subId-r\",$repostFilter]")
-                client.send("[\"REQ\",\"$subId-l\",$reactionFilter]")
-                client.send("[\"REQ\",\"$subId-z\",$zapFilter]")
 
-                delay(NOTE_FETCH_TIMEOUT_MS)
-                client.disconnect()
+                lookupPool.query(relayUrl, subId, listOf(repostFilter, reactionFilter, zapFilter), NOTE_FETCH_TIMEOUT_MS) { msg ->
+                    try {
+                        val parsed = json.parseToJsonElement(msg).jsonArray
+                        if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
+                            val eventObj = parsed[2].jsonObject
+                            val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@query
+                            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@query
+
+                            when (kind) {
+                                6 -> seenReposts.add(id)
+                                7 -> seenReactions.add(id)
+                                9735 -> seenZaps.add(id)
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
             }
 
             withContext(Dispatchers.Main.immediate) {
@@ -2574,64 +2555,55 @@ class FeedService @Inject constructor(
             val reposts = mutableListOf<RepostDetail>()
 
             for (relayUrl in relayUrls) {
-                val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
                 val subId = "eng-${UUID.randomUUID().toString().take(8)}"
+                val filter = """{"kinds":[6,7,9735],"#e":["$noteId"]}"""
+                lookupPool.query(relayUrl, subId, listOf(filter), NOTE_FETCH_TIMEOUT_MS) { msg ->
+                    try {
+                        val parsed = json.parseToJsonElement(msg).jsonArray
+                        if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
+                            val eventObj = parsed[2].jsonObject
+                            val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@query
+                            if (!seenIds.add(id)) return@query
+                            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@query
+                            val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
+                            val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                            val tags = eventObj["tags"]?.jsonArray?.map { t ->
+                                t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
+                            } ?: emptyList()
 
-                scope.launch {
-                    client.messages.collect { msg ->
-                        try {
-                            val parsed = json.parseToJsonElement(msg).jsonArray
-                            if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                                val eventObj = parsed[2].jsonObject
-                                val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                if (!seenIds.add(id)) return@collect
-                                val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-                                val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                val tags = eventObj["tags"]?.jsonArray?.map { t ->
-                                    t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                                } ?: emptyList()
-
-                                when (kind) {
-                                    7 -> {
-                                        val emoji = if (content == "+" || content.isBlank()) "\u2764\uFE0F" else content
-                                        synchronized(reactions) { reactions.add(ReactionDetail(id, pubkey, emoji)) }
+                            when (kind) {
+                                7 -> {
+                                    val emoji = if (content == "+" || content.isBlank()) "\u2764\uFE0F" else content
+                                    synchronized(reactions) { reactions.add(ReactionDetail(id, pubkey, emoji)) }
+                                }
+                                9735 -> {
+                                    val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
+                                    var zapperPubkey = pubkey
+                                    var amountSats = 0L
+                                    var comment = ""
+                                    if (descTag != null) {
+                                        try {
+                                            val zapReq = json.parseToJsonElement(descTag).jsonObject
+                                            zapperPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: pubkey
+                                            comment = zapReq["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                            val zapTags = zapReq["tags"]?.jsonArray?.map { t ->
+                                                t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
+                                            } ?: emptyList()
+                                            val amountTag = zapTags.firstOrNull { it.size >= 2 && it[0] == "amount" }
+                                            if (amountTag != null) {
+                                                amountSats = (amountTag[1].toLongOrNull() ?: 0L) / 1000
+                                            }
+                                        } catch (_: Exception) {}
                                     }
-                                    9735 -> {
-                                        val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-                                        var zapperPubkey = pubkey
-                                        var amountSats = 0L
-                                        var comment = ""
-                                        if (descTag != null) {
-                                            try {
-                                                val zapReq = json.parseToJsonElement(descTag).jsonObject
-                                                zapperPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: pubkey
-                                                comment = zapReq["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                                val zapTags = zapReq["tags"]?.jsonArray?.map { t ->
-                                                    t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                                                } ?: emptyList()
-                                                val amountTag = zapTags.firstOrNull { it.size >= 2 && it[0] == "amount" }
-                                                if (amountTag != null) {
-                                                    amountSats = (amountTag[1].toLongOrNull() ?: 0L) / 1000
-                                                }
-                                            } catch (_: Exception) {}
-                                        }
-                                        synchronized(zaps) { zaps.add(ZapDetail(id, zapperPubkey, amountSats, comment)) }
-                                    }
-                                    6 -> {
-                                        synchronized(reposts) { reposts.add(RepostDetail(id, pubkey)) }
-                                    }
+                                    synchronized(zaps) { zaps.add(ZapDetail(id, zapperPubkey, amountSats, comment)) }
+                                }
+                                6 -> {
+                                    synchronized(reposts) { reposts.add(RepostDetail(id, pubkey)) }
                                 }
                             }
-                        } catch (_: Exception) {}
-                    }
+                        }
+                    } catch (_: Exception) {}
                 }
-
-                client.connect()
-                val filter = """{"kinds":[6,7,9735],"#e":["$noteId"]}"""
-                client.send("[\"REQ\",\"$subId\",$filter]")
-                delay(NOTE_FETCH_TIMEOUT_MS)
-                client.disconnect()
             }
 
             val allPubkeys = (reactions.map { it.pubkey } + zaps.map { it.zapperPubkey } + reposts.map { it.pubkey }).distinct()
@@ -2664,67 +2636,58 @@ class FeedService @Inject constructor(
             val perNote = ConcurrentHashMap<String, MutableList<Any>>()
 
             for (relayUrl in relayUrls) {
-                val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
                 val subId = "thr-${UUID.randomUUID().toString().take(8)}"
-
-                scope.launch {
-                    client.messages.collect { msg ->
-                        try {
-                            val parsed = json.parseToJsonElement(msg).jsonArray
-                            if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                                val eventObj = parsed[2].jsonObject
-                                val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                if (!seenIds.add(id)) return@collect
-                                val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-                                val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                val tags = eventObj["tags"]?.jsonArray?.map { t ->
-                                    t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                                } ?: emptyList()
-
-                                val targetNoteId = tags.firstOrNull { it.size >= 2 && it[0] == "e" && it[1] in noteIdSet }?.get(1) ?: return@collect
-
-                                val detail: Any = when (kind) {
-                                    7 -> {
-                                        val emoji = if (content == "+" || content.isBlank()) "\u2764\uFE0F" else content
-                                        ReactionDetail(id, pubkey, emoji)
-                                    }
-                                    9735 -> {
-                                        val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-                                        var zapperPubkey = pubkey
-                                        var amountSats = 0L
-                                        var comment = ""
-                                        if (descTag != null) {
-                                            try {
-                                                val zapReq = json.parseToJsonElement(descTag).jsonObject
-                                                zapperPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: pubkey
-                                                comment = zapReq["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                                val zapTags = zapReq["tags"]?.jsonArray?.map { t ->
-                                                    t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                                                } ?: emptyList()
-                                                val amountTag = zapTags.firstOrNull { it.size >= 2 && it[0] == "amount" }
-                                                if (amountTag != null) {
-                                                    amountSats = (amountTag[1].toLongOrNull() ?: 0L) / 1000
-                                                }
-                                            } catch (_: Exception) {}
-                                        }
-                                        ZapDetail(id, zapperPubkey, amountSats, comment)
-                                    }
-                                    6 -> RepostDetail(id, pubkey)
-                                    else -> return@collect
-                                }
-                                perNote.getOrPut(targetNoteId) { mutableListOf() }.add(detail)
-                            }
-                        } catch (_: Exception) {}
-                    }
-                }
-
-                client.connect()
                 val noteIdsJson = noteIds.joinToString(",") { "\"$it\"" }
                 val filter = """{"kinds":[6,7,9735],"#e":[$noteIdsJson],"limit":500}"""
-                client.send("[\"REQ\",\"$subId\",$filter]")
-                delay(NOTE_FETCH_TIMEOUT_MS)
-                client.disconnect()
+                lookupPool.query(relayUrl, subId, listOf(filter), NOTE_FETCH_TIMEOUT_MS) { msg ->
+                    try {
+                        val parsed = json.parseToJsonElement(msg).jsonArray
+                        if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
+                            val eventObj = parsed[2].jsonObject
+                            val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@query
+                            if (!seenIds.add(id)) return@query
+                            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@query
+                            val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
+                            val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                            val tags = eventObj["tags"]?.jsonArray?.map { t ->
+                                t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
+                            } ?: emptyList()
+
+                            val targetNoteId = tags.firstOrNull { it.size >= 2 && it[0] == "e" && it[1] in noteIdSet }?.get(1) ?: return@query
+
+                            val detail: Any = when (kind) {
+                                7 -> {
+                                    val emoji = if (content == "+" || content.isBlank()) "\u2764\uFE0F" else content
+                                    ReactionDetail(id, pubkey, emoji)
+                                }
+                                9735 -> {
+                                    val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
+                                    var zapperPubkey = pubkey
+                                    var amountSats = 0L
+                                    var comment = ""
+                                    if (descTag != null) {
+                                        try {
+                                            val zapReq = json.parseToJsonElement(descTag).jsonObject
+                                            zapperPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: pubkey
+                                            comment = zapReq["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                            val zapTags = zapReq["tags"]?.jsonArray?.map { t ->
+                                                t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
+                                            } ?: emptyList()
+                                            val amountTag = zapTags.firstOrNull { it.size >= 2 && it[0] == "amount" }
+                                            if (amountTag != null) {
+                                                amountSats = (amountTag[1].toLongOrNull() ?: 0L) / 1000
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                                    ZapDetail(id, zapperPubkey, amountSats, comment)
+                                }
+                                6 -> RepostDetail(id, pubkey)
+                                else -> return@query
+                            }
+                            perNote.getOrPut(targetNoteId) { mutableListOf() }.add(detail)
+                        }
+                    } catch (_: Exception) {}
+                }
             }
 
             val result = perNote.mapValues { (_, details) ->
