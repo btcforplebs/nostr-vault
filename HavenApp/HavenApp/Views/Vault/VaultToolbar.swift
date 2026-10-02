@@ -24,33 +24,29 @@ extension VaultView {
 
     // MARK: - Trailing Toolbar (inline)
 
+    // Each icon means one thing in every mode: the tray arrow in is what
+    // others gave you, the arrow out is what you gave. The person icon used
+    // to mean "my notes only" under Notes but "on my notes" under Likes and
+    // Zaps. Whitelisted notes already show in All, and the phone has no
+    // layout switch (`rowLayoutMode`).
     @ViewBuilder
     var trailingToolbarInline: some View {
         HStack(spacing: 4) {
-            IconFilterButton(
-                icon: "rectangle.compress.vertical",
-                tooltip: "Condensed View",
-                isSelected: noteLayoutMode == .compact,
-                color: .havenPurple
-            ) {
-                withAnimation(Motion.toggle) {
-                    noteLayoutMode = noteLayoutMode == .compact ? .expanded : .compact
-                }
-            }
-
             if viewMode == .notes {
-                IconFilterButton(icon: "square.stack", tooltip: "All", isSelected: contentFilter == .all, color: .havenPurple) { contentFilter = .all }
-                IconFilterButton(icon: "person.fill", tooltip: "My Notes", isSelected: contentFilter == .mine, color: .havenPurple) { contentFilter = .mine }
-                IconFilterButton(icon: "at", tooltip: "Tagged", isSelected: contentFilter == .tagged, color: .havenPurple) { contentFilter = .tagged }
-                IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Whitelisted", isSelected: contentFilter == .whitelist, color: .havenPurple) { contentFilter = .whitelist }
+                IconFilterButton(icon: "square.stack", tooltip: "All", isSelected: contentFilter == .all, color: .havenPurple, label: "All") { contentFilter = .all }
+                IconFilterButton(icon: "person.fill", tooltip: "Mine", isSelected: contentFilter == .mine, color: .havenPurple, label: "Mine") { contentFilter = .mine }
+                IconFilterButton(icon: "at", tooltip: "Mentions", isSelected: contentFilter == .tagged, color: .havenPurple, label: "Mentions") { contentFilter = .tagged }
             } else if viewMode == .likes {
-                IconFilterButton(icon: "person.fill", tooltip: "My Notes", isSelected: likesFilter == .onMyNotes, color: .havenPurple) { likesFilter = .onMyNotes }
-                IconFilterButton(icon: "heart", tooltip: "My Likes", isSelected: likesFilter == .myLikes, color: .havenPurple) { likesFilter = .myLikes }
+                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: likesFilter == .onMyNotes, color: .havenPurple, label: "Received") { likesFilter = .onMyNotes }
+                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: likesFilter == .myLikes, color: .havenPurple, label: "Given") { likesFilter = .myLikes }
             } else if viewMode == .zaps {
-                IconFilterButton(icon: "person.fill", tooltip: "My Notes", isSelected: zapsFilter == .onMyNotes, color: .havenPurple) { zapsFilter = .onMyNotes }
-                IconFilterButton(icon: "bolt", tooltip: "My Zaps", isSelected: zapsFilter == .myZaps, color: .havenPurple) { zapsFilter = .myZaps }
+                IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: zapsFilter == .onMyNotes, color: .havenPurple, label: "Received") { zapsFilter = .onMyNotes }
+                IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: zapsFilter == .myZaps, color: .havenPurple, label: "Given") { zapsFilter = .myZaps }
             }
         }
+        .animation(Motion.toggle, value: contentFilter)
+        .animation(Motion.toggle, value: likesFilter)
+        .animation(Motion.toggle, value: zapsFilter)
     }
 
     // MARK: - Trailing Toolbar (compact menu)
@@ -58,44 +54,29 @@ extension VaultView {
     @ViewBuilder
     var trailingToolbarMenu: some View {
         Menu {
-            Button {
-                withAnimation(Motion.toggle) {
-                    noteLayoutMode = noteLayoutMode == .compact ? .expanded : .compact
-                }
-            } label: {
-                Label(
-                    noteLayoutMode == .compact ? "Expanded View" : "Condensed View",
-                    systemImage: noteLayoutMode == .compact ? "rectangle.expand.vertical" : "rectangle.compress.vertical"
-                )
-            }
-            Divider()
-
             if viewMode == .notes {
                 Button { contentFilter = .all } label: {
-                    Label("All Notes", systemImage: "square.stack")
+                    Label("All", systemImage: "square.stack")
                 }
                 Button { contentFilter = .mine } label: {
-                    Label("My Notes", systemImage: "person.fill")
+                    Label("Mine", systemImage: "person.fill")
                 }
                 Button { contentFilter = .tagged } label: {
-                    Label("Tagged", systemImage: "at")
-                }
-                Button { contentFilter = .whitelist } label: {
-                    Label("Whitelisted", systemImage: "checkmark.seal.fill")
+                    Label("Mentions", systemImage: "at")
                 }
             } else if viewMode == .likes {
                 Button { likesFilter = .onMyNotes } label: {
-                    Label("My Notes", systemImage: "person.fill")
+                    Label("Received", systemImage: "tray.and.arrow.down.fill")
                 }
                 Button { likesFilter = .myLikes } label: {
-                    Label("My Likes", systemImage: "heart")
+                    Label("Given", systemImage: "tray.and.arrow.up.fill")
                 }
             } else if viewMode == .zaps {
                 Button { zapsFilter = .onMyNotes } label: {
-                    Label("My Notes", systemImage: "person.fill")
+                    Label("Received", systemImage: "tray.and.arrow.down.fill")
                 }
                 Button { zapsFilter = .myZaps } label: {
-                    Label("My Zaps", systemImage: "bolt")
+                    Label("Given", systemImage: "tray.and.arrow.up.fill")
                 }
             }
         } label: {

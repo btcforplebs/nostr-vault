@@ -123,7 +123,7 @@ extension VaultView {
                         ))) {
                             NoteRow(
                                 event: event,
-                                layoutMode: noteLayoutMode,
+                                layoutMode: rowLayoutMode,
                                 reactors: showEngagement ? reactionMap[event.id] : nil,
                                 latestReactionDate: showEngagement ? latestReactionDates[event.id] : nil,
                                 zappers: showEngagement ? zapMap[event.id] : nil,
@@ -140,7 +140,7 @@ extension VaultView {
                         #else
                         NoteRow(
                             event: event,
-                            layoutMode: noteLayoutMode,
+                            layoutMode: rowLayoutMode,
                             reactors: showEngagement ? reactionMap[event.id] : nil,
                             latestReactionDate: showEngagement ? latestReactionDates[event.id] : nil,
                             zappers: showEngagement ? zapMap[event.id] : nil,
@@ -234,7 +234,7 @@ extension VaultView {
                                 tags: event.tags,
                                 kind: event.kind
                             ))) {
-                                NoteRow(event: event, truncate: true, layoutMode: noteLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
+                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
                                     .relayFocusOutline(focusedEventId == event.id)
                                     .padding(.horizontal, 16)
                                     .onAppear {
@@ -245,7 +245,7 @@ extension VaultView {
                             }
                             .buttonStyle(.plain)
                             #else
-                            NoteRow(event: event, truncate: true, layoutMode: noteLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
+                            NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
                                 .relayFocusOutline(focusedEventId == event.id)
                                 .padding(.horizontal, 16)
                                 .onAppear {
@@ -332,7 +332,7 @@ extension VaultView {
                                 tags: event.tags,
                                 kind: event.kind
                             ))) {
-                                NoteRow(event: event, truncate: true, layoutMode: noteLayoutMode, zappers: rowZappers)
+                                NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers)
                                     .relayFocusOutline(focusedEventId == event.id)
                                     .padding(.horizontal, 16)
                                     .onAppear {
@@ -343,7 +343,7 @@ extension VaultView {
                             }
                             .buttonStyle(.plain)
                             #else
-                            NoteRow(event: event, truncate: true, layoutMode: noteLayoutMode, zappers: rowZappers)
+                            NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers)
                                 .relayFocusOutline(focusedEventId == event.id)
                                 .padding(.horizontal, 16)
                                 .onAppear {
