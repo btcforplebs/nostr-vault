@@ -154,9 +154,11 @@ class ModeComposeViewModel @Inject constructor(
     }
 
     /**
-     * Copies the first [TRIM_LIMIT_US] of [source] into a new MP4 without
-     * re-encoding. The cut lands on whole samples, starting at the opening
-     * keyframe.
+     * Copies the opening of [source], up to [TRIM_LIMIT_US], into a new MP4
+     * without re-encoding. The cut is at the last video keyframe before the
+     * limit: B-frames just under it can reference a frame past it, and
+     * dropping that frame would flicker on every loop. Audio a muxer can't
+     * take (PCM in a .mov) is left out rather than failing the pick.
      */
     private fun trimToLimit(source: File, rotation: Int): File {
         val out = File.createTempFile("divine_trim_", ".mp4", context.cacheDir)
@@ -166,18 +168,41 @@ class ModeComposeViewModel @Inject constructor(
             extractor.setDataSource(source.absolutePath)
             muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             val tracks = HashMap<Int, Int>()
+            var videoTrack = -1
             var bufferSize = 1 shl 20
             for (i in 0 until extractor.trackCount) {
                 val format = extractor.getTrackFormat(i)
                 val trackMime = format.getString(MediaFormat.KEY_MIME) ?: continue
-                if (!trackMime.startsWith("video/") && !trackMime.startsWith("audio/")) continue
+                val isVideo = trackMime.startsWith("video/")
+                if (!isVideo && !trackMime.startsWith("audio/")) continue
+                val muxerTrack = try {
+                    muxer.addTrack(format)
+                } catch (e: Exception) {
+                    if (isVideo) throw e
+                    Log.w(TAG, "trim: dropping audio $trackMime: ${e.message}")
+                    continue
+                }
                 extractor.selectTrack(i)
-                tracks[i] = muxer.addTrack(format)
+                tracks[i] = muxerTrack
+                if (isVideo) videoTrack = i
                 if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
                     bufferSize = maxOf(bufferSize, format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
                 }
             }
             muxer.setOrientationHint(rotation)
+            // Find the last video keyframe at or before the limit. Only the
+            // video track is selected while seeking, so the sync point is its.
+            var cutUs = TRIM_LIMIT_US
+            if (videoTrack >= 0) {
+                val others = tracks.keys.filter { it != videoTrack }
+                others.forEach { extractor.unselectTrack(it) }
+                extractor.seekTo(TRIM_LIMIT_US, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+                val keyUs = extractor.sampleTime
+                // A clip with one long GOP has no keyframe to cut at; keep the limit.
+                if (keyUs > 0) cutUs = keyUs
+                others.forEach { extractor.selectTrack(it) }
+                extractor.seekTo(0, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+            }
             muxer.start()
             val buffer = ByteBuffer.allocate(bufferSize)
             val info = MediaCodec.BufferInfo()
@@ -187,7 +212,9 @@ class ModeComposeViewModel @Inject constructor(
                 if (size < 0) break
                 val track = extractor.sampleTrackIndex
                 val time = extractor.sampleTime
-                if (time > TRIM_LIMIT_US) {
+                // Once a track reaches the cut, later samples in decode order
+                // (open-GOP leading B-frames) belong to the dropped keyframe.
+                if (track in finished || time >= cutUs) {
                     finished.add(track)
                 } else {
                     val keyFrame = extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0
