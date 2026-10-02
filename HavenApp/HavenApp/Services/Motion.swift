@@ -247,3 +247,21 @@ enum Motion {
         return animation.delay(Double(min(index, cap)) * step)
     }
 }
+
+/// Press feedback for a solid floating button, such as the Post capsule.
+///
+/// The default style dims a pressed label to about a quarter opacity in a
+/// single frame. On a button floating over the feed, that let the row beneath
+/// show through it mid-tap. This keeps the fill solid: the button settles in
+/// and darkens slightly, then springs back on release (a fade only, under
+/// Reduce Motion).
+struct PressScaleButtonStyle: ButtonStyle {
+    var pressedScale: CGFloat = 0.94
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !Motion.isReduced ? pressedScale : 1)
+            .brightness(configuration.isPressed ? -0.08 : 0)
+            .animation(configuration.isPressed ? Motion.control : Motion.pop, value: configuration.isPressed)
+    }
+}
