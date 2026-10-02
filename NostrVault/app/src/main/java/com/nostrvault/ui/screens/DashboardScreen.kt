@@ -4,12 +4,15 @@ import android.content.Intent
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,6 +26,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,6 +62,9 @@ import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.ui.components.VaultNoteCard
 import com.nostrvault.ui.components.VaultNoteLayoutMode
 import com.nostrvault.ui.components.VaultNoteType
+import com.nostrvault.ui.navigation.NotificationTarget
+import com.nostrvault.ui.navigation.RelayFocus
+import com.nostrvault.ui.navigation.RelayFocusRequest
 import com.nostrvault.ui.navigation.Screen
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -68,6 +75,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -1143,6 +1151,74 @@ class DashboardViewModel @Inject constructor(
 
     fun toggleCompact() { _isCompact.value = !_isCompact.value }
 
+    // ── Notification focus (port of iOS consumeRelayFocus, PR #95) ──
+
+    /** Events fetched by id for a notification tap, when not (yet) in [allEvents]. */
+    private val focusEvents = ConcurrentHashMap<String, NostrEvent>()
+
+    /**
+     * Switch to the list that holds a notification's event: likes → Likes on
+     * my notes, zaps → Zaps on my notes, everything else → Notes / All. Filters
+     * are only touched when they differ, since setting one resets its list.
+     */
+    fun applyRelayFocusView(request: RelayFocusRequest, zapsOnly: Boolean) {
+        when (NotificationTarget.viewFor(request.type, zapsOnly)) {
+            VaultViewMode.LIKES -> {
+                if (_likesFilter.value != VaultLikesFilter.ON_MY_NOTES) setLikesFilter(VaultLikesFilter.ON_MY_NOTES)
+                if (_viewMode.value != VaultViewMode.LIKES) setViewMode(VaultViewMode.LIKES)
+            }
+            VaultViewMode.ZAPS -> {
+                if (_zapsFilter.value != VaultZapsFilter.ON_MY_NOTES) setZapsFilter(VaultZapsFilter.ON_MY_NOTES)
+                if (_viewMode.value != VaultViewMode.ZAPS) setViewMode(VaultViewMode.ZAPS)
+            }
+            VaultViewMode.NOTES -> {
+                if (_contentFilter.value != VaultContentFilter.ALL) setContentFilter(VaultContentFilter.ALL)
+                if (_viewMode.value != VaultViewMode.NOTES) setViewMode(VaultViewMode.NOTES)
+            }
+        }
+        fetchFocusEventIfMissing(request.eventId)
+    }
+
+    /**
+     * The notification's event carries the target in its tags, so it has to be
+     * at hand. It normally arrives over the live inbox subscription; on a cold
+     * start that can lag, so also ask the local relays for it by id.
+     */
+    private fun fetchFocusEventIfMissing(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (focusEvent(id) != null) return@launch
+            val config = configStore.config.value
+            val urls = listOfNotNull(config.nostrURL, config.localInboxURL).distinct()
+            for (url in urls) {
+                val (raw, _) = queryRelayEndpoint(
+                    url, "{\"ids\":[\"$id\"]}", "focus", LOAD_MORE_TIMEOUT_MS, dedupe = false,
+                )
+                raw.firstOrNull { it.id == id }?.let {
+                    focusEvents[id] = it
+                    return@launch
+                }
+            }
+        }
+    }
+
+    private suspend fun focusEvent(id: String): NostrEvent? =
+        focusEvents[id] ?: allEventsMutex.withLock { allEvents.firstOrNull { it.id == id } }
+
+    /** Ids to look for in the list, best first; see [NotificationTarget.focusCandidates]. */
+    suspend fun focusCandidates(request: RelayFocusRequest): List<String> =
+        NotificationTarget.focusCandidates(request.eventId, focusEvent(request.eventId)?.tags.orEmpty())
+
+    /**
+     * The post to open when the event never shows up in the list (older than
+     * the loaded page). Null when the notification's event could not be found,
+     * since opening a reaction or zap receipt as a note shows nothing.
+     */
+    suspend fun focusFallbackNoteId(request: RelayFocusRequest): String? =
+        // A mention or reply is a note itself, so its id opens even untagged.
+        NotificationTarget.targetNoteId(
+            request.type, request.eventId, focusEvent(request.eventId)?.tags.orEmpty(),
+        )
+
     // ── Display data processing (port of iOS VaultDataProcessing) ──
 
     private fun scheduleUpdateDisplayData() {
@@ -1594,6 +1670,9 @@ class DashboardViewModel @Inject constructor(
         filters: String,
         subIdPrefix: String,
         timeoutMs: Long,
+        /** False for lookups that must not mark ids as seen: a seen id is
+         *  dropped by the live subscription, so it would never reach the list. */
+        dedupe: Boolean = true,
     ): Pair<List<NostrEvent>, List<FeedNote>> {
         val rawEvents = mutableListOf<NostrEvent>()
         val contentNotes = mutableListOf<FeedNote>()
@@ -1612,7 +1691,7 @@ class DashboardViewModel @Inject constructor(
                             if (parsed.size < 3) return@collect
                             val eventObj = parsed[2].jsonObject
                             val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                            if (!seenIds.add(id)) return@collect
+                            if (dedupe && !seenIds.add(id)) return@collect
 
                             val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
                             val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
@@ -1785,6 +1864,46 @@ fun DashboardScreen(
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val colors = LocalNostrVaultColors.current
+
+    // A tapped notification parks its event in RelayFocus (see NavGraph). Pick
+    // the list that holds it, wait for it to load, scroll it to the middle and
+    // outline it for 3 s — iOS consumeRelayFocus. If it never shows (older
+    // than the loaded page), open the post instead, so a tap always lands.
+    var focusedEventId by remember { mutableStateOf<String?>(null) }
+    val currentZapsOnly by rememberUpdatedState(zapsOnly)
+    val currentOnNoteClick by rememberUpdatedState(onNoteClick)
+    LaunchedEffect(Unit) {
+        RelayFocus.pending.filterNotNull().collectLatest {
+            val request = RelayFocus.consume() ?: return@collectLatest
+            focusedEventId = null
+            viewModel.applyRelayFocusView(request, currentZapsOnly)
+            // The event can still be arriving from the relay and the lists
+            // rebuild on a debounce, so look for up to ~10 s.
+            repeat(40) {
+                val id = viewModel.focusCandidates(request).firstOrNull { candidate ->
+                    focusShownNotes(viewModel).any { it.id == candidate }
+                }
+                if (id != null) {
+                    delay(150) // let the list lay the row out
+                    val index = focusShownNotes(viewModel).indexOfFirst { it.id == id }
+                    if (index >= 0) {
+                        listState.animateScrollToItem(index)
+                        val layout = listState.layoutInfo
+                        layout.visibleItemsInfo.firstOrNull { it.key == id }?.let { item ->
+                            val center = (layout.viewportStartOffset + layout.viewportEndOffset) / 2
+                            listState.animateScrollBy((item.offset + item.size / 2 - center).toFloat())
+                        }
+                        focusedEventId = id
+                        delay(3_000)
+                        focusedEventId = null
+                        return@collectLatest
+                    }
+                }
+                delay(250)
+            }
+            viewModel.focusFallbackNoteId(request)?.let { currentOnNoteClick(it) }
+        }
+    }
 
     // Dashboard bottom sheet state
     var showDashboardSheet by remember { mutableStateOf(false) }
@@ -2057,6 +2176,7 @@ fun DashboardScreen(
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
+                    focusedEventId = focusedEventId,
                 )
                 VaultViewMode.LIKES -> LikesContent(
                     notes = displayLikedNotes,
@@ -2073,6 +2193,7 @@ fun DashboardScreen(
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
+                    focusedEventId = focusedEventId,
                 )
                 VaultViewMode.ZAPS -> ZapsContent(
                     notes = displayZappedNotes,
@@ -2089,6 +2210,7 @@ fun DashboardScreen(
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
+                    focusedEventId = focusedEventId,
                 )
             }
         }
@@ -2218,6 +2340,8 @@ private fun NotesContent(
     onNoteClick: (String) -> Unit,
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
+    /** The row a tapped notification landed on, outlined briefly. */
+    focusedEventId: String? = null,
 ) {
     val colors = LocalNostrVaultColors.current
     val latestReactionDates by viewModel.latestReactionDates.collectAsState()
@@ -2282,7 +2406,9 @@ private fun NotesContent(
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = if (isCompact) 2.dp else 4.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 10.dp, vertical = if (isCompact) 2.dp else 4.dp)
+                        .relayFocusOutline(note.id == focusedEventId, isCompact),
                 )
             }
 
@@ -2325,6 +2451,8 @@ private fun LikesContent(
     onNoteClick: (String) -> Unit,
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
+    /** The row a tapped notification landed on, outlined briefly. */
+    focusedEventId: String? = null,
 ) {
     val colors = LocalNostrVaultColors.current
     val latestReactionDates by viewModel.latestReactionDates.collectAsState()
@@ -2410,7 +2538,9 @@ private fun LikesContent(
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = if (isCompact) 2.dp else 4.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 10.dp, vertical = if (isCompact) 2.dp else 4.dp)
+                        .relayFocusOutline(note.id == focusedEventId, isCompact),
                 )
             }
         }
@@ -2437,6 +2567,8 @@ private fun ZapsContent(
     onNoteClick: (String) -> Unit,
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
+    /** The row a tapped notification landed on, outlined briefly. */
+    focusedEventId: String? = null,
 ) {
     val colors = LocalNostrVaultColors.current
 
@@ -2523,7 +2655,9 @@ private fun ZapsContent(
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = if (isCompact) 2.dp else 4.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 10.dp, vertical = if (isCompact) 2.dp else 4.dp)
+                        .relayFocusOutline(note.id == focusedEventId, isCompact),
                 )
             }
         }
@@ -3007,3 +3141,33 @@ data class DiskVaultSnapshot(
     val events: List<com.nostrvault.service.NostrEvent>,
     val savedAt: Long,
 )
+
+/** The list on screen for the current view mode. */
+private fun focusShownNotes(viewModel: DashboardViewModel): List<FeedNote> =
+    when (viewModel.viewMode.value) {
+        VaultViewMode.NOTES -> viewModel.displayNotes.value
+        VaultViewMode.LIKES -> viewModel.displayLikedNotes.value
+        VaultViewMode.ZAPS -> viewModel.displayZappedNotes.value
+    }
+
+/**
+ * Outlines the row a notification tap landed on, in the card's own shape, and
+ * fades it out when cleared. Port of iOS `relayFocusOutline`.
+ */
+private fun Modifier.relayFocusOutline(isFocused: Boolean, isCompact: Boolean): Modifier = composed {
+    val colors = LocalNostrVaultColors.current
+    val alpha by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0f,
+        animationSpec = tween(durationMillis = if (isFocused) 200 else 600),
+        label = "relayFocusOutline",
+    )
+    if (alpha == 0f) {
+        Modifier
+    } else {
+        Modifier.border(
+            width = 2.dp,
+            color = colors.primary.copy(alpha = alpha),
+            shape = RoundedCornerShape(if (isCompact) 10.dp else 12.dp),
+        )
+    }
+}

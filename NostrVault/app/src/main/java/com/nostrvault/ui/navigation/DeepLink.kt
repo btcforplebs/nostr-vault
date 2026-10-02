@@ -11,6 +11,8 @@ package com.nostrvault.ui.navigation
 data class DeepLinkTarget(
     val route: String,
     val accountNpub: String? = null,
+    /** Set when the route is the Relay tab and it should scroll to one event. */
+    val relayFocus: RelayFocusRequest? = null,
 )
 
 /**
@@ -113,9 +115,9 @@ object DeepLinkRouter {
 
     /**
      * The extras [com.nostrvault.service.LocalNotificationService] puts on its
-     * tap intent. `type` is the notification kind, `eventId` the note it was
-     * about, `author` the sender's hex pubkey, `npub` the account it arrived
-     * for.
+     * tap intent. `type` is the notification kind, `eventId` the event the
+     * notification was raised for (not necessarily a note), `author` the
+     * sender's hex pubkey, `npub` the account it arrived for.
      */
     fun fromNotification(
         type: String?,
@@ -124,13 +126,27 @@ object DeepLinkRouter {
         npub: String?,
     ): DeepLinkTarget? {
         val account = npub?.takeIf { it.isNotBlank() }
+        if (type == null) return null
         return when (type) {
             // A DM opens the conversation, not the gift wrap's event id — the
             // wrap id is not addressable as a note.
             "dm", "giftwrap" -> author?.takeIf { isHex64(it) }
                 ?.let { DeepLinkTarget(Screen.DMThread.createRoute(it), account) }
-            "mention", "reply", "repost", "zap" -> eventId?.takeIf { isHex64(it) }
-                ?.let { DeepLinkTarget(Screen.NoteDetail.createRoute(it), account) }
+            // Every post-related notification lands on that post in the Relay
+            // tab, matching iOS: the tab picks the list that holds it, scrolls to
+            // it and outlines it, and opens the post if it never shows up. The id
+            // here is the notification's own event — for a reaction, repost or
+            // zap that is the kind 7/6/9735 event, which the Relay tab resolves to
+            // the post it is about (NotificationTarget.targetNoteId). Opening it
+            // as a note directly, as this used to, found nothing.
+            in NotificationTarget.RELAY_TYPES -> eventId?.takeIf { isHex64(it) }
+                ?.let {
+                    DeepLinkTarget(
+                        route = Screen.Dashboard.route,
+                        accountNpub = account,
+                        relayFocus = RelayFocusRequest(type = type, eventId = it),
+                    )
+                }
             // The catch-up marker deliberately has no event id.
             "summary" -> DeepLinkTarget(Screen.Feed.route, account)
             else -> null
