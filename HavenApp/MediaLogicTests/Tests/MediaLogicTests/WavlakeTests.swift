@@ -61,3 +61,28 @@ final class WavlakeTests: XCTestCase {
                        "https://wavlake.com/api/v1/content/search?term=rock%20%26%20roll")
     }
 }
+
+final class WavlakeLinkTests: XCTestCase {
+    func testTrackIdFromLinks() {
+        let id = "ba8926a3-02bc-4b1d-b9f2-2a79e851121b"
+        XCTAssertEqual(WavlakeLink.trackId(from: URL(string: "https://wavlake.com/track/\(id)")!), id)
+        XCTAssertEqual(WavlakeLink.trackId(from: URL(string: "https://www.wavlake.com/track/\(id)?ref=x")!), id)
+        XCTAssertEqual(WavlakeLink.trackId(from: URL(string: "https://embed.wavlake.com/track/\(id.uppercased())")!), id)
+        XCTAssertNil(WavlakeLink.trackId(from: URL(string: "https://wavlake.com/album/\(id)")!))
+        XCTAssertNil(WavlakeLink.trackId(from: URL(string: "https://wavlake.com/track/not-a-uuid")!))
+        XCTAssertNil(WavlakeLink.trackId(from: URL(string: "https://notwavlake.com/track/\(id)")!))
+        XCTAssertNil(WavlakeLink.trackId(from: URL(string: "https://evil.com/wavlake.com/track/\(id)")!))
+    }
+
+    func testArtistNpubIsKeptOnlyWhenItIsAnNpub() {
+        let json = #"[{"id":"t","title":"S","artist":"A","mediaUrl":"https://x/a.mp3","artistNpub":"npub1abc"},{"id":"u","title":"S","artist":"A","mediaUrl":"https://x/b.mp3","artistNpub":""}]"#
+        let tracks = WavlakeAPI.tracks(fromRankings: Data(json.utf8))
+        XCTAssertEqual(tracks.map(\.artistNpub), ["npub1abc", nil])
+    }
+
+    func testShareTextMentionsArtistOnNostr() {
+        let json = #"[{"id":"t1","title":"21 Million","artist":"Rare Scrilla","mediaUrl":"https://x/a.mp3","artistNpub":"npub1xyz"}]"#
+        let t = WavlakeAPI.tracks(fromRankings: Data(json.utf8))[0]
+        XCTAssertEqual(WavlakeLink.shareText(for: t), "🎵 21 Million by nostr:npub1xyz\n\nhttps://wavlake.com/track/t1")
+    }
+}

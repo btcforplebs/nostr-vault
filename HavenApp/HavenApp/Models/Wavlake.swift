@@ -15,6 +15,8 @@ struct WavlakeTrack: Identifiable, Hashable, Codable {
     let mediaUrl: String
     let duration: Int?
     let msatTotal: String?
+    /// The artist's Nostr key, when they've linked one on Wavlake.
+    var artistNpub: String? = nil
 
     var audioURL: URL? { URL(string: mediaUrl) }
     var artworkURL: URL? { albumArtUrl.flatMap(URL.init(string:)) }
@@ -54,6 +56,7 @@ enum WavlakeAPI {
         return components?.url
     }
 
+    static func trackURL(_ id: String) -> URL { base.appendingPathComponent("track/\(id)") }
     static func albumURL(_ id: String) -> URL { base.appendingPathComponent("album/\(id)") }
     static func artistURL(_ id: String) -> URL { base.appendingPathComponent("artist/\(id)") }
 
@@ -79,7 +82,8 @@ enum WavlakeAPI {
             albumArtUrl: json["albumArtUrl"] as? String,
             mediaUrl: mediaUrl,
             duration: (json["duration"] as? Int) ?? (json["duration"] as? Double).map { Int($0) },
-            msatTotal: msat
+            msatTotal: msat,
+            artistNpub: (json["artistNpub"] as? String).flatMap { $0.hasPrefix("npub1") ? $0 : nil }
         )
     }
 
@@ -143,6 +147,11 @@ enum WavlakeAPI {
         return results(fromSearch: try await fetch(url))
     }
 
+    /// One track by id. The endpoint answers with a one-element array.
+    static func track(_ id: String) async throws -> WavlakeTrack? {
+        tracks(fromRankings: try await fetch(trackURL(id))).first
+    }
+
     static func album(_ id: String) async throws -> [WavlakeTrack] {
         tracks(fromAlbum: try await fetch(albumURL(id)))
     }
@@ -154,5 +163,27 @@ enum WavlakeAPI {
             all.append(contentsOf: (try? await album(albumId)) ?? [])
         }
         return all
+    }
+}
+
+/// Wavlake links as they appear in Nostr posts.
+enum WavlakeLink {
+    /// The track id in wavlake.com/track/<id> or embed.wavlake.com/track/<id>.
+    static func trackId(from url: URL) -> String? {
+        guard let host = url.host?.lowercased(),
+              host == "wavlake.com" || host.hasSuffix(".wavlake.com") else { return nil }
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard parts.count >= 2, parts[parts.count - 2].lowercased() == "track" else { return nil }
+        let id = parts[parts.count - 1]
+        // Wavlake ids are UUIDs; anything else is some other page.
+        return UUID(uuidString: id) != nil ? id.lowercased() : nil
+    }
+
+    /// What "Share" puts in the composer: the song, the artist (mentioned
+    /// when they're on Nostr, so they're notified) and the link that plays
+    /// in any client with a Wavlake card.
+    static func shareText(for track: WavlakeTrack) -> String {
+        let by = track.artistNpub.map { "nostr:\($0)" } ?? track.artist
+        return "🎵 \(track.title) by \(by)\n\nhttps://wavlake.com/track/\(track.id)"
     }
 }

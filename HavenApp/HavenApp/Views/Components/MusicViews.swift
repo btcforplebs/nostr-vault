@@ -7,6 +7,7 @@ import SwiftUI
 /// list after it; the mini player keeps going while you browse.
 struct MusicBrowserView: View {
     @ObservedObject private var player = MusicPlayerService.shared
+    @State private var sheet: MusicSheet?
     @State private var query = ""
     @State private var trending: [WavlakeTrack] = []
     @State private var results: [WavlakeSearchResult] = []
@@ -61,6 +62,7 @@ struct MusicBrowserView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .task { if trending.isEmpty { await loadTrending() } }
+        .modifier(MusicSheetHost(sheet: $sheet))
     }
 
     private var searchField: some View {
@@ -107,6 +109,7 @@ struct MusicBrowserView: View {
                             player.play(tracks, startAt: offset)
                         }
                     }
+                    .contextMenu { MusicTrackActions(track: track, sheet: $sheet) }
             }
         }
     }
@@ -299,7 +302,10 @@ struct MiniPlayerBar: View {
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                     VStack(alignment: .leading, spacing: 1) {
                         Text(track.title).font(.appSystem(size: 14, weight: .semibold)).lineLimit(1)
-                        Text(track.artist).font(.appSystem(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                        HStack(spacing: 5) {
+                            if track.isLive { LiveBadge() }
+                            Text(track.artist).font(.appSystem(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                        }
                     }
                     Spacer(minLength: 4)
                     if player.isBuffering && player.isPlaying {
@@ -314,16 +320,18 @@ struct MiniPlayerBar: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
                     }
-                    Button(action: player.next) {
-                        Image(systemName: "forward.fill")
-                            .font(.appSystem(size: 15, weight: .bold))
-                            .frame(width: 30, height: 34)
-                            .contentShape(Rectangle())
+                    if !track.isLive {
+                        Button(action: player.next) {
+                            Image(systemName: "forward.fill")
+                                .font(.appSystem(size: 15, weight: .bold))
+                                .frame(width: 30, height: 34)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!player.hasNext)
+                        .opacity(player.hasNext ? 1 : 0.35)
+                        .accessibilityLabel("Next song")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!player.hasNext)
-                    .opacity(player.hasNext ? 1 : 0.35)
-                    .accessibilityLabel("Next song")
                     Button(action: player.stop) {
                         Image(systemName: "xmark")
                             .font(.appSystem(size: 13, weight: .bold))
@@ -340,7 +348,7 @@ struct MiniPlayerBar: View {
                 GeometryReader { geo in
                     Capsule()
                         .fill(Color.havenPurple)
-                        .frame(width: player.duration > 0 ? geo.size.width * min(1, player.elapsed / player.duration) : 0)
+                        .frame(width: !track.isLive && player.duration > 0 ? geo.size.width * min(1, player.elapsed / player.duration) : 0)
                 }
                 .frame(height: 2)
                 .padding(.horizontal, 12)
@@ -377,6 +385,7 @@ struct NowPlayingView: View {
     @ObservedObject private var player = MusicPlayerService.shared
     @Environment(\.dismiss) private var dismiss
     @State private var scrubbing: Double?
+    @State private var sheet: MusicSheet?
 
     var body: some View {
         VStack(spacing: 22) {
@@ -386,11 +395,13 @@ struct NowPlayingView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 18))
                     .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
                 VStack(spacing: 4) {
+                    if track.isLive { LiveBadge() }
                     Text(track.title).font(.appSystem(size: 22, weight: .bold)).multilineTextAlignment(.center)
                     Text(track.artist).font(.appSystem(size: 16)).foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 24)
 
+                if !track.isLive {
                 VStack(spacing: 4) {
                     Slider(
                         value: Binding(
@@ -415,11 +426,14 @@ struct NowPlayingView: View {
                     .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 28)
+                }
 
                 HStack(spacing: 44) {
                     Button(action: player.previous) {
                         Image(systemName: "backward.fill").font(.appSystem(size: 26))
                     }
+                    .opacity(track.isLive ? 0 : 1)
+                    .disabled(track.isLive)
                     Button(action: player.togglePlayPause) {
                         Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.appSystem(size: 64))
@@ -429,12 +443,25 @@ struct NowPlayingView: View {
                         Image(systemName: "forward.fill").font(.appSystem(size: 26))
                     }
                     .disabled(!player.hasNext)
-                    .opacity(player.hasNext ? 1 : 0.35)
+                    .opacity(track.isLive ? 0 : (player.hasNext ? 1 : 0.35))
                 }
                 .buttonStyle(.plain)
 
+                HStack(spacing: 12) {
+                    if let song = track.wavlake {
+                        actionButton("Share", icon: "square.and.arrow.up") {
+                            sheet = .share(WavlakeLink.shareText(for: song))
+                        }
+                        if let hex = song.artistNpub.flatMap(MusicSheet.hex(fromNpub:)) {
+                            actionButton("Artist", icon: "person.crop.circle") { sheet = .profile(hex) }
+                        }
+                    } else if let host = track.hostPubkey {
+                        actionButton("Host", icon: "person.crop.circle") { sheet = .profile(host) }
+                    }
+                }
+
                 if let page = track.pageURL {
-                    Link("Open on Wavlake", destination: page)
+                    Link(track.isLive ? "Open stream" : "Open on Wavlake", destination: page)
                         .font(.appSystem(size: 13, weight: .semibold))
                         .foregroundColor(.secondary)
                 }
@@ -449,5 +476,162 @@ struct NowPlayingView: View {
         .frame(minWidth: 380, minHeight: 600)
         #endif
         .presentationDetents([.large])
+        .modifier(MusicSheetHost(sheet: $sheet))
+    }
+
+    private func actionButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.appSystem(size: 14, weight: .semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Sharing, artists, live
+
+struct LiveBadge: View {
+    var body: some View {
+        Text("LIVE")
+            .font(.appSystem(size: 10, weight: .heavy))
+            .foregroundColor(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color.red))
+    }
+}
+
+/// The two places a song leads: a post sharing it, or the artist's Nostr
+/// profile (which carries Follow and Zap).
+enum MusicSheet: Identifiable {
+    case share(String)
+    case profile(String)
+
+    var id: String {
+        switch self {
+        case .share(let text): return "share:\(text)"
+        case .profile(let hex): return "profile:\(hex)"
+        }
+    }
+
+    static func hex(fromNpub npub: String) -> String? {
+        guard let decoded = Bech32.decode(npub), decoded.hrp == "npub" else { return nil }
+        return decoded.hexString
+    }
+}
+
+struct MusicSheetHost: ViewModifier {
+    @Binding var sheet: MusicSheet?
+    @EnvironmentObject private var nostrService: NostrService
+    @EnvironmentObject private var configService: ConfigService
+    @EnvironmentObject private var relayManager: RelayProcessManager
+
+    func body(content: Content) -> some View {
+        content.sheet(item: $sheet) { item in
+            switch item {
+            case .share(let text):
+                ComposeView(onDismiss: { sheet = nil }, replyTo: nil, quoteTo: nil, initialContent: text, restoredDraftId: nil)
+                    .environmentObject(nostrService)
+                    .environmentObject(configService)
+                    .environmentObject(relayManager)
+            case .profile(let hex):
+                ProfileView(pubkey: hex, onDismiss: { sheet = nil })
+                    .environmentObject(nostrService)
+                    .environmentObject(configService)
+                    #if os(macOS)
+                    .frame(minWidth: 520, minHeight: 560)
+                    #endif
+            }
+        }
+    }
+}
+
+/// Long-press actions on a song.
+struct MusicTrackActions: View {
+    let track: WavlakeTrack
+    @Binding var sheet: MusicSheet?
+
+    var body: some View {
+        Button { sheet = .share(WavlakeLink.shareText(for: track)) } label: {
+            Label("Share to Nostr", systemImage: "square.and.arrow.up")
+        }
+        if let hex = track.artistNpub.flatMap(MusicSheet.hex(fromNpub:)) {
+            Button { sheet = .profile(hex) } label: {
+                Label("\(track.artist) on Nostr", systemImage: "person.crop.circle")
+            }
+        }
+        if let page = track.pageURL {
+            Button { PlatformURL.open(page) } label: {
+                Label("Open on Wavlake", systemImage: "safari")
+            }
+        }
+    }
+}
+
+/// A Wavlake song inside a post: artwork, title, artist and a play button.
+/// Shown in place of the generic link preview, so a shared song plays right
+/// from the feed (and a repost or quote of it does too).
+struct WavlakeTrackCard: View {
+    let trackId: String
+    @ObservedObject private var player = MusicPlayerService.shared
+    @State private var track: WavlakeTrack?
+    @State private var failed = false
+
+    /// Songs already looked up, so scrolling past a card doesn't refetch it.
+    @MainActor private static var cache: [String: WavlakeTrack] = [:]
+
+    var body: some View {
+        Group {
+            if let track {
+                card(track)
+            } else if failed {
+                EmptyView()
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.secondary.opacity(0.1))
+                    .frame(height: 68)
+            }
+        }
+        .task(id: trackId) { await load() }
+    }
+
+    private func card(_ track: WavlakeTrack) -> some View {
+        let isCurrent = player.current?.id == track.id
+        return HStack(spacing: 12) {
+            MusicArtwork(url: track.artworkURL, size: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title).font(.appSystem(size: 15, weight: .semibold)).lineLimit(1)
+                Text(track.artist).font(.appSystem(size: 13)).foregroundColor(.secondary).lineLimit(1)
+                Label("Wavlake", systemImage: "music.note")
+                    .font(.appSystem(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button {
+                if isCurrent { player.togglePlayPause() } else { player.play([track]) }
+            } label: {
+                Image(systemName: isCurrent && player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.appSystem(size: 38))
+                    .foregroundColor(.havenPurple)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isCurrent && player.isPlaying ? "Pause \(track.title)" : "Play \(track.title)")
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.1)))
+    }
+
+    private func load() async {
+        if let cached = Self.cache[trackId] { track = cached; return }
+        if let found = try? await WavlakeAPI.track(trackId) {
+            Self.cache[trackId] = found
+            track = found
+        } else {
+            failed = true
+        }
     }
 }

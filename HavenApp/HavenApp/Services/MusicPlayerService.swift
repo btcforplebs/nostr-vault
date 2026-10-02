@@ -8,14 +8,41 @@ import UIKit
 import AppKit
 #endif
 
-/// Plays Wavlake tracks app-wide: keeps going while you browse, switch tabs
+/// Something the app-wide player can play: a Wavlake song, or the sound of
+/// a live stream (so a stream keeps going in the mini player and on the
+/// lock screen while you browse).
+struct PlayerTrack: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let artist: String
+    let artworkURL: URL?
+    let audioURL: URL?
+    let duration: Int?
+    var isLive = false
+    var albumTitle: String? = nil
+    var pageURL: URL? = nil
+    /// The song behind this item, for Share and the artist's profile.
+    var wavlake: WavlakeTrack? = nil
+    /// A live stream's host, for opening their profile.
+    var hostPubkey: String? = nil
+}
+
+extension PlayerTrack {
+    init(_ track: WavlakeTrack) {
+        self.init(id: track.id, title: track.title, artist: track.artist,
+                  artworkURL: track.artworkURL, audioURL: track.audioURL, duration: track.duration,
+                  albumTitle: track.albumTitle, pageURL: track.pageURL, wavlake: track)
+    }
+}
+
+/// Plays Wavlake tracks and live-stream audio app-wide: keeps going while you browse, switch tabs
 /// or lock the phone, and shows on the lock screen / Control Center (and
 /// the Mac's Now Playing) with play, pause, next, previous and scrubbing.
 @MainActor
 final class MusicPlayerService: ObservableObject {
     static let shared = MusicPlayerService()
 
-    @Published private(set) var queue: [WavlakeTrack] = []
+    @Published private(set) var queue: [PlayerTrack] = []
     @Published private(set) var index: Int = 0
     @Published private(set) var isPlaying = false
     @Published private(set) var isBuffering = false
@@ -23,7 +50,7 @@ final class MusicPlayerService: ObservableObject {
     @Published private(set) var elapsed: Double = 0
     @Published private(set) var duration: Double = 0
 
-    var current: WavlakeTrack? { queue.indices.contains(index) ? queue[index] : nil }
+    var current: PlayerTrack? { queue.indices.contains(index) ? queue[index] : nil }
     var hasNext: Bool { index + 1 < queue.count }
 
     private let player = AVPlayer()
@@ -58,8 +85,18 @@ final class MusicPlayerService: ObservableObject {
 
     // MARK: - Public controls
 
-    /// Plays `tracks` starting at `startIndex`; the rest queue up after it.
+    /// Plays Wavlake `tracks` from `startIndex`; the rest queue up after it.
     func play(_ tracks: [WavlakeTrack], startAt startIndex: Int = 0) {
+        play(tracks: tracks.map(PlayerTrack.init), startAt: startIndex)
+    }
+
+    /// Listens to a live stream: sound only, in the mini player and on the
+    /// lock screen. Replaces whatever was queued.
+    func playLive(_ item: PlayerTrack) {
+        play(tracks: [item], startAt: 0)
+    }
+
+    func play(tracks: [PlayerTrack], startAt startIndex: Int = 0) {
         guard tracks.indices.contains(startIndex) else { return }
         queue = tracks
         index = startIndex
@@ -93,6 +130,7 @@ final class MusicPlayerService: ObservableObject {
     /// Back to the previous track, or to the start of this one when it has
     /// played for more than a few seconds — the way every music app does it.
     func previous() {
+        if current?.isLive == true { return }
         if elapsed > 3 || index == 0 {
             seek(to: 0)
         } else {
@@ -124,7 +162,7 @@ final class MusicPlayerService: ObservableObject {
 
     private func loadCurrent(autoplay: Bool) {
         guard let track = current, let url = track.audioURL else { return }
-        let item = AVPlayerItem(url: url)
+        let item = makeItem(url: url, isLive: track.isLive)
         statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             let seconds = item.duration.seconds
             Task { @MainActor in
@@ -141,9 +179,25 @@ final class MusicPlayerService: ObservableObject {
         }
         elapsed = 0
         duration = Double(track.duration ?? 0)
+        let commands = MPRemoteCommandCenter.shared()
+        commands.changePlaybackPositionCommand.isEnabled = !track.isLive
+        commands.nextTrackCommand.isEnabled = hasNext
+        commands.previousTrackCommand.isEnabled = !track.isLive
         player.replaceCurrentItem(with: item)
         loadArtwork(for: track)
         if autoplay { resume() } else { updateNowPlaying() }
+    }
+
+    /// A live HLS stream plays through `HLSLowLatencyStripper`: zap.stream's
+    /// low-latency playlists fail outright in AVPlayer, and plain live HLS
+    /// plays everywhere, a couple of seconds further behind.
+    private func makeItem(url: URL, isLive: Bool) -> AVPlayerItem {
+        if isLive, url.pathExtension.lowercased() == "m3u8", let wrapped = HLSLowLatencyStripper.wrap(url) {
+            let asset = AVURLAsset(url: wrapped)
+            asset.resourceLoader.setDelegate(HLSLowLatencyStripper.shared, queue: HLSLowLatencyStripper.shared.queue)
+            return AVPlayerItem(asset: asset)
+        }
+        return AVPlayerItem(url: url)
     }
 
     private func trackEnded() {
@@ -243,7 +297,11 @@ final class MusicPlayerService: ObservableObject {
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
         ]
         if let album = track.albumTitle { info[MPMediaItemPropertyAlbumTitle] = album }
-        if duration > 0 { info[MPMediaItemPropertyPlaybackDuration] = duration }
+        if track.isLive {
+            info[MPNowPlayingInfoPropertyIsLiveStream] = true
+        } else if duration > 0 {
+            info[MPMediaItemPropertyPlaybackDuration] = duration
+        }
         if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         #if os(macOS)
@@ -251,7 +309,7 @@ final class MusicPlayerService: ObservableObject {
         #endif
     }
 
-    private func loadArtwork(for track: WavlakeTrack) {
+    private func loadArtwork(for track: PlayerTrack) {
         artworkTask?.cancel()
         artwork = nil
         guard let url = track.artworkURL else { return }

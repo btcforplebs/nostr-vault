@@ -172,6 +172,8 @@ struct LiveStreamPlayerView: View {
             .presentationBackground(Color.platformWindowBackground)
             #endif
         }
+        // The video has its own sound; don't play the mini player over it.
+        .onAppear { MusicPlayerService.shared.pause() }
         .alert("Block this host?", isPresented: $showingBlockConfirm) {
             Button("Block", role: .destructive) {
                 blockHost()
@@ -212,6 +214,21 @@ struct LiveStreamPlayerView: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer(minLength: 0)
+                if stream.streamingURL != nil {
+                    // Hands the stream's sound to the app-wide player: it keeps
+                    // going in the mini player and on the lock screen while
+                    // you browse, like a Wavlake song.
+                    Button(action: listenInBackground) {
+                        Label("Listen", systemImage: "headphones")
+                            .font(.appSystem(size: 12, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color.havenPurple.opacity(0.15)))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.havenPurple)
+                    .accessibilityHint("Keeps playing the sound while you browse")
+                }
                 Menu {
                     Button {
                         showingReportDialog = true
@@ -333,6 +350,20 @@ struct LiveStreamPlayerView: View {
 
     /// A stream zap pays the host named in the event, and carries the stream's
     /// address so the receipt lands in this chat rather than nowhere.
+    private func listenInBackground() {
+        MusicPlayerService.shared.playLive(PlayerTrack(
+            id: "live:\(stream.address)",
+            title: stream.title ?? "Live stream",
+            artist: hostName,
+            artworkURL: stream.imageURL ?? profile?.pictureURL,
+            audioURL: stream.streamingURL,
+            duration: nil,
+            isLive: true,
+            hostPubkey: stream.hostPubkey
+        ))
+        dismiss()
+    }
+
     private func sendZap(amountSats: Int) {
         guard let lud16 = lightningAddress(for: stream.zapPubkey) else {
             noLightningAddress = true
