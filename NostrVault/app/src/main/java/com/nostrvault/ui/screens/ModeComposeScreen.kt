@@ -6,10 +6,15 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.media.MediaMuxer
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +50,8 @@ import com.nostrvault.data.model.Reel
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ReelsFeedService
+import com.nostrvault.ui.notification.ErrorStyle
+import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -54,6 +62,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.ByteBuffer
 import javax.inject.Inject
 
 /** What the post button writes in feeds that show something other than notes. */
@@ -75,6 +84,10 @@ data class PickedClip(
     val height: Int,
     val durationSeconds: Double,
     val mimeType: String,
+    /** The source ran past the diVine limit and was cut to its opening. */
+    val wasTrimmed: Boolean = false,
+    /** Degrees the source asks players to rotate it, kept when trimming. */
+    val rotation: Int = 0,
 )
 
 /**
@@ -86,6 +99,7 @@ class ModeComposeViewModel @Inject constructor(
     private val nostrService: NostrService,
     private val blossomService: BlossomService,
     private val reelsFeedService: ReelsFeedService,
+    private val notificationManager: NotificationManager,
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -128,6 +142,72 @@ class ModeComposeViewModel @Inject constructor(
         context.contentResolver.openInputStream(uri)!!.use { input ->
             file.outputStream().use { input.copyTo(it) }
         }
+        val picked = measure(file, mime)
+        if (picked.durationSeconds * 1_000_000 <= TRIM_LIMIT_US) return picked
+        // A long picked video is cut to its opening rather than uploaded whole.
+        val trimmed = try {
+            trimToLimit(file, picked.rotation)
+        } finally {
+            file.delete()
+        }
+        return measure(trimmed, "video/mp4").copy(wasTrimmed = true)
+    }
+
+    /**
+     * Copies the first [TRIM_LIMIT_US] of [source] into a new MP4 without
+     * re-encoding. The cut lands on whole samples, starting at the opening
+     * keyframe.
+     */
+    private fun trimToLimit(source: File, rotation: Int): File {
+        val out = File.createTempFile("divine_trim_", ".mp4", context.cacheDir)
+        val extractor = MediaExtractor()
+        var muxer: MediaMuxer? = null
+        try {
+            extractor.setDataSource(source.absolutePath)
+            muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            val tracks = HashMap<Int, Int>()
+            var bufferSize = 1 shl 20
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val trackMime = format.getString(MediaFormat.KEY_MIME) ?: continue
+                if (!trackMime.startsWith("video/") && !trackMime.startsWith("audio/")) continue
+                extractor.selectTrack(i)
+                tracks[i] = muxer.addTrack(format)
+                if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                    bufferSize = maxOf(bufferSize, format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
+                }
+            }
+            muxer.setOrientationHint(rotation)
+            muxer.start()
+            val buffer = ByteBuffer.allocate(bufferSize)
+            val info = MediaCodec.BufferInfo()
+            val finished = HashSet<Int>()
+            while (finished.size < tracks.size) {
+                val size = extractor.readSampleData(buffer, 0)
+                if (size < 0) break
+                val track = extractor.sampleTrackIndex
+                val time = extractor.sampleTime
+                if (time > TRIM_LIMIT_US) {
+                    finished.add(track)
+                } else {
+                    val keyFrame = extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0
+                    info.set(0, size, time, if (keyFrame) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+                    tracks[track]?.let { muxer.writeSampleData(it, buffer, info) }
+                }
+                extractor.advance()
+            }
+            muxer.stop()
+            return out
+        } catch (e: Exception) {
+            out.delete()
+            throw e
+        } finally {
+            muxer?.release()
+            extractor.release()
+        }
+    }
+
+    private fun measure(file: File, mime: String): PickedClip {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(file.absolutePath)
@@ -138,7 +218,7 @@ class ModeComposeViewModel @Inject constructor(
             val frame = retriever.getFrameAtTime(100_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 ?: throw IllegalStateException("no frame")
             val (width, height) = if (rotation == 90 || rotation == 270) h to w else w to h
-            return PickedClip(file, frame, width, height, ms / 1000.0, mime)
+            return PickedClip(file, frame, width, height, ms / 1000.0, mime, rotation = rotation)
         } finally {
             retriever.release()
         }
@@ -188,7 +268,13 @@ class ModeComposeViewModel @Inject constructor(
                 val event = nostrService.signEventAsync(kind = DivinePost.KIND, content = caption.trim(), tags = tags)
                     ?: throw IllegalStateException("Couldn't sign the post. Check your key or remote signer in Settings.")
                 nostrService.postEvent(event)
-                nostrService.publishTo(event, Reel.DIVINE_RELAY)
+                val (accepted, message) = nostrService.publishAwaitingOk(event, Reel.DIVINE_RELAY)
+                if (!accepted) {
+                    notificationManager.showError(
+                        "Posted to your relays, but diVine's relay didn't take it: ${message.ifBlank { "no reason given" }}",
+                        ErrorStyle.WARNING,
+                    )
+                }
                 clip.file.delete()
                 reelsFeedService.refresh()
                 onDone()
@@ -245,6 +331,8 @@ class ModeComposeViewModel @Inject constructor(
         private const val TAG = "ModeCompose"
         /** diVine's camera records six-second loops. */
         const val RECORD_LIMIT_SECONDS = 6
+        /** Picked videos past this are trimmed; matches iOS's 6.3 s. */
+        const val TRIM_LIMIT_US = 6_300_000L
     }
 }
 
@@ -261,15 +349,19 @@ fun ModeComposeScreen(
     val clip by viewModel.clip.collectAsState()
     val cover by viewModel.cover.collectAsState()
 
-    var title by remember { mutableStateOf("") }
-    var summary by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
-    var prepTime by remember { mutableStateOf("") }
-    var cookTime by remember { mutableStateOf("") }
-    var servings by remember { mutableStateOf("") }
-    var ingredients by remember { mutableStateOf("") }
-    var directions by remember { mutableStateOf("") }
-    var categories by remember { mutableStateOf("") }
+    var title by rememberSaveable { mutableStateOf("") }
+    var summary by rememberSaveable { mutableStateOf("") }
+    var body by rememberSaveable { mutableStateOf("") }
+    var prepTime by rememberSaveable { mutableStateOf("") }
+    var cookTime by rememberSaveable { mutableStateOf("") }
+    var servings by rememberSaveable { mutableStateOf("") }
+    var ingredients by rememberSaveable { mutableStateOf("") }
+    var directions by rememberSaveable { mutableStateOf("") }
+    var categories by rememberSaveable { mutableStateOf("") }
+
+    // The X is disabled while busy; system back would otherwise pop the
+    // route and cancel the upload or post partway through.
+    BackHandler(enabled = busy) {}
 
     val kind = viewModel.kind
     val canPost = when (kind) {
@@ -352,7 +444,8 @@ fun ModeComposeScreen(
                     Field(body, { body = it }, "Say something about it (#tags work)", minLines = 2)
                     clip?.let {
                         Text(
-                            "${Math.round(it.durationSeconds)}s · ${it.width}×${it.height}",
+                            "${Math.round(it.durationSeconds)}s · ${it.width}×${it.height}" +
+                                if (it.wasTrimmed) " · trimmed to the first ${ModeComposeViewModel.RECORD_LIMIT_SECONDS} seconds" else "",
                             color = SecondaryText, fontSize = 12.sp,
                         )
                     }
@@ -419,26 +512,29 @@ private fun DivineVideoArea(clip: PickedClip?, busy: Boolean, onPicked: (Uri) ->
         if (granted) launchCamera()
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(9f / 16f)
-            .heightIn(max = 460.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.Black),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (clip != null) {
-            Image(
-                bitmap = clip.poster.asImageBitmap(),
-                contentDescription = "Chosen video",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else if (busy) {
-            CircularProgressIndicator(color = Color.White)
-        } else {
-            Text("A short looping video", color = Color.White.copy(alpha = 0.8f))
+    // The cap goes on before aspectRatio, which then sizes from that height;
+    // after it, a full-width 9:16 box is already ~640dp and the cap is ignored.
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .heightIn(max = 460.dp)
+                .aspectRatio(9f / 16f, matchHeightConstraintsFirst = true)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.Black),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (clip != null) {
+                Image(
+                    bitmap = clip.poster.asImageBitmap(),
+                    contentDescription = "Chosen video",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (busy) {
+                CircularProgressIndicator(color = Color.White)
+            } else {
+                Text("A short looping video", color = Color.White.copy(alpha = 0.8f))
+            }
         }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

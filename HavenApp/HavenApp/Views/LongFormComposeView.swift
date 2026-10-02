@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import ImageIO
 
 /// Writes a NIP-23 long-form post (kind 30023): an article, or a recipe in
 /// the shape zap.cooking publishes so recipe apps and our Recipes feed list it.
@@ -15,8 +16,8 @@ struct LongFormComposeView: View {
     @State private var summary = ""
     @State private var body_ = ""
     @State private var coverItem: PhotosPickerItem?
+    /// The picked cover, re-encoded as JPEG.
     @State private var coverData: Data?
-    @State private var coverMIME = "image/jpeg"
     // Recipe fields
     @State private var prepTime = ""
     @State private var cookTime = ""
@@ -61,6 +62,9 @@ struct LongFormComposeView: View {
                     Section {
                         TextEditor(text: $ingredients)
                             .frame(minHeight: 120)
+                            .overlay(alignment: .topLeading) {
+                                Self.placeholder("2 eggs\n1 cup flour", showing: ingredients.isEmpty)
+                            }
                     } header: {
                         Text("Ingredients")
                     } footer: {
@@ -69,6 +73,9 @@ struct LongFormComposeView: View {
                     Section {
                         TextEditor(text: $directions)
                             .frame(minHeight: 160)
+                            .overlay(alignment: .topLeading) {
+                                Self.placeholder("Preheat the oven to 350°F\nWhisk the eggs", showing: directions.isEmpty)
+                            }
                     } header: {
                         Text("Directions")
                     } footer: {
@@ -131,35 +138,65 @@ struct LongFormComposeView: View {
         .onChange(of: coverItem) { _, item in
             guard let item else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    coverData = data
-                    coverMIME = item.supportedContentTypes.first?.preferredMIMEType ?? "image/jpeg"
+                // iPhone photos come as HEIC, which browsers and Android
+                // readers of the post can't show; send a JPEG instead.
+                if let data = try? await item.loadTransferable(type: Data.self),
+                   let jpeg = Self.coverJPEG(from: data) {
+                    coverData = jpeg
+                } else {
+                    error = "Couldn't read that photo."
                 }
             }
         }
         .interactiveDismissDisabled(isPosting)
     }
 
+    /// TextEditor has no placeholder of its own.
+    @ViewBuilder
+    private static func placeholder(_ text: String, showing: Bool) -> some View {
+        if showing {
+            Text(text)
+                .foregroundColor(Color.secondary.opacity(0.6))
+                .padding(.top, 8)
+                .padding(.leading, 5)
+                .allowsHitTesting(false)
+        }
+    }
+
     @ViewBuilder
     private var cover: some View {
         PhotosPicker(selection: $coverItem, matching: .images) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.secondary.opacity(0.12))
-                if let coverData, let image = Self.image(from: coverData) {
-                    image
-                        .resizable()
-                        .scaledToFill()
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                } else {
-                    Label("Add a cover photo", systemImage: "photo")
-                        .foregroundColor(.havenPurple)
+            // The image sits in an overlay so a wide photo can't widen the
+            // row, and the clip rounds what is left after the fill crop.
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.secondary.opacity(0.12))
+                .frame(height: 160)
+                .overlay {
+                    if let coverData, let image = Self.image(from: coverData) {
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Label("Add a cover photo", systemImage: "photo")
+                            .foregroundColor(.havenPurple)
+                    }
                 }
-            }
-            .frame(height: 160)
-            .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+    }
+
+    /// Decodes any image format, applies its orientation, caps it at a
+    /// cover-sized 2400 px and encodes JPEG (which also drops location data).
+    static func coverJPEG(from data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 2400
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return PreparedClip.jpegData(image)
     }
 
     private static func image(from data: Data) -> Image? {
@@ -181,7 +218,7 @@ struct LongFormComposeView: View {
                 if let coverData {
                     status = "Uploading cover…"
                     imageURL = try await ModePostPublisher.upload(
-                        data: coverData, mimeType: coverMIME,
+                        data: coverData, mimeType: "image/jpeg",
                         configService: configService, nostrService: nostrService).url
                 }
                 status = "Publishing…"
@@ -202,6 +239,8 @@ struct LongFormComposeView: View {
                 status = nil
                 isPosting = false
                 self.error = error.localizedDescription
+                // The in-form copy sits at the bottom of a long form.
+                ErrorNotificationManager.shared.show(error.localizedDescription)
             }
         }
     }

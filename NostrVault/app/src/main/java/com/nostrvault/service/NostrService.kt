@@ -1327,8 +1327,42 @@ class NostrService @Inject constructor(
         }
     }
 
-    /** Also send [event] to [relayUrl], e.g. diVine's relay for a diVine. */
-    fun publishTo(event: NostrEvent, relayUrl: String) = fireAndForgetPublish(serializeEvent(event), relayUrl)
+    /**
+     * Also send [event] to [relayUrl], e.g. diVine's relay for a diVine, and
+     * wait for its OK. Returns whether it accepted and its message; a relay
+     * that never answers within [timeoutMs] counts as not accepted.
+     */
+    suspend fun publishAwaitingOk(event: NostrEvent, relayUrl: String, timeoutMs: Long = 15_000): Pair<Boolean, String> {
+        if (!isValidRelayUrl(relayUrl)) return false to "bad relay address"
+        val eventJson = serializeEvent(event)
+        return withContext(Dispatchers.IO) {
+            val client = WebSocketClient(url = relayUrl, scope = scope)
+            try {
+                withTimeoutOrNull(timeoutMs) {
+                    coroutineScope {
+                        // Listen before connecting; the flow does not replay.
+                        val answer = async(start = CoroutineStart.UNDISPATCHED) {
+                            client.messages.mapNotNull { okReply(it, event.id) }.first()
+                        }
+                        client.connect()
+                        client.send("[\"EVENT\",$eventJson]")
+                        answer.await()
+                    }
+                } ?: (false to "it didn't answer")
+            } finally {
+                client.disconnect()
+            }
+        }
+    }
+
+    /** `["OK", <eventId>, <accepted>, <message>]` for [eventId], else null. */
+    private fun okReply(message: String, eventId: String): Pair<Boolean, String>? = runCatching {
+        val parsed = Json.parseToJsonElement(message).jsonArray
+        if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "OK") return@runCatching null
+        if (parsed[1].jsonPrimitive.contentOrNull != eventId) return@runCatching null
+        val accepted = parsed[2].jsonPrimitive.booleanOrNull ?: false
+        accepted to (parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: "")
+    }.getOrNull()
 
     private fun fireAndForgetPublish(eventJson: String, relayUrl: String) {
         if (!isValidRelayUrl(relayUrl)) return

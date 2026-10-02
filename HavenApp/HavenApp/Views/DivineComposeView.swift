@@ -14,8 +14,11 @@ struct DivineComposeView: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
 
-    /// diVine's camera records six-second loops; picked videos may run longer.
+    /// diVine's camera records six-second loops; longer picked videos are
+    /// trimmed to their opening this long.
     static let recordLimit: TimeInterval = 6.3
+    /// How long to wait for diVine's relay to accept the post.
+    static let divineRelayDeadline: TimeInterval = 15
 
     @State private var pickerItem: PhotosPickerItem?
     @State private var showingCamera = false
@@ -152,7 +155,8 @@ struct DivineComposeView: View {
                 .lineLimit(2...5)
                 .textFieldStyle(.roundedBorder)
             if let clip {
-                Text("\(Int(clip.duration.rounded()))s · \(Int(clip.size.width))×\(Int(clip.size.height))")
+                Text("\(Int(clip.duration.rounded()))s · \(Int(clip.size.width))×\(Int(clip.size.height))"
+                     + (clip.wasTrimmed ? " · trimmed to the first \(Int(Self.recordLimit)) seconds" : ""))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -225,8 +229,15 @@ struct DivineComposeView: View {
                                      title: trimmedTitle, caption: trimmedCaption,
                                      publishedAt: Int(Date().timeIntervalSince1970))
 
+                // The relay's own timeout only starts once its socket connects,
+                // so a socket stuck connecting would never report; stop waiting
+                // after a deadline of our own.
+                let once = ResumeOnce()
                 let divineResult = await withCheckedContinuation { (continuation: CheckedContinuation<(Bool, String)?, Never>) in
-                    var resumed = false
+                    Task {
+                        try? await Task.sleep(for: .seconds(Self.divineRelayDeadline))
+                        if once.claim() { continuation.resume(returning: (false, "it didn't answer")) }
+                    }
                     Task {
                         do {
                             try await ModePostPublisher.publish(
@@ -234,13 +245,11 @@ struct DivineComposeView: View {
                                 extraRelays: [ReelsFeedService.divineRelay],
                                 nostrService: nostrService
                             ) { relay, ok, message in
-                                guard relay == ReelsFeedService.divineRelay, !resumed else { return }
-                                resumed = true
+                                guard relay == ReelsFeedService.divineRelay, once.claim() else { return }
                                 continuation.resume(returning: (ok, message))
                             }
                         } catch {
-                            guard !resumed else { return }
-                            resumed = true
+                            guard once.claim() else { return }
                             self.error = error.localizedDescription
                             continuation.resume(returning: nil)
                         }
@@ -253,7 +262,7 @@ struct DivineComposeView: View {
                 }
                 if !accepted {
                     ErrorNotificationManager.shared.show(
-                        "Posted to your relays, but diVine's relay said no: \(message.isEmpty ? "no reason given" : message)",
+                        "Posted to your relays, but diVine's relay didn't take it: \(message.isEmpty ? "no reason given" : message)",
                         style: .warning)
                 }
                 clip.cleanUp()
@@ -306,6 +315,8 @@ struct PreparedClip {
     /// Displayed (rotation-applied) pixel size.
     let size: CGSize
     let duration: TimeInterval
+    /// The source ran past `DivineComposeView.recordLimit` and was cut.
+    let wasTrimmed: Bool
 
     enum PrepareError: LocalizedError {
         case noVideoTrack, exportFailed(String), noPoster
@@ -328,6 +339,11 @@ struct PreparedClip {
             throw PrepareError.exportFailed("no exporter")
         }
         session.shouldOptimizeForNetworkUse = true
+        let limit = CMTime(seconds: DivineComposeView.recordLimit, preferredTimescale: 600)
+        let wasTrimmed = try await asset.load(.duration) > limit
+        if wasTrimmed {
+            session.timeRange = CMTimeRange(start: .zero, duration: limit)
+        }
         if #available(iOS 18, macOS 15, *) {
             do {
                 try await session.export(to: output, as: .mp4)
@@ -356,10 +372,10 @@ struct PreparedClip {
         let frame = try await generator.image(at: time).image
         guard let jpeg = Self.jpegData(frame) else { throw PrepareError.noPoster }
 
-        return PreparedClip(videoURL: output, posterJPEG: jpeg, size: size, duration: duration)
+        return PreparedClip(videoURL: output, posterJPEG: jpeg, size: size, duration: duration, wasTrimmed: wasTrimmed)
     }
 
-    private static func jpegData(_ image: CGImage) -> Data? {
+    static func jpegData(_ image: CGImage) -> Data? {
         let data = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { return nil }
         CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
@@ -369,6 +385,19 @@ struct PreparedClip {
 
     func cleanUp() {
         try? FileManager.default.removeItem(at: videoURL)
+    }
+}
+
+/// Lets exactly one of several racing callbacks resume a continuation.
+final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if claimed { return false }
+        claimed = true
+        return true
     }
 }
 
