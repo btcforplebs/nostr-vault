@@ -333,7 +333,8 @@ struct iPadSidebarView: View {
                 ActionToastBanner()
                 ErrorNotificationBanner()
             }
-            .padding(.top, 4)
+            // Below the navigation bar (50 pt on iPad), not over its buttons.
+            .padding(.top, 4 + 50)
         }
         .overlay { ZapFlightStage() }
         .sheet(isPresented: $showingAccountSwitcher) {
@@ -462,7 +463,8 @@ struct iPhoneTabView: View {
                 ActionToastBanner()
                 ErrorNotificationBanner()
             }
-            .padding(.top, 4)
+            // Below the navigation bar (44 pt on iPhone), not over its buttons.
+            .padding(.top, 4 + 44)
         }
         .overlay { ZapFlightStage() }
         .onAppear {
