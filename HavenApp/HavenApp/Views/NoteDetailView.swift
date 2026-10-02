@@ -49,6 +49,10 @@ struct NoteDetailView: View {
     /// the scrollable area upward instead of shoving the note (and
     /// everything below it) down mid-read.
     @State private var pinnedScrollId: String?
+    /// Whether the view has brought the note you tapped into view once the
+    /// thread above it appeared. Only the first arrival scrolls; after that
+    /// the reader is in charge.
+    @State private var didLandOnFocusedNote = false
 
     private var threadRootId: String {
         NIP10Thread.rootEventId(kind: note.kind, tags: note.tags) ?? note.id
@@ -102,6 +106,16 @@ struct NoteDetailView: View {
             .sorted(by: { $0.createdAt < $1.createdAt })
     }
 
+    private func landOnFocusedNote(proxy: ScrollViewProxy) {
+        guard !didLandOnFocusedNote, !dynamicParents.isEmpty else { return }
+        didLandOnFocusedNote = true
+        let target = focusedNoteId.isEmpty ? note.id : focusedNoteId
+        // Next runloop turn, once the revealed history has laid out.
+        DispatchQueue.main.async {
+            proxy.scrollTo(target, anchor: .top)
+        }
+    }
+
     private func selectAndScrollToNote(_ targetId: String, proxy: ScrollViewProxy) {
         withAnimation(Motion.scrollJump) {
             focusedNoteId = targetId
@@ -151,6 +165,19 @@ struct NoteDetailView: View {
                 .padding(.bottom, 90)
             }
             .scrollPosition(id: $pinnedScrollId, anchor: .top)
+            // Opening a reply loads the conversation above it, which pushed the
+            // reply below the fold: the pin above does not hold, because the
+            // parents are not direct scroll targets. Once they are shown, put
+            // the note you tapped at the top, with its parents scrollable above.
+            .onChange(of: isLoadingParents) { _, loading in
+                guard !loading else { return }
+                landOnFocusedNote(proxy: proxy)
+            }
+            .task {
+                // Parents already cached: they are on screen from the first frame.
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                if !isLoadingParents { landOnFocusedNote(proxy: proxy) }
+            }
             .onChange(of: focusedNoteId) { _, newId in
                 if !newId.isEmpty {
                     fetchEngagement(for: newId)
