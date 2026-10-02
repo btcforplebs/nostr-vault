@@ -104,6 +104,8 @@ final class VideoPlaybackService: @unchecked Sendable {
         let assetURL: URL
         let mimeOverride: String?
         let label: String
+        /// Live HLS replayed through `HLSLowLatencyStripper`.
+        var lowLatencyOff = false
 
         var assetOptions: [String: Any] {
             guard let mimeOverride else { return [:] }
@@ -243,6 +245,12 @@ final class VideoPlaybackService: @unchecked Sendable {
             }
         } else {
             out.append(Candidate(assetURL: url, mimeOverride: nil, label: "remote"))
+            // A live stream whose low-latency mode the server gets wrong
+            // (zap.stream answers the preload hint with HTTP 416) fails
+            // outright; the same stream plays as plain live HLS.
+            if url.pathExtension.lowercased() == "m3u8", let wrapped = HLSLowLatencyStripper.wrap(url) {
+                out.append(Candidate(assetURL: wrapped, mimeOverride: nil, label: "remote, low-latency off", lowLatencyOff: true))
+            }
         }
 
         return out
@@ -250,6 +258,9 @@ final class VideoPlaybackService: @unchecked Sendable {
 
     private func makeItem(for candidate: Candidate) -> AVPlayerItem {
         let asset = AVURLAsset(url: candidate.assetURL, options: candidate.assetOptions)
+        if candidate.lowLatencyOff {
+            asset.resourceLoader.setDelegate(HLSLowLatencyStripper.shared, queue: HLSLowLatencyStripper.shared.queue)
+        }
         return AVPlayerItem(asset: asset)
     }
 
@@ -382,5 +393,107 @@ final class VideoPlaybackService: @unchecked Sendable {
         Task { @MainActor in
             RelayProcessManager.shared.addLog("Video \(short): \(message)", level: level)
         }
+    }
+}
+
+// MARK: - Low-latency HLS fallback
+
+/// Plays a live HLS stream with its low-latency (LL-HLS) tags removed.
+///
+/// zap.stream serves LL-HLS whose `EXT-X-PRELOAD-HINT` asks for an
+/// open-ended byte range of the part still being written. Its server answers
+/// that request with HTTP 416 instead of holding it open, and AVPlayer treats
+/// a 416 as fatal, so the stream never starts (measured 2026-10-02: three of
+/// three live zap.stream streams failed, every other host played). Without
+/// the LL tags the same playlists are plain live HLS, which plays — about two
+/// seconds further behind live.
+///
+/// AVPlayer only lets an app rewrite what it loads for a custom URL scheme,
+/// so playlists are requested as `nvhls-https://…`, fetched here, cleaned,
+/// and handed back. Segment and init URIs are rewritten to absolute `https`,
+/// so the video itself still streams straight from the server.
+final class HLSLowLatencyStripper: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
+    static let shared = HLSLowLatencyStripper()
+    static let schemePrefix = "nvhls-"
+    let queue = DispatchQueue(label: "com.haven.hls-ll-stripper")
+
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        // Cloudflare in front of zap.stream refuses a bare CFNetwork agent
+        // (403) but serves the one AVPlayer itself sends.
+        config.httpAdditionalHeaders = ["User-Agent": "AppleCoreMedia/1.0"]
+        return URLSession(configuration: config)
+    }()
+
+    /// `https://host/x.m3u8` → `nvhls-https://host/x.m3u8`.
+    static func wrap(_ url: URL) -> URL? {
+        guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return nil }
+        return URL(string: schemePrefix + url.absoluteString)
+    }
+
+    static func unwrap(_ url: URL) -> URL? {
+        let s = url.absoluteString
+        guard s.hasPrefix(schemePrefix) else { return nil }
+        return URL(string: String(s.dropFirst(schemePrefix.count)))
+    }
+
+    private static let lowLatencyTags = [
+        "#EXT-X-PART:", "#EXT-X-PART-INF", "#EXT-X-PRELOAD-HINT", "#EXT-X-SERVER-CONTROL",
+        "#EXT-X-RENDITION-REPORT", "#EXT-X-SKIP",
+    ]
+
+    /// Drops the LL-HLS tags and makes every URI absolute: playlists back
+    /// through this loader, segments straight to the server.
+    static func rewrite(_ playlist: String, base: URL) -> String {
+        func absolute(_ uri: String) -> String {
+            guard let resolved = URL(string: uri, relativeTo: base)?.absoluteURL else { return uri }
+            if resolved.path.lowercased().hasSuffix(".m3u8"), let wrapped = wrap(resolved) {
+                return wrapped.absoluteString
+            }
+            return resolved.absoluteString
+        }
+        var out: [String] = []
+        for raw in playlist.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if lowLatencyTags.contains(where: { line.hasPrefix($0) }) { continue }
+            if line.isEmpty {
+                out.append(line)
+            } else if !line.hasPrefix("#") {
+                out.append(absolute(line))
+            } else if let range = line.range(of: #"URI="([^"]*)""#, options: .regularExpression) {
+                let uri = String(line[range].dropFirst(5).dropLast())
+                out.append(line.replacingCharacters(in: range, with: "URI=\"\(absolute(uri))\""))
+            } else {
+                out.append(line)
+            }
+        }
+        return out.joined(separator: "\n")
+    }
+
+    func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
+                        shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
+        guard let wrapped = loadingRequest.request.url, var url = Self.unwrap(wrapped) else { return false }
+        // Delivery directives (_HLS_msn/_HLS_part/_HLS_skip) belong to the
+        // low-latency mode this is turning off.
+        if var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            parts.queryItems = parts.queryItems?.filter { !$0.name.hasPrefix("_HLS_") }
+            if parts.queryItems?.isEmpty == true { parts.queryItems = nil }
+            url = parts.url ?? url
+        }
+        session.dataTask(with: url) { data, response, error in
+            guard let data, let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+                  let text = String(data: data, encoding: .utf8) else {
+                loadingRequest.finishLoading(with: error ?? URLError(.badServerResponse))
+                return
+            }
+            let body = Data(Self.rewrite(text, base: http.url ?? url).utf8)
+            loadingRequest.contentInformationRequest?.contentType = "public.m3u-playlist"
+            loadingRequest.contentInformationRequest?.contentLength = Int64(body.count)
+            loadingRequest.contentInformationRequest?.isByteRangeAccessSupported = false
+            loadingRequest.dataRequest?.respond(with: body)
+            loadingRequest.finishLoading()
+        }.resume()
+        return true
     }
 }

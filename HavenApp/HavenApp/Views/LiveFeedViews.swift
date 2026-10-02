@@ -108,7 +108,10 @@ struct LiveStreamPlayerView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let url = stream.streamingURL {
-                VideoPlayerView(url: url)
+                // The player with picture-in-picture: starting PiP closes this
+                // sheet, and the stream keeps playing in its floating window
+                // while you browse the rest of the app.
+                FullScreenVideoPlayer(url: url, onPiPStart: { dismiss() })
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
                     // A 16:9 video sized to the width of a phone in landscape
                     // is taller than the screen, and a VStack that cannot fit
