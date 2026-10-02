@@ -1769,22 +1769,7 @@ class FeedService: ObservableObject {
                 continue
             }
 
-            let c = WebSocketClient()
-            c.isTemporary = true
-            c.messageSubject
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] msg in self?.handleParentNoteFetch(msg) }
-                .store(in: &cancellables)
-            c.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { state in
-                    if state == .connected {
-                        c.send(text: reqStr)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { c.disconnect() }
-                    }
-                }
-                .store(in: &cancellables)
-            c.connect(url: url)
+            sendThroughLookupSocket(url: url, req: reqStr, subId: subId)
         }
     }
 
@@ -3444,31 +3429,123 @@ class FeedService: ObservableObject {
                 continue
             }
 
-            // Fallback: open a temporary connection when no active one is available.
-            let c = WebSocketClient()
-            c.isTemporary = true
-
-            // Temporary connections don't go through handleFeedMsgBackground, so
-            // subscribe the fast-path handler directly on the message subject.
-            c.messageSubject
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] msg in self?.handleParentNoteFetch(msg) }
-                .store(in: &cancellables)
-
-            c.$connectionState
-                .receive(on: DispatchQueue.main)
-                .sink { state in
-                    if state == .connected {
-                        c.send(text: reqStr)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-                            c.disconnect()
-                        }
-                    }
-                }
-                .store(in: &cancellables)
-
-            c.connect(url: url)
+            // No feed connection: borrow a pooled lookup socket for this relay.
+            sendThroughLookupSocket(url: url, req: reqStr, subId: subId)
         }
+    }
+
+    // MARK: - Lookup sockets
+
+    /// One socket per relay for missing-note lookups (thread roots, quotes),
+    /// reused across flushes and closed once it has gone quiet.
+    ///
+    /// Each flush used to open a fresh socket to every relay it asked and drop
+    /// it 8 s later. Scrolling a threaded feed flushes every few hundred ms,
+    /// so on 2026-10-02 the iPhone opened ~500 WebSocket connections a minute
+    /// to the same ~22 relays, 239 of them refused with HTTP 429, and the phone
+    /// ran hot. Now the same relays see one connection each.
+    private struct LookupSocket {
+        let client: WebSocketClient
+        /// REQs waiting for the handshake to finish.
+        var pending: [(req: String, subId: String)] = []
+        var subscriptions = Set<AnyCancellable>()
+        var idleClose: DispatchWorkItem?
+    }
+
+    private var lookupSockets: [String: LookupSocket] = [:]
+    /// Relays that refused or dropped a lookup socket, and when to try again.
+    /// A 429 lands here, so a throttling relay is left alone instead of
+    /// being redialled on the next flush.
+    private var lookupCooldownUntil: [String: Date] = [:]
+
+    /// How long a lookup socket stays open after its last request. Longer than
+    /// the 8 s a relay gets to answer, so a scroll keeps reusing it.
+    private static let lookupIdleSeconds: TimeInterval = 20
+    private static let lookupCooldownSeconds: TimeInterval = 120
+    /// How long a lookup REQ stays open on the relay before we CLOSE it.
+    private static let lookupSubscriptionSeconds: TimeInterval = 8
+
+    private func sendThroughLookupSocket(url: URL, req: String, subId: String) {
+        let key = Self.normalizeRelayKey(url.absoluteString) ?? url.absoluteString
+        if let until = lookupCooldownUntil[key] {
+            if until > Date() { return }
+            lookupCooldownUntil[key] = nil
+        }
+
+        if var socket = lookupSockets[key] {
+            switch socket.client.connectionState {
+            case .connected:
+                sendLookup(req: req, subId: subId, on: socket.client)
+                scheduleLookupIdleClose(key: key)
+                return
+            case .connecting, .disconnected:
+                // Handshake still in flight (a new client starts out
+                // .disconnected until connect() publishes .connecting).
+                socket.pending.append((req, subId))
+                lookupSockets[key] = socket
+                return
+            case .error:
+                closeLookupSocket(key: key)
+            }
+        }
+
+        let client = WebSocketClient()
+        client.isTemporary = true
+        var socket = LookupSocket(client: client, pending: [(req, subId)])
+
+        client.messageSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] msg in self?.handleParentNoteFetch(msg) }
+            .store(in: &socket.subscriptions)
+
+        client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak client] state in
+                guard let self, let client,
+                      self.lookupSockets[key]?.client === client else { return }
+                switch state {
+                case .connected:
+                    let queued = self.lookupSockets[key]?.pending ?? []
+                    self.lookupSockets[key]?.pending.removeAll()
+                    for item in queued { self.sendLookup(req: item.req, subId: item.subId, on: client) }
+                    self.scheduleLookupIdleClose(key: key)
+                case .error:
+                    // Refused (429 and friends), timed out or dropped.
+                    self.lookupCooldownUntil[key] = Date().addingTimeInterval(Self.lookupCooldownSeconds)
+                    self.closeLookupSocket(key: key)
+                case .connecting, .disconnected:
+                    break
+                }
+            }
+            .store(in: &socket.subscriptions)
+
+        lookupSockets[key] = socket
+        client.connect(url: url)
+    }
+
+    private func sendLookup(req: String, subId: String, on client: WebSocketClient) {
+        client.send(text: req)
+        let closeMsg = ["CLOSE", subId] as [Any]
+        guard let closeData = try? JSONSerialization.data(withJSONObject: closeMsg),
+              let closeStr = String(data: closeData, encoding: .utf8) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.lookupSubscriptionSeconds) { [weak client] in
+            client?.send(text: closeStr)
+        }
+    }
+
+    private func scheduleLookupIdleClose(key: String) {
+        lookupSockets[key]?.idleClose?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.closeLookupSocket(key: key) }
+        lookupSockets[key]?.idleClose = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.lookupIdleSeconds, execute: work)
+    }
+
+    private func closeLookupSocket(key: String) {
+        guard let socket = lookupSockets.removeValue(forKey: key) else { return }
+        socket.idleClose?.cancel()
+        socket.client.disconnect()
+        // Dropping `socket` releases its subscriptions with it. They used to
+        // go into `cancellables`, which kept every finished client alive.
     }
 
     /// Authors whose relay list was already requested, so each is asked once.
