@@ -120,6 +120,7 @@ func main() {
 		}
 
 		runsafe.Go("subscribeInboxAndChat", func() { subscribeInboxAndChat(mainCtx) })
+		runsafe.Go("followerLedger", func() { runFollowerLedger(mainCtx) })
 		runsafe.Go("syncFeed", func() { syncFeed(mainCtx) })
 		runsafe.Go("ingestPopularEngagement", func() { ingestPopularEngagement(mainCtx) })
 		runsafe.Go("periodicCloudBackups", func() { startPeriodicCloudBackups(mainCtx) })
