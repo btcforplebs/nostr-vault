@@ -57,6 +57,7 @@ struct FeedMediaView: View {
     var isThumbnail: Bool = false
 
     @ObservedObject private var configService = ConfigService.shared
+    @Environment(\.mediaZoomNamespace) private var zoomNamespace
     @State private var mediaType: FeedMediaType?
     @State private var isDetecting: Bool = false
     @State private var videoAspectRatio: CGFloat?
@@ -102,6 +103,7 @@ struct FeedMediaView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGestureIfSome(onTap)
+        .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
 
     private var videoView: some View {
@@ -135,6 +137,7 @@ struct FeedMediaView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGestureIfSome(onTap)
+        .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
 
     /// Height cap for inline video, mirroring `FeedPhotoView`: portraits get a
@@ -160,6 +163,7 @@ struct FeedMediaView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGestureIfSome(onTap)
+        .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
 
     /// Aspect ratio the note published in its `imeta` `dim`, if any.
