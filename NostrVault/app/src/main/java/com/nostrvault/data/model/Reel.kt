@@ -29,9 +29,17 @@ data class Reel(
 ) {
     val id: String get() = note.id
 
+    /** `kind:pubkey:d` — every version of one addressable video shares it. */
+    val address: String
+        get() = "${note.kind}:${note.pubkey}:" +
+            (note.tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: "")
+
     companion object {
-        /** NIP-71 video events: normal and short, and their addressable forms. */
-        val VIDEO_KINDS = listOf(21, 22, 34235, 34236)
+        /** NIP-71 addressable short video: the event diVine publishes. */
+        val VIDEO_KINDS = listOf(34236)
+
+        /** diVine's own relay, where most of its videos live. */
+        const val DIVINE_RELAY = "wss://relay.divine.video"
 
         /** Newest first; id breaks ties so the order is total and stable. */
         val NEWEST_FIRST: Comparator<Reel> =
@@ -154,21 +162,15 @@ data class Reel(
 }
 
 /**
- * The two filters a Reels page asks for. Each pages on its own cursor: kind-1
- * notes are dense and NIP-71 events are sparse, so one shared cursor would
- * either skip notes or re-ask for the same video window.
+ * The filters a Reels page asks for, each paging on its own cursor. Reels are
+ * diVine videos only; kind-1 notes carrying a video stay in the timeline.
  */
 enum class ReelStream(val kinds: List<Int>, val limit: Int) {
     VIDEO(Reel.VIDEO_KINDS, 100),
-    NOTE(listOf(1), 300),
     ;
 
     companion object {
-        fun forKind(kind: Int): ReelStream? = when (kind) {
-            1 -> NOTE
-            in Reel.VIDEO_KINDS -> VIDEO
-            else -> null
-        }
+        fun forKind(kind: Int): ReelStream? = if (kind in Reel.VIDEO_KINDS) VIDEO else null
     }
 }
 
@@ -239,7 +241,7 @@ data class ReelCursors(
 
         /**
          * Whether a finished page should start the next one without waiting for
-         * a swipe. A page of notes with no video in it would otherwise park the
+         * a swipe. A page with nothing playable in it would otherwise park the
          * pager on its last reel with nothing left to trigger the next page.
          */
         fun shouldContinue(reelCount: Int, shownIndex: Int, reachedEnd: Boolean): Boolean =
