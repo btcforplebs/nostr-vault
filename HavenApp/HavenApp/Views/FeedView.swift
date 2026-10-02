@@ -515,7 +515,10 @@ struct FeedView: View {
     private var isCompactWidth: Bool { horizontalSizeClass == .compact }
 
     private var feedLeadingToolbar: some View {
-        HStack(spacing: 12) {
+        // No spacing or trailing padding of our own: the toolbar Menu already
+        // insets its label ~11 pt before and ~13 pt after, which on top of
+        // ours left this pill far roomier than the icon pill beside it.
+        HStack(spacing: 0) {
             Button(action: { showingRelayStatus = true }) {
                 Circle()
                     .fill(feedService.connectionDotColor)
@@ -559,7 +562,6 @@ struct FeedView: View {
             }
         }
         .padding(.leading, 7)
-        .padding(.trailing, 14)
         .padding(.vertical, 7)
     }
     #endif
@@ -1093,6 +1095,7 @@ struct FeedView: View {
                                 feedTrailingToolbarInline
                                 feedTrailingToolbarMenu
                             }
+                            .padding(.horizontal, 3)
                         }
                         // The lone layout button fades in as the full row
                         // fades out, centred in the circle the pill folds to.
