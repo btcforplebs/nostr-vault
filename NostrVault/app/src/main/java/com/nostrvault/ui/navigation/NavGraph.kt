@@ -154,7 +154,23 @@ fun NostrVaultNavHost(
         target.accountNpub
             ?.takeIf { it != configStore.config.value.activeOrOwnerNpub() }
             ?.let { configStore.switchActiveAccount(it) }
-        navController.navigate(target.route) { launchSingleTop = true }
+        val focus = target.relayFocus
+        if (focus == null) {
+            navController.navigate(target.route) { launchSingleTop = true }
+            return@LaunchedEffect
+        }
+        // A notification about a post: park the target for the Relay tab, then
+        // switch to that tab as the bottom bar does — the same instance, so its
+        // loaded events are reused — and drop anything stacked on it (an open
+        // thread), so the list the tab scrolls is the one on screen.
+        RelayFocus.request(focus)
+        RelayForegroundService.markRelayViewed()
+        navController.navigate(Screen.Dashboard.route) {
+            popUpTo(Screen.Feed.route) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+        navController.popBackStack(Screen.Dashboard.route, inclusive = false)
     }
 
     // The bars fold with the scroll on the list tabs (Feed/Media/Relay), following
