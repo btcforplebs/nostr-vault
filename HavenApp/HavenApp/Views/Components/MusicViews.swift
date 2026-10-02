@@ -428,22 +428,27 @@ final class FloatingButtonRow: ObservableObject {
 
 /// Places a floating button (Post, Blossom, Relay) in the row above the tab
 /// bar and reports its width so the mini player can make room for it.
+///
+/// Where there is no iPhone tab bar (the iPad split, macOS) there's no row to
+/// share: the button sits at the ordinary 20pt margin and reports nothing.
 struct FloatingButtonSlot: ViewModifier {
     @ObservedObject private var row = FloatingButtonRow.shared
+    @Environment(\.floatingTabBarHeight) private var tabBarHeight
     @State private var id = UUID()
 
     func body(content: Content) -> some View {
+        let sharesRow = tabBarHeight > 0
         content
             .background(
                 GeometryReader { geo in
                     Color.clear
-                        .onAppear { row.report(id, width: geo.size.width) }
-                        .onChange(of: geo.size.width) { _, width in row.report(id, width: width) }
+                        .onAppear { if sharesRow { row.report(id, width: geo.size.width) } }
+                        .onChange(of: geo.size.width) { _, width in if sharesRow { row.report(id, width: width) } }
                 }
             )
             .onDisappear { row.report(id, width: nil) }
             .padding(.trailing, FloatingButtonRow.trailingInset)
-            .padding(.bottom, row.buttonBottom)
+            .padding(.bottom, sharesRow ? row.buttonBottom : 20)
             .animation(Motion.chrome, value: row.buttonBottom)
     }
 }
