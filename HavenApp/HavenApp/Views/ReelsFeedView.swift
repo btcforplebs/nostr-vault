@@ -1,7 +1,7 @@
 import SwiftUI
 import AVFoundation
 
-/// Reels: full-screen videos, one per page, swiped vertically.
+/// Reels: full-screen diVine videos, one per page, swiped vertically.
 ///
 /// Only the page on screen plays. Its neighbours build their players ahead of
 /// time so a swipe lands on a video that is already buffering — the player
@@ -164,8 +164,8 @@ struct ReelsFeedView: View {
         if service.followSetIsEmpty { return "Switch to Global to see everyone's videos." }
         if service.loadFailed { return "Reels come from relays, so this one needs a connection." }
         return service.scope == .following
-            ? "Nobody you follow has posted a video recently."
-            : "Nothing playable came back from your relays."
+            ? "Nobody you follow has posted a diVine video recently."
+            : "No diVine videos came back from the relays."
     }
 }
 
