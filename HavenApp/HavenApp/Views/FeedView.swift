@@ -409,6 +409,12 @@ struct FeedView: View {
     @State private var showingGlobalRecipeWarning = false
     @State private var isAtTop: Bool = true
     @State private var scrolledNoteID: String?
+    /// Rows on screen right now, so switching layouts can keep the post you
+    /// were reading in front of you. A plain reference: rows scrolling in and
+    /// out must not re-render the feed.
+    @State private var visibleRows = FeedVisibleRows()
+    /// Row to bring back to the top once a layout switch has re-rendered.
+    @State private var pendingLayoutAnchor: String?
     @State private var lastScrollOffset: CGFloat = 0
     @State private var isScrollingDown: Bool = false
     @State private var navigationPath = NavigationPath()
@@ -486,6 +492,8 @@ struct FeedView: View {
     /// choice is visible at once).
     private func setLayoutModeForCurrentFeed(_ mode: FeedLayoutMode) {
         let resolved = mode.clamped(supportsThreading: currentFeedSupportsThreading)
+        // The note you are looking at, read in the layout you are leaving.
+        let readingNoteId = topVisibleNoteId()
         configService.config.feedLayoutModes[feedService.feedMode.rawValue] = resolved.rawValue
         // Keep the legacy key in step so a downgrade still lands somewhere sane.
         configService.config.feedCompactModes[feedService.feedMode.rawValue] = resolved.usesCondensedRows
@@ -503,6 +511,31 @@ struct FeedView: View {
         expandedNoteId = nil
         if needsRefilter { feedService.recomputeFilteredNotes() }
         rebuildThreadsIfNeeded(immediate: true)
+        if let readingNoteId { pendingLayoutAnchor = rowId(showing: readingNoteId) }
+    }
+
+    /// Topmost note on screen. In threaded layout a card is identified by its
+    /// root; the first of its notes the flat feed also holds stands in for it.
+    private func topVisibleNoteId() -> String? {
+        if isThreadedModeActive {
+            return feedThreads.first { visibleRows.ids.contains($0.rootId) }?.rootId
+        }
+        return feedService.filteredNotes.first { visibleRows.ids.contains($0.id) }?.id
+    }
+
+    /// The row that shows `noteId` in the layout now active: the thread card
+    /// that contains it, or the note itself (or, coming from a thread card,
+    /// its first note in the flat feed).
+    private func rowId(showing noteId: String) -> String? {
+        if isThreadedModeActive {
+            return feedThreads.first { thread in
+                thread.rootId == noteId || thread.entries.contains { $0.note.id == noteId }
+            }?.rootId
+        }
+        if feedService.filteredNotes.contains(where: { $0.id == noteId }) { return noteId }
+        guard let thread = feedThreads.first(where: { $0.rootId == noteId }) else { return nil }
+        let flatIds = Set(feedService.filteredNotes.map(\.id))
+        return thread.entries.first { flatIds.contains($0.note.id) }?.note.id
     }
 
     /// Open the thread at a specific note. Threaded rows can't use
@@ -2267,6 +2300,7 @@ struct FeedView: View {
                                 )
                                 .padding(.horizontal, 12)
                                 .onAppear { prefetchAhead(ofThread: thread.rootId) }
+                                .trackFeedVisibility(thread.rootId, in: visibleRows)
                             }
                         } else {
                         ForEach(feedService.filteredNotes) { note in
@@ -2296,6 +2330,7 @@ struct FeedView: View {
                                 }
                             }
                             .onAppear { prefetchAhead(ofNote: note.id) }
+                            .trackFeedVisibility(note.id, in: visibleRows)
                             #else
                             let isExpanded = (expandedNoteId == note.id)
                             feedNoteRowContent(note: note, profile: profile, rowData: rowData, parentIsNext: parentIsNext, isExpanded: isExpanded)
@@ -2355,6 +2390,14 @@ struct FeedView: View {
                 }
                 .tint(Color.secondary.opacity(0.6))
                 .scrollPosition(id: $scrolledNoteID)
+                .onChange(of: pendingLayoutAnchor) { _, anchor in
+                    guard let anchor else { return }
+                    // Next runloop turn, once the new layout's rows exist.
+                    DispatchQueue.main.async {
+                        proxy.scrollTo(anchor, anchor: .top)
+                        pendingLayoutAnchor = nil
+                    }
+                }
                 .scrollDirectionTracking(feedService: feedService, isAtTop: $isAtTop)
                 .softTopScrollEdge()
                 .onChange(of: feedService.isLoadingFeed) { _, isLoading in
@@ -4010,3 +4053,25 @@ struct FeedNoteSkeletonRow: View {
     }
 }
 
+/// Which feed rows are on screen. Reference type on purpose: it changes on
+/// every scroll, and nothing should re-render for that — it is read only when
+/// the layout switches.
+final class FeedVisibleRows {
+    var ids: Set<String> = []
+}
+
+extension View {
+    /// Keeps `rows` knowing whether this row is on screen.
+    @ViewBuilder
+    func trackFeedVisibility(_ id: String, in rows: FeedVisibleRows) -> some View {
+        if #available(iOS 18.0, macOS 15.0, *) {
+            self
+                .onScrollVisibilityChange(threshold: 0.3) { visible in
+                    if visible { rows.ids.insert(id) } else { rows.ids.remove(id) }
+                }
+                .onDisappear { rows.ids.remove(id) }
+        } else {
+            self
+        }
+    }
+}
