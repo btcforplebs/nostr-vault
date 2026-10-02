@@ -32,6 +32,8 @@ extension Notification.Name {
     static let composeFromTabBar = Notification.Name("com.haven.composeFromTabBar")
     /// Posted by the collapsed tab bar (or menu bar) to open the relay dashboard.
     static let openRelayDashboard = Notification.Name("com.haven.openRelayDashboard")
+    /// Posted by the collapsed tab bar on the Media tab to open the Blossom dashboard.
+    static let openBlossomDashboard = Notification.Name("com.haven.openBlossomDashboard")
 
     /// Widget deep links. Search and Media had no existing route because
     /// nothing else needed to open them programmatically.

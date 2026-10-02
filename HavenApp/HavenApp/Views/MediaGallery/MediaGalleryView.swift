@@ -173,6 +173,9 @@ struct MediaGalleryView: View {
         }
         .modifier(mediaChangeHandlers)
         .modifier(MagicPasteFromWidget { handlePasteFromClipboard() })
+        .onReceive(NotificationCenter.default.publisher(for: .openBlossomDashboard)) { _ in
+            showingBlossomMediaList = true
+        }
         .modifier(mediaSheetsAndPickers)
     }
 

@@ -10,57 +10,263 @@ struct IdentifiableString: Identifiable {
 
 
 
-@available(iOS 18.0, *)
+/// How far the iPhone chrome (bottom tab bar + feed top bar) is folded away,
+/// driven by the finger rather than by a timed animation.
+///
+/// `progress` follows the scroll 1:1 while the user drags, so a half-drag
+/// leaves the bars half-folded and reversing the drag brings them straight
+/// back. On release it settles to whichever end is nearer, or to the end a
+/// fling is heading for. Both bars read this one value and settle on one
+/// `Motion.chrome` spring, so they can never drift apart.
+///
+/// `@Observable`, not a `FeedService` property: `progress` changes every
+/// frame of a drag, and only the two bars should re-render for it. A
+/// `@Published` write would invalidate every view observing `FeedService`.
+/// Views that need a yes/no (the per-screen compose buttons, the feed top
+/// bar's layout) read `isFolded`, which only changes at the ends.
+@Observable
+@MainActor
+final class ChromeCollapse {
+    static let shared = ChromeCollapse()
+
+    /// 0 = fully shown, 1 = fully folded.
+    private(set) var progress: CGFloat = 0
+
+    /// True only once the bars are completely folded; false again the moment
+    /// they start coming back, so the top bar's pills can fade in with the
+    /// finger rather than appearing after it.
+    private(set) var isFolded = false
+
+    /// Scroll distance that folds the bars completely — about one bar height,
+    /// so the chrome moves at the same speed as the content under it.
+    static let distance: CGFloat = 60
+
+    /// A fling faster than this (points/second) commits to its direction
+    /// immediately instead of dragging the bars along with the deceleration.
+    static let flingVelocity: CGFloat = 400
+
+    private init() {}
+
+    /// Opacity of what the fold hides: gone by 60%.
+    static func fadeOut(_ p: CGFloat) -> Double { Double(max(0, 1 - p / 0.6)) }
+    /// Opacity of what the fold reveals: starts at 40%. The two curves never
+    /// sit at similar strengths, so outgoing and incoming controls do not
+    /// read as stacked on top of each other.
+    static func fadeIn(_ p: CGFloat) -> Double { Double(max(0, (p - 0.4) / 0.6)) }
+
+    /// Sets progress directly — used while the finger (or its fling) is
+    /// driving the scroll.
+    func track(_ value: CGFloat) {
+        set(value)
+    }
+
+    /// Animates to a resting state.
+    func settle(to value: CGFloat) {
+        guard value != progress else { return }
+        withAnimation(Motion.chrome) { set(value) }
+    }
+
+    /// Brings the bars fully back: tab switch, tapping the folded avatar,
+    /// account switch.
+    func reset() {
+        settle(to: 0)
+    }
+
+    private func set(_ value: CGFloat) {
+        let clamped = min(max(value, 0), 1)
+        if clamped != progress { progress = clamped }
+        let folded = clamped >= 1
+        if folded != isFolded { isFolded = folded }
+        // The per-screen compose buttons and the profile/media/vault chrome
+        // still observe the FeedService flag. Mirror the edge-only state so
+        // they keep working without observing every frame.
+        let feedService = FeedService.shared
+        if feedService.feedScrollingDown != folded {
+            feedService.feedScrollingDown = folded
+        }
+    }
+}
+
+/// Fades and slightly shrinks its content with the chrome fold. Its own view
+/// so that reading the per-frame `progress` re-renders only this wrapper,
+/// not the screen that builds the content.
+struct ChromeFold<Content: View>: View {
+    var anchor: UnitPoint = .center
+    /// `true` for content that appears as the bars fold (the lone layout
+    /// button), rather than disappears.
+    var inverted = false
+    var isEnabled = true
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        let p = isEnabled ? ChromeCollapse.shared.progress : 0
+        let visible = inverted ? ChromeCollapse.fadeIn(p) : ChromeCollapse.fadeOut(p)
+        content
+            .opacity(visible)
+            .scaleEffect(0.85 + 0.15 * visible, anchor: anchor)
+            .allowsHitTesting(visible > 0.5)
+            .accessibilityHidden(visible <= 0.5)
+    }
+}
+
+/// The feed top bar's glass pill. With the fold it narrows from its content's
+/// full width to a circle on `alignment`'s edge, the same morph the bottom
+/// tab bar makes.
+///
+/// Only the glass and the clip move. The content keeps its layout, so the
+/// navigation bar hosting it never relayouts mid-drag. The system's own
+/// toolbar glass must be hidden (`hidingSharedToolbarBackground()`): UIKit
+/// animates that platter on its own clock and leaves it behind.
+struct ChromeMorphCapsule<Content: View>: View {
+    var alignment: Alignment
+    var isEnabled = true
+    @ViewBuilder var content: Content
+
+    @State private var size: CGSize = .zero
+
+    var body: some View {
+        let p = isEnabled ? ChromeCollapse.shared.progress : 0
+        // Unmeasured on the first pass: draw at the content's own size.
+        let width: CGFloat? = size == .zero ? nil : size.width + (size.height - size.width) * p
+        content
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+            .mask(alignment: alignment) { Capsule().frame(width: width) }
+            .background(alignment: alignment) {
+                Color.clear
+                    .frame(width: width)
+                    .applyGlassCapsule()
+            }
+    }
+}
+
+extension ToolbarContent {
+    /// Drops the Liquid Glass platter iOS 26 draws behind toolbar items, for
+    /// items that draw their own glass.
+    @ToolbarContentBuilder
+    func hidingSharedToolbarBackground() -> some ToolbarContent {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
+    }
+}
+
 @available(macOS 15.0, iOS 18.0, *)
-private struct ScrollDirectionModifier: ViewModifier {
-    @ObservedObject var feedService: FeedService
+private struct ScrollChromeModifier: ViewModifier {
     var isAtTopBinding: Binding<Bool>?
-    @State private var isScrollingDown = false
+
+    /// Per-frame bookkeeping. A plain class held in `@State`, so writing it
+    /// every frame does not invalidate this modifier (and re-emit the whole
+    /// scroll content) the way a `@State` value write would.
+    private final class Tracker {
+        var phase: ScrollPhase = .idle
+        var lastOffset: CGFloat?
+        /// Direction of the finger's most recent movement, +1 = down the list.
+        var lastDirection: CGFloat = 0
+        /// Set when a fling has already chosen where the bars go; the rest
+        /// of that deceleration no longer moves them.
+        var committed = false
+    }
+
+    @State private var tracker = Tracker()
 
     func body(content: Content) -> some View {
         content
             .onScrollGeometryChange(for: CGFloat.self) { geo in
-                geo.contentOffset.y
-            } action: { oldValue, newValue in
-                let delta = newValue - oldValue
-                if abs(delta) > 8 {
-                    let scrollingDown = delta > 0
-                    if scrollingDown != isScrollingDown {
-                        isScrollingDown = scrollingDown
-                        // Respect the user's "disable tab bar animation" setting:
-                        // never publish a "scrolling down" flip so the tab bar and
-                        // per-screen FABs stay fully expanded. Force-expand writes
-                        // (below) always run so a stale collapsed state can recover.
-                        if !(scrollingDown && ConfigService.shared.config.disableTabBarAnimation) {
-                            feedService.feedScrollingDown = scrollingDown
-                        }
-                    }
-                }
-                // Only force-expand when truly scrolled back to the very top.
-                // Guard both writes: `onScrollGeometryChange` fires every frame
-                // while the offset changes, and near the top (including the iOS
-                // rubber-band bounce) `newValue` oscillates around 0 every frame.
-                // Writing `feedScrollingDown` unconditionally would publish
-                // `objectWillChange` on the shared FeedService each frame —
-                // re-rendering the tab bar and every feed row dozens of times a
-                // second, the framerate glitch seen at the top of every feed.
-                if newValue <= 0 {
-                    if feedService.feedScrollingDown {
-                        feedService.feedScrollingDown = false
-                    }
-                    if isScrollingDown {
-                        isScrollingDown = false
-                    }
-                }
-
-                // Track whether the user is at the top of the feed
-                if let binding = isAtTopBinding {
-                    let atTop = newValue <= 10
-                    if atTop != binding.wrappedValue {
-                        binding.wrappedValue = atTop
-                    }
-                }
+                // Offset from the top of the content, clamped to the
+                // scrollable range, so rubber-banding past either end
+                // produces no movement.
+                let top = geo.contentOffset.y + geo.contentInsets.top
+                let maxOffset = max(0, geo.contentSize.height + geo.contentInsets.top
+                                    + geo.contentInsets.bottom - geo.containerSize.height)
+                return min(max(top, 0), maxOffset)
+            } action: { _, offset in
+                handle(offset: offset)
             }
+            .onScrollPhaseChange { _, newPhase, context in
+                handle(phase: newPhase, velocity: context.velocity?.dy)
+            }
+    }
+
+    private var chrome: ChromeCollapse { .shared }
+
+    private var isPinnedOpen: Bool {
+        ConfigService.shared.config.disableTabBarAnimation
+    }
+
+    /// The bars can be at most this folded at a given offset, so the top of
+    /// a list always shows them in full and a list shorter than `distance`
+    /// can only fold them partway (and then settles them back open).
+    private func ceiling(at offset: CGFloat) -> CGFloat {
+        offset / ChromeCollapse.distance
+    }
+
+    private func handle(offset: CGFloat) {
+        let last = tracker.lastOffset
+        tracker.lastOffset = offset
+
+        if let binding = isAtTopBinding {
+            let atTop = offset <= 10
+            if atTop != binding.wrappedValue { binding.wrappedValue = atTop }
+        }
+
+        if isPinnedOpen {
+            if chrome.progress != 0 { chrome.track(0) }
+            return
+        }
+
+        switch tracker.phase {
+        case .interacting, .decelerating:
+            // Only the finger and its fling move the bars. A programmatic
+            // scroll (.animating) or a content change while idle — new notes
+            // inserted above, a restored position, load-more — does not.
+            guard let last, !tracker.committed else { break }
+            let delta = offset - last
+            if delta != 0 { tracker.lastDirection = delta > 0 ? 1 : -1 }
+            chrome.track(min(chrome.progress + delta / ChromeCollapse.distance,
+                             ceiling(at: offset)))
+            return
+        default:
+            break
+        }
+
+        // Whatever moved the list, arriving at the top shows the bars.
+        let cap = ceiling(at: offset)
+        if chrome.progress > cap {
+            if tracker.phase == .animating { chrome.track(cap) } else { chrome.settle(to: cap) }
+        }
+    }
+
+    private func handle(phase newPhase: ScrollPhase, velocity: CGFloat?) {
+        let oldPhase = tracker.phase
+        tracker.phase = newPhase
+        guard !isPinnedOpen else { return }
+        let offset = tracker.lastOffset ?? 0
+        let canFold = ceiling(at: offset) >= 1
+
+        switch newPhase {
+        case .interacting:
+            tracker.committed = false
+            tracker.lastDirection = 0
+        case .decelerating:
+            // Lifting the finger mid-fling: a fast fling picks its end now.
+            // Direction comes from the finger's last movement; only the
+            // velocity's magnitude is used.
+            if oldPhase == .interacting, let velocity,
+               abs(velocity) >= ChromeCollapse.flingVelocity, tracker.lastDirection != 0 {
+                chrome.settle(to: tracker.lastDirection > 0 && canFold ? 1 : 0)
+                tracker.committed = true
+            }
+        case .idle:
+            tracker.committed = false
+            // Never leave the bars half-folded.
+            let p = chrome.progress
+            guard p > 0, p < 1 else { return }
+            chrome.settle(to: p >= 0.5 && canFold ? 1 : 0)
+        default:
+            break
+        }
     }
 }
 
@@ -68,7 +274,7 @@ extension View {
     @ViewBuilder
     func scrollDirectionTracking(feedService: FeedService, isAtTop: Binding<Bool>? = nil) -> some View {
         if #available(macOS 15.0, iOS 18.0, *) {
-            self.modifier(ScrollDirectionModifier(feedService: feedService, isAtTopBinding: isAtTop))
+            self.modifier(ScrollChromeModifier(isAtTopBinding: isAtTop))
         } else {
             self
         }
@@ -292,9 +498,7 @@ struct FeedView: View {
     /// the connection dot on the left and the feed-style button on the right,
     /// and scrolling up brings the rest back. iPhone only — iPad has a sidebar
     /// instead of the bottom bar this pairs with.
-    private var isTopBarCollapsed: Bool {
-        horizontalSizeClass == .compact && feedService.feedScrollingDown
-    }
+    private var isCompactWidth: Bool { horizontalSizeClass == .compact }
 
     private var feedLeadingToolbar: some View {
         HStack(spacing: 12) {
@@ -306,9 +510,17 @@ struct FeedView: View {
             }
             .buttonStyle(.plain)
             .frame(width: 30, height: 30)
-            .applyGlassCircle()
+            // The dot's own ring melts into the pill as it becomes a circle,
+            // so the folded dot sits in one ring, not two.
+            .background {
+                ChromeFold(isEnabled: isCompactWidth) {
+                    Color.clear.applyGlassCircle()
+                }
+            }
 
-            if !isTopBarCollapsed {
+            // Always laid out, only faded: removing it would resize the
+            // toolbar item and make the navigation bar relayout mid-fold.
+            ChromeFold(anchor: .leading, isEnabled: isCompactWidth) {
                 Menu {
                     ForEach(FeedMode.allCases, id: \.self) { mode in
                         Button(action: { feedService.switchMode(mode) }) {
@@ -330,9 +542,11 @@ struct FeedView: View {
                     }
                     .foregroundColor(.white)
                 }
-                .transition(.scale(scale: 0.85, anchor: .leading).combined(with: .opacity))
             }
         }
+        .padding(.leading, 7)
+        .padding(.trailing, 14)
+        .padding(.vertical, 7)
     }
     #endif
 
@@ -848,29 +1062,37 @@ struct FeedView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                feedLeadingToolbar
-                    .animation(Motion.chrome, value: isTopBarCollapsed)
+                ChromeMorphCapsule(alignment: .leading, isEnabled: isCompactWidth) {
+                    feedLeadingToolbar
+                }
             }
+            .hidingSharedToolbarBackground()
 
             ToolbarItem(placement: .navigationBarTrailing) {
-                ZStack(alignment: .trailing) {
-                    if isTopBarCollapsed {
-                        if feedService.feedMode != .reels {
-                            layoutModeButton
-                                .padding(4)
-                                .applyGlassCapsule()
-                                .transition(.opacity)
+                ChromeMorphCapsule(alignment: .trailing, isEnabled: isCompactWidth) {
+                    ZStack(alignment: .trailing) {
+                        ChromeFold(anchor: .trailing, isEnabled: isCompactWidth) {
+                            // Width only: the pill's vertical padding makes it
+                            // taller than the bar's proposal, which must not
+                            // demote the row to the menu.
+                            ViewThatFits(in: .horizontal) {
+                                feedTrailingToolbarInline
+                                feedTrailingToolbarMenu
+                            }
                         }
-                    } else {
-                        ViewThatFits {
-                            feedTrailingToolbarInline
-                            feedTrailingToolbarMenu
+                        // The lone layout button fades in as the full row
+                        // fades out, centred in the circle the pill folds to.
+                        if isCompactWidth && feedService.feedMode != .reels {
+                            ChromeFold(anchor: .trailing, inverted: true) {
+                                layoutModeButton
+                                    .padding(.horizontal, 4)
+                            }
                         }
-                        .transition(.scale(scale: 0.85, anchor: .trailing).combined(with: .opacity))
                     }
+                    .padding(.vertical, 4)
                 }
-                .animation(Motion.chrome, value: isTopBarCollapsed)
             }
+            .hidingSharedToolbarBackground()
         }
         #endif
         .onAppear {
@@ -2114,7 +2336,7 @@ struct FeedView: View {
                 // gates auto-loading new posts) and the tab bar follow it.
                 scrolledNoteID = nil
                 isAtTop = true
-                feedService.feedScrollingDown = false
+                ChromeCollapse.shared.reset()
                 rebuildRowDataCache()
                 rebuildThreadsIfNeeded()
             }
