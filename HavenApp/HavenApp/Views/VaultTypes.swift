@@ -8,6 +8,15 @@ enum ViewMode {
     case media
     case likes
     case zaps
+    case followers
+}
+
+/// Followers from the relay's follower ledger: follows we watched happen,
+/// your web of trust, and everyone else who isn't spam.
+enum FollowersFilter {
+    case new
+    case trusted
+    case others
 }
 
 enum ContentFilter {

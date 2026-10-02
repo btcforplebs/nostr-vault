@@ -19,6 +19,20 @@ extension VaultView {
             IconFilterButton(icon: "bolt.fill", tooltip: "Zaps", isSelected: viewMode == .zaps, color: .havenPurple) {
                 withAnimation(Motion.toggle) { viewMode = .zaps }
             }
+            IconFilterButton(icon: "person.2.fill", tooltip: "Followers", isSelected: viewMode == .followers, color: .havenPurple) {
+                withAnimation(Motion.toggle) { viewMode = .followers }
+            }
+            .overlay(alignment: .topTrailing) {
+                if hasNewFollowers {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 8, height: 8)
+                        .offset(x: -5, y: 6)
+                        .allowsHitTesting(false)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .accessibilityValue(hasNewFollowers ? "New followers" : "")
         }
     }
 
@@ -42,9 +56,14 @@ extension VaultView {
             } else if viewMode == .zaps {
                 IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: zapsFilter == .onMyNotes, color: .havenPurple, label: "Received") { zapsFilter = .onMyNotes }
                 IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: zapsFilter == .myZaps, color: .havenPurple, label: "Given") { zapsFilter = .myZaps }
+            } else if viewMode == .followers {
+                IconFilterButton(icon: "sparkles", tooltip: "New", isSelected: followersFilter == .new, color: .havenPurple, label: "New") { followersFilter = .new }
+                IconFilterButton(icon: "checkmark.seal.fill", tooltip: "Trusted", isSelected: followersFilter == .trusted, color: .havenPurple, label: "Trusted") { followersFilter = .trusted }
+                IconFilterButton(icon: "person.3.fill", tooltip: "Others", isSelected: followersFilter == .others, color: .havenPurple, label: "Others") { followersFilter = .others }
             }
         }
         .animation(Motion.toggle, value: contentFilter)
+        .animation(Motion.toggle, value: followersFilter)
         .animation(Motion.toggle, value: likesFilter)
         .animation(Motion.toggle, value: zapsFilter)
     }
@@ -78,6 +97,16 @@ extension VaultView {
                 Button { zapsFilter = .myZaps } label: {
                     Label("Given", systemImage: "tray.and.arrow.up.fill")
                 }
+            } else if viewMode == .followers {
+                Button { followersFilter = .new } label: {
+                    Label("New", systemImage: "sparkles")
+                }
+                Button { followersFilter = .trusted } label: {
+                    Label("Trusted", systemImage: "checkmark.seal.fill")
+                }
+                Button { followersFilter = .others } label: {
+                    Label("Others", systemImage: "person.3.fill")
+                }
             }
         } label: {
             Image(systemName: "line.3.horizontal.decrease")
@@ -109,6 +138,12 @@ extension VaultView {
         }
     }
 
+    var followersButton: some View {
+        ModeButton(title: "Followers", icon: "person.2.fill", isSelected: viewMode == .followers, hasNotification: hasNewFollowers) {
+            withAnimation(Motion.toggle) { viewMode = .followers }
+        }
+    }
+
     var modeView: some View {
         HStack(spacing: 4) {
             notesButton
@@ -116,6 +151,7 @@ extension VaultView {
                 likesButton
             }
             zapsButton
+            followersButton
             #if os(iOS)
             // Add compact toggle on mobile
             if UIDevice.current.userInterfaceIdiom == .phone {
@@ -254,6 +290,24 @@ extension VaultView {
             }
             FilterButton(title: "My Likes", icon: "heart", color: .pink, isSelected: likesFilter == .myLikes) {
                 likesFilter = .myLikes
+            }
+        }
+        .padding(4)
+        .background(Color.platformTertiaryGroupedBackground)
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.8))
+    }
+
+    var followersFilterView: some View {
+        HStack(spacing: 2) {
+            FilterButton(title: "New", icon: "sparkles", color: .havenPurple, isSelected: followersFilter == .new) {
+                followersFilter = .new
+            }
+            FilterButton(title: "Trusted", icon: "checkmark.seal.fill", color: Color.havenVerified, isSelected: followersFilter == .trusted) {
+                followersFilter = .trusted
+            }
+            FilterButton(title: "Others", icon: "person.3.fill", color: .secondary, isSelected: followersFilter == .others) {
+                followersFilter = .others
             }
         }
         .padding(4)

@@ -78,6 +78,8 @@ extension VaultView {
                 withAnimation(Motion.fade) { hasNewZaps = false }
             }
             notificationBaseline[9735] = events.filter { $0.kind == 9735 }.count
+        case .followers:
+            markFollowersSeen()
         case .media:
             break
         }
@@ -534,6 +536,7 @@ extension VaultView {
         case .media: return "Media"
         case .likes: return "Likes"
         case .zaps: return "Zaps"
+        case .followers: return "Followers"
         }
     }
 }
