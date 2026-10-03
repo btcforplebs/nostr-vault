@@ -52,7 +52,9 @@ extension VaultView {
             guard url.scheme == "nostr" else { return .systemAction }
             let id = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
             if id.hasPrefix("npub1") || id.hasPrefix("nprofile1") {
-                self.showingProfilePubkey = id
+                if let pubkey = QuoteReference.profilePubkey(fromBech32: id) {
+                    self.showingProfilePubkey = pubkey
+                }
                 return .handled
             }
             if id.hasPrefix("note1") || id.hasPrefix("nevent1") || id.hasPrefix("naddr1") {

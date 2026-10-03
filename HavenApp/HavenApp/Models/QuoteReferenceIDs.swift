@@ -38,4 +38,13 @@ extension QuoteReference {
         }
         return nil
     }
+
+    /// The hex pubkey behind a `npub1…`/`nprofile1…` mention, or nil — so a
+    /// mention that cannot be read opens nothing rather than a blank profile.
+    static func profilePubkey(fromBech32 identifier: String) -> String? {
+        let id = identifier.lowercased()
+        guard id.hasPrefix("npub1") || id.hasPrefix("nprofile1"),
+              let decoded = Bech32.decode(id) else { return nil }
+        return profilePubkey(hrp: decoded.hrp, payload: decoded.data)
+    }
 }

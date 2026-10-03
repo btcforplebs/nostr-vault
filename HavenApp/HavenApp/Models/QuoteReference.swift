@@ -45,6 +45,22 @@ enum QuoteReference {
     /// NIP-19 naddr TLV: type 0 = d-tag (UTF-8), 1 = relay, 2 = pubkey (32 bytes),
     /// 3 = kind (4 bytes, big endian). Kind and pubkey are both required — without
     /// them the reference names no event.
+    /// The pubkey a profile mention names, from its decoded bech32 payload.
+    /// `npub` is the 32 raw bytes; `nprofile` is TLV with the pubkey as type 0
+    /// and relay hints after it. Hex-encoding an nprofile's whole payload —
+    /// what the mention tap did — gives a 144-character "pubkey" that opens a
+    /// blank stranger. Nil for anything that does not hold exactly 32 bytes.
+    static func profilePubkey(hrp: String, payload: Data) -> String? {
+        switch hrp.lowercased() {
+        case "npub":
+            return payload.count == 32 ? hex(payload) : nil
+        case "nprofile":
+            return tlvEntries(payload).first { $0.type == 0 && $0.value.count == 32 }.map { hex(Data($0.value)) }
+        default:
+            return nil
+        }
+    }
+
     static func coordinate(fromNaddrTLV payload: Data) -> String? {
         var dTag: String?
         var pubkey: String?

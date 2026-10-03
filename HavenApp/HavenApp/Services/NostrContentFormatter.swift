@@ -49,6 +49,11 @@ public struct NostrContentFormatter {
         // links as preview cards.
         text = stripURLs(mediaURLs, from: text)
 
+        // Links the author typed as markdown show as typed: otherwise
+        // `[@jack](nostr:npub1<someone else>)` reads "@jack" and opens someone
+        // else. Every link below is one the app builds itself.
+        text = MarkdownEscape.linkSyntax(in: text)
+
         // Resolve nostr:npub and nostr:nprofile
         text = replaceWithLinks(in: text, regex: npubRegex, template: "nostr:$1")
         text = replaceWithLinks(in: text, regex: nprofileRegex, template: "nostr:$1")
@@ -138,10 +143,10 @@ public struct NostrContentFormatter {
                 displayLabel = urlString
             }
 
-            let markdownLink = "[\(displayLabel)](\(urlString))"
+            let markdownLink = "[\(MarkdownEscape.label(displayLabel))](\(urlString))"
             let fullRange = NSRange(location: adjustedStart, length: range.length)
             result = (result as NSString).replacingCharacters(in: fullRange, with: markdownLink)
-            offset += markdownLink.count - range.length
+            offset += (markdownLink as NSString).length - range.length
         }
 
         return result
@@ -210,30 +215,9 @@ public struct NostrContentFormatter {
         for match in matches {
             let fullRange = NSRange(location: match.range.location + offset, length: match.range.length)
             let matchedValue = nsString.substring(with: match.range(at: 1))
-            var hexPubkey: String?
-            if matchedValue.hasPrefix("npub1") {
-                if let decoded = Bech32.decode(matchedValue) {
-                    hexPubkey = decoded.hexString
-                }
-            } else if matchedValue.hasPrefix("nprofile1") {
-                if let decoded = Bech32.decode(matchedValue) {
-                    var data = decoded.data
-                    while data.count >= 2 {
-                        let type = data.removeFirst()
-                        let length = Int(data.removeFirst())
-                        if data.count >= length {
-                            let value = data.prefix(length)
-                            if type == 0 && length == 32 {
-                                hexPubkey = value.map { String(format: "%02x", $0) }.joined()
-                                break
-                            }
-                            data.removeFirst(length)
-                        } else {
-                            break
-                        }
-                    }
-                }
-            }
+            // The tap handler resolves the link with this same function, so the
+            // name shown and the profile opened cannot disagree.
+            let hexPubkey = QuoteReference.profilePubkey(fromBech32: matchedValue)
             let displayLabel: String
             if let hex = hexPubkey, let name = NostrService.shared.profiles[hex]?.bestName {
                 displayLabel = "@\(name)"
@@ -246,7 +230,7 @@ public struct NostrContentFormatter {
             }
             let prevLength = fullRange.length
             result = (result as NSString).replacingCharacters(in: fullRange, with: displayLabel)
-            offset += displayLabel.count - prevLength
+            offset += (displayLabel as NSString).length - prevLength
         }
         return result
     }
@@ -263,32 +247,9 @@ public struct NostrContentFormatter {
             let fullRange = NSRange(location: match.range.location + offset, length: match.range.length)
             let matchedValue = nsString.substring(with: match.range(at: 1))
 
-            var hexPubkey: String?
-
-            if matchedValue.hasPrefix("npub1") {
-                if let decoded = Bech32.decode(matchedValue) {
-                    hexPubkey = decoded.hexString
-                }
-            } else if matchedValue.hasPrefix("nprofile1") {
-                if let decoded = Bech32.decode(matchedValue) {
-                    // TLV parsing for nprofile: Type 0 is the pubkey (32 bytes)
-                    var data = decoded.data
-                    while data.count >= 2 {
-                        let type = data.removeFirst()
-                        let length = Int(data.removeFirst())
-                        if data.count >= length {
-                            let value = data.prefix(length)
-                            if type == 0 && length == 32 {
-                                hexPubkey = value.map { String(format: "%02x", $0) }.joined()
-                                break
-                            }
-                            data.removeFirst(length)
-                        } else {
-                            break
-                        }
-                    }
-                }
-            }
+            // The tap handler resolves the link with this same function, so the
+            // name shown and the profile opened cannot disagree.
+            let hexPubkey = QuoteReference.profilePubkey(fromBech32: matchedValue)
 
             var displayLabel: String
             if let hex = hexPubkey {
@@ -307,10 +268,12 @@ public struct NostrContentFormatter {
             }
 
             // Add markdown bolding so it's even more noticeable
-            let markdownLink = "**[\(displayLabel)](nostr:\(matchedValue))**"
+            // The name is someone else's kind 0: escaped, it cannot close the
+            // label early and point the link somewhere else.
+            let markdownLink = "**[\(MarkdownEscape.label(displayLabel))](nostr:\(matchedValue))**"
             let prevLength = fullRange.length
             result = (result as NSString).replacingCharacters(in: fullRange, with: markdownLink)
-            offset += markdownLink.count - prevLength
+            offset += (markdownLink as NSString).length - prevLength
         }
 
         return result

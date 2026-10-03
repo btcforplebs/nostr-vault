@@ -76,3 +76,34 @@ enum HTMLEntities {
         return named[body.lowercased()]
     }
 }
+
+/// Escaping for text that is fed to `AttributedString(markdown:)`.
+///
+/// Note text is rendered as markdown, so anything that looks like a link
+/// becomes one. Without this a post could carry `[@jack](nostr:npub1<mallory>)`
+/// — reading "@jack", opening Mallory — and a kind-0 name like
+/// `Alice](https://evil.example) [x` could break out of the mention link the
+/// app builds around it (Tron, mention-tap review).
+enum MarkdownEscape {
+    /// For a string the app places inside a link label it builds.
+    static func label(_ text: String) -> String {
+        escape(text, characters: #"\[]()*_`~"#)
+    }
+
+    /// For note content before the app adds its own links: hand-written link
+    /// syntax is shown as typed, so the only links are the ones the app made.
+    /// Bold and italics still work.
+    static func linkSyntax(in text: String) -> String {
+        escape(text, characters: #"\[]"#)
+    }
+
+    private static func escape(_ text: String, characters: String) -> String {
+        var out = ""
+        out.reserveCapacity(text.count)
+        for ch in text {
+            if characters.contains(ch) { out.append("\\") }
+            out.append(ch)
+        }
+        return out
+    }
+}
