@@ -301,7 +301,8 @@ extension VaultView {
                            let msats = Int64(amountTag[1]) {
                             amountSats = msats / 1000
                         }
-                        let parsed = ParsedZapReceipt(senderPubkey: senderPubkey, targetNoteId: targetId, amountSats: amountSats)
+                        let parsed = ParsedZapReceipt(senderPubkey: senderPubkey, targetNoteId: targetId, amountSats: amountSats,
+                                                      requestIsSigned: NostrEventVerifier.isValid(json: descJson))
                         newCacheEntries[receipt.id] = parsed
                         parsedReceipts.append((receipt.id, parsed))
                     }
@@ -319,7 +320,7 @@ extension VaultView {
                 if currentZapsFilter == .myZaps {
                     // My Zaps: notes I zapped
                     let myZappedNoteIds = Set(parsedReceipts.compactMap { item -> String? in
-                        guard item.parsed.senderPubkey == owner else { return nil }
+                        guard item.parsed.senderPubkey == owner, item.parsed.requestIsSigned else { return nil }
                         return item.parsed.targetNoteId
                     })
                     let filtered = currentEvents.filter { noteKinds.contains($0.kind) && myZappedNoteIds.contains($0.id) }

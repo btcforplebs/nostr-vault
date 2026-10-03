@@ -2186,11 +2186,13 @@ class NostrService @Inject constructor(
     // Fetch zap receipts
     // ══════════════════════════════════════════════════════════════════
 
-    fun fetchZapReceipts(relayUrls: List<String>, limit: Int = 1000) {
+    /** [tagFilter] narrows the request, e.g. `"#P" to listOf(me)` for zaps you sent. */
+    fun fetchZapReceipts(relayUrls: List<String>, limit: Int = 1000, tagFilter: Map<String, List<String>> = emptyMap()) {
         val subId = "zaps-${UUID.randomUUID().toString().take(8)}"
         val filter = buildFilterJson(buildMap<String, Any> {
             put("kinds", listOf(9735))
             put("limit", limit)
+            putAll(tagFilter)
         })
 
         for (relayUrl in relayUrls) {

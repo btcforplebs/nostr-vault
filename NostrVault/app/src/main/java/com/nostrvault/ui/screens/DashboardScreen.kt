@@ -1526,7 +1526,7 @@ class DashboardViewModel @Inject constructor(
 
                 if (currentZapsFilter == VaultZapsFilter.MY_ZAPS) {
                     val myZappedNoteIds = parsedReceipts
-                        .filter { it.parsed.senderPubkey == owner }
+                        .filter { it.parsed.senderPubkey == owner && it.parsed.requestIsSigned }
                         .mapNotNull { it.parsed.targetNoteId }
                         .toSet()
 
@@ -1639,6 +1639,16 @@ class DashboardViewModel @Inject constructor(
         val urls = listOfNotNull(localUrl, configStore.config.value.localInboxURL).distinct()
         Log.d(TAG, "Fetching extended zap receipts history")
         nostrService.fetchZapReceipts(urls)
+
+        // Your relay only holds receipts that tag you with `p`, i.e. zaps you
+        // received. The receipt for a zap you sent is published to the relays
+        // of the person you zapped and tags you with `P`, so "Given" stayed
+        // empty. Ask the feed relays for those.
+        val owner = nostrService.activeHexPubkey
+        if (owner.isNotEmpty()) {
+            val externalUrls = buildExternalRelayUrls().filter { it != localUrl }
+            nostrService.fetchZapReceipts(externalUrls, limit = 500, tagFilter = mapOf("#P" to listOf(owner)))
+        }
     }
 
     /** Merge events from NostrService.events into our allEvents store. */
@@ -1703,7 +1713,7 @@ class DashboardViewModel @Inject constructor(
                 }
             }
 
-            val parsed = ParsedZapReceipt(senderPubkey, targetId, amountSats)
+            val parsed = ParsedZapReceipt(senderPubkey, targetId, amountSats, com.nostrvault.relay.HavenBridge.verifyEvent(descJson))
             zapReceiptCache[event.id] = parsed
             if (zapReceiptCache.size > MAX_ZAP_RECEIPT_CACHE) {
                 val toRemove = zapReceiptCache.keys.take(zapReceiptCache.size - MAX_ZAP_RECEIPT_CACHE)

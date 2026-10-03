@@ -64,4 +64,8 @@ struct ParsedZapReceipt {
     let senderPubkey: String
     let targetNoteId: String?
     let amountSats: Int64
+    /// The zap request inside the receipt carries a valid signature. Anyone
+    /// can publish a receipt naming you as the sender; only a signed request
+    /// proves you made the zap.
+    let requestIsSigned: Bool
 }
