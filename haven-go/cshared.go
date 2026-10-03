@@ -112,13 +112,30 @@ func GetNotifyLogC() *C.char {
 	return C.CString(msg)
 }
 
-// NIP-46 remote signer state (independent of relay lifecycle)
+// NIP-46 remote signer state (independent of relay lifecycle).
+//
+// One live session per signer, so switching between accounts that each sign
+// with their own bunker is instant: the session for the account switched to
+// is still connected, and nothing has to log in again. Only one session is
+// active (the one requests go to); the others stay connected in the
+// background. nip46Mu guards the map and the active key only; it is never
+// held across a network round trip, so a slow login cannot block signing
+// on another session or freeze the caller.
+type nip46Session struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	pool   *nostr.SimplePool
+	client *nip46.BunkerClient
+	userPubkey string
+}
+
 var (
-	nip46Ctx    context.Context
-	nip46Cancel context.CancelFunc
-	nip46Pool   *nostr.SimplePool
-	nip46Client *nip46.BunkerClient
-	nip46Mu     sync.RWMutex
+	nip46Sessions = map[string]*nip46Session{} // keyed by signer (bunker) pubkey
+	nip46Active   string
+	// Bumped on every activation, so a login that finishes after the user
+	// moved to another account is kept but does not take over.
+	nip46ActiveGen uint64
+	nip46Mu        sync.RWMutex
 
 	nip46PendingAuthURL atomic.Value // stores string
 
@@ -1187,18 +1204,6 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	goSK := C.GoString(clientSK)
 	goURL := C.GoString(bunkerURL)
 
-	nip46Mu.Lock()
-	defer nip46Mu.Unlock()
-
-	// Tear down any prior session
-	if nip46Cancel != nil {
-		nip46Cancel()
-	}
-	nip46Client = nil
-
-	nip46Ctx, nip46Cancel = context.WithCancel(context.Background())
-	nip46Pool = nostr.NewSimplePool(nip46Ctx)
-
 	nip46PendingAuthURL.Store("")
 	nip46LastError.Store("")
 
@@ -1212,7 +1217,6 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	if err != nil {
 		slog.Error("NIP46ConnectC: invalid bunker URL", "error", err)
 		nip46LastError.Store("error:invalid bunker link")
-		nip46Cancel()
 		return nil
 	}
 	targetPubkey := parsed.Host
@@ -1222,37 +1226,49 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	if !nostr.IsValidPublicKey(targetPubkey) {
 		slog.Error("NIP46ConnectC: invalid target pubkey", "pubkey", targetPubkey)
 		nip46LastError.Store("error:invalid signer key in bunker link")
-		nip46Cancel()
 		return nil
 	}
 	if len(relays) == 0 {
 		slog.Error("NIP46ConnectC: no relay in bunker URL")
 		nip46LastError.Store("error:no relay in bunker link")
-		nip46Cancel()
 		return nil
 	}
 
-	// Create the bunker client with the long-lived nip46Ctx so the background
+	// Claim the active slot for this signer and drop any previous session for
+	// it (this is a fresh login, e.g. after a dead socket). Other signers'
+	// sessions are left alone.
+	nip46Mu.Lock()
+	if old := nip46Sessions[targetPubkey]; old != nil {
+		old.cancel()
+		delete(nip46Sessions, targetPubkey)
+	}
+	nip46Active = targetPubkey
+	nip46ActiveGen++
+	myGen := nip46ActiveGen
+	nip46Mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	pool := nostr.NewSimplePool(ctx)
+
+	// Create the bunker client with the long-lived session ctx so the background
 	// subscription that listens for RPC responses stays alive for the entire
-	// session.  Previously we passed a 30-second timeout context to
+	// session. Previously we passed a 30-second timeout context to
 	// ConnectBunker which also fed into NewBunker → pool.SubscribeMany; when
 	// the timeout fired (or defer-cancel ran), the subscription died and all
 	// subsequent RPCs (sign_event, encrypt, etc.) would never receive a reply.
-	bunker := nip46.NewBunker(nip46Ctx, goSK, targetPubkey, relays, nip46Pool, onAuth)
+	bunker := nip46.NewBunker(ctx, goSK, targetPubkey, relays, pool, onAuth)
 
 	// The connect RPC itself gets a timeout so we don't block forever when
-	// the signer is offline.
+	// the signer is offline. No lock is held while waiting.
 	log.Printf("NIP46ConnectC: sending connect RPC to %s via %v (secret=%d chars)", targetPubkey[:8], relays, len(secret))
-	connectCtx, connectCancel := context.WithTimeout(nip46Ctx, 60*time.Second)
+	connectCtx, connectCancel := context.WithTimeout(ctx, 60*time.Second)
 	defer connectCancel()
 
 	result, err := bunker.RPC(connectCtx, "connect", []string{targetPubkey, secret, nip46Perms, nip46ClientMetadata})
 	if err != nil {
 		slog.Error("NIP46ConnectC: connect RPC failed", "error", err)
 		recordNIP46Error(connectCtx, err)
-		nip46Cancel()
-		nip46Client = nil
-		nip46Pool = nil
+		cancel()
 		return nil
 	}
 	// NIP-46: connect answers "ack" or echoes the secret. With a secret in
@@ -1262,44 +1278,124 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	}
 
 	log.Printf("NIP46ConnectC: connect RPC succeeded, requesting public key...")
-	nip46Client = bunker
 
 	// GetPublicKey also gets a timeout to prevent hanging indefinitely
-	pkCtx, pkCancel := context.WithTimeout(nip46Ctx, 30*time.Second)
+	pkCtx, pkCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer pkCancel()
 
 	pubkey, err := bunker.GetPublicKey(pkCtx)
 	if err != nil {
 		slog.Error("NIP46ConnectC: GetPublicKey failed", "error", err)
 		recordNIP46Error(pkCtx, err)
+		cancel()
 		return nil
 	}
 
-	log.Printf("NIP-46: connected to signer %s", pubkey[:8])
+	nip46Mu.Lock()
+	if old := nip46Sessions[targetPubkey]; old != nil {
+		old.cancel() // a second login for the same signer finished first
+	}
+	nip46Sessions[targetPubkey] = &nip46Session{ctx: ctx, cancel: cancel, pool: pool, client: bunker, userPubkey: pubkey}
+	stillActive := nip46ActiveGen == myGen
+	nip46Mu.Unlock()
+
+	if stillActive {
+		log.Printf("NIP-46: connected to signer %s", pubkey[:8])
+	} else {
+		log.Printf("NIP-46: connected to signer %s, kept in the background (another account became active)", pubkey[:8])
+	}
 	return C.CString(pubkey)
 }
 
+// activeNIP46 returns the session requests should go to, or nils.
+func activeNIP46() (*nip46.BunkerClient, context.Context) {
+	nip46Mu.RLock()
+	defer nip46Mu.RUnlock()
+	if s := nip46Sessions[nip46Active]; s != nil {
+		return s.client, s.ctx
+	}
+	return nil, context.Background()
+}
+
+// NIP46ActivateC makes an existing session for `signerPubkey` the active one
+// and returns its user pubkey, or nil when there is no live session for it
+// (the caller then logs in with NIP46ConnectC).
+//
+//export NIP46ActivateC
+func NIP46ActivateC(signerPubkey *C.char) *C.char {
+	target := C.GoString(signerPubkey)
+	nip46Mu.Lock()
+	defer nip46Mu.Unlock()
+	s := nip46Sessions[target]
+	if s == nil || s.ctx.Err() != nil {
+		delete(nip46Sessions, target)
+		return nil
+	}
+	nip46Active = target
+	nip46ActiveGen++
+	nip46PendingAuthURL.Store("")
+	return C.CString(s.userPubkey)
+}
+
+// NIP46DropC closes the session for one signer (one that answered for the
+// wrong account, or one that stopped answering).
+//
+//export NIP46DropC
+func NIP46DropC(signerPubkey *C.char) {
+	target := C.GoString(signerPubkey)
+	nip46Mu.Lock()
+	defer nip46Mu.Unlock()
+	if s := nip46Sessions[target]; s != nil {
+		s.cancel()
+		delete(nip46Sessions, target)
+	}
+	if nip46Active == target {
+		nip46Active = ""
+	}
+}
+
+// NIP46DisconnectC closes the ACTIVE session only. Sessions of other accounts
+// stay connected so switching back to them is instant.
+//
 //export NIP46DisconnectC
 func NIP46DisconnectC() {
 	nip46Mu.Lock()
 	defer nip46Mu.Unlock()
 
-	if nip46Cancel != nil {
-		nip46Cancel()
+	if s := nip46Sessions[nip46Active]; s != nil {
+		s.cancel()
+		delete(nip46Sessions, nip46Active)
 	}
-	nip46Client = nil
-	nip46Pool = nil
+	nip46Active = ""
 	nip46PendingAuthURL.Store("")
 	log.Println("NIP-46: disconnected")
 }
 
 //export NIP46SignEventC
 func NIP46SignEventC(eventJSON *C.char) *C.char {
-	nip46Mu.RLock()
-	client := nip46Client
-	parentCtx := nip46Ctx
-	nip46Mu.RUnlock()
+	client, parentCtx := activeNIP46()
+	return nip46Sign(client, parentCtx, eventJSON)
+}
 
+// NIP46SignEventWithC signs through one signer's session even when it is not
+// the active one (the owner's relay AUTH while browsing another account).
+// Never logs in: no live session for that signer means nil, not a new
+// request piling onto a signer.
+//
+//export NIP46SignEventWithC
+func NIP46SignEventWithC(signerPubkey *C.char, eventJSON *C.char) *C.char {
+	target := C.GoString(signerPubkey)
+	nip46Mu.RLock()
+	sess := nip46Sessions[target]
+	nip46Mu.RUnlock()
+	if sess == nil || sess.ctx.Err() != nil {
+		nip46LastError.Store("disconnected")
+		return nil
+	}
+	return nip46Sign(sess.client, sess.ctx, eventJSON)
+}
+
+func nip46Sign(client *nip46.BunkerClient, parentCtx context.Context, eventJSON *C.char) *C.char {
 	nip46LastError.Store("")
 	if client == nil {
 		slog.Error("NIP46SignEventC: not connected")
@@ -1345,10 +1441,7 @@ func NIP46SignEventC(eventJSON *C.char) *C.char {
 
 //export NIP46GetPublicKeyC
 func NIP46GetPublicKeyC() *C.char {
-	nip46Mu.RLock()
-	client := nip46Client
-	parentCtx := nip46Ctx
-	nip46Mu.RUnlock()
+	client, parentCtx := activeNIP46()
 
 	nip46LastError.Store("")
 	if client == nil {
@@ -1371,10 +1464,7 @@ func NIP46GetPublicKeyC() *C.char {
 
 //export NIP46NIP44EncryptC
 func NIP46NIP44EncryptC(targetPubkey *C.char, plaintext *C.char) *C.char {
-	nip46Mu.RLock()
-	client := nip46Client
-	parentCtx := nip46Ctx
-	nip46Mu.RUnlock()
+	client, parentCtx := activeNIP46()
 
 	nip46LastError.Store("")
 	if client == nil {
@@ -1397,10 +1487,7 @@ func NIP46NIP44EncryptC(targetPubkey *C.char, plaintext *C.char) *C.char {
 
 //export NIP46NIP44DecryptC
 func NIP46NIP44DecryptC(targetPubkey *C.char, ciphertext *C.char) *C.char {
-	nip46Mu.RLock()
-	client := nip46Client
-	parentCtx := nip46Ctx
-	nip46Mu.RUnlock()
+	client, parentCtx := activeNIP46()
 
 	nip46LastError.Store("")
 	if client == nil {
@@ -1423,10 +1510,7 @@ func NIP46NIP44DecryptC(targetPubkey *C.char, ciphertext *C.char) *C.char {
 
 //export NIP46NIP04EncryptC
 func NIP46NIP04EncryptC(targetPubkey *C.char, plaintext *C.char) *C.char {
-	nip46Mu.RLock()
-	client := nip46Client
-	parentCtx := nip46Ctx
-	nip46Mu.RUnlock()
+	client, parentCtx := activeNIP46()
 
 	nip46LastError.Store("")
 	if client == nil {
@@ -1449,10 +1533,7 @@ func NIP46NIP04EncryptC(targetPubkey *C.char, plaintext *C.char) *C.char {
 
 //export NIP46NIP04DecryptC
 func NIP46NIP04DecryptC(targetPubkey *C.char, ciphertext *C.char) *C.char {
-	nip46Mu.RLock()
-	client := nip46Client
-	parentCtx := nip46Ctx
-	nip46Mu.RUnlock()
+	client, parentCtx := activeNIP46()
 
 	nip46LastError.Store("")
 	if client == nil {
@@ -1475,10 +1556,7 @@ func NIP46NIP04DecryptC(targetPubkey *C.char, ciphertext *C.char) *C.char {
 
 //export NIP46PingC
 func NIP46PingC() C.int {
-	nip46Mu.RLock()
-	client := nip46Client
-	parentCtx := nip46Ctx
-	nip46Mu.RUnlock()
+	client, parentCtx := activeNIP46()
 
 	if client == nil {
 		return 1

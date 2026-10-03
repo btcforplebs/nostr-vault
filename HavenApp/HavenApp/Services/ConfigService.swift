@@ -473,8 +473,11 @@ class ConfigService: ObservableObject {
         let previousNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
         // Also stop a connect still in flight — otherwise it lands after the
         // switch and the new account's posts go to the old account's signer.
+        // The previous account's signer session stays connected in the
+        // background (switching back is then instant); only stop treating it
+        // as the active signer.
         if hasBunkerConfig(forNpub: previousNpub) && NIP46Service.shared.connectionState != .disconnected {
-            NIP46Service.shared.disconnect()
+            NIP46Service.shared.detachForAccountSwitch()
         }
 
         isSwitchingAccount = true
