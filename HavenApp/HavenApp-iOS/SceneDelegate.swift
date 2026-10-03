@@ -44,13 +44,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window = window
         window.makeKeyAndVisible()
 
-        // In-app banners get a window of their own, above the app's, so a
-        // sheet (a profile, a note, compose) can never cover them. It takes
+        // In-app banners and the zap strike get a window of their own, above
+        // the app's, so a sheet (a profile, a note, compose) can never cover them. It takes
         // no touches except on the banners themselves.
         let banners = BannerWindow(windowScene: windowScene)
         banners.windowLevel = .alert - 1
         banners.overrideUserInterfaceStyle = .dark
-        let host = UIHostingController(rootView: AppBannerStack())
+        // The zap strike flies here too: drawn in the app's own window, a bolt
+        // fired from a profile or a note sheet went off behind that sheet.
+        let host = UIHostingController(rootView: ZStack {
+            ZapFlightStage()
+            AppBannerStack()
+        })
         host.view.backgroundColor = .clear
         banners.rootViewController = host
         banners.isHidden = false

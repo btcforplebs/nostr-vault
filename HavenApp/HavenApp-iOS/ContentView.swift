@@ -332,7 +332,6 @@ struct iPadSidebarView: View {
             if tab == 0 { feedService.markViewed() }
             if tab == 4 { relayManager.markRelayViewed() }
         }
-        .overlay { ZapFlightStage() }
         .sheet(isPresented: $showingAccountSwitcher) {
             AccountSwitcherView(configService: configService)
         }
@@ -524,7 +523,6 @@ struct iPhoneTabView: View {
                 }
             )
         }
-        .overlay { ZapFlightStage() }
         .onAppear {
             if configService.config.hasCompletedSetup && relayManager.state == .idle {
                 relayManager.startRelay(config: configService.config)
