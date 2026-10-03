@@ -1349,6 +1349,9 @@ private struct IdentityStepView: View {
                 if selectedMethod == .local {
                     VStack(spacing: 16) {
                         WizardInputField(label: String(localized: "setup.identity.label.nsec"), text: $nsec, placeholder: "nsec1...", isSecure: true)
+                            .onChange(of: nsec) { _, newValue in
+                                fillNpub(fromNsec: newValue)
+                            }
 
                         if !nsec.isEmpty && !nsec.hasPrefix("nsec") {
                             HStack(spacing: 6) {
@@ -1616,6 +1619,25 @@ private struct IdentityStepView: View {
             case .nameNotFound: return "Name not found on that domain"
             case .invalidPubkey: return "Server returned an invalid public key"
             }
+        }
+    }
+
+    /// A pasted nsec is the whole identity: derive its npub so the user
+    /// isn't left with a disabled Continue and an empty npub field to fill
+    /// by hand (or filled with an npub that doesn't match the key).
+    private func fillNpub(fromNsec value: String) {
+        let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean != value {
+            nsec = clean // pasted keys often carry a trailing newline
+            return
+        }
+        guard let decoded = Bech32.decode(clean), decoded.hrp == "nsec",
+              let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (decoded.hexString as NSString).utf8String)) else { return }
+        let pk = String(cString: pkCStr)
+        free(pkCStr)
+        if let pubData = Bech32.hexToData(pk),
+           let derivedNpub = Bech32.encode(hrp: "npub", data: pubData) {
+            npub = derivedNpub
         }
     }
 
