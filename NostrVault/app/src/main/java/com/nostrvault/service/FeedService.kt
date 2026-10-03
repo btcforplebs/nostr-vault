@@ -3236,7 +3236,7 @@ class FeedService @Inject constructor(
     fun loadOlderNotes() = loadMore()
 
     /** Like a note (kind 7 reaction). */
-    fun likeNote(noteId: String, emoji: String? = null) {
+    fun likeNote(noteId: String, emoji: String? = null, tags: List<List<String>>? = null) {
         val existing = _likedEventIds.value
         if (noteId in existing) return
         _likedEventIds.value = existing + noteId
@@ -3244,8 +3244,8 @@ class FeedService @Inject constructor(
         val reactionEmoji = emoji ?: configStore.config.value.defaultReactionEmoji
 
         scope.launch(Dispatchers.IO) {
-            val tags = listOf(listOf("e", noteId))
-            val event = runCatching { nostrService.signEventAsync(kind = 7, content = reactionEmoji, tags = tags) }
+            val reactionTags = tags ?: listOf(listOf("e", noteId))
+            val event = runCatching { nostrService.signEventAsync(kind = 7, content = reactionEmoji, tags = reactionTags) }
                 .onFailure { Log.e(TAG, "like not signed: ${it.message}") }.getOrNull()
             if (event != null) nostrService.postEvent(event) else unlikeNote(noteId)
         }
