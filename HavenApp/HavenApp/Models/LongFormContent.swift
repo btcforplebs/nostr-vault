@@ -86,6 +86,18 @@ enum MarkdownBlock: Identifiable, Equatable {
     case image(URL)
     case rule
 
+    /// The markdown of a block a reader can highlight; nil for code, images
+    /// and rules.
+    var highlightableText: String? {
+        switch self {
+        case .heading(_, let text), .paragraph(let text), .bullet(let text),
+             .ordered(_, let text), .quote(let text):
+            return text
+        case .code, .image, .rule:
+            return nil
+        }
+    }
+
     var id: String {
         switch self {
         case .heading(let level, let text): return "h\(level):\(text)"

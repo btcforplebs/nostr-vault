@@ -125,8 +125,10 @@ enum ZapHistoryService {
     }
 
     /// Sends `filters` to every relay and collects the events (deduplicated
-    /// by id) until each relay has sent EOSE or `timeout` passes.
-    private static func query(filters: [[String: Any]], relays: [URL], timeout: TimeInterval = 5) async -> [[String: Any]] {
+    /// by id) until each relay has sent EOSE or `timeout` passes. Events are
+    /// returned unverified; callers check signatures. The article reader's
+    /// highlights use it too.
+    static func query(filters: [[String: Any]], relays: [URL], timeout: TimeInterval = 5) async -> [[String: Any]] {
         guard !relays.isEmpty else { return [] }
         return await withCheckedContinuation { continuation in
             var events: [String: [String: Any]] = [:]

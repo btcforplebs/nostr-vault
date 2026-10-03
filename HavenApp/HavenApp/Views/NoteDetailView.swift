@@ -685,6 +685,11 @@ struct NoteDetailView: View {
                         // highlights / voice replies pointing at the root.
                         filters.append(["#q": [targetRootId], "limit": 50])
                         filters.append(["kinds": Self.otherResponseKinds, "#e": [targetRootId], "limit": 50])
+                        // An article's highlights name it by address, not by
+                        // this version's id, so `#e` alone never finds them.
+                        if let coord = self.threadRootCoordinate {
+                            filters.append(["kinds": Self.otherResponseKinds, "#a": [coord], "limit": 50])
+                        }
                         let req = (["REQ", subId] as [Any]) + filters.map { $0 as Any }
                         if let data = try? JSONSerialization.data(withJSONObject: req),
                            let str = String(data: data, encoding: .utf8) {

@@ -205,6 +205,9 @@ struct ArticleReaderView: View {
     @State private var noLightningAddressAlert = false
     @State private var highlighting = false
     @State private var highlightDraft: HighlightDraft?
+    /// Other people's highlights of this article, newest first.
+    @State private var highlights: [ArticleHighlight] = []
+    @State private var shownHighlights: HighlightGroup?
 
     private var metadata: LongFormMetadata { note.longFormMetadata }
     private var profile: FeedProfile? { nostrService.profiles[note.pubkey] }
@@ -262,8 +265,15 @@ struct ArticleReaderView: View {
                     onImageTap: { url in
                         showingMediaUrl = IdentifiableURL(url: url, allURLs: [url])
                     },
-                    onHighlight: highlighting ? { text in highlightDraft = HighlightDraft(context: text) } : nil
+                    onHighlight: highlighting ? { text in highlightDraft = HighlightDraft(context: text) } : nil,
+                    highlights: highlightsByBlock,
+                    onShowHighlights: { shownHighlights = HighlightGroup(highlights: $0) }
                 )
+
+                if !highlights.isEmpty {
+                    Divider()
+                    highlightsSection
+                }
 
                 Divider()
                 actionBar
@@ -285,6 +295,32 @@ struct ArticleReaderView: View {
             .presentationDetents([.height(380), .medium])
             .presentationDragIndicator(.visible)
             .presentationBackground(Color.platformWindowBackground)
+            #endif
+        }
+        .task(id: note.id) { await loadHighlights() }
+        .sheet(item: $shownHighlights) { group in
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(group.highlights) { HighlightRow(highlight: $0) }
+                    }
+                    .padding(20)
+                }
+                .navigationTitle(Text("Highlights"))
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { shownHighlights = nil }
+                    }
+                }
+            }
+            #if os(iOS)
+            .presentationDetents([.medium, .large])
+            #endif
+            #if os(macOS)
+            .frame(minWidth: 420, minHeight: 360)
             #endif
         }
         .sheet(item: $highlightDraft) { draft in
@@ -392,6 +428,72 @@ struct ArticleReaderView: View {
         }
     }
 
+    // MARK: Highlights from the network
+
+    private var coordinate: String? {
+        NIP10Thread.coordinate(kind: note.kind, pubkey: note.pubkey, tags: note.tags)
+    }
+
+    /// Each text block's highlights, keyed by block id. A passage that no
+    /// longer appears in the text as shown is left out here but stays in the
+    /// list below the article.
+    private var highlightsByBlock: [String: [ArticleHighlight]] {
+        guard !highlights.isEmpty else { return [:] }
+        let blocks = MarkdownParser.parse(note.content).compactMap { block in
+            block.highlightableText.map { (id: block.id, text: ArticleEngagement.plainText($0)) }
+        }
+        let texts = blocks.map(\.text)
+        var out: [String: [ArticleHighlight]] = [:]
+        for highlight in highlights {
+            if let index = ArticleEngagement.blockIndex(for: highlight.passage, in: texts) {
+                out[blocks[index].id, default: []].append(highlight)
+            }
+        }
+        return out
+    }
+
+    private var highlightsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Highlights · \(highlights.count)", systemImage: "highlighter")
+                .font(.appSystem(size: 15, weight: .semibold))
+            ForEach(highlights) { HighlightRow(highlight: $0) }
+        }
+    }
+
+    /// The article's relay, the feed relays and the author's outbox: where a
+    /// highlight of it is likely to have been sent.
+    private var highlightRelays: [URL] {
+        let config = ConfigService.shared.config
+        var strings = [config.nostrURL]
+        strings += config.activeFeedRelays.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : config.activeFeedRelays
+        strings += nostrService.outboxRelays[note.pubkey] ?? []
+        var seen = Set<String>()
+        return strings
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))).inserted }
+            .prefix(8)
+            .compactMap { URL(string: $0) }
+    }
+
+    private func loadHighlights() async {
+        let articleId = note.id
+        let coordinate = coordinate
+        let events = await ZapHistoryService.query(
+            filters: ArticleEngagement.highlightFilters(id: articleId, coordinate: coordinate),
+            relays: highlightRelays)
+        // A relay can hand back anything: only a signed 9802 that points at
+        // this article counts, so nobody can put words in someone's name.
+        let found = events
+            .filter { NostrEventVerifier.isValid($0) }
+            .compactMap { ArticleHighlight(event: $0, articleId: articleId, coordinate: coordinate) }
+            .sorted { $0.createdAt > $1.createdAt }
+        await MainActor.run {
+            highlights = found
+            let missing = Set(found.map(\.pubkey)).filter { nostrService.profiles[$0] == nil }
+            if !missing.isEmpty { nostrService.fetchMissingProfiles(for: Array(missing)) }
+        }
+    }
+
     private func publishHighlight(passage: String, context: String, comment: String) {
         let relay = ConfigService.shared.config.nostrURL
         let tags = ArticleEngagement.highlightTags(id: note.id, kind: note.kind, pubkey: note.pubkey, tags: note.tags,
@@ -401,7 +503,50 @@ struct ArticleReaderView: View {
         Task {
             _ = try? await ModePostPublisher.publish(kind: ArticleEngagement.highlightKind, content: content,
                                                      tags: tags, nostrService: nostrService)
+            // Show it among everyone else's once a relay has it.
+            await loadHighlights()
         }
+    }
+}
+
+/// The highlights behind one tinted passage, for the sheet.
+struct HighlightGroup: Identifiable {
+    let id = UUID()
+    let highlights: [ArticleHighlight]
+}
+
+/// One person's highlight: who, the passage, and their comment if any.
+struct HighlightRow: View {
+    let highlight: ArticleHighlight
+    @EnvironmentObject var nostrService: NostrService
+
+    var body: some View {
+        let profile = nostrService.profiles[highlight.pubkey]
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                AvatarView(url: profile?.pictureURL, pubkey: highlight.pubkey, size: 22)
+                Text(profile?.bestName ?? "npub…" + String(highlight.pubkey.suffix(6)))
+                    .font(.appSystem(size: 13, weight: .semibold))
+                Text(highlight.createdAt, style: .relative)
+                    .font(.appSystem(size: 11))
+                    .foregroundColor(.secondary)
+                Spacer(minLength: 0)
+            }
+            HStack(alignment: .top, spacing: 8) {
+                RoundedRectangle(cornerRadius: 1.5).fill(Color.yellow.opacity(0.8)).frame(width: 3)
+                Text(highlight.passage)
+                    .font(.appSystem(size: 14))
+                    .italic()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let comment = highlight.comment {
+                Text(comment)
+                    .font(.appSystem(size: 14))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -476,6 +621,10 @@ struct MarkdownBodyView: View {
     /// Set while the reader is in highlight mode: text blocks become tappable
     /// and hand back their plain text.
     var onHighlight: ((String) -> Void)? = nil
+    /// Other people's highlights, keyed by block id: those blocks get a tint
+    /// and a count that opens them.
+    var highlights: [String: [ArticleHighlight]] = [:]
+    var onShowHighlights: (([ArticleHighlight]) -> Void)? = nil
 
     private var blocks: [MarkdownBlock] { MarkdownParser.parse(markdown) }
 
@@ -487,7 +636,7 @@ struct MarkdownBodyView: View {
                     inlineText(text)
                         .font(.appSystem(size: headingSize(level), weight: .bold))
                         .fixedSize(horizontal: false, vertical: true)
-                        .highlightable(text, onHighlight)
+                        .highlightable(text, onHighlight, shown: highlights[block.id] ?? [], onShow: onShowHighlights)
                         .padding(.top, level <= 2 ? 8 : 2)
 
                 case .paragraph(let text):
@@ -495,14 +644,14 @@ struct MarkdownBodyView: View {
                         .font(.appSystem(size: 16))
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
-                        .highlightable(text, onHighlight)
+                        .highlightable(text, onHighlight, shown: highlights[block.id] ?? [], onShow: onShowHighlights)
 
                 case .bullet(let text):
                     HStack(alignment: .top, spacing: 8) {
                         Text("•").font(.appSystem(size: 16, weight: .bold)).foregroundColor(.havenPurple)
                         inlineText(text).font(.appSystem(size: 16)).fixedSize(horizontal: false, vertical: true)
                     }
-                    .highlightable(text, onHighlight)
+                    .highlightable(text, onHighlight, shown: highlights[block.id] ?? [], onShow: onShowHighlights)
 
                 case .ordered(let index, let text):
                     HStack(alignment: .top, spacing: 8) {
@@ -512,7 +661,7 @@ struct MarkdownBodyView: View {
                             .monospacedDigit()
                         inlineText(text).font(.appSystem(size: 16)).fixedSize(horizontal: false, vertical: true)
                     }
-                    .highlightable(text, onHighlight)
+                    .highlightable(text, onHighlight, shown: highlights[block.id] ?? [], onShow: onShowHighlights)
 
                 case .quote(let text):
                     HStack(alignment: .top, spacing: 10) {
@@ -522,7 +671,7 @@ struct MarkdownBodyView: View {
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .highlightable(text, onHighlight)
+                    .highlightable(text, onHighlight, shown: highlights[block.id] ?? [], onShow: onShowHighlights)
 
                 case .code(let text):
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -571,8 +720,12 @@ struct MarkdownBodyView: View {
 private extension View {
     /// In highlight mode, tint the block and make the whole of it a tap target
     /// that reports its text without markdown.
+    ///
+    /// Outside highlight mode, a block other people highlighted gets a soft
+    /// yellow tint and a count under it that opens who highlighted it.
     @ViewBuilder
-    func highlightable(_ markdown: String, _ onHighlight: ((String) -> Void)?) -> some View {
+    func highlightable(_ markdown: String, _ onHighlight: ((String) -> Void)?,
+                       shown: [ArticleHighlight] = [], onShow: (([ArticleHighlight]) -> Void)? = nil) -> some View {
         if let onHighlight {
             self
                 .padding(.horizontal, 6)
@@ -581,6 +734,24 @@ private extension View {
                 .background(Color.havenPurple.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .contentShape(Rectangle())
                 .onTapGesture { onHighlight(ArticleEngagement.plainText(markdown)) }
+        } else if !shown.isEmpty {
+            VStack(alignment: .trailing, spacing: 4) {
+                self
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.yellow.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Button { onShow?(shown) } label: {
+                    Label("\(shown.count)", systemImage: "highlighter")
+                        .font(.appSystem(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.yellow.opacity(0.16), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(shown.count == 1 ? "1 highlight" : "\(shown.count) highlights"))
+            }
         } else {
             self
         }
