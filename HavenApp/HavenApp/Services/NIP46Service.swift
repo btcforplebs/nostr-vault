@@ -43,6 +43,8 @@ enum NIP46Error: Error, LocalizedError {
 class NIP46Service: ObservableObject {
     /// Background signer requests queue here, one at a time.
     static let backgroundGate = SignerRequestGate()
+    /// How long one background request may hold `backgroundGate`.
+    static let backgroundLease: UInt64 = 15_000_000_000
 
     static let shared = NIP46Service()
 
@@ -384,7 +386,7 @@ class NIP46Service: ObservableObject {
     /// that cannot sign for that key.
     func signEvent(eventJSON: String, withSigner signerPubkey: String) async throws -> String {
         let label = Self.approvalLabel(forEventJSON: eventJSON)
-        return try await signerRequest(label) {
+        return try await signerRequest(label, queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
             try await self.callGo { NIP46SignEventWithC(
                 UnsafeMutablePointer(mutating: (signerPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
@@ -396,7 +398,7 @@ class NIP46Service: ObservableObject {
         print("NIP46Service: signEvent called, connectionState=\(connectionState.rawValue)")
         try await ensureConnected()
         let label = Self.approvalLabel(forEventJSON: eventJSON)
-        return try await signerRequest(label) {
+        return try await signerRequest(label, queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
             try await self.callGo { NIP46SignEventC(
                 UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
             )}
@@ -533,12 +535,26 @@ class NIP46Service: ObservableObject {
     /// the time, and a banner that is always up means nothing.
     private static let userActionKinds: Set<Int> = [0, 1, 3, 5, 6, 7, 9, 13, 16, 20, 21, 22, 1111, 1984, 9734, 30023]
 
-    private nonisolated static func approvalLabel(forEventJSON json: String) -> String? {
+    /// Upload auth: Blossom (24242) and HTTP auth (27235). Signed without a
+    /// banner like other background work, but almost always because the person
+    /// just attached a photo, so it skips the background queue. Queued, a photo
+    /// post waited silently behind relay AUTH and DM decrypts.
+    private static let uploadAuthKinds: Set<Int> = [24242, 27235]
+
+    private nonisolated static func kind(ofEventJSON json: String) -> Int? {
         struct KindOnly: Decodable { let kind: Int }
-        guard let data = json.data(using: .utf8),
-              let kind = try? JSONDecoder().decode(KindOnly.self, from: data).kind,
-              userActionKinds.contains(kind) else { return nil }
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(KindOnly.self, from: data).kind
+    }
+
+    private nonisolated static func approvalLabel(forEventJSON json: String) -> String? {
+        guard let kind = kind(ofEventJSON: json), userActionKinds.contains(kind) else { return nil }
         return kind == 13 ? "Approve sending your message" : "Approve in your signer"
+    }
+
+    private nonisolated static func waitsInBackgroundQueue(eventJSON json: String) -> Bool {
+        guard let kind = kind(ofEventJSON: json) else { return true }
+        return !uploadAuthKinds.contains(kind)
     }
 
     /// - Parameter label: banner text if this request waits on the person, or
@@ -549,9 +565,23 @@ class NIP46Service: ObservableObject {
         // list syncs) goes to the signer one request at a time, however many
         // callers ask at once. Things the person did (label != nil) skip the
         // queue so a post never waits behind a backlog.
+        //
+        // A request holds the queue for at most `backgroundLease`. The signer can
+        // leave one unanswered for the full 90 s bridge timeout (relay AUTH after
+        // the app comes back to the foreground does this), and everything behind
+        // it used to wait the whole time. Past the lease the request keeps
+        // waiting for its answer, it just stops holding up the rest.
         let gated = label == nil && queued
-        if gated { await Self.backgroundGate.wait() }
-        defer { if gated { Task { await Self.backgroundGate.signal() } } }
+        var ticket: UInt64?
+        if gated {
+            let held = await Self.backgroundGate.wait()
+            ticket = held
+            Task {
+                try? await Task.sleep(nanoseconds: Self.backgroundLease)
+                await Self.backgroundGate.signal(held)
+            }
+        }
+        defer { if let ticket { Task { await Self.backgroundGate.signal(ticket) } } }
         outstandingRequests += 1
         if label != nil { bannerRequests += 1 }
         #if os(iOS)
@@ -768,16 +798,33 @@ class NIP46Service: ObservableObject {
 }
 
 /// A one-at-a-time gate for background signer requests.
+///
+/// Each holder gets a ticket, and only that ticket can release the slot, once.
+/// That lets a holder's slot be taken back on a timer (`lease`) while its
+/// request is still waiting on the signer, without its later release freeing
+/// the slot out from under whoever got it next.
 actor SignerRequestGate {
-    private var busy = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var holder: UInt64?
+    private var nextTicket: UInt64 = 0
+    private var waiters: [(ticket: UInt64, continuation: CheckedContinuation<Void, Never>)] = []
 
-    func wait() async {
-        if !busy { busy = true; return }
-        await withCheckedContinuation { waiters.append($0) }
+    func wait() async -> UInt64 {
+        nextTicket += 1
+        let ticket = nextTicket
+        if holder == nil { holder = ticket; return ticket }
+        await withCheckedContinuation { waiters.append((ticket, $0)) }
+        return ticket
     }
 
-    func signal() {
-        if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() }
+    /// Frees the slot if `ticket` still holds it; otherwise does nothing.
+    func signal(_ ticket: UInt64) {
+        guard holder == ticket else { return }
+        if waiters.isEmpty {
+            holder = nil
+        } else {
+            let next = waiters.removeFirst()
+            holder = next.ticket
+            next.continuation.resume()
+        }
     }
 }
