@@ -25,8 +25,7 @@ struct TenorGif: Identifiable, Hashable {
 /// there is no keyless endpoint to call. The search *page* is server-rendered
 /// and embeds the full result set -- every media format, with byte sizes and
 /// pixel dimensions -- in a `<script id="store-cache">` JSON blob. We fetch the
-/// page and read that blob, which is the same shape of dependency
-/// `YarnClipService` already takes on getyarn.io, and far steadier than a
+/// page and read that blob, which is far steadier than a
 /// regex over `<img src>`: we get real URLs, dimensions and descriptions
 /// instead of whatever the markup happens to look like this month.
 ///
