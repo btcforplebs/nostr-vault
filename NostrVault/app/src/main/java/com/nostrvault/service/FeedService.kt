@@ -175,7 +175,14 @@ class FeedService @Inject constructor(
                 .map { it.activeAccountNpub }
                 .distinctUntilChanged()
                 .drop(1) // Skip initial emission
-                .collect { forceReload() }
+                .collect {
+                    // The new account's list is unknown until its own load
+                    // answers, and a tap queued under the previous account
+                    // must not reach this one.
+                    contactListConfirmed = false
+                    pendingFollowActions.clear()
+                    forceReload()
+                }
         }
     }
 
@@ -584,24 +591,38 @@ class FeedService @Inject constructor(
      * could replace the real one on every relay, and the tap used to be dropped
      * without a word.
      */
-    private val pendingFollowActions = mutableListOf<Pair<String, Boolean>>()
+    private data class PendingFollow(val pubkey: String, val follow: Boolean, val account: String)
+    private val pendingFollowActions = mutableListOf<PendingFollow>()
 
-    private fun queueFollowAction(pubkey: String, follow: Boolean) {
-        pendingFollowActions.removeAll { it.first == pubkey }
-        pendingFollowActions.add(pubkey to follow)
-        notificationManager.showFollow(
-            profileDisplayName(pubkey),
-            FollowKind.FAILED(if (follow) "Following once your follow list loads…" else "Unfollowing once your follow list loads…"),
-        )
+    /**
+     * The user's real follow list is known for this account (see
+     * ContactManager.loadConfirmsList). Until it is, follow / unfollow never
+     * publish: a timed-out load leaves an empty or partial list in memory, and
+     * publishing it would replace every follow on every relay (iOS #180).
+     */
+    @Volatile private var contactListConfirmed = false
+
+    private fun queueFollowAction(pubkey: String, follow: Boolean, unavailable: Boolean = false) {
+        pendingFollowActions.removeAll { it.pubkey == pubkey }
+        pendingFollowActions.add(PendingFollow(pubkey, follow, currentSnapshotKey()))
+        val message = when {
+            unavailable -> "Couldn't load your follow list. Not changing it."
+            follow -> "Following once your follow list loads…"
+            else -> "Unfollowing once your follow list loads…"
+        }
+        notificationManager.showFollow(profileDisplayName(pubkey), FollowKind.FAILED(message))
         if (!_isLoadingContacts.value) scope.launch { loadContactList() }
     }
 
+    /** Applies queued taps only once the real list is known; after a timeout they stay queued. */
     private fun applyPendingFollowActions() {
-        if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value || pendingFollowActions.isEmpty()) return
-        val actions = pendingFollowActions.toList()
+        if (!contactManager.mayPublishFollowList(_hasAttemptedContactLoad.value, _isLoadingContacts.value, contactListConfirmed)) return
+        if (pendingFollowActions.isEmpty()) return
+        val account = currentSnapshotKey()
+        val actions = pendingFollowActions.filter { it.account == account }
         pendingFollowActions.clear()
-        for ((pubkey, follow) in actions) {
-            if (follow) followUser(pubkey) else unfollowUser(pubkey)
+        for (action in actions) {
+            if (action.follow) followUser(action.pubkey) else unfollowUser(action.pubkey)
         }
     }
 
@@ -627,9 +648,10 @@ class FeedService @Inject constructor(
 
         withContext(Dispatchers.IO) {
             try {
-                val result = withTimeoutOrNull(CONTACT_LOAD_TIMEOUT_MS) {
+                val fetched = withTimeoutOrNull(CONTACT_LOAD_TIMEOUT_MS) {
                     fetchContactListFromRelays()
                 }
+                val result = fetched?.best
                 if (myGeneration != contactLoadGeneration) {
                     // Superseded by a newer call (e.g. an account switch) — this
                     // result may belong to a different account entirely, discard it.
@@ -640,6 +662,7 @@ class FeedService @Inject constructor(
                     val (pubkeys, content, createdAt) = result
                     Log.d(TAG, "loadContactList: committing ${pubkeys.size} followed pubkeys (created_at=$createdAt)")
                     withContext(Dispatchers.Main.immediate) {
+                        contactListConfirmed = true
                         _followedPubkeys.value = pubkeys
                         contactListContent = content
                         ownContactListCreatedAt = maxOf(ownContactListCreatedAt, createdAt)
@@ -668,6 +691,7 @@ class FeedService @Inject constructor(
                     // so the network catches up (self-heal).
                     Log.w(TAG, "loadContactList: relay kind-3 stale (relay created_at=${result.third} < local $ownContactListCreatedAt) — keeping ${_followedPubkeys.value.size} local follows and re-publishing")
                     withContext(Dispatchers.Main.immediate) {
+                        contactListConfirmed = true
                         _hasAttemptedContactLoad.value = true
                         _isLoadingContacts.value = false
                         if (_followedPubkeys.value.isNotEmpty()) {
@@ -675,8 +699,11 @@ class FeedService @Inject constructor(
                         }
                     }
                 } else {
-                    Log.w(TAG, "loadContactList: no contact list found (timeout or empty relays)")
+                    Log.w(TAG, "loadContactList: no contact list found (confirmed new account=${fetched?.confirmed == true})")
                     withContext(Dispatchers.Main.immediate) {
+                        // Only a genuinely new account (every relay answered,
+                        // none had a list) may follow from empty; a timeout may not.
+                        contactListConfirmed = fetched?.confirmed == true
                         _hasAttemptedContactLoad.value = true
                         _isLoadingContacts.value = false
                     }
@@ -694,7 +721,10 @@ class FeedService @Inject constructor(
         }
     }
 
-    private suspend fun fetchContactListFromRelays(): Triple<List<String>, String, Long>? {
+    /** One follow-list fetch: the newest list found, and whether the list is known (see ContactManager.loadConfirmsList). */
+    private data class ContactFetch(val best: Triple<List<String>, String, Long>?, val confirmed: Boolean)
+
+    private suspend fun fetchContactListFromRelays(): ContactFetch? {
         val config = configStore.config.value
         val relayUrls = buildList {
             config.nostrURL?.let { add(it) }
@@ -720,13 +750,15 @@ class FeedService @Inject constructor(
             // kind-3 won the race. Collect across relays and keep the newest.
             var best: Triple<List<String>, String, Long>? = null   // pubkeys, content, createdAt
             var graceJob: Job? = null
+            val tally = ContactManager.EOSETally()
 
             fun resumeWithBest() {
                 lock.withLock {
                     if (resumed) return
                     resumed = true
                     graceJob?.cancel()
-                    cont.resume(best) { _, _, _ -> }
+                    val confirmed = contactManager.loadConfirmsList(best != null, relayUrls.size, tally.answeredCount())
+                    cont.resume(ContactFetch(best, confirmed)) { _, _, _ -> }
                 }
             }
 
@@ -734,6 +766,7 @@ class FeedService @Inject constructor(
                 scope.launch(Dispatchers.IO) {
                     val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
                     val subId = "contacts-${UUID.randomUUID().toString().take(8)}"
+                    tally.sent(subId, relayUrl)
 
                     // Tracked so it can be cancelled after disconnect — messages is a
                     // SharedFlow that never completes, so this would otherwise leak.
@@ -743,10 +776,21 @@ class FeedService @Inject constructor(
                         client.messages.collect { msg ->
                             try {
                                 val parsed = json.parseToJsonElement(msg).jsonArray
-                                if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
+                                val type = parsed.getOrNull(0)?.jsonPrimitive?.contentOrNull
+                                val msgSubId = parsed.getOrNull(1)?.jsonPrimitive?.contentOrNull
+                                if (type == "EOSE" && msgSubId != null) {
+                                    // Each relay counts once, and only for its own request.
+                                    tally.eose(relayUrl, msgSubId)
+                                    if (tally.answeredCount() >= relayUrls.size) resumeWithBest()
+                                }
+                                if (parsed.size >= 3 && type == "EVENT" && msgSubId != null && tally.isAnswer(relayUrl, msgSubId)) {
                                     val eventObj = parsed[2].jsonObject
                                     val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull
-                                    if (kind == 3) {
+                                    // A relay can send anything: only the user's own,
+                                    // validly signed list counts.
+                                    val author = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull
+                                    if (kind == 3 && author == nostrService.activeHexPubkey &&
+                                        HavenBridge.verifyEvent(eventObj.toString())) {
                                         val createdAt = eventObj["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
                                         val tags = eventObj["tags"]?.jsonArray?.map { tagArr ->
                                             tagArr.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
@@ -1892,6 +1936,7 @@ class FeedService @Inject constructor(
             currentPubkeys = _followedPubkeys.value,
             hasAttemptedLoad = _hasAttemptedContactLoad.value,
             isLoading = _isLoadingContacts.value,
+            listConfirmed = contactListConfirmed,
         )
         return result.fold(
             onSuccess = { followResult ->
@@ -1907,6 +1952,11 @@ class FeedService @Inject constructor(
                 Result.success(Unit)
             },
             onFailure = {
+                if (it is ContactManager.FollowActionError.ListUnavailable) {
+                    // Kept queued and retried; never published against an unknown list.
+                    queueFollowAction(pubkey, follow = true, unavailable = true)
+                    return Result.failure(it)
+                }
                 notificationManager.showFollow(displayName, FollowKind.FAILED(it.message ?: "Failed"))
                 Result.failure(it)
             },
@@ -1927,6 +1977,7 @@ class FeedService @Inject constructor(
             currentPubkeys = _followedPubkeys.value,
             hasAttemptedLoad = _hasAttemptedContactLoad.value,
             isLoading = _isLoadingContacts.value,
+            listConfirmed = contactListConfirmed,
         )
         return result.fold(
             onSuccess = { followResult ->
@@ -1945,6 +1996,11 @@ class FeedService @Inject constructor(
                 Result.success(Unit)
             },
             onFailure = {
+                if (it is ContactManager.FollowActionError.ListUnavailable) {
+                    // Kept queued and retried; never published against an unknown list.
+                    queueFollowAction(pubkey, follow = false, unavailable = true)
+                    return Result.failure(it)
+                }
                 notificationManager.showFollow(displayName, FollowKind.FAILED(it.message ?: "Failed"))
                 Result.failure(it)
             },
@@ -3129,6 +3185,8 @@ class FeedService @Inject constructor(
         unavailableSince.clear()
         _unavailableNoteIds.value = emptySet()
         relayListRequested.clear()
+        contactListConfirmed = false
+        pendingFollowActions.clear()
         recomputeFilteredNotes()
     }
 
