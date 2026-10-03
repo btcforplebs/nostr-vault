@@ -4,6 +4,10 @@ import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.RecipeTopics
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Port of FeedFilterEngine.swift -- pure feed filtering and sorting.
@@ -13,6 +17,37 @@ object FeedFilterEngine {
 
     /** NIP-23 long-form content. */
     private const val LONG_FORM_KIND = 30023
+
+    /**
+     * Parses the relay's `wot_cache.json` — haven-go's wotCache,
+     * `{"pubkeys": {"<hex>": true, ...}, "timestamp": ...}` — into a pubkey
+     * set. Returns null when the file can't be read as that shape (the caller
+     * keeps whatever graph it had), and an empty set when the graph names
+     * nobody but the owner: that carries no trust information, and treating
+     * it as a graph would hide everyone from Global. Same rules as iOS's
+     * FeedFilterEngine.loadWotPubkeys.
+     *
+     * Android used to decode this file as a bare JSON array, which always
+     * threw, so the trust graph stayed empty and Global (Web of Trust on, the
+     * default) and Discovery showed nothing.
+     */
+    fun parseWotCache(content: String, ownerHex: String): Set<String>? {
+        val root = runCatching { Json.parseToJsonElement(content) }.getOrNull() ?: return null
+        val pubkeys: Set<String> = when (root) {
+            is JsonObject -> (root["pubkeys"] as? JsonObject)?.keys ?: return null
+            // Tolerate a bare array too, in case an older relay ever wrote one.
+            is JsonArray -> root.mapNotNull { runCatching { it.jsonPrimitive.content }.getOrNull() }.toSet()
+            else -> return null
+        }
+        return if (hasUsableWot(pubkeys, ownerHex)) pubkeys else emptySet()
+    }
+
+    /** True when the graph names somebody other than the owner. */
+    fun hasUsableWot(pubkeys: Set<String>, ownerHex: String): Boolean {
+        if (pubkeys.isEmpty()) return false
+        if (ownerHex.isEmpty()) return true
+        return pubkeys.any { it != ownerHex }
+    }
 
     /**
      * Main feed filter: applies blocked list, reply/repost visibility,

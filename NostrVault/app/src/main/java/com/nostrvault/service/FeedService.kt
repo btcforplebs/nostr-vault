@@ -1906,9 +1906,12 @@ class FeedService @Inject constructor(
                 if (wotCachePath != null) {
                     val file = File(wotCachePath)
                     if (file.exists()) {
-                        val content = file.readText()
-                        val pubkeys = json.decodeFromString<List<String>>(content)
-                        val loaded = pubkeys.toSet()
+                        val loaded = FeedFilterEngine.parseWotCache(file.readText(), nostrService.activeHexPubkey)
+                        if (loaded == null) {
+                            Log.w(TAG, "WoT cache unreadable: $wotCachePath")
+                            return@launch
+                        }
+                        Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
                             if (loaded != _wotPubkeys.value) {
                                 _wotPubkeys.value = loaded
