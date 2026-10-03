@@ -86,6 +86,9 @@ extern char* NIP46NIP04EncryptC(const char* targetPubkey, const char* plaintext)
 extern char* NIP46NIP04DecryptC(const char* targetPubkey, const char* ciphertext);
 extern int NIP46PingC(void);
 extern char* NIP46GetPendingAuthURLC(void);
+extern char* NIP46ActivateC(const char* signerPubkey);
+extern void NIP46DropC(const char* signerPubkey);
+extern char* NIP46SignEventWithC(const char* signerPubkey, const char* eventJSON);
 extern char* ComputePopularNotesC(void);
 extern char* GetFollowersC(const char* owner);
 extern char* GetImportLogC(void);
@@ -350,6 +353,33 @@ JNIEXPORT jstring JNICALL
 Java_com_nostrvault_relay_HavenBridge_nip46SignEvent(JNIEnv *env, jobject thiz, jstring eventJson) {
     const char *cJson = GET_CSTR(env, eventJson);
     char *result = NIP46SignEventC((char*)cJson);
+    REL_CSTR(env, eventJson, cJson);
+    return goStringToJstring(env, result);
+}
+
+/* One live bunker session per signer (#168). */
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_nip46Activate(JNIEnv *env, jobject thiz, jstring signerPubkey) {
+    const char *cKey = GET_CSTR(env, signerPubkey);
+    char *result = NIP46ActivateC((char*)cKey);
+    REL_CSTR(env, signerPubkey, cKey);
+    return goStringToJstring(env, result);
+}
+
+JNIEXPORT void JNICALL
+Java_com_nostrvault_relay_HavenBridge_nip46Drop(JNIEnv *env, jobject thiz, jstring signerPubkey) {
+    const char *cKey = GET_CSTR(env, signerPubkey);
+    NIP46DropC((char*)cKey);
+    REL_CSTR(env, signerPubkey, cKey);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_nip46SignEventWith(JNIEnv *env, jobject thiz,
+        jstring signerPubkey, jstring eventJson) {
+    const char *cKey = GET_CSTR(env, signerPubkey);
+    const char *cJson = GET_CSTR(env, eventJson);
+    char *result = NIP46SignEventWithC((char*)cKey, (char*)cJson);
+    REL_CSTR(env, signerPubkey, cKey);
     REL_CSTR(env, eventJson, cJson);
     return goStringToJstring(env, result);
 }

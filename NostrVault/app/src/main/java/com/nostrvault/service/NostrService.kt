@@ -1145,6 +1145,35 @@ class NostrService @Inject constructor(
         val signingMode = configStore.config.value.activeSigningMode()
         Log.d(TAG, "signEventAsync: kind=$kind signingMode=$signingMode bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded}")
 
+        // Owner-forced events while another account is active go to the
+        // OWNER's own signer (#168 parity), never the active account's.
+        val route = SignerRouting.route(configStore.config.value, forceOwner, ownerHexPubkey, activeHexPubkey)
+        when (route) {
+            is SignerRoute.Unavailable -> throw IllegalStateException(route.reason)
+            is SignerRoute.BunkerSession -> {
+                val eventJson = EventPublisher.buildUnsignedEvent(
+                    kind = kind, content = content,
+                    tags = EventPublisher.appendClientTag(tags, kind), pubkey = ownerHexPubkey,
+                )
+                val signed = gatedIfBackground(kind) { NIP46Service.signEventWith(route.signerPubkey, eventJson) }
+                    ?: throw IllegalStateException("The owner's signer is not connected")
+                return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "NIP-46 signer (owner)")
+            }
+            is SignerRoute.Amber -> if (route.asOwner) {
+                val eventJson = EventPublisher.buildUnsignedEvent(
+                    kind = kind, content = content,
+                    tags = EventPublisher.appendClientTag(tags, kind), pubkey = ownerHexPubkey,
+                )
+                val signed = amberSignerService.signEvent(eventJson, asOwner = true)
+                    ?: throw IllegalStateException("Amber signer failed")
+                return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "Amber (owner)")
+            }
+            is SignerRoute.Local -> if (route.asOwner && signingMode != "local") {
+                return@withContext signLocally(kind, content, tags, forceOwner = true)
+            }
+            SignerRoute.ActiveBunker -> Unit
+        }
+
         when (signingMode) {
             "nip46" -> {
                 val finalTags = EventPublisher.appendClientTag(tags, kind)
@@ -1155,7 +1184,7 @@ class NostrService @Inject constructor(
                     pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey,
                 )
                 ensureBunkerConnected()
-                val signed = NIP46Service.signEvent(eventJson)
+                val signed = gatedIfBackground(kind) { NIP46Service.signEvent(eventJson) }
                     ?: throw IllegalStateException("NIP-46 remote signer failed")
                 return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "NIP-46 signer")
             }
@@ -1173,30 +1202,35 @@ class NostrService @Inject constructor(
             }
             else -> {
                 // Local signing
-                if (!com.nostrvault.relay.HavenBridge.isLoaded) {
-                    throw IllegalStateException("Native library not loaded")
-                }
-                val secretKey = resolveSecretKey(forceOwner)
-                    ?: throw IllegalStateException("No signing key available (ownerHexKey=${configStore.config.value.ownerHexKey != null}, ownerNpub=${configStore.config.value.ownerNpub.take(8)})")
-                val finalTags = EventPublisher.appendClientTag(tags, kind)
-                val pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey
-                val eventJson = EventPublisher.buildUnsignedEvent(
-                    kind = kind, content = content, tags = finalTags, pubkey = pubkey,
-                )
-
-                // Apply NIP-13 proof of work if enabled for this event kind
-                val powDifficulty = powPreferences.difficultyForKind(kind)
-                val signed = if (powDifficulty > 0) {
-                    EventPublisher.mineAndSignWithGoBackend(eventJson, secretKey, powDifficulty)
-                        ?: EventPublisher.signWithGoBackend(eventJson, secretKey) // fallback
-                } else {
-                    EventPublisher.signWithGoBackend(eventJson, secretKey)
-                }
-                    ?: throw IllegalStateException("Go signEvent failed (pubkey=${pubkey.take(8)}, keyLen=${secretKey.length})")
-                parseSignedEvent(signed)
-                    ?: throw IllegalStateException("Failed to parse signed event")
+                signLocally(kind, content, tags, forceOwner)
             }
         }
+    }
+
+    /** Signs with the local key of the owner ([forceOwner]) or the active account. */
+    private fun signLocally(kind: Int, content: String, tags: List<List<String>>, forceOwner: Boolean): NostrEvent {
+        if (!com.nostrvault.relay.HavenBridge.isLoaded) {
+            throw IllegalStateException("Native library not loaded")
+        }
+        val secretKey = resolveSecretKey(forceOwner)
+            ?: throw IllegalStateException("No signing key available (ownerHexKey=${configStore.config.value.ownerHexKey != null}, ownerNpub=${configStore.config.value.ownerNpub.take(8)})")
+        val finalTags = EventPublisher.appendClientTag(tags, kind)
+        val pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey
+        val eventJson = EventPublisher.buildUnsignedEvent(
+            kind = kind, content = content, tags = finalTags, pubkey = pubkey,
+        )
+
+        // Apply NIP-13 proof of work if enabled for this event kind
+        val powDifficulty = powPreferences.difficultyForKind(kind)
+        val signed = if (powDifficulty > 0) {
+            EventPublisher.mineAndSignWithGoBackend(eventJson, secretKey, powDifficulty)
+                ?: EventPublisher.signWithGoBackend(eventJson, secretKey) // fallback
+        } else {
+            EventPublisher.signWithGoBackend(eventJson, secretKey)
+        }
+            ?: throw IllegalStateException("Go signEvent failed (pubkey=${pubkey.take(8)}, keyLen=${secretKey.length})")
+        return parseSignedEvent(signed)
+            ?: throw IllegalStateException("Failed to parse signed event")
     }
 
     /**
@@ -2327,17 +2361,25 @@ class NostrService @Inject constructor(
      * signer that answers for a different account.
      */
     private suspend fun ensureBunkerConnected() {
-        if (NIP46Service.isConnected.value) return
         val cfg = configStore.config.value
         val bunker = cfg.bunkerConfig(cfg.activeOrOwnerNpub())
             ?: throw IllegalStateException("No bunker configured for this account")
-        val pubkey = NIP46Service.connectForAccount(bunker)
-            ?: throw IllegalStateException("Could not reach the bunker")
-        if (pubkey != activeHexPubkey) {
-            NIP46Service.disconnect()
-            throw IllegalStateException("This bunker signs as ${pubkey.take(8)}…, not this account")
-        }
+        // The connect/ensure decision runs under NIP46Service's lock and checks
+        // the signer's key; a wrong-key signer is dropped, not kept.
+        NIP46Service.connectForAccount(bunker, activeHexPubkey)
+            ?: throw IllegalStateException(NIP46Service.lastError.value ?: "Could not reach the bunker")
     }
+
+    /**
+     * Background signer work (relay AUTH, Blossom auth, the 10050 / 10063
+     * lists) goes to a remote signer one request at a time; what the person
+     * does (posts, reactions, zaps) is never queued behind it.
+     */
+    private val backgroundSignerGate = kotlinx.coroutines.sync.Semaphore(1)
+    private val backgroundSignerKinds = setOf(22242, 24242, 27235, 10002, 10050, 10063, 10000)
+
+    private suspend fun <T> gatedIfBackground(kind: Int, block: suspend () -> T): T =
+        if (kind in backgroundSignerKinds) backgroundSignerGate.withPermit { block() } else block()
 
     /**
      * An external signer's answer is only accepted if it is the event we asked

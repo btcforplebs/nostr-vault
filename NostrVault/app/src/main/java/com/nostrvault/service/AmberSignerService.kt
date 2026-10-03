@@ -146,10 +146,15 @@ class AmberSignerService @Inject constructor(
      * bug elsewhere), fail loudly here instead of silently signing as the owner
      * while purporting to act for a different account.
      */
-    suspend fun signEvent(unsignedEventJson: String): String? {
+    /**
+     * @param asOwner signing an owner-forced event (relay AUTH, owner lists)
+     *   while another account is active. Amber holds the owner's key, so that
+     *   is allowed; the caller still checks the result's pubkey.
+     */
+    suspend fun signEvent(unsignedEventJson: String, asOwner: Boolean = false): String? {
         val config = configStore.config.value
         val activeNpub = config.activeAccountNpub
-        if (!activeNpub.isNullOrEmpty() && activeNpub != config.ownerNpub) {
+        if (!asOwner && !activeNpub.isNullOrEmpty() && activeNpub != config.ownerNpub) {
             Log.e(TAG, "signEvent: refusing to sign — active account ($activeNpub) is not the owner, and Amber has no per-account identity to sign as")
             return null
         }

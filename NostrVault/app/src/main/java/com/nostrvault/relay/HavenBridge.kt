@@ -199,6 +199,22 @@ object HavenBridge {
     /** Sign an event via the remote signer. Returns signed event JSON. */
     external fun nip46SignEvent(eventJson: String): String?
 
+    /**
+     * Makes the live session for [signerPubkey] the active one and returns its
+     * user pubkey, or null when there is no live session for it (log in with
+     * [nip46Connect]). One session per signer is kept by the Go core (#168).
+     */
+    external fun nip46Activate(signerPubkey: String): String?
+
+    /** Closes the session for one signer (wrong account, or dead). */
+    external fun nip46Drop(signerPubkey: String)
+
+    /**
+     * Signs through [signerPubkey]'s live session without making it active
+     * and without logging in. Null when there is no live session for it.
+     */
+    external fun nip46SignEventWith(signerPubkey: String, eventJson: String): String?
+
     /** Get the signer's public key. */
     external fun nip46GetPublicKey(): String?
 
