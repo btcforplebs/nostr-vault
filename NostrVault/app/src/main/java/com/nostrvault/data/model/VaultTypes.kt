@@ -40,4 +40,10 @@ data class ParsedZapReceipt(
     val senderPubkey: String,
     val targetNoteId: String?,
     val amountSats: Long,
+    /**
+     * The zap request inside the receipt carries a valid signature. Anyone can
+     * publish a receipt naming you as the sender; only a signed request proves
+     * you made the zap.
+     */
+    val requestIsSigned: Boolean,
 )
