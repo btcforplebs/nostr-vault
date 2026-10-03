@@ -87,6 +87,23 @@ class HideLinksInTextTest {
     }
 
     @Test
+    fun `a note with hundreds of links gets three cards and keeps the rest in the text`() {
+        // Each card fetches its page; 500 links to the poster's own host must
+        // not become 500 requests from the phone (Tron, #183).
+        val links = (1..500).map { "https://attacker.example/p$it" }
+        val note = FeedNote(
+            id = "a".repeat(64), pubkey = "b".repeat(64), content = links.joinToString(" "),
+            createdAt = java.util.Date(0), tags = emptyList(), kind = 1,
+        )
+        assertEquals(500, note.linkURLs.size)
+        assertEquals(links.take(FeedNote.MAX_LINK_CARDS), note.cardLinkURLs)
+
+        val segments = parseContentSegments(note.content, note.cardLinkURLs.toSet())
+        val tappable = segments.filterIsInstance<ContentSegment.Url>().map { it.url }
+        assertEquals(links.drop(FeedNote.MAX_LINK_CARDS), tappable)
+    }
+
+    @Test
     fun `domain drops www`() {
         assertEquals("example.com", linkDomain("https://www.example.com/a?b=c"))
     }

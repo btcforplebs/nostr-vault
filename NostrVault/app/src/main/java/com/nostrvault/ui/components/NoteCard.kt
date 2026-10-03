@@ -383,7 +383,7 @@ fun NoteCard(
                     content = note.content,
                     profiles = profiles,
                     mediaURLs = note.mediaURLs.toSet(),
-                    linkURLs = note.linkURLs.toSet(),
+                    linkURLs = note.cardLinkURLs.toSet(),
                     fontSize = 17.sp,
                     lineHeight = 24.sp,
                     onProfileClick = onProfileClick,
@@ -419,7 +419,7 @@ fun NoteCard(
 
             // One card per link. The URLs are out of the text above, so a
             // card is the only place each link still shows — quotes or not.
-            for (link in note.linkURLs) {
+            for (link in note.cardLinkURLs) {
                 Spacer(Modifier.height(8.dp))
                 LinkPreviewCard(
                     url = link,
