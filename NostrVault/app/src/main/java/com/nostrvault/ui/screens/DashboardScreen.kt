@@ -1698,10 +1698,16 @@ class DashboardViewModel @Inject constructor(
         try {
             val zapReq = json.parseToJsonElement(descJson).jsonObject
             val senderPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: return null
-            val targetId = event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+            val reqTags = zapReq["tags"]?.jsonArray
+            // The note comes from the signed request, not the receipt: a forged
+            // receipt can wrap your real request and point it at another note.
+            val requestTargetId = reqTags?.firstNotNullOfOrNull { tag ->
+                val tagArr = tag as? JsonArray ?: return@firstNotNullOfOrNull null
+                if (tagArr.size >= 2 && (tagArr[0] as? JsonPrimitive)?.contentOrNull == "e") (tagArr[1] as? JsonPrimitive)?.contentOrNull else null
+            }
+            val targetId = requestTargetId ?: event.tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
 
             var amountSats = 0L
-            val reqTags = zapReq["tags"]?.jsonArray
             if (reqTags != null) {
                 for (tag in reqTags) {
                     val tagArr = tag.jsonArray
