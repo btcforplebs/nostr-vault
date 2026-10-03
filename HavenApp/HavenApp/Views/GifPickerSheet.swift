@@ -405,7 +405,11 @@ struct GifPickerSheet: View {
                 case .nostrBuild:
                     items = try await NostrBuildGifService.search(text, page: page).map(GifItem.init)
                 case .tenor:
+                    #if TENOR_SIDELOAD
                     items = try await TenorGifService.search(text).map(GifItem.init)
+                    #else
+                    items = []
+                    #endif
                 }
                 guard !Task.isCancelled else { return }
                 await MainActor.run { apply(items, for: requested, page: page, query: text) }

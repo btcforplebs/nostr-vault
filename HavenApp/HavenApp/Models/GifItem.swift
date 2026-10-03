@@ -12,15 +12,24 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     case nostrBuild
     case tenor
 
-    /// Sources this build offers, in picker order. The App Store build
-    /// (`APPSTORE`, set by release_all.sh) leaves out Tenor, whose search page
-    /// is read without the service's permission. nostr.build is an official API.
+    /// Sources this build offers, in picker order. Safe by default:
+    ///
+    /// - nostr.build (an official API) only when the build carries its API key
+    ///   (`NostrBuildGIFAPIKey`, from the gitignored Secrets.xcconfig).
+    /// - Tenor, whose search page is read without the service's permission,
+    ///   only in builds that opt in with `TENOR_SIDELOAD`. Nothing sets that
+    ///   for the App Store, so an archive made straight from Xcode has no
+    ///   Tenor. (The old `APPSTORE` opt-out was only set by release_all.sh,
+    ///   and build 17 shipped Tenor because it was archived from Xcode.)
+    ///
+    /// Empty means the composer hides its GIF button.
     static var available: [GifSource] {
-        #if APPSTORE
-        return [.nostrBuild]
-        #else
-        return [.nostrBuild, .tenor]
+        var sources: [GifSource] = []
+        if NostrBuildGifService.isConfigured { sources.append(.nostrBuild) }
+        #if TENOR_SIDELOAD
+        sources.append(.tenor)
         #endif
+        return sources
     }
 
     var id: String { rawValue }
@@ -119,6 +128,7 @@ struct GifItem: Identifiable, Hashable {
         aspectRatio = gif.aspectRatio
     }
 
+    #if TENOR_SIDELOAD
     init(_ gif: TenorGif) {
         source = .tenor
         sourceID = gif.id
@@ -130,4 +140,5 @@ struct GifItem: Identifiable, Hashable {
         accessibilityText = gif.description.isEmpty ? "GIF from Tenor" : gif.description
         aspectRatio = gif.aspectRatio
     }
+    #endif
 }
