@@ -23,8 +23,11 @@ struct LinkPreviewCard: View {
                 cardContent(metadata)
             } else if isLoading {
                 shimmerPlaceholder
+            } else {
+                // Note text no longer carries the URL, so a site with no
+                // preview still needs a card or the link would vanish.
+                fallbackCard
             }
-            // If fetch failed or no title, render nothing (graceful degradation)
         }
         // Keyed on the URL, not on appearance: SwiftUI reuses a view's state
         // when it reuses its identity, and a card that only ever loaded once
@@ -85,18 +88,47 @@ struct LinkPreviewCard: View {
             .padding(10)
             .background(Color.platformTertiaryGroupedBackground)
             .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    // Embedded in a note, so it tracks QuotedNoteView — its
-                    // direct peer — rather than sitting fainter than the card
-                    // it lives inside.
-                    .stroke(
-                        Color.havenPurple.opacity(ConfigService.shared.config.useOLED ? 0.30 : 0.15),
-                        lineWidth: ConfigService.shared.config.useOLED ? 1.2 : 1
-                    )
-            )
+            .overlay(cardBorder)
         }
         .buttonStyle(.plain)
+    }
+
+    /// The domain alone, in the same chrome as a full card.
+    private var fallbackCard: some View {
+        Button {
+            PlatformURL.open(url)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "link")
+                    .font(.appSystem(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Text(displayDomain)
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+                    .font(.appSystem(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary.opacity(0.6))
+            }
+            .padding(10)
+            .background(Color.platformTertiaryGroupedBackground)
+            .cornerRadius(8)
+            .overlay(cardBorder)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Link to \(displayDomain)"))
+    }
+
+    private var cardBorder: some View {
+        RoundedRectangle(cornerRadius: 8)
+            // Embedded in a note, so it tracks QuotedNoteView — its
+            // direct peer — rather than sitting fainter than the card
+            // it lives inside.
+            .stroke(
+                Color.havenPurple.opacity(ConfigService.shared.config.useOLED ? 0.30 : 0.15),
+                lineWidth: ConfigService.shared.config.useOLED ? 1.2 : 1
+            )
     }
 
     // MARK: - OG Image

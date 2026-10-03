@@ -42,11 +42,9 @@ public struct NostrContentFormatter {
     private static func formatUncached(_ content: String, mediaURLs: [URL]) -> AttributedString {
         var text = content
 
-        // Strip bare image/video URLs from text (they'll show as thumbnails)
-        for url in mediaURLs {
-            text = text.replacingOccurrences(of: url.absoluteString, with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
+        // Strip URLs the view renders on its own — media as thumbnails,
+        // links as preview cards.
+        text = stripURLs(mediaURLs, from: text)
 
         // Resolve nostr:npub and nostr:nprofile
         text = replaceWithLinks(in: text, regex: npubRegex, template: "nostr:$1")
@@ -123,6 +121,28 @@ public struct NostrContentFormatter {
 
 
     // MARK: - Plain-text mention resolution (for compact views)
+
+    /// Removes each URL from `text`, longest first so a URL that prefixes
+    /// another (`a.com` and `a.com/page`) can't leave half of the longer one.
+    static func stripURLs(_ urls: [URL], from text: String) -> String {
+        var result = text
+        for url in urls.map(\.absoluteString).sorted(by: { $0.count > $1.count }) {
+            result = result.replacingOccurrences(of: url, with: "")
+        }
+        // A URL cut from mid-sentence leaves its two spaces behind.
+        return result
+            .replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Every HTTP(S) URL in `text`, in order, without duplicates.
+    static func httpURLs(in text: String) -> [URL] {
+        let ns = text as NSString
+        var seen = Set<String>()
+        return httpURLRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+            .compactMap { URL(string: ns.substring(with: $0.range)) }
+            .filter { seen.insert($0.absoluteString).inserted }
+    }
 
     /// Replaces nostr:npub and nostr:nprofile with @ProfileName as plain text,
     /// without generating markdown links or AttributedStrings.
