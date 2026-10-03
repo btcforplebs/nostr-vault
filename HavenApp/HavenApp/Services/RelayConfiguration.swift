@@ -91,7 +91,6 @@ enum RelayConfiguration {
     /// preference change reaches its catch-up summary on the next relay start;
     /// individual notifications are filtered client-side and change immediately.
     static func notifyKinds(config: HavenConfig) -> [Int] {
-        guard config.enablePushNotifications else { return [NotificationPolicy.silentKind] }
         // An account with no stored entry uses NotificationPreferences()'s
         // defaults everywhere else, so it has to count here too — otherwise a
         // user who never opened the notification settings has no entries at all
@@ -102,6 +101,17 @@ enum RelayConfiguration {
         })
         let prefs = Set(accounts.filter { !$0.isEmpty }).map {
             config.notificationPrefsPerAccount[$0] ?? NotificationPreferences()
+        }
+        // With phone notifications off, DMs are still marked: the in-app banner
+        // shows them while the app is open (see NotificationPolicy.allowsWithPushOff).
+        guard config.enablePushNotifications else {
+            return NotificationPolicy.notifyKinds(
+                mentionsOrReplies: false,
+                dms: prefs.contains { $0.dms },
+                zaps: false,
+                reactions: false,
+                reposts: false
+            )
         }
         return NotificationPolicy.notifyKinds(
             mentionsOrReplies: prefs.contains { $0.mentions || $0.replies },

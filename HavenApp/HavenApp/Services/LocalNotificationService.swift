@@ -39,7 +39,7 @@ final class LocalNotificationService {
     /// Called on the main actor from RelayProcessManager.applyBatchedUpdate()
     /// with the text after the `🔔NOTIFY|` prefix.
     func handle(_ markerBody: String) {
-        guard ConfigService.shared.config.enablePushNotifications else { return }
+        let pushEnabled = ConfigService.shared.config.enablePushNotifications
 
         // preview is always last and may contain spaces/pipes — split it off first
         let previewKey = "|preview="
@@ -61,6 +61,7 @@ final class LocalNotificationService {
             }        }
 
         guard let type = fields["type"] else { return }
+        guard pushEnabled || NotificationPolicy.allowsWithPushOff(type: type, appInForeground: appInForeground) else { return }
         let author = fields["author"] ?? ""
 
         // The catch-up backlog "summary" marker has no per-event id (it isn't

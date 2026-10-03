@@ -127,10 +127,13 @@ object DeepLinkRouter {
         val account = npub?.takeIf { it.isNotBlank() }
         if (type == null) return null
         return when (type) {
-            // A DM opens the conversation, not the gift wrap's event id — the
-            // wrap id is not addressable as a note.
-            "dm", "giftwrap" -> author?.takeIf { isHex64(it) }
+            // A NIP-04 DM opens the conversation, not its event id.
+            "dm" -> author?.takeIf { isHex64(it) }
                 ?.let { DeepLinkTarget(Screen.DMThread.createRoute(it), account) }
+            // A gift wrap's author is the one-time wrapping key, not the sender
+            // (that is only known after decrypting), so it opens the inbox —
+            // as iOS does. Opening a thread with the wrap key showed a stranger.
+            "giftwrap" -> DeepLinkTarget(Screen.DMInbox.route, account)
             // Every post-related notification lands on that post in the Relay
             // tab, matching iOS: the tab picks the list that holds it, scrolls to
             // it and outlines it, and opens the post if it never shows up. The id

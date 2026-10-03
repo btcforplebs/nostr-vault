@@ -95,6 +95,12 @@ class DeepLinkRouterTest {
         assertNull(target?.relayFocus)
     }
 
+    @Test fun `a gift wrap notification opens the inbox, not a thread with the wrap key`() {
+        // The marker's author is the one-time wrapping key, not the sender.
+        val target = DeepLinkRouter.fromNotification("giftwrap", hexNote, hexAuthor, null)
+        assertEquals(Screen.DMInbox.route, target?.route)
+    }
+
     @Test fun `the catch-up summary carries no event id and opens the feed`() {
         assertEquals(Screen.Feed.route, DeepLinkRouter.fromNotification("summary", "", "", "")?.route)
     }
