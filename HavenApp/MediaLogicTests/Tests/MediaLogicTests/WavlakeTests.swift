@@ -45,9 +45,29 @@ final class WavlakeTests: XCTestCase {
         XCTAssertEqual(tracks.first?.duration, 200)
     }
 
-    func testArtistAlbumIds() {
-        let json = #"{"id":"a","name":"R","albums":[{"id":"x"},{"id":"y"},{"title":"no id"}]}"#
-        XCTAssertEqual(WavlakeAPI.albumIds(fromArtist: Data(json.utf8)), ["x", "y"])
+    func testArtistAlbumsNewestFirst() {
+        let json = #"""
+        {"id":"a","name":"R","albums":[
+          {"id":"old","title":"Old","releaseDate":"2021-03-01T00:00:00.000Z","albumArtUrl":"https://x/old.jpg"},
+          {"id":"undated","title":"Undated"},
+          {"title":"no id"},
+          {"id":"new","title":"New","releaseDate":"2026-09-30T06:10:02.406Z"}]}
+        """#
+        let albums = WavlakeAPI.albums(fromArtist: Data(json.utf8))
+        XCTAssertEqual(albums.map(\.id), ["new", "old", "undated"])
+        XCTAssertEqual(albums.map(\.year), [2026, 2021, nil])
+        XCTAssertEqual(albums.first?.artist, "R")
+        XCTAssertEqual(albums[1].artURL?.absoluteString, "https://x/old.jpg")
+    }
+
+    func testAlbumHeading() {
+        let json = #"{"id":"al","title":"Sound Money","artist":"Rare Scrilla","artistId":"a1","releaseDate":"2024-04-18T16:13:11.948Z","tracks":[]}"#
+        let album = WavlakeAPI.album(fromAlbum: Data(json.utf8))
+        XCTAssertEqual(album?.title, "Sound Money")
+        XCTAssertEqual(album?.artist, "Rare Scrilla")
+        XCTAssertEqual(album?.artistId, "a1")
+        XCTAssertEqual(album?.year, 2024)
+        XCTAssertNil(WavlakeAPI.album(fromAlbum: Data("[]".utf8)))
     }
 
     func testGarbageIsEmptyNotACrash() {

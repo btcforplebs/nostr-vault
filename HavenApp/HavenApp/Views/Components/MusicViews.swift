@@ -1,69 +1,328 @@
+import Combine
 import SwiftUI
 
 // MARK: - Music feed
+
+/// What the Music feed shows. The top-right toolbar sets it and
+/// MusicBrowserView reads it, so the two stay in step across tabs.
+@MainActor
+final class MusicFeedState: ObservableObject {
+    static let shared = MusicFeedState()
+
+    enum Scope: Equatable {
+        case trending
+        case artist(WavlakeArtist)
+        case following
+    }
+
+    /// The rankings windows offered as words. Wavlake answers 1 to 90 days.
+    enum TrendingWindow: Int, CaseIterable {
+        case week = 7
+        case month = 30
+
+        var title: String { self == .week ? "This week" : "This month" }
+    }
+
+    /// An artist or album opened inside the feed.
+    enum Page: Hashable {
+        case artist(WavlakeArtist)
+        case album(WavlakeAlbum)
+    }
+
+    /// Any toolbar pick, even the one already showing, closes open pages
+    /// and the search.
+    @Published var scope: Scope = .trending { didSet { path = []; picks += 1 } }
+    /// Counts toolbar picks, so the feed can clear its search on a pick
+    /// that doesn't change what loads.
+    @Published private(set) var picks = 0
+    /// Pages opened over the toolbar's choice; the last one is showing.
+    @Published private(set) var path: [Page] = []
+    @Published var trendingWindow: TrendingWindow = .week
+    /// Artists you've played or opened, newest first.
+    @Published private(set) var recentArtists: [WavlakeArtist] = []
+
+    private static let recentKey = "music.recentArtists"
+    private static let maxRecent = 20
+    /// Artist pages fetched this launch, for their Nostr keys. A missing
+    /// key is cached too (npub nil), so Following doesn't ask twice.
+    private var artistCache: [String: WavlakeArtist] = [:]
+    private var cancellables = Set<AnyCancellable>()
+    /// Pages already loaded this launch, so Back and forth don't refetch.
+    private var artistPages: [String: ArtistPage] = [:]
+    private var albumPages: [String: AlbumPage] = [:]
+
+    struct ArtistPage {
+        var artist: WavlakeArtist?
+        var albums: [WavlakeAlbum]
+        var tracks: [WavlakeTrack]
+    }
+
+    struct AlbumPage {
+        var album: WavlakeAlbum?
+        var tracks: [WavlakeTrack]
+    }
+
+    private init() {
+        if let data = UserDefaults.standard.data(forKey: Self.recentKey),
+           let saved = try? JSONDecoder().decode([WavlakeArtist].self, from: data) {
+            recentArtists = saved
+        }
+        // Every song that starts, from this feed or a post, adds its artist.
+        // Queue and index publish separately; settle before reading them.
+        let player = MusicPlayerService.shared
+        player.$queue.combineLatest(player.$index)
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
+            .compactMap { queue, index in queue.indices.contains(index) ? queue[index].wavlake : nil }
+            .removeDuplicates { $0.artistId == $1.artistId }
+            .sink { [weak self] track in self?.remember(track) }
+            .store(in: &cancellables)
+    }
+
+    func remember(_ track: WavlakeTrack) {
+        guard let id = track.artistId else { return }
+        remember(WavlakeArtist(id: id, name: track.artist, artUrl: track.artistArtUrl, npub: track.artistNpub))
+    }
+
+    func remember(_ artist: WavlakeArtist) {
+        var artist = artist
+        let known = recentArtists.first { $0.id == artist.id }
+        artist.artUrl = artist.artUrl ?? known?.artUrl
+        artist.npub = artist.npub ?? known?.npub
+        recentArtists = Array(([artist] + recentArtists.filter { $0.id != artist.id }).prefix(Self.maxRecent))
+        saveRecent()
+    }
+
+    func clearRecentArtists() {
+        recentArtists = []
+        saveRecent()
+    }
+
+    var currentArtist: WavlakeArtist? {
+        if case .artist(let artist) = scope { return artist }
+        return nil
+    }
+
+    func show(_ artist: WavlakeArtist) {
+        remember(artist)
+        scope = .artist(artist)
+    }
+
+    func open(_ page: Page) {
+        guard path.last != page else { return }
+        if case .artist(let artist) = page { remember(artist) }
+        path.append(page)
+    }
+
+    func goBack() {
+        _ = path.popLast()
+    }
+
+    /// The artist or album on screen right now, so a song's "Go to" actions
+    /// don't offer the page you're already on.
+    var showingArtistId: String? {
+        switch path.last {
+        case .artist(let artist): return artist.id
+        case .album: return nil
+        case nil: return currentArtist?.id
+        }
+    }
+
+    var showingAlbumId: String? {
+        if case .album(let album) = path.last { return album.id }
+        return nil
+    }
+
+    /// An artist's details, albums (newest first) and the songs on them.
+    /// Songs come from the newest 25 albums; the albums row lists them all.
+    func artistPage(_ id: String) async -> ArtistPage? {
+        if let cached = artistPages[id] { return cached }
+        guard let found = try? await WavlakeAPI.artistPage(id) else { return nil }
+        let tracks = await WavlakeAPI.tracks(onAlbums: Array(found.albums.prefix(25)))
+        let page = ArtistPage(artist: found.artist, albums: found.albums, tracks: tracks)
+        // Every album failing is a bad connection, not an empty artist:
+        // show it, but ask again next time.
+        if !found.albums.isEmpty && tracks.isEmpty { return page }
+        artistPages[id] = page
+        return page
+    }
+
+    func albumPage(_ id: String) async -> AlbumPage? {
+        if let cached = albumPages[id] { return cached }
+        guard let found = try? await WavlakeAPI.albumPage(id), !found.tracks.isEmpty else { return nil }
+        let page = AlbumPage(album: found.album, tracks: found.tracks)
+        albumPages[id] = page
+        return page
+    }
+
+    func showTrending(_ window: TrendingWindow) {
+        trendingWindow = window
+        scope = .trending
+    }
+
+    private func saveRecent() {
+        if let data = try? JSONEncoder().encode(recentArtists) {
+            UserDefaults.standard.set(data, forKey: Self.recentKey)
+        }
+    }
+
+    /// Wavlake artists whose linked Nostr key you follow, and their ranked
+    /// songs. Wavlake can't be asked which artists a key follows, and only
+    /// an artist's own page carries their key, so this checks the artists
+    /// of the last 90 days' rankings plus your recent artists.
+    func followedArtists(follows: Set<String>) async -> (artists: [WavlakeArtist], tracks: [WavlakeTrack]) {
+        let ranked = (try? await WavlakeAPI.trending(days: 90)) ?? []
+        var ids: [String] = []
+        for id in recentArtists.map(\.id) + ranked.compactMap(\.artistId) where !ids.contains(id) {
+            ids.append(id)
+        }
+        let missing = ids.filter { artistCache[$0] == nil }
+        await withTaskGroup(of: WavlakeArtist?.self) { group in
+            for id in missing {
+                group.addTask { try? await WavlakeAPI.artist(id) }
+            }
+            for await artist in group {
+                if let artist { artistCache[artist.id] = artist }
+            }
+        }
+        let artists = ids.compactMap { artistCache[$0] }.filter { artist in
+            artist.npub.flatMap(MusicSheet.hex(fromNpub:)).map(follows.contains) ?? false
+        }
+        let followed = Set(artists.map(\.id))
+        return (artists, ranked.filter { $0.artistId.map(followed.contains) ?? false })
+    }
+}
 
 /// The Music feed: Wavlake's trending tracks, and search across tracks,
 /// albums and artists. Tapping a track plays it and queues the rest of the
 /// list after it; the mini player keeps going while you browse.
 struct MusicBrowserView: View {
     @ObservedObject private var player = MusicPlayerService.shared
+    @ObservedObject private var feed = MusicFeedState.shared
     @State private var sheet: MusicSheet?
     @State private var query = ""
-    @State private var trending: [WavlakeTrack] = []
+    /// The songs for the toolbar's current choice.
+    @State private var tracks: [WavlakeTrack] = []
+    /// Following: the artists found, shown above their songs.
+    @State private var followedArtists: [WavlakeArtist] = []
     @State private var results: [WavlakeSearchResult] = []
-    /// An album or artist opened from search: its title and tracks.
-    @State private var opened: (title: String, tracks: [WavlakeTrack])?
     @State private var isLoading = false
     @State private var errorText: String?
     @State private var searchTask: Task<Void, Never>?
+    /// Search keeps its own spinner and message, so clearing a search
+    /// can't stop the toolbar choice's load, or the other way round.
+    @State private var isSearching = false
+    @State private var searchError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            searchField
+        ScrollViewReader { proxy in
+            VStack(alignment: .leading, spacing: 12) {
+                // Opening or leaving a page starts it at its top.
+                Color.clear.frame(height: 0).id(Self.topAnchor)
 
-            if let opened {
-                header(opened.title) {
-                    Button { self.opened = nil } label: {
-                        Label("Back", systemImage: "chevron.left").font(.appSystem(size: 14, weight: .semibold))
+                if let page = feed.path.last {
+                    pageView(page)
+                        .id(page)
+                } else {
+                    searchField
+
+                    if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                        searchResults
+                    } else {
+                        scopeContent
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.havenPurple)
+
+                    status
                 }
-                trackList(opened.tracks)
-            } else if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-                searchResults
-            } else {
-                header("Trending on Wavlake") { EmptyView() }
-                trackList(trending)
-            }
 
-            if isLoading {
-                ProgressView().tint(.havenPurple).frame(maxWidth: .infinity).padding(.vertical, 30)
-            } else if let errorText {
-                Text(errorText)
-                    .font(.appSystem(size: 14))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 30)
-                    .contentShape(Rectangle())
-                    .accessibilityAddTraits(query.isEmpty && opened == nil ? .isButton : [])
-                    .onTapGesture {
-                        if query.isEmpty && opened == nil { Task { await loadTrending() } }
-                    }
+                Link(destination: URL(string: "https://wavlake.com")!) {
+                    Text("Music from Wavlake")
+                        .font(.appSystem(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+                .padding(.vertical, 16)
             }
-
-            Link(destination: URL(string: "https://wavlake.com")!) {
-                Text("Music from Wavlake")
-                    .font(.appSystem(size: 12, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-            }
-            .padding(.vertical, 16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .onChange(of: feed.path) { _, _ in proxy.scrollTo(Self.topAnchor, anchor: .top) }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .task { if trending.isEmpty { await loadTrending() } }
+        .task(id: loadKey) { await load() }
+        // A toolbar pick replaces whatever search was showing.
+        .onChange(of: feed.picks) { _, _ in query = "" }
         .modifier(MusicSheetHost(sheet: $sheet))
+    }
+
+    private static let topAnchor = "music.top"
+
+    @ViewBuilder
+    private func pageView(_ page: MusicFeedState.Page) -> some View {
+        switch page {
+        case .artist(let artist):
+            MusicArtistPage(artist: artist, sheet: $sheet, onBack: feed.goBack)
+        case .album(let album):
+            MusicAlbumPage(album: album, sheet: $sheet, onBack: feed.goBack)
+        }
+    }
+
+    /// The spinner or message under the toolbar's choice or a search.
+    @ViewBuilder
+    private var status: some View {
+        if isBrowsing ? isLoading : isSearching {
+            ProgressView().tint(.havenPurple).frame(maxWidth: .infinity).padding(.vertical, 30)
+        } else if let message = isBrowsing ? errorText : searchError {
+            Text(message)
+                .font(.appSystem(size: 14))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 30)
+                .contentShape(Rectangle())
+                .accessibilityAddTraits(isBrowsing ? .isButton : [])
+                .onTapGesture {
+                    if isBrowsing { Task { await load() } }
+                }
+        }
+    }
+
+    /// Showing the toolbar's choice rather than search.
+    private var isBrowsing: Bool { query.isEmpty }
+
+    /// Changes whenever the toolbar picks something else to show.
+    private var loadKey: String {
+        switch feed.scope {
+        case .trending: return "trending:\(feed.trendingWindow.rawValue)"
+        case .artist(let artist): return "artist:\(artist.id)"
+        case .following: return "following"
+        }
+    }
+
+    @ViewBuilder
+    private var scopeContent: some View {
+        switch feed.scope {
+        case .trending:
+            header("Trending \(feed.trendingWindow.title.lowercased())") { EmptyView() }
+            trackList(tracks)
+        case .artist(let artist):
+            MusicArtistPage(artist: artist, sheet: $sheet) { feed.scope = .trending }
+                .id(artist.id)
+        case .following:
+            if !followedArtists.isEmpty {
+                header("Artists you follow") { EmptyView() }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(followedArtists) { artist in
+                            MusicCollectionTile(title: artist.name, subtitle: "Artist", art: artist.artURL, round: true) {
+                                feed.open(.artist(artist))
+                            }
+                        }
+                    }
+                }
+            }
+            if !tracks.isEmpty {
+                header("Their songs") { EmptyView() }
+                trackList(tracks)
+            }
+        }
     }
 
     private var searchField: some View {
@@ -78,7 +337,7 @@ struct MusicBrowserView: View {
                 #endif
                 .onChange(of: query) { _, _ in scheduleSearch() }
             if !query.isEmpty {
-                Button { query = ""; opened = nil } label: {
+                Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -90,32 +349,11 @@ struct MusicBrowserView: View {
     }
 
     private func header<Accessory: View>(_ title: String, @ViewBuilder accessory: () -> Accessory) -> some View {
-        HStack {
-            accessory()
-            Text(title).font(.appSystem(size: 18, weight: .bold))
-            Spacer()
-        }
-        .padding(.top, 4)
+        MusicSectionHeader(title: title, accessory: accessory)
     }
 
     private func trackList(_ tracks: [WavlakeTrack]) -> some View {
-        LazyVStack(spacing: 4) {
-            ForEach(Array(tracks.enumerated()), id: \.element.id) { offset, track in
-                MusicTrackRow(track: track, isCurrent: player.current?.id == track.id, isPlaying: player.isPlaying)
-                    .contentShape(Rectangle())
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityHint(player.current?.id == track.id && player.isPlaying ? "Pauses the song" : "Plays the song")
-                    .onTapGesture {
-                        if player.current?.id == track.id {
-                            player.togglePlayPause()
-                        } else {
-                            player.play(tracks, startAt: offset)
-                        }
-                    }
-                    .contextMenu { MusicTrackActions(track: track, sheet: $sheet) }
-            }
-        }
+        MusicTrackList(tracks: tracks, sheet: $sheet)
     }
 
     @ViewBuilder
@@ -142,69 +380,520 @@ struct MusicBrowserView: View {
     private func collectionCard(_ result: WavlakeSearchResult) -> some View {
         switch result {
         case .album(let id, let title, let art):
-            collectionTile(title: title, subtitle: "Album", art: art, round: false) { await open(title: title) { try await WavlakeAPI.album(id) } }
+            MusicCollectionTile(title: title, subtitle: "Album", art: art.flatMap(URL.init(string:)), round: false) {
+                feed.open(.album(WavlakeAlbum(id: id, title: title, artUrl: art)))
+            }
         case .artist(let id, let name, let art):
-            collectionTile(title: name, subtitle: "Artist", art: art, round: true) { await open(title: name) { try await WavlakeAPI.artistTracks(id) } }
+            MusicCollectionTile(title: name, subtitle: "Artist", art: art.flatMap(URL.init(string:)), round: true) {
+                feed.open(.artist(WavlakeArtist(id: id, name: name, artUrl: art)))
+            }
         case .track:
             EmptyView()
         }
     }
 
-    private func collectionTile(title: String, subtitle: String, art: String?, round: Bool, action: @escaping () async -> Void) -> some View {
-        Button { Task { await action() } } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                MusicArtwork(url: art.flatMap(URL.init(string:)), size: 110)
-                    .clipShape(round ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 10)))
-                Text(title).font(.appSystem(size: 13, weight: .semibold)).lineLimit(1)
-                Text(subtitle).font(.appSystem(size: 11)).foregroundColor(.secondary)
-            }
-            .frame(width: 110, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Loading
 
-    private func loadTrending() async {
+    private func load() async {
+        tracks = []
+        followedArtists = []
         isLoading = true
         errorText = nil
-        do {
-            trending = try await WavlakeAPI.trending()
-            if trending.isEmpty { errorText = "Nothing trending right now." }
-        } catch {
-            errorText = "Couldn't reach Wavlake. Tap to try again."
+        var found: [WavlakeTrack] = []
+        var artists: [WavlakeArtist] = []
+        var message: String?
+        switch feed.scope {
+        case .trending:
+            do {
+                found = try await WavlakeAPI.trending(days: feed.trendingWindow.rawValue)
+                if found.isEmpty { message = "Nothing trending right now." }
+            } catch {
+                message = "Couldn't reach Wavlake. Tap to try again."
+            }
+        case .artist:
+            // MusicArtistPage loads itself.
+            break
+        case .following:
+            let follows = Set(FeedService.shared.followedPubkeys)
+            if follows.isEmpty {
+                message = "Follow people on Nostr, and the Wavlake artists among them show up here."
+            } else {
+                (artists, found) = await feed.followedArtists(follows: follows)
+                if artists.isEmpty {
+                    message = "None of the Wavlake artists checked are people you follow. Artists show up here once they link their Nostr key on Wavlake."
+                }
+            }
         }
+        // A newer choice took over while this one loaded; it owns the page.
+        guard !Task.isCancelled else { return }
+        tracks = found
+        followedArtists = artists
+        errorText = message
         isLoading = false
     }
 
     /// Searches once typing pauses, so each keystroke isn't a request.
     private func scheduleSearch() {
         searchTask?.cancel()
-        opened = nil
         let term = query.trimmingCharacters(in: .whitespaces)
-        guard !term.isEmpty else { results = []; errorText = nil; isLoading = false; return }
+        guard !term.isEmpty else { results = []; searchError = nil; isSearching = false; return }
         searchTask = Task {
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled else { return }
-            isLoading = true
-            errorText = nil
+            isSearching = true
+            searchError = nil
             let found = (try? await WavlakeAPI.search(term)) ?? []
             guard !Task.isCancelled else { return }
             results = found
-            isLoading = false
-            if found.isEmpty { errorText = "No music found for \"\(term)\"." }
+            isSearching = false
+            if found.isEmpty { searchError = "No music found for \"\(term)\"." }
+        }
+    }
+}
+
+// MARK: - Artist and album pages
+
+/// An artist's page: their picture and name, Play and Shuffle, a row of
+/// albums (newest first) to open, then every song.
+struct MusicArtistPage: View {
+    let artist: WavlakeArtist
+    @Binding var sheet: MusicSheet?
+    let onBack: () -> Void
+    @ObservedObject private var player = MusicPlayerService.shared
+    @ObservedObject private var feed = MusicFeedState.shared
+    @State private var page: MusicFeedState.ArtistPage?
+    @State private var isLoading = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            MusicBackButton(action: onBack)
+
+            VStack(spacing: 8) {
+                MusicArtwork(url: shown.artURL, size: 148)
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+                Text(shown.name)
+                    .font(.appSystem(size: 26, weight: .bold))
+                    .multilineTextAlignment(.center)
+                if let summary {
+                    Text(summary).font(.appSystem(size: 13)).foregroundColor(.secondary)
+                }
+                MusicPlayButtons(tracks: page?.tracks ?? []) {
+                    if let hex = shown.npub.flatMap(MusicSheet.hex(fromNpub:)) {
+                        MusicPillButton(title: "On Nostr", icon: "person.crop.circle", filled: false) {
+                            sheet = .profile(hex)
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity)
+
+            if isLoading {
+                ProgressView().tint(.havenPurple).frame(maxWidth: .infinity).padding(.vertical, 30)
+            } else if let page, !page.tracks.isEmpty || !page.albums.isEmpty {
+                if !page.albums.isEmpty {
+                    MusicSectionHeader(title: page.albums.count == 1 ? "Album" : "Albums") { EmptyView() }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(alignment: .top, spacing: 14) {
+                            ForEach(page.albums) { album in
+                                MusicCollectionTile(title: album.title, subtitle: album.year.map(String.init) ?? "Album",
+                                                    art: album.artURL, round: false, size: 140) {
+                                    feed.open(.album(album))
+                                }
+                            }
+                        }
+                    }
+                }
+                if !page.tracks.isEmpty {
+                    MusicSectionHeader(title: "Songs") { EmptyView() }
+                    MusicTrackList(tracks: page.tracks, sheet: $sheet)
+                }
+            } else {
+                MusicRetryMessage(text: "Couldn't load \(shown.name). Tap to try again.") {
+                    Task { await load() }
+                }
+            }
+        }
+        .task { await load() }
+    }
+
+    /// The fetched details once they're in; what was tapped until then.
+    private var shown: WavlakeArtist {
+        guard var found = page?.artist else { return artist }
+        found.artUrl = found.artUrl ?? artist.artUrl
+        found.npub = found.npub ?? artist.npub
+        return found
+    }
+
+    private var summary: String? {
+        guard let page, !page.albums.isEmpty else { return nil }
+        return [MusicCount.albums(page.albums.count), page.tracks.isEmpty ? nil : MusicCount.songs(page.tracks.count)]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    private func load() async {
+        isLoading = true
+        let found = await feed.artistPage(artist.id)
+        guard !Task.isCancelled else { return }
+        page = found
+        isLoading = false
+    }
+}
+
+/// An album's page: the cover, its artist (tap to open them), year and
+/// length, Play and Shuffle, and the songs in album order.
+struct MusicAlbumPage: View {
+    let album: WavlakeAlbum
+    @Binding var sheet: MusicSheet?
+    let onBack: () -> Void
+    @ObservedObject private var feed = MusicFeedState.shared
+    @State private var page: MusicFeedState.AlbumPage?
+    @State private var isLoading = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            MusicBackButton(action: onBack)
+
+            VStack(spacing: 6) {
+                MusicArtwork(url: shown.artURL, size: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .shadow(color: .black.opacity(0.3), radius: 14, y: 6)
+                    .padding(.bottom, 6)
+                Text(shown.title)
+                    .font(.appSystem(size: 22, weight: .bold))
+                    .multilineTextAlignment(.center)
+                if let name = shown.artist {
+                    if let artistId = shown.artistId {
+                        Button { openArtist(id: artistId, name: name) } label: {
+                            Text(name).font(.appSystem(size: 16, weight: .semibold)).foregroundColor(.havenPurple)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens the artist")
+                    } else {
+                        Text(name).font(.appSystem(size: 16, weight: .semibold)).foregroundColor(.secondary)
+                    }
+                }
+                if let summary {
+                    Text(summary).font(.appSystem(size: 13)).foregroundColor(.secondary)
+                }
+                MusicPlayButtons(tracks: page?.tracks ?? []) { EmptyView() }
+                    .padding(.top, 6)
+            }
+            .frame(maxWidth: .infinity)
+
+            if isLoading {
+                ProgressView().tint(.havenPurple).frame(maxWidth: .infinity).padding(.vertical, 30)
+            } else if let page {
+                MusicTrackList(tracks: page.tracks, sheet: $sheet, numbered: true)
+            } else {
+                MusicRetryMessage(text: "Couldn't load \(album.title). Tap to try again.") {
+                    Task { await load() }
+                }
+            }
+        }
+        .task { await load() }
+    }
+
+    private var shown: WavlakeAlbum {
+        guard var found = page?.album else { return album }
+        found.artUrl = found.artUrl ?? album.artUrl
+        found.artist = found.artist ?? album.artist ?? page?.tracks.first?.artist
+        found.artistId = found.artistId ?? album.artistId ?? page?.tracks.first?.artistId
+        return found
+    }
+
+    private var summary: String? {
+        guard let page else { return shown.year.map(String.init) }
+        let seconds = page.tracks.compactMap(\.duration).reduce(0, +)
+        return [shown.year.map(String.init), MusicCount.songs(page.tracks.count),
+                seconds > 0 ? MusicCount.minutes(seconds) : nil]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    /// Opened from that artist's page, Back is the way there; otherwise
+    /// open the artist on top.
+    private func openArtist(id: String, name: String) {
+        let path = feed.path
+        let cameFromArtist: Bool
+        if path.count >= 2, case .artist(let previous) = path[path.count - 2] {
+            cameFromArtist = previous.id == id
+        } else {
+            cameFromArtist = path.count == 1 && feed.currentArtist?.id == id
+        }
+        if cameFromArtist {
+            feed.goBack()
+        } else {
+            let art = page?.tracks.first(where: { $0.artistId == id })?.artistArtUrl
+            feed.open(.artist(WavlakeArtist(id: id, name: name, artUrl: art)))
         }
     }
 
-    private func open(title: String, load: () async throws -> [WavlakeTrack]) async {
+    private func load() async {
         isLoading = true
-        errorText = nil
-        let tracks = (try? await load()) ?? []
+        let found = await feed.albumPage(album.id)
+        guard !Task.isCancelled else { return }
+        page = found
         isLoading = false
-        if tracks.isEmpty {
-            errorText = "Couldn't load \(title)."
+    }
+}
+
+enum MusicCount {
+    static func songs(_ n: Int) -> String { n == 1 ? "1 song" : "\(n) songs" }
+    static func albums(_ n: Int) -> String { n == 1 ? "1 album" : "\(n) albums" }
+    static func minutes(_ seconds: Int) -> String {
+        let minutes = max(1, Int((Double(seconds) / 60).rounded()))
+        return minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min"
+    }
+}
+
+/// A page's songs. Tap plays from that song on (or pauses the one
+/// playing); long-press shares or opens its artist or album.
+struct MusicTrackList: View {
+    let tracks: [WavlakeTrack]
+    @Binding var sheet: MusicSheet?
+    /// Album order: a track number in place of the cover.
+    var numbered = false
+    @ObservedObject private var player = MusicPlayerService.shared
+
+    var body: some View {
+        LazyVStack(spacing: 4) {
+            ForEach(Array(tracks.enumerated()), id: \.element.id) { offset, track in
+                MusicTrackRow(track: track, isCurrent: player.current?.id == track.id, isPlaying: player.isPlaying,
+                              number: numbered ? offset + 1 : nil)
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint(player.current?.id == track.id && player.isPlaying ? "Pauses the song" : "Plays the song")
+                    .onTapGesture {
+                        if player.current?.id == track.id {
+                            player.togglePlayPause()
+                        } else {
+                            player.play(tracks, startAt: offset)
+                        }
+                    }
+                    .contextMenu { MusicTrackActions(track: track, sheet: $sheet, opensPages: true) }
+            }
+        }
+    }
+}
+
+/// Play from the top and Shuffle, plus any extra pill (an artist's Nostr
+/// profile). Disabled until there are songs.
+struct MusicPlayButtons<Extra: View>: View {
+    let tracks: [WavlakeTrack]
+    @ViewBuilder let extra: () -> Extra
+    @ObservedObject private var player = MusicPlayerService.shared
+
+    var body: some View {
+        HStack(spacing: 10) {
+            MusicPillButton(title: "Play", icon: "play.fill", filled: true) { player.play(tracks) }
+            MusicPillButton(title: "Shuffle", icon: "shuffle", filled: false) { player.play(tracks.shuffled()) }
+            extra()
+        }
+        .disabled(tracks.isEmpty)
+        .opacity(tracks.isEmpty ? 0.5 : 1)
+    }
+}
+
+struct MusicPillButton: View {
+    let title: String
+    let icon: String
+    let filled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.appSystem(size: 14, weight: .semibold))
+                .foregroundColor(filled ? .white : .havenPurple)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 36)
+                .background(Capsule().fill(filled ? Color.havenPurple : Color.havenPurple.opacity(0.14)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct MusicBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Back", systemImage: "chevron.left")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .frame(minHeight: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.havenPurple)
+    }
+}
+
+struct MusicSectionHeader<Accessory: View>: View {
+    let title: String
+    let accessory: Accessory
+
+    init(title: String, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title
+        self.accessory = accessory()
+    }
+
+    var body: some View {
+        HStack {
+            accessory
+            Text(title).font(.appSystem(size: 18, weight: .bold)).accessibilityAddTraits(.isHeader)
+            Spacer()
+        }
+        .padding(.top, 4)
+    }
+}
+
+/// An album or artist to open: square cover, or a round picture for artists.
+struct MusicCollectionTile: View {
+    let title: String
+    let subtitle: String
+    let art: URL?
+    let round: Bool
+    var size: CGFloat = 110
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                MusicArtwork(url: art, size: size)
+                    .clipShape(round ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 10)))
+                Text(title).font(.appSystem(size: 13, weight: .semibold)).lineLimit(2)
+                Text(subtitle).font(.appSystem(size: 11)).foregroundColor(.secondary)
+            }
+            .frame(width: size, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(round ? "Opens the artist" : "Opens the album")
+    }
+}
+
+struct MusicRetryMessage: View {
+    let text: String
+    let retry: () -> Void
+
+    var body: some View {
+        Text(text)
+            .font(.appSystem(size: 14))
+            .foregroundColor(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 30)
+            .contentShape(Rectangle())
+            .accessibilityAddTraits(.isButton)
+            .onTapGesture(perform: retry)
+    }
+}
+
+/// The Music feed's top-right controls: Trending (this week or month),
+/// an artist picker, and Wavlake artists you follow on Nostr.
+struct MusicToolbarButtons: View {
+    @ObservedObject private var feed = MusicFeedState.shared
+
+    var body: some View {
+        HStack(spacing: 4) {
+            toolbarMenu(icon: isTrending ? "flame.fill" : "flame", label: "Trending", isSelected: isTrending) {
+                MusicTrendingMenuItems()
+            }
+            toolbarMenu(icon: artist != nil ? "person.crop.circle.fill" : "person.crop.circle",
+                        label: artist.map { "Artist: \($0.name)" } ?? "Artists", isSelected: artist != nil) {
+                MusicArtistMenuItems()
+            }
+            IconFilterButton(icon: isFollowing ? "person.2.fill" : "person.2", tooltip: "Artists you follow",
+                             isSelected: isFollowing, color: .havenPurple) {
+                feed.scope = .following
+            }
+            #if os(macOS)
+            .help("Wavlake artists you follow on Nostr")
+            #endif
+        }
+    }
+
+    private var isTrending: Bool { feed.scope == .trending }
+    private var isFollowing: Bool { feed.scope == .following }
+    private var artist: WavlakeArtist? { feed.currentArtist }
+
+    private func toolbarMenu<Items: View>(icon: String, label: String, isSelected: Bool, @ViewBuilder items: () -> Items) -> some View {
+        Menu {
+            items()
+        } label: {
+            Image(systemName: icon)
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(isSelected ? .havenPurple : .secondary)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+                .animation(Motion.toggle, value: isSelected)
+        }
+        .menuIndicator(.hidden)
+        #if os(macOS)
+        // .borderlessButton flattens the label's modifiers on macOS.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .help(label)
+        #endif
+        .accessibilityLabel(label)
+    }
+}
+
+/// This week / This month, for the toolbar's Trending menu and the
+/// compact toolbar's single menu.
+struct MusicTrendingMenuItems: View {
+    @ObservedObject private var feed = MusicFeedState.shared
+
+    var body: some View {
+        ForEach(MusicFeedState.TrendingWindow.allCases, id: \.self) { window in
+            Button { feed.showTrending(window) } label: {
+                Label("Trending \(window.title.lowercased())",
+                      systemImage: feed.scope == .trending && feed.trendingWindow == window ? "checkmark" : "flame")
+            }
+        }
+    }
+}
+
+/// Artists you've played or opened, newest first.
+struct MusicArtistMenuItems: View {
+    @ObservedObject private var feed = MusicFeedState.shared
+
+    var body: some View {
+        if feed.recentArtists.isEmpty {
+            Text("Artists you play or open show up here")
         } else {
-            opened = (title, tracks)
+            ForEach(feed.recentArtists) { artist in
+                Button { feed.show(artist) } label: {
+                    Label(artist.name, systemImage: feed.currentArtist?.id == artist.id ? "checkmark" : "person.crop.circle")
+                }
+            }
+            Divider()
+            Button(role: .destructive) { feed.clearRecentArtists() } label: {
+                Label("Clear artists", systemImage: "trash")
+            }
+        }
+    }
+}
+
+/// Everything in MusicToolbarButtons, as items for the compact toolbar menu.
+struct MusicToolbarMenuItems: View {
+    @ObservedObject private var feed = MusicFeedState.shared
+
+    var body: some View {
+        MusicTrendingMenuItems()
+        Button { feed.scope = .following } label: {
+            Label("Artists you follow", systemImage: feed.scope == .following ? "checkmark" : "person.2")
+        }
+        Menu {
+            MusicArtistMenuItems()
+        } label: {
+            Label("Artists", systemImage: "person.crop.circle")
         }
     }
 }
@@ -213,9 +902,25 @@ struct MusicTrackRow: View {
     let track: WavlakeTrack
     let isCurrent: Bool
     let isPlaying: Bool
+    /// Album order: the track number shows instead of the cover.
+    var number: Int? = nil
 
     var body: some View {
         HStack(spacing: 12) {
+            if let number {
+                Group {
+                    if isCurrent {
+                        Image(systemName: isPlaying ? "waveform" : "play.fill")
+                            .font(.appSystem(size: 14, weight: .bold))
+                            .foregroundColor(.havenPurple)
+                    } else {
+                        Text("\(number)")
+                            .font(.appSystem(size: 15, weight: .semibold).monospacedDigit())
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .frame(width: 28, height: 40)
+            } else {
             ZStack {
                 MusicArtwork(url: track.artworkURL, size: 48)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -225,6 +930,7 @@ struct MusicTrackRow: View {
                         .font(.appSystem(size: 18, weight: .bold))
                         .foregroundColor(.white)
                 }
+            }
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
@@ -699,8 +1405,28 @@ struct MusicSheetHost: ViewModifier {
 struct MusicTrackActions: View {
     let track: WavlakeTrack
     @Binding var sheet: MusicSheet?
+    /// Inside the Music feed, a song also leads to its artist and album page.
+    var opensPages = false
 
     var body: some View {
+        if opensPages {
+            let feed = MusicFeedState.shared
+            if let id = track.artistId, feed.showingArtistId != id {
+                Button {
+                    feed.open(.artist(WavlakeArtist(id: id, name: track.artist, artUrl: track.artistArtUrl, npub: track.artistNpub)))
+                } label: {
+                    Label("Go to \(track.artist)", systemImage: "music.mic")
+                }
+            }
+            if let id = track.albumId, feed.showingAlbumId != id {
+                Button {
+                    feed.open(.album(WavlakeAlbum(id: id, title: track.albumTitle ?? "Album", artUrl: track.albumArtUrl,
+                                                  artist: track.artist, artistId: track.artistId)))
+                } label: {
+                    Label(track.albumTitle.map { "Go to \($0)" } ?? "Go to album", systemImage: "square.stack")
+                }
+            }
+        }
         Button { sheet = .share(WavlakeLink.shareText(for: track)) } label: {
             Label("Share to Nostr", systemImage: "square.and.arrow.up")
         }
