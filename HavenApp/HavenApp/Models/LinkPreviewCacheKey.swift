@@ -14,3 +14,17 @@ enum LinkPreviewCacheKey {
         return digest.map { String(format: "%02x", $0) }.joined() + ".json"
     }
 }
+
+/// Which of a note's links get a preview card — and so leave the text.
+///
+/// Capped: every card fetches its page, and one note can carry thousands of
+/// URLs to a host the poster controls, so drawing them all turned a single
+/// spam note into that many requests from the phone (Tron, Android #183).
+/// Links past the cap stay in the text as ordinary tappable links.
+enum LinkCards {
+    static let max = 3
+
+    static func shown(_ links: [URL]) -> [URL] {
+        Array(links.prefix(max))
+    }
+}
