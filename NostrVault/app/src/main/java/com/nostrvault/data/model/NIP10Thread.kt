@@ -57,12 +57,74 @@ object NIP10Thread {
         kind == COMMENT_KIND && tags.any { it.size >= 2 && it[0] == "K" && it[1] == "1" }
 
     /**
-     * The kind a reply to [parentKind] is sent as. Replies match the thread:
-     * answering a comment sends a comment, anything else stays kind 1, which
-     * every client can show today. When the big clients render comments, flip
-     * this to always return [COMMENT_KIND] for notes.
+     * The kind a response to [parentKind] is sent as. A comment answers a
+     * comment. Kind 1 replies are only valid onto a kind 1 parent (NIP-10),
+     * so anything else — an article, a video, a picture — gets a comment.
+     * Onto a kind 1 note it's a kind 1 reply by default (what most clients
+     * show under a note today); [asComment] sends a comment instead, which
+     * the composer offers on an original note.
      */
-    fun replyKind(parentKind: Int): Int = if (parentKind == COMMENT_KIND) COMMENT_KIND else 1
+    fun replyKind(parentKind: Int, asComment: Boolean = false): Int = when (parentKind) {
+        COMMENT_KIND -> COMMENT_KIND
+        1 -> if (asComment) COMMENT_KIND else 1
+        else -> COMMENT_KIND
+    }
+
+    /** True for a kind 1 note that isn't itself a reply: the one place the
+     *  composer offers a choice between a reply and a comment. */
+    fun isOriginalNote(kind: Int, tags: List<List<String>>): Boolean =
+        kind == 1 && parentEventId(kind, tags) == null
+
+    /** The `a`/`A` coordinate of an addressable (30000–39999) or replaceable
+     *  (0, 3, 10000–19999) event; replaceables keep the trailing colon. */
+    fun coordinate(kind: Int, pubkey: String, tags: List<List<String>>): String? = when {
+        kind in 30000..39999 -> tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)?.let { "$kind:$pubkey:$it" }
+        kind == 0 || kind == 3 || kind in 10000..19999 -> "$kind:$pubkey:"
+        else -> null
+    }
+
+    /**
+     * NIP-22 tags for a top-level comment on the parent, which is also the
+     * root: `E` for a regular event; `A` alone for an addressable or
+     * replaceable one, with the parent named by `a` and this version's `e`.
+     */
+    fun topLevelCommentTags(
+        parentId: String,
+        parentKind: Int,
+        parentPubkey: String,
+        parentTags: List<List<String>>,
+        relayHint: String
+    ): List<List<String>> {
+        val tags = mutableListOf<List<String>>()
+        val coord = coordinate(parentKind, parentPubkey, parentTags)
+        if (coord != null) {
+            tags.add(listOf("A", coord, relayHint))
+            tags.add(listOf("K", parentKind.toString()))
+            tags.add(listOf("P", parentPubkey))
+            tags.add(listOf("a", coord, relayHint))
+            tags.add(listOf("e", parentId, relayHint, parentPubkey))
+        } else {
+            tags.add(listOf("E", parentId, relayHint, parentPubkey))
+            tags.add(listOf("K", parentKind.toString()))
+            tags.add(listOf("P", parentPubkey))
+            tags.add(listOf("e", parentId, relayHint, parentPubkey))
+        }
+        tags.add(listOf("k", parentKind.toString()))
+        tags.add(listOf("p", parentPubkey))
+        return tags
+    }
+
+    /** NIP-22 tags for any comment: on a comment it copies that comment's
+     *  root and points at it; on anything else the parent is the root. */
+    fun commentTags(
+        parentId: String,
+        parentKind: Int,
+        parentPubkey: String,
+        parentTags: List<List<String>>,
+        relayHint: String
+    ): List<List<String>> =
+        if (parentKind == COMMENT_KIND) commentReplyTags(parentId, parentPubkey, parentTags, relayHint)
+        else topLevelCommentTags(parentId, parentKind, parentPubkey, parentTags, relayHint)
 
     /**
      * NIP-22 tags for a comment answering the comment `parent`: the root scope

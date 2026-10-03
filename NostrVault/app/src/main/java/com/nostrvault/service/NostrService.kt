@@ -1909,6 +1909,7 @@ class NostrService @Inject constructor(
         rootId: String,
         focusedId: String,
         ancestorIds: List<String>,
+        rootCoordinate: String? = null,
         onRawEvent: ((String, String) -> Unit)? = null,
         onResult: (List<FeedNote>) -> Unit,
     ) {
@@ -1926,7 +1927,30 @@ class NostrService @Inject constructor(
         // ancestor of a comment is usually itself a comment.
         val idValues = (listOf(rootId) + ancestorIds).distinct()
         val idFilter = """{"kinds":[1,$COMMENT],"ids":[${jsonArr(idValues)}]}"""
-        queryDetailRelays(listOf(eFilter, commentsFilter, idFilter), onRawEvent, onResult)
+        // Comments on an addressable or replaceable root name it by A; an
+        // edited article has a new event id, so #E alone misses them.
+        val filters = mutableListOf(eFilter, commentsFilter, idFilter)
+        if (rootCoordinate != null) {
+            filters.add("""{"kinds":[$COMMENT],"#A":[${jsonArr(listOf(rootCoordinate))}],"limit":150}""")
+        }
+        queryDetailRelays(filters, onRawEvent, onEose = onResult)
+    }
+
+    /**
+     * Responses to [rootId] that aren't thread rows (spec "below the fold"):
+     * quotes of any kind (#q) plus highlights (9802) and voice replies (1244).
+     * The caller decides which of these are quotes rather than replies.
+     */
+    fun fetchOtherResponses(rootId: String, onResult: (List<FeedNote>) -> Unit) {
+        queryDetailRelays(
+            listOf(
+                """{"#q":["$rootId"],"limit":50}""",
+                """{"kinds":[9802,1244],"#e":["$rootId"],"limit":50}""",
+            ),
+            onRawEvent = null,
+            onEose = onResult,
+            acceptKinds = null,
+        )
     }
 
     /**
@@ -1971,7 +1995,7 @@ class NostrService @Inject constructor(
         queryDetailRelays(
             listOf("""{"kinds":[1,$COMMENT],"#e":[$idArr],"limit":150}"""),
             onRawEvent,
-            onResult,
+            onEose = onResult,
         )
     }
 
@@ -1986,6 +2010,8 @@ class NostrService @Inject constructor(
     private fun queryDetailRelays(
         filters: List<String>,
         onRawEvent: ((String, String) -> Unit)? = null,
+        /** Kinds to keep; null keeps every kind. */
+        acceptKinds: Set<Int>? = setOf(1, NIP10Thread.COMMENT_KIND),
         onEose: (List<FeedNote>) -> Unit,
     ) {
         val config = configStore.config.value
@@ -2033,7 +2059,7 @@ class NostrService @Inject constructor(
                                     ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
                                 } catch (_: Exception) { emptyList() }
 
-                                if (kind == 1 || kind == COMMENT) {
+                                if (acceptKinds == null || kind in acceptKinds) {
                                     collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
                                     onRawEvent?.invoke(id, ev.toString())
                                 }
