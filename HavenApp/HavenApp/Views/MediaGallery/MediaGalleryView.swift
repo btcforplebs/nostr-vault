@@ -51,7 +51,13 @@ struct MediaGalleryView: View {
     }
 
     // Cached display data (computed in background)
-    @State var displayMedia: [MediaItem] = []
+    @State var displayMedia: [MediaItem] = [] {
+        willSet { mediaSections = Self.sections(for: newValue, sortOption: sortOption) }
+    }
+
+    /// `displayMedia` split into dated runs. Kept in state rather than computed
+    /// in `body`, which re-ran the grouping on every redraw of the grid.
+    @State var mediaSections: [MediaDateSection] = []
 
     // Stable loading state so the empty-state message doesn't flash
     // before the display data has been computed at least once.
