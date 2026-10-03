@@ -350,7 +350,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			processInboxEvent(ctx, ev, wdbInbox, wdbChat, notifier, rejects)
+			processInboxEvent(ctx, ev, wdbInbox, wdbChat, notifier, rejects, false)
 			advance(&lastSeen, ev.CreatedAt)
 		}
 	}
@@ -606,6 +606,12 @@ func subscribeInboxAndChat(ctx context.Context) {
 		}
 	})
 
+	// Gift wraps get their own live subscription: relays apply `since` to live
+	// events too, and a wrap's created_at is randomized up to 2 days into the
+	// past, so a DM sent right now is usually older than lastSeen and the
+	// filter below drops it until the next catch-up round.
+	runsafe.Go("inbox.liveGiftWraps", func() { subscribeLiveGiftWraps(ctx, relays, pTags, wdbInbox, wdbChat, rejects) })
+
 	// Live subscription with reconnect. SubscribeMany's channel closes when the
 	// context is cancelled or all relays send CLOSED; the previous code treated
 	// that as terminal and never resubscribed. Now we reconnect (resuming from
@@ -621,7 +627,7 @@ func subscribeInboxAndChat(ctx context.Context) {
 		sawEvent := false
 		for ev := range pool.SubscribeMany(ctx, relays, filter) {
 			sawEvent = true
-			processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects)
+			processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects, false)
 			advance(&lastSeen, ev.CreatedAt)
 		}
 		if ctx.Err() != nil {
@@ -631,6 +637,62 @@ func subscribeInboxAndChat(ctx context.Context) {
 			backoff = time.Second // healthy connection delivered events; reset
 		}
 		log.Println("📢 inbox subscription closed, reconnecting in", backoff)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < 60*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+// liveWrapSettle is how long a gift-wrap subscription waits for every relay's
+// EOSE before treating what arrives as live. A dead relay in the set never
+// sends EOSE, and without a cap no new DM would ever count as live.
+const liveWrapSettle = 30 * time.Second
+
+// subscribeLiveGiftWraps keeps a live kind-1059 subscription floored at the
+// gift-wrap backdate window, re-opened on every disconnect. Wraps that arrive
+// before EOSE (or before liveWrapSettle) are stored backlog and go through the
+// normal age gate, so startup and reconnects stay quiet; wraps that arrive
+// after it were just published and notify even with a backdated created_at.
+// Duplicates are skipped in processInboxEvent, so the overlap with the main
+// subscription and with each reconnect's re-sent window costs nothing.
+func subscribeLiveGiftWraps(ctx context.Context, relays, pTags []string, wdbInbox, wdbChat eventstore.RelayWrapper, rejects *tempRejects) {
+	backoff := time.Second
+	for ctx.Err() == nil {
+		since := nostr.Timestamp(time.Now().Add(-giftWrapBackdateSlack).Unix())
+		filter := nostr.Filter{
+			Kinds: []int{nostr.KindGiftWrap},
+			Tags:  nostr.TagMap{"p": pTags},
+			Since: &since,
+		}
+		eose := make(chan struct{})
+		settled := time.After(liveWrapSettle)
+		live := false
+		sawEvent := false
+		for ev := range pool.SubscribeManyNotifyEOSE(ctx, slices.Clone(relays), filter, eose) {
+			sawEvent = true
+			if !live {
+				select {
+				case <-eose:
+					live = true
+				case <-settled:
+					live = true
+				default:
+				}
+			}
+			processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects, live)
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if sawEvent {
+			backoff = time.Second
+		}
+		log.Println("📢 gift-wrap subscription closed, reconnecting in", backoff)
 		select {
 		case <-ctx.Done():
 			return
@@ -728,7 +790,7 @@ func logInboxImport(ev *nostr.Event) {
 // the live subscription and the periodic catch-up pull. When notifier is nil
 // (live subscription) accepted events notify immediately; otherwise the
 // notifier applies catch-up batch suppression.
-func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbChat eventstore.RelayWrapper, notifier *batchNotifier, rejects *tempRejects) {
+func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbChat eventstore.RelayWrapper, notifier *batchNotifier, rejects *tempRejects, liveWrap bool) {
 	relayURL := ""
 	if ev.Relay != nil {
 		relayURL = ev.Relay.URL
@@ -780,7 +842,11 @@ func processInboxEvent(ctx context.Context, ev nostr.RelayEvent, wdbInbox, wdbCh
 	// only just succeeded after being stuck) doesn't light up the dot either —
 	// notifier.maybeNotify already skipped its own emitInboxNotify call for
 	// this, but previously still let logInboxImport through unconditionally.
-	if c.notify && isNotifyableAge(ev.Event) {
+	notifyableAge := isNotifyableAge(ev.Event)
+	if liveWrap && ev.Kind == nostr.KindGiftWrap {
+		notifyableAge = isNotifyableLiveGiftWrap(ev.Event)
+	}
+	if c.notify && notifyableAge {
 		logInboxImport(ev.Event)
 		if notifier != nil {
 			notifier.maybeNotify(ev.Event, c.recipient)
@@ -823,6 +889,17 @@ func isNotifyableKind(kind int) bool {
 func isNotifyableAge(ev *nostr.Event) bool {
 	maxAge := time.Duration(config.NotifyMaxAgeHours) * time.Hour
 	return maxAge <= 0 || time.Since(ev.CreatedAt.Time()) <= maxAge
+}
+
+// isNotifyableLiveGiftWrap is isNotifyableAge for a gift wrap that arrived on
+// the live subscription AFTER the relays finished sending stored events — i.e.
+// one that was just published, not backlog. Its created_at is randomized up to
+// 2 days into the past, so the plain age gate would silence most new DMs; here
+// the backdate window is added on top. Backlog (startup, reconnect, catch-up)
+// never takes this path, so the startup-storm protection is unchanged.
+func isNotifyableLiveGiftWrap(ev *nostr.Event) bool {
+	maxAge := time.Duration(config.NotifyMaxAgeHours) * time.Hour
+	return maxAge <= 0 || time.Since(ev.CreatedAt.Time()) <= maxAge+giftWrapBackdateSlack
 }
 
 // preferences and to switch to the right account on tap, instead of guessing

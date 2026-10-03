@@ -121,6 +121,11 @@ class MainActivity : FragmentActivity() {
                     // what makes them reachable again, including from senders
                     // still running that build.
                     runCatching { nostrService.republishDMRelayList() }
+
+                    // onStart only starts DM listening when setup was already
+                    // complete, so a user who just finished the wizard heard no
+                    // DMs until they opened the DM tab or reopened the app.
+                    dmService.startIfNeeded()
                 }
             }
 

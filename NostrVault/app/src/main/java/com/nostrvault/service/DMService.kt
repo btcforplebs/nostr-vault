@@ -41,6 +41,8 @@ class DMService @Inject constructor(
         private const val FIRE_AND_FORGET_TIMEOUT_MS = 3_000L
         private const val AUTH_TIMEOUT_MS = 5_000L
         private const val EXTERNAL_FETCH_OVERLAP_MS = 60 * 60 * 1000L // 1 hour overlap
+        // NIP-59 backdates a gift wrap's created_at by up to 2 days; plus a minute.
+        private const val GIFT_WRAP_BACKDATE_SECONDS = 2 * 24 * 60 * 60L + 60
         private const val OPTIMISTIC_DEDUP_THRESHOLD_MS = 30_000L
         private const val MAX_INJECTED_DM_IDS = 5_000
         private const val CACHE_SAVE_DEBOUNCE_MS = 500L
@@ -843,8 +845,11 @@ class DMService @Inject constructor(
 
                         client.connect()
 
-                        // NIP-17 (kind 1059)
-                        val nip17Filter = """{"kinds":[1059],"#p":["$ownerHex"],"since":$since}"""
+                        // NIP-17 (kind 1059). A gift wrap's created_at is
+                        // randomized up to 2 days into the past, so the 1-hour
+                        // overlap above would miss most new ones.
+                        val wrapSince = minOf(since, System.currentTimeMillis() / 1000 - GIFT_WRAP_BACKDATE_SECONDS)
+                        val nip17Filter = """{"kinds":[1059],"#p":["$ownerHex"],"since":$wrapSince}"""
                         client.send("[\"REQ\",\"$subId-17\",$nip17Filter]")
 
                         // NIP-04 incoming (kind 4)

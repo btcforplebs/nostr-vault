@@ -518,6 +518,11 @@ struct SetupWizardView: View {
         saveIntermediateConfig()
         configService.config.adoptGlobalBunkerConfigForOwner()
         configService.config.hasCompletedSetup = true
+        // New accounts start with notifications on (DMs, replies, mentions and
+        // zaps per NotificationPreferences' defaults) — otherwise a first DM
+        // arrives silently. Set here rather than as the config default so
+        // existing installs keep whatever they had.
+        configService.config.enablePushNotifications = true
         configService.save()
         configService.refreshActiveAccountHex()
 

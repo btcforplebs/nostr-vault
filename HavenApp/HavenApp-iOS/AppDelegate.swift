@@ -99,6 +99,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 PushNotificationService.shared.requestPermissionAndRegister()
             }
             Self.scheduleAppRefresh()
+
+            // Republish our kind 10050 so senders on any client know where to
+            // deliver DMs. It is replaceable, so this also heals lists written
+            // by older builds (127.0.0.1 entries, or ["r", url] tags no other
+            // client reads). The macOS AppDelegate does the same at launch.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(5))
+                NostrService.shared.republishDMRelayListsForSignableAccounts()
+            }
         }
 
         return true

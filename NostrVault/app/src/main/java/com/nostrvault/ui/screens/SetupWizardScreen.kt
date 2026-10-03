@@ -944,15 +944,9 @@ class SetupWizardViewModel @Inject constructor(
 
     fun completeSetup(onComplete: () -> Unit) {
         viewModelScope.launch {
-            configStore.update { it.copy(hasCompletedSetup = true) }
-
-            // Advertise where to send us DMs. Setup never did this, so a new
-            // account had no kind 10050 at all and was effectively unreachable
-            // over NIP-17 — senders fell through to a guessed relay set and
-            // replies had nowhere defined to go.
-            runCatching { nostrService.republishDMRelayList() }
-
-            // Resolve active account hex pubkey (matches iOS refreshActiveAccountHex)
+            // Resolve active account hex pubkey (matches iOS refreshActiveAccountHex).
+            // Done before hasCompletedSetup flips: MainActivity starts the DM
+            // listeners on that flip, and they subscribe for the active account.
             val npub = configStore.config.value.ownerNpub
             if (npub.startsWith("npub1")) {
                 try {
@@ -962,6 +956,18 @@ class SetupWizardViewModel @Inject constructor(
                     }
                 } catch (_: Exception) {}
             }
+
+            // New accounts start with notifications on (DMs, replies, mentions
+            // and zaps per PushPrefs' defaults) — otherwise a
+            // first DM arrives silently. Set here rather than as the config
+            // default so existing installs keep whatever they had.
+            configStore.update { it.copy(hasCompletedSetup = true, enablePushNotifications = true) }
+
+            // Advertise where to send us DMs. Setup never did this, so a new
+            // account had no kind 10050 at all and was effectively unreachable
+            // over NIP-17 — senders fell through to a guessed relay set and
+            // replies had nowhere defined to go.
+            runCatching { nostrService.republishDMRelayList() }
 
             onComplete()
         }

@@ -1051,8 +1051,10 @@ class NostrService: ObservableObject {
             return
         }
 
-        // Build ["r", relay_url] tags for DM relays
-        let tags = reachable.map { ["r", $0] }
+        // NIP-17 tags are ["relay", url]. Builds before this wrote ["r", url],
+        // which no other client reads — they saw an empty list and had nowhere
+        // to deliver our DMs.
+        let tags = reachable.map { ["relay", $0] }
 
         Task {
             if let event = await signEventAsync(kind: 10050, content: "", tags: tags, signAsNpub: signAsNpub) {
@@ -1079,8 +1081,9 @@ class NostrService: ObservableObject {
     @MainActor
     func republishDMRelayListsForSignableAccounts() {
         let config = ConfigService.shared.config
-        guard !config.isLocal else { return }
-
+        // Not gated on `config.isLocal`: the dmRelays list is remote either way,
+        // and new-user setup always lands on a local relay URL — gating here
+        // meant a fresh account never published a 10050 at all.
         let reachable = config.dmRelays.filter { !Self.isLoopbackRelay($0) }
         guard !reachable.isEmpty else { return }
 
@@ -1289,10 +1292,15 @@ class NostrService: ObservableObject {
             }
         }
 
-        // 3. Profile Broadcast: Send Kind 0 to blastr relays directly
-        //    (replaceable events don't trigger the Go relay's StoreEvent blast)
+        // 3. Profile Broadcast: Send Kind 0 and the Kind 10050 DM relay list to
+        //    blastr relays directly (replaceable events don't trigger the Go
+        //    relay's StoreEvent blast). The 10050 also goes to the DM relays it
+        //    names, where senders look for it.
         if event.kind == 0 {
             broadcastRawEvent(eventDict)
+        } else if event.kind == 10050 {
+            let listed = event.tags.compactMap { $0.count >= 2 && $0[0] == "relay" ? $0[1] : nil }
+            broadcastRawEvent(eventDict, extraRelays: listed)
         }
 
     }

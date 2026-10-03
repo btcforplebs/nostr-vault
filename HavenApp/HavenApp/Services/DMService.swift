@@ -594,13 +594,18 @@ class DMService: ObservableObject {
                         // Use 1-hour overlap for clock drift safety
                         let since = max(0, self.lastExternalFetchTimestamp - 3600)
 
-                        // NIP-17 gift wraps
+                        // NIP-17 gift wraps. created_at is randomized up to 2
+                        // days into the past, so the 1-hour overlap above would
+                        // miss most new ones — floor the window at 2 days.
                         var nip17Filter: [String: Any] = [
                             "kinds": [1059],
                             "#p": [ownPubkey],
                             "limit": 500
                         ]
-                        if since > 0 { nip17Filter["since"] = since }
+                        if since > 0 {
+                            let wrapFloor = Int64(Date().timeIntervalSince1970) - (2 * 24 * 3600 + 60)
+                            nip17Filter["since"] = min(since, wrapFloor)
+                        }
                         let req1 = ["REQ", "ext-nip17-\(UUID().uuidString.prefix(6))", nip17Filter] as [Any]
                         if let data = try? JSONSerialization.data(withJSONObject: req1),
                            let str = String(data: data, encoding: .utf8) {

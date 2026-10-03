@@ -1485,7 +1485,10 @@ class NostrService @Inject constructor(
                 "wss://relay.btcforplebs.com",
             )
         }
-        val tags = relays.map { listOf("r", it) }
+        // NIP-17 tags are ["relay", url]. Builds before this wrote ["r", url],
+        // which no other client reads — they saw an empty list and had nowhere
+        // to deliver our DMs.
+        val tags = relays.map { listOf("relay", it) }
         signAndPost(kind = 10050, content = "", tags = tags, forceOwner = true)
     }
 
