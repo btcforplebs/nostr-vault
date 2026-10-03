@@ -170,6 +170,9 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.5.1")
     // Live streams are HLS (.m3u8); ExoPlayer needs this to open one.
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+    // Music: a MediaSessionService keeps Wavlake playing in the background
+    // with notification and lock-screen controls.
+    implementation("androidx.media3:media3-session:1.5.1")
 
     // ---- JSON ----
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

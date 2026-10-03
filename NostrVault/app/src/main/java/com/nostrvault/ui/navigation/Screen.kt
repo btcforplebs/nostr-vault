@@ -29,16 +29,19 @@ sealed class Screen(val route: String) {
         fun createRoute(pubkey: String? = null) =
             if (pubkey != null) "new_message?pubkey=$pubkey" else "new_message"
     }
-    data object ComposeNote : Screen("compose?replyTo={replyTo}&quoteTo={quoteTo}&draftId={draftId}") {
+    data object ComposeNote : Screen("compose?replyTo={replyTo}&quoteTo={quoteTo}&draftId={draftId}&text={text}") {
         fun createRoute(
             replyToNoteId: String? = null,
             quoteToNoteId: String? = null,
             draftId: String? = null,
+            /** Prefilled text (Share a song to Nostr). */
+            text: String? = null,
         ): String {
             val params = mutableListOf<String>()
             replyToNoteId?.let { params.add("replyTo=$it") }
             quoteToNoteId?.let { params.add("quoteTo=$it") }
             draftId?.let { params.add("draftId=$it") }
+            text?.let { params.add("text=${android.net.Uri.encode(it)}") }
             return if (params.isNotEmpty()) "compose?${params.joinToString("&")}" else "compose"
         }
     }

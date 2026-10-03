@@ -13,6 +13,8 @@
          so the service starts as dataSync there instead (see
          RelayForegroundService.foregroundServiceType). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Music: background playback of Wavlake songs and live-stream audio. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Battery optimization exemption -->
@@ -110,6 +112,17 @@
                 <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
+
+        <!-- Music playback (Wavlake): keeps playing in the background, with
+             notification and lock-screen controls via Media3's MediaSession. -->
+        <service
+            android:name=".service.music.MusicPlaybackService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
 
         <!-- 24/7 Relay Foreground Service -->
         <service

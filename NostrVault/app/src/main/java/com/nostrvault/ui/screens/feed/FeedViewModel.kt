@@ -230,7 +230,7 @@ class FeedViewModel @Inject constructor(
      */
     private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
         FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR -> true
-        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.REELS -> false
+        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.REELS, FeedMode.MUSIC -> false
     }
 
     private fun defaultCompact(mode: FeedMode): Boolean = when (mode) {
@@ -403,6 +403,8 @@ class FeedViewModel @Inject constructor(
             liveFeedService.refresh()
             return
         }
+        // Music is Wavlake; the note subscription has nothing to switch.
+        if (mode == FeedMode.MUSIC) return
         viewModelScope.launch {
             feedService.switchFeedMode(mode)
         }
@@ -499,6 +501,9 @@ class FeedViewModel @Inject constructor(
     // Exposed for BroadcastSheet which needs direct service access
     val feedServiceRef: FeedService get() = feedService
     val nostrServiceRef: NostrService get() = nostrService
+
+    /** An artist's npub (from Wavlake) as hex, to open their profile. */
+    fun npubToHex(npub: String): String? = nostrService.npubToHex(npub)
     val configStoreRef: ConfigStore get() = configStore
 
     // ── Scroll position persistence ────────────────────────────

@@ -1052,6 +1052,7 @@ class FeedService @Inject constructor(
                     FeedMode.RECIPES -> "recipes"
                     FeedMode.LIVE -> "live"
                     FeedMode.REELS -> "reels"
+                    FeedMode.MUSIC -> "music"
                 }
                 sendPrimaryFeedSubscription(relayUrl, "feed-$label")
                 continue
@@ -1105,6 +1106,7 @@ class FeedService @Inject constructor(
             FeedMode.RECIPES -> "recipes"
             FeedMode.LIVE -> "live"
             FeedMode.REELS -> "reels"
+            FeedMode.MUSIC -> "music"
         }
         return "feed-$label"
     }
@@ -1174,6 +1176,7 @@ class FeedService @Inject constructor(
             FeedMode.RECIPES -> "recipes"
             FeedMode.LIVE -> "live"
             FeedMode.REELS -> return
+            FeedMode.MUSIC -> return
         }
         for ((relayUrl, client) in feedClients) {
             if (client.connectionState.value == WebSocketClient.ConnectionState.CONNECTED) {
@@ -1228,6 +1231,9 @@ class FeedService @Inject constructor(
                 FeedMode.LIVE -> {
                     // Handled entirely by LiveFeedService; this subscription
                     // never runs for it.
+                }
+                FeedMode.MUSIC -> {
+                    // Wavlake, not relays: MusicScreen loads its own catalogue.
                 }
                 FeedMode.REELS -> return // Returned above; ReelsFeedService owns it
                 FeedMode.RECIPES -> {
