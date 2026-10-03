@@ -1434,6 +1434,11 @@ class NostrService: ObservableObject {
         return RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting
     }
 
+    /// What the Relay tab counts as a post: notes, reposts, articles, NIP-22
+    /// comments and highlights. Comments and highlights that tag you were
+    /// never requested, so they never showed up there.
+    static let relayTabNoteKinds = [1, 6, 30023, NIP10Thread.commentKind, 9802]
+
     func fetchNotes(from relayURLs: [URL], until: Int64? = nil, since: Int64? = nil, authors: [String]? = nil) {
         // Count only the subscriptions we actually open/request below — NOT every
         // URL passed in. Skipped URLs (local relay not ready, already connecting,
@@ -1647,7 +1652,7 @@ class NostrService: ObservableObject {
         // Giving notes their own filter guarantees they load independent of how
         // many reactions/zaps share the window — same rationale as bounding
         // long-form bodies separately.
-        let noteKinds = [1, 6, 30023]
+        let noteKinds = Self.relayTabNoteKinds
         let metaKinds = [0, 3, 4, 7, 1063, 9735, 10000, 10063]
         let noteLimit = isHistorical ? 100 : 400
         let metaLimit = isHistorical ? 100 : 200

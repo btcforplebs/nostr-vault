@@ -52,12 +52,68 @@ enum NIP10Thread {
         kind == commentKind && tags.contains { $0.count >= 2 && $0[0] == "K" && $0[1] == "1" }
     }
 
-    /// The kind a reply to `parentKind` is sent as. Replies match the thread:
-    /// answering a comment sends a comment, anything else stays kind 1, which
-    /// every client can show today. When the big clients render comments, flip
-    /// this to always return `commentKind` for notes.
-    static func replyKind(parentKind: Int) -> Int {
-        parentKind == commentKind ? commentKind : 1
+    /// The kind a response to `parentKind` is sent as.
+    ///
+    /// - A comment answers a comment (1111 → 1111).
+    /// - Kind 1 replies are only valid onto a kind 1 parent (NIP-10), so
+    ///   anything else — an article, a video, a picture — gets a comment.
+    /// - Onto a kind 1 note it's a kind 1 reply by default: that's what most
+    ///   clients show under a note today. `asComment` sends a comment instead,
+    ///   which the composer offers on an original note (not on a reply: a
+    ///   reply to a reply stays kind 1).
+    static func replyKind(parentKind: Int, asComment: Bool = false) -> Int {
+        if parentKind == commentKind { return commentKind }
+        if parentKind == 1 { return asComment ? commentKind : 1 }
+        return commentKind
+    }
+
+    /// True for a kind 1 note that isn't itself a reply: the one place the
+    /// composer offers a choice between a reply and a comment.
+    static func isOriginalNote(kind: Int, tags: [[String]]) -> Bool {
+        kind == 1 && parentEventId(kind: kind, tags: tags) == nil
+    }
+
+    /// The `a`/`A` coordinate of an addressable (30000–39999) or replaceable
+    /// (0, 3, 10000–19999) event; replaceables keep the trailing colon.
+    static func coordinate(kind: Int, pubkey: String, tags: [[String]]) -> String? {
+        if kind >= 30000 && kind < 40000 {
+            guard let d = tags.first(where: { $0.count >= 2 && $0[0] == "d" })?[1] else { return nil }
+            return "\(kind):\(pubkey):\(d)"
+        }
+        if kind == 0 || kind == 3 || (kind >= 10000 && kind < 20000) {
+            return "\(kind):\(pubkey):"
+        }
+        return nil
+    }
+
+    /// NIP-22 tags for a top-level comment on `parent`, which is also the
+    /// root. A regular event is rooted by `E`; an addressable or replaceable
+    /// one by `A` alone, with the parent named by `a` and this version's `e`.
+    static func topLevelCommentTags(parentId: String, parentKind: Int, parentPubkey: String, parentTags: [[String]], relayHint: String) -> [[String]] {
+        var tags: [[String]] = []
+        if let coord = coordinate(kind: parentKind, pubkey: parentPubkey, tags: parentTags) {
+            tags.append(["A", coord, relayHint])
+            tags.append(["K", String(parentKind)])
+            tags.append(["P", parentPubkey])
+            tags.append(["a", coord, relayHint])
+            tags.append(["e", parentId, relayHint, parentPubkey])
+        } else {
+            tags.append(["E", parentId, relayHint, parentPubkey])
+            tags.append(["K", String(parentKind)])
+            tags.append(["P", parentPubkey])
+            tags.append(["e", parentId, relayHint, parentPubkey])
+        }
+        tags.append(["k", String(parentKind)])
+        tags.append(["p", parentPubkey])
+        return tags
+    }
+
+    /// NIP-22 tags for any comment: on a comment it copies that comment's
+    /// root and points at it; on anything else the parent is the root.
+    static func commentTags(parentId: String, parentKind: Int, parentPubkey: String, parentTags: [[String]], relayHint: String) -> [[String]] {
+        parentKind == commentKind
+            ? commentReplyTags(parentId: parentId, parentPubkey: parentPubkey, parentTags: parentTags, relayHint: relayHint)
+            : topLevelCommentTags(parentId: parentId, parentKind: parentKind, parentPubkey: parentPubkey, parentTags: parentTags, relayHint: relayHint)
     }
 
     /// NIP-22 tags for a comment answering the comment `parent`: the root
