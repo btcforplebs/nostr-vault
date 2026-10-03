@@ -36,7 +36,14 @@ struct DivineComposeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    header
                     videoArea
+                    if clip != nil {
+                        lengthMeter
+                    }
+                    if !isPosting {
+                        sourceButtons
+                    }
                     if clip != nil {
                         fields
                     }
@@ -65,9 +72,12 @@ struct DivineComposeView: View {
                         .disabled(isPosting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Post") { post() }
-                        .fontWeight(.bold)
-                        .disabled(clip == nil || isPosting || isPreparing)
+                    Button { post() } label: {
+                        Text("Post").fontWeight(.bold)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.havenPurple)
+                    .disabled(clip == nil || isPosting || isPreparing)
                 }
             }
         }
@@ -91,7 +101,22 @@ struct DivineComposeView: View {
 
     // MARK: - Pieces
 
-    @ViewBuilder
+    /// The one rule a diVine has, said before anything is picked.
+    private var header: some View {
+        VStack(spacing: 4) {
+            Text("A looping video, up to \(Self.limitSeconds) seconds")
+                .font(.headline)
+            Text("Record one, or choose a video. Longer videos keep their first \(Self.limitSeconds) seconds.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Whole seconds a diVine can run, as people say it.
+    static var limitSeconds: Int { Int(recordLimit) }
+
     private var videoArea: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16)
@@ -105,61 +130,94 @@ struct DivineComposeView: View {
                     Text("Getting the video ready…").font(.footnote).foregroundColor(.white.opacity(0.8))
                 }
             } else {
-                VStack(spacing: 14) {
-                    Image(systemName: "play.square.stack")
-                        .font(.system(size: 40))
-                        .foregroundColor(.white.opacity(0.8))
-                    Text("A short looping video")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.8))
-                    sourceButtons
+                VStack(spacing: 6) {
+                    Text("\(Self.limitSeconds)s")
+                        .font(.system(size: 56, weight: .heavy, design: .rounded))
+                        .foregroundColor(.white)
+                    Text("max length")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white.opacity(0.7))
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Up to \(Self.limitSeconds) seconds")
             }
         }
         .aspectRatio(9.0 / 16.0, contentMode: .fit)
-        .frame(maxHeight: 460)
+        .frame(maxHeight: 420)
+    }
 
-        if clip != nil, !isPosting {
-            sourceButtons
+    /// How much of the limit the picked clip uses.
+    @ViewBuilder
+    private var lengthMeter: some View {
+        if let clip {
+            let used = min(1, clip.duration / Double(Self.limitSeconds))
+            VStack(alignment: .leading, spacing: 6) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.secondary.opacity(0.2))
+                        Capsule().fill(Color.havenPurple)
+                            .frame(width: max(8, geo.size.width * used))
+                    }
+                }
+                .frame(height: 6)
+                HStack {
+                    Text(String(format: "%.1fs of %ds", clip.duration, Self.limitSeconds))
+                        .font(.footnote.weight(.semibold).monospacedDigit())
+                    Spacer()
+                    Text(clip.wasTrimmed ? "Trimmed to fit" : "Fits")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: 420)
+            .accessibilityElement(children: .combine)
         }
     }
 
     private var sourceButtons: some View {
-        HStack(spacing: 12) {
+        // Stacked and large while they are the next step; a compact row once
+        // there is a clip and Post is.
+        let layout = clip == nil ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+        return layout {
             #if os(iOS)
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                Button {
-                    showingCamera = true
-                } label: {
-                    Label("Record", systemImage: "video.fill")
+                // Filled until there is a clip; after that Post is the next step.
+                if clip == nil {
+                    Button { showingCamera = true } label: {
+                        Label("Record a video", systemImage: "video.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button { showingCamera = true } label: {
+                        Label("Record again", systemImage: "video.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.havenPurple)
             }
             #endif
             PhotosPicker(selection: $pickerItem, matching: .videos) {
-                Label(clip == nil ? "Choose" : "Choose another", systemImage: "photo.on.rectangle")
+                Label(clip == nil ? "Choose from Photos" : "Choose another",
+                      systemImage: "photo.on.rectangle")
                     .lineLimit(1)
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .tint(clip == nil ? .white : .havenPurple)
         }
+        .tint(.havenPurple)
+        .controlSize(clip == nil ? .large : .regular)
+        .frame(maxWidth: 420)
         .disabled(isPreparing)
     }
 
     private var fields: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextField("Title", text: $title)
+            TextField("Title (optional)", text: $title)
                 .textFieldStyle(.roundedBorder)
-            TextField("Say something about it (#tags work)", text: $caption, axis: .vertical)
+            TextField("Caption (optional) — #tags work", text: $caption, axis: .vertical)
                 .lineLimit(2...5)
                 .textFieldStyle(.roundedBorder)
-            if let clip {
-                Text("\(Int(clip.duration.rounded()))s · \(Int(clip.size.width))×\(Int(clip.size.height))"
-                     + (clip.wasTrimmed ? " · trimmed to the first \(Int(Self.recordLimit)) seconds" : ""))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
         }
         .disabled(isPosting)
     }

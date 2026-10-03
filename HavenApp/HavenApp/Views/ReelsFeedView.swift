@@ -154,6 +154,15 @@ struct ReelsFeedView: View {
                 .font(.appSystem(size: 13))
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
+            Button(action: onPost) {
+                Label("Post a diVine", systemImage: "plus")
+                    .font(.appSystem(size: 15, weight: .bold))
+                    .padding(.horizontal, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.havenPurple)
+            .controlSize(.large)
+            .padding(.top, 8)
             if service.followSetIsEmpty || (service.scope == .following && !service.loadFailed) {
                 Button("Show everyone's videos") { onShowGlobal() }
                     .buttonStyle(.borderless)
@@ -530,8 +539,9 @@ private struct ReelPageView: View {
     }
 
     private var actionRail: some View {
-        VStack(spacing: 18) {
-            railButton(icon: "plus.app", label: "Post a diVine", action: onPost)
+        VStack(spacing: 12) {
+            postButton
+                .padding(.bottom, 6)
 
             railButton(
                 icon: isLiked ? "heart.fill" : "heart",
@@ -541,10 +551,10 @@ private struct ReelPageView: View {
 
             railButton(icon: "bubble.right", label: "Reply", action: onReply)
 
-            railButton(icon: "text.bubble", label: "Open thread", action: onOpenNote)
+            railButton(icon: "text.bubble", label: "Thread", action: onOpenNote)
 
             ShareLink(item: URL(string: "https://mynostrspace.com/thread/\(reel.note.nevent)")!) {
-                railIcon("square.and.arrow.up", tint: .white)
+                railItem("square.and.arrow.up", tint: .white, label: "Share")
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Share")
@@ -557,10 +567,47 @@ private struct ReelPageView: View {
         .padding(.bottom, 4)
     }
 
+    /// Posting is the one action that makes something new, so it reads as a
+    /// filled button rather than another white glyph in the column.
+    private var postButton: some View {
+        Button(action: onPost) {
+            VStack(spacing: 3) {
+                Image(systemName: "plus")
+                    .font(.appSystem(size: 22, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 46, height: 46)
+                    .background(Circle().fill(Color.havenPurple))
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                    .shadow(color: .black.opacity(0.4), radius: 4)
+                Text("Post")
+                    .font(.appSystem(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.6), radius: 2)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Post a diVine")
+    }
+
     private func railButton(icon: String, tint: Color = .white, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { railIcon(icon, tint: tint) }
+        Button(action: action) { railItem(icon, tint: tint, label: label) }
             .buttonStyle(.plain)
             .accessibilityLabel(label)
+    }
+
+    private func railItem(_ icon: String, tint: Color, label: String) -> some View {
+        VStack(spacing: 1) {
+            railIcon(icon, tint: tint)
+            Text(label)
+                .font(.appSystem(size: 10, weight: .semibold))
+                .foregroundColor(.white.opacity(0.9))
+                .shadow(color: .black.opacity(0.6), radius: 2)
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .frame(minWidth: 44)
+        .contentShape(Rectangle())
     }
 
     private func railIcon(_ icon: String, tint: Color) -> some View {
@@ -568,7 +615,6 @@ private struct ReelPageView: View {
             .font(.appSystem(size: 24, weight: .semibold))
             .foregroundColor(tint)
             .shadow(color: .black.opacity(0.45), radius: 4)
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
+            .frame(width: 44, height: 34)
     }
 }
