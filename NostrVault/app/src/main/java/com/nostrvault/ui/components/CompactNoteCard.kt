@@ -115,7 +115,7 @@ fun CompactNoteCard(
                     )
                 }
 
-                // Body text (plain, 3 lines max). Memoize the regex-based mention
+                // Body text (plain, as many lines as Compact View is set to). Memoize the regex-based mention
                 // stripping so it doesn't re-run on every recomposition (e.g. each
                 // throttled profile-map update) while scrolling the compact feed.
                 if (note.content.isNotBlank()) {
@@ -127,7 +127,7 @@ fun CompactNoteCard(
                         text = plainText,
                         color = SecondaryText,
                         fontSize = 13.sp,
-                        maxLines = 3,
+                        maxLines = LocalFeedLineLimits.current.compactLines,
                         overflow = TextOverflow.Ellipsis,
                         lineHeight = 17.sp,
                     )

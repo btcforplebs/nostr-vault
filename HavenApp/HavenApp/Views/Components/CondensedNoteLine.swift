@@ -87,7 +87,19 @@ struct CondensedNoteLine: View {
     }
     private var nameSize: CGFloat { isRoot ? 13 : 12 }
     private var bodySize: CGFloat { isRoot ? 14 : 13 }
-    private var bodyLineLimit: Int { isRoot ? 3 : 2 }
+    /// From Settings: a feed row (`.card`) is Compact View; a line in a
+    /// thread card (`.plain`) is Threaded View, where replies show one fewer
+    /// line than the root.
+    private var bodyLineLimit: Int {
+        let range = HavenConfig.lineLimitRange
+        switch style {
+        case .card:
+            return min(max(configService.config.compactLineLimit, range.lowerBound), range.upperBound)
+        case .plain:
+            let root = min(max(configService.config.threadedLineLimit, range.lowerBound), range.upperBound)
+            return isRoot ? root : max(1, root - 1)
+        }
+    }
 
     private var displayContent: String {
         contentOverride ?? note.content
