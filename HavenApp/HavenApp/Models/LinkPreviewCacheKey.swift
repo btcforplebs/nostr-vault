@@ -28,3 +28,39 @@ enum LinkCards {
         Array(links.prefix(max))
     }
 }
+
+/// Finding and removing http(s) URLs in note text — the one URL rule the
+/// formatter, the condensed line and the tests share.
+enum NoteURLs {
+    /// A bare URL not already inside markdown link syntax. Trailing
+    /// punctuation is left out, so "see https://x.com/a." keeps its full stop.
+    static let httpRegex = try! NSRegularExpression(pattern: #"(?<![(\[])https?://[^\s<>\")\]]*[^\s<>\")\].,;:!?'\"]"#, options: .caseInsensitive)
+
+    /// Removes `urls` from `text`, then closes the gaps they leave.
+    ///
+    /// A URL is removed only where the regex matches it whole. With the link
+    /// cap, some links stay in the text, and a substring replace would cut a
+    /// shown `https://a.com` out of a kept `https://a.com/login`, leaving
+    /// "/login" (Tron, #184). A URL the regex never matches whole (one right
+    /// after `(` or `[`) falls back to a plain replace, longest first.
+    static func strip(_ urls: [URL], from text: String) -> String {
+        let wanted = Set(urls.map(\.absoluteString))
+        var result = text
+        var removed = Set<String>()
+        let ns = text as NSString
+        for match in httpRegex.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
+            let found = ns.substring(with: match.range)
+            let key = URL(string: found)?.absoluteString ?? found
+            guard wanted.contains(key), let range = Range(match.range, in: result) else { continue }
+            result.removeSubrange(range)
+            removed.insert(key)
+        }
+        for url in wanted.subtracting(removed).sorted(by: { $0.count > $1.count }) {
+            result = result.replacingOccurrences(of: url, with: "")
+        }
+        // A URL cut from mid-sentence leaves its two spaces behind.
+        return result
+            .replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
