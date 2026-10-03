@@ -124,7 +124,7 @@ class RelayConfigApplierTest {
     @Test
     fun `app-side saves do not starve a pending restart`() = runTest {
         val h = Harness(this)
-        val changed = base.copy(chatRelayWotDepth = 3)
+        val changed = base.copy(chatRelayWotDepth = base.chatRelayWotDepth + 1)
         h.save(changed)
         repeat(10) { n ->
             advanceTimeBy(500)

@@ -264,7 +264,10 @@ data class HavenConfig(
     val chatRelayName: String = "Nostr Vault Chat",
     val chatRelayDescription: String = "Chat relay",
     val chatRelayIcon: String = "",
-    val chatRelayWotDepth: Int = 2,
+    // 3 = follows plus who they follow, matching iOS. At 2 the trust graph is
+    // exactly your follows, so Global (Web of Trust) equals Following and
+    // Discovery (trusted but not followed) is always empty.
+    val chatRelayWotDepth: Int = 3,
     val chatRelayWotRefreshHours: Int = 24,
     val chatRelayMinFollowers: Int = 3,
     val wotRefreshInterval: String = "24h",
