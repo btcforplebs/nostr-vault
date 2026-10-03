@@ -53,6 +53,7 @@ class LocalNotificationService @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: Lazy<NostrService>,
     private val imageLoader: Lazy<ImageLoader>,
+    private val dmService: Lazy<DMService>,
 ) {
     companion object {
         private const val TAG = "LocalNotif"
@@ -64,6 +65,8 @@ class LocalNotificationService @Inject constructor(
         private const val MARKER = "🔔NOTIFY|"
         private const val PREVIEW_MARKER = "|preview="
         private const val MAX_SEEN = 500
+        /** How long a DM marker waits for the inbox to decrypt its message. */
+        private const val DM_OPEN_TIMEOUT_MS = 3_000L
 
         private fun isDm(type: String) = type == "dm" || type == "giftwrap"
 
@@ -75,6 +78,17 @@ class LocalNotificationService @Inject constructor(
          */
         fun allowsWithPushOff(type: String, appInForeground: Boolean): Boolean =
             appInForeground && isDm(type)
+
+        /**
+         * A decrypted DM as notification text: one line, cut to fit. Null when
+         * there is nothing to read, so the caller keeps the generic line.
+         */
+        fun dmPreview(content: String, limit: Int = 160): String? {
+            val oneLine = content.trim().split(Regex("\\s+")).joinToString(" ")
+            if (oneLine.isEmpty()) return null
+            if (oneLine.length <= limit) return oneLine
+            return oneLine.take(limit - 1).trimEnd() + "…"
+        }
     }
 
     /** True while the app is on screen. Set by MainActivity's onStart/onStop. */
@@ -193,15 +207,54 @@ class LocalNotificationService @Inject constructor(
             return
         }
 
-        val profile = if (author.length == 64) nostrService.get().profiles.value[author] else null
-        val (title, text) = buildContent(type, profile?.bestName, preview)
-        // A DM while the app is open shows the in-app banner instead of a
-        // system notification, as on iOS.
-        if (appInForeground && isDm(type)) {
-            InAppBannerBus.show(InAppBanner(id, title, text, type, author, npub))
+        if (isDm(type)) {
+            announceDm(id, type, author, recipientHex, npub)
             return
         }
+
+        val profile = if (author.length == 64) nostrService.get().profiles.value[author] else null
+        val (title, text) = buildContent(type, profile?.bestName, preview)
         post(id, title, text, type, author, npub, profile?.pictureURL)
+    }
+
+    /**
+     * A gift wrap is signed by a throwaway key, so its marker cannot say who
+     * wrote it — not even when it was you: every DM you send also wraps a copy
+     * to yourself, and that copy lands in your own inbox. Skip the copies this
+     * device sent, wait for the inbox to decrypt the rest, then show the real
+     * sender and text. If it never opens, the generic line still goes out.
+     */
+    private fun announceDm(id: String, type: String, author: String, recipientHex: String, npub: String) {
+        // A NIP-04 DM names its author in the clear.
+        if (author.isNotEmpty() && author.equals(recipientHex, ignoreCase = true)) return
+        val dms = dmService.get()
+        if (dms.isOwnSentWrap(id)) {
+            Log.i(TAG, "skip: own sent DM ${id.take(8)}")
+            return
+        }
+        scope.launch {
+            val opened = dms.awaitOpenedMessage(id, DM_OPEN_TIMEOUT_MS)
+            if (opened != null) {
+                if (opened.second.isFromMe) return@launch
+                // The conversation is already on screen.
+                if (appInForeground && dms.visibleConversation == opened.first) return@launch
+            }
+            val sender = opened?.second?.senderPubkey ?: author
+            val profile = if (sender.length == 64) nostrService.get().profiles.value[sender] else null
+            val text = opened?.second?.content?.let { dmPreview(it) }.orEmpty()
+            val (title, body) = buildContent(type, profile?.bestName, text)
+            // Once opened, route as a DM with its counterparty so a tap lands in
+            // the thread; an unopened gift wrap still opens the inbox.
+            val routeType = if (opened != null) "dm" else type
+            val routeAuthor = opened?.first ?: author
+            // A DM while the app is open shows the in-app banner instead of a
+            // system notification, as on iOS.
+            if (appInForeground) {
+                InAppBannerBus.show(InAppBanner(id, title, body, routeType, routeAuthor, npub))
+            } else {
+                post(id, title, body, routeType, routeAuthor, npub, profile?.pictureURL)
+            }
+        }
     }
 
     /** Returns true if this id is newly seen (and records it); false if a duplicate. */
@@ -225,7 +278,7 @@ class LocalNotificationService @Inject constructor(
             "reply" -> "$who replied to your note" to preview.ifBlank { "Tap to view the reply" }
             "dm", "giftwrap" -> {
                 val title = if (name != null) "Message from $who" else "New message"
-                title to "You have a new encrypted message"
+                title to preview.ifBlank { "You have a new encrypted message" }
             }
             "zap" -> "⚡ New zap" to if (name != null) "$who zapped you" else "You received a zap"
             "reaction" -> "$who reacted ${preview.ifBlank { "❤️" }}" to "Tap to view your note"

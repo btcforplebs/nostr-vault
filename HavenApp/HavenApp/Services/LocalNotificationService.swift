@@ -125,13 +125,15 @@ final class LocalNotificationService {
 
     /// A gift wrap is signed by a throwaway key, so its marker cannot say who
     /// wrote it — not even when it was you: every DM you send also wraps a copy
-    /// to yourself, and that copy lands in your own inbox. The inbox decrypts
-    /// it a moment later, so wait for that, then drop your own copies and show
+    /// to yourself, and that copy lands in your own inbox. Copies this device
+    /// sent are known by id; for the rest the inbox decrypts the message a
+    /// moment later, so wait for that, then drop your own copies and show
     /// the real sender and text. If it never opens (another account, an
     /// offline signer) the generic line still goes out.
     private func announceDM(id: String, type: String, author: String, recipientHex: String, npub: String) {
         // A NIP-04 DM names its author in the clear.
         if !author.isEmpty, author.lowercased() == recipientHex.lowercased() { return }
+        if DMService.shared.isOwnSentWrap(id) { return }
 
         Task { @MainActor in
             let opened = await DMService.shared.waitForMessage(withEventId: id, timeout: Self.dmOpenTimeout)

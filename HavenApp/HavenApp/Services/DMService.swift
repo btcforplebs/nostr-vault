@@ -403,6 +403,10 @@ class DMService: ObservableObject {
 
                 guard self.switchGeneration == generation else { return }
 
+                // Its relay notification must not announce your own message.
+                if self.sentSelfWrapIds.count > 500 { self.sentSelfWrapIds.removeAll() }
+                self.sentSelfWrapIds.insert(selfGiftWrap.id)
+
                 // Publish both to local relay (non-blocking, reuses persistent connection)
                 self.publishToInbox(giftWrap)
                 self.publishToInbox(selfGiftWrap)
@@ -503,6 +507,15 @@ class DMService: ObservableObject {
     /// The conversation whose thread is on screen, so a notification for a
     /// message already in front of the user can stay quiet.
     var visibleConversation: String?
+
+    /// Ids of the self-copy wraps this device sent. Every DM you send also
+    /// wraps a copy to yourself; this is how its notification is recognised
+    /// without decrypting it (a NIP-46 signer may not answer in time).
+    private var sentSelfWrapIds = Set<String>()
+
+    func isOwnSentWrap(_ eventId: String) -> Bool {
+        sentSelfWrapIds.contains(eventId)
+    }
 
     /// The conversation holding the message decrypted from event `eventId`
     /// (a gift wrap's id, or a NIP-04 event's), and that message.
