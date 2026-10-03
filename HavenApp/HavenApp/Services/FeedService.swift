@@ -2076,7 +2076,7 @@ class FeedService: ObservableObject {
 
         // Shared mutable state protected by main-thread dispatch.
         var completed = false
-        var eoseCount = 0
+        var tally = ContactManager.EOSETally()
         var clients: [WebSocketClient] = []
         // kind-3 is a REPLACEABLE event: keep the NEWEST version across relays, not
         // the first to arrive. Taking first-to-arrive let a stale relay copy
@@ -2096,7 +2096,7 @@ class FeedService: ObservableObject {
             completed = true
             graceWork?.cancel()
             self.contactLoadingTimeout?.invalidate()
-            if ContactManager.loadConfirmsList(foundList: best != nil, relaysAsked: relays.count, relaysAnswered: eoseCount) {
+            if ContactManager.loadConfirmsList(foundList: best != nil, relaysAsked: relays.count, relaysAnswered: tally.answered.count) {
                 self.contactListConfirmed = true
             }
             clients.forEach { $0.disconnect() }
@@ -2167,8 +2167,13 @@ class FeedService: ObservableObject {
                           let type = json[0] as? String else { return }
 
                     if type == "EVENT", json.count >= 3,
+                       let subId = json[1] as? String, tally.isAnswer(from: url.absoluteString, subId: subId),
                        let eventDict = json[2] as? [String: Any],
                        let kind = eventDict["kind"] as? Int, kind == 3,
+                       // A relay can send anything: only the user's own, validly
+                       // signed list counts.
+                       (eventDict["pubkey"] as? String) == ownerHex,
+                       NostrEventVerifier.isValid(eventDict),
                        let tags = eventDict["tags"] as? [[String]] {
                         let pTags = tags.filter { $0.count >= 2 && $0[0] == "p" }
                         let createdAt = (eventDict["created_at"] as? Int) ?? 0
@@ -2188,11 +2193,11 @@ class FeedService: ObservableObject {
                             graceWork = work
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
                         }
-                    } else if type == "EOSE" {
-                        eoseCount += 1
+                    } else if type == "EOSE", json.count >= 2, let subId = json[1] as? String {
+                        tally.eose(from: url.absoluteString, subId: subId)
                         // Every relay has delivered its stored kind-3 (if any) before
                         // its EOSE — so once all have EOSE'd, `best` is the true newest.
-                        if eoseCount >= relays.count && !completed {
+                        if tally.answered.count >= relays.count && !completed {
                             finalize()
                         }
                     }
@@ -2204,7 +2209,9 @@ class FeedService: ObservableObject {
                 .sink { state in
                     guard !completed, state == .connected else { return }
                     let filter: [String: Any] = ["kinds": [3], "authors": [ownerHex], "limit": 1]
-                    let req = ["REQ", "cl-\(UUID().uuidString.prefix(4))", filter] as [Any]
+                    let subId = "cl-\(UUID().uuidString.prefix(8))"
+                    tally.sent(subId: subId, to: url.absoluteString)
+                    let req = ["REQ", subId, filter] as [Any]
                     if let data = try? JSONSerialization.data(withJSONObject: req),
                        let str = String(data: data, encoding: .utf8) {
                         c.send(text: str)

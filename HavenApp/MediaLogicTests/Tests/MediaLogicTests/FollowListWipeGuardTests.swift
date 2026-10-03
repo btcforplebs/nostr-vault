@@ -46,3 +46,33 @@ final class FollowListWipeGuardTests: XCTestCase {
         XCTAssertTrue(ContactManager.loadConfirmsList(foundList: true, relaysAsked: 3, relaysAnswered: 1))
     }
 }
+
+/// Tron: counting EOSE messages instead of relays let one relay repeating
+/// EOSE stand in for the relay that holds the list.
+final class FollowListEOSETallyTests: XCTestCase {
+    func testDuplicateEOSEFromOneRelayDoesNotConfirm() {
+        var tally = ContactManager.EOSETally()
+        tally.sent(subId: "cl-a", to: "wss://one")
+        tally.sent(subId: "cl-b", to: "wss://two")
+        tally.eose(from: "wss://one", subId: "cl-a")
+        tally.eose(from: "wss://one", subId: "cl-a")
+        XCTAssertEqual(tally.answered.count, 1)
+        XCTAssertFalse(ContactManager.loadConfirmsList(foundList: false, relaysAsked: 2, relaysAnswered: tally.answered.count))
+    }
+
+    func testEOSEForAnotherSubscriptionIsIgnored() {
+        var tally = ContactManager.EOSETally()
+        tally.sent(subId: "cl-a", to: "wss://one")
+        tally.eose(from: "wss://one", subId: "something-else")
+        XCTAssertTrue(tally.answered.isEmpty)
+    }
+
+    func testBothRelaysAnsweringConfirmsANewAccount() {
+        var tally = ContactManager.EOSETally()
+        tally.sent(subId: "cl-a", to: "wss://one")
+        tally.sent(subId: "cl-b", to: "wss://two")
+        tally.eose(from: "wss://one", subId: "cl-a")
+        tally.eose(from: "wss://two", subId: "cl-b")
+        XCTAssertTrue(ContactManager.loadConfirmsList(foundList: false, relaysAsked: 2, relaysAnswered: tally.answered.count))
+    }
+}

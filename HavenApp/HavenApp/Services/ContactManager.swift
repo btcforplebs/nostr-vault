@@ -111,6 +111,27 @@ enum ContactManager {
         hasAttemptedLoad && !isLoading && listConfirmed
     }
 
+    /// Which relays have finished answering one follow-list request. Counts a
+    /// relay once, and only for the subscription id it was sent: a relay that
+    /// repeats EOSE (buggy or hostile) must not make the relay that actually
+    /// holds the list look like it answered "none".
+    struct EOSETally {
+        private var subIds: [String: String] = [:]   // relay -> sub id sent to it
+        private(set) var answered: Set<String> = []
+
+        init() {}
+
+        mutating func sent(subId: String, to relay: String) { subIds[relay] = subId }
+
+        /// Records an EOSE; ignored unless it is for the sub id sent to that relay.
+        mutating func eose(from relay: String, subId: String) {
+            guard subIds[relay] == subId else { return }
+            answered.insert(relay)
+        }
+
+        func isAnswer(from relay: String, subId: String) -> Bool { subIds[relay] == subId }
+    }
+
     /// `listConfirmed` after one load: true when a list was found, or when no
     /// list was found but every relay answered. False on timeout / error.
     static func loadConfirmsList(foundList: Bool, relaysAsked: Int, relaysAnswered: Int) -> Bool {
