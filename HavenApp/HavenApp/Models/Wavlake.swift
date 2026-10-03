@@ -53,6 +53,19 @@ struct WavlakeArtist: Identifiable, Hashable, Codable {
     var artURL: URL? { artUrl.flatMap(URL.init(string:)) }
 }
 
+/// A Wavlake album, as an artist page lists it and an album page heads it.
+struct WavlakeAlbum: Identifiable, Hashable, Codable {
+    let id: String
+    let title: String
+    var artUrl: String?
+    var artist: String?
+    var artistId: String?
+    /// Release year, from Wavlake's ISO release date.
+    var year: Int?
+
+    var artURL: URL? { artUrl.flatMap(URL.init(string:)) }
+}
+
 enum WavlakeAPI {
     static let base = URL(string: "https://wavlake.com/api/v1/content")!
 
@@ -131,11 +144,39 @@ enum WavlakeAPI {
         return rows.compactMap { track(from: $0, artistFallback: artist) }
     }
 
-    /// The ids of an artist's albums, in the order Wavlake lists them.
-    static func albumIds(fromArtist data: Data) -> [String] {
+    /// An artist's albums, newest release first. Wavlake lists them oldest
+    /// first; undated albums go last.
+    static func albums(fromArtist data: Data) -> [WavlakeAlbum] {
         guard let artist = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let albums = artist["albums"] as? [[String: Any]] else { return [] }
-        return albums.compactMap { $0["id"] as? String }
+              let rows = artist["albums"] as? [[String: Any]] else { return [] }
+        let name = artist["name"] as? String
+        let dated = rows.compactMap { row -> (album: WavlakeAlbum, date: String)? in
+            guard let album = album(from: row, artistFallback: name) else { return nil }
+            return (album, (row["releaseDate"] as? String) ?? "")
+        }
+        // ISO dates sort as strings; stable, so same-day albums keep order.
+        return dated.enumerated()
+            .sorted { a, b in a.element.date != b.element.date ? a.element.date > b.element.date : a.offset < b.offset }
+            .map(\.element.album)
+    }
+
+    /// An album's heading: title, cover, artist and year.
+    static func album(fromAlbum data: Data) -> WavlakeAlbum? {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return album(from: json)
+    }
+
+    static func album(from json: [String: Any], artistFallback: String? = nil) -> WavlakeAlbum? {
+        guard let id = json["id"] as? String else { return nil }
+        let title = (json["title"] as? String) ?? (json["name"] as? String) ?? "Untitled"
+        return WavlakeAlbum(
+            id: id,
+            title: title,
+            artUrl: json["albumArtUrl"] as? String,
+            artist: (json["artist"] as? String) ?? artistFallback,
+            artistId: json["artistId"] as? String,
+            year: (json["releaseDate"] as? String).flatMap { Int($0.prefix(4)) }
+        )
     }
 
     /// An artist page's name, picture and Nostr key. Rankings and search
@@ -187,13 +228,29 @@ enum WavlakeAPI {
         tracks(fromAlbum: try await fetch(albumURL(id)))
     }
 
-    static func artistTracks(_ id: String) async throws -> [WavlakeTrack] {
-        let albumIds = albumIds(fromArtist: try await fetch(artistURL(id)))
-        var all: [WavlakeTrack] = []
-        for albumId in albumIds.prefix(10) {
-            all.append(contentsOf: (try? await album(albumId)) ?? [])
+    /// An album's heading and tracks, from one request.
+    static func albumPage(_ id: String) async throws -> (album: WavlakeAlbum?, tracks: [WavlakeTrack]) {
+        let data = try await fetch(albumURL(id))
+        return (album(fromAlbum: data), tracks(fromAlbum: data))
+    }
+
+    /// An artist page's details and albums, from one request.
+    static func artistPage(_ id: String) async throws -> (artist: WavlakeArtist?, albums: [WavlakeAlbum]) {
+        let data = try await fetch(artistURL(id))
+        return (artist(fromArtist: data, id: id), albums(fromArtist: data))
+    }
+
+    /// Every track on `albums`, album by album in the order given. The
+    /// albums load side by side; one that fails is left out.
+    static func tracks(onAlbums albums: [WavlakeAlbum]) async -> [WavlakeTrack] {
+        var byAlbum: [String: [WavlakeTrack]] = [:]
+        await withTaskGroup(of: (String, [WavlakeTrack]).self) { group in
+            for album in albums {
+                group.addTask { (album.id, (try? await WavlakeAPI.album(album.id)) ?? []) }
+            }
+            for await (id, tracks) in group { byAlbum[id] = tracks }
         }
-        return all
+        return albums.flatMap { byAlbum[$0.id] ?? [] }
     }
 }
 
