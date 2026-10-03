@@ -159,7 +159,7 @@ public struct NostrContentFormatter {
     static func httpURLs(in text: String) -> [URL] {
         let ns = text as NSString
         var seen = Set<String>()
-        return httpURLRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        return NoteURLs.cardRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
             .compactMap { URL(string: ns.substring(with: $0.range)) }
             .filter { seen.insert($0.absoluteString).inserted }
     }

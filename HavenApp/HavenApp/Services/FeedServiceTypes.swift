@@ -147,11 +147,6 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         try? NSRegularExpression(pattern: #"https?://\S+/[a-f0-9]{64}(?=\s|$)"#, options: .caseInsensitive)
     }()
 
-    /// Matches any HTTP(S) URL in content for link preview extraction.
-    private static let httpURLRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"https?://[^\s<>\")\]]*[^\s<>\")\].,;:!?'\"]"#, options: .caseInsensitive)
-    }()
-
     private static func parseMediaURLs(from content: String) -> [URL] {
         let ns = content as NSString
         let range = NSRange(location: 0, length: ns.length)
@@ -177,7 +172,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
 
     /// Extracts non-media HTTP(S) URLs from content for link preview cards.
     private static func parseLinkURLs(from content: String, excludingMedia mediaURLs: [URL]) -> [URL] {
-        guard let regex = httpURLRegex else { return [] }
+        let regex = NoteURLs.cardRegex
         let ns = content as NSString
         let range = NSRange(location: 0, length: ns.length)
         let mediaSet = Set(mediaURLs.map { $0.absoluteString })

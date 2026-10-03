@@ -30,33 +30,33 @@ enum LinkCards {
 }
 
 /// Finding and removing http(s) URLs in note text — the one URL rule the
-/// formatter, the condensed line and the tests share.
+/// card list, the strip and the formatter share.
 enum NoteURLs {
-    /// A bare URL not already inside markdown link syntax. Trailing
+    /// Every http(s) URL in note text: what gets a link card. Trailing
     /// punctuation is left out, so "see https://x.com/a." keeps its full stop.
+    static let cardRegex = try! NSRegularExpression(pattern: #"https?://[^\s<>\")\]]*[^\s<>\")\].,;:!?'\"]"#, options: .caseInsensitive)
+
+    /// The same URL, but not right after `(` or `[`: for linkifying bare URLs,
+    /// where a URL in that position is already inside a markdown link.
     static let httpRegex = try! NSRegularExpression(pattern: #"(?<![(\[])https?://[^\s<>\")\]]*[^\s<>\")\].,;:!?'\"]"#, options: .caseInsensitive)
 
     /// Removes `urls` from `text`, then closes the gaps they leave.
     ///
-    /// A URL is removed only where the regex matches it whole. With the link
-    /// cap, some links stay in the text, and a substring replace would cut a
-    /// shown `https://a.com` out of a kept `https://a.com/login`, leaving
-    /// "/login" (Tron, #184). A URL the regex never matches whole (one right
-    /// after `(` or `[`) falls back to a plain replace, longest first.
+    /// A URL is removed only where `cardRegex` — the pattern that chose the
+    /// cards — matches it whole. With the link cap some links stay in the
+    /// text, and a substring replace cut a shown `https://a.com` out of a kept
+    /// `https://a.com/login`, leaving "/login" (Tron, #184). There is no
+    /// substring fallback: a URL that is never a whole match stays in the text,
+    /// which shows too much rather than cutting another link apart.
     static func strip(_ urls: [URL], from text: String) -> String {
         let wanted = Set(urls.map(\.absoluteString))
         var result = text
-        var removed = Set<String>()
         let ns = text as NSString
-        for match in httpRegex.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
+        for match in cardRegex.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
             let found = ns.substring(with: match.range)
             let key = URL(string: found)?.absoluteString ?? found
             guard wanted.contains(key), let range = Range(match.range, in: result) else { continue }
             result.removeSubrange(range)
-            removed.insert(key)
-        }
-        for url in wanted.subtracting(removed).sorted(by: { $0.count > $1.count }) {
-            result = result.replacingOccurrences(of: url, with: "")
         }
         // A URL cut from mid-sentence leaves its two spaces behind.
         return result

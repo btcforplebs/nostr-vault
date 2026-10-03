@@ -23,7 +23,7 @@ final class NoteURLsStripTests: XCTestCase {
         // Tron's case: with the cap, a.com gets a card and leaves the text,
         // while a.com/login stays. A substring replace left "/login".
         let text = "a https://a.com b https://b.com c https://c.com read https://a.com/login"
-        let shown = LinkCards.shown(NoteURLs.httpRegex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+        let shown = LinkCards.shown(NoteURLs.cardRegex.matches(in: text, range: NSRange(text.startIndex..., in: text))
             .compactMap { Range($0.range, in: text).map { url(String(text[$0])) } })
         XCTAssertEqual(shown.count, 3)
         XCTAssertEqual(NoteURLs.strip(shown, from: text), "a b c read https://a.com/login")
@@ -39,8 +39,19 @@ final class NoteURLsStripTests: XCTestCase {
         XCTAssertEqual(NoteURLs.strip([url("https://x.com/a")], from: "https://x.com/a"), "")
     }
 
-    func testAURLTheRegexSkipsStillGoesByPlainReplace() {
-        // Right after "(" the regex does not match; media there was always stripped.
+    /// The cards come from `cardRegex`, so a URL written right after "(" or
+    /// "[" gets one; the strip must match it whole there too (Tron, #184).
+    func testAShownLinkInBracketsLeavesTheKeptLinkWhole() {
+        for text in ["(https://a.com) https://b.com https://c.com read https://a.com/login",
+                     "[https://a.com] https://b.com https://c.com read https://a.com/login"] {
+            let shown = LinkCards.shown(NoteURLs.cardRegex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+                .compactMap { Range($0.range, in: text).map { url(String(text[$0])) } })
+            XCTAssertEqual(shown.map(\.absoluteString), ["https://a.com", "https://b.com", "https://c.com"])
+            XCTAssertTrue(NoteURLs.strip(shown, from: text).hasSuffix("read https://a.com/login"), text)
+        }
+    }
+
+    func testMediaInParenthesesIsStillStripped() {
         XCTAssertEqual(NoteURLs.strip([url("https://x.com/p.jpg")], from: "pic (https://x.com/p.jpg)"), "pic ()")
     }
 }
