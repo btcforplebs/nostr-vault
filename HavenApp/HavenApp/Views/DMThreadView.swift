@@ -209,6 +209,18 @@ struct DMThreadView: View {
         isSending = true
         let messageToSend = trimmed
         messageInput = ""
+        #if os(iOS)
+        // Tapping send while the keyboard holds an uncommitted word (an inline
+        // prediction or autocorrect suggestion) makes UIKit commit it after the
+        // clear above, which writes the sent text back into the field. Clear
+        // again once that commit has landed, unless it's new typing.
+        DispatchQueue.main.async {
+            let leftover = messageInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !leftover.isEmpty && messageToSend.contains(leftover) {
+                messageInput = ""
+            }
+        }
+        #endif
 
         Task {
             do {
