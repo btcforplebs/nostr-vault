@@ -42,15 +42,7 @@ object NostrMentions {
     private fun decodeBech32(identifier: String): String? {
         return when {
             identifier.startsWith("npub1", ignoreCase = true) -> HavenBridge.decodeNpub(identifier)
-            identifier.startsWith("nprofile1", ignoreCase = true) -> {
-                // decodeNprofile returns JSON: {"pubkey":"...","relays":[...]}
-                val json = HavenBridge.decodeNprofile(identifier) ?: return null
-                val keyStart = json.indexOf("\"pubkey\":\"")
-                if (keyStart < 0) return null
-                val start = keyStart + 10
-                val end = json.indexOf("\"", start)
-                if (end < 0) null else json.substring(start, end)
-            }
+            identifier.startsWith("nprofile1", ignoreCase = true) -> HavenBridge.decodeNprofilePubkey(identifier)
             else -> null
         }
     }
