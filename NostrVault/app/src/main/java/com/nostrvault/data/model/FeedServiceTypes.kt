@@ -321,14 +321,15 @@ data class FeedNote(
             )
         }
 
-        private fun parseMediaURLs(content: String): List<String> {
+        internal fun parseMediaURLs(content: String): List<String> {
             val urls = mutableListOf<String>()
             urls += MEDIA_REGEX.findAll(content).map { it.value }
             urls += BLOSSOM_REGEX.findAll(content).map { it.value }
             return urls
         }
 
-        private fun parseLinkURLs(content: String, mediaSet: Set<String>): List<String> {
+        /** Every non-media http(s) URL in [content], in order, each once. */
+        internal fun parseLinkURLs(content: String, mediaSet: Set<String>): List<String> {
             val seen = mutableSetOf<String>()
             return HTTP_URL_REGEX.findAll(content)
                 .map { it.value }

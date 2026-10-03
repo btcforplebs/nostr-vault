@@ -1298,10 +1298,17 @@ private fun HeroNoteCard(
                     content = note.content,
                     profiles = profiles,
                     mediaURLs = note.mediaURLs.toSet(),
+                    linkURLs = note.linkURLs.toSet(),
                     onProfileClick = onProfileClick,
                     fontSize = 17.sp,
                     lineHeight = 24.sp,
                 )
+                Spacer(Modifier.height(12.dp))
+            }
+
+            // One card per link: the URLs are out of the text above (#170).
+            for (link in note.linkURLs) {
+                LinkPreviewCard(url = link)
                 Spacer(Modifier.height(12.dp))
             }
 

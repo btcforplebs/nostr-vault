@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -12,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,7 +30,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * OpenGraph link preview card shown below note content for the first non-media URL.
+ * OpenGraph link preview card shown below note content, one per non-media URL.
+ *
+ * The URL itself is no longer in the note text (#170 parity), so this card is
+ * the only trace of the link: while the page loads, and when it has no
+ * OpenGraph data or cannot be reached, a domain-only card still opens it.
  *
  * Fetches OG metadata (title, description, image, siteName) via HTML meta tags.
  * Layout: 72dp image | title (13sp bold, 2 lines) + description (12sp, 2 lines) + domain (10sp).
@@ -58,10 +65,11 @@ fun LinkPreviewCard(
         }
     }
 
-    val meta = metadata ?: return
-
-    // Don't render if no meaningful metadata was found
-    if (meta.title.isNullOrBlank() && meta.description.isNullOrBlank() && meta.imageUrl.isNullOrBlank()) return
+    val meta = metadata
+    if (meta == null || (meta.title.isNullOrBlank() && meta.description.isNullOrBlank() && meta.imageUrl.isNullOrBlank())) {
+        LinkFallbackCard(url, modifier)
+        return
+    }
 
     Surface(
         shape = RoundedCornerShape(8.dp),
@@ -136,6 +144,53 @@ fun LinkPreviewCard(
     }
 }
 
+/** Link icon, the domain, an ↗ arrow: the link with nothing fetched about it. */
+@Composable
+fun LinkFallbackCard(
+    url: String,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalNostrVaultColors.current
+    val uriHandler = LocalUriHandler.current
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = TertiaryGroupedBg,
+        border = BorderStroke(
+            if (LocalOledMode.current) 0.8.dp else 0.5.dp,
+            colors.primary.copy(alpha = if (LocalOledMode.current) 0.18f else 0.12f),
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) { contentDescription = "Link to ${linkDomain(url)}" }
+            .clickable {
+                try { uriHandler.openUri(url) } catch (_: Exception) {}
+            },
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Icon(
+                imageVector = NostrVaultIcons.LinkIcon,
+                contentDescription = null,
+                tint = colors.primary,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = linkDomain(url),
+                color = PrimaryText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(text = "↗", color = TertiaryText, fontSize = 13.sp)
+        }
+    }
+}
+
 // ── OG Metadata ──────────────────────────────────────────────────
 
 data class OgMetadata(
@@ -151,6 +206,9 @@ data class OgMetadata(
  * ever scrolled past (and was written concurrently from composition coroutines).
  */
 private val ogMetadataCache = LruCache<String, OgMetadata>(200)
+
+/** The host a link points at, without `www.`, for cards and chips. */
+fun linkDomain(url: String): String = extractDomain(url)
 
 private fun extractDomain(url: String): String {
     return try {
