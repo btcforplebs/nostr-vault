@@ -122,12 +122,18 @@ struct ArticleHighlight: Identifiable, Equatable {
     /// Accepts only a 9802 that points at this article — by its coordinate or
     /// by this version's id — and has a passage. The caller checks the
     /// signature; this checks the shape.
-    init?(event: [String: Any], articleId: String, coordinate: String?) {
+    /// How far ahead of the clock a highlight may be dated. The newest are
+    /// the ones shown, so a highlight dated in 2099 would push every real one
+    /// off the list (Tron, #189); this allows only for clock drift.
+    static let maxFutureSkew: TimeInterval = 600
+
+    init?(event: [String: Any], articleId: String, coordinate: String?, now: Date = Date()) {
         guard (event["kind"] as? Int) == ArticleEngagement.highlightKind,
               let id = event["id"] as? String,
               let pubkey = event["pubkey"] as? String,
               let content = event["content"] as? String,
               let createdAt = (event["created_at"] as? NSNumber)?.doubleValue,
+              createdAt <= now.timeIntervalSince1970 + Self.maxFutureSkew,
               let tags = event["tags"] as? [[String]] else { return nil }
         let pointsHere = tags.contains { tag in
             guard tag.count >= 2 else { return false }

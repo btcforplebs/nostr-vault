@@ -78,4 +78,14 @@ final class ArticleHighlightTests: XCTestCase {
         XCTAssertEqual(placed.keys.sorted(), ["p:2"])
         XCTAssertEqual(placed["p:2"]?.count, 1)
     }
+
+    func testAHighlightDatedInTheFutureIsRefused() {
+        // Fifty of these would otherwise fill every shown slot.
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        var e = event(tags: [["a", coord]])
+        e["created_at"] = 4_070_908_800 // 2099
+        XCTAssertNil(ArticleHighlight(event: e, articleId: articleId, coordinate: coord, now: now))
+        e["created_at"] = 1_700_000_000 + 300 // clock drift is fine
+        XCTAssertNotNil(ArticleHighlight(event: e, articleId: articleId, coordinate: coord, now: now))
+    }
 }
