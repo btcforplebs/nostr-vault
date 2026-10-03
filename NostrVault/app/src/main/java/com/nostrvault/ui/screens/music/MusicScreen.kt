@@ -476,10 +476,3 @@ fun WavlakeTrackCard(trackId: String, modifier: Modifier = Modifier) {
         }
     }
 }
-
-/** Builds a live stream's [PlayerTrack] for the mini player. */
-fun liveTrack(address: String, title: String?, host: String, image: String?, url: String, hostPubkey: String) =
-    PlayerTrack(
-        id = "live:$address", title = title ?: "Live stream", artist = host, artworkUrl = image,
-        audioUrl = url, durationSec = null, isLive = true, hostPubkey = hostPubkey,
-    )
