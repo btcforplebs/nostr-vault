@@ -12,6 +12,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const revealAll = location.search.includes('reveal');
     document.querySelectorAll('.fade-in-up').forEach(el => revealAll ? el.classList.add('visible') : observer.observe(el));
 
+    // The hero film autoplays muted; a tap toggles sound and restarts it from the top.
+    const film = document.querySelector('.film-main video');
+    if (film) {
+        film.addEventListener('click', () => {
+            film.muted = !film.muted;
+            if (!film.muted) { film.currentTime = 0; film.play(); }
+            const cap = film.parentElement.querySelector('figcaption');
+            if (cap) cap.textContent = film.muted ? 'The Door \u00b7 20 seconds \u00b7 tap for sound' : 'The Door \u00b7 20 seconds \u00b7 tap to mute';
+        });
+    }
+
     // Hero phones drift slightly with scroll; skipped when the user prefers reduced motion.
     const phones = document.querySelector('.hero-phones');
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;

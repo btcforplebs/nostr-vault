@@ -321,6 +321,57 @@ nav {
     transform: translateY(-20px);
 }
 
+
+/* Film */
+.film {
+    padding: 90px 20px 20px;
+    max-width: var(--max-width);
+    margin: 0 auto;
+}
+
+.film h2.center { margin-bottom: 44px; }
+
+.film-main,
+.film-side {
+    margin: 0;
+    border-radius: 24px;
+    overflow: hidden;
+    border: 1px solid var(--glass-border);
+    background: #050505;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65);
+}
+
+.film-main video,
+.film-side video {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    cursor: pointer;
+}
+
+.film-main figcaption,
+.film-side figcaption {
+    padding: 14px 18px;
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--glass-border);
+}
+
+.film-row {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 40px;
+    align-items: center;
+    margin-top: 40px;
+}
+
+.film-copy h3 { font-size: 1.6rem; margin-bottom: 14px; letter-spacing: -0.5px; }
+.film-copy p { color: var(--text-secondary); font-size: 1.05rem; line-height: 1.65; }
+.film-link { display: inline-block; margin-top: 18px; color: var(--accent); font-weight: 600; }
+.film-link:hover { text-decoration: underline; }
+
 /* Platforms */
 .platforms {
     padding: 90px 20px 20px;
@@ -548,6 +599,7 @@ footer a:hover { color: var(--accent); }
     .gallery { grid-template-columns: repeat(2, 1fr); }
     .shot.wide { grid-column: span 2; }
     .split { grid-template-columns: 1fr; gap: 40px; }
+    .film-row { grid-template-columns: 1fr; gap: 28px; }
     .split .phone.solo { max-width: 320px; margin: 0 auto; }
     .nav-links { display: none; }
 }
@@ -562,6 +614,8 @@ footer a:hover { color: var(--accent); }
     .hero-phones { margin-top: 44px; }
     .hero-phones .phone { width: 34%; border-radius: 22px; }
     .features, .showcase, .platforms { padding: 60px 16px; }
+    .film { padding: 60px 16px 0; }
+    .film-main, .film-side { border-radius: 18px; }
     .card { padding: 28px; }
     .gallery { grid-template-columns: 1fr; gap: 20px; }
     .shot.wide { grid-column: span 1; }

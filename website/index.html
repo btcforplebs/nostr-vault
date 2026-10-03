@@ -52,9 +52,20 @@
           "screenshot": [
             "https://nostrvault.app/assets/screens/iphone-feed.webp",
             "https://nostrvault.app/assets/screens/iphone-reels.webp",
+            "https://nostrvault.app/assets/screens/iphone-profile.webp",
             "https://nostrvault.app/assets/screens/ipad-articles.webp",
+            "https://nostrvault.app/assets/screens/ipad-profile.webp",
             "https://nostrvault.app/assets/screens/android-relay.webp"
           ],
+          "video": {
+            "@type": "VideoObject",
+            "name": "Nostr Vault — Bring them home",
+            "description": "Your posts live on someone else's server. Nostr Vault brings them home: a personal relay on iPhone, Mac and Android with encrypted keys and Lightning zaps built in.",
+            "thumbnailUrl": "https://nostrvault.app/assets/video/the-door-poster.jpg",
+            "contentUrl": "https://nostrvault.app/assets/video/the-door-720.mp4",
+            "uploadDate": "2026-10-03",
+            "duration": "PT20S"
+          },
           "featureList": [
             "Personal Nostr relay embedded in the app",
             "Following, Discover, Global, Popular, Media, Reels, Articles, Recipes, Live and Music feeds",
@@ -112,6 +123,7 @@
         </a>
         <div class="nav-links">
             <a href="#features">Features</a>
+            <a href="#film">Watch</a>
             <a href="#platforms">Download</a>
             <a href="#relay">Relay</a>
             <a href="blog-what-is-nostr-vault.html">Blog</a>
@@ -140,7 +152,7 @@
                 <img src="assets/screens/iphone-reels.webp" alt="Nostr Vault Reels feed on iPhone playing a vertical video" width="900" height="1957" loading="eager">
             </figure>
             <figure class="phone center">
-                <img src="assets/screens/iphone-feed.webp" alt="Nostr Vault Global feed on iPhone with threaded notes and link previews" width="900" height="1957" loading="eager">
+                <img src="assets/screens/iphone-feed.webp" alt="Nostr Vault Following feed on iPhone with morning notes and artwork from followed accounts" width="900" height="1957" loading="eager">
             </figure>
             <figure class="phone tilt-right">
                 <img src="assets/screens/iphone-articles.webp" alt="Nostr Vault Articles feed on iPhone showing long-form posts as cards" width="900" height="1957" loading="eager">
@@ -170,6 +182,33 @@
                 <span class="platform-sub">APK on GitHub or Zapstore &middot; Android 8+</span>
                 <span class="platform-cta">Get the APK &rarr;</span>
             </a>
+        </div>
+    </section>
+
+    <section class="film" id="film">
+        <p class="eyebrow center fade-in-up">Watch</p>
+        <h2 class="center fade-in-up">Your posts. Their servers. Their rules.<br>Bring them home.</h2>
+        <figure class="film-main fade-in-up delay-100">
+            <video autoplay muted loop playsinline preload="metadata" poster="assets/video/the-door-poster.jpg" width="1280" height="720" aria-label="Twenty second Nostr Vault film: notes drift off remote servers and come home through an orange vault door to a personal relay on iPhone, Mac and Android">
+                <source src="assets/video/the-door-720.mp4" type="video/mp4">
+            </video>
+            <figcaption>The Door &middot; 20 seconds &middot; tap for sound</figcaption>
+        </figure>
+        <div class="film-row">
+            <figure class="film-side fade-in-up">
+                <video controls playsinline preload="none" poster="assets/video/promo-poster.jpg" width="1280" height="720" aria-label="Thirty-four second Nostr Vault promo: a personal relay on every device, encrypted keys, zaps and Bitcoin built in, private by design">
+                    <source src="assets/video/promo-720.mp4" type="video/mp4">
+                </video>
+                <figcaption>The full promo &middot; 34 seconds</figcaption>
+            </figure>
+            <div class="film-copy fade-in-up delay-100">
+                <h3>What if your notes lived with you?</h3>
+                <p>Every note you post today lives on somebody else&rsquo;s relay. Nostr Vault runs one on hardware you
+                    hold, mirrors your outbox, inbox, chats and Blossom media to it, and keeps your key encrypted with
+                    NIP-49 or out of the app entirely with a NIP-46 bunker. Zaps ride Nostr Wallet Connect, and your
+                    on-chain Bitcoin is derived from the same nsec.</p>
+                <a href="#showcase" class="film-link">See the screens &rarr;</a>
+            </div>
         </div>
     </section>
 
@@ -259,7 +298,7 @@
 
         <div class="gallery">
             <figure class="shot wide fade-in-up">
-                <img src="assets/screens/ipad-articles.webp" alt="Nostr Vault on iPad with the Articles feed in the left column and an open article in the reader on the right" width="1200" height="1600" loading="lazy">
+                <img src="assets/screens/ipad-articles.webp" alt="Nostr Vault on iPad signed in as Vitor Pamplona, with the Articles feed in the left column and a long-form article about Liechtenstein open in the reader on the right" width="1200" height="1600" loading="lazy">
                 <figcaption>iPad &middot; Articles with the reader open beside the list</figcaption>
             </figure>
             <figure class="shot fade-in-up delay-100">
@@ -275,8 +314,24 @@
                 <figcaption>iPhone &middot; Trending on Wavlake, with sats</figcaption>
             </figure>
             <figure class="shot fade-in-up delay-200">
-                <img src="assets/screens/iphone-profile.webp" alt="A profile page in Nostr Vault on iPhone with note, media and following counts and a lightning address" width="900" height="1957" loading="lazy">
-                <figcaption>iPhone &middot; Profile with lightning address</figcaption>
+                <img src="assets/screens/iphone-profile.webp" alt="Will Casarin's (jb55) profile in Nostr Vault on iPhone with note, media and following counts, a lightning address and his website" width="900" height="1957" loading="lazy">
+                <figcaption>iPhone &middot; Your profile, with lightning address and site</figcaption>
+            </figure>
+            <figure class="shot fade-in-up">
+                <img src="assets/screens/iphone-profile-derek.webp" alt="Derek Ross's profile in Nostr Vault on iPhone listing his projects, 1.3k follows and a reposted note" width="900" height="1957" loading="lazy">
+                <figcaption>iPhone &middot; Another account, one tap away</figcaption>
+            </figure>
+            <figure class="shot fade-in-up delay-100">
+                <img src="assets/screens/iphone-following.webp" alt="The Following feed in Nostr Vault on iPhone showing threaded replies from followed developers" width="900" height="1957" loading="lazy">
+                <figcaption>iPhone &middot; Following, threaded</figcaption>
+            </figure>
+            <figure class="shot wide fade-in-up">
+                <img src="assets/screens/ipad-profile.webp" alt="Vitor Pamplona's profile in Nostr Vault on iPad with his notes on the left and a selected note and its replies, including a chart, open on the right" width="1200" height="1600" loading="lazy">
+                <figcaption>iPad &middot; Profile with a note and its replies open beside it</figcaption>
+            </figure>
+            <figure class="shot fade-in-up delay-200">
+                <img src="assets/screens/iphone-thread-article.webp" alt="A long French note about Galileo's lunar drawings open as a thread in Nostr Vault on iPhone" width="900" height="1957" loading="lazy">
+                <figcaption>iPhone &middot; Long notes read like articles</figcaption>
             </figure>
             <figure class="shot fade-in-up">
                 <img src="assets/screens/android-recipes.webp" alt="The Recipes feed in Nostr Vault on Android showing recipe cards with photos" width="900" height="2005" loading="lazy">
