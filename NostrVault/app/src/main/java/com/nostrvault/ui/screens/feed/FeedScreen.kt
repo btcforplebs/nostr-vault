@@ -10,6 +10,9 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -28,6 +31,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,8 +50,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
 import com.nostrvault.relay.HavenBridge
@@ -62,6 +71,9 @@ import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.ui.screens.LiveStreamScreen
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.FullScreenMediaRouter
+import com.nostrvault.ui.components.MediaSourceKey
+import com.nostrvault.ui.components.MediaZoomSources
+import com.nostrvault.ui.components.mediaZoomSource
 import com.nostrvault.ui.components.RetryableAsyncImage
 import com.nostrvault.ui.components.isVideoUrl
 import com.nostrvault.ui.components.BroadcastSheet
@@ -78,10 +90,13 @@ import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFab
 import com.nostrvault.ui.components.chromeFold
+import com.nostrvault.ui.components.chromeReveal
+import com.nostrvault.ui.components.newPostsFold
 import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.components.SkeletonFeed
 import com.nostrvault.service.ScrollPosition
 import com.nostrvault.ui.theme.*
+import com.nostrvault.service.FeedLanguage
 import java.text.DateFormat
 
 /**
@@ -95,12 +110,23 @@ fun FeedScreen(
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
     onCompose: () -> Unit,
+    /** Opens the diVine, article or recipe composer. */
+    onComposeMode: (com.nostrvault.ui.screens.ModeComposerKind) -> Unit = {},
     onReply: ((String) -> Unit)? = null,
     onQuote: ((String) -> Unit)? = null,
     onNavigateToSettings: () -> Unit,
     viewModel: FeedViewModel = hiltViewModel(),
 ) {
     val feedMode by viewModel.feedMode.collectAsState()
+    // The post button writes what the feed shows: a diVine in diVines, an
+    // article in Articles, a recipe in Recipes, a note everywhere else.
+    val modeComposer = when (feedMode) {
+        FeedMode.REELS -> com.nostrvault.ui.screens.ModeComposerKind.DIVINE
+        FeedMode.ARTICLES -> com.nostrvault.ui.screens.ModeComposerKind.ARTICLE
+        FeedMode.RECIPES -> com.nostrvault.ui.screens.ModeComposerKind.RECIPE
+        else -> null
+    }
+    val postAction: () -> Unit = { modeComposer?.let(onComposeMode) ?: onCompose() }
     val liveStreams by viewModel.liveStreams.collectAsState()
     val liveLoading by viewModel.liveLoading.collectAsState()
     // The tapped stream is held rather than looked up again by id: a kind-30311
@@ -129,13 +155,16 @@ fun FeedScreen(
     val showReplies by viewModel.showReplies.collectAsState()
     val mediaFollowingOnly by viewModel.mediaFollowingOnly.collectAsState()
     val popularFilter by viewModel.popularFilter.collectAsState()
+    val globalShowsEveryone by viewModel.globalShowsEveryone.collectAsState()
+    val globalFeedLanguages by viewModel.globalFeedLanguages.collectAsState()
+    val trustGraphReady by viewModel.trustGraphReady.collectAsState()
     val showEngagementStats by viewModel.showEngagementStats.collectAsState()
     val pendingCount by viewModel.pendingNoteCount.collectAsState()
-    val parentNotes by viewModel.parentNotesCache.collectAsState()
-    val quotedNotes by viewModel.quotedNotesCache.collectAsState()
-    // Collected so the repost button re-highlights instantly after you repost.
-    val repostedIds by viewModel.repostedEventIds.collectAsState()
-    val parentIsNext by viewModel.parentIsNextNote.collectAsState()
+    // The parent, quote and repost caches are not collected here. Every parent
+    // or quote that resolves replaces those maps, and a read at this level
+    // re-ran this whole screen and handed every visible row a new map to
+    // compare — dozens of times while a page of replies streams in. Each row
+    // subscribes to just its own entries in FeedFullNoteRow instead.
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -157,11 +186,15 @@ fun FeedScreen(
     }
 
     // Batch-fetch all missing parent notes whenever the visible notes list changes.
-    // One REQ with all IDs instead of one REQ per item.
+    // One REQ with all IDs instead of one REQ per item. The scan walks the
+    // whole feed (up to MAX_FEED_NOTES), so it runs off the main thread;
+    // only the fetch call comes back to it.
     LaunchedEffect(notes) {
-        val missingIds = notes.mapNotNull { note ->
-            note.parentEventId?.takeIf { viewModel.parentNoteFor(it) == null }
-        }.distinct()
+        val missingIds = withContext(Dispatchers.Default) {
+            notes.mapNotNull { note ->
+                note.parentEventId?.takeIf { viewModel.parentNoteFor(it) == null }
+            }.distinct()
+        }
         if (missingIds.isNotEmpty()) {
             viewModel.fetchMissingParentNotes(missingIds)
         }
@@ -169,17 +202,16 @@ fun FeedScreen(
 
     // Batch-fetch any embedded quoted notes (nostr:note1.../nevent1...) referenced
     // by the visible notes. Decoded to hex and fetched via the same path as parents.
+    // Once they resolve, fetch their authors' profiles if not already cached —
+    // collected here rather than keyed on the cache, so a resolving quote does
+    // not recompose the screen.
     LaunchedEffect(notes) {
-        val quotedIds = notes.flatMap { it.quotedEventIds }.distinct()
-        if (quotedIds.isNotEmpty()) {
-            viewModel.fetchMissingQuotedNotes(quotedIds)
+        val quotedIds = withContext(Dispatchers.Default) {
+            notes.flatMap { it.quotedEventIds }.distinct()
         }
-    }
-
-    // Once quoted notes resolve, fetch their authors' profiles if not already cached.
-    LaunchedEffect(notes, parentNotes) {
-        val quotedIds = notes.flatMap { it.quotedEventIds }.distinct()
-        if (quotedIds.isNotEmpty()) {
+        if (quotedIds.isEmpty()) return@LaunchedEffect
+        viewModel.fetchMissingQuotedNotes(quotedIds)
+        viewModel.parentNotesCache.collect {
             viewModel.fetchMissingQuotedProfiles(quotedIds)
         }
     }
@@ -214,6 +246,8 @@ fun FeedScreen(
     // Reels' Global scope is unmoderated video from the whole network; it sits
     // behind a warning (iOS parity: the same one Media's Global uses there).
     var showGlobalReelsWarning by remember { mutableStateOf(false) }
+    // Global's Everyone scope sits behind the same warning (iOS parity).
+    var showGlobalEveryoneWarning by remember { mutableStateOf(false) }
     val reelsScope by viewModel.reelsScope.collectAsState()
 
     // Trigger load-more when near bottom
@@ -252,14 +286,24 @@ fun FeedScreen(
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
     )
 
-    // Save scroll position for snapshot persistence (debounced on scroll stop)
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (!listState.isScrollInProgress) {
-            viewModel.saveScrollPosition(
-                listState.firstVisibleItemIndex,
-                listState.firstVisibleItemScrollOffset,
-            )
+    // Tell the feed when a drag or fling is moving the list, so incoming
+    // relay batches wait for it to settle instead of reshaping the list under
+    // the finger; and save the scroll position for snapshot persistence when
+    // it stops. Read through snapshotFlow, not as an effect key: a key read
+    // here recomposed the whole screen at the start and end of every fling.
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+            viewModel.setFeedScrolling(scrolling)
+            if (!scrolling) {
+                viewModel.saveScrollPosition(
+                    listState.firstVisibleItemIndex,
+                    listState.firstVisibleItemScrollOffset,
+                )
+            }
         }
+    }
+    DisposableEffect(Unit) {
+        onDispose { viewModel.setFeedScrolling(false) }
     }
 
     // Restore scroll position from disk snapshot on cold boot
@@ -331,6 +375,38 @@ fun FeedScreen(
             }
     }
 
+    // Keep your place when switching layouts (iOS PR #130). Expanded and
+    // condensed rows are keyed by note id, threaded cards by thread root, so
+    // the LazyColumn's own key anchoring loses the post on any switch to or
+    // from threaded. The switch reads the topmost visible row in the layout
+    // being left; once the new layout's rows exist, the row that shows the
+    // same note (its thread card, or the note itself) is brought to the top.
+    var layoutAnchor by remember { mutableStateOf<Pair<FeedLayoutAnchor, FeedLayoutMode>?>(null) }
+    val captureLayoutAnchor: () -> FeedLayoutAnchor? = {
+        val rows = listState.layoutInfo.visibleItemsInfo.map { Triple(it.index, it.offset, it.size) }
+        FeedLayoutAnchor.topRowIndex(rows)?.let { row ->
+            if (isThreaded) feedThreads.getOrNull(row)?.let(FeedLayoutAnchor::thread)
+            else notes.getOrNull(row)?.let { FeedLayoutAnchor.note(it.id) }
+        }
+    }
+    LaunchedEffect(layoutAnchor) {
+        val (anchor, from) = layoutAnchor ?: return@LaunchedEffect
+        // The new rows arrive a frame or two later (and a thread grouping
+        // after that); give up quietly if the note has left the feed.
+        val row = withTimeoutOrNull(2_000) {
+            snapshotFlow {
+                when {
+                    layoutMode == from -> null
+                    isThreaded != (layoutMode == FeedLayoutMode.THREADED) -> null
+                    isThreaded -> anchor.indexInThreads(feedThreads)
+                    else -> anchor.indexInNotes(notes.map { it.id })
+                }
+            }.filterNotNull().first()
+        }
+        if (row != null) listState.requestScrollToItem(row)
+        layoutAnchor = null
+    }
+
     // Handle tab re-selection: scroll to top or refresh if already at top
     LaunchedEffect(Unit) {
         viewModel.scrollToTopRequest.collect {
@@ -344,6 +420,17 @@ fun FeedScreen(
                 listState.scrollToItem(0) // Instant scroll for better performance
             }
         }
+    }
+
+    // Posts are waiting and either auto-load is off or the user has scrolled
+    // away from the top.
+    val showNewPosts = pendingCount > 0 && (!autoLoad || !isAtTop) && feedMode != FeedMode.REELS
+    val loadNewPosts: () -> Unit = {
+        viewModel.applyPendingNotes()
+        // Scroll toward the top right away; if the animation
+        // outruns the prepend, the reveal effect snaps the
+        // last bit once the new first note composes.
+        scope.launch { listState.animateScrollToItem(0) }
     }
 
     GlassScaffold(
@@ -365,11 +452,23 @@ fun FeedScreen(
                 mediaFollowingOnly = mediaFollowingOnly,
                 popularFilter = popularFilter,
                 showEngagementStats = showEngagementStats,
+                globalShowsEveryone = globalShowsEveryone,
+                globalFeedLanguages = globalFeedLanguages,
+                // Reads the setting at tap time; leaving the Web of Trust
+                // goes through the warning, coming back does not.
+                onToggleTrustScope = {
+                    if (viewModel.globalShowsEveryone.value) viewModel.setGlobalShowsEveryone(false)
+                    else showGlobalEveryoneWarning = true
+                },
+                onSetGlobalLanguages = viewModel::setGlobalFeedLanguages,
                 reelsGlobal = reelsScope == ReelsScope.GLOBAL,
                 onReelsFollowing = { viewModel.setReelsScope(ReelsScope.FOLLOWING) },
                 onReelsGlobal = { showGlobalReelsWarning = true },
                 onModeChange = viewModel::setFeedMode,
-                onCycleLayoutMode = viewModel::cycleLayoutMode,
+                onCycleLayoutMode = {
+                    layoutAnchor = captureLayoutAnchor()?.let { it to layoutMode }
+                    viewModel.cycleLayoutMode()
+                },
                 onToggleAutoLoad = viewModel::toggleAutoLoad,
                 onToggleReposts = viewModel::toggleShowReposts,
                 onToggleReplies = viewModel::toggleShowReplies,
@@ -377,6 +476,8 @@ fun FeedScreen(
                 onSetPopularFilter = viewModel::setPopularFilter,
                 onToggleEngagementStats = viewModel::toggleShowEngagementStats,
                 onOpenFeedDashboard = { showFeedConfig = true },
+                newPostsCount = if (showNewPosts) pendingCount else 0,
+                onLoadNewPosts = loadNewPosts,
             )
         },
         floatingActionButton = {
@@ -389,7 +490,7 @@ fun FeedScreen(
                 // iOS-style gradient "Post" capsule (FeedView compose FAB)
                 val colors = LocalNostrVaultColors.current
                 Surface(
-                    onClick = onCompose,
+                    onClick = postAction,
                     shape = RoundedCornerShape(50),
                     color = Color.Transparent,
                     modifier = Modifier
@@ -415,13 +516,17 @@ fun FeedScreen(
                             .padding(horizontal = 18.dp),
                     ) {
                         Icon(
-                            NostrVaultIcons.Create,
+                            when (modeComposer) {
+                                com.nostrvault.ui.screens.ModeComposerKind.ARTICLE -> NostrVaultIcons.Articles
+                                com.nostrvault.ui.screens.ModeComposerKind.RECIPE -> NostrVaultIcons.Recipes
+                                else -> NostrVaultIcons.Create
+                            },
                             contentDescription = "Compose",
                             tint = Color.White,
                             modifier = Modifier.size(18.dp),
                         )
                         Text(
-                            text = "Post",
+                            text = modeComposer?.buttonTitle ?: "Post",
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
@@ -454,6 +559,7 @@ fun FeedScreen(
                         viewModel.cacheNote(note)
                         onNoteClick(note.id)
                     },
+                    onPost = { onComposeMode(com.nostrvault.ui.screens.ModeComposerKind.DIVINE) },
                     onShowGlobal = { showGlobalReelsWarning = true },
                 )
             } else if (feedMode == FeedMode.LIVE) {
@@ -503,6 +609,12 @@ fun FeedScreen(
                         } else {
                             "No follow lists came back from your relays \u2014 try refreshing"
                         }
+                    } else if (feedMode == FeedMode.GLOBAL && !globalShowsEveryone && !trustGraphReady) {
+                        // Global fails closed without the trust graph; say so
+                        // rather than "waiting for notes" over a full inbox.
+                        "Building your Web of Trust\u2026 Tap the shield to see everyone"
+                    } else if (feedMode == FeedMode.GLOBAL && globalFeedLanguages.isNotEmpty()) {
+                        "Nothing in ${FeedLanguage.summary(globalFeedLanguages)} yet"
                     } else {
                         null
                     },
@@ -536,8 +648,6 @@ fun FeedScreen(
                                         note = note,
                                         viewModel = viewModel,
                                         allProfiles = allProfiles,
-                                        quotedNotes = quotedNotes,
-                                        repostedIds = repostedIds,
                                         onNoteClick = onNoteClick,
                                         onArticleClick = onArticleClick,
                                         onProfileClick = onProfileClick,
@@ -602,8 +712,6 @@ fun FeedScreen(
                                 note = note,
                                 viewModel = viewModel,
                                 allProfiles = allProfiles,
-                                quotedNotes = quotedNotes,
-                                repostedIds = repostedIds,
                                 onNoteClick = onNoteClick,
                                 onArticleClick = onArticleClick,
                                 onProfileClick = onProfileClick,
@@ -640,25 +748,44 @@ fun FeedScreen(
             }
         }
 
-            // Floating "New Posts" pill
-            // Remove AnimatedVisibility for better performance
-            if (pendingCount > 0 && (!autoLoad || !isAtTop) && feedMode != FeedMode.REELS) {
+            // Floating "New Posts" pill. It folds away with the bars, rising
+            // back under the top bar; folded, the small pill in the top bar's
+            // row stands in for it (iOS `NewPostsFold`).
+            if (showNewPosts) {
+                val folded by rememberChromeFolded()
                 NewPostsPill(
                     count = pendingCount,
-                    onClick = {
-                        viewModel.applyPendingNotes()
-                        // Scroll toward the top right away; if the animation
-                        // outruns the prepend, the reveal effect snaps the
-                        // last bit once the new first note composes.
-                        scope.launch { listState.animateScrollToItem(0) }
-                    },
+                    onClick = loadNewPosts,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = padding.calculateTopPadding() + 12.dp)
                         .zIndex(1f)
+                        .newPostsFold()
+                        .blockedWhen(folded)
                 )
             }
         }
+    }
+
+    if (showGlobalEveryoneWarning) {
+        AlertDialog(
+            onDismissRequest = { showGlobalEveryoneWarning = false },
+            title = { Text("Sensitive Content Warning") },
+            text = {
+                Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.setGlobalShowsEveryone(true)
+                        showGlobalEveryoneWarning = false
+                    },
+                ) { Text("Proceed", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGlobalEveryoneWarning = false }) { Text("Cancel") }
+            },
+        )
     }
 
     if (showGlobalReelsWarning) {
@@ -992,6 +1119,7 @@ private fun MediaFeedGrid(
     // The pager opens across the first media of every cell, so its indices line up
     // 1:1 with the grid. filterMediaNotes guarantees a non-empty mediaURLs per note.
     val gridUrls = remember(notes) { notes.map { it.mediaURLs.first() } }
+    val zoomOrigin = remember { MediaZoomSources.newOrigin() }
 
     // Infinite scroll: load older media as the user nears the end of the grid.
     val shouldLoadMore by remember {
@@ -1021,7 +1149,8 @@ private fun MediaFeedGrid(
             MediaGridCell(
                 url = note.mediaURLs.first(),
                 mediaCount = note.mediaURLs.size,
-                onTap = { FullScreenMediaRouter.open(gridUrls, index) },
+                sourceKey = MediaSourceKey(zoomOrigin, index),
+                onTap = { FullScreenMediaRouter.open(gridUrls, index, zoomOrigin) },
                 onLongPress = { onNoteClick(note.id) },
             )
         }
@@ -1050,12 +1179,14 @@ private fun MediaFeedGrid(
 private fun MediaGridCell(
     url: String,
     mediaCount: Int,
+    sourceKey: MediaSourceKey,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .aspectRatio(1f)
+            .mediaZoomSource(sourceKey, crop = true)
             .combinedClickable(
                 onClick = onTap,
                 onLongClick = onLongPress,
@@ -1104,8 +1235,6 @@ private fun FeedFullNoteRow(
     note: FeedNote,
     viewModel: FeedViewModel,
     allProfiles: Map<String, FeedProfile>,
-    quotedNotes: Map<String, FeedNote>,
-    repostedIds: Set<String>,
     onNoteClick: (String) -> Unit,
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
@@ -1137,6 +1266,8 @@ private fun FeedFullNoteRow(
     val statsState = viewModel.noteStats.collectAsState()
     val parentsState = viewModel.parentNotesCache.collectAsState()
     val parentNextState = viewModel.parentIsNextNote.collectAsState()
+    val quotedState = viewModel.quotedNotesCache.collectAsState()
+    val repostedState = viewModel.repostedEventIds.collectAsState()
     // Likes and zaps are recorded against effectiveEventId (EngagementBar
     // sends it) and reactions are counted against the e-tag target, so a
     // repost is looked up by the note it reposts.
@@ -1149,11 +1280,18 @@ private fun FeedFullNoteRow(
         derivedStateOf { parentEventId != null && note.id in parentNextState.value }
     }
 
-    val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotes) {
-        if (note.quotedEventIds.isEmpty()) {
-            emptyMap()
-        } else {
-            note.quotedEventIds.mapNotNull { qid -> viewModel.quotedNoteFor(qid)?.let { qid to it } }.toMap()
+    val isReposted by remember(note.id) { derivedStateOf { note.effectiveEventId in repostedState.value } }
+    // The read of quotedState is what subscribes; quotedNoteFor resolves against
+    // the same caches. A parent landing for some other note recomputes this
+    // but compares equal, so this row does not redraw.
+    val quotedNotesMap by remember(note.id) {
+        derivedStateOf {
+            quotedState.value
+            if (note.quotedEventIds.isEmpty()) {
+                emptyMap()
+            } else {
+                note.quotedEventIds.mapNotNull { qid -> viewModel.quotedNoteFor(qid)?.let { qid to it } }.toMap()
+            }
         }
     }
 
@@ -1172,7 +1310,7 @@ private fun FeedFullNoteRow(
         quotedNotes = quotedNotesMap,
         isLiked = isLiked,
         isZapped = isZapped,
-        isReposted = note.effectiveEventId in repostedIds,
+        isReposted = isReposted,
         repostedByProfile = note.repostedBy?.let { cardProfiles[it] },
         replyToProfile = note.replyToPubkey?.let { cardProfiles[it] },
         parentNote = parentNote,
@@ -1218,6 +1356,10 @@ private fun FeedTopBar(
     mediaFollowingOnly: Boolean,
     popularFilter: PopularFilter,
     showEngagementStats: Boolean,
+    globalShowsEveryone: Boolean,
+    globalFeedLanguages: List<String>,
+    onToggleTrustScope: () -> Unit,
+    onSetGlobalLanguages: (List<String>) -> Unit,
     reelsGlobal: Boolean,
     onReelsFollowing: () -> Unit,
     onReelsGlobal: () -> Unit,
@@ -1230,6 +1372,9 @@ private fun FeedTopBar(
     onSetPopularFilter: (PopularFilter) -> Unit,
     onToggleEngagementStats: () -> Unit,
     onOpenFeedDashboard: () -> Unit,
+    /** Posts are waiting and the floating "New Posts" button is up. */
+    newPostsCount: Int,
+    onLoadNewPosts: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
     var feedModeExpanded by remember { mutableStateOf(false) }
@@ -1254,7 +1399,7 @@ private fun FeedTopBar(
     ) {
         // ── Leading pill: one tap target. The icon names the current feed and
         // its corner dot carries the connection status; tapping anywhere on the
-        // pill opens the feed list, with Feed Dashboard at the bottom of it
+        // pill opens the feed list, with Dashboard at the bottom of it
         // (the old separate dot opened the dashboard, and sat so close to the
         // feed menu that it was easy to hit by mistake). Folded, only the
         // icon is left, and it opens the same list.
@@ -1334,12 +1479,7 @@ private fun FeedTopBar(
                 }
                 HorizontalDivider()
                 DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text("Feed Dashboard")
-                            Text(connectionStatus, fontSize = 12.sp, color = SecondaryText)
-                        }
-                    },
+                    text = { Text("Dashboard") },
                     leadingIcon = {
                         Box {
                             Icon(NostrVaultIcons.Relay, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1360,7 +1500,19 @@ private fun FeedTopBar(
             }
         }
 
-        Spacer(Modifier.weight(1f))
+        // Folded, the floating "New Posts" button becomes a small pill centred
+        // in this row, between the two circles (iOS `foldedNewPostsPill`).
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            if (newPostsCount > 0) {
+                val folded by rememberChromeFolded()
+                NewPostsPill(
+                    count = newPostsCount,
+                    compact = true,
+                    onClick = onLoadNewPosts,
+                    modifier = Modifier.chromeReveal().blockedWhen(!folded),
+                )
+            }
+        }
 
         // ── Trailing pill: compact toggle + mode-dependent filters.
         // Reels has no layout button, so collapsed there leaves nothing to show.
@@ -1410,6 +1562,11 @@ private fun FeedTopBar(
                     }
                 }
                 FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL -> {
+                    if (feedMode == FeedMode.GLOBAL) {
+                        // Who Global shows, and in which languages (iOS #128/#133).
+                        TrustScopeButton(everyone = globalShowsEveryone, onClick = onToggleTrustScope)
+                        LanguageFilterButton(selected = globalFeedLanguages, onChange = onSetGlobalLanguages)
+                    }
                     // Auto-load posts
                     IconButton(onClick = onToggleAutoLoad, modifier = Modifier.size(32.dp)) {
                         Icon(
@@ -1457,6 +1614,10 @@ private fun FeedTopBar(
                             modifier = Modifier.size(18.dp),
                         )
                     }
+                    // Media's Global gets the same Web of Trust / Everyone shield.
+                    if (!mediaFollowingOnly) {
+                        TrustScopeButton(everyone = globalShowsEveryone, onClick = onToggleTrustScope)
+                    }
                 }
                 FeedMode.POPULAR -> {
                     // Follows filter
@@ -1503,6 +1664,98 @@ private fun FeedTopBar(
                 }
             } } }
         } }
+    }
+}
+
+/**
+ * Who Global (and Media's Global) shows: the shield is your Web of Trust, the
+ * globe (in orange) is everyone. One button, so the pill keeps its width.
+ */
+@Composable
+private fun TrustScopeButton(everyone: Boolean, onClick: () -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(32.dp)
+            .semantics {
+                stateDescription = if (everyone) "Everyone" else "Web of Trust"
+            },
+    ) {
+        Icon(
+            imageVector = if (everyone) NostrVaultIcons.Globe else NostrVaultIcons.TrustShield,
+            contentDescription = if (everyone) {
+                "Everyone: unfiltered posts. Tap for your Web of Trust"
+            } else {
+                "Web of Trust: people you follow and the people they follow. Tap for everyone"
+            },
+            tint = if (everyone) ZapOrange else colors.primary,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+/**
+ * Global's language picker. Pick any number of languages; none picked shows
+ * every language. The menu stays open between picks so several can be
+ * chosen in one go, as on iOS. The device's own languages come first.
+ */
+@Composable
+private fun LanguageFilterButton(selected: List<String>, onChange: (List<String>) -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    var expanded by remember { mutableStateOf(false) }
+    val languages = remember {
+        val locales = android.os.LocaleList.getDefault()
+        FeedLanguage.pickerList((0 until locales.size()).map { locales[it].toLanguageTag() })
+    }
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .size(32.dp)
+                .semantics { stateDescription = FeedLanguage.summary(selected) },
+        ) {
+            Icon(
+                imageVector = if (selected.isEmpty()) NostrVaultIcons.LanguagesOutline else NostrVaultIcons.Languages,
+                contentDescription = "Languages",
+                tint = if (selected.isEmpty()) SecondaryText else colors.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 420.dp),
+        ) {
+            DropdownMenuItem(
+                text = { Text("All languages") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (selected.isEmpty()) NostrVaultIcons.Check else NostrVaultIcons.GlobeOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                onClick = { onChange(emptyList()) },
+            )
+            HorizontalDivider()
+            languages.forEach { language ->
+                val isOn = language.code in selected
+                DropdownMenuItem(
+                    text = { Text(language.displayName()) },
+                    leadingIcon = {
+                        if (isOn) {
+                            Icon(NostrVaultIcons.Check, contentDescription = "Selected", modifier = Modifier.size(18.dp))
+                        } else {
+                            Spacer(Modifier.size(18.dp))
+                        }
+                    },
+                    onClick = {
+                        onChange(if (isOn) selected - language.code else selected + language.code)
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -1614,39 +1867,59 @@ private fun EmptyFeedPlaceholder(
 // ── New posts pill ──────────────────────────────────────────────
 
 @Composable
-private fun NewPostsPill(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun NewPostsPill(
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** The small "↑ N" pill the folded top bar shows in the button's place. */
+    compact: Boolean = false,
+) {
     val colors = LocalNostrVaultColors.current
     // Mirrors iOS: Capsule fill(havenPurple/theme primary), white content,
     // soft offset drop shadow (black 40%, radius 8, y+4), 10/20 padding,
-    // arrow.up size 12 bold + "N New Posts" size 13 bold.
+    // arrow.up size 12 bold + "N New Posts" size 13 bold. Compact: 5/10
+    // padding, radius 4 / y+2 shadow, arrow 11 + count 12 (99+ at most).
     val shape = RoundedCornerShape(50)
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    // Tapped anywhere in the box, rippled on the capsule.
+    val interaction = remember { MutableInteractionSource() }
+    Box(
         modifier = modifier
-            .shadow(
-                elevation = 8.dp,
-                shape = shape,
-                ambientColor = Color.Black.copy(alpha = 0.4f),
-                spotColor = Color.Black.copy(alpha = 0.4f),
-            )
-            .clip(shape)
-            .background(colors.primary)
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 20.dp),
+            .semantics(mergeDescendants = true) { contentDescription = "$count new posts, tap to load" }
+            // The small pill's tap target, without growing the pill.
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(if (compact) 8.dp else 0.dp),
     ) {
-        Icon(
-            imageVector = NostrVaultIcons.ArrowUp,
-            contentDescription = null,
-            tint = PrimaryText,
-            modifier = Modifier.size(12.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = "$count New Posts",
-            fontWeight = FontWeight.Bold,
-            fontSize = 13.sp,
-            color = PrimaryText,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .shadow(
+                    elevation = if (compact) 4.dp else 8.dp,
+                    shape = shape,
+                    ambientColor = Color.Black.copy(alpha = 0.4f),
+                    spotColor = Color.Black.copy(alpha = 0.4f),
+                )
+                .clip(shape)
+                .background(colors.primary)
+                .indication(interaction, LocalIndication.current)
+                .padding(
+                    vertical = if (compact) 5.dp else 10.dp,
+                    horizontal = if (compact) 10.dp else 20.dp,
+                ),
+        ) {
+            Icon(
+                imageVector = NostrVaultIcons.ArrowUp,
+                contentDescription = null,
+                tint = PrimaryText,
+                modifier = Modifier.size(if (compact) 11.dp else 12.dp),
+            )
+            Spacer(Modifier.width(if (compact) 4.dp else 8.dp))
+            Text(
+                text = if (compact) (if (count > 99) "99+" else "$count") else "$count New Posts",
+                fontWeight = FontWeight.Bold,
+                fontSize = if (compact) 12.sp else 13.sp,
+                color = PrimaryText,
+            )
+        }
     }
 }
 

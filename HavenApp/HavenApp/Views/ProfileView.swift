@@ -537,8 +537,8 @@ struct ProfileView: View {
                         )
                     }
                     .buttonStyle(PressScaleButtonStyle())
-                    .padding(.trailing, 20)
-                    .floatingActionBottomPadding()
+                    // Shares the row above the tab bar with the music mini player.
+                    .modifier(FloatingButtonSlot())
                     .hoverEffect(.lift)
                 }
             }

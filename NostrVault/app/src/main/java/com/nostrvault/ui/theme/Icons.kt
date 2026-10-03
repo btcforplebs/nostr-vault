@@ -61,6 +61,8 @@ import androidx.compose.material.icons.filled.OfflineBolt
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.MoveToInbox
+import androidx.compose.material.icons.filled.Outbox
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PictureInPictureAlt
@@ -79,6 +81,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -90,6 +93,9 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.OfflineBolt
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
@@ -188,6 +194,9 @@ object NostrVaultIcons {
     val Globe: ImageVector = Icons.Filled.Public                 // globe (alias for filter context)
     val GlobeOutline: ImageVector = Icons.Outlined.Public        // globe.americas
     val BarChart: ImageVector = Icons.Filled.BarChart            // chart.bar.fill
+    val TrustShield: ImageVector = Icons.Filled.VerifiedUser     // checkmark.shield.fill (Web of Trust)
+    val Languages: ImageVector = Icons.Filled.Translate          // character.bubble.fill
+    val LanguagesOutline: ImageVector = Icons.Outlined.Translate // character.bubble
 
     // Search / vault filters
     val Layers: ImageVector = Icons.Filled.Layers                // square.stack
@@ -195,12 +204,15 @@ object NostrVaultIcons {
     val TagIcon: ImageVector = Icons.Filled.Tag                  // number/hashtag
     val LinkIcon: ImageVector = Icons.Filled.Link                // link
     val At: ImageVector = Icons.Filled.AlternateEmail            // at (tagged filter)
+    val Received: ImageVector = Icons.Filled.MoveToInbox         // tray.and.arrow.down.fill
+    val Given: ImageVector = Icons.Filled.Outbox                 // tray.and.arrow.up.fill
 
     // Wallet
 
     // Blossom
     val Blossom: ImageVector = Icons.Filled.LocalFlorist          // camera.macro (flower)
     val Cloud: ImageVector = Icons.Filled.Cloud                   // cloud.fill
+    val CloudDone: ImageVector = Icons.Filled.CloudDone           // checkmark.icloud.fill
     val Video: ImageVector = Icons.Filled.Videocam               // video.fill
     val Gif: ImageVector = Icons.Filled.Gif                       // GIF badge
 

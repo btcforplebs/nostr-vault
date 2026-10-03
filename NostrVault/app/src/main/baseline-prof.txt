@@ -1,0 +1,9 @@
+# App baseline profile: compile the app's own code ahead of time on install.
+#
+# The AndroidX libraries ship their own profiles, which profileinstaller
+# applies even to sideloaded installs (Zapstore). Without this file our code
+# — every feed row, the services that feed it — started interpreted and was
+# JIT-compiled while the user scrolled, which is where first-scroll jank on a
+# low-RAM phone comes from. Wildcards: the whole app is small next to Compose.
+HSPLcom/nostrvault/**;->**(**)**
+Lcom/nostrvault/**;

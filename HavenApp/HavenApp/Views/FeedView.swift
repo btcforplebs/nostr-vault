@@ -386,6 +386,8 @@ struct FeedView: View {
     @EnvironmentObject var nostrService: NostrService
     @ObservedObject private var pendingManager = PendingPostManager.shared
     @State private var composeContext: ComposeContext?
+    /// The diVine, article or recipe composer, when the post button opens one.
+    @State private var modeComposer: ModeComposer?
     @State private var showingRelayStatus = false
     @State private var showingNoteId: String?
     @State private var showingProfileKey: IdentifiableString?
@@ -453,6 +455,8 @@ struct FeedView: View {
     /// layouts so nothing is grouped that will never be drawn.
     @State private var feedThreads: [FeedThread<FeedNote>] = []
     @State private var threadRebuildWork: DispatchWorkItem?
+    /// A gap-fill regroup is already queued; see regroupIfGapFilled.
+    @State private var gapRegroupScheduled = false
 
     // MARK: - Helper Properties
 
@@ -460,7 +464,7 @@ struct FeedView: View {
     /// timeline feeds follow the legacy global preference.
     private var defaultCompactForCurrentFeed: Bool {
         switch feedService.feedMode {
-        case .following, .articles, .recipes, .live, .reels:
+        case .following, .articles, .recipes, .live, .reels, .music:
             return false
         case .discovery, .global, .popular, .media:
             return configService.config.useFeedCompactMode
@@ -473,7 +477,7 @@ struct FeedView: View {
         switch feedService.feedMode {
         case .following, .discovery, .global, .popular:
             return true
-        case .media, .articles, .recipes, .live, .reels:
+        case .media, .articles, .recipes, .live, .reels, .music:
             return false
         }
     }
@@ -596,7 +600,7 @@ struct FeedView: View {
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
         // compact mode has nothing to condense.
-        case .media, .articles, .recipes, .live, .reels:
+        case .media, .articles, .recipes, .live, .reels, .music:
             return false
         }
     }
@@ -803,6 +807,9 @@ struct FeedView: View {
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: recipeService.scope == .global, color: .havenPurple) {
                     showingGlobalRecipeWarning = true
                 }
+            } else if feedService.feedMode == .music {
+                // Music has no relay filters; search lives on the page.
+                EmptyView()
             } else if feedService.feedMode == .live {
                 IconFilterButton(icon: liveService.scope == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: liveService.scope == .following, color: .havenPurple) {
                     liveService.setScope(.following)
@@ -958,6 +965,9 @@ struct FeedView: View {
                 Button { showingGlobalRecipeWarning = true } label: {
                     Label("Global", systemImage: "globe")
                 }
+            } else if feedService.feedMode == .music {
+                // Music has no relay filters; search lives on the page.
+                EmptyView()
             } else if feedService.feedMode == .live {
                 Button { liveService.setScope(.following) } label: {
                     Label("Following", systemImage: "person.2.fill")
@@ -1207,6 +1217,9 @@ struct FeedView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Recipes from everyone")
+            } else if feedService.feedMode == .music {
+                // Music has no relay filters; search lives on the page.
+                EmptyView()
             } else if feedService.feedMode == .live {
                 Button(action: { liveService.setScope(.following) }) {
                     Image(systemName: liveService.scope == .following ? "person.2.fill" : "person.2")
@@ -1317,8 +1330,13 @@ struct FeedView: View {
     }
     #endif
 
-    @ViewBuilder
+    /// The feed, with the music mini player docked at the bottom where
+    /// there's no iPhone tab bar to carry it (iPad, Mac).
     private var rootContent: some View {
+        rootContentBase.modifier(MiniPlayerInset())
+    }
+
+    private var rootContentBase: some View {
         ZStack {
             // Match the platform theme background
             Color.platformWindowBackground.ignoresSafeArea()
@@ -1426,6 +1444,20 @@ struct FeedView: View {
             ComposeView(onDismiss: { composeContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo, initialContent: ctx.initialContent, restoredDraftId: ctx.draftId)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
+        }
+        .sheet(item: $modeComposer) { composer in
+            Group {
+                switch composer {
+                case .divine:
+                    DivineComposeView(onDismiss: { modeComposer = nil })
+                case .article:
+                    LongFormComposeView(flavor: .article, onDismiss: { modeComposer = nil })
+                case .recipe:
+                    LongFormComposeView(flavor: .recipe, onDismiss: { modeComposer = nil })
+                }
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
         }
         .onChange(of: pendingManager.editRequest?.id) { _, _ in
             guard let req = pendingManager.editRequest else { return }
@@ -2089,7 +2121,16 @@ struct FeedView: View {
             if let parentId = note.parentEventId { gapIds.insert(parentId) }
         }
         guard !arrivedIds.isDisjoint(with: gapIds) else { return }
-        rebuildThreadsIfNeeded()
+        // Roots stream in every ~0.1 s while a feed fills, and each rebuild
+        // regroups the whole feed on the main thread; per batch, that kept
+        // the phone hot. Regroup at most every 0.4 s. A throttle, not a
+        // debounce: a steady stream must not postpone the regroup forever.
+        guard !gapRegroupScheduled else { return }
+        gapRegroupScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            gapRegroupScheduled = false
+            rebuildThreadsIfNeeded(immediate: true)
+        }
     }
 
     /// noteStats changed — re-resolve rows whose stats actually differ.
@@ -2282,9 +2323,16 @@ struct FeedView: View {
             onOpenNote: { openNoteDetail($0) },
             onLike: { feedActionsValue.likeNote($0) },
             onShowGlobal: { showingGlobalReelsWarning = true },
-            isCovered: composeContext != nil || showingProfileKey != nil || showingNoteId != nil
+            onPost: { modeComposer = .divine },
+            isCovered: composeContext != nil || modeComposer != nil || showingProfileKey != nil || showingNoteId != nil
                 || showingMediaUrl != nil || showingRelayStatus
         )
+        // feedList is not on screen in diVines, so the collapsed tab bar's
+        // compose button is answered here.
+        .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
+            guard (note.object as? Int) == 0 else { return }
+            modeComposer = .divine
+        }
     }
 
     /// Live streams: NIP-53 events that are running *and* carry a URL Apple's
@@ -2390,6 +2438,8 @@ struct FeedView: View {
                             articleListView
                         } else if feedService.feedMode == .recipes {
                             recipeGridView
+                        } else if feedService.feedMode == .music {
+                            MusicBrowserView()
                         } else if feedService.feedMode == .live {
                             liveGridView
                         } else {
@@ -2660,19 +2710,19 @@ struct FeedView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
                 guard (note.object as? Int) == 0 else { return }
-                composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
+                openComposer()
             }
         }
         .overlay(alignment: .bottomTrailing) {
             #if os(iOS)
             ChromeFold(anchor: .bottomTrailing) {
                 Button {
-                    composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
+                    openComposer()
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "square.and.pencil")
+                        Image(systemName: ModeComposer(feedMode: feedService.feedMode)?.symbolName ?? "square.and.pencil")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text(String(localized: "feed.action.post"))
+                        Text(ModeComposer(feedMode: feedService.feedMode)?.buttonTitle ?? String(localized: "feed.action.post"))
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -2690,13 +2740,23 @@ struct FeedView: View {
                             .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .accessibilityLabel("Compose new post")
+                .accessibilityLabel(ModeComposer(feedMode: feedService.feedMode)?.accessibilityLabel ?? "Compose new post")
                 .buttonStyle(PressScaleButtonStyle())
-                .padding(.trailing, 20)
-                .floatingActionBottomPadding()
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
             }
             #endif
+        }
+    }
+
+    /// The post button writes what the feed shows: a diVine in diVines, an
+    /// article in Articles, a recipe in Recipes, a note everywhere else.
+    private func openComposer() {
+        if let composer = ModeComposer(feedMode: feedService.feedMode) {
+            modeComposer = composer
+        } else {
+            composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
         }
     }
 

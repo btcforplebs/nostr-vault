@@ -73,16 +73,27 @@ class DeepLinkRouterTest {
         assertNull(route("nostrvault://note/" + "a".repeat(63)))
     }
 
-    @Test fun `a mention notification opens the note it was about`() {
+    @Test fun `a mention notification lands on its note in the Relay tab`() {
         val target = DeepLinkRouter.fromNotification("mention", hexNote, hexAuthor, "npub1abc")
-        assertEquals(Screen.NoteDetail.createRoute(hexNote), target?.route)
+        assertEquals(Screen.Dashboard.route, target?.route)
+        assertEquals(RelayFocusRequest("mention", hexNote), target?.relayFocus)
         assertEquals("npub1abc", target?.accountNpub)
+    }
+
+    @Test fun `every post notification type focuses the Relay tab`() {
+        // "reaction" used to route nowhere, so a like tap did nothing.
+        for (type in listOf("mention", "reply", "quote", "reaction", "repost", "zap")) {
+            val target = DeepLinkRouter.fromNotification(type, hexNote, hexAuthor, null)
+            assertEquals(type, Screen.Dashboard.route, target?.route)
+            assertEquals(type, RelayFocusRequest(type, hexNote), target?.relayFocus)
+        }
     }
 
     @Test fun `a DM notification opens the conversation, not the gift wrap`() {
         val target = DeepLinkRouter.fromNotification("dm", hexNote, hexAuthor, null)
         assertEquals(Screen.DMThread.createRoute(hexAuthor), target?.route)
         assertNull(target?.accountNpub)
+        assertNull(target?.relayFocus)
     }
 
     @Test fun `the catch-up summary carries no event id and opens the feed`() {

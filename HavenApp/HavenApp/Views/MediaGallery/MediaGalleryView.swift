@@ -228,8 +228,8 @@ struct MediaGalleryView: View {
                             .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .padding(.trailing, 20)
-                .floatingActionBottomPadding()
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
             }
         }
@@ -345,8 +345,8 @@ struct MediaGalleryView: View {
                             .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .padding(.trailing, 20)
-                .floatingActionBottomPadding()
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
             }
         }

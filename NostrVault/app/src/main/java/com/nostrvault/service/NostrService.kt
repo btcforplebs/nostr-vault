@@ -10,6 +10,7 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.GlobalSearchResults
 import com.nostrvault.data.model.SearchTermMatcher
 import com.nostrvault.data.model.ProfileUpdateSignal
+import com.nostrvault.data.remote.LookupSocketPool
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.*
@@ -45,6 +46,7 @@ class NostrService @Inject constructor(
     private val eventPublisher: EventPublisher,
     private val amberSignerService: AmberSignerService,
     private val powPreferences: com.nostrvault.data.local.PowPreferences,
+    private val lookupPool: LookupSocketPool,
 ) {
     companion object {
         /** Kinds whose newest event replaces cached state; see [acceptReplaceable]. */
@@ -386,7 +388,8 @@ class NostrService @Inject constructor(
 
         clients[normalizedUrl] = client
 
-        scope.launch {
+        // Collected on Default so a message does not hop through Main on its way there.
+        scope.launch(Dispatchers.Default) {
             client.messages.collect { message ->
                 launch(Dispatchers.Default) { onMessage(message) }
             }
@@ -416,6 +419,7 @@ class NostrService @Inject constructor(
             temporaryClients.forEach { it.disconnect() }
             temporaryClients.clear()
         }
+        lookupPool.closeAll()
         closeMetadataPool()
     }
 
@@ -856,7 +860,7 @@ class NostrService @Inject constructor(
     /** Open a long-lived metadata-pool connection that survives across flushes. */
     private fun createMetadataClient(relayUrl: String): WebSocketClient {
         val client = WebSocketClient(url = relayUrl, scope = scope)
-        scope.launch {
+        scope.launch(Dispatchers.Default) {
             client.messages.collect { msg ->
                 launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
             }
@@ -1093,24 +1097,8 @@ class NostrService @Inject constructor(
         for (relayUrl in blastrRelays.take(3)) {
             if (!isValidRelayUrl(relayUrl)) continue
             scope.launch(Dispatchers.IO) {
-                tempClientSemaphore.withPermit {
-                    val client = WebSocketClient(url = relayUrl, scope = scope)
-                    tempClientsLock.withLock { temporaryClients.add(client) }
-
-                    scope.launch {
-                        client.messages.collect { msg ->
-                            launch(Dispatchers.Default) {
-                                processRelayMessage(msg, relayUrl)
-                            }
-                        }
-                    }
-
-                    client.connect()
-                    client.send("[\"REQ\",\"$subId\",${buildFilterJson(filter)}]")
-
-                    delay(TEMP_CLIENT_DISCONNECT_MS)
-                    client.disconnect()
-                    tempClientsLock.withLock { temporaryClients.remove(client) }
+                lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), TEMP_CLIENT_DISCONNECT_MS) { msg ->
+                    launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
                 }
             }
         }
@@ -1338,6 +1326,43 @@ class NostrService @Inject constructor(
             }
         }
     }
+
+    /**
+     * Also send [event] to [relayUrl], e.g. diVine's relay for a diVine, and
+     * wait for its OK. Returns whether it accepted and its message; a relay
+     * that never answers within [timeoutMs] counts as not accepted.
+     */
+    suspend fun publishAwaitingOk(event: NostrEvent, relayUrl: String, timeoutMs: Long = 15_000): Pair<Boolean, String> {
+        if (!isValidRelayUrl(relayUrl)) return false to "bad relay address"
+        val eventJson = serializeEvent(event)
+        return withContext(Dispatchers.IO) {
+            val client = WebSocketClient(url = relayUrl, scope = scope)
+            try {
+                withTimeoutOrNull(timeoutMs) {
+                    coroutineScope {
+                        // Listen before connecting; the flow does not replay.
+                        val answer = async(start = CoroutineStart.UNDISPATCHED) {
+                            client.messages.mapNotNull { okReply(it, event.id) }.first()
+                        }
+                        client.connect()
+                        client.send("[\"EVENT\",$eventJson]")
+                        answer.await()
+                    }
+                } ?: (false to "it didn't answer")
+            } finally {
+                client.disconnect()
+            }
+        }
+    }
+
+    /** `["OK", <eventId>, <accepted>, <message>]` for [eventId], else null. */
+    private fun okReply(message: String, eventId: String): Pair<Boolean, String>? = runCatching {
+        val parsed = Json.parseToJsonElement(message).jsonArray
+        if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "OK") return@runCatching null
+        if (parsed[1].jsonPrimitive.contentOrNull != eventId) return@runCatching null
+        val accepted = parsed[2].jsonPrimitive.booleanOrNull ?: false
+        accepted to (parsed.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: "")
+    }.getOrNull()
 
     private fun fireAndForgetPublish(eventJson: String, relayUrl: String) {
         if (!isValidRelayUrl(relayUrl)) return
@@ -1611,56 +1636,38 @@ class NostrService @Inject constructor(
         for (relayUrl in relayUrls) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
-                    tempClientsLock.withLock { temporaryClients.add(client) }
-
-                    // Guarantee the collector is registered as a SharedFlow
-                    // subscriber BEFORE we connect/REQ. messages has replay=0, so any
-                    // EVENT/EOSE emitted before subscription is silently dropped — the
-                    // race that left the temp-client query receiving nothing.
-                    val subscribed = CompletableDeferred<Unit>()
-                    scope.launch {
-                        client.messages
-                            .onSubscription { subscribed.complete(Unit) }
-                            .collect { msg ->
-                            try {
-                                val parsed = json.parseToJsonElement(msg).jsonArray
-                                // EOSE frames are ["EOSE", subId] (size 2). A < 3
-                                // guard dropped them before the EOSE handler, so the
-                                // collected notes were never delivered via onResult.
-                                if (parsed.size < 2) return@collect
-                                val type = parsed[0].jsonPrimitive.contentOrNull ?: return@collect
-                                val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@collect
-                                if (type == "EVENT" && sid == subId) {
-                                    val ev = parsed[2].jsonObject
-                                    val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
-                                    val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-                                    val tags: List<List<String>> = try {
-                                        ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
-                                    } catch (_: Exception) { emptyList() }
-
-                                    if (kind == 1) {
-                                        collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
-                                    }
-                                }
-                                if (type == "EOSE" && sid == subId) {
-                                    onResult(collected.values.sortedByDescending { it.createdAt })
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    subscribed.await()
-                    client.connect()
+                    // The pool subscribes to a socket's messages before it
+                    // connects, so an early EVENT/EOSE is not dropped.
                     val filter = """{"kinds":[1],"authors":["$pubkey"],"limit":50}"""
-                    client.send("[\"REQ\",\"$subId\",$filter]")
+                    lookupPool.query(relayUrl, subId, listOf(filter), TEMP_CLIENT_DISCONNECT_MS) { msg ->
+                        try {
+                            val parsed = json.parseToJsonElement(msg).jsonArray
+                            // EOSE frames are ["EOSE", subId] (size 2). A < 3
+                            // guard dropped them before the EOSE handler, so the
+                            // collected notes were never delivered via onResult.
+                            if (parsed.size < 2) return@query
+                            val type = parsed[0].jsonPrimitive.contentOrNull ?: return@query
+                            val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@query
+                            if (type == "EVENT" && sid == subId) {
+                                val ev = parsed[2].jsonObject
+                                val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@query
+                                val tags: List<List<String>> = try {
+                                    ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
+                                } catch (_: Exception) { emptyList() }
 
-                    delay(TEMP_CLIENT_DISCONNECT_MS)
-                    client.disconnect()
-                    tempClientsLock.withLock { temporaryClients.remove(client) }
+                                if (kind == 1) {
+                                    collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
+                                }
+                            }
+                            if (type == "EOSE" && sid == subId) {
+                                onResult(collected.values.sortedByDescending { it.createdAt })
+                            }
+                        } catch (_: Exception) {}
+                    }
                 } catch (_: Exception) {}
             }
         }
@@ -1849,49 +1856,40 @@ class NostrService @Inject constructor(
                 cont.resume(collected.values.sortedByDescending { it.createdAt })
             }
         }
+        // A refused or cooling-down relay ends at once; only the last relay
+        // to end (or the first EOSE) finishes, not the first to give up.
+        val remaining = java.util.concurrent.atomic.AtomicInteger(relayUrls.size)
 
         for (relayUrl in relayUrls) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
-                    tempClientsLock.withLock { temporaryClients.add(client) }
-
-                    scope.launch {
-                        client.messages.collect { msg ->
-                            try {
-                                val parsed = json.parseToJsonElement(msg).jsonArray
-                                if (parsed.size < 2) return@collect
-                                val type = parsed[0].jsonPrimitive.contentOrNull ?: return@collect
-                                val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@collect
-                                if (sid != subId) return@collect
-                                if (type == "EVENT" && parsed.size >= 3) {
-                                    val ev = parsed[2].jsonObject
-                                    val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
-                                    val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-                                    val tags: List<List<String>> = try {
-                                        ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
-                                    } catch (_: Exception) { emptyList() }
-                                    collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
-                                } else if (type == "EOSE") {
-                                    finish()
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    client.connect()
                     val filter = """{"kinds":[1,1063,30023],"authors":["$pubkey"],"limit":500}"""
-                    client.send("[\"REQ\",\"$subId\",$filter]")
-
-                    delay(TEMP_CLIENT_DISCONNECT_MS)
-                    client.disconnect()
-                    tempClientsLock.withLock { temporaryClients.remove(client) }
-                    finish()
+                    lookupPool.query(relayUrl, subId, listOf(filter), TEMP_CLIENT_DISCONNECT_MS) { msg ->
+                        try {
+                            val parsed = json.parseToJsonElement(msg).jsonArray
+                            if (parsed.size < 2) return@query
+                            val type = parsed[0].jsonPrimitive.contentOrNull ?: return@query
+                            val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@query
+                            if (sid != subId) return@query
+                            if (type == "EVENT" && parsed.size >= 3) {
+                                val ev = parsed[2].jsonObject
+                                val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@query
+                                val tags: List<List<String>> = try {
+                                    ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
+                                } catch (_: Exception) { emptyList() }
+                                collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
+                            } else if (type == "EOSE") {
+                                finish()
+                            }
+                        } catch (_: Exception) {}
+                    }
                 } catch (_: Exception) {
-                    finish()
+                } finally {
+                    if (remaining.decrementAndGet() == 0) finish()
                 }
             }
         }
@@ -2015,48 +2013,36 @@ class NostrService @Inject constructor(
         for (relayUrl in relayUrls) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    val client = WebSocketClient(url = relayUrl, scope = scope, trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"))
-                    tempClientsLock.withLock { temporaryClients.add(client) }
+                    lookupPool.query(relayUrl, subId, filters, TEMP_CLIENT_DISCONNECT_MS) { msg ->
+                        try {
+                            val parsed = json.parseToJsonElement(msg).jsonArray
+                            // EOSE is ["EOSE", subId] (size 2); a < 3 guard dropped
+                            // it so onEose never fired and replies/thread results
+                            // were never delivered. Same bug as fetchProfileNotes.
+                            if (parsed.size < 2) return@query
+                            val type = parsed[0].jsonPrimitive.contentOrNull ?: return@query
+                            val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@query
+                            if (type == "EVENT" && sid == subId) {
+                                val ev = parsed[2].jsonObject
+                                val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@query
+                                val tags: List<List<String>> = try {
+                                    ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
+                                } catch (_: Exception) { emptyList() }
 
-                    scope.launch {
-                        client.messages.collect { msg ->
-                            try {
-                                val parsed = json.parseToJsonElement(msg).jsonArray
-                                // EOSE is ["EOSE", subId] (size 2); a < 3 guard dropped
-                                // it so onEose never fired and replies/thread results
-                                // were never delivered. Same bug as fetchProfileNotes.
-                                if (parsed.size < 2) return@collect
-                                val type = parsed[0].jsonPrimitive.contentOrNull ?: return@collect
-                                val sid = parsed[1].jsonPrimitive.contentOrNull ?: return@collect
-                                if (type == "EVENT" && sid == subId) {
-                                    val ev = parsed[2].jsonObject
-                                    val id = ev["id"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val pk = ev["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@collect
-                                    val content = ev["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                    val createdAt = ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L
-                                    val kind = ev["kind"]?.jsonPrimitive?.intOrNull ?: return@collect
-                                    val tags: List<List<String>> = try {
-                                        ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } } ?: emptyList()
-                                    } catch (_: Exception) { emptyList() }
-
-                                    if (kind == 1 || kind == COMMENT) {
-                                        collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
-                                        onRawEvent?.invoke(id, ev.toString())
-                                    }
+                                if (kind == 1 || kind == COMMENT) {
+                                    collected[id] = FeedNote.fromEvent(id, pk, content, tags, createdAt, kind)
+                                    onRawEvent?.invoke(id, ev.toString())
                                 }
-                                if (type == "EOSE" && sid == subId) {
-                                    onEose(collected.values.sortedBy { it.createdAt })
-                                }
-                            } catch (_: Exception) {}
-                        }
+                            }
+                            if (type == "EOSE" && sid == subId) {
+                                onEose(collected.values.sortedBy { it.createdAt })
+                            }
+                        } catch (_: Exception) {}
                     }
-
-                    client.connect()
-                    client.send("[\"REQ\",\"$subId\",${filters.joinToString(",")}]")
-
-                    delay(TEMP_CLIENT_DISCONNECT_MS)
-                    client.disconnect()
-                    tempClientsLock.withLock { temporaryClients.remove(client) }
                 } catch (_: Exception) {}
             }
         }
@@ -2076,47 +2062,15 @@ class NostrService @Inject constructor(
     ): List<JsonObject> {
         if (filters.isEmpty() || relayUrls.isEmpty()) return emptyList()
         val subId = "q-${UUID.randomUUID().toString().take(8)}"
-        val req = "[\"REQ\",\"$subId\",${filters.joinToString(",")}]"
         val collected = ConcurrentHashMap<String, JsonObject>()
 
+        // Each relay's lookup ends at its EOSE/CLOSED, or at once when the
+        // relay refuses the socket (or refused one in the last two minutes).
         withTimeoutOrNull(timeoutMs) {
             coroutineScope {
                 for (relayUrl in relayUrls) launch(Dispatchers.IO) {
-                    val client = WebSocketClient(
-                        url = relayUrl, scope = scope,
-                        trustLocalhost = relayUrl.contains("localhost") || relayUrl.contains("127.0.0.1"),
-                    )
-                    tempClientsLock.withLock { temporaryClients.add(client) }
-                    try {
-                        coroutineScope {
-                            val done = CompletableDeferred<Unit>()
-                            // A relay that refuses the connection is finished,
-                            // not something to wait the whole timeout on.
-                            val watchState = launch(start = CoroutineStart.UNDISPATCHED) {
-                                client.connectionState
-                                    .dropWhile { it == WebSocketClient.ConnectionState.DISCONNECTED }
-                                    .first { it == WebSocketClient.ConnectionState.DISCONNECTED }
-                                done.complete(Unit)
-                            }
-                            val read = launch {
-                                client.messages
-                                    .onSubscription {
-                                        client.connect()
-                                        client.send(req)
-                                    }
-                                    .first { msg -> handleRawQueryMessage(msg, subId, collected) }
-                                done.complete(Unit)
-                            }
-                            done.await()
-                            watchState.cancel()
-                            read.cancel()
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                    } finally {
-                        client.disconnect()
-                        tempClientsLock.withLock { temporaryClients.remove(client) }
+                    lookupPool.query(relayUrl, subId, filters, timeoutMs) { msg ->
+                        handleRawQueryMessage(msg, subId, collected)
                     }
                 }
             }
@@ -2158,23 +2112,9 @@ class NostrService @Inject constructor(
 
         for (relayUrl in relayUrls) {
             scope.launch(Dispatchers.IO) {
-                val client = WebSocketClient(url = relayUrl, scope = scope)
-                tempClientsLock.withLock { temporaryClients.add(client) }
-
-                scope.launch {
-                    client.messages.collect { msg ->
-                        launch(Dispatchers.Default) {
-                            processRelayMessage(msg, relayUrl)
-                        }
-                    }
+                lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), TEMP_CLIENT_DISCONNECT_MS) { msg ->
+                    launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
                 }
-
-                client.connect()
-                client.send("[\"REQ\",\"$subId\",${buildFilterJson(filter)}]")
-
-                delay(TEMP_CLIENT_DISCONNECT_MS)
-                client.disconnect()
-                tempClientsLock.withLock { temporaryClients.remove(client) }
             }
         }
     }
@@ -2195,7 +2135,7 @@ class NostrService @Inject constructor(
                 val client = WebSocketClient(url = relayUrl, scope = scope)
                 tempClientsLock.withLock { temporaryClients.add(client) }
 
-                scope.launch {
+                scope.launch(Dispatchers.Default) {
                     client.messages.collect { msg ->
                         launch(Dispatchers.Default) {
                             processRelayMessage(msg, relayUrl)

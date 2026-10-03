@@ -1,48 +1,32 @@
-# NostrVault v2.7.0 (Build 15) Release Notes
+# Nostr Vault v2.7.2 (Build 18) Release Notes
 
-A new look and a lot of new surface. The filing-cabinet icon is gone — the app now wears the lit arch in Sunset Orange, as a proper adaptive icon and as the silhouette you see in your notification shade. Behind it the app has a real visual system for the first time: one elevation ramp, named colours instead of hardcoded ones, and animations that honour Reduce Motion. This release also adds home-screen widgets, Reels, long-form Articles, a Recipes feed, Live streams with chat and zapping, and a search that asks everywhere at once. Your chosen signer is now used for everything you sign, and the Global feed no longer shows the raw firehose to brand-new accounts.
+A smoother, faster feed on everyday phones, and the Android app catching up with the iPhone. Scrolling on a 4 GB phone no longer stalls while posts and threads load. The feed preloads what is coming, shows photos at their real size with a soft preview, and keeps your place. New in this release: a Followers view, Web of Trust and language filters on Global, a Lightning wallet with history and lightning addresses, and one-tap sign-in with Clave.
 
-## Security
+## Faster
 
-*   **Some Actions Bypassed Your Signer**: Likes, reposts, follows, mute and relay lists, deletes, reports, drafts and group sign-ins went through a separate signing path that did not use the remote signer or Amber you had chosen. Everything you sign now goes through your chosen signer, and what comes back is checked: a signature for a different account, or for anything other than what was asked, is refused.
-*   **The Global Feed Showed Everything to New Accounts**: The spam filter is built from your follow graph, and an empty graph — exactly what a new account has — let everybody through. Global now shows only accounts in your graph, and the graph is seeded from the app's own starter packs so a new account has one within seconds of first launch.
+*   **Smooth Scrolling on Low-RAM Phones**: The feed was re-sorting up to 10,000 notes on the main thread every time a relay sent posts, and in threaded mode it regrouped the whole feed each time a reply's parent arrived. That work now happens in the background, so the list keeps moving. New posts wait until you stop scrolling before they are added, only the row that changed redraws, GIFs use the phone's hardware decoder, and the app's own code is precompiled at install. On a 4 GB test phone: no missed frames in 5,388, where before the list froze for 20 seconds at a time.
+*   **The Feed Loads Ahead of You**: The next posts load before you reach them. Photos open at their real size with a blurred preview while they load, and quoted and earlier posts hold their space instead of pushing the feed down.
+*   **Fewer Connections**: Lookups share one connection per relay instead of opening a new one each time, and a relay that refuses is left alone for two minutes.
 
 ## New
 
-*   **A New App Icon**: The lit arch in Sunset Orange, as an adaptive icon, with a themed monochrome layer so notifications show the brand instead of a generic dot.
-*   **A Consistent Look**: One elevation ramp and one set of named colours behind every screen — card and page contrast used to be inverted — plus one animation vocabulary with Reduce Motion support.
-*   **Home-Screen Widgets**.
-*   **Reels**: A full-screen video feed in the feed menu — one video per page, swipe up for the next, with its neighbours already loading. Following by default; Global asks first. Posts marked with a content warning are left out.
-*   **Search Everywhere at Once**: Global search asks your device, your Mac relay and several Nostr search services in parallel, shows results as they arrive, and shows how each source is doing — so a service that is down no longer looks like "no results".
-*   **Use a Relay From Another App**: Advanced › External Relay turns off the built-in relay and Blossom server and points the app at ones running in another app on your phone, such as Citrine — for keeping your client and your storage in separate sandboxes.
-*   **A Threaded Feed**: The feed's view button now cycles expanded, condensed and threaded. Threaded gathers a conversation into one card with its replies on a rail; tap a reply to open it in place with its action bar, tap again to go to the thread. Each feed remembers its own layout.
-*   **Articles**: Long-form posts from the people you follow, drawn as articles with a reader.
-*   **Recipes**: A feed of cooking posts from zapcooking and nostrcooking, live from relays.
-*   **Live Streams**: Only the streams actually on air that can actually play, with chat, zapping, report and block.
-*   **Scan a Signer's QR Code**: Connect a remote signer with the camera instead of typing a bunker string, including during setup.
-*   **Taps From Outside the App** open the right screen, and Groups is reachable.
-
-## Removed
-
-*   **The Ecash Wallet**: Ecash is cash held at a mint you have to trust, and the mint this app shipped against was drained and shut down. Rather than keep a feature carrying that risk, it is gone — along with its mint setting, its step in setup, and the Sats widget that showed its balance. Lightning and Nostr Wallet Connect are untouched. **If you are holding ecash in an older version, move it out before you update**; the wallet screen is the only place it can be spent from.
+*   **Followers**: The Relay tab has a Followers view: who followed you recently, who came back, and everyone, with a red dot for new follows since you last looked. The Relay tab bar is now Notes · Likes · Zaps · Followers.
+*   **Global Filters**: Global shows your Web of Trust by default; the shield switches to Everyone. A language button lets you pick which languages to see.
+*   **Lightning Wallet**: Payment history, and send to lightning addresses and LNURLs as well as invoices, with the amount checked before you pay.
+*   **Sign in With Clave**: One tap opens Clave, you approve, and you are back connected. The signer session also stays up while you approve, instead of dying when you switch apps.
+*   **Comments**: NIP-22 comments (kind 1111) show up in threads, and you answer a comment with a comment.
+*   **Zaps**: The bolt flies from your avatar to the zap button and lands with a lightning strike and a haptic crack.
+*   **Photo Zoom**: Photos zoom out of their spot in the feed and swipe back into it. The viewer has Save.
+*   **Media Tab Backup Badge**: Every tile shows whether it is backed up to your Blossom servers.
+*   **One Feed Button**: Like the iPhone: an icon with a status dot, tap for the feed list.
 
 ## Bug Fixes
 
-*   **Threads Stuck on "Loading the Start of This Thread"**: The start of a thread usually arrived — the feed just never looked again. It does now, and it stops throwing away the notes it fetched.
-*   **Discovery Now Comes From the People You Follow**: It used to rank whoever the app happened to have seen, all tied, in arbitrary order. It now counts who your follows follow, the same way the Apple apps do.
-*   **Search Read the Feed, Not Your Relay**: In relay mode, search looked through whatever the feed happened to have loaded instead of asking your own relay, so anything not currently in memory was invisible to it. It now queries the relay.
-*   **Quoted Posts**: A quoted post now draws as a card in the feed, on the focused note and on the relay tab, with quoted articles resolved.
-*   **Zap Amounts**: Read from the invoice, since receipts do not carry them — and an invoice with no amount no longer reads as 1 BTC in live chat.
-*   **Live Streams**: The live feed no longer crashes on its first real run, and the chat composer no longer sits behind the tab bar.
-*   **Posts With Unusual Characters**: Backslashes, tabs and other control characters were encoded wrongly in signed events, which relays could reject.
-*   **Signing Failures**: Saving your profile no longer crashes when the signer fails — it says what went wrong — and a like or repost that could not be signed is undone instead of showing as done.
-*   **Tap Targets**: The note action row is a full 48dp tall with no dead gaps between buttons.
-*   **Search Results Can Be Acted On**: Reply, repost, like and zap from a result instead of buttons that draw nothing.
-*   **Report and Block From the Feed**.
-*   **Engagement Counts Are Shown**: The card was already being handed them.
-*   **Drafts**: A swipe asks before it deletes, and the Drafts screen is the drafts screen.
-*   **Text Size**: The setting does something now.
-*   **Names and Avatars** no longer stay as fallbacks in feed rows, and a media link stops printing above its own thumbnail.
-*   **Media Uploads**: A failed signature is retried instead of failing the post.
-*   **Paying an Invoice**: Confirms first, and shows the amount before you approve it.
-*   **A Fresh Clone Could Not Build the App At All**.
+*   **Settings Apply Themselves**: Changing a setting the relay reads at start now restarts the relay for you, only when it would actually start differently. No more "restart to apply".
+*   **Posts With Photos Are Not Lost**: A post was cancelled when no outside Blossom server accepted its media, even though the photo was saved on your phone. It now waits and sends when a server is reachable.
+*   **Notification Taps** land on the post in the Relay tab.
+*   **Threads**: The start of a thread is looked for on the relays that have it, threaded cards show the newest replies, the thread lines sit beside profile pictures, and a quote is no longer treated as a reply.
+*   **Keep Your Place** when switching between expanded, condensed and threaded layouts.
+*   **Old Notes Show the Year**, instead of "57w".
+*   **Quoting a Repost** cites the original post, and relay picks in the composer attach as previews.
+*   **The Top Bar** folds away with the bottom bar as you scroll, and the New Posts button folds with it.

@@ -29,6 +29,9 @@ object FeedFilterEngine {
         popularFilter: PopularFilter = PopularFilter.ALL,
         popularNoteScores: Map<String, Double> = emptyMap(),
         throttledPubkeys: Map<String, Int> = emptyMap(),
+        globalLanguages: Set<String> = emptySet(),
+        globalRequiresTrust: Boolean = true,
+        languageOf: (FeedNote) -> String? = { null },
     ): List<FeedNote> {
         var filtered = notes.filter { note ->
             // Always exclude blocked pubkeys
@@ -42,7 +45,7 @@ object FeedFilterEngine {
             if (!showReplies && note.isReply) return@filter false
 
             // Spam filter
-            if (FeedNote.isNoiseOrSpam(note.content, note.tags)) return@filter false
+            if (note.isNoise) return@filter false
 
             // For reposts, membership is judged by the reposter (the follow who
             // boosted it), not the original author -- otherwise a repost of
@@ -52,7 +55,18 @@ object FeedFilterEngine {
             when (mode) {
                 FeedMode.FOLLOWING -> authorForMembership in followedPubkeys
                 FeedMode.DISCOVERY -> authorForMembership !in followedPubkeys && authorForMembership in wotPubkeys
-                FeedMode.GLOBAL -> true
+                FeedMode.GLOBAL -> {
+                    // Web of Trust by default, judged on the note's author
+                    // (iOS parity). Fails CLOSED: an empty graph means "not
+                    // built yet", and admitting everyone then hands the open
+                    // firehose to exactly the people who never chose it.
+                    // "Everyone" (opted into behind a warning) skips the graph.
+                    if (globalRequiresTrust && note.pubkey !in wotPubkeys) return@filter false
+                    // Narrowed to chosen languages: notes whose language can't
+                    // be told (short, links only) stay. See FeedLanguageDetector.
+                    if (globalLanguages.isEmpty()) return@filter true
+                    FeedLanguageDetector.admits(languageOf(note), globalLanguages)
+                }
                 FeedMode.POPULAR -> {
                     when (popularFilter) {
                         PopularFilter.ALL -> true
@@ -104,6 +118,7 @@ object FeedFilterEngine {
         blocked: Set<String>,
         wotPubkeys: Set<String>,
         isGlobalMedia: Boolean,
+        globalRequiresTrust: Boolean = true,
         throttledPubkeys: Map<String, Int> = emptyMap(),
     ): List<FeedNote> {
         var filtered = notes.filter { note ->
@@ -112,9 +127,10 @@ object FeedFilterEngine {
             // FeedFilterEngine.filterMediaNotes). Following media is already scoped
             // to followed authors by the subscription, so it shows all media here —
             // gating it on wotPubkeys (often empty in Following mode) hid everything.
-            if (isGlobalMedia && wotPubkeys.isNotEmpty() && note.pubkey !in wotPubkeys) return@filter false
+            // "Everyone" lifts it, as on iOS (#133).
+            if (isGlobalMedia && globalRequiresTrust && wotPubkeys.isNotEmpty() && note.pubkey !in wotPubkeys) return@filter false
             if (note.mediaURLs.isEmpty()) return@filter false
-            if (FeedNote.isNoiseOrSpam(note.content, note.tags)) return@filter false
+            if (note.isNoise) return@filter false
             true
         }.sortedByDescending { it.createdAt }
 

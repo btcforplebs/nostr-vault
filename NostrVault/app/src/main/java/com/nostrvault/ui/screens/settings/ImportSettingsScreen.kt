@@ -56,6 +56,7 @@ fun ImportSettingsScreen(
     val isImporting by viewModel.isImporting.collectAsState()
     val progress by viewModel.importProgress.collectAsState()
     val status by viewModel.statusMessage.collectAsState()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val colors = LocalNostrVaultColors.current
 
     var newRelay by remember { mutableStateOf("") }
@@ -86,11 +87,12 @@ fun ImportSettingsScreen(
                 .padding(16.dp),
         ) {
             SectionLabel("Import Configuration")
-            OutlinedTextField(
+            // Commits on Done / focus loss / leaving: the start date is part of
+            // the relay's start config, so saving it restarts the relay.
+            CommitOnEndTextField(
                 value = config.importStartDate,
-                onValueChange = viewModel::setStartDate,
+                onCommit = viewModel::setStartDate,
                 label = { Text("Start Date (YYYY-MM-DD)") },
-                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = PrimaryText,
@@ -160,7 +162,12 @@ fun ImportSettingsScreen(
                 Text(status, color = SecondaryText, fontSize = 13.sp)
             } else {
                 Button(
-                    onClick = { viewModel.startImport() },
+                    onClick = {
+                        // Commits a start date still being typed before the
+                        // import reads the config.
+                        focusManager.clearFocus()
+                        viewModel.startImport()
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                 ) { Text("Start Import") }

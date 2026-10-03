@@ -265,8 +265,14 @@ class BlossomDashboardViewModel @Inject constructor(
                 for ((index, blob) in needsPush.withIndex()) {
                     val sha256 = blob.sha256 ?: continue
                     try {
-                        blossomService.pushLocalToMirrors(sha256)
-                        pushed++
+                        // Count only a blob every server took: a partial push
+                        // still leaves it missing somewhere.
+                        val result = blossomService.pushLocalToMirrors(sha256)
+                        if (result is BlossomService.MirrorPushResult.AllAccepted) {
+                            pushed++
+                        } else {
+                            addLog("${sha256.take(8)}: ${result.message}", BlossomActivityLog.LogLevel.WARNING)
+                        }
                     } catch (e: Exception) {
                         addLog("Failed to push ${sha256.take(8)}: ${e.message}", BlossomActivityLog.LogLevel.WARNING)
                     }

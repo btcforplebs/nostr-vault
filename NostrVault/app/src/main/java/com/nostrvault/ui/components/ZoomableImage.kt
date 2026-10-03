@@ -242,6 +242,10 @@ fun ZoomableImage(
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(model)
+                // The feed's smaller copy, already in memory, stands in while
+                // the full image loads — so the zoom from the feed never flies
+                // an empty frame.
+                .apply { (model as? String)?.let { placeholderMemoryCacheKey(it) } }
                 .crossfade(true)
                 .build(),
             contentDescription = contentDescription,

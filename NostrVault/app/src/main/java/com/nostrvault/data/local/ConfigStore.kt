@@ -4,10 +4,14 @@ import android.content.Context
 import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
+import com.nostrvault.relay.RelayConfigApplier
+import com.nostrvault.relay.RelayConfiguration
+import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.NIP46Service
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +46,19 @@ class ConfigStore @Inject constructor(
 
     private val _isSwitchingAccount = MutableStateFlow(false)
     val isSwitchingAccount: StateFlow<Boolean> = _isSwitchingAccount.asStateFlow()
+
+    /**
+     * Restarts the embedded relay after a save that changes how it would
+     * start; every other save is a no-op for it. Lives here, at the one place
+     * config is saved, so no settings screen needs a "restart to apply" step.
+     */
+    val relayApplier = RelayConfigApplier(
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        now = { android.os.SystemClock.elapsedRealtime() },
+        launchedInputs = { RelayForegroundService.launchedInputs },
+        inputsFor = { RelayConfiguration.launchInputs(it, File(context.filesDir, "relay_data")) },
+        restart = { RelayForegroundService.restartForSavedConfig() },
+    )
 
     /** Load config from disk or create defaults. */
     fun reload() {
@@ -112,12 +129,17 @@ class ConfigStore @Inject constructor(
     suspend fun updateAsync(transform: (HavenConfig) -> HavenConfig) {
         _config.value = transform(_config.value)
         save()
+        relayApplier.configSaved(_config.value)
     }
 
     /** Update config synchronously (saves in background). */
     fun update(transform: (HavenConfig) -> HavenConfig) {
         _config.value = transform(_config.value)
-        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { save() }
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            save()
+            // After the write: the relay re-reads the config from disk.
+            relayApplier.configSaved(_config.value)
+        }
     }
 
     /** Set active account pubkey. */

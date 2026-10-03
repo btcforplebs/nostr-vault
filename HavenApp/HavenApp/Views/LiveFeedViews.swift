@@ -113,6 +113,24 @@ struct LiveStreamPlayerView: View {
                 // while you browse the rest of the app.
                 FullScreenVideoPlayer(url: url, onPiPStart: { dismiss() })
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .overlay(alignment: .topLeading) {
+                        // Minimize: the stream's sound carries on in the mini
+                        // player and on the lock screen while you browse; tap
+                        // Watch in the player to get the video back.
+                        Button(action: listenInBackground) {
+                            Image(systemName: "chevron.down")
+                                .font(.appSystem(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Circle().fill(Color.black.opacity(0.45)))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(6)
+                        .accessibilityLabel("Minimize")
+                        .accessibilityHint("Keeps playing the sound while you browse")
+                    }
                     // A 16:9 video sized to the width of a phone in landscape
                     // is taller than the screen, and a VStack that cannot fit
                     // its children pushes the last one — the composer — off the
@@ -172,6 +190,8 @@ struct LiveStreamPlayerView: View {
             .presentationBackground(Color.platformWindowBackground)
             #endif
         }
+        // The video has its own sound; don't play the mini player over it.
+        .onAppear { MusicPlayerService.shared.pause() }
         .alert("Block this host?", isPresented: $showingBlockConfirm) {
             Button("Block", role: .destructive) {
                 blockHost()
@@ -329,6 +349,20 @@ struct LiveStreamPlayerView: View {
             let sent = await chat.send(text, stream: stream)
             if !sent { draft = text }
         }
+    }
+
+    private func listenInBackground() {
+        MusicPlayerService.shared.playLive(stream: stream, item: PlayerTrack(
+            id: "live:\(stream.address)",
+            title: stream.title ?? "Live stream",
+            artist: hostName,
+            artworkURL: stream.imageURL ?? profile?.pictureURL,
+            audioURL: stream.streamingURL,
+            duration: nil,
+            isLive: true,
+            hostPubkey: stream.hostPubkey
+        ))
+        dismiss()
     }
 
     /// A stream zap pays the host named in the event, and carries the stream's

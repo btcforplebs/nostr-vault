@@ -140,8 +140,18 @@ class FeedViewModel @Inject constructor(
     fun setFeedScrollingDown(value: Boolean) = feedService.setFeedScrollingDown(value)
 
     // ── Pending notes (new posts indicator) ────────────────────
-    val pendingNoteCount: StateFlow<Int> = feedService.pendingNotes
-        .map { it.size }
+    // Counted through the current feed's filter, not raw: Global with the Web
+    // of Trust on drops most of what arrives, and a raw count put a "new posts"
+    // pill over nothing. Re-counted when the filter's inputs change (they all
+    // end in a new filtered list or a config change).
+    val pendingNoteCount: StateFlow<Int> = combine(
+        feedService.pendingNotes,
+        feedService.filteredNotes,
+        feedService.filteredMediaNotes,
+        configStore.config,
+    ) { pending, _, _, _ -> feedService.visiblePendingCount(pending) }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     fun applyPendingNotes() {
@@ -310,6 +320,7 @@ class FeedViewModel @Inject constructor(
         }
         cache.keys.intersect(gaps)
     }.distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
 
     val feedThreads: StateFlow<List<FeedThread>> = combine(
         filteredNotes,
@@ -317,7 +328,8 @@ class FeedViewModel @Inject constructor(
         resolvedAncestorIds,
     ) { notes, threaded, _ ->
         if (!threaded) emptyList() else FeedThreadGrouping.build(notes) { id -> feedService.findNote(id) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun fetchMissingNote(id: String) = feedService.fetchMissingNote(id)
 
@@ -337,6 +349,24 @@ class FeedViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val popularFilter: StateFlow<PopularFilter> = feedService.popularFilter
+
+    /** Global (and Media's Global) shows everyone rather than your Web of Trust. */
+    val globalShowsEveryone: StateFlow<Boolean> = configStore.config
+        .map { it.globalShowsEveryone }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.globalShowsEveryone)
+
+    /** Languages Global is narrowed to; empty is every language. */
+    val globalFeedLanguages: StateFlow<List<String>> = configStore.config
+        .map { it.globalFeedLanguages }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.globalFeedLanguages)
+
+    /** Global filters against this graph; empty means the relay hasn't built it yet. */
+    val trustGraphReady: StateFlow<Boolean> = feedService.wotPubkeys
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.wotPubkeys.value.isNotEmpty())
+
+    fun setGlobalShowsEveryone(on: Boolean) = feedService.setGlobalShowsEveryone(on)
+    fun setGlobalFeedLanguages(codes: List<String>) = feedService.setGlobalFeedLanguages(codes)
 
     private val _showEngagementStats = MutableStateFlow(false)
     val showEngagementStats: StateFlow<Boolean> = _showEngagementStats.asStateFlow()
@@ -478,6 +508,10 @@ class FeedViewModel @Inject constructor(
 
     fun saveScrollPosition(index: Int, offset: Int) {
         feedService.updateScrollPosition(index, offset)
+    }
+
+    fun setFeedScrolling(active: Boolean) {
+        feedService.setFeedScrolling(active)
     }
 
     fun clearRestoredPosition() {

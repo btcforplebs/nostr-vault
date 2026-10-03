@@ -33,6 +33,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +53,7 @@ import com.nostrvault.ui.components.ScrollCondenseEffect
 import com.nostrvault.ui.components.blockedWhen
 import com.nostrvault.ui.components.chromeFab
 import com.nostrvault.ui.components.rememberChromeFolded
+import com.nostrvault.ui.notification.ErrorStyle
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -99,7 +102,89 @@ class MediaGalleryViewModel @Inject constructor(
     }
 
     fun refresh() {
+        blossomService.forgetMirrorPresence()
         loadBlossomMedia()
+    }
+
+    /** Each Blossom server's answer per blob; the tile badges read this. */
+    val mirrorPresence = blossomService.mirrorPresence
+
+    /** The user's outside Blossom servers, so badges re-check when one is added. */
+    val blossomMirrors = configStore.config
+        .map { it.activeBlossomMirrors }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, configStore.config.value.activeBlossomMirrors)
+
+    fun backupSummary(sha256: String, presence: Map<String, Map<String, BlobPresence>>): BlossomBackupSummary? =
+        blossomService.backupSummary(sha256, presence)
+
+    /** Asks the servers about [sha256] once per session (or after a refresh). */
+    suspend fun checkBackup(sha256: String) {
+        blossomService.checkMirrorPresence(sha256)
+    }
+
+    private val _busySha = MutableStateFlow<String?>(null)
+    /** The blob being saved or mirrored from the menu right now, or null. */
+    val busySha = _busySha.asStateFlow()
+
+    /**
+     * Uploads a file already on this phone to the servers not known to have
+     * it, then re-checks so the badge shows the new count. Port of iOS
+     * `MediaBackupActions.mirrorMissing`.
+     */
+    fun mirrorMissing(item: BlossomMediaItem) {
+        if (_busySha.value != null) return
+        viewModelScope.launch {
+            _busySha.value = item.sha256
+            try {
+                val result = pushMissing(item.sha256)
+                when (result) {
+                    null -> notificationManager.showToast("Already on all your Blossom servers")
+                    is BlossomService.MirrorPushResult.AllAccepted -> notificationManager.showToast(result.message)
+                    is BlossomService.MirrorPushResult.Partial -> notificationManager.showError(result.message, ErrorStyle.WARNING)
+                    else -> notificationManager.showError(result.message)
+                }
+            } finally {
+                _busySha.value = null
+            }
+        }
+    }
+
+    /**
+     * Stores a file that is only on outside servers in the vault on this
+     * phone, then uploads it to any server that lacks it. Port of iOS
+     * `MediaBackupActions.saveToVault`.
+     */
+    fun saveToVault(item: BlossomMediaItem) {
+        if (_busySha.value != null) return
+        viewModelScope.launch {
+            _busySha.value = item.sha256
+            try {
+                val saved = blossomService.mirrorUrlToLocal(item.displayUrl)
+                if (saved == null) {
+                    notificationManager.showError("Could not save to your vault")
+                    return@launch
+                }
+                val backedUp = blossomMirrors.value.isNotEmpty() &&
+                    pushMissing(saved).let { it == null || it is BlossomService.MirrorPushResult.AllAccepted }
+                notificationManager.showToast(
+                    if (backedUp) "Saved to your vault and your Blossom" else "Saved to your vault on this phone",
+                )
+                loadBlossomMedia()
+            } finally {
+                _busySha.value = null
+            }
+        }
+    }
+
+    /** Null when every server already had it; otherwise the push result. Re-checks after. */
+    private suspend fun pushMissing(sha256: String): BlossomService.MirrorPushResult? {
+        blossomService.checkMirrorPresence(sha256, force = true)
+        val summary = blossomService.backupSummary(sha256)
+        if (summary != null && !summary.needsMirror) return null
+        val result = blossomService.pushLocalToMirrors(sha256, only = summary?.missing)
+        blossomService.checkMirrorPresence(sha256, force = true)
+        return result
     }
 
     private fun loadBlossomMedia() {
@@ -142,7 +227,7 @@ class MediaGalleryViewModel @Inject constructor(
 
                     _mediaItems.value = items.values
                         .filter { it.isImage || it.isVideo || it.mimeType == null }
-                        .sortedByDescending { it.uploaded ?: (it.lastModified?.div(1000)) ?: 0L }
+                        .sortedByDescending { it.sortTime }
                         .toList()
                 }
             } finally {
@@ -304,6 +389,9 @@ data class BlossomMediaItem(
     val isImage: Boolean get() = mimeType?.startsWith("image") == true || mimeType == "image"
     val isAudio: Boolean get() = mimeType?.startsWith("audio") == true
 
+    /** Seconds since epoch the gallery orders by, newest first: upload time, else file mtime. */
+    val sortTime: Long get() = uploaded ?: lastModified?.div(1000) ?: 0L
+
     /** GIF detection by extension or mime type, matching iOS MediaGallery isGif. */
     val isGif: Boolean get() =
         mimeType?.contains("gif", ignoreCase = true) == true ||
@@ -317,7 +405,21 @@ data class MediaItem(val url: String, val noteId: String)
 enum class DeleteScope { MIRRORS, EVERYWHERE }
 
 /** Media type filter matching iOS MediaTypeFilter. */
-enum class MediaTypeFilter { ALL, PHOTO, VIDEO, GIF, OTHER }
+enum class MediaTypeFilter {
+    ALL, PHOTO, VIDEO, GIF, OTHER;
+
+    /**
+     * Whether [item] belongs under this filter. Shared by the Media tab and
+     * the composer's relay picker so the two can't drift.
+     */
+    fun matches(item: BlossomMediaItem): Boolean = when (this) {
+        ALL -> true
+        PHOTO -> item.isImage && !item.isGif
+        VIDEO -> item.isVideo
+        GIF -> item.isGif
+        OTHER -> !item.isImage && !item.isVideo
+    }
+}
 
 /** Gallery layout mode. */
 enum class MediaLayoutMode { GRID, LIST }
@@ -371,18 +473,12 @@ fun MediaGalleryScreen(
     // a state they cannot see and cannot predict. The index keeps every mapping
     // the feed has ever handed it, so the answer is a property of the blob.
     val noteIdByHash by feedService.blobNoteIndex.collectAsState()
+    val mirrorPresence by viewModel.mirrorPresence.collectAsState()
+    val blossomMirrors by viewModel.blossomMirrors.collectAsState()
+    val busySha by viewModel.busySha.collectAsState()
 
     val filteredItems = remember(mediaItems, activeFilter) {
-        mediaItems
-            .filter { item ->
-                when (activeFilter) {
-                    MediaTypeFilter.ALL -> true
-                    MediaTypeFilter.PHOTO -> item.isImage && !item.isGif
-                    MediaTypeFilter.VIDEO -> item.isVideo
-                    MediaTypeFilter.GIF -> item.isGif
-                    MediaTypeFilter.OTHER -> !item.isImage && !item.isVideo
-                }
-            }
+        mediaItems.filter { activeFilter.matches(it) }
     }
 
     GlassScaffold(
@@ -399,43 +495,10 @@ fun MediaGalleryScreen(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
                     // Leading: media type filter icons
-                    GlassPill {
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.GridLayout,
-                            label = "All",
-                            selected = activeFilter == MediaTypeFilter.ALL,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.ALL },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Media,
-                            label = "Photos",
-                            selected = activeFilter == MediaTypeFilter.PHOTO,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.PHOTO },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Video,
-                            label = "Videos",
-                            selected = activeFilter == MediaTypeFilter.VIDEO,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.VIDEO },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Gif,
-                            label = "GIFs",
-                            selected = activeFilter == MediaTypeFilter.GIF,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.GIF },
-                        )
-                        MediaFilterIcon(
-                            icon = NostrVaultIcons.Document,
-                            label = "Other",
-                            selected = activeFilter == MediaTypeFilter.OTHER,
-                            accentColor = colors.primary,
-                            onClick = { activeFilter = MediaTypeFilter.OTHER },
-                        )
-                    }
+                    MediaTypeFilterPill(
+                        active = activeFilter,
+                        onSelect = { activeFilter = it },
+                    )
 
                     Spacer(Modifier.weight(1f))
 
@@ -555,6 +618,15 @@ fun MediaGalleryScreen(
                         MediaGridCell(
                             item = item,
                             index = index,
+                            backup = BackupBadgeState(
+                                summary = viewModel.backupSummary(item.sha256, mirrorPresence),
+                                mirrorCount = blossomMirrors.size,
+                                mirrorsKey = blossomMirrors,
+                                busy = busySha == item.sha256,
+                                check = { viewModel.checkBackup(item.sha256) },
+                                onMirror = { viewModel.mirrorMissing(item) },
+                                onSaveToVault = { viewModel.saveToVault(item) },
+                            ),
                             contextMenuTarget = contextMenuTarget,
                             noteId = noteIdByHash[item.sha256.lowercase()],
                             onNoteClick = onNoteClick,
@@ -589,6 +661,15 @@ fun MediaGalleryScreen(
                         MediaListRow(
                             item = item,
                             index = index,
+                            backup = BackupBadgeState(
+                                summary = viewModel.backupSummary(item.sha256, mirrorPresence),
+                                mirrorCount = blossomMirrors.size,
+                                mirrorsKey = blossomMirrors,
+                                busy = busySha == item.sha256,
+                                check = { viewModel.checkBackup(item.sha256) },
+                                onMirror = { viewModel.mirrorMissing(item) },
+                                onSaveToVault = { viewModel.saveToVault(item) },
+                            ),
                             contextMenuTarget = contextMenuTarget,
                             noteId = noteIdByHash[item.sha256.lowercase()],
                             onNoteClick = onNoteClick,
@@ -614,6 +695,7 @@ fun MediaGalleryScreen(
 private fun MediaGridCell(
     item: BlossomMediaItem,
     index: Int,
+    backup: BackupBadgeState,
     contextMenuTarget: Int?,
     noteId: String?,
     onNoteClick: (String) -> Unit,
@@ -667,10 +749,26 @@ private fun MediaGridCell(
             )
         }
 
+        // How many of your Blossom servers hold it, so you can spot what is
+        // not backed up without opening it.
+        if (backup.mirrorCount > 0) {
+            BlossomBackupBadge(
+                backup = backup,
+                compact = true,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(4.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 5.dp, vertical = 2.dp),
+            )
+        }
+
         // Context menu
         MediaItemContextMenu(
             expanded = contextMenuTarget == index,
             item = item,
+            backup = backup,
             noteId = noteId,
             onNoteClick = onNoteClick,
             onDismiss = onDismissMenu,
@@ -686,6 +784,7 @@ private fun MediaGridCell(
 private fun MediaListRow(
     item: BlossomMediaItem,
     index: Int,
+    backup: BackupBadgeState,
     contextMenuTarget: Int?,
     noteId: String?,
     onNoteClick: (String) -> Unit,
@@ -776,6 +875,10 @@ private fun MediaListRow(
                         modifier = Modifier.size(14.dp),
                     )
                 }
+                if (backup.mirrorCount > 0) {
+                    Spacer(Modifier.width(8.dp))
+                    BlossomBackupBadge(backup = backup)
+                }
             }
         }
 
@@ -796,6 +899,7 @@ private fun MediaListRow(
         MediaItemContextMenu(
             expanded = contextMenuTarget == index,
             item = item,
+            backup = backup,
             noteId = noteId,
             onNoteClick = onNoteClick,
             onDismiss = onDismissMenu,
@@ -810,6 +914,7 @@ private fun MediaListRow(
 private fun MediaItemContextMenu(
     expanded: Boolean,
     item: BlossomMediaItem,
+    backup: BackupBadgeState,
     noteId: String?,
     onNoteClick: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -863,14 +968,59 @@ private fun MediaItemContextMenu(
         )
         if (!item.isLocal) {
             DropdownMenuItem(
-                text = { Text("Mirror to Blossom") },
+                text = { Text(if (backup.busy) "Saving…" else "Save to Vault") },
+                enabled = !backup.busy,
                 leadingIcon = {
-                    Icon(NostrVaultIcons.Blossom, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Icon(NostrVaultIcons.Storage, contentDescription = null, modifier = Modifier.size(20.dp))
                 },
                 onClick = {
-                    // Blossom mirror integration point
                     onDismiss()
+                    backup.onSaveToVault()
                 },
+            )
+        } else if (backup.summary?.needsMirror == true) {
+            // On the phone, and some Blossom server does not have it yet.
+            DropdownMenuItem(
+                text = { Text(if (backup.busy) "Mirroring…" else "Mirror to Blossom") },
+                enabled = !backup.busy,
+                leadingIcon = {
+                    Icon(NostrVaultIcons.ArrowUp, contentDescription = null, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    backup.onMirror()
+                },
+            )
+        }
+    }
+}
+
+/**
+ * The Media tab's type filter buttons. Also used by the composer's relay
+ * picker, which offers only the [filters] it can attach.
+ */
+@Composable
+internal fun MediaTypeFilterPill(
+    active: MediaTypeFilter,
+    onSelect: (MediaTypeFilter) -> Unit,
+    filters: List<MediaTypeFilter> = MediaTypeFilter.entries,
+) {
+    val colors = LocalNostrVaultColors.current
+    GlassPill {
+        for (filter in filters) {
+            val (icon, label) = when (filter) {
+                MediaTypeFilter.ALL -> NostrVaultIcons.GridLayout to "All"
+                MediaTypeFilter.PHOTO -> NostrVaultIcons.Media to "Photos"
+                MediaTypeFilter.VIDEO -> NostrVaultIcons.Video to "Videos"
+                MediaTypeFilter.GIF -> NostrVaultIcons.Gif to "GIFs"
+                MediaTypeFilter.OTHER -> NostrVaultIcons.Document to "Other"
+            }
+            MediaFilterIcon(
+                icon = icon,
+                label = label,
+                selected = active == filter,
+                accentColor = colors.primary,
+                onClick = { onSelect(filter) },
             )
         }
     }
@@ -900,5 +1050,71 @@ private fun formatFileSize(bytes: Long): String {
         bytes < 1024 -> "$bytes B"
         bytes < 1024 * 1024 -> "${bytes / 1024} KB"
         else -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+    }
+}
+
+/** One tile's Blossom backup answer and the actions on it. */
+@Stable
+internal class BackupBadgeState(
+    /** Null until every configured server has answered once. */
+    val summary: BlossomBackupSummary?,
+    val mirrorCount: Int,
+    /** The server list, so adding one asks again instead of leaving the count unknown. */
+    val mirrorsKey: List<String>,
+    val busy: Boolean,
+    val check: suspend () -> Unit,
+    val onMirror: () -> Unit,
+    val onSaveToVault: () -> Unit,
+)
+
+/**
+ * The cloud "x/y" badge: green on every server, orange on some, grey on none,
+ * "?" when a server could not be asked. Port of iOS `BlossomBackupBadge`.
+ */
+@Composable
+internal fun BlossomBackupBadge(
+    backup: BackupBadgeState,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    val summary = backup.summary
+    // Re-runs after a pull to refresh clears the answers (summary goes null).
+    LaunchedEffect(backup.mirrorsKey, summary == null) {
+        if (summary == null) backup.check()
+    }
+    val tint = when {
+        summary == null || summary.present == 0 -> SecondaryText
+        summary.isComplete -> Color(0xFF4CAF50)
+        else -> Color(0xFFFF9800)
+    }
+    val total = backup.mirrorCount
+    val text = when {
+        summary == null -> "–/$total"
+        summary.unreachable > 0 && summary.present < summary.total -> "${summary.present}/$total?"
+        else -> "${summary.present}/$total"
+    }
+    val label = when {
+        summary == null -> "Checking your Blossom servers"
+        summary.unreachable > 0 -> "On ${summary.present} of $total Blossom servers, ${summary.unreachable} could not be reached"
+        else -> "On ${summary.present} of $total Blossom servers"
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.semantics(mergeDescendants = true) { contentDescription = label },
+    ) {
+        Icon(
+            imageVector = if (summary?.isComplete == true) NostrVaultIcons.CloudDone else NostrVaultIcons.Cloud,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(if (compact) 10.dp else 13.dp),
+        )
+        Spacer(Modifier.width(3.dp))
+        Text(
+            text = text,
+            color = tint,
+            fontSize = if (compact) 10.sp else 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"),
+        )
     }
 }

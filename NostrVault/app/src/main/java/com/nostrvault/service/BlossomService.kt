@@ -5,6 +5,8 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.remote.BlossomClient
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -515,49 +517,116 @@ class BlossomService @Inject constructor(
     }
 
     /**
-     * Push a local blob to all external mirrors.
+     * What pushing one blob from this device's relay to the outside servers
+     * did. "Pushed to mirrors" used to be shown whatever happened, including
+     * when every server refused the upload.
      */
-    suspend fun pushLocalToMirrors(sha256: String) = withContext(Dispatchers.IO) {
-        val localUrl = localBlossomURL() ?: return@withContext
+    sealed class MirrorPushResult {
+        /** Every server tried accepted the blob. */
+        data class AllAccepted(val count: Int) : MirrorPushResult()
 
-        // Download from local
-        val data = try {
-            val request = Request.Builder().url("$localUrl/$sha256").get().build()
-            val response = localClient.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext
-            readBodyCapped(response, MAX_BLOB_BYTES) ?: return@withContext
-        } catch (e: Exception) {
-            Log.w(TAG, "Local download failed: ${e.message}")
-            return@withContext
-        }
+        /** Some servers accepted it, some did not. */
+        data class Partial(val accepted: Int, val attempted: Int) : MirrorPushResult()
 
-        // Sign once and reuse across all mirrors (external signers fail on
-        // concurrent signing requests).
-        val authHeader = createAuthHeader("upload", sha256)
-        if (authHeader.isEmpty()) {
-            Log.e(TAG, "Push aborted: could not create Blossom auth event (signer unavailable)")
-            return@withContext
-        }
+        /** Every server tried refused it or could not be reached. */
+        data class AllFailed(val attempted: Int) : MirrorPushResult()
 
-        val mirrors = configStore.config.value.activeBlossomMirrors
-        val jobs = mirrors.map { mirror ->
-            async {
-                try {
-                    uploadToServer(
-                        source = UploadSource.Data(data),
-                        serverUrl = mirror,
-                        sha256 = sha256,
-                        contentType = "application/octet-stream",
-                        authHeader = authHeader,
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "Push to mirror $mirror failed: ${e.message}")
-                    null
-                }
+        /** No outside server is configured (or none of the requested ones is). */
+        data object NoOutsideServer : MirrorPushResult()
+
+        /** The blob could not be read from this device's relay. */
+        data object NotOnDevice : MirrorPushResult()
+
+        /** The upload could not be signed. */
+        data object SignerUnavailable : MirrorPushResult()
+
+        /** At least one outside server now holds the blob. */
+        val anyAccepted: Boolean get() = this is AllAccepted || this is Partial
+
+        /** One short line for a toast. Wording follows iOS (PR #109). */
+        val message: String
+            get() = when (this) {
+                is AllAccepted -> "Pushed to mirrors"
+                is Partial -> "Mirrored to $accepted of $attempted Blossom servers"
+                is AllFailed -> "Could not push to mirrors"
+                NoOutsideServer -> "No Blossom mirrors configured"
+                NotOnDevice -> "Could not read this file from your vault"
+                SignerUnavailable -> "Could not sign the upload"
+            }
+
+        companion object {
+            fun of(accepted: Int, attempted: Int): MirrorPushResult = when {
+                attempted <= 0 -> NoOutsideServer
+                accepted >= attempted -> AllAccepted(attempted)
+                accepted > 0 -> Partial(accepted, attempted)
+                else -> AllFailed(attempted)
             }
         }
-        jobs.awaitAll()
     }
+
+    /**
+     * Push a blob that is already in this device's relay to the outside
+     * servers. [only] limits the upload to those servers (the ones missing the
+     * blob); null means every configured server. Port of iOS
+     * `pushLocalToMirrors(sha256:only:)`.
+     */
+    suspend fun pushLocalToMirrors(sha256: String, only: Collection<String>? = null): MirrorPushResult =
+        withContext(Dispatchers.IO) {
+            val configured = configStore.config.value.activeBlossomMirrors
+            val mirrors = if (only == null) configured else configured.filter { it in only }
+            if (mirrors.isEmpty()) {
+                Log.w(TAG, "Push of ${sha256.take(8)}: no outside Blossom server to push to")
+                return@withContext MirrorPushResult.NoOutsideServer
+            }
+
+            val localUrl = localBlossomURL() ?: return@withContext MirrorPushResult.NotOnDevice
+
+            // Read from this device's relay.
+            var contentType = "application/octet-stream"
+            val data = try {
+                val request = Request.Builder().url("$localUrl/$sha256").get().build()
+                localClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.w(TAG, "Push of ${sha256.take(8)}: local read HTTP ${response.code}")
+                        return@withContext MirrorPushResult.NotOnDevice
+                    }
+                    response.header("Content-Type")?.takeIf { it.isNotBlank() }?.let { contentType = it }
+                    readBodyCapped(response, MAX_BLOB_BYTES)
+                } ?: return@withContext MirrorPushResult.NotOnDevice
+            } catch (e: Exception) {
+                Log.w(TAG, "Local download failed: ${e.message}")
+                return@withContext MirrorPushResult.NotOnDevice
+            }
+
+            // Sign once and reuse across all mirrors (external signers fail on
+            // concurrent signing requests).
+            val authHeader = createAuthHeader("upload", sha256)
+            if (authHeader.isEmpty()) {
+                Log.e(TAG, "Push aborted: could not create Blossom auth event (signer unavailable)")
+                return@withContext MirrorPushResult.SignerUnavailable
+            }
+
+            val accepted = mirrors.map { mirror ->
+                async {
+                    try {
+                        uploadToServer(
+                            source = UploadSource.Data(data),
+                            serverUrl = mirror,
+                            sha256 = sha256,
+                            contentType = contentType,
+                            authHeader = authHeader,
+                        ) != null
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Push to mirror $mirror failed: ${e.message}")
+                        false
+                    }
+                }
+            }.awaitAll().count { it }
+
+            MirrorPushResult.of(accepted, mirrors.size).also {
+                Log.i(TAG, "Push of ${sha256.take(8)}: $accepted of ${mirrors.size} servers accepted")
+            }
+        }
 
     /**
      * Mirror all blobs from external to local.
@@ -681,34 +750,99 @@ class BlossomService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     /**
-     * Check if a blob exists on each mirror.
+     * Each server's last answer per blob, kept for the session. The Media tab
+     * tiles, the list rows and the viewer all read this one map, so a file
+     * cannot show "3/3" on its tile and offer a Mirror button in the viewer.
      */
-    suspend fun checkMirrorStatus(sha256: String): Map<String, Boolean> = withContext(Dispatchers.IO) {
-        val mirrors = configStore.config.value.activeBlossomMirrors
-        val results = mutableMapOf<String, Boolean>()
+    private val _mirrorPresence = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Map<String, BlobPresence>>>(emptyMap())
+    val mirrorPresence: kotlinx.coroutines.flow.StateFlow<Map<String, Map<String, BlobPresence>>> = _mirrorPresence
 
-        val jobs = mirrors.map { mirror ->
-            async {
-                val exists = checkBlobExists(mirror, sha256)
-                synchronized(results) { results[mirror] = exists }
-            }
+    /** Checks running now, by hash, so a grid of tiles asks each server once per blob. */
+    private val presenceInFlight = mutableMapOf<String, Deferred<Map<String, BlobPresence>>>()
+
+    /** Caps blobs checked at once; a scrolled grid would otherwise fire hundreds of HEADs. */
+    private val presenceGate = kotlinx.coroutines.sync.Semaphore(6)
+
+    /**
+     * Check if a blob exists on each mirror. A server that could not be asked
+     * counts as "does not have it" here; use [checkMirrorPresence] to tell the two apart.
+     */
+    suspend fun checkMirrorStatus(sha256: String): Map<String, Boolean> =
+        checkMirrorPresence(sha256, force = true).mapValues { it.value == BlobPresence.PRESENT }
+
+    /**
+     * Asks every configured Blossom server whether it holds [sha256] and
+     * records the answer in [mirrorPresence]. Without [force], a cached answer
+     * that covers every configured server, or a check already running, is reused.
+     * Port of iOS `BlossomBackupStore.refresh`.
+     */
+    suspend fun checkMirrorPresence(sha256: String, force: Boolean = false): Map<String, BlobPresence> {
+        val hash = sha256.lowercase()
+        val mirrors = configStore.config.value.activeBlossomMirrors
+        if (mirrors.isEmpty()) return emptyMap()
+        val running = synchronized(presenceInFlight) { presenceInFlight[hash] }
+        if (running != null) {
+            val result = running.await()
+            if (!force) return result
+        } else if (!force) {
+            _mirrorPresence.value[hash]?.takeIf { cached -> mirrors.all { it in cached } }?.let { return it }
         }
-        jobs.awaitAll()
-        results
+        // The check runs in the service scope and records its own answer, so a
+        // tile scrolled away mid-check still fills the cache for when it returns.
+        val job = synchronized(presenceInFlight) {
+            presenceInFlight[hash]?.takeIf { !force } ?: scope.async {
+                try {
+                    presenceGate.withPermit {
+                        mirrors.map { mirror -> async { mirror to checkBlobExists(mirror, hash) } }
+                            .awaitAll().toMap()
+                    }.also { result -> _mirrorPresence.update { it + (hash to result) } }
+                } finally {
+                    synchronized(presenceInFlight) {
+                        if (presenceInFlight[hash] === coroutineContext[Job]) presenceInFlight.remove(hash)
+                    }
+                }
+            }.also { presenceInFlight[hash] = it }
+        }
+        return job.await()
     }
 
-    private fun checkBlobExists(mirror: String, sha256: String): Boolean {
+    /** Drops every cached answer, so the next look asks the servers again (pull to refresh). */
+    fun forgetMirrorPresence() {
+        _mirrorPresence.value = emptyMap()
+    }
+
+    /**
+     * How many configured servers hold [sha256], or null until every one of
+     * them has answered once.
+     */
+    fun backupSummary(sha256: String, presence: Map<String, Map<String, BlobPresence>> = _mirrorPresence.value): BlossomBackupSummary? =
+        BlossomBackupSummary.of(presence[sha256.lowercase()], configStore.config.value.activeBlossomMirrors)
+
+    /**
+     * A 2xx alone is not enough: some servers answer 200 with an HTML page for
+     * any path, which would read as "has it" for every file.
+     */
+    private fun checkBlobExists(mirror: String, sha256: String): BlobPresence {
         return try {
             val request = Request.Builder()
-                .url("$mirror/$sha256")
+                .url("${mirror.trimEnd('/')}/$sha256")
                 .head()
                 .build()
-
-            val response = remoteClient.newCall(request).execute()
-            response.isSuccessful
+            val client = if (isLocalhost(mirror)) localClient else presenceClient
+            client.newCall(request).execute().use { response ->
+                blobPresence(response.code, response.header("Content-Type"), response.header("Content-Length"))
+            }
         } catch (e: Exception) {
-            false
+            BlobPresence.UNREACHABLE
         }
+    }
+
+    /** Short timeouts: a sleeping server should read as "couldn't reach", not hang the badge. */
+    private val presenceClient by lazy {
+        remoteClient.newBuilder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .build()
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -882,6 +1016,57 @@ class BlossomService @Inject constructor(
         }
         data class FileSource(val file: File) : UploadSource() {
             val byteCount: Long get() = file.length()
+        }
+    }
+}
+
+/** Whether one Blossom server holds a blob. */
+enum class BlobPresence {
+    PRESENT,
+    ABSENT,
+    /** The server did not answer (offline, timeout, 5xx), so we do not know. */
+    UNREACHABLE,
+}
+
+/** The decision behind a HEAD check, split out so it can be tested without a server. Matches iOS. */
+fun blobPresence(statusCode: Int, contentType: String?, contentLength: String?): BlobPresence = when (statusCode) {
+    in 200..299 -> when {
+        contentType?.lowercase()?.startsWith("text/html") == true -> BlobPresence.ABSENT
+        contentLength?.toLongOrNull() == 0L -> BlobPresence.ABSENT
+        else -> BlobPresence.PRESENT
+    }
+    in 400..499 -> BlobPresence.ABSENT
+    else -> BlobPresence.UNREACHABLE
+}
+
+/** How many of the user's Blossom servers hold one file. Port of iOS `BlossomBackupSummary`. */
+data class BlossomBackupSummary(
+    val present: Int,
+    val unreachable: Int,
+    val total: Int,
+    /** Servers not known to have the file: those that said no plus those that could not be asked. */
+    val missing: List<String>,
+) {
+    val isComplete: Boolean get() = total > 0 && present == total
+    /** Worth offering an upload: some server lacks it, or could not be asked. */
+    val needsMirror: Boolean get() = total > 0 && present < total
+
+    companion object {
+        /** Null while any configured server has no answer yet, rather than guessing. */
+        fun of(byMirror: Map<String, BlobPresence>?, mirrors: List<String>): BlossomBackupSummary? {
+            if (mirrors.isEmpty()) return BlossomBackupSummary(0, 0, 0, emptyList())
+            if (byMirror == null || !mirrors.all { it in byMirror }) return null
+            var present = 0
+            var unreachable = 0
+            val missing = mutableListOf<String>()
+            for (mirror in mirrors) {
+                when (byMirror[mirror]) {
+                    BlobPresence.PRESENT -> present++
+                    BlobPresence.UNREACHABLE -> { unreachable++; missing += mirror }
+                    else -> missing += mirror
+                }
+            }
+            return BlossomBackupSummary(present, unreachable, mirrors.size, missing)
         }
     }
 }

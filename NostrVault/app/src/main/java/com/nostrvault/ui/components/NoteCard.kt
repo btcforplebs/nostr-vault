@@ -22,6 +22,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -53,6 +59,9 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.NoteStats
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
+import com.nostrvault.service.MediaSaveService
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -729,18 +738,22 @@ fun MediaPreviewRow(
     tags: List<List<String>> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
+    // One id per row, so the viewer can find the photo it opened from.
+    val origin = remember { MediaZoomSources.newOrigin() }
     if (urls.size == 1) {
         SingleMediaPreview(
             url = urls.first(),
             tags = tags,
-            onMediaClick = { FullScreenMediaRouter.open(urls, 0) },
+            sourceKey = MediaSourceKey(origin, 0),
+            onMediaClick = { FullScreenMediaRouter.open(urls, 0, origin) },
             modifier = modifier,
         )
     } else {
         MediaCarousel(
             urls = urls,
             tags = tags,
-            onMediaClick = { index -> FullScreenMediaRouter.open(urls, index) },
+            origin = origin,
+            onMediaClick = { index -> FullScreenMediaRouter.open(urls, index, origin) },
             modifier = modifier,
         )
     }
@@ -756,15 +769,23 @@ fun MediaPreviewRow(
  * Rendered as an activity-window overlay via [FullScreenMediaHost] — NOT a Dialog —
  * so Picture-in-Picture (which only captures the activity's own window) can show
  * the playing video. All chrome hides while the activity is in PiP.
+ *
+ * With an [origin], a photo zooms out of its spot in the feed and, on close
+ * (swipe, back, or the X), back into it — iOS #117. It fades instead for a
+ * video, a zoomed-in photo, a spot that has scrolled away, or Reduce Motion.
+ * [onDismiss] runs once the close animation has landed.
  */
 @Composable
 internal fun FullScreenMediaPager(
     urls: List<String>,
     initialIndex: Int,
     onDismiss: () -> Unit,
+    origin: Long? = null,
     viewModel: FeedMediaMirrorViewModel = hiltViewModel(),
 ) {
     val mirrorState by viewModel.state.collectAsState()
+    val saveState by viewModel.saveState.collectAsState()
+    val context = LocalContext.current
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -778,6 +799,7 @@ internal fun FullScreenMediaPager(
     // Re-evaluate mirror status whenever the visible page changes (the ViewModel is
     // shared across the feed, so only one viewer is ever active).
     LaunchedEffect(currentUrl) { viewModel.onOpen(currentUrl) }
+    LaunchedEffect(pagerState.currentPage) { FullScreenMediaRouter.setPage(pagerState.currentPage) }
 
     // Drag-to-dismiss state, using the same visual formulas as MediaViewerScreen / iOS.
     val dragOffsetY = remember { Animatable(0f) }
@@ -795,21 +817,117 @@ internal fun FullScreenMediaPager(
         derivedStateOf { (1f - abs(dragOffsetY.value) / 100f).coerceIn(0f, 1f) }
     }
 
-    BackHandler(onBack = onDismiss)
+    // ── Zoom in from / out to the tapped photo ──────────────────────────
+    // 0 = drawn over the source (or invisible, for a fade), 1 = full screen.
+    val progress = remember { Animatable(0f) }
+    // The transform at progress 0; null means cross-fade.
+    var zoomFrom by remember { mutableStateOf<ZoomTransform?>(null) }
+    var sourceRect by remember { mutableStateOf<ZoomRect?>(null) }
+    var containerOrigin by remember { mutableStateOf(Offset.Zero) }
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    var closing by remember { mutableStateOf(false) }
+
+    /** The zoom for the item at [page], or null when it should fade. */
+    fun zoomFor(page: Int): Pair<ZoomTransform, ZoomRect>? {
+        if (origin == null || Motion.isReduced || containerSize == IntSize.Zero) return null
+        val url = urls.getOrNull(page) ?: return null
+        if (isVideoUrl(url)) return null
+        val source = MediaZoomSources.get(MediaSourceKey(origin, page)) ?: return null
+        if (!MediaZoomGeometry.isOnScreen(source.full, source.visible)) return null
+        val rect = source.full.offset(-containerOrigin.x, -containerOrigin.y)
+        val w = containerSize.width.toFloat()
+        val h = containerSize.height.toFloat()
+        // The viewer draws the image Fit; without a known ratio the source
+        // box's own shape is the best guess (exact for a feed card).
+        val aspect = MediaAspectCache.get(url) ?: (rect.width / rect.height)
+        val fitted = MediaZoomGeometry.fit(aspect, w, h)
+        return MediaZoomGeometry.transform(fitted, rect, source.crop) to rect
+    }
+
+    // Keyed on "laid out yet", not the size, so a rotation mid-zoom doesn't cancel it.
+    val laidOut = containerSize != IntSize.Zero
+    LaunchedEffect(laidOut) {
+        if (!laidOut || closing || progress.value > 0f) return@LaunchedEffect
+        val zoom = zoomFor(pagerState.currentPage)
+        zoomFrom = zoom?.first
+        sourceRect = zoom?.second
+        if (zoom != null && origin != null) {
+            FullScreenMediaRouter.setHiddenSource(MediaSourceKey(origin, pagerState.currentPage))
+        }
+        progress.animateTo(1f, if (zoom != null) Motion.panel() else Motion.fade())
+        // Once full screen the black covers the source; show it again so a page
+        // change can't leave a hole in the carousel underneath.
+        FullScreenMediaRouter.setHiddenSource(null)
+    }
+
+    val close: () -> Unit = close@{
+        if (closing) return@close
+        closing = true
+        val page = pagerState.currentPage
+        val zoom = if (currentScale <= 1.05f) zoomFor(page) else null
+        zoomFrom = zoom?.first
+        sourceRect = zoom?.second
+        if (zoom != null && origin != null) {
+            FullScreenMediaRouter.setHiddenSource(MediaSourceKey(origin, page))
+        }
+        scope.launch {
+            launch { dragOffsetY.animateTo(0f, if (zoom != null) Motion.panel() else Motion.fade()) }
+            progress.animateTo(0f, if (zoom != null) Motion.panel() else Motion.fade())
+            onDismiss()
+        }
+    }
+
+    BackHandler(onBack = close)
+
+    val shown by remember { derivedStateOf { progress.value.coerceIn(0f, 1f) } }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = backgroundAlpha))
+            .onGloballyPositioned {
+                containerOrigin = it.positionInWindow()
+                containerSize = it.size
+            }
+            .background(Color.Black.copy(alpha = backgroundAlpha * shown))
             // Swallow taps that no child consumed so they can't reach the UI beneath
             .pointerInput(Unit) { detectTapGestures { } },
     ) {
             HorizontalPager(
                 state = pagerState,
                 // Lock paging while a page is zoomed so pan doesn't flip pages.
-                userScrollEnabled = currentScale <= 1.05f,
+                userScrollEnabled = currentScale <= 1.05f && !closing,
                 modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer {
+                        val from = zoomFrom
+                        if (from == null) {
+                            alpha = shown
+                        } else {
+                            val t = MediaZoomGeometry.interpolate(from, progress.value)
+                            transformOrigin = TransformOrigin(0f, 0f)
+                            scaleX = t.scale
+                            scaleY = t.scale
+                            translationX = t.translationX
+                            translationY = t.translationY
+                        }
+                    }
+                    .drawWithContent {
+                        val from = zoomFrom
+                        val src = sourceRect
+                        if (from == null || src == null || progress.value >= 1f) {
+                            drawContent()
+                        } else {
+                            // Clip to the source's shape at 0, opening to the full screen.
+                            val clip = MediaZoomGeometry.lerpRect(
+                                MediaZoomGeometry.toLocal(src, from),
+                                ZoomRect(0f, 0f, size.width, size.height),
+                                progress.value,
+                            )
+                            clipRect(clip.left, clip.top, clip.left + clip.width, clip.top + clip.height) {
+                                this@drawWithContent.drawContent()
+                            }
+                        }
+                    }
                     .graphicsLayer {
                         translationY = dragOffsetY.value
                         scaleX = contentScale
@@ -830,14 +948,16 @@ internal fun FullScreenMediaPager(
                         contentDescription = null,
                         onScaleChanged = { currentScale = it },
                         onVerticalDrag = { deltaY ->
-                            if (currentScale <= 1.05f) {
+                            if (currentScale <= 1.05f && !closing) {
                                 accumulatedDragY += deltaY
                                 scope.launch { dragOffsetY.snapTo(accumulatedDragY) }
                             }
                         },
                         onVerticalDragEnd = {
-                            if (abs(accumulatedDragY) > dismissThresholdPx) {
-                                onDismiss()
+                            if (closing) {
+                                // The close animation owns the offset now.
+                            } else if (abs(accumulatedDragY) > dismissThresholdPx) {
+                                close()
                             } else {
                                 scope.launch {
                                     dragOffsetY.animateTo(0f, Motion.snapBack())
@@ -852,13 +972,13 @@ internal fun FullScreenMediaPager(
 
             if (!isInPiP) {
                 IconButton(
-                    onClick = onDismiss,
+                    onClick = close,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .statusBarsPadding()
                         .padding(8.dp)
                         .size(40.dp)
-                        .graphicsLayer { alpha = overlayAlpha }
+                        .graphicsLayer { alpha = overlayAlpha * shown }
                         .background(Color.Black.copy(alpha = 0.4f), CircleShape),
                 ) {
                     Icon(
@@ -869,16 +989,34 @@ internal fun FullScreenMediaPager(
                 }
             }
 
-            if (!isInPiP && viewModel.canMirror) {
-                MirrorToBlossomPill(
-                    state = mirrorState,
-                    onMirror = { viewModel.mirror(currentUrl) },
+            // Top row, like iOS (PR #120): Save, then Mirror / Mirrored, one-word
+            // labels. Messages go out as system toasts: the in-app pills draw
+            // under this overlay.
+            if (!isInPiP) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .statusBarsPadding()
                         .padding(8.dp)
-                        .graphicsLayer { alpha = overlayAlpha },
-                )
+                        .graphicsLayer { alpha = overlayAlpha * shown },
+                ) {
+                    SaveToGalleryPill(
+                        state = saveState,
+                        onSave = {
+                            viewModel.saveToGallery(currentUrl) { message ->
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
+                    if (viewModel.canMirror) {
+                        MirrorToBlossomPill(
+                            state = mirrorState,
+                            onMirror = { viewModel.mirror(currentUrl) },
+                        )
+                    }
+                }
             }
 
             // Page-position dots, only when the note carries more than one item.
@@ -890,7 +1028,7 @@ internal fun FullScreenMediaPager(
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
                         .padding(bottom = 24.dp)
-                        .graphicsLayer { alpha = overlayAlpha },
+                        .graphicsLayer { alpha = overlayAlpha * shown },
                 ) {
                     repeat(urls.size) { i ->
                         val selected = i == pagerState.currentPage
@@ -927,13 +1065,21 @@ private fun MirrorToBlossomPill(
     val clickable = state is FeedMediaMirrorViewModel.MirrorState.Idle ||
         state is FeedMediaMirrorViewModel.MirrorState.Failed
 
+    val spoken = when (state) {
+        FeedMediaMirrorViewModel.MirrorState.Mirroring -> "Mirroring to Blossom"
+        FeedMediaMirrorViewModel.MirrorState.Mirrored -> "Mirrored to Blossom"
+        is FeedMediaMirrorViewModel.MirrorState.Failed -> "Mirror failed, retry"
+        FeedMediaMirrorViewModel.MirrorState.Idle -> "Mirror to Blossom"
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .clip(CircleShape)
             .background(bg)
             .then(if (clickable) Modifier.clickable(onClick = onMirror) else Modifier)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .semantics(mergeDescendants = true) { contentDescription = spoken }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         when (state) {
             FeedMediaMirrorViewModel.MirrorState.Mirroring -> {
@@ -948,19 +1094,71 @@ private fun MirrorToBlossomPill(
             FeedMediaMirrorViewModel.MirrorState.Mirrored -> {
                 Icon(NostrVaultIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Mirrored to Blossom", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Mirrored", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             is FeedMediaMirrorViewModel.MirrorState.Failed -> {
                 Icon(NostrVaultIcons.Dismiss, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Mirror failed — retry", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Retry", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             FeedMediaMirrorViewModel.MirrorState.Idle -> {
                 Icon(NostrVaultIcons.Backup, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Mirror to Blossom", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Mirror", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+/** Capsule that saves the viewed photo or video to the device gallery. */
+@Composable
+private fun SaveToGalleryPill(
+    state: FeedMediaMirrorViewModel.SaveState,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val saved = state == FeedMediaMirrorViewModel.SaveState.Saved
+    val bg = if (saved) Color(0xFF33CC99).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.6f)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(CircleShape)
+            .background(bg)
+            .then(
+                if (state == FeedMediaMirrorViewModel.SaveState.Idle) Modifier.clickable(onClick = onSave)
+                else Modifier,
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = if (saved) "Saved to gallery" else "Save to gallery"
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        if (state == FeedMediaMirrorViewModel.SaveState.Saving) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                color = Color.White,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                imageVector = if (saved) NostrVaultIcons.Check else NostrVaultIcons.Import,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = when (state) {
+                FeedMediaMirrorViewModel.SaveState.Saving -> "Saving…"
+                FeedMediaMirrorViewModel.SaveState.Saved -> "Saved"
+                FeedMediaMirrorViewModel.SaveState.Idle -> "Save"
+            },
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
     }
 }
 
@@ -968,7 +1166,36 @@ private fun MirrorToBlossomPill(
 class FeedMediaMirrorViewModel @Inject constructor(
     private val blossomService: BlossomService,
     private val mediaCacheService: MediaCacheService,
+    private val mediaSaveService: MediaSaveService,
 ) : ViewModel() {
+
+    enum class SaveState { Idle, Saving, Saved }
+
+    private val _saveState = MutableStateFlow(SaveState.Idle)
+    val saveState = _saveState.asStateFlow()
+
+    /** The URL on screen; a save that finishes after the user paged away leaves the new page's state alone. */
+    private var openUrl: String? = null
+
+    /**
+     * Save the media on screen to the device gallery (MediaStore, no storage
+     * permission on Android 10+). [onMessage] gets one short line for a toast.
+     * Port of iOS FeedMediaViewer.saveToPhotosTapped().
+     */
+    fun saveToGallery(url: String, onMessage: (String) -> Unit) {
+        if (_saveState.value != SaveState.Idle) return
+        viewModelScope.launch {
+            _saveState.value = SaveState.Saving
+            // Feed videos are recognised by extension, so that names the type
+            // when the server only says application/octet-stream.
+            val hint = if (isVideoUrl(url)) MediaSaveService.mimeTypeForExtension(url) else null
+            val result = mediaSaveService.saveToGallery(url, hint)
+            if (openUrl == url) {
+                _saveState.value = if (result.isSuccess) SaveState.Saved else SaveState.Idle
+            }
+            onMessage(if (result.isSuccess) "Saved to gallery" else "Couldn't save to gallery")
+        }
+    }
 
     sealed interface MirrorState {
         data object Idle : MirrorState
@@ -989,6 +1216,8 @@ class FeedMediaMirrorViewModel @Inject constructor(
      * otherwise offer the mirror action. Mirrors iOS FeedMediaViewer.updateMirrorStatus().
      */
     fun onOpen(url: String) {
+        openUrl = url
+        _saveState.value = SaveState.Idle
         val hash = extractSha256(url)
         _state.value = if (hash != null && mediaCacheService.isInLocalBlossom(hash)) {
             MirrorState.Mirrored
@@ -1021,6 +1250,7 @@ class FeedMediaMirrorViewModel @Inject constructor(
 private fun SingleMediaPreview(
     url: String,
     tags: List<List<String>>,
+    sourceKey: MediaSourceKey,
     onMediaClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1064,6 +1294,7 @@ private fun SingleMediaPreview(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(displayHeight)
+                .mediaZoomSource(sourceKey)
                 .clip(RoundedCornerShape(8.dp))
                 .background(TertiaryGroupedBg)
                 .clickable { onMediaClick(url) },
@@ -1145,11 +1376,22 @@ private fun BlurHashPreview(
 private fun MediaCarousel(
     urls: List<String>,
     tags: List<List<String>>,
+    origin: Long,
     onMediaClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val pagerState = rememberPagerState(pageCount = { urls.size })
+
+    // Follow the full-screen viewer as it pages, so closing it on the third
+    // photo zooms back into a carousel showing the third photo.
+    val viewerPosition by FullScreenMediaRouter.position.collectAsState()
+    LaunchedEffect(viewerPosition) {
+        val p = viewerPosition ?: return@LaunchedEffect
+        if (p.origin == origin && p.index in urls.indices && p.index != pagerState.currentPage) {
+            pagerState.scrollToPage(p.index)
+        }
+    }
 
     // A pager has one height for every page, so the ratio comes from the first
     // image — the one you see before you swipe. Pages are drawn Fit inside it,
@@ -1175,6 +1417,7 @@ private fun MediaCarousel(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxSize()
+                    .mediaZoomSource(MediaSourceKey(origin, page))
                     .background(TertiaryGroupedBg)
                     .clickable { onMediaClick(page) },
             ) {
@@ -1411,15 +1654,31 @@ private fun ParentNoteSkeleton(
 
 // ── Formatting helpers ────────────────────────────────────────────
 
-internal fun formatTimestamp(epochSecs: Long): String {
-    val now = System.currentTimeMillis() / 1000
-    val diff = now - epochSecs
+internal fun formatTimestamp(epochSecs: Long): String =
+    formatTimestamp(epochSecs, System.currentTimeMillis() / 1000)
+
+/**
+ * Relative time for a week, then a date: "Sep 24" for this year,
+ * "Sep 24, 2025" for any other year (iOS `relativeTime`, PR #69).
+ */
+internal fun formatTimestamp(
+    epochSecs: Long,
+    nowSecs: Long,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    locale: java.util.Locale = java.util.Locale.getDefault(),
+): String {
+    val diff = nowSecs - epochSecs
     return when {
         diff < 60 -> "now"
         diff < 3600 -> "${diff / 60}m"
         diff < 86400 -> "${diff / 3600}h"
         diff < 604800 -> "${diff / 86400}d"
-        else -> "${diff / 604800}w"
+        else -> {
+            val date = java.time.Instant.ofEpochSecond(epochSecs).atZone(zone)
+            val sameYear = date.year == java.time.Instant.ofEpochSecond(nowSecs).atZone(zone).year
+            val pattern = if (sameYear) "MMM d" else "MMM d, yyyy"
+            java.time.format.DateTimeFormatter.ofPattern(pattern, locale).format(date)
+        }
     }
 }
 

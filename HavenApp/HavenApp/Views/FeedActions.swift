@@ -8,6 +8,46 @@ struct ComposeContext: Identifiable {
     var draftId: String? = nil
 }
 
+/// A composer for a feed that shows something other than notes.
+enum ModeComposer: String, Identifiable {
+    case divine, article, recipe
+
+    var id: String { rawValue }
+
+    init?(feedMode: FeedMode) {
+        switch feedMode {
+        case .reels: self = .divine
+        case .articles: self = .article
+        case .recipes: self = .recipe
+        default: return nil
+        }
+    }
+
+    var buttonTitle: String {
+        switch self {
+        case .divine: return "diVine"
+        case .article: return "Write"
+        case .recipe: return "Recipe"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .divine: return "video.badge.plus"
+        case .article: return "doc.richtext"
+        case .recipe: return "fork.knife"
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .divine: return "Post a diVine"
+        case .article: return "Write an article"
+        case .recipe: return "Post a recipe"
+        }
+    }
+}
+
 enum NoteLayoutMode {
     case sideBySide
     case wide

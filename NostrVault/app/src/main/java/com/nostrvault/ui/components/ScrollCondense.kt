@@ -70,6 +70,18 @@ object ScrollChrome {
 
     private var settleJob: Job? = null
 
+    /**
+     * Opacity of what folds away: gone by 60% of the fold. iOS
+     * `ChromeCollapse.fadeOut`.
+     */
+    fun fadeOut(p: Float): Float = (1f - p / 0.6f).coerceIn(0f, 1f)
+
+    /**
+     * Opacity of what the fold reveals: starts at 40%, so outgoing and
+     * incoming controls never read as stacked. iOS `ChromeCollapse.fadeIn`.
+     */
+    fun fadeIn(p: Float): Float = ((p - 0.4f) / 0.6f).coerceIn(0f, 1f)
+
     /** Folded past halfway — which controls take taps, and the old boolean. */
     val isFolded: Boolean get() = progress > 0.5f
 
@@ -228,6 +240,44 @@ fun Modifier.chromeFab(): Modifier = this.layout { measurable, constraints ->
             transformOrigin = TransformOrigin(1f, 1f)
             scaleX = 1f - 0.5f * p
             scaleY = 1f - 0.5f * p
+        }
+    }
+}
+
+/**
+ * The floating "New Posts" button's fold: it fades, shrinks toward its top
+ * edge and rises [rise] back under the top bar as the bars fold, and returns
+ * with them. Folded, a small pill in the top bar's row stands in for it
+ * ([chromeReveal]). iOS `NewPostsFold`.
+ */
+fun Modifier.newPostsFold(rise: Dp = 16.dp): Modifier = this.layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val visible = ScrollChrome.fadeOut(ScrollChrome.progress)
+    val risePx = rise.toPx()
+    layout(placeable.width, placeable.height) {
+        // Faded out entirely: not placed, so it takes no taps meant for the feed.
+        if (visible > 0f) placeable.placeRelativeWithLayer(0, 0) {
+            alpha = visible
+            transformOrigin = TransformOrigin(0.5f, 0f)
+            scaleX = 0.85f + 0.15f * visible
+            scaleY = 0.85f + 0.15f * visible
+            translationY = -risePx * (1f - visible)
+        }
+    }
+}
+
+/**
+ * The opposite of a fold: content that appears as the bars fold (the small
+ * "New Posts" pill in the folded top bar). iOS `ChromeFold(inverted: true)`.
+ */
+fun Modifier.chromeReveal(): Modifier = this.layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val visible = ScrollChrome.fadeIn(ScrollChrome.progress)
+    layout(placeable.width, placeable.height) {
+        if (visible > 0f) placeable.placeRelativeWithLayer(0, 0) {
+            alpha = visible
+            scaleX = 0.85f + 0.15f * visible
+            scaleY = 0.85f + 0.15f * visible
         }
     }
 }

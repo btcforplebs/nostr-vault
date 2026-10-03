@@ -38,6 +38,8 @@ class FeedService: ObservableObject {
     @Published private(set) var referencedNoteUpdates = ReferencedNoteSignal()
     private var pendingReferencedNoteIds: Set<String> = []
     private var referencedNoteFlushScheduled = false
+    /// Size at which `parentNotesCache` is next trimmed. See handleParentNoteFetch.
+    private var parentNotesCacheTrimAt = 500
     private var referencedNoteGeneration = 0
 
     /// Records that a referenced note arrived and schedules a coalesced flush,
@@ -700,6 +702,8 @@ class FeedService: ObservableObject {
         extendedNetworkPubkeys.removeAll()
         notes.removeAll()
         parentNotesCache.removeAll()
+        parentNotesCacheTrimAt = 500
+        processingQueue.async { [bgAccumulator] in bgAccumulator.resetParentFetchClaims() }
         pendingNotes.removeAll()
         noteBuffer.removeAll()
         seenIds.removeAll()
@@ -1032,6 +1036,8 @@ class FeedService: ObservableObject {
 
     func refresh() {
         guard !isLoadingContacts, !isPaused else { return }
+        // Music has no relay feed to reload.
+        if feedMode == .music { return }
 
         // Ask the embedded relay to catch up its inbox/outbox from external
         // relays too, so a feed pull-to-refresh also freshens the Relay tab,
@@ -1201,6 +1207,8 @@ class FeedService: ObservableObject {
         feedMode = mode
         notes.removeAll()
         parentNotesCache.removeAll()
+        parentNotesCacheTrimAt = 500
+        processingQueue.async { [bgAccumulator] in bgAccumulator.resetParentFetchClaims() }
         pendingNotes.removeAll()
         noteBuffer.removeAll()
         seenIds.removeAll()
@@ -1228,7 +1236,10 @@ class FeedService: ObservableObject {
             self?.bgAccumulator.isGlobalMode = isGlobal
         }
 
-        if mode == .live {
+        if mode == .music {
+            // Wavlake, not relays: MusicBrowserView loads its own catalogue,
+            // and the note pipeline stays idle underneath it.
+        } else if mode == .live {
             // Same reasoning as Recipes: LiveFeedService owns this one.
             LiveFeedService.shared.loadIfNeeded()
         } else if mode == .reels {
@@ -1349,7 +1360,7 @@ class FeedService: ObservableObject {
         switch feedMode {
         case .following, .discovery, .articles: return true
         case .media: return mediaFeedMode == .following
-        case .global, .popular, .recipes, .live, .reels: return false
+        case .global, .popular, .recipes, .live, .reels, .music: return false
         }
     }
 
@@ -1375,7 +1386,7 @@ class FeedService: ObservableObject {
         case .following, .articles: return followedPubkeys
         case .media: return mediaFeedMode == .following ? followedPubkeys : []
         case .discovery: return extendedNetworkPubkeys
-        case .global, .popular, .recipes, .live, .reels: return []
+        case .global, .popular, .recipes, .live, .reels, .music: return []
         }
     }
 
@@ -1592,7 +1603,7 @@ class FeedService: ObservableObject {
         switch feedMode {
         case .following, .articles: searchAuthors = followedPubkeys
         case .discovery: searchAuthors = extendedNetworkPubkeys
-        case .global, .popular, .media, .recipes, .live, .reels: searchAuthors = nil
+        case .global, .popular, .media, .recipes, .live, .reels, .music: searchAuthors = nil
         }
         if let searchAuthors, searchAuthors.isEmpty {
             searchCancellable?.cancel()
@@ -1751,6 +1762,8 @@ class FeedService: ObservableObject {
         }
         fetchingNoteIds.insert(id)
         fetchingNoteTimestamps[id] = Date()
+        // Queued ahead of the request, so it runs before any answer to it.
+        forgetParentFetchClaim(id)
 
         if id.hasPrefix(QuoteReference.coordinatePrefix) {
             fetchMissingNoteByNaddr(coordinate: id)
@@ -2948,8 +2961,9 @@ class FeedService: ObservableObject {
         // 0.8 s note-flush timer.
         if type == "EVENT", json.count >= 2,
            let subId = json[1] as? String, subId.hasPrefix("tfetch-") {
+            guard let ev = verifiedParentEvent(msg) else { return }
             DispatchQueue.main.async { [weak self] in
-                self?.handleParentNoteFetch(msg)
+                self?.handleParentNoteFetch(ev)
             }
             return
         }
@@ -3513,8 +3527,10 @@ class FeedService: ObservableObject {
         var socket = LookupSocket(client: client, pending: [(req, subId)])
 
         client.messageSubject
+            .receive(on: processingQueue)
+            .compactMap { [weak self] msg in self?.verifiedParentEvent(msg) }
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] msg in self?.handleParentNoteFetch(msg) }
+            .sink { [weak self] ev in self?.handleParentNoteFetch(ev) }
             .store(in: &socket.subscriptions)
 
         client.$connectionState
@@ -3604,15 +3620,37 @@ class FeedService: ObservableObject {
         scheduleNoteFetchFlush()
     }
 
-    /// Fast-path handler for parent note fetches — inserts directly into notes on the main
-    /// thread without going through the batch accumulator or flush timers.
-    private func handleParentNoteFetch(_ msg: String) {
+    /// Runs on processingQueue. Parses a lookup response and checks its
+    /// signature there, so neither costs the main thread. Once a copy of an
+    /// id verifies, later copies are dropped unchecked: every relay asked
+    /// answers with the same note, and main dropped the extras anyway (the id
+    /// is no longer being fetched). They are dropped, never passed on
+    /// unverified, since a forged event can reuse a real id.
+    private nonisolated func verifiedParentEvent(_ msg: String) -> [String: Any]? {
         guard let data = msg.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let type = json[0] as? String,
+              let type = json.first as? String,
               type == "EVENT", json.count >= 3,
               let ev = json[2] as? [String: Any],
-              let id        = ev["id"]        as? String,
+              let id = ev["id"] as? String,
+              !bgAccumulator.parentFetchRecentlyVerified(id),
+              NostrEventVerifier.isValid(ev) else { return nil }
+        bgAccumulator.markParentFetchVerified(id)
+        return ev
+    }
+
+    /// A verified copy that main then dropped must not block the next fetch
+    /// of the same note: without this, its later copies were discarded as
+    /// duplicates for the whole claim window.
+    private func forgetParentFetchClaim(_ id: String) {
+        processingQueue.async { [bgAccumulator] in bgAccumulator.forgetParentFetch(id) }
+    }
+
+    /// Fast-path handler for parent note fetches — inserts directly into notes on the main
+    /// thread without going through the batch accumulator or flush timers.
+    /// `ev` has already passed `verifiedParentEvent`.
+    private func handleParentNoteFetch(_ ev: [String: Any]) {
+        guard let id        = ev["id"]        as? String,
               let pubkey    = ev["pubkey"]     as? String,
               let content   = ev["content"]    as? String,
               let createdAt = ev["created_at"] as? Int64,
@@ -3622,7 +3660,7 @@ class FeedService: ObservableObject {
 
         // Use findNote rather than seenIds: a note can be in seenIds but evicted from
         // notes[] by the 800-cap flush, in which case we still need it in parentNotesCache.
-        guard findNote(id: id) == nil else { return }
+        guard findNote(id: id) == nil else { forgetParentFetchClaim(id); return }
 
         // Only what was asked for, and only if it is genuine. These come from
         // relay hints and outboxes named in other people's notes, so any of
@@ -3632,8 +3670,8 @@ class FeedService: ObservableObject {
         let dTag = tags.first { $0.count >= 2 && $0[0] == "d" }?[1] ?? ""
         let coordinate = "\(QuoteReference.coordinatePrefix)\(kind):\(pubkey):\(dTag)"
         guard fetchingNoteIds.contains(id) || unavailableNoteIds.contains(id)
-                || fetchingNoteIds.contains(coordinate) || unavailableNoteIds.contains(coordinate),
-              NostrEventVerifier.isValid(ev) else { return }
+                || fetchingNoteIds.contains(coordinate) || unavailableNoteIds.contains(coordinate)
+        else { forgetParentFetchClaim(id); return }
 
         let note = FeedNote(
             id: id,
@@ -3662,7 +3700,7 @@ class FeedService: ObservableObject {
         fetchingNoteTimestamps.removeValue(forKey: id)
         parentNotesCache[id] = note
         noteReferencedNoteArrived(id)
-        if parentNotesCache.count > 500 {
+        if parentNotesCache.count > parentNotesCacheTrimAt {
             // Parent edges alone are not what the timeline asks for: a thread
             // card fetches the *root*, which for anything deeper than a direct
             // reply is no note's parent, and quotes and repost originals are
@@ -3671,6 +3709,11 @@ class FeedService: ObservableObject {
             // went back to "Loading the start of this thread...".
             let referencedIds = ReferencedNoteRepair.referencedIds(in: notes)
             parentNotesCache = parentNotesCache.filter { referencedIds.contains($0.key) }
+            // When most of the cache is still referenced, the trim frees almost
+            // nothing, and a fixed 500 re-ran this whole-feed scan on every
+            // later arrival: the main thread pegged and the phone ran hot.
+            // Trim again only after another 250 arrive.
+            parentNotesCacheTrimAt = max(500, parentNotesCache.count + 250)
         }
         NostrService.shared.fetchMissingProfiles(for: [pubkey])
     }

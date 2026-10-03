@@ -233,11 +233,13 @@ class LocalNotificationService @Inject constructor(
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("notif_type", type)
+            // The notifying event's own id. For a reaction, repost or zap that is
+            // the kind 7/6/9735 event, not the post it is about — the marker
+            // carries no tags, so the Relay tab resolves the post from the
+            // stored event on tap (DeepLinkRouter.fromNotification).
             putExtra("notif_event_id", id)
             putExtra("notif_author", author)
-            // Not yet consumed on tap (Android has no equivalent of iOS's account-switch-
-            // on-navigate yet) — included now so that's a follow-up wiring change, not
-            // another missing-data problem to debug later.
+            // The account it arrived for; the nav host switches to it on tap.
             putExtra("notif_npub", npub)
         }
         val pending = PendingIntent.getActivity(

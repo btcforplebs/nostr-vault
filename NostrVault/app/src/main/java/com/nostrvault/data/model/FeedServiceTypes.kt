@@ -122,6 +122,17 @@ data class FeedNote(
     fun isNoiseOrSpam(): Boolean = Companion.isNoiseOrSpam(content, tags)
 
     /**
+     * [isNoiseOrSpam], computed once per note. The feed filter re-checks every
+     * note (up to MAX_FEED_NOTES) twice per relay batch, and each check copies
+     * and lowercases the whole content — garbage the GC then collected while
+     * the user scrolled. A delegated property has no backing field, so it is
+     * not serialized into the snapshot.
+     */
+    val isNoise: Boolean by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        Companion.isNoiseOrSpam(content, tags)
+    }
+
+    /**
      * Thread root id, read by [NIP10Thread.rootEventId]: a NIP-22 comment's
      * uppercase `E`; for NIP-10 an explicit "root"-marked e-tag, else the
      * first non-mention e-tag; else this note's own id (a top-level note is
@@ -162,6 +173,48 @@ data class FeedNote(
                 add(note.threadRootId)
                 addAll(note.quotedEventIds)
             }
+        }
+
+        /**
+         * The note a quote of [note] should cite. Quoting a kind-6 repost has
+         * to cite the note it carries, by id *and* author: the composer gets
+         * the original's id ([effectiveEventId]) but used to read the author
+         * off the repost, so a bare repost's `q`/`p` tags and preview named
+         * the reposter.
+         *
+         * Uses the loaded original when [loadedOriginal] has it. Otherwise
+         * rebuilds it from the repost, trusting the author/body/tags only if
+         * the constructor really unpacked the NIP-18 embedded event. That is
+         * read from the tags, not the content: a repost's own tags always hold
+         * `["e", repostedEventId]` and no event can tag its own id, so a note
+         * still holding that tag was not unpacked and carries the reposter's
+         * identity — the author then comes from the repost's `p` tag.
+         * Mirrors iOS `FeedService.quoteTarget(for:)` (#66, #67).
+         */
+        fun quoteTarget(note: FeedNote, loadedOriginal: (String) -> FeedNote?): FeedNote {
+            if (note.kind != 6) return note
+            val refId = note.repostedEventId ?: return note
+            loadedOriginal(refId)?.takeIf { it.id == refId && it.kind != 6 }?.let { return it }
+            val stillWrapped = note.tags.any { it.size >= 2 && it[0] == "e" && it[1] == refId }
+            if (!stillWrapped) {
+                return FeedNote(
+                    id = refId,
+                    pubkey = note.pubkey,
+                    content = note.content,
+                    createdAt = note.createdAt,
+                    tags = note.tags,
+                    kind = 1,
+                )
+            }
+            val author = note.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: note.pubkey
+            return FeedNote(
+                id = refId,
+                pubkey = author,
+                content = "",
+                createdAt = note.createdAt,
+                tags = emptyList(),
+                kind = 1,
+            )
         }
 
         // Regex patterns (compiled once)
@@ -208,10 +261,14 @@ data class FeedNote(
                     if (innerContent != null && innerPubkey != null) {
                         resolvedPubkey = innerPubkey
                         resolvedContent = innerContent
-                        // Parse inner tags if present
+                        // The inner event's tags, never the repost's: keeping the
+                        // outer `e`/`p` here would make an unpacked repost look
+                        // bare to [quoteTarget], which tells them apart by tags.
                         val innerTags = inner["tags"]
-                        if (innerTags != null) {
-                            resolvedTags = Json.decodeFromString(innerTags.toString())
+                        resolvedTags = if (innerTags != null) {
+                            Json.decodeFromString(innerTags.toString())
+                        } else {
+                            emptyList()
                         }
                         if (resolvedRepostedBy == null) resolvedRepostedBy = pubkey
                     }
@@ -419,12 +476,12 @@ enum class FeedMode(val displayName: String) {
     MEDIA("Media"),
 
     /**
-     * Full-screen vertical video, one per page. Like [LIVE], not a view of the
-     * note list: ReelsFeedService runs its own queries (NIP-71 video events and
-     * kind-1 notes carrying a video), and the note subscription idles while
-     * this mode is showing.
+     * diVines: full-screen looping short videos, one per page. Like [LIVE],
+     * not a view of the note list: ReelsFeedService runs its own queries
+     * (diVine's kind-34236 videos), and the note subscription idles while this
+     * mode is showing.
      */
-    REELS("Reels"),
+    REELS("diVines"),
 
     /**
      * Long-form articles (kind 30023). The events were already arriving — the

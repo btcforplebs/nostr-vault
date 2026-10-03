@@ -9,6 +9,15 @@ struct LinkPreviewCard: View {
     @State private var isLoading = true
 
     var body: some View {
+        // A Wavlake song plays right here instead of opening a web page.
+        if let trackId = WavlakeLink.trackId(from: url) {
+            WavlakeTrackCard(trackId: trackId)
+        } else {
+            preview
+        }
+    }
+
+    private var preview: some View {
         Group {
             if let metadata = metadata, metadata.title != nil {
                 cardContent(metadata)

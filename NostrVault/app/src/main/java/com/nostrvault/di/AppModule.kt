@@ -9,6 +9,7 @@ import com.nostrvault.service.ContactManager
 import com.nostrvault.service.EventPublisher
 import com.nostrvault.service.FeedFilterEngine
 import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.decode.VideoFrameDecoder
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
@@ -99,7 +100,15 @@ object AppModule {
                 // Before the built-in HTTP fetcher, which would download a whole
                 // video to read one frame of it.
                 add(com.nostrvault.service.RemoteVideoFrameFetcher.Factory())
-                add(GifDecoder.Factory())
+                // ImageDecoder (API 28+) decodes animated GIF/WebP natively and
+                // draws through AnimatedImageDrawable on the render thread;
+                // GifDecoder is the old software Movie path, which decodes every
+                // frame on the CPU and dropped frames on a scrolling feed.
+                if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    add(ImageDecoderDecoder.Factory())
+                } else {
+                    add(GifDecoder.Factory())
+                }
                 add(VideoFrameDecoder.Factory())
             }
             .crossfade(false) // Disable crossfade for instant rendering and better scroll performance
