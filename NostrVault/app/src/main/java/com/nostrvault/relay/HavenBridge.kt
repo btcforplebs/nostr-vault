@@ -416,6 +416,20 @@ object HavenBridge {
 
     /** Decode an nprofile bech32 string. Returns JSON: {"pubkey":"...","relays":[...]} */
     fun decodeNprofile(nprofile: String): String? {
+        val (pubkey, relays) = nprofileParts(nprofile) ?: return null
+        val relaysJson = relays.joinToString(",") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
+        return """{"pubkey":"$pubkey","relays":[$relaysJson]}"""
+    }
+
+    /** The hex pubkey an nprofile names, by the same rule as [decodeNprofile]. */
+    fun decodeNprofilePubkey(nprofile: String): String? = nprofileParts(nprofile)?.first
+
+    /**
+     * The pubkey is the first type-0 entry that is exactly 32 bytes (iOS #186).
+     * Taking any length, last one wins, let a crafted nprofile open a profile
+     * for a key that isn't one.
+     */
+    private fun nprofileParts(nprofile: String): Pair<String, List<String>>? {
         val (hrp, payload) = bech32Decode(nprofile) ?: return null
         if (hrp != "nprofile") return null
         var pubkey: String? = null
@@ -428,14 +442,12 @@ object HavenBridge {
             if (i + length > payload.size) break
             val value = payload.copyOfRange(i, i + length)
             when (type) {
-                0 -> pubkey = value.toHex()
+                0 -> if (pubkey == null && length == 32) pubkey = value.toHex()
                 1 -> relays.add(String(value, Charsets.UTF_8))
             }
             i += length
         }
-        if (pubkey == null) return null
-        val relaysJson = relays.joinToString(",") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
-        return """{"pubkey":"$pubkey","relays":[$relaysJson]}"""
+        return pubkey?.let { it to relays }
     }
 
     /** Decode a note1 bech32 string to a hex event ID. */
