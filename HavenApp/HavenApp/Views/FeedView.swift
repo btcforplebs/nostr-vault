@@ -3420,7 +3420,12 @@ struct FeedNoteRow: View {
         if !bodySource.quotedEventIds.isEmpty {
             VStack(spacing: 8) {
                 ForEach(bodySource.quotedEventIds, id: \.self) { quoteId in
-                    if let quotedNote = actions.findNote(quoteId) {
+                    if let quotedNote = actions.findNote(quoteId), let stream = LiveStream(note: quotedNote) {
+                        // Not wrapped in a link: the tap plays the stream, and
+                        // a stream event has no thread to open.
+                        LiveStreamEmbedView(stream: stream)
+                            .transition(Self.arrivalTransition)
+                    } else if let quotedNote = actions.findNote(quoteId) {
                         NoteNavigationLink(note: quotedNote) {
                             QuotedNoteView(note: quotedNote)
                         }

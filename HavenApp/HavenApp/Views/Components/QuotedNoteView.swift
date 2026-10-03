@@ -5,6 +5,15 @@ struct QuotedNoteView: View {
     @EnvironmentObject var nostrService: NostrService
     
     var body: some View {
+        // A quoted live stream is something to watch, not text to read.
+        if let stream = LiveStream(note: note) {
+            LiveStreamEmbedView(stream: stream)
+        } else {
+            noteCard
+        }
+    }
+
+    private var noteCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 let profile = nostrService.profiles[note.pubkey]
