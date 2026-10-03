@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -259,23 +258,6 @@ class ComposeNoteViewModel @Inject constructor(
 
     val isReply: Boolean get() = replyToNoteId != null
 
-    /** Answer an original note with a NIP-22 comment (1111) instead of a kind
-     *  1 reply. Off by default: most clients show kind 1 under a note. */
-    private val _postAsComment = MutableStateFlow(false)
-    val postAsComment = _postAsComment.asStateFlow()
-    fun setPostAsComment(on: Boolean) { _postAsComment.value = on }
-
-    /** What a response to the parent will be: "choice" on an original note
-     *  (reply, or comment), "comment" when it can only be a comment (an
-     *  article, a video…), null for a plain reply or a new note. */
-    val responseKindHint: String?
-        get() {
-            val parent = replyToNoteId?.let { feedService.findNote(it) } ?: return null
-            if (parent.kind == 6) return null
-            if (NIP10Thread.isOriginalNote(parent.kind, parent.tags)) return "choice"
-            return if (parent.kind != NIP10Thread.COMMENT_KIND &&
-                NIP10Thread.replyKind(parent.kind) == NIP10Thread.COMMENT_KIND) "comment" else null
-        }
     val isQuote: Boolean get() = quoteToNoteId != null
 
     /**
@@ -1131,10 +1113,9 @@ class ComposeNoteViewModel @Inject constructor(
         val effectiveParentKind = if (parentNote.kind == 6) {
             parentNote.repostedEventId?.let { feedService.findNote(it)?.kind } ?: 1
         } else parentNote.kind
-        // Kind 1 replies only onto kind 1 notes; anything else (and a note
-        // when "Post as comment" is on) gets a NIP-22 comment.
-        val asComment = _postAsComment.value && NIP10Thread.isOriginalNote(effectiveParentKind, parentNote.tags)
-        val eventKind = NIP10Thread.replyKind(effectiveParentKind, asComment)
+        // Automatic (Logen, 2026-10-03): a note gets a kind 1 reply, anything
+        // else a NIP-22 comment. No switch to explain.
+        val eventKind = NIP10Thread.replyKind(effectiveParentKind)
         if (eventKind == NIP10Thread.COMMENT_KIND) {
             // NIP-22: on a comment, copy its root and point at it; on anything
             // else the parent is the root (E, or A alone for addressables and
@@ -1238,7 +1219,6 @@ fun ComposeNoteScreen(
     val uploadMessage by viewModel.uploadMessage.collectAsState()
     val error by viewModel.error.collectAsState()
     val replyingToName by viewModel.replyingToName.collectAsState()
-    val postAsComment by viewModel.postAsComment.collectAsState()
     val quotedNote by viewModel.quotedNote.collectAsState()
     val quotedProfile by viewModel.quotedProfile.collectAsState()
     val attachments by viewModel.attachments.collectAsState()
@@ -1411,18 +1391,6 @@ fun ComposeNoteScreen(
                     color = SecondaryText,
                     fontSize = 13.sp,
                 )
-                when (viewModel.responseKindHint) {
-                    "choice" -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Post as comment", color = SecondaryText, fontSize = 12.sp)
-                        Spacer(Modifier.width(8.dp))
-                        Switch(
-                            checked = postAsComment,
-                            onCheckedChange = viewModel::setPostAsComment,
-                            modifier = Modifier.scale(0.75f),
-                        )
-                    }
-                    "comment" -> Text("Posting as a comment", color = SecondaryText, fontSize = 12.sp)
-                }
                 Spacer(Modifier.height(8.dp))
             }
 
