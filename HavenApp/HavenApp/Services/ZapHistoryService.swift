@@ -124,10 +124,17 @@ enum ZapHistoryService {
             .compactMap { URL(string: $0) }
     }
 
-    /// Sends `filters` to every relay and collects the events (deduplicated
-    /// by id) until each relay has sent EOSE or `timeout` passes.
-    private static func query(filters: [[String: Any]], relays: [URL], timeout: TimeInterval = 5) async -> [[String: Any]] {
+    /// Sends `filters` to every relay and collects the events until each
+    /// relay has sent EOSE or `timeout` passes. The article reader's
+    /// highlights use it too.
+    ///
+    /// A relay is not trusted: only signature-checked events are kept, the
+    /// first valid event per id wins (a forged copy reusing a real id cannot
+    /// replace it), and each relay is held to the total `limit` it was asked
+    /// for, since `limit` is only a request (Tron, #189).
+    static func query(filters: [[String: Any]], relays: [URL], timeout: TimeInterval = 5) async -> [[String: Any]] {
         guard !relays.isEmpty else { return [] }
+        let perRelayCap = filters.reduce(0) { $0 + (($1["limit"] as? Int) ?? 500) }
         return await withCheckedContinuation { continuation in
             var events: [String: [String: Any]] = [:]
             var pending = relays.count
@@ -154,6 +161,7 @@ enum ZapHistoryService {
                 client.isTemporary = true
                 clients.append(client)
                 var relayDone = false
+                var received = 0
 
                 client.messageSubject
                     .receive(on: DispatchQueue.main)
@@ -167,7 +175,17 @@ enum ZapHistoryService {
                         if type == "EVENT", array.count >= 3,
                            let event = array[2] as? [String: Any],
                            let id = event["id"] as? String {
-                            events[id] = event
+                            received += 1
+                            if received > perRelayCap {
+                                // Past what it was asked for: stop listening.
+                                relayDone = true
+                                client.disconnect()
+                                relayFinished()
+                                return
+                            }
+                            if events[id] == nil, NostrEventVerifier.isValid(event) {
+                                events[id] = event
+                            }
                         } else if type == "EOSE" || type == "CLOSED" {
                             relayDone = true
                             relayFinished()
