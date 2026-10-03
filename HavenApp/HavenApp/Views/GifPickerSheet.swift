@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// GIF keyboard with two sources: getyarn.io for captioned movie and TV
-/// quotes, Tenor for everything else. Type a search, get a grid, tap one to
-/// hand it back to the caller as a `GifItem`.
+/// GIF keyboard with nostr.build and Tenor. Type a search, get a grid, tap
+/// one to hand it back to the caller as a `GifItem`.
 struct GifPickerSheet: View {
     var onSelect: (GifItem) -> Void
 
@@ -42,12 +41,11 @@ struct GifPickerSheet: View {
     @ScaledMetric(relativeTo: .caption2) private var subcaptionLineHeight: Double = 13
     @ScaledMetric(relativeTo: .footnote) private var captionBlockPadding: Double = 16
     /// Cells revealed per step. Deliberately smaller than either source's page
-    /// -- getyarn returns 20, Tenor 50 -- because every revealed cell pulls its
+    /// -- Tenor returns 50 -- because every revealed cell pulls its
     /// own preview GIF.
     private let revealStep = 8
     /// Hard ceiling on pages requested per search, for sources that page at
-    /// all. getyarn gives no end signal -- p=99 still answers with a full page
-    /// -- so without a cap "show more" would walk a free service forever.
+    /// all, so "show more" can't walk a free service forever.
     private let maxPages = 5
 
     private var state: SourceState { states[source] ?? SourceState() }
@@ -406,8 +404,6 @@ struct GifPickerSheet: View {
                 switch requested {
                 case .nostrBuild:
                     items = try await NostrBuildGifService.search(text, page: page).map(GifItem.init)
-                case .yarn:
-                    items = try await YarnClipService.search(text, page: page).map(GifItem.init)
                 case .tenor:
                     items = try await TenorGifService.search(text).map(GifItem.init)
                 }
@@ -436,8 +432,7 @@ struct GifPickerSheet: View {
     private func apply(_ items: [GifItem], for requested: GifSource, page: Int, query text: String) {
         // The field may have moved on while the request was in flight.
         guard states[requested]?.query == text else { return }
-        // A later getyarn page can hand back clips we already hold -- it never
-        // signals the end and does not order a repeated query stably. Dedupe,
+        // A later page can hand back GIFs we already hold. Dedupe,
         // and treat an all-duplicate page as the end. Tenor answers once, so
         // its end is simply the page it gave us.
         states[requested]?.hasSearched = true
@@ -479,16 +474,12 @@ private struct GifResultCell: View {
                     ProgressView().tint(.white)
                 }
             }
-            // Each source has its own shape -- getyarn clips are 16:9, Tenor
-            // GIFs are anything -- so the art takes the item's ratio instead of
+            // GIFs come in every shape, so the art takes the item's ratio instead of
             // cropping everything into one frame.
             .aspectRatio(CGFloat(item.aspectRatio), contentMode: .fit)
             .clipped()
 
-            // Under the art, not over it. A getyarn transcript is the reason to
-            // pick the clip, so it is content rather than an overlay: laid over
-            // the frame it competed with the art at two lines, needed a scrim to
-            // stay legible, and covered the part of the picture it was quoting.
+            // Under the art, not over it, when a source supplies a caption.
             if let caption {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(caption)

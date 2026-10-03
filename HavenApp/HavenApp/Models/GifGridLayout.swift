@@ -2,9 +2,8 @@ import Foundation
 
 /// Column maths for the GIF picker's grid.
 ///
-/// The grid draws cells of different heights -- a Tenor GIF is any shape, and
-/// a getyarn clip carries a caption whose depth depends on the transcript --
-/// so a row-based grid leaves a ragged gap under every short cell in a row.
+/// The grid draws cells of different heights -- a Tenor or nostr.build GIF is
+/// any shape -- so a row-based grid leaves a ragged gap under every short cell in a row.
 /// This lays the cells out as a waterfall instead: fixed-width columns, each
 /// item placed in whichever column is currently shortest.
 ///
