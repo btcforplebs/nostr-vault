@@ -499,6 +499,10 @@ struct ProfileView: View {
             }
             .environmentObject(nostrService)
         }
+        #if os(macOS)
+        // On iPhone and iPad every banner is drawn in its own window above all
+        // sheets (BannerWindow in SceneDelegate), so a profile sheet cannot
+        // cover one; the Mac still draws them over the sheet itself.
         .overlay(alignment: .top) {
             if onDismiss != nil {
                 VStack(spacing: 6) {
@@ -510,6 +514,7 @@ struct ProfileView: View {
                 .allowsHitTesting(true)
             }
         }
+        #endif
         #if os(iOS)
         .overlay(alignment: .bottomTrailing) {
             if isOwnProfile {
@@ -2004,7 +2009,7 @@ struct ProfileView: View {
 
     private func followErrorMessage(_ err: FeedService.FollowActionError) -> String {
         switch err {
-        case .contactsNotLoaded: return "Contacts still loading"
+        case .contactsNotLoaded: return "Following once your follow list loads…"
         case .alreadyFollowing:  return "Already following"
         case .cannotUnfollowSelf: return "Follow failed"
         }
@@ -2012,7 +2017,7 @@ struct ProfileView: View {
 
     private func unfollowErrorMessage(_ err: FeedService.FollowActionError) -> String {
         switch err {
-        case .contactsNotLoaded:  return "Contacts still loading"
+        case .contactsNotLoaded:  return "Unfollowing once your follow list loads…"
         case .cannotUnfollowSelf: return "Can't unfollow yourself"
         case .alreadyFollowing:   return "Unfollow failed"
         }
