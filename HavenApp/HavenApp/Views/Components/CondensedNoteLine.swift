@@ -294,7 +294,7 @@ struct CondensedNoteLine: View {
 
     private func mediaThumbnail(_ url: URL) -> some View {
         ZStack(alignment: .bottomTrailing) {
-            FeedMediaView(url: url, isThumbnail: true)
+            FeedMediaView(url: url, isThumbnail: true, animatesThumbnail: true)
                 .frame(width: isRoot ? 80 : 56, height: isRoot ? 80 : 56)
                 .aspectRatio(1, contentMode: .fill)
                 .clipShape(RoundedRectangle(cornerRadius: 6))

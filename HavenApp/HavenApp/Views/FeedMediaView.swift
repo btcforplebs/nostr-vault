@@ -55,6 +55,9 @@ struct FeedMediaView: View {
     var portraitMaxHeight: CGFloat = 600
     /// Whether this is displayed as a thumbnail in a grid (use square aspect ratio).
     var isThumbnail: Bool = false
+    /// Plays a GIF thumbnail instead of showing its first frame. For a single
+    /// thumbnail beside a line of text; grids stay still.
+    var animatesThumbnail: Bool = false
 
     @ObservedObject private var configService = ConfigService.shared
     @Environment(\.mediaZoomNamespace) private var zoomNamespace
@@ -92,6 +95,7 @@ struct FeedMediaView: View {
         FeedGIFView(
             url: url,
             isThumbnail: isThumbnail,
+            animatesThumbnail: animatesThumbnail,
             landscapeMaxHeight: maxHeight,
             portraitMaxHeight: portraitMaxHeight
         )
@@ -332,6 +336,7 @@ private struct FeedPhotoView: View {
 private struct FeedGIFView: View {
     let url: URL
     let isThumbnail: Bool
+    var animatesThumbnail: Bool = false
     var landscapeMaxHeight: CGFloat = 400
     var portraitMaxHeight: CGFloat = 600
 
@@ -346,7 +351,8 @@ private struct FeedGIFView: View {
             AnimatedImage(
                 url: url,
                 contentMode: isThumbnail ? .fill : .fit,
-                shouldAnimate: !isThumbnail,
+                shouldAnimate: !isThumbnail || animatesThumbnail,
+                targetSize: isThumbnail && animatesThumbnail ? CGSize(width: 80, height: 80) : nil,
                 onLoad: { size in
                     // Unanimated, as in FeedPhotoView: resize the row at
                     // once and animate only the opacity below.
@@ -363,7 +369,9 @@ private struct FeedGIFView: View {
                     .transition(MediaLoadingPlaceholder.removal)
             }
         }
-        .aspectRatio(isThumbnail ? nil : displayAspectRatio, contentMode: .fit)
+        // A thumbnail fills the square its caller gives it. A nil ratio would
+        // fit the image's own shape and letterbox a wide GIF inside the square.
+        .aspectRatio(isThumbnail ? 1 : displayAspectRatio, contentMode: isThumbnail ? .fill : .fit)
         .frame(maxHeight: heightCap)
     }
 

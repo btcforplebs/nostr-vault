@@ -301,7 +301,14 @@ struct AnimatedImage: UIViewRepresentable {
 
             if isGIF {
                 if self.shouldAnimate {
-                    image = Self.makeAnimatedGIF(data: data)
+                    // A target size bounds every frame's decode, so a small
+                    // animated thumbnail doesn't hold full-size frames.
+                    var maxPixelSize: Int?
+                    if let targetSize = self.targetSize {
+                        let scale = await MainActor.run { UIScreen.main.scale }
+                        maxPixelSize = Int(max(targetSize.width, targetSize.height) * scale)
+                    }
+                    image = Self.makeAnimatedGIF(data: data, maxPixelSize: maxPixelSize)
                 } else {
                     image = UIImage(data: data)
                 }
@@ -344,16 +351,25 @@ struct AnimatedImage: UIViewRepresentable {
 
     /// Decodes all GIF frames via CGImageSource and returns an animating UIImage.
     /// UIImage(data:) only decodes the first frame, so looping requires this.
-    nonisolated private static func makeAnimatedGIF(data: Data) -> UIImage? {
+    nonisolated private static func makeAnimatedGIF(data: Data, maxPixelSize: Int? = nil) -> UIImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let count = CGImageSourceGetCount(source)
         guard count > 1 else { return UIImage(data: data) }
+        let thumbnailOptions = maxPixelSize.map {
+            [
+                kCGImageSourceCreateThumbnailFromImageAlways: kCFBooleanTrue,
+                kCGImageSourceCreateThumbnailWithTransform: kCFBooleanTrue,
+                kCGImageSourceThumbnailMaxPixelSize: $0 as NSNumber
+            ] as CFDictionary
+        }
 
         var frames: [UIImage] = []
         var totalDuration: Double = 0
 
         for i in 0..<count {
-            guard let cgImage = CGImageSourceCreateImageAtIndex(source, i, nil) else { continue }
+            let frame = thumbnailOptions.map { CGImageSourceCreateThumbnailAtIndex(source, i, $0) }
+                ?? CGImageSourceCreateImageAtIndex(source, i, nil)
+            guard let cgImage = frame else { continue }
             frames.append(UIImage(cgImage: cgImage))
             let props = CGImageSourceCopyPropertiesAtIndex(source, i, nil) as? [String: Any]
             let gifDict = props?[kCGImagePropertyGIFDictionary as String] as? [String: Any]
