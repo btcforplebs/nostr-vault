@@ -20,7 +20,7 @@ A new look and a lot of new surface. The filing-cabinet icon is gone — every p
 *   **Articles**: Long-form posts from the people you follow, drawn as articles with a reader, instead of a wall of raw text.
 *   **Recipes**: A feed of cooking posts from zapcooking and nostrcooking, live from relays.
 *   **Live Streams**: Only the streams actually on air that can actually play — including ones published through services such as shosho.live — with chat and zapping while you watch.
-*   **A GIF Keyboard**: In the composer, backed by getyarn and Tenor, with captions that stay readable over bright frames and a layout that packs tall and wide GIFs without gaps.
+*   **A GIF Keyboard**: In the composer, backed by nostr.build, with a layout that packs tall and wide GIFs without gaps.
 *   **Selectable Notification Sounds**.
 *   **Scan a Signer's QR Code**: Connect a remote signer with the camera instead of typing a bunker string.
 *   **Mac Relay Sync Is Built In (iOS)**: The separate sync service and its Sync Now and Full Resync buttons are gone; the app's own relay now keeps up with your Mac directly, including the Mac's inbox, which was never synced before. The first time, it copies your entire history from the Mac and checks the copy — Settings › Mac Relay shows the result, with a button to check again.
