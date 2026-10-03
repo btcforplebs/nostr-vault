@@ -54,8 +54,25 @@ final class MusicPlayerService: ObservableObject {
     /// bring its video back.
     @Published private(set) var liveStream: LiveStream?
 
+    /// Off, the whole queue over again, or this song over again.
+    enum RepeatMode: CaseIterable {
+        case off, all, one
+    }
+
+    /// The queue is in shuffled order; turning it off puts back the order
+    /// it was played in.
+    @Published private(set) var isShuffled = false
+    @Published var repeatMode: RepeatMode = .off {
+        didSet { MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled = hasNext }
+    }
+    private var unshuffledQueue: [PlayerTrack] = []
+
     var current: PlayerTrack? { queue.indices.contains(index) ? queue[index] : nil }
-    var hasNext: Bool { index + 1 < queue.count }
+    var hasNext: Bool {
+        index + 1 < queue.count || (repeatMode == .all && !queue.isEmpty && current?.isLive != true)
+    }
+    /// The songs after this one, in play order, as the full player's Up Next lists them.
+    var upNext: ArraySlice<PlayerTrack> { queue.indices.contains(index + 1) ? queue[(index + 1)...] : [] }
 
     private let player = AVPlayer()
     private var timeObserver: Any?
@@ -104,8 +121,54 @@ final class MusicPlayerService: ObservableObject {
     func play(tracks: [PlayerTrack], startAt startIndex: Int = 0) {
         guard tracks.indices.contains(startIndex) else { return }
         liveStream = nil
+        isShuffled = false
+        unshuffledQueue = []
         queue = tracks
         index = startIndex
+        loadCurrent(autoplay: true)
+    }
+
+    /// Plays `tracks` in a random order, with shuffle showing as on, so
+    /// turning it off goes back to the list's own order.
+    func playShuffled(_ tracks: [WavlakeTrack]) {
+        guard !tracks.isEmpty else { return }
+        let ordered = tracks.map(PlayerTrack.init)
+        play(tracks: ordered.shuffled())
+        unshuffledQueue = ordered
+        isShuffled = true
+    }
+
+    /// Shuffles everything but the song playing, which keeps playing at the
+    /// top; off, the original order comes back with the current song in place.
+    func toggleShuffle() {
+        guard let track = current, !track.isLive else { return }
+        if isShuffled {
+            let restored = unshuffledQueue.isEmpty ? queue : unshuffledQueue
+            queue = restored
+            index = restored.firstIndex { $0.id == track.id } ?? 0
+            unshuffledQueue = []
+            isShuffled = false
+        } else {
+            unshuffledQueue = queue
+            var rest = queue
+            rest.remove(at: index)
+            queue = [track] + rest.shuffled()
+            index = 0
+            isShuffled = true
+        }
+        MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled = hasNext
+    }
+
+    /// Off → repeat all → repeat one → off.
+    func cycleRepeat() {
+        let modes = RepeatMode.allCases
+        repeatMode = modes[(modes.firstIndex(of: repeatMode)! + 1) % modes.count]
+    }
+
+    /// Plays the queue's song at `position`, from Up Next.
+    func jump(to position: Int) {
+        guard queue.indices.contains(position), position != index else { return }
+        index = position
         loadCurrent(autoplay: true)
     }
 
@@ -129,7 +192,7 @@ final class MusicPlayerService: ObservableObject {
 
     func next() {
         guard hasNext else { return }
-        index += 1
+        index = index + 1 < queue.count ? index + 1 : 0
         loadCurrent(autoplay: true)
     }
 
@@ -157,6 +220,8 @@ final class MusicPlayerService: ObservableObject {
         player.replaceCurrentItem(with: nil)
         queue = []
         liveStream = nil
+        isShuffled = false
+        unshuffledQueue = []
         index = 0
         isPlaying = false
         elapsed = 0
@@ -175,7 +240,9 @@ final class MusicPlayerService: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if seconds.isFinite, seconds > 0 { self.duration = seconds }
-                if item.status == .failed, self.hasNext { self.next() }
+                // Past an unplayable song, but never round again under repeat
+                // all: a queue where nothing plays would spin forever.
+                if item.status == .failed, self.index + 1 < self.queue.count { self.next() }
             }
         }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
@@ -208,7 +275,10 @@ final class MusicPlayerService: ObservableObject {
     }
 
     private func trackEnded() {
-        if hasNext {
+        if repeatMode == .one, current?.isLive != true {
+            seek(to: 0)
+            resume()
+        } else if hasNext {
             next()
         } else {
             isPlaying = false

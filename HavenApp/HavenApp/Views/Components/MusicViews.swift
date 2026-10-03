@@ -1,3 +1,4 @@
+import AVKit
 import Combine
 import SwiftUI
 
@@ -117,9 +118,24 @@ final class MusicFeedState: ObservableObject {
         _ = path.popLast()
     }
 
+    /// Opens an artist or album from anywhere (the full player, the mini
+    /// player, another tab): switches to the Music feed first if it isn't
+    /// showing, so the page has somewhere to open.
+    func reveal(_ page: Page) {
+        if FeedService.shared.feedMode == .music {
+            open(page)
+        } else {
+            FeedService.shared.switchMode(.music)
+            if case .artist(let artist) = page { remember(artist) }
+            path = [page]
+        }
+        NotificationCenter.default.post(name: .havenOpenFeed, object: nil)
+    }
+
     /// The artist or album on screen right now, so a song's "Go to" actions
     /// don't offer the page you're already on.
     var showingArtistId: String? {
+        guard FeedService.shared.feedMode == .music else { return nil }
         switch path.last {
         case .artist(let artist): return artist.id
         case .album: return nil
@@ -128,8 +144,21 @@ final class MusicFeedState: ObservableObject {
     }
 
     var showingAlbumId: String? {
+        guard FeedService.shared.feedMode == .music else { return nil }
         if case .album(let album) = path.last { return album.id }
         return nil
+    }
+
+    /// The page for a song's artist or album, when Wavlake says which.
+    static func artistPage(of track: WavlakeTrack) -> Page? {
+        track.artistId.map { .artist(WavlakeArtist(id: $0, name: track.artist, artUrl: track.artistArtUrl, npub: track.artistNpub)) }
+    }
+
+    static func albumPage(of track: WavlakeTrack) -> Page? {
+        track.albumId.map {
+            .album(WavlakeAlbum(id: $0, title: track.albumTitle ?? "Album", artUrl: track.albumArtUrl,
+                                artist: track.artist, artistId: track.artistId))
+        }
     }
 
     /// An artist's details, albums (newest first) and the songs on them.
@@ -300,7 +329,29 @@ struct MusicBrowserView: View {
     private var scopeContent: some View {
         switch feed.scope {
         case .trending:
-            header("Trending \(feed.trendingWindow.title.lowercased())") { EmptyView() }
+            let window = feed.trendingWindow.title.lowercased()
+            if !feed.recentArtists.isEmpty {
+                header("Your artists") { EmptyView() }
+                artistRow(feed.recentArtists)
+            }
+            if !trendingArtists.isEmpty {
+                header("Top artists \(window)") { EmptyView() }
+                artistRow(trendingArtists)
+            }
+            if !trendingAlbums.isEmpty {
+                header("Top albums \(window)") { EmptyView() }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(trendingAlbums) { album in
+                            MusicCollectionTile(title: album.title, subtitle: album.artist ?? "Album",
+                                                art: album.artURL, round: false, size: 130) {
+                                feed.open(.album(album))
+                            }
+                        }
+                    }
+                }
+            }
+            header("Trending songs \(window)") { EmptyView() }
             trackList(tracks)
         case .artist(let artist):
             MusicArtistPage(artist: artist, sheet: $sheet) { feed.scope = .trending }
@@ -308,15 +359,7 @@ struct MusicBrowserView: View {
         case .following:
             if !followedArtists.isEmpty {
                 header("Artists you follow") { EmptyView() }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(followedArtists) { artist in
-                            MusicCollectionTile(title: artist.name, subtitle: "Artist", art: artist.artURL, round: true) {
-                                feed.open(.artist(artist))
-                            }
-                        }
-                    }
-                }
+                artistRow(followedArtists)
             }
             if !tracks.isEmpty {
                 header("Their songs") { EmptyView() }
@@ -350,6 +393,42 @@ struct MusicBrowserView: View {
 
     private func header<Accessory: View>(_ title: String, @ViewBuilder accessory: () -> Accessory) -> some View {
         MusicSectionHeader(title: title, accessory: accessory)
+    }
+
+    /// Round artist pictures in a sideways row; tap one for their page.
+    private func artistRow(_ artists: [WavlakeArtist]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: 12) {
+                ForEach(artists) { artist in
+                    MusicCollectionTile(title: artist.name, subtitle: "Artist", art: artist.artURL, round: true, size: 96) {
+                        feed.open(.artist(artist))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Trending is ranked by song, so its artists and albums come out in
+    /// the order their best song places. A row this long is plenty.
+    private static let rowLimit = 15
+
+    private var trendingArtists: [WavlakeArtist] {
+        var seen = Set<String>()
+        return tracks.compactMap { track -> WavlakeArtist? in
+            guard let id = track.artistId, seen.insert(id).inserted else { return nil }
+            return WavlakeArtist(id: id, name: track.artist, artUrl: track.artistArtUrl, npub: track.artistNpub)
+        }
+        .prefix(Self.rowLimit).map { $0 }
+    }
+
+    private var trendingAlbums: [WavlakeAlbum] {
+        var seen = Set<String>()
+        return tracks.compactMap { track -> WavlakeAlbum? in
+            guard let id = track.albumId, seen.insert(id).inserted else { return nil }
+            return WavlakeAlbum(id: id, title: track.albumTitle ?? "Album", artUrl: track.albumArtUrl,
+                                artist: track.artist, artistId: track.artistId)
+        }
+        .prefix(Self.rowLimit).map { $0 }
     }
 
     private func trackList(_ tracks: [WavlakeTrack]) -> some View {
@@ -661,20 +740,26 @@ struct MusicTrackList: View {
     var body: some View {
         LazyVStack(spacing: 4) {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { offset, track in
-                MusicTrackRow(track: track, isCurrent: player.current?.id == track.id, isPlaying: player.isPlaying,
-                              number: numbered ? offset + 1 : nil)
-                    .contentShape(Rectangle())
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityHint(player.current?.id == track.id && player.isPlaying ? "Pauses the song" : "Plays the song")
-                    .onTapGesture {
-                        if player.current?.id == track.id {
-                            player.togglePlayPause()
-                        } else {
-                            player.play(tracks, startAt: offset)
+                HStack(spacing: 0) {
+                    MusicTrackRow(track: track, isCurrent: player.current?.id == track.id, isPlaying: player.isPlaying,
+                                  number: numbered ? offset + 1 : nil)
+                        .contentShape(Rectangle())
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint(player.current?.id == track.id && player.isPlaying ? "Pauses the song" : "Plays the song")
+                        .onTapGesture {
+                            if player.current?.id == track.id {
+                                player.togglePlayPause()
+                            } else {
+                                player.play(tracks, startAt: offset)
+                            }
                         }
+                    // The same actions as a long-press, in plain sight.
+                    MusicMoreMenu(label: "More for \(track.title)") {
+                        MusicTrackActions(track: track, sheet: $sheet)
                     }
-                    .contextMenu { MusicTrackActions(track: track, sheet: $sheet, opensPages: true) }
+                }
+                .contextMenu { MusicTrackActions(track: track, sheet: $sheet) }
             }
         }
     }
@@ -690,7 +775,7 @@ struct MusicPlayButtons<Extra: View>: View {
     var body: some View {
         HStack(spacing: 10) {
             MusicPillButton(title: "Play", icon: "play.fill", filled: true) { player.play(tracks) }
-            MusicPillButton(title: "Shuffle", icon: "shuffle", filled: false) { player.play(tracks.shuffled()) }
+            MusicPillButton(title: "Shuffle", icon: "shuffle", filled: false) { player.playShuffled(tracks) }
             extra()
         }
         .disabled(tracks.isEmpty)
@@ -715,6 +800,53 @@ struct MusicPillButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// A song's ⋯: its long-press actions behind a visible button.
+struct MusicMoreMenu<Items: View>: View {
+    let label: String
+    @ViewBuilder let items: () -> Items
+
+    var body: some View {
+        Menu {
+            items()
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 36, height: 44)
+                .contentShape(Rectangle())
+        }
+        .menuIndicator(.hidden)
+        #if os(macOS)
+        // .borderlessButton flattens the label's modifiers on macOS.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .help(label)
+        #endif
+        .accessibilityLabel(label)
+    }
+}
+
+/// Go to the playing song's artist or album, for the mini player's and the
+/// folded bar's long-press.
+struct MusicNowPlayingPageActions: View {
+    let track: PlayerTrack
+
+    var body: some View {
+        if let song = track.wavlake {
+            if let page = MusicFeedState.artistPage(of: song) {
+                Button { MusicFeedState.shared.reveal(page) } label: {
+                    Label("Go to \(song.artist)", systemImage: "music.mic")
+                }
+            }
+            if let page = MusicFeedState.albumPage(of: song) {
+                Button { MusicFeedState.shared.reveal(page) } label: {
+                    Label(song.albumTitle.map { "Go to \($0)" } ?? "Go to album", systemImage: "square.stack")
+                }
+            }
+        }
     }
 }
 
@@ -962,15 +1094,26 @@ struct MusicTrackRow: View {
 struct MusicArtwork: View {
     let url: URL?
     let size: CGFloat
+    /// A load cut off by the page swapping in (opening an artist from the
+    /// player switches tab and feed at once) fails for good; try again.
+    @State private var retries = 0
 
     var body: some View {
         Group {
             if let url {
-                AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    placeholder
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } else if phase.error != nil, retries < 2 {
+                        placeholder.task {
+                            try? await Task.sleep(nanoseconds: 400_000_000)
+                            retries += 1
+                        }
+                    } else {
+                        placeholder
+                    }
                 }
+                .id(retries)
             } else {
                 placeholder
             }
@@ -1084,6 +1227,10 @@ struct MiniPlayerBar: View {
             .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
             .contentShape(Capsule())
             .onTapGesture { showingFull = true }
+            .contextMenu {
+                Button { showingFull = true } label: { Label("Open player", systemImage: "music.note") }
+                MusicNowPlayingPageActions(track: track)
+            }
             .sheet(isPresented: $showingFull) { NowPlayingView() }
         }
     }
@@ -1134,6 +1281,10 @@ struct CollapsedNowPlayingButton: View {
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
             .accessibilityValue("\(track.title), \(track.artist)")
             .accessibilityAction(named: "Open player") { showingFull = true }
+            .contextMenu {
+                Button { showingFull = true } label: { Label("Open player", systemImage: "music.note") }
+                MusicNowPlayingPageActions(track: track)
+            }
             .sheet(isPresented: $showingFull) { NowPlayingView() }
         }
     }
@@ -1223,106 +1374,228 @@ struct MiniPlayerInset: ViewModifier {
     }
 }
 
-/// Full player: big artwork, scrubber, previous / play / next.
+/// Full player: the cover (or Up Next) over a blur of it, the song with its
+/// artist and album as links into the Music feed, scrubber, shuffle /
+/// previous / play / next / repeat, and AirPlay, Up Next and more along
+/// the bottom.
 struct NowPlayingView: View {
     @ObservedObject private var player = MusicPlayerService.shared
     @Environment(\.dismiss) private var dismiss
     @State private var scrubbing: Double?
     @State private var sheet: MusicSheet?
+    @State private var showingQueue = false
+
+    private static let artSize: CGFloat = 280
 
     var body: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: 18) {
             Capsule().fill(Color.secondary.opacity(0.4)).frame(width: 40, height: 5).padding(.top, 10)
             if let track = player.current {
-                MusicArtwork(url: track.artworkURL, size: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
-                VStack(spacing: 4) {
-                    if track.isLive { LiveBadge() }
-                    Text(track.title).font(.appSystem(size: 22, weight: .bold)).multilineTextAlignment(.center)
-                    Text(track.artist).font(.appSystem(size: 16)).foregroundColor(.secondary)
+                Group {
+                    if showingQueue {
+                        upNext
+                    } else {
+                        MusicArtwork(url: track.artworkURL, size: Self.artSize)
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                            .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
+                            .accessibilityHidden(true)
+                    }
                 }
-                .padding(.horizontal, 24)
+                .frame(height: Self.artSize)
+                .transition(.opacity)
 
-                if !track.isLive {
-                VStack(spacing: 4) {
-                    Slider(
-                        value: Binding(
-                            get: { scrubbing ?? player.elapsed },
-                            set: { scrubbing = $0 }
-                        ),
-                        in: 0...max(player.duration, 1),
-                        onEditingChanged: { editing in
-                            if !editing, let target = scrubbing {
-                                player.seek(to: target)
-                                scrubbing = nil
-                            }
-                        }
-                    )
-                    .tint(.havenPurple)
-                    HStack {
-                        Text(MusicTime.format(scrubbing ?? player.elapsed))
-                        Spacer()
-                        Text(MusicTime.format(player.duration))
-                    }
-                    .font(.appSystem(size: 12).monospacedDigit())
-                    .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 28)
-                }
+                titles(track)
 
-                HStack(spacing: 44) {
-                    Button(action: player.previous) {
-                        Image(systemName: "backward.fill").font(.appSystem(size: 26))
-                    }
-                    .opacity(track.isLive ? 0 : 1)
-                    .disabled(track.isLive)
-                    Button(action: player.togglePlayPause) {
-                        Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.appSystem(size: 64))
-                            .foregroundColor(.havenPurple)
-                    }
-                    Button(action: player.next) {
-                        Image(systemName: "forward.fill").font(.appSystem(size: 26))
-                    }
-                    .disabled(!player.hasNext)
-                    .opacity(track.isLive ? 0 : (player.hasNext ? 1 : 0.35))
-                }
-                .buttonStyle(.plain)
+                if !track.isLive { scrubber }
 
-                HStack(spacing: 12) {
-                    if let song = track.wavlake {
-                        actionButton("Share", icon: "square.and.arrow.up") {
-                            sheet = .share(WavlakeLink.shareText(for: song))
-                        }
-                        if let hex = song.artistNpub.flatMap(MusicSheet.hex(fromNpub:)) {
-                            actionButton("Artist", icon: "person.crop.circle") { sheet = .profile(hex) }
-                        }
-                    } else if let host = track.hostPubkey {
-                        if let stream = player.liveStream {
-                            actionButton("Watch", icon: "play.rectangle") { sheet = .live(stream) }
-                        }
-                        actionButton("Host", icon: "person.crop.circle") { sheet = .profile(host) }
-                    }
-                }
+                transport(track)
 
-                if let page = track.pageURL {
-                    Link(track.isLive ? "Open stream" : "Open on Wavlake", destination: page)
-                        .font(.appSystem(size: 13, weight: .semibold))
-                        .foregroundColor(.secondary)
-                }
+                pageButtons(track)
+
+                Spacer(minLength: 0)
+
+                bottomBar(track)
             } else {
                 Text("Nothing playing").foregroundColor(.secondary)
                     .onAppear { dismiss() }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity)
+        .padding(.bottom, 12)
+        .background { backdrop }
         #if os(macOS)
-        .frame(minWidth: 380, minHeight: 600)
+        .frame(minWidth: 380, minHeight: 640)
         #endif
         .presentationDetents([.large])
         .modifier(MusicSheetHost(sheet: $sheet))
+    }
+
+    // MARK: Pieces
+
+    /// The cover, blown up and blurred under a material, so the player
+    /// takes on the song's colours and text stays readable in light and dark.
+    private var backdrop: some View {
+        ZStack {
+            if let url = player.current?.artworkURL {
+                AsyncImage(url: url) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Color.clear
+                }
+                .blur(radius: 50)
+                .opacity(0.8)
+            }
+            Rectangle().fill(.regularMaterial)
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+    }
+
+    /// Title, then the artist and album, each opening its page.
+    private func titles(_ track: PlayerTrack) -> some View {
+        VStack(spacing: 4) {
+            if track.isLive { LiveBadge() }
+            Text(track.title).font(.appSystem(size: 22, weight: .bold)).multilineTextAlignment(.center).lineLimit(2)
+            if let song = track.wavlake, let page = MusicFeedState.artistPage(of: song) {
+                linkText(track.artist, size: 16, weight: .semibold, hint: "Opens the artist") { go(page) }
+            } else {
+                Text(track.artist).font(.appSystem(size: 16)).foregroundColor(.secondary)
+            }
+            if let song = track.wavlake, let album = song.albumTitle, album != track.title,
+               let page = MusicFeedState.albumPage(of: song) {
+                linkText(album, size: 13, weight: .regular, hint: "Opens the album") { go(page) }
+            }
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private func linkText(_ text: String, size: CGFloat, weight: Font.Weight, hint: String,
+                          action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Text(text).lineLimit(1)
+                Image(systemName: "chevron.right").font(.appSystem(size: size - 4, weight: .semibold))
+            }
+            .font(.appSystem(size: size, weight: weight))
+            .foregroundColor(.havenPurple)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(hint)
+    }
+
+    private var scrubber: some View {
+        VStack(spacing: 4) {
+            Slider(
+                value: Binding(
+                    get: { scrubbing ?? player.elapsed },
+                    set: { scrubbing = $0 }
+                ),
+                in: 0...max(player.duration, 1),
+                onEditingChanged: { editing in
+                    if !editing, let target = scrubbing {
+                        player.seek(to: target)
+                        scrubbing = nil
+                    }
+                }
+            )
+            .tint(.havenPurple)
+            HStack {
+                Text(MusicTime.format(scrubbing ?? player.elapsed))
+                Spacer()
+                Text(MusicTime.format(player.duration))
+            }
+            .font(.appSystem(size: 12).monospacedDigit())
+            .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 28)
+    }
+
+    /// Shuffle and repeat flank the usual three; live has only play/pause.
+    private func transport(_ track: PlayerTrack) -> some View {
+        HStack(spacing: 0) {
+            modeButton(icon: "shuffle", isOn: player.isShuffled, label: "Shuffle",
+                       value: player.isShuffled ? "On" : "Off", action: player.toggleShuffle)
+                .opacity(track.isLive ? 0 : 1)
+                .disabled(track.isLive)
+            Spacer()
+            Button(action: player.previous) {
+                Image(systemName: "backward.fill").font(.appSystem(size: 26))
+            }
+            .opacity(track.isLive ? 0 : 1)
+            .disabled(track.isLive)
+            .accessibilityLabel("Previous")
+            Spacer()
+            Button(action: player.togglePlayPause) {
+                Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.appSystem(size: 64))
+                    .foregroundColor(.havenPurple)
+            }
+            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+            Spacer()
+            Button(action: player.next) {
+                Image(systemName: "forward.fill").font(.appSystem(size: 26))
+            }
+            .disabled(!player.hasNext)
+            .opacity(track.isLive ? 0 : (player.hasNext ? 1 : 0.35))
+            .accessibilityLabel("Next")
+            Spacer()
+            modeButton(icon: player.repeatMode == .one ? "repeat.1" : "repeat", isOn: player.repeatMode != .off,
+                       label: "Repeat", value: repeatValue, action: player.cycleRepeat)
+                .opacity(track.isLive ? 0 : 1)
+                .disabled(track.isLive)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 28)
+    }
+
+    private var repeatValue: String {
+        switch player.repeatMode {
+        case .off: return "Off"
+        case .all: return "All"
+        case .one: return "This song"
+        }
+    }
+
+    /// Shuffle or repeat: purple on a soft purple disc when on.
+    private func modeButton(icon: String, isOn: Bool, label: String, value: String,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.appSystem(size: 17, weight: .semibold))
+                .foregroundColor(isOn ? .havenPurple : .secondary)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(Color.havenPurple.opacity(isOn ? 0.18 : 0)))
+                .contentShape(Circle())
+                .animation(Motion.toggle, value: isOn)
+        }
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
+    }
+
+    /// Where a song leads: its artist and album pages, and Share. A live
+    /// stream offers its video and host.
+    @ViewBuilder
+    private func pageButtons(_ track: PlayerTrack) -> some View {
+        HStack(spacing: 10) {
+            if let song = track.wavlake {
+                if let page = MusicFeedState.artistPage(of: song) {
+                    actionButton("Artist", icon: "music.mic") { go(page) }
+                }
+                if let page = MusicFeedState.albumPage(of: song) {
+                    actionButton("Album", icon: "square.stack") { go(page) }
+                }
+                actionButton("Share", icon: "square.and.arrow.up") {
+                    sheet = .share(WavlakeLink.shareText(for: song))
+                }
+            } else if let host = track.hostPubkey {
+                if let stream = player.liveStream {
+                    actionButton("Watch", icon: "play.rectangle") { sheet = .live(stream) }
+                }
+                actionButton("Host", icon: "person.crop.circle") { sheet = .profile(host) }
+            }
+        }
     }
 
     private func actionButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
@@ -1335,7 +1608,130 @@ struct NowPlayingView: View {
         }
         .buttonStyle(.plain)
     }
+
+    /// AirPlay, Up Next, and the song's other actions.
+    private func bottomBar(_ track: PlayerTrack) -> some View {
+        HStack {
+            AirPlayButton()
+                .frame(width: 44, height: 44)
+                .accessibilityLabel("AirPlay")
+            Spacer()
+            if !track.isLive {
+                Button {
+                    withAnimation(Motion.toggle) { showingQueue.toggle() }
+                } label: {
+                    Image(systemName: "list.bullet")
+                        .font(.appSystem(size: 18, weight: .semibold))
+                        .foregroundColor(showingQueue ? .havenPurple : .secondary)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(Color.havenPurple.opacity(showingQueue ? 0.18 : 0)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Up Next")
+                .accessibilityValue(showingQueue ? "Showing" : "Hidden")
+                Spacer()
+            }
+            if let song = track.wavlake {
+                MusicMoreMenu(label: "More for \(song.title)") {
+                    // Artist and Album are buttons right above.
+                    MusicTrackActions(track: song, sheet: $sheet, opensPages: false)
+                }
+                .frame(width: 44, height: 44)
+            } else {
+                Color.clear.frame(width: 44, height: 44)
+            }
+        }
+        .padding(.horizontal, 28)
+    }
+
+    /// The songs after this one; tap one to play it now.
+    private var upNext: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Up Next").font(.appSystem(size: 17, weight: .bold)).accessibilityAddTraits(.isHeader)
+                Spacer()
+                if player.isShuffled {
+                    Label("Shuffled", systemImage: "shuffle").font(.appSystem(size: 12, weight: .semibold))
+                        .foregroundColor(.havenPurple)
+                }
+            }
+            let upcoming = Array(player.upNext.enumerated())
+            if upcoming.isEmpty {
+                Text(player.repeatMode == .all ? "The queue starts over after this song."
+                                               : "Nothing after this song.")
+                    .font(.appSystem(size: 14))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(upcoming, id: \.element.id) { offset, item in
+                            Button { player.jump(to: player.index + 1 + offset) } label: {
+                                HStack(spacing: 10) {
+                                    MusicArtwork(url: item.artworkURL, size: 40)
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(item.title).font(.appSystem(size: 14, weight: .semibold)).lineLimit(1)
+                                        Text(item.artist).font(.appSystem(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
+                                    if let duration = item.duration, duration > 0 {
+                                        Text(MusicTime.format(Double(duration)))
+                                            .font(.appSystem(size: 12).monospacedDigit())
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Plays this song now")
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+    }
+
+    /// Closes the player and opens the page in the Music feed. The page
+    /// opens once the sheet is on its way out, so the switch to the feed
+    /// tab doesn't happen under it.
+    private func go(_ page: MusicFeedState.Page) {
+        dismiss()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            MusicFeedState.shared.reveal(page)
+        }
+    }
 }
+
+/// The system AirPlay / output picker, for sending music to a speaker.
+#if os(iOS)
+struct AirPlayButton: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.tintColor = .secondaryLabel
+        view.activeTintColor = UIColor(Color.havenPurple)
+        view.prioritizesVideoDevices = false
+        return view
+    }
+
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+#else
+struct AirPlayButton: NSViewRepresentable {
+    func makeNSView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.isRoutePickerButtonBordered = false
+        return view
+    }
+
+    func updateNSView(_ nsView: AVRoutePickerView, context: Context) {}
+}
+#endif
+
 
 // MARK: - Sharing, artists, live
 
@@ -1405,24 +1801,19 @@ struct MusicSheetHost: ViewModifier {
 struct MusicTrackActions: View {
     let track: WavlakeTrack
     @Binding var sheet: MusicSheet?
-    /// Inside the Music feed, a song also leads to its artist and album page.
-    var opensPages = false
+    /// Go to artist / album. Off where the caller offers its own way there.
+    var opensPages = true
 
     var body: some View {
         if opensPages {
             let feed = MusicFeedState.shared
-            if let id = track.artistId, feed.showingArtistId != id {
-                Button {
-                    feed.open(.artist(WavlakeArtist(id: id, name: track.artist, artUrl: track.artistArtUrl, npub: track.artistNpub)))
-                } label: {
+            if let page = MusicFeedState.artistPage(of: track), feed.showingArtistId != track.artistId {
+                Button { feed.reveal(page) } label: {
                     Label("Go to \(track.artist)", systemImage: "music.mic")
                 }
             }
-            if let id = track.albumId, feed.showingAlbumId != id {
-                Button {
-                    feed.open(.album(WavlakeAlbum(id: id, title: track.albumTitle ?? "Album", artUrl: track.albumArtUrl,
-                                                  artist: track.artist, artistId: track.artistId)))
-                } label: {
+            if let page = MusicFeedState.albumPage(of: track), feed.showingAlbumId != track.albumId {
+                Button { feed.reveal(page) } label: {
                     Label(track.albumTitle.map { "Go to \($0)" } ?? "Go to album", systemImage: "square.stack")
                 }
             }
