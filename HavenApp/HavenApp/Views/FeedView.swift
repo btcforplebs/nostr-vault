@@ -3634,10 +3634,8 @@ struct FeedNoteRow: View {
             if url.scheme == "nostr" {
                 let identifier = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
                 if identifier.hasPrefix("npub1") || identifier.hasPrefix("nprofile1") {
-                    if let decoded = Bech32.decode(identifier) {
-                        onProfile?(decoded.hexString)
-                    } else {
-                        onProfile?(identifier)
+                    if let pubkey = QuoteReference.profilePubkey(fromBech32: identifier) {
+                        onProfile?(pubkey)
                     }
                     return .handled
                 }

@@ -1222,24 +1222,11 @@ private struct IdentityStepView: View {
                                         npub = ""
                                     }
                                 } else if cleaned.hasPrefix("nprofile1") {
-                                    // Decode nprofile TLV to extract pubkey
-                                    if let decoded = Bech32.decode(cleaned), decoded.hrp == "nprofile" {
-                                        let bytes = Array(decoded.data)
-                                        var i = 0
-                                        while i + 2 <= bytes.count {
-                                            let type = bytes[i]
-                                            let length = Int(bytes[i + 1])
-                                            i += 2
-                                            if i + length > bytes.count { break }
-                                            if type == 0 && length == 32 {
-                                                let pubkeyHex = bytes[i..<i+length].map { String(format: "%02x", $0) }.joined()
-                                                if let pubData = Bech32.hexToData(pubkeyHex),
-                                                   let resolvedNpub = Bech32.encode(hrp: "npub", data: pubData) {
-                                                    npub = resolvedNpub
-                                                }
-                                            }
-                                            i += length
-                                        }
+                                    // The same decoder the feed's mention links use.
+                                    if let pubkeyHex = QuoteReference.profilePubkey(fromBech32: cleaned),
+                                       let pubData = Bech32.hexToData(pubkeyHex),
+                                       let resolvedNpub = Bech32.encode(hrp: "npub", data: pubData) {
+                                        npub = resolvedNpub
                                     } else {
                                         npub = ""
                                     }

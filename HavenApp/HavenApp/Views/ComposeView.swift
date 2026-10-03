@@ -549,24 +549,7 @@ struct ComposeView: View {
 
     /// Resolves a bare `npub1…`/`nprofile1…` bech32 identifier to a hex pubkey.
     private func resolvePubkey(fromBech32 bech32: String) -> String? {
-        if bech32.lowercased().hasPrefix("npub1") {
-            return Bech32.decode(bech32)?.hexString
-        }
-        if bech32.lowercased().hasPrefix("nprofile1"), let decoded = Bech32.decode(bech32) {
-            // TLV: type 0 = pubkey (32 bytes)
-            var data = decoded.data
-            while data.count >= 2 {
-                let type = data.removeFirst()
-                let length = Int(data.removeFirst())
-                guard data.count >= length else { break }
-                let value = data.prefix(length)
-                if type == 0 && length == 32 {
-                    return value.map { String(format: "%02x", $0) }.joined()
-                }
-                data.removeFirst(length)
-            }
-        }
-        return nil
+        QuoteReference.profilePubkey(fromBech32: bech32)
     }
 
     /// Display token shown in the editor for a mention (e.g. "@Alice").
