@@ -1,10 +1,12 @@
 import SwiftUI
+import Combine
 
 // MARK: - SearchView
 
 struct SearchView: View {
     @StateObject private var feedService = FeedService.shared
     @EnvironmentObject var relayManager: RelayProcessManager
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject var configService: ConfigService
     @EnvironmentObject var nostrService: NostrService
 
@@ -199,7 +201,16 @@ struct SearchView: View {
                             #else
                             // Return searches immediately instead of waiting out the
                             // 300ms debounce; Escape clears the field and the results.
-                            .onSubmit { searchNow() }
+                            .onSubmit {
+                                // "#bitcoin" opens the hashtag's feed instead of a word search.
+                                let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if q.hasPrefix("#"), q.count > 2, !q.dropFirst().contains(where: { $0.isWhitespace || $0 == "#" }),
+                                   let url = HashtagLink.url(for: String(q.dropFirst())) {
+                                    openURL(url)
+                                } else {
+                                    searchNow()
+                                }
+                            }
                             .onKeyPress(.escape) {
                                 guard !searchQuery.isEmpty else { return .ignored }
                                 clearSearch()
@@ -438,6 +449,7 @@ struct SearchView: View {
             #endif
         }
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
+        .hashtagLinks()
         .onAppear {
             refreshDiscovery(force: true)
             #if os(macOS)
@@ -895,8 +907,8 @@ struct SearchView: View {
     @ViewBuilder
     private func hashtagRow(hashtag: String) -> some View {
         Button(action: {
-            searchQuery = "#\(hashtag)"
-            searchNow()
+            // Opens the hashtag's own feed: posts tagged with it, not a word search.
+            if let url = HashtagLink.url(for: hashtag) { openURL(url) }
         }) {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -1273,5 +1285,295 @@ final class GlobalSearchLifetime: ObservableObject {
 
     deinit {
         session?.cancel()
+    }
+}
+
+// MARK: - Hashtag feeds
+
+/// `nostrvault://hashtag/<tag>`: what a #hashtag in a post links to.
+enum HashtagLink {
+    static func url(for tag: String) -> URL? {
+        let clean = tag.trimmingCharacters(in: CharacterSet(charactersIn: "#")).lowercased()
+        guard !clean.isEmpty,
+              let encoded = clean.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+        return URL(string: "nostrvault://hashtag/\(encoded)")
+    }
+
+    static func tag(from url: URL) -> String? {
+        guard url.scheme == "nostrvault", url.host == "hashtag" else { return nil }
+        let tag = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).removingPercentEncoding ?? ""
+        return tag.isEmpty ? nil : tag.lowercased()
+    }
+}
+
+extension View {
+    /// Opens a hashtag feed, as a sheet from this view, when a #hashtag link
+    /// below it is tapped. Put it on each screen that can present (the root,
+    /// a profile, a thread, search): the nearest one handles the tap.
+    func hashtagLinks() -> some View {
+        modifier(HashtagLinkHandling())
+    }
+}
+
+private struct HashtagLinkHandling: ViewModifier {
+    @State private var shown: IdentifiableString?
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.openURL, OpenURLAction { url in
+                if let tag = HashtagLink.tag(from: url) {
+                    shown = IdentifiableString(id: tag)
+                    return .handled
+                }
+                return .systemAction
+            })
+            .sheet(item: $shown) { item in
+                HashtagFeedView(tag: item.id)
+                    .environmentObject(NostrService.shared)
+                    .environmentObject(ConfigService.shared)
+                    #if os(macOS)
+                    .frame(minWidth: 520, minHeight: 560)
+                    #endif
+            }
+    }
+}
+
+/// Posts tagged with one hashtag (`#t`), newest first, live: the subscription
+/// stays open so new posts arrive while the screen is up.
+@MainActor
+final class HashtagFeedModel: ObservableObject {
+    let tag: String
+    @Published private(set) var notes: [FeedNote] = []
+    @Published private(set) var isLoading = true
+
+    private var clients: [WebSocketClient] = []
+    private var cancellables = Set<AnyCancellable>()
+    private var seen = Set<String>()
+    private let queue = DispatchQueue(label: "com.haven.hashtag-feed")
+    private var generation = 0
+
+    init(tag: String) { self.tag = tag }
+
+    /// Set when "People I follow" was asked for before the follow list loaded:
+    /// showing Everyone under that label would show strangers.
+    @Published private(set) var waitingForFollows = false
+
+    /// `authors` narrows the query to those people (the "People I follow" view).
+    func start(authors: [String]?) {
+        stop()
+        generation += 1
+        let gen = generation
+        notes = []
+        seen = []
+        isLoading = true
+        waitingForFollows = false
+        if let authors, authors.isEmpty {
+            waitingForFollows = true
+            isLoading = false
+            return
+        }
+        let wantedTags = Set([tag, tag.lowercased()])
+        let wantedAuthors = authors.map(Set.init)
+
+        var filter: [String: Any] = [
+            "kinds": [1],
+            // NIP-24 says t tags are lowercase; some clients keep the typed case.
+            "#t": Array(Set([tag, tag.lowercased()])),
+            "limit": 100,
+        ]
+        if let authors, !authors.isEmpty { filter["authors"] = authors }
+        let subId = "hashtag-\(UUID().uuidString.prefix(8))"
+        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
+              let req = String(data: data, encoding: .utf8) else { return }
+
+        let relays = ConfigService.shared.config.activeFeedRelays.compactMap(URL.init(string:))
+        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        for relay in relays {
+            let client = WebSocketClient()
+            client.isTemporary = true
+            clients.append(client)
+            var sent = false
+            client.$connectionState
+                .sink { [weak client] state in
+                    guard state == .connected, !sent, let client else { return }
+                    sent = true
+                    client.send(text: req)
+                }
+                .store(in: &cancellables)
+            client.messageSubject
+                .receive(on: queue)
+                .compactMap { message -> FeedNote?? in
+                    Self.parse(message, subId: subId, blocked: blocked, tags: wantedTags, authors: wantedAuthors)
+                }
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] parsed in
+                    guard let self, self.generation == gen else { return }
+                    switch parsed {
+                    case .some(let note?): self.insert(note)
+                    case .some(nil): self.isLoading = false   // EOSE from a relay
+                    case .none: break
+                    }
+                }
+                .store(in: &cancellables)
+            client.connect(url: relay)
+        }
+        // Never spin forever if every relay is slow or down.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, self.generation == gen else { return }
+            self.isLoading = false
+        }
+    }
+
+    func stop() {
+        clients.forEach { $0.disconnect() }
+        clients = []
+        cancellables.removeAll()
+    }
+
+    private func insert(_ note: FeedNote) {
+        guard seen.insert(note.id).inserted else { return }
+        let index = notes.firstIndex { $0.createdAt < note.createdAt } ?? notes.endIndex
+        notes.insert(note, at: index)
+        if notes.count > 300 { notes.removeLast(notes.count - 300) }
+        isLoading = false
+    }
+
+    /// `.some(note)` for a usable event, `.some(nil)` for EOSE, nil otherwise.
+    /// Runs off the main thread: every event's signature is checked, since a
+    /// relay can send anything under any author.
+    /// Only what was asked for: a relay can send validly signed posts that
+    /// lack the tag, or come from people outside the requested authors.
+    nonisolated private static func parse(_ message: String, subId: String, blocked: Set<String>,
+                                          tags wanted: Set<String>, authors: Set<String>?) -> FeedNote?? {
+        guard let data = message.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              let type = array.first as? String,
+              array.count >= 2, (array[1] as? String) == subId else { return nil }
+        if type == "EOSE" { return .some(nil) }
+        guard type == "EVENT", array.count >= 3,
+              let ev = array[2] as? [String: Any],
+              let id = ev["id"] as? String,
+              let pubkey = ev["pubkey"] as? String,
+              let content = ev["content"] as? String,
+              let createdAt = ev["created_at"] as? Int64,
+              let kind = ev["kind"] as? Int, kind == 1,
+              let tags = ev["tags"] as? [[String]],
+              !blocked.contains(pubkey),
+              authors.map({ $0.contains(pubkey) }) ?? true,
+              tags.contains(where: { $0.count >= 2 && $0[0] == "t" && wanted.contains($0[1].lowercased()) }),
+              !FeedNote.isNoiseOrSpam(content: content, tags: tags),
+              NostrEventVerifier.isValid(ev) else { return nil }
+        return .some(FeedNote(id: id, pubkey: pubkey, content: content,
+                              createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
+                              tags: tags, kind: kind))
+    }
+}
+
+struct HashtagFeedView: View {
+    let tag: String
+    @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var configService: ConfigService
+    @ObservedObject private var feedService = FeedService.shared
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var model: HashtagFeedModel
+    @State private var followingOnly = false
+    @State private var showingProfile: IdentifiableString?
+    @State private var showingNote: FeedNote?
+    @State private var showingMediaUrl: IdentifiableURL?
+    @Namespace private var mediaZoom
+
+    init(tag: String) {
+        self.tag = tag
+        _model = StateObject(wrappedValue: HashtagFeedModel(tag: tag))
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    Picker("Show", selection: $followingOnly) {
+                        Text("Everyone").tag(false)
+                        Text("People I follow").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                    if model.notes.isEmpty {
+                        VStack(spacing: 10) {
+                            if model.waitingForFollows {
+                                ProgressView()
+                                Text("Loading the people you follow…")
+                                    .font(.appSubheadline)
+                                    .foregroundColor(.secondary)
+                            } else if model.isLoading {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "number").font(.appSystem(size: 28)).foregroundColor(.secondary)
+                                Text(followingOnly ? "No posts tagged #\(tag) from people you follow yet"
+                                                   : "No posts tagged #\(tag) yet")
+                                    .font(.appSubheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                    }
+
+                    ForEach(model.notes) { note in
+                        FeedNoteRow(
+                            note: note,
+                            profile: nostrService.profiles[note.pubkey],
+                            rowData: FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService),
+                            onProfile: { showingProfile = IdentifiableString(id: $0) },
+                            onMedia: { url, urls in showingMediaUrl = IdentifiableURL(url: url, allURLs: urls) },
+                            showParent: false
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { showingNote = note }
+                        .padding(.horizontal, 16)
+                        .onAppear { nostrService.fetchMissingProfiles(for: [note.pubkey]) }
+                    }
+                }
+                .padding(.bottom, 24)
+            }
+            .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
+            .navigationTitle("#\(tag)")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .hashtagLinks()
+        .task { model.start(authors: nil) }
+        .onChange(of: followingOnly) { _, onlyFollows in
+            model.start(authors: onlyFollows ? feedService.followedPubkeys : nil)
+        }
+        // The follow list can arrive after the switch was flipped.
+        .onChange(of: feedService.followedPubkeys.count) { _, _ in
+            if followingOnly && model.waitingForFollows {
+                model.start(authors: feedService.followedPubkeys)
+            }
+        }
+        .onDisappear { model.stop() }
+        .sheet(item: $showingProfile) { profile in
+            ProfileView(pubkey: profile.id, onDismiss: { showingProfile = nil })
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
+        .sheet(item: $showingNote) { note in
+            NavigationStack {
+                NoteDetailView(note: note)
+                    .navigationDestination(for: FeedNote.self) { NoteDetailView(note: $0) }
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
+        }
+        .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
     }
 }

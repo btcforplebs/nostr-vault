@@ -214,6 +214,7 @@ struct NoteDetailView: View {
         }
         .navigationTitle("")
         .environment(\.feedActions, noteDetailFeedActions)
+        .hashtagLinks()
 
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

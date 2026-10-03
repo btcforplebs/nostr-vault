@@ -9,6 +9,9 @@ public struct NostrContentFormatter {
     private static let neventRegex = try! NSRegularExpression(pattern: "nostr:(nevent1[a-z0-9]+)")
     private static let naddrRegex = try! NSRegularExpression(pattern: "nostr:(naddr1[a-z0-9]+)")
     /// Matches bare HTTP(S) URLs that are NOT already inside markdown link syntax.
+    /// A #hashtag: letters/digits/underscore after a # that starts a word, so
+    /// URL fragments (`page#top`) and markdown labels are left alone.
+    private static let hashtagRegex = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}_/#&\]\[])#([\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*)"#)
     private static let httpURLRegex = try! NSRegularExpression(pattern: #"(?<![(\[])https?://[^\s<>\")\]]*[^\s<>\")\].,;:!?'\"]"#, options: .caseInsensitive)
 
     // Result cache — keyed on content + mediaURLs count. Note content is immutable
@@ -56,6 +59,9 @@ public struct NostrContentFormatter {
         // Convert bare HTTP(S) URLs to clickable markdown links
         text = linkifyURLs(in: text)
 
+        // #hashtags open that hashtag's feed (see HashtagLink).
+        text = linkifyHashtags(in: text)
+
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
@@ -73,6 +79,28 @@ public struct NostrContentFormatter {
         } catch {
             return AttributedString(text)
         }
+    }
+
+    /// Turns #hashtags into markdown links to `nostrvault://hashtag/<tag>`.
+    /// Runs after URL linkification and skips anything inside a markdown
+    /// link's target, so a URL's own `#fragment` stays part of the URL.
+    private static func linkifyHashtags(in text: String) -> String {
+        let ns = text as NSString
+        var result = ""
+        var cursor = 0
+        // Ranges of "(...)" link targets produced by linkifyURLs/mentions.
+        let targets = (try? NSRegularExpression(pattern: #"\]\([^)]*\)"#))?
+            .matches(in: text, range: NSRange(location: 0, length: ns.length)).map(\.range) ?? []
+        for match in hashtagRegex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            if targets.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) { continue }
+            let tag = ns.substring(with: match.range(at: 1))
+            guard let url = HashtagLink.url(for: tag) else { continue }
+            result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            result += "[#\(tag)](\(url.absoluteString))"
+            cursor = match.range.location + match.range.length
+        }
+        result += ns.substring(from: cursor)
+        return result
     }
 
     /// Converts bare HTTP(S) URLs to markdown links so they become tappable in the attributed string.
