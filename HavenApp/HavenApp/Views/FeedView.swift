@@ -624,68 +624,19 @@ struct FeedView: View {
     /// corner dot carries the connection status the old separate dot showed.
     /// Folded, only the icon's circle is left.
     private var feedLeadingToolbar: some View {
-        Menu {
-            Picker(selection: Binding(
-                get: { feedService.feedMode },
-                set: { feedService.switchMode($0) }
-            )) {
-                ForEach(FeedMode.allCases, id: \.self) { mode in
-                    Label(mode.displayName, systemImage: mode.symbolName)
-                        .tag(mode)
-                }
-            } label: {
-                EmptyView()
-            }
-            .pickerStyle(.inline)
-
-            Divider()
-
-            Button(action: { showingRelayStatus = true }) {
-                Label("Dashboard", systemImage: "antenna.radiowaves.left.and.right")
-            }
-        } label: {
-            HStack(spacing: 0) {
-                // No glass ring of its own: glassEffect takes touches even
-                // with hit testing off, which left the icon the one spot that
-                // did not open the menu. Folded, the pill itself is the ring.
-                Image(systemName: feedService.feedMode.symbolName)
-                    .font(.appSystem(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 30, height: 30)
-                    .overlay(alignment: .bottomTrailing) {
-                        Circle()
-                            .fill(feedService.connectionDotColor)
-                            .frame(width: 8, height: 8)
-                            .shadow(color: feedService.connectionDotColor.opacity(0.6), radius: 2)
-                            .offset(x: -1, y: -1)
-                    }
-
-                // Always laid out, only faded: removing it would resize the
-                // toolbar item and make the navigation bar relayout mid-fold.
-                ChromeFold(anchor: .leading, isEnabled: isCompactWidth) {
-                    HStack(spacing: 3) {
-                        Text(feedService.feedMode.displayName)
-                            .font(.appSystem(size: 17, weight: .bold))
-                        Image(systemName: "chevron.down")
-                            .font(.appSystem(size: 9, weight: .bold))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.leading, 8)
-                    .padding(.trailing, 12)
-                }
-            }
-            .padding(.leading, 7)
-            .padding(.vertical, 7)
-            // The toolbar proposes a narrow width; without this the feed
-            // name truncates away and only the icon and chevron are left.
-            .fixedSize()
-            .contentShape(Rectangle())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .accessibilityLabel("Feed: \(feedService.feedMode.displayName)")
-        .accessibilityValue(feedService.connectionStatus)
-        .accessibilityHint("Switch feeds or open the feed dashboard")
+        // Its own Equatable view so the open menu is only rebuilt when the
+        // feed or connection status changes. Built inline, every FeedService
+        // publish (each arriving note) re-rendered the menu while it was open,
+        // which stalled or jumped its scrolling.
+        FeedPickerMenu(
+            mode: feedService.feedMode,
+            connectionStatus: feedService.connectionStatus,
+            dotColor: feedService.connectionDotColor,
+            isCompactWidth: isCompactWidth,
+            onSelect: { feedService.switchMode($0) },
+            onDashboard: { showingRelayStatus = true }
+        )
+        .equatable()
     }
     #endif
 
@@ -4300,3 +4251,87 @@ extension View {
         }
     }
 }
+
+#if os(iOS)
+/// The feed picker in the top-left of the feed. Equatable on the values it
+/// shows, so it does not rebuild for unrelated FeedService changes while open.
+struct FeedPickerMenu: View, Equatable {
+    let mode: FeedMode
+    let connectionStatus: String
+    let dotColor: Color
+    let isCompactWidth: Bool
+    let onSelect: (FeedMode) -> Void
+    let onDashboard: () -> Void
+
+    static func == (lhs: FeedPickerMenu, rhs: FeedPickerMenu) -> Bool {
+        lhs.mode == rhs.mode
+            && lhs.connectionStatus == rhs.connectionStatus
+            && lhs.isCompactWidth == rhs.isCompactWidth
+    }
+
+    var body: some View {
+        Menu {
+            Picker(selection: Binding(
+                get: { mode },
+                set: { onSelect($0) }
+            )) {
+                ForEach(FeedMode.allCases, id: \.self) { mode in
+                    Label(mode.displayName, systemImage: mode.symbolName)
+                        .tag(mode)
+                }
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.inline)
+
+            Divider()
+
+            Button(action: onDashboard) {
+                Label("Dashboard", systemImage: "antenna.radiowaves.left.and.right")
+            }
+        } label: {
+            HStack(spacing: 0) {
+                // No glass ring of its own: glassEffect takes touches even
+                // with hit testing off, which left the icon the one spot that
+                // did not open the menu. Folded, the pill itself is the ring.
+                Image(systemName: mode.symbolName)
+                    .font(.appSystem(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 30, height: 30)
+                    .overlay(alignment: .bottomTrailing) {
+                        Circle()
+                            .fill(dotColor)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: dotColor.opacity(0.6), radius: 2)
+                            .offset(x: -1, y: -1)
+                    }
+
+                // Always laid out, only faded: removing it would resize the
+                // toolbar item and make the navigation bar relayout mid-fold.
+                ChromeFold(anchor: .leading, isEnabled: isCompactWidth) {
+                    HStack(spacing: 3) {
+                        Text(mode.displayName)
+                            .font(.appSystem(size: 17, weight: .bold))
+                        Image(systemName: "chevron.down")
+                            .font(.appSystem(size: 9, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 12)
+                }
+            }
+            .padding(.leading, 7)
+            .padding(.vertical, 7)
+            // The toolbar proposes a narrow width; without this the feed
+            // name truncates away and only the icon and chevron are left.
+            .fixedSize()
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Feed: \(mode.displayName)")
+        .accessibilityValue(connectionStatus)
+        .accessibilityHint("Switch feeds or open the feed dashboard")
+    }
+}
+#endif
