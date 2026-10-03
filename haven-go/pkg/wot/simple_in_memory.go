@@ -221,8 +221,13 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 		}
 	}
 
+	// Every depth persists its graph: the apps read wot_cache.json to filter
+	// Global and Discovery, and depths 1 and 2 used to return without saving,
+	// so on Android (depth 2 by default) that file never existed and both
+	// feeds came up empty.
 	if wt.WotDepth == 1 {
 		wt.pubkeys.Store(&newWot)
+		wt.SaveCache()
 		return
 	}
 
@@ -258,6 +263,7 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 		slog.Info("🕸️ analysed Nostr events", "count", eventsAnalysed.Load())
 		slog.Info("📈 direct followers in import relays", "🫂pubkeys", len(newWot), "🔗relays", len(wt.SeedRelays))
 		wt.pubkeys.Store(&newWot)
+		wt.SaveCache()
 		return
 	}
 
