@@ -223,6 +223,8 @@ struct FeedActions {
                     FollowNotificationManager.shared.add(recipientName: name, kind: .followed)
                 case .failure(.contactsNotLoaded):
                     FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Following once your follow list loads…"))
+                case .failure(.listUnavailable):
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Couldn't load your follow list. Not changing it."))
                 case .failure(.alreadyFollowing):
                     break
                 case .failure:
@@ -236,6 +238,8 @@ struct FeedActions {
                     FollowNotificationManager.shared.add(recipientName: name, kind: .unfollowed)
                 case .failure(.contactsNotLoaded):
                     FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Unfollowing once your follow list loads…"))
+                case .failure(.listUnavailable):
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Couldn't load your follow list. Not changing it."))
                 case .failure(.cannotUnfollowSelf):
                     FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Can't unfollow yourself"))
                 case .failure:
