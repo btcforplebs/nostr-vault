@@ -54,6 +54,9 @@ struct ComposeView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
 
     @State private var content: String = ""
+    /// Answer an original note with a NIP-22 comment (1111) instead of a
+    /// kind 1 reply. Off by default: most clients show kind 1 under a note.
+    @State private var postAsComment = false
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var attachments: [Attachment] = []
     @State private var isUploading = false
@@ -813,6 +816,31 @@ struct ComposeView: View {
         .frame(minHeight: 44)
     }
     
+    /// What this response will be sent as. On an original note it's a choice
+    /// (reply, or "Post as comment"); on anything that isn't a note it's
+    /// always a comment, and the line says so.
+    @ViewBuilder
+    private func responseKindChoice(parent: FeedNote) -> some View {
+        if parent.kind == 6 {
+            EmptyView()
+        } else if NIP10Thread.isOriginalNote(kind: parent.kind, tags: parent.tags) {
+            Toggle(isOn: $postAsComment) {
+                Text("Post as comment")
+                    .font(.appSystem(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .tint(.havenPurple)
+            .fixedSize()
+            .accessibilityHint("Sends a NIP-22 comment instead of a reply. Some apps don't show comments under notes yet.")
+        } else if NIP10Thread.replyKind(parentKind: parent.kind) == NIP10Thread.commentKind && parent.kind != NIP10Thread.commentKind {
+            Label("Posting as a comment", systemImage: "text.bubble")
+                .font(.appSystem(size: 12, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+    }
+
     private func replyHeader(parent: FeedNote) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 0) {
@@ -846,6 +874,8 @@ struct ComposeView: View {
                         .lineLimit(3)
                         .padding(.bottom, 4)
                 }
+
+                responseKindChoice(parent: parent)
             }
         }
         .padding(12)
@@ -1624,39 +1654,30 @@ struct ComposeView: View {
                     return tag[3] != "mention"
                 }
 
-                // NIP-10/NIP-01: addressable-event a-tags, alongside the e-tags above.
-                // A parameterized replaceable event (kind 30000–39999, e.g. a long-form
-                // article) gets a new event id every time it's edited, so an e-tag-only
-                // reply silently becomes orphaned from other clients' view of the thread
-                // once the author edits it — the "a" coordinate (kind:pubkey:d-tag) is
-                // what stays stable across edits.
-                func addressableCoordinate(kind: Int, pubkey: String, tags: [[String]]) -> String? {
-                    guard kind >= 30000 && kind < 40000,
-                          let dTag = tags.first(where: { $0.count >= 2 && $0[0] == "d" })?[1] else { return nil }
-                    return "\(kind):\(pubkey):\(dTag)"
-                }
                 let parentNonMentionATags = effectiveParentTags.filter { tag in
                     guard tag.count >= 2 && tag[0] == "a" else { return false }
                     guard tag.count >= 4 else { return true }
                     return tag[3] != "mention"
                 }
 
-                eventKind = NIP10Thread.replyKind(parentKind: effectiveParentKind)
+                // Kind 1 replies only onto kind 1 notes; anything else (and a
+                // note when "Post as comment" is on) gets a NIP-22 comment.
+                let asComment = postAsComment && NIP10Thread.isOriginalNote(kind: effectiveParentKind, tags: effectiveParentTags)
+                eventKind = NIP10Thread.replyKind(parentKind: effectiveParentKind, asComment: asComment)
                 if eventKind == NIP10Thread.commentKind {
-                    // NIP-22: answering a comment sends a comment, scoped to
-                    // the same root.
-                    tags.append(contentsOf: NIP10Thread.commentReplyTags(
-                        parentId: effectiveParentId, parentPubkey: effectiveParentPubkey,
-                        parentTags: effectiveParentTags, relayHint: relayHint
+                    // NIP-22: on a comment, copy its root and point at it; on
+                    // anything else the parent is the root (E, or A alone for
+                    // addressables and replaceables).
+                    tags.append(contentsOf: NIP10Thread.commentTags(
+                        parentId: effectiveParentId, parentKind: effectiveParentKind,
+                        parentPubkey: effectiveParentPubkey, parentTags: effectiveParentTags,
+                        relayHint: relayHint
                     ))
                 } else if parentNonMentionETags.isEmpty {
                     // Parent IS the root note — single e-tag with "root" marker.
                     // NIP-10: the optional 5th element is the event author's pubkey,
                     // used by the outbox model to know whose relays to fetch it from.
                     tags.append(["e", effectiveParentId, relayHint, "root", effectiveParentPubkey])
-                    if let coord = addressableCoordinate(kind: parent.kind, pubkey: effectiveParentPubkey, tags: effectiveParentTags) {
-                        tags.append(["a", coord, relayHint, "root"])
-                    }
                 } else {
                     // Parent is itself a reply — find the thread root
                     let threadRootId: String
@@ -1677,16 +1698,10 @@ struct ComposeView: View {
                     }
                     tags.append(["e", effectiveParentId, relayHint, "reply", effectiveParentPubkey])
 
-                    // Root a-tag: we only have the root's event id here (not its kind/
-                    // pubkey/d-tag), so propagate it forward from the parent's own root
-                    // a-tag if it had one.
+                    // A legacy thread under an addressable root carries its
+                    // coordinate forward. a/A tags have no marker field.
                     if let rootATag = parentNonMentionATags.first(where: { $0.count >= 4 && $0[3] == "root" }) ?? parentNonMentionATags.first {
-                        tags.append(["a", rootATag[1], relayHint, "root"])
-                    }
-
-                    // Reply a-tag: the immediate parent might itself be addressable.
-                    if let coord = addressableCoordinate(kind: parent.kind, pubkey: effectiveParentPubkey, tags: effectiveParentTags) {
-                        tags.append(["a", coord, relayHint, "reply"])
+                        tags.append(["a", rootATag[1], relayHint])
                     }
                 }
 

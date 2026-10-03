@@ -27,6 +27,9 @@ struct NoteDetailView: View {
     @State private var noLightningAddressAlert = false
 
     @State private var detailedReactions: [NostrEvent] = []
+    /// Responses that aren't replies (spec "below the fold"): quotes,
+    /// highlights, voice replies. Shown in their own section, not as rows.
+    @State private var otherResponses: [FeedNote] = []
     @State private var detailedReposts: [NostrEvent] = []
     @State private var detailedZaps: [NostrEvent] = []
     
@@ -56,6 +59,17 @@ struct NoteDetailView: View {
 
     private var threadRootId: String {
         NIP10Thread.rootEventId(kind: note.kind, tags: note.tags) ?? note.id
+    }
+
+    /// The root's `kind:pubkey:d` address when it's an addressable or
+    /// replaceable event. Comments root on `A` there, and an edited article
+    /// has a new event id, so `#E` alone misses them.
+    private var threadRootCoordinate: String? {
+        if note.kind == NIP10Thread.commentKind {
+            return note.tags.first(where: { $0.count >= 2 && $0[0] == "A" })?[1]
+        }
+        guard threadRootId == note.id else { return nil }
+        return NIP10Thread.coordinate(kind: note.kind, pubkey: note.pubkey, tags: note.tags)
     }
 
     private var focusedNote: FeedNote {
@@ -158,6 +172,8 @@ struct NoteDetailView: View {
 
                     // Replies Section
                     repliesSection(proxy: proxy)
+
+                    otherResponsesSection
 
 
                 }
@@ -478,6 +494,23 @@ struct NoteDetailView: View {
         }
     }
 
+    /// Quotes, highlights and other responses, under the replies.
+    @ViewBuilder
+    private var otherResponsesSection: some View {
+        if !otherResponses.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Quotes & highlights")
+                    .font(.appSystem(size: 15, weight: .bold))
+                    .padding(.horizontal, 16)
+                ForEach(otherResponses) { response in
+                    OtherResponseCard(note: response, profile: nostrService.profiles[response.pubkey])
+                        .padding(.horizontal, 16)
+                }
+            }
+            .padding(.top, 20)
+        }
+    }
+
     private func repliesSection(proxy: ScrollViewProxy) -> some View {
         let currentReplies = dynamicReplies
         let pool = threadPool
@@ -643,7 +676,15 @@ struct NoteDetailView: View {
                         // so one filter reaches them at any depth.
                         let commentsFilter: [String: Any] = ["kinds": [NIP10Thread.commentKind], "#E": [targetRootId], "limit": 150]
                         let engagementFilter: [String: Any] = ["kinds": [6, 7, 9735], "#e": [activeFocusId], "limit": 150]
-                        let req = ["REQ", subId, repliesFilter, commentsFilter, engagementFilter] as [Any]
+                        var filters: [[String: Any]] = [repliesFilter, commentsFilter, engagementFilter]
+                        if let coord = self.threadRootCoordinate {
+                            filters.append(["kinds": [NIP10Thread.commentKind], "#A": [coord], "limit": 150])
+                        }
+                        // Other responses: quotes of any kind (#q), and
+                        // highlights / voice replies pointing at the root.
+                        filters.append(["#q": [targetRootId], "limit": 50])
+                        filters.append(["kinds": Self.otherResponseKinds, "#e": [targetRootId], "limit": 50])
+                        let req = (["REQ", subId] as [Any]) + filters.map { $0 as Any }
                         if let data = try? JSONSerialization.data(withJSONObject: req),
                            let str = String(data: data, encoding: .utf8) {
                             client.send(text: str)
@@ -666,6 +707,22 @@ struct NoteDetailView: View {
         }
     }
 
+    /// Highlights (9802) and voice replies (1244) go below the fold.
+    static let otherResponseKinds = [9802, 1244]
+
+    /// A response that isn't a thread row: a quote (a `q` tag on the root,
+    /// and not itself a reply), a highlight, a voice reply, or any other
+    /// kind that points at the root. Replies, comments, reactions, reposts
+    /// and zaps are handled where they always were.
+    private func isOtherResponse(kind: Int, tags: [[String]]) -> Bool {
+        if [1, NIP10Thread.commentKind, 6, 7, 9735].contains(kind) {
+            guard kind == 1 else { return false }
+            let quotesRoot = tags.contains { $0.count >= 2 && $0[0] == "q" && $0[1] == threadRootId }
+            return quotesRoot && NIP10Thread.parentEventId(kind: kind, tags: tags) == nil
+        }
+        return true
+    }
+
     private func handleReplyMessage(_ msg: String, client: WebSocketClient) {
         guard let data = msg.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
@@ -680,7 +737,20 @@ struct NoteDetailView: View {
            let kind = ev["kind"] as? Int,
            let tags = ev["tags"] as? [[String]] {
 
-            if kind == 1 || kind == NIP10Thread.commentKind {
+            if isOtherResponse(kind: kind, tags: tags) {
+                if !otherResponses.contains(where: { $0.id == id }),
+                   !FeedNote.isNoiseOrSpam(content: content, tags: tags) {
+                    otherResponses.append(FeedNote(
+                        id: id, pubkey: pubkey, content: content,
+                        createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
+                        tags: tags, kind: kind
+                    ))
+                    otherResponses.sort { $0.createdAt > $1.createdAt }
+                    if nostrService.profiles[pubkey] == nil {
+                        nostrService.fetchMissingProfiles(for: [pubkey])
+                    }
+                }
+            } else if kind == 1 || kind == NIP10Thread.commentKind {
                 let reply = FeedNote(
                     id: id,
                     pubkey: pubkey,
@@ -1988,6 +2058,59 @@ struct NoteNavigationLink<Label: View>: View {
                 label()
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+/// One "below the fold" response: who, what kind, and the text. Quotes link
+/// through to the quoting note.
+struct OtherResponseCard: View {
+    let note: FeedNote
+    let profile: FeedProfile?
+
+    private var label: (String, String) {
+        switch note.kind {
+        case 1: return ("Quoted", "quote.bubble")
+        case 9802: return ("Highlighted", "highlighter")
+        case 1244: return ("Voice reply", "waveform")
+        default: return ("Responded", "arrowshape.turn.up.left")
+        }
+    }
+
+    var body: some View {
+        let card = VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                AvatarView(url: profile?.pictureURL, pubkey: note.pubkey, size: 22)
+                Text(profile?.bestName ?? String(note.pubkey.prefix(8)))
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Label(label.0, systemImage: label.1)
+                    .font(.appSystem(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Spacer(minLength: 0)
+            }
+            let text = NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs)
+            if !text.characters.isEmpty {
+                Text(text)
+                    .font(.appSystem(size: 14))
+                    .lineLimit(note.kind == 9802 ? 6 : 4)
+                    .padding(.leading, note.kind == 9802 ? 8 : 0)
+                    .overlay(alignment: .leading) {
+                        if note.kind == 9802 {
+                            Rectangle().fill(Color.havenPurple.opacity(0.6)).frame(width: 3)
+                        }
+                    }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.08)))
+
+        if note.kind == 1 {
+            NoteNavigationLink(note: note) { card }
+                .buttonStyle(.plain)
+        } else {
+            card
         }
     }
 }
