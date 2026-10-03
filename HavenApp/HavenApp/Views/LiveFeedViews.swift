@@ -5,6 +5,10 @@ import SwiftUI
 struct LiveStreamCardView: View {
     let stream: LiveStream
     let profile: FeedProfile?
+    /// False draws an ENDED pill — a stream embedded in a note outlives its
+    /// broadcast, unlike a Live-tab tile.
+    var isLive: Bool = true
+    var thumbnailHeight: CGFloat = 120
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -23,13 +27,13 @@ struct LiveStreamCardView: View {
                         }
                     }
                 }
-                .frame(height: 120)
+                .frame(height: thumbnailHeight)
                 .frame(maxWidth: .infinity)
                 .clipped()
 
                 HStack(spacing: 6) {
-                    livePill
-                    if let participants = stream.participants {
+                    if isLive { livePill } else { endedPill }
+                    if isLive, let participants = stream.participants {
                         Label("\(participants)", systemImage: "person.2.fill")
                             .font(.appSystem(size: 10, weight: .semibold))
                             .padding(.horizontal, 6)
@@ -64,6 +68,16 @@ struct LiveStreamCardView: View {
                 .stroke(Color.platformSeparator, lineWidth: 0.5)
         )
         .contentShape(Rectangle())
+    }
+
+    private var endedPill: some View {
+        Text("ENDED")
+            .font(.appSystem(size: 10, weight: .bold))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.black.opacity(0.55))
+            .foregroundColor(.white.opacity(0.8))
+            .clipShape(Capsule())
     }
 
     private var livePill: some View {
@@ -464,4 +478,69 @@ struct LiveChatRowView: View {
         formatter.dateStyle = .none
         return formatter
     }()
+}
+
+// MARK: - In a note
+
+/// A live stream inside a note — quoted with `nostr:naddr1…` or linked from
+/// zap.stream and friends. The Live-tab tile, so a stream looks the same
+/// wherever it shows up, and a tap opens the same player.
+struct LiveStreamEmbedView: View {
+    let stream: LiveStream
+
+    @EnvironmentObject var nostrService: NostrService
+    @State private var playing: LiveStream?
+
+    var body: some View {
+        // Read once per render: an embed scrolled back to after its stream
+        // ended must stop offering to play it.
+        let isLive = stream.isPlayableLive(at: Int64(Date().timeIntervalSince1970))
+        LiveStreamCardView(
+            stream: stream,
+            profile: nostrService.profiles[stream.hostPubkey],
+            isLive: isLive,
+            thumbnailHeight: 170
+        )
+        .opacity(isLive ? 1 : 0.75)
+        .onTapGesture { if isLive { playing = stream } }
+        .accessibilityAddTraits(isLive ? .isButton : [])
+        .accessibilityHint(isLive ? Text("Plays the live stream") : Text("This stream has ended"))
+        .sheet(item: $playing) { stream in
+            LiveStreamPlayerView(stream: stream)
+                .environmentObject(nostrService)
+                .environmentObject(ConfigService.shared)
+        }
+    }
+}
+
+extension LiveStream {
+    /// A stream from a note-shaped event, as quotes and the feed store it.
+    init?(note: FeedNote) {
+        guard note.kind == 30311 else { return nil }
+        self.init(id: note.id, pubkey: note.pubkey,
+                  createdAt: Int64(note.createdAt.timeIntervalSince1970), tags: note.tags)
+    }
+}
+
+/// A stream known only by its coordinate, as a link names it: fetched through
+/// the same lookup quoted notes use, then embedded.
+struct LiveStreamReferenceView: View {
+    let coordinate: String
+    let fallbackURL: URL
+
+    @EnvironmentObject var nostrService: NostrService
+    @ObservedObject private var feedService = FeedService.shared
+
+    var body: some View {
+        if let note = feedService.findNote(id: coordinate), let stream = LiveStream(note: note) {
+            LiveStreamEmbedView(stream: stream)
+        } else if feedService.unavailableNoteIds.contains(coordinate) {
+            LinkFallbackCard(url: fallbackURL)
+        } else {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.platformTertiaryGroupedBackground)
+                .frame(height: 230)
+                .onAppear { feedService.fetchMissingNote(id: coordinate) }
+        }
+    }
 }

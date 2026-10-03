@@ -1839,6 +1839,9 @@ struct MusicTrackActions: View {
 /// from the feed (and a repost or quote of it does too).
 struct WavlakeTrackCard: View {
     let trackId: String
+    /// The link this card replaced. The note text no longer shows it, so a
+    /// track that fails to load falls back to it instead of vanishing.
+    var fallbackURL: URL? = nil
     @ObservedObject private var player = MusicPlayerService.shared
     @State private var track: WavlakeTrack?
     @State private var failed = false
@@ -1851,7 +1854,9 @@ struct WavlakeTrackCard: View {
             if let track {
                 card(track)
             } else if failed {
-                EmptyView()
+                if let fallbackURL {
+                    LinkFallbackCard(url: fallbackURL)
+                }
             } else {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color.secondary.opacity(0.1))
