@@ -38,6 +38,11 @@ fun LinkPreviewCard(
     url: String,
     modifier: Modifier = Modifier,
 ) {
+    // A Wavlake song plays right here instead of opening a web page.
+    com.nostrvault.data.music.WavlakeLink.trackId(url)?.let { trackId ->
+        com.nostrvault.ui.screens.music.WavlakeTrackCard(trackId, modifier)
+        return
+    }
     val colors = LocalNostrVaultColors.current
     val uriHandler = LocalUriHandler.current
     var metadata by remember(url) { mutableStateOf(ogMetadataCache.get(url)) }

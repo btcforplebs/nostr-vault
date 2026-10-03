@@ -186,6 +186,8 @@ class ComposeNoteViewModel @Inject constructor(
     private val replyToNoteId: String? = savedStateHandle["replyTo"]
     private val quoteToNoteId: String? = savedStateHandle["quoteTo"]
     private val resumeDraftId: String? = savedStateHandle["draftId"]
+    /** Text to start with, e.g. a song shared from the music player. */
+    private val initialText: String? = savedStateHandle["text"]
 
     /** Stable draft ID for this compose session. */
     private val draftId: String = resumeDraftId ?: java.util.UUID.randomUUID().toString()
@@ -299,6 +301,7 @@ class ComposeNoteViewModel @Inject constructor(
 
 
     init {
+        initialText?.takeIf { it.isNotBlank() }?.let { _content.value = it }
         // Start waking sleeping mirror hosts (e.g. the Mac relay) now, so
         // they're reachable by the time the user hits Post.
         blossomService.prewarmMirrors()

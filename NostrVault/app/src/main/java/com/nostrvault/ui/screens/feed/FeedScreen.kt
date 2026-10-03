@@ -112,6 +112,8 @@ fun FeedScreen(
     onCompose: () -> Unit,
     /** Opens the diVine, article or recipe composer. */
     onComposeMode: (com.nostrvault.ui.screens.ModeComposerKind) -> Unit = {},
+    /** Opens the composer with [text] filled in (Share a song to Nostr). */
+    onComposeText: (String) -> Unit = {},
     onReply: ((String) -> Unit)? = null,
     onQuote: ((String) -> Unit)? = null,
     onNavigateToSettings: () -> Unit,
@@ -561,6 +563,15 @@ fun FeedScreen(
                     },
                     onPost = { onComposeMode(com.nostrvault.ui.screens.ModeComposerKind.DIVINE) },
                     onShowGlobal = { showGlobalReelsWarning = true },
+                )
+            } else if (feedMode == FeedMode.MUSIC) {
+                com.nostrvault.ui.screens.music.MusicScreen(
+                    actions = com.nostrvault.ui.screens.music.MusicActions(
+                        onShare = onComposeText,
+                        onOpenProfile = onProfileClick,
+                        npubToHex = viewModel::npubToHex,
+                    ),
+                    contentPadding = padding,
                 )
             } else if (feedMode == FeedMode.LIVE) {
                 LiveGrid(
@@ -1541,7 +1552,7 @@ private fun FeedTopBar(
             // replies and auto-load are all about kind-1 traffic, and a
             // long-form list is short enough not to need them.
             Box(Modifier.chromeFold(leadingGap = 4.dp).blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
-                FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE -> Unit
+                FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MUSIC -> Unit
                 FeedMode.REELS -> {
                     // Following, or everyone behind the sensitive-content warning.
                     IconButton(onClick = onReelsFollowing, modifier = Modifier.size(40.dp)) {
@@ -1791,6 +1802,7 @@ private fun EmptyFeedPlaceholder(
                     FeedMode.RECIPES -> NostrVaultIcons.Recipes
                     FeedMode.LIVE -> NostrVaultIcons.Live
                     FeedMode.REELS -> NostrVaultIcons.Reels
+                    FeedMode.MUSIC -> NostrVaultIcons.Music
                 },
                 contentDescription = null,
                 tint = colors.primaryLight,
@@ -1808,6 +1820,7 @@ private fun EmptyFeedPlaceholder(
                     FeedMode.RECIPES -> "No Recipes Yet"
                     FeedMode.LIVE -> "Nothing Live"
                     FeedMode.REELS -> "No Videos Yet"
+                    FeedMode.MUSIC -> "No Music"
                 },
                 color = PrimaryText,
                 fontSize = 22.sp,
@@ -1826,6 +1839,7 @@ private fun EmptyFeedPlaceholder(
                     FeedMode.RECIPES -> "Recipes from zap.cooking show up here"
                     FeedMode.LIVE -> "Streams that are running right now show up here"
                     FeedMode.REELS -> "Videos from your feed show up here"
+                    FeedMode.MUSIC -> "Songs from Wavlake show up here"
                 },
                 color = SecondaryText,
                 fontSize = 13.sp,
@@ -1950,4 +1964,5 @@ private val FeedMode.icon: ImageVector
         FeedMode.ARTICLES -> NostrVaultIcons.Articles
         FeedMode.RECIPES -> NostrVaultIcons.Recipes
         FeedMode.LIVE -> NostrVaultIcons.Live
+        FeedMode.MUSIC -> NostrVaultIcons.Music
     }

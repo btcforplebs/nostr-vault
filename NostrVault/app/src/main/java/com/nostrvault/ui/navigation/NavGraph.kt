@@ -242,6 +242,9 @@ fun NostrVaultNavHost(
                     onComposeMode = { kind ->
                         navController.navigate(Screen.ModeCompose.createRoute(kind.route))
                     },
+                    onComposeText = { text ->
+                        navController.navigate(Screen.ComposeNote.createRoute(text = text))
+                    },
                     onReply = { noteId ->
                         navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
                     },
@@ -419,6 +422,7 @@ fun NostrVaultNavHost(
                     navArgument("replyTo") { type = NavType.StringType; nullable = true; defaultValue = null },
                     navArgument("quoteTo") { type = NavType.StringType; nullable = true; defaultValue = null },
                     navArgument("draftId") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("text") { type = NavType.StringType; nullable = true; defaultValue = null },
                 ),
             ) { entry ->
                 ComposeNoteScreen(
@@ -780,6 +784,26 @@ fun NostrVaultNavHost(
                 )
             }
         }
+
+        // Music mini player: above the bottom bar on every tab while a song or
+        // a live stream is loaded. On tabs with a floating button (Post,
+        // Blossom, Relay) it stops short of it so the two share the row.
+        val musicActions = remember(navController) {
+            com.nostrvault.ui.screens.music.MusicActions(
+                onShare = { navController.navigate(Screen.ComposeNote.createRoute(text = it)) },
+                onOpenProfile = { navController.navigate(Screen.Profile.createRoute(it)) },
+                npubToHex = nostrService::npubToHex,
+            )
+        }
+        com.nostrvault.ui.screens.music.MiniPlayerBar(
+            actions = musicActions,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(
+                    bottom = if (showBottomBar) 84.dp else 16.dp,
+                    end = if (chromeFolds) 132.dp else 0.dp,
+                ),
+        )
 
         // Pending post countdown banner
         PendingPostBanner(

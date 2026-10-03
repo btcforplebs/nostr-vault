@@ -506,6 +506,13 @@ enum class FeedMode(val displayName: String) {
      * says "live" in anything cached.
      */
     LIVE("Live"),
+
+    /**
+     * Wavlake music: trending and search, played in the background by
+     * MusicPlaybackService. Not a view of the note list either; the note
+     * subscription idles while this mode is showing.
+     */
+    MUSIC("Music"),
 }
 
 /** `t` topics zap.cooking publishes recipes under; category tags are `zapcooking-<category>`. */
