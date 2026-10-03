@@ -1150,7 +1150,10 @@ private struct IdentityStepView: View {
 
     private var isNpubValid: Bool {
         guard !npub.isEmpty, npub.hasPrefix("npub") else { return false }
-        guard let decoded = Bech32.decode(npub), decoded.hrp == "npub" else { return false }
+        // decode skips the checksum: without it a one-character typo is a
+        // different, valid-looking key that setup would save as the owner.
+        guard Bech32.hasValidChecksum(npub),
+              let decoded = Bech32.decode(npub), decoded.hrp == "npub", decoded.data.count == 32 else { return false }
         return true
     }
 
@@ -1173,7 +1176,11 @@ private struct IdentityStepView: View {
         }
         guard isNpubValid else { return false }
         if selectedMethod == .nip46 { return bunkerConnected }
-        if !nsec.isEmpty && nsecPassword.isEmpty { return false }
+        if !nsec.isEmpty {
+            // The key decides the identity: an nsec whose npub isn't the one
+            // in the field would sign as someone other than the owner.
+            guard derivedNpub == npub, !nsecPassword.isEmpty else { return false }
+        }
         return true
     }
 
@@ -1309,7 +1316,7 @@ private struct IdentityStepView: View {
                 }
             } else {
                 // Full mode: standard npub field
-                WizardInputField(label: String(localized: "setup.identity.label.npub"), text: $npub, placeholder: "npub1...", isDisabled: selectedMethod == .nip46 && bunkerConnected)
+                WizardInputField(label: String(localized: "setup.identity.label.npub"), text: $npub, placeholder: "npub1...", isDisabled: (selectedMethod == .nip46 && bunkerConnected) || (selectedMethod == .local && derivedNpub != nil))
                     .opacity(appeared ? 1 : 0)
                     .offset(x: appeared ? 0 : 20)
                     .animation(WizardAnimations.springEnter.delay(0.2), value: appeared)
@@ -1353,7 +1360,7 @@ private struct IdentityStepView: View {
                                 fillNpub(fromNsec: newValue)
                             }
 
-                        if !nsec.isEmpty && !nsec.hasPrefix("nsec") {
+                        if !nsec.isEmpty && derivedNpub == nil {
                             HStack(spacing: 6) {
                                 Image(systemName: "exclamationmark.triangle")
                                     .font(.caption)
@@ -1622,6 +1629,16 @@ private struct IdentityStepView: View {
         }
     }
 
+    /// The npub of the nsec field, or nil while it doesn't hold a valid key.
+    private var derivedNpub: String? {
+        guard let decoded = Bech32.decode(nsec), decoded.hrp == "nsec",
+              let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (decoded.hexString as NSString).utf8String)) else { return nil }
+        let pk = String(cString: pkCStr)
+        free(pkCStr)
+        guard let pubData = Bech32.hexToData(pk) else { return nil }
+        return Bech32.encode(hrp: "npub", data: pubData)
+    }
+
     /// A pasted nsec is the whole identity: derive its npub so the user
     /// isn't left with a disabled Continue and an empty npub field to fill
     /// by hand (or filled with an npub that doesn't match the key).
@@ -1631,12 +1648,7 @@ private struct IdentityStepView: View {
             nsec = clean // pasted keys often carry a trailing newline
             return
         }
-        guard let decoded = Bech32.decode(clean), decoded.hrp == "nsec",
-              let pkCStr = GetPublicKeyC(UnsafeMutablePointer(mutating: (decoded.hexString as NSString).utf8String)) else { return }
-        let pk = String(cString: pkCStr)
-        free(pkCStr)
-        if let pubData = Bech32.hexToData(pk),
-           let derivedNpub = Bech32.encode(hrp: "npub", data: pubData) {
+        if let derivedNpub {
             npub = derivedNpub
         }
     }
