@@ -207,6 +207,9 @@ struct ArticleReaderView: View {
     @State private var highlightDraft: HighlightDraft?
     /// Other people's highlights of this article, newest first.
     @State private var highlights: [ArticleHighlight] = []
+    /// Where each highlight sits, worked out once per load, off the main
+    /// thread — never in `body`, which re-runs on every profile update.
+    @State private var highlightsByBlock: [String: [ArticleHighlight]] = [:]
     @State private var shownHighlights: HighlightGroup?
 
     private var metadata: LongFormMetadata { note.longFormMetadata }
@@ -434,24 +437,6 @@ struct ArticleReaderView: View {
         NIP10Thread.coordinate(kind: note.kind, pubkey: note.pubkey, tags: note.tags)
     }
 
-    /// Each text block's highlights, keyed by block id. A passage that no
-    /// longer appears in the text as shown is left out here but stays in the
-    /// list below the article.
-    private var highlightsByBlock: [String: [ArticleHighlight]] {
-        guard !highlights.isEmpty else { return [:] }
-        let blocks = MarkdownParser.parse(note.content).compactMap { block in
-            block.highlightableText.map { (id: block.id, text: ArticleEngagement.plainText($0)) }
-        }
-        let texts = blocks.map(\.text)
-        var out: [String: [ArticleHighlight]] = [:]
-        for highlight in highlights {
-            if let index = ArticleEngagement.blockIndex(for: highlight.passage, in: texts) {
-                out[blocks[index].id, default: []].append(highlight)
-            }
-        }
-        return out
-    }
-
     private var highlightsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Highlights · \(highlights.count)", systemImage: "highlighter")
@@ -478,17 +463,27 @@ struct ArticleReaderView: View {
     private func loadHighlights() async {
         let articleId = note.id
         let coordinate = coordinate
+        let content = note.content
+        // `query` returns only signature-checked events.
         let events = await ZapHistoryService.query(
             filters: ArticleEngagement.highlightFilters(id: articleId, coordinate: coordinate),
             relays: highlightRelays)
-        // A relay can hand back anything: only a signed 9802 that points at
-        // this article counts, so nobody can put words in someone's name.
-        let found = events
-            .filter { NostrEventVerifier.isValid($0) }
-            .compactMap { ArticleHighlight(event: $0, articleId: articleId, coordinate: coordinate) }
-            .sorted { $0.createdAt > $1.createdAt }
+        let (found, placed) = await Task.detached(priority: .userInitiated) { () -> ([ArticleHighlight], [String: [ArticleHighlight]]) in
+            // Only a 9802 that points at this article counts, spam dropped
+            // the same way the thread view drops it.
+            let highlights = ArticleEngagement.shown(events.compactMap { event -> ArticleHighlight? in
+                if let text = event["content"] as? String, let tags = event["tags"] as? [[String]],
+                   FeedNote.isNoiseOrSpam(content: text, tags: tags) { return nil }
+                return ArticleHighlight(event: event, articleId: articleId, coordinate: coordinate)
+            })
+            let blocks = MarkdownParser.parse(content).compactMap { block in
+                block.highlightableText.map { (id: block.id, text: ArticleEngagement.plainText($0)) }
+            }
+            return (highlights, ArticleEngagement.place(highlights, in: blocks))
+        }.value
         await MainActor.run {
             highlights = found
+            highlightsByBlock = placed
             let missing = Set(found.map(\.pubkey)).filter { nostrService.profiles[$0] == nil }
             if !missing.isEmpty { nostrService.fetchMissingProfiles(for: Array(missing)) }
         }

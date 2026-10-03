@@ -744,7 +744,9 @@ struct NoteDetailView: View {
            let tags = ev["tags"] as? [[String]] {
 
             if isOtherResponse(kind: kind, tags: tags) {
+                // Shown as "<name> highlighted this": it must really be theirs.
                 if !otherResponses.contains(where: { $0.id == id }),
+                   NostrEventVerifier.isValid(ev),
                    !FeedNote.isNoiseOrSpam(content: content, tags: tags) {
                     otherResponses.append(FeedNote(
                         id: id, pubkey: pubkey, content: content,

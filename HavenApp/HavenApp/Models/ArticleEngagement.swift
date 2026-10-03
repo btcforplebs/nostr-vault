@@ -7,6 +7,12 @@ import Foundation
 /// count by coordinate never see it, and an edit orphans it.
 enum ArticleEngagement {
     static let highlightKind = 9802
+    /// NIP-84 passages are a sentence or a paragraph. Anything longer is not
+    /// a highlight, and each one is matched against the whole article.
+    static let maxPassageLength = 1_000
+    /// The newest this many are shown: keys are free, so the count is the
+    /// publisher's choice, not the article's.
+    static let maxShownHighlights = 50
 
     /// NIP-25 reaction tags. `a` only appears when the event is addressable.
     static func reactionTags(id: String, kind: Int, pubkey: String, tags: [[String]], relayHint: String) -> [[String]] {
@@ -63,6 +69,30 @@ enum ArticleEngagement {
         return filters
     }
 
+    /// The highlights to show: newest first, at most `maxShownHighlights`.
+    static func shown(_ highlights: [ArticleHighlight]) -> [ArticleHighlight] {
+        var seen = Set<String>()
+        return Array(highlights
+            .sorted { $0.createdAt > $1.createdAt }
+            .filter { seen.insert($0.id).inserted }
+            .prefix(maxShownHighlights))
+    }
+
+    /// Each block's highlights, keyed by block id. Every block is normalized
+    /// once, so the cost is one pass per highlight, not per highlight per
+    /// block per re-render. Passages not in the text as shown are left out.
+    static func place(_ highlights: [ArticleHighlight], in blocks: [(id: String, text: String)]) -> [String: [ArticleHighlight]] {
+        let normalizedBlocks = blocks.map { normalized($0.text) }
+        var out: [String: [ArticleHighlight]] = [:]
+        for highlight in highlights {
+            let needle = normalized(highlight.passage)
+            guard !needle.isEmpty,
+                  let index = normalizedBlocks.firstIndex(where: { $0.contains(needle) }) else { continue }
+            out[blocks[index].id, default: []].append(highlight)
+        }
+        return out
+    }
+
     /// Which text block a passage belongs to: the first whose plain text
     /// contains it, ignoring case and runs of whitespace. Nil when the
     /// passage is not in the article as shown (an earlier version, or text
@@ -106,7 +136,7 @@ struct ArticleHighlight: Identifiable, Equatable {
             return false
         }
         let passage = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard pointsHere, !passage.isEmpty else { return nil }
+        guard pointsHere, !passage.isEmpty, passage.count <= ArticleEngagement.maxPassageLength else { return nil }
         let comment = tags.first { $0.count >= 2 && $0[0] == "comment" }?[1]
             .trimmingCharacters(in: .whitespacesAndNewlines)
         self.id = id

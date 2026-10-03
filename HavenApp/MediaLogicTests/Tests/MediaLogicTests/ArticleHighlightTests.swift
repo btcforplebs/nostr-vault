@@ -47,4 +47,35 @@ final class ArticleHighlightTests: XCTestCase {
         XCTAssertNil(ArticleEngagement.blockIndex(for: "not in this version", in: blocks))
         XCTAssertNil(ArticleEngagement.blockIndex(for: "   ", in: blocks))
     }
+
+    // MARK: cost caps (Tron, #189)
+
+    private func highlight(_ n: Int, passage: String = "quiet part") -> ArticleHighlight {
+        var e = event(content: passage, tags: [["a", coord]])
+        e["id"] = String(format: "%064x", n)
+        e["created_at"] = 1_700_000_000 + n
+        return ArticleHighlight(event: e, articleId: articleId, coordinate: coord)!
+    }
+
+    func testAnOverlongPassageIsNotAHighlight() {
+        let long = String(repeating: "x", count: ArticleEngagement.maxPassageLength + 1)
+        XCTAssertNil(ArticleHighlight(event: event(content: long, tags: [["a", coord]]), articleId: articleId, coordinate: coord))
+        let atCap = String(repeating: "x", count: ArticleEngagement.maxPassageLength)
+        XCTAssertNotNil(ArticleHighlight(event: event(content: atCap, tags: [["a", coord]]), articleId: articleId, coordinate: coord))
+    }
+
+    func testFourHundredHighlightsShowTheNewestFifty() {
+        let all = (0..<400).map { highlight($0) }.shuffled()
+        let shown = ArticleEngagement.shown(all)
+        XCTAssertEqual(shown.count, ArticleEngagement.maxShownHighlights)
+        XCTAssertEqual(shown.first?.id, String(format: "%064x", 399))
+        XCTAssertEqual(shown.last?.id, String(format: "%064x", 350))
+    }
+
+    func testPlacementPutsEachHighlightOnItsBlock() {
+        let blocks = [(id: "p:1", text: "Intro."), (id: "p:2", text: "It was the Quiet\npart."), (id: "p:3", text: "End.")]
+        let placed = ArticleEngagement.place([highlight(1), highlight(2, passage: "nowhere")], in: blocks)
+        XCTAssertEqual(placed.keys.sorted(), ["p:2"])
+        XCTAssertEqual(placed["p:2"]?.count, 1)
+    }
 }
