@@ -1075,24 +1075,22 @@ class NostrService: ObservableObject {
         }
     }
 
-    /// Republishes kind 10050 for every account that can sign.
+    /// Brings the owner's DM inbox list (kind 10050) into step across devices,
+    /// and republishes kind 10050 for every other account that can sign.
     ///
-    /// Builds shipped a 10050 that led with `wss://127.0.0.1:<port>`, which made
-    /// those accounts undeliverable — senders wrote the gift wrap to their own
-    /// machine. 10050 is a replaceable event, so putting a clean one out
-    /// overwrites the broken one on every relay that holds it, and from then on
-    /// *any* sender reaches them, including ones still running the old build.
-    /// That's why this isn't gated behind the publish-relay-list toggle the way
-    /// kind 10002 is: a broken 10050 silently breaks DMs, so healing it can't be
-    /// opt-in.
+    /// The owner's list is one list for all devices: the newest published
+    /// 10050 is adopted unless this device changed its list more recently, in
+    /// which case this device's list is published. Before, every device
+    /// republished its own settings at launch, so whichever device opened last
+    /// silently replaced the list the others had set.
+    ///
+    /// Publishing also heals lists from older builds (`wss://127.0.0.1:<port>`
+    /// entries, which made senders write the gift wrap to their own machine).
+    /// That's why this isn't gated behind the publish-relay-list toggle the
+    /// way kind 10002 is: a broken 10050 silently breaks DMs.
     @MainActor
     func republishDMRelayListsForSignableAccounts() {
         let config = ConfigService.shared.config
-        // Not gated on `config.isLocal`: the dmRelays list is remote either way,
-        // and new-user setup always lands on a local relay URL — gating here
-        // meant a fresh account never published a 10050 at all.
-        let reachable = config.dmRelays.filter { !Self.isLoopbackRelay($0) }
-        guard !reachable.isEmpty else { return }
 
         var accounts: [String] = config.whitelistedNpubs
         if !config.ownerNpub.isEmpty && !accounts.contains(config.ownerNpub) {
@@ -1100,15 +1098,153 @@ class NostrService: ObservableObject {
         }
 
         Task {
-            for npub in accounts {
-                let isOwner = npub == config.ownerNpub
-                let canSign = isOwner
-                    ? (!config.ownerNcryptsec.isEmpty || config.ownerHexKey != nil || ConfigService.shared.hasBunkerConfig(forNpub: npub))
-                    : (ConfigService.shared.hasCredential(forNpub: npub) || ConfigService.shared.hasBunkerConfig(forNpub: npub))
+            await syncOwnerDMInboxList()
+
+            // Not gated on `config.isLocal`: the dmRelays list is remote either
+            // way, and new-user setup always lands on a local relay URL.
+            // Other accounts keep the plain list: the owner's Haven inbox
+            // only takes DMs for the owner.
+            let reachable = ConfigService.shared.config.dmRelays.filter { !Self.isLoopbackRelay($0) }
+            guard !reachable.isEmpty else { return }
+            for npub in accounts where npub != config.ownerNpub {
+                let canSign = ConfigService.shared.hasCredential(forNpub: npub) || ConfigService.shared.hasBunkerConfig(forNpub: npub)
                 guard canSign else { continue }
 
                 publishDMRelayList(dmRelays: reachable, signAsNpub: npub)
                 try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+    }
+
+    /// Adopts or publishes the owner's DM inbox list — see
+    /// `republishDMRelayListsForSignableAccounts`.
+    @MainActor
+    func syncOwnerDMInboxList() async {
+        let configService = ConfigService.shared
+        let config = configService.config
+        guard !config.ownerNpub.isEmpty,
+              let ownerHex = Bech32.decode(config.ownerNpub)?.hexString else { return }
+        let canSign = !config.ownerNcryptsec.isEmpty || config.ownerHexKey != nil
+            || configService.hasBunkerConfig(forNpub: config.ownerNpub)
+
+        let newest = await fetchNewestDMRelayList(for: ownerHex, alsoAsk: config.dmInboxRelays)
+        let published = newest?.relays.filter { !Self.isLoopbackRelay($0) }
+
+        var action = HavenConfig.dmInboxSyncAction(
+            local: configService.config.dmInboxRelays,
+            localUpdatedAt: configService.config.dmRelaysUpdatedAt,
+            published: published, publishedAt: newest?.createdAt)
+
+        if action == .adopt, let published, let newest {
+            if !published.isEmpty {
+                configService.config.dmRelays = published
+            }
+            configService.config.dmRelaysUpdatedAt = newest.createdAt
+            configService.save()
+            print("NostrService: Adopted published DM inbox list (\(published.count) relays)")
+            // Adopting can still leave this device holding more than was
+            // published (its own Haven inbox, or loopback entries dropped).
+            action = HavenConfig.dmInboxSyncAction(
+                local: configService.config.dmInboxRelays,
+                localUpdatedAt: newest.createdAt,
+                published: newest.relays, publishedAt: newest.createdAt)
+        }
+
+        guard action == .publish, canSign else { return }
+        publishOwnerDMInboxList()
+    }
+
+    /// Publishes this device's DM inbox list for the owner and stamps it as the
+    /// newest change. Call after the user edits the list or the Haven inbox
+    /// address changes.
+    @MainActor
+    func publishOwnerDMInboxList() {
+        let configService = ConfigService.shared
+        let reachable = configService.config.dmInboxRelays.filter { !Self.isLoopbackRelay($0) }
+        guard !reachable.isEmpty else { return }
+        configService.config.dmRelaysUpdatedAt = Int64(Date().timeIntervalSince1970)
+        configService.save()
+        publishDMRelayList(dmRelays: reachable, signAsNpub: configService.config.ownerNpub)
+    }
+
+    /// The newest signed kind 10050 for `pubkey` across the blastr relays, the
+    /// account's cached outbox relays and `alsoAsk`, or nil if none answered
+    /// within the timeout. Asks fresh rather than trusting `dmRelayLists`,
+    /// which is cached across launches and would let a device adopt its own
+    /// stale copy.
+    func fetchNewestDMRelayList(for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> (relays: [String], createdAt: Int64)? {
+        var urls = ConfigService.shared.config.activeBlastrRelays
+        if urls.isEmpty { urls = ["wss://relay.primal.net", "wss://nos.lol"] }
+        for extra in alsoAsk + (outboxRelays[pubkey] ?? []) where !urls.contains(extra) {
+            urls.append(extra)
+        }
+        let targets = urls.filter { !Self.isLoopbackRelay($0) }.compactMap { URL(string: $0) }
+        guard !targets.isEmpty else { return nil }
+
+        return await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var best: NostrEvent?
+            var finished = 0
+            var resumed = false
+            var clients: [WebSocketClient] = []
+            var subs = Set<AnyCancellable>()
+
+            func finish() {
+                lock.lock()
+                guard !resumed else { lock.unlock(); return }
+                resumed = true
+                let winner = best
+                lock.unlock()
+                DispatchQueue.main.async {
+                    clients.forEach { $0.disconnect() }
+                    subs.removeAll()
+                }
+                guard let winner else { continuation.resume(returning: nil); return }
+                continuation.resume(returning: (ProfileRepository.parseDMRelayListTags(winner.tags), winner.created_at))
+            }
+
+            DispatchQueue.main.async {
+                for url in targets {
+                    let client = WebSocketClient()
+                    client.isTemporary = true
+                    clients.append(client)
+                    let subId = "dmlist-\(UUID().uuidString.prefix(6))"
+                    client.messageSubject
+                        .sink { message in
+                            guard let data = message.data(using: .utf8),
+                                  let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                                  let type = json.first as? String else { return }
+                            if type == "EVENT", let dict = json[safe: 2] as? [String: Any],
+                               let raw = try? JSONSerialization.data(withJSONObject: dict),
+                               let event = try? JSONDecoder().decode(NostrEvent.self, from: raw),
+                               event.kind == 10050, event.pubkey == pubkey,
+                               let str = String(data: raw, encoding: .utf8),
+                               NostrEventVerifier.isValid(json: str) {
+                                lock.lock()
+                                if best == nil || event.created_at > best!.created_at { best = event }
+                                lock.unlock()
+                            } else if type == "EOSE" || type == "CLOSED" {
+                                lock.lock()
+                                finished += 1
+                                let all = finished >= targets.count
+                                lock.unlock()
+                                if all { finish() }
+                            }
+                        }
+                        .store(in: &subs)
+                    client.$connectionState
+                        .sink { state in
+                            guard state == .connected else { return }
+                            let req = ["REQ", subId, ["kinds": [10050], "authors": [pubkey], "limit": 1]] as [Any]
+                            if let data = try? JSONSerialization.data(withJSONObject: req),
+                               let str = String(data: data, encoding: .utf8) {
+                                client.send(text: str)
+                            }
+                        }
+                        .store(in: &subs)
+                    client.connect(url: url)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish() }
             }
         }
     }

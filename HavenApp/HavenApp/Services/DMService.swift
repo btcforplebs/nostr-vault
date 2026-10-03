@@ -256,8 +256,21 @@ class DMService: ObservableObject {
             "authors": [ownPubkey]
         ]
 
+        // Gift wraps sent to this relay's /inbox — it is the owner's Haven DM
+        // inbox, the first entry of the published DM relay list — are stored
+        // there, not in /chat, so read them here too.
+        let filterWraps: [String: Any] = [
+            "kinds": [1059],
+            "#p": [ownPubkey]
+        ]
+
         let req1 = ["REQ", "nip04-in", filterTagged] as [Any]
         let req2 = ["REQ", "nip04-out", filterAuthored] as [Any]
+        let req3 = ["REQ", "inbox-wraps", filterWraps] as [Any]
+        if let data = try? JSONSerialization.data(withJSONObject: req3),
+           let str = String(data: data, encoding: .utf8) {
+            client.send(text: str)
+        }
 
         if let data = try? JSONSerialization.data(withJSONObject: req1),
            let str = String(data: data, encoding: .utf8) {
@@ -411,18 +424,20 @@ class DMService: ObservableObject {
                 self.publishToInbox(giftWrap)
                 self.publishToInbox(selfGiftWrap)
 
-                // Fetch relay lists concurrently, then fire-and-forget to external relays
-                async let recipientRelays = self.fetchRecipientDMRelays(recipientHexPubkey)
-                async let ownRelays = self.fetchRecipientDMRelays(ownHexPubkey)
-
-                let rRelays = await recipientRelays
-                let oRelays = await ownRelays
-
-                for relayURL in rRelays {
-                    self.fireAndForgetPublish(giftWrap, url: relayURL)
+                // Your own copy goes to your DM inbox list — the same list
+                // every device reads from — never to whichever of your relay
+                // lists a lookup happens to find first. Looking yours up the
+                // way a recipient's is looked up could land on your general
+                // (kind 10002) relays, which no device reads DMs from, so the
+                // message never appeared on your other devices.
+                let ownRelays = self.ownDMInboxRelays()
+                for relayURL in ownRelays {
+                    self.publishAuthenticated(selfGiftWrap, url: relayURL)
                 }
-                for relayURL in oRelays {
-                    self.fireAndForgetPublish(selfGiftWrap, url: relayURL)
+
+                let rRelays = await self.fetchRecipientDMRelays(recipientHexPubkey)
+                for relayURL in rRelays {
+                    self.publishAuthenticated(giftWrap, url: relayURL)
                 }
             } catch {
                 print("DMService: Background DM publish failed: \(error)")
@@ -585,9 +600,21 @@ class DMService: ObservableObject {
             relays = ["wss://relay.primal.net", "wss://nos.lol"]
         }
 
-        // Include own DM relays so we can discover sent messages from other devices
+        // Include own DM inbox relays: your sent copies from other devices
+        // land there, as do messages to you.
+        for relay in ownDMInboxRelays() where !relays.contains(relay) {
+            relays.append(relay)
+        }
         if let ownDMRelays = NostrService.shared.dmRelayLists[ownPubkey] {
-            for relay in ownDMRelays where !relays.contains(relay) {
+            for relay in ownDMRelays where !relays.contains(relay) && !NostrService.isLoopbackRelay(relay) {
+                relays.append(relay)
+            }
+        }
+        // And your general (kind 10002) read relays: builds before the DM
+        // inbox list sent your own copies there when that list happened to be
+        // found first, so this is where those messages are.
+        if let ownReadRelays = NostrService.shared.relayLists[ownPubkey] {
+            for relay in ownReadRelays where !relays.contains(relay) && !NostrService.isLoopbackRelay(relay) {
                 relays.append(relay)
             }
         }
@@ -990,7 +1017,12 @@ class DMService: ObservableObject {
                    let eventJSON = try? JSONSerialization.data(withJSONObject: eventData),
                    let event = try? JSONDecoder().decode(NostrEvent.self, from: eventJSON) {
                     DispatchQueue.main.async {
-                        self.handleIncomingNIP04(event)
+                        if event.kind == 1059 {
+                            guard Self.isAuthentic(event) else { return }
+                            self.handleIncomingGiftWrap(event)
+                        } else {
+                            self.handleIncomingNIP04(event)
+                        }
                     }
                 }
             default:
@@ -1320,23 +1352,16 @@ class DMService: ObservableObject {
             }
         }
 
-        // Fallback to kind 10002 (general read relays)
-        if let readRelays = NostrService.shared.relayLists[pubkey] {
-            let usable = reachable(readRelays)
-            if !usable.isEmpty {
-                print("📋 Using kind 10002 relay list for \(pubkey.prefix(8)): \(usable)")
-                return usable
-            }
-        }
-
-        // Trigger a fetch and wait briefly for results
+        // No DM relay list known yet: fetch, and wait for it. A general
+        // (kind 10002) list is only a fallback for someone who has published
+        // no DM list, so it must not win just because it arrived first — the
+        // two are fetched together and whichever landed first used to decide.
         NostrService.shared.fetchRelayList(for: pubkey)
 
-        // Wait up to 4 seconds for the relay lists to populate
+        // Wait up to 4 seconds for the DM relay list to arrive
         for _ in 0..<8 {
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
 
-            // Check kind 10050 first
             if let dmRelays = NostrService.shared.dmRelayLists[pubkey] {
                 let usable = reachable(dmRelays)
                 if !usable.isEmpty {
@@ -1344,14 +1369,14 @@ class DMService: ObservableObject {
                     return usable
                 }
             }
+        }
 
-            // Then check kind 10002
-            if let readRelays = NostrService.shared.relayLists[pubkey] {
-                let usable = reachable(readRelays)
-                if !usable.isEmpty {
-                    print("📋 Fetched kind 10002 relay list for \(pubkey.prefix(8)): \(usable)")
-                    return usable
-                }
+        // Fallback to kind 10002 (general read relays)
+        if let readRelays = NostrService.shared.relayLists[pubkey] {
+            let usable = reachable(readRelays)
+            if !usable.isEmpty {
+                print("📋 Using kind 10002 relay list for \(pubkey.prefix(8)): \(usable)")
+                return usable
             }
         }
 
@@ -1394,6 +1419,113 @@ class DMService: ObservableObject {
     /// Fire-and-forget publish to an external relay.
     /// Connects, sends EVENT, and disconnects after a short flush window.
     /// Does NOT block the caller — errors are logged but not propagated.
+    /// This account's DM inbox list, minus loopback entries. For the owner
+    /// that is the published list — the Haven inbox (Mac relay) first. Other
+    /// accounts use the plain DM relays: the owner's Haven inbox only takes
+    /// DMs addressed to the owner.
+    private func ownDMInboxRelays() -> [String] {
+        let config = ConfigService.shared.config
+        let ownerHex = Bech32.decode(config.ownerNpub)?.hexString ?? ""
+        let list = loadedAccountPubkey == ownerHex ? config.dmInboxRelays : config.dmRelays
+        return list.filter { !NostrService.isLoopbackRelay($0) }
+    }
+
+    /// Publishes to a relay that may require NIP-42 AUTH before it accepts a
+    /// write. A Haven inbox (the Mac relay) does: it rejects the event with
+    /// "auth-required" until the owner authenticates, and the plain
+    /// fire-and-forget publish never noticed. Here an auth-required rejection
+    /// is answered with AUTH — signed by the owner, whom the Haven trusts —
+    /// and the event is sent once more. Relays that need no AUTH accept it on
+    /// the first try. Logs the outcome; never blocks the caller.
+    private func publishAuthenticated(_ event: NostrEvent, url: String) {
+        guard let urlObj = URL(string: url) else { return }
+        let client = WebSocketClient()
+        client.isTemporary = true
+        let eventMsg: String? = {
+            let msg = ["EVENT", eventToDict(event)] as [Any]
+            guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }()
+        guard let eventMsg else { return }
+
+        var challenge: String?
+        var authSent = false
+        var authEventId: String?
+        var done = false
+        var subs = Set<AnyCancellable>()
+        func finish(_ ok: Bool, _ note: String) {
+            guard !done else { return }
+            done = true
+            print(ok ? "📤 DM wrap \(event.id.prefix(8)) accepted by \(url)" : "⚠️ DM wrap \(event.id.prefix(8)) not stored by \(url): \(note)")
+            client.disconnect()
+            subs.removeAll()
+        }
+
+        client.messageSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] message in
+                guard let self, !done,
+                      let data = message.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                      let type = json.first as? String else { return }
+                switch type {
+                case "AUTH":
+                    challenge = json[safe: 1] as? String
+                case "OK":
+                    guard let id = json[safe: 1] as? String else { return }
+                    let accepted = (json[safe: 2] as? Bool) ?? false
+                    let note = (json[safe: 3] as? String) ?? ""
+                    // khatru handles each message on its own goroutine, so a
+                    // retry sent right behind the AUTH can be judged before
+                    // the AUTH lands. Resend only once the AUTH is accepted.
+                    if let authId = authEventId, id == authId {
+                        if accepted { client.send(text: eventMsg) } else { finish(false, "AUTH rejected: \(note)") }
+                        return
+                    }
+                    guard id == event.id else { return }
+                    if accepted || note.hasPrefix("duplicate") {
+                        finish(true, note)
+                    } else if note.hasPrefix("auth-required"), !authSent, let challenge, self.canSignAsOwner() {
+                        authSent = true
+                        Task { @MainActor in
+                            let tags = [["relay", url], ["challenge", challenge]]
+                            guard let auth = await NostrService.shared.signEventAsync(kind: 22242, content: "", tags: tags, forceOwner: true) else {
+                                finish(false, "could not sign AUTH")
+                                return
+                            }
+                            let msg = ["AUTH", self.eventToDict(auth)] as [Any]
+                            if let data = try? JSONSerialization.data(withJSONObject: msg),
+                               let str = String(data: data, encoding: .utf8) {
+                                authEventId = auth.id
+                                client.send(text: str)
+                            }
+                        }
+                    } else {
+                        finish(false, note)
+                    }
+                default:
+                    break
+                }
+            }
+            .store(in: &subs)
+
+        client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { state in
+                if state == .connected {
+                    client.send(text: eventMsg)
+                } else if case .error = state {
+                    finish(false, "connection failed")
+                }
+            }
+            .store(in: &subs)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+            finish(false, "timed out")
+        }
+        client.connect(url: urlObj)
+    }
+
     private func fireAndForgetPublish(_ event: NostrEvent, url: String) {
         guard let urlObj = URL(string: url) else { return }
 

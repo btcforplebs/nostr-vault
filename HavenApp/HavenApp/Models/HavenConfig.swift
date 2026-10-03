@@ -184,6 +184,13 @@ struct HavenConfig: Codable, Equatable {
         "wss://nos.lol",
         "wss://relay.btcforplebs.com"
     ]
+    /// When `dmRelays` last changed, in Unix seconds: the user's own edit, or
+    /// the created_at of a published kind 10050 this device adopted. Devices
+    /// compare it with the newest published list at launch so the most recent
+    /// change wins, instead of each device overwriting the list with whatever
+    /// it happens to hold. nil = never set (the defaults), which any published
+    /// list beats.
+    var dmRelaysUpdatedAt: Int64? = nil
 
     // Whitelisted Npubs (multi-npub support)
     var whitelistedNpubs: [String] = []
@@ -262,7 +269,7 @@ struct HavenConfig: Codable, Equatable {
         case blossomMirrors, autoMirrorMedia, saveGifsToBlossom
         case fipsPublishEnabled, fipsAddressSource, fipsCustomNpub
         case blastrRelaysFile, blastrRelays
-        case feedRelays, dmRelays
+        case feedRelays, dmRelays, dmRelaysUpdatedAt
         case whitelistedNpubs, whitelistedNpubsFile
         case blacklistedNpubs, blacklistedNpubsFile
         case blockedNpubsPerAccount
@@ -403,6 +410,7 @@ struct HavenConfig: Codable, Equatable {
         
         feedRelays = try container.decodeIfPresent([String].self, forKey: .feedRelays) ?? defaults.feedRelays
         dmRelays = try container.decodeIfPresent([String].self, forKey: .dmRelays) ?? defaults.dmRelays
+        dmRelaysUpdatedAt = try container.decodeIfPresent(Int64.self, forKey: .dmRelaysUpdatedAt)
 
         
         whitelistedNpubs = try container.decodeIfPresent([String].self, forKey: .whitelistedNpubs) ?? defaults.whitelistedNpubs
@@ -512,6 +520,75 @@ struct HavenConfig: Codable, Equatable {
     var macRelayHttpsURL: String {
         let base = macRelayNormalizedBase
         return base.isEmpty ? "" : "https://\(base)"
+    }
+
+    // MARK: - DM Inbox (NIP-17)
+
+    /// The owner's always-on Haven inbox as a DM relay, or "" when there is
+    /// none. On iOS that is the Mac relay; on a Mac it is this relay itself,
+    /// once it has a public address. Only a wss:// address counts: the list it
+    /// joins is published for other people, and a plain ws:// LAN address is
+    /// unreachable to them.
+    var ownHavenDMInboxURL: String {
+        #if os(macOS)
+        guard !isLocal else { return "" }
+        return Self.normalizedRelayURL(nostrURL + "/inbox")
+        #else
+        let base = macRelayNormalizedBase
+        guard !base.isEmpty else { return "" }
+        let typed = macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if typed.hasPrefix("ws://") || typed.hasPrefix("http://") { return "" }
+        return Self.normalizedRelayURL("wss://\(base)/inbox")
+        #endif
+    }
+
+    /// The one DM inbox list: where other people send this account's DMs,
+    /// where this account's own sent copies go, and where every device reads
+    /// DMs from. The owner's Haven inbox comes first, then `dmRelays`.
+    var dmInboxRelays: [String] {
+        Self.mergedDMInboxRelays(havenInbox: ownHavenDMInboxURL, dmRelays: dmRelays)
+    }
+
+    static func mergedDMInboxRelays(havenInbox: String, dmRelays: [String]) -> [String] {
+        var result: [String] = []
+        var seen = Set<String>()
+        for raw in [havenInbox] + dmRelays {
+            let url = normalizedRelayURL(raw)
+            guard !url.isEmpty, seen.insert(url.lowercased()).inserted else { continue }
+            result.append(url)
+        }
+        return result
+    }
+
+    /// Trims whitespace and trailing slashes so the same relay typed two ways
+    /// compares equal.
+    static func normalizedRelayURL(_ raw: String) -> String {
+        var url = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while url.hasSuffix("/") { url = String(url.dropLast()) }
+        return url
+    }
+
+    /// What launch should do with the DM inbox list, given this device's list
+    /// and the newest one published for the account.
+    enum DMInboxSyncAction: Equatable {
+        /// Take the published list (and its timestamp) as this device's own.
+        case adopt
+        /// Publish this device's list: nothing is published, or ours is newer.
+        case publish
+        /// Already in step.
+        case none
+    }
+
+    /// `published` is the newest kind 10050 found (nil = none found);
+    /// `publishedAt` its created_at. `local` is this device's merged list.
+    static func dmInboxSyncAction(local: [String], localUpdatedAt: Int64?,
+                                  published: [String]?, publishedAt: Int64?) -> DMInboxSyncAction {
+        guard let published, let publishedAt else { return .publish }
+        let localAt = localUpdatedAt ?? 0
+        if publishedAt > localAt { return .adopt }
+        if localAt > publishedAt { return .publish }
+        let same = local.map { normalizedRelayURL($0).lowercased() } == published.map { normalizedRelayURL($0).lowercased() }
+        return same ? .none : .publish
     }
 
     // MARK: - Blossom Mirrors Configuration
