@@ -294,7 +294,10 @@ extension VaultView {
                               let descData = descJson.data(using: .utf8),
                               let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
                               let senderPubkey = zapReq["pubkey"] as? String else { continue }
-                        let targetId = receipt.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
+                        // The note comes from the signed request, not the receipt: a forged
+                        // receipt can wrap your real request and point it at another note.
+                        let requestTargetId = (zapReq["tags"] as? [[String]])?.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
+                        let targetId = requestTargetId ?? receipt.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
                         var amountSats: Int64 = 0
                         if let reqTags = zapReq["tags"] as? [[String]],
                            let amountTag = reqTags.first(where: { $0.count >= 2 && $0[0] == "amount" }),

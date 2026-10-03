@@ -555,6 +555,12 @@ class NostrService: ObservableObject {
             .store(in: &cancellables)
     }
 
+    /// Bumped every time `events` is wiped by `resetConnections`. One-shot
+    /// fetches whose results live only in `events` (receipts pulled from feed
+    /// relays, notes fetched by id) compare against it to know they must run
+    /// again; the local relay subscription refills itself, they do not.
+    private(set) var eventsResetGeneration = 0
+
     func resetConnections() {
         for (urlString, subId) in activeSubscriptions {
             if let client = clients[urlString] {
@@ -619,6 +625,7 @@ class NostrService: ObservableObject {
 
         // 2. Clear Viewer tab event state — these belong to the previous account
         events.removeAll()
+        eventsResetGeneration += 1
         noteMedia.removeAll()
         clearSeen()
 

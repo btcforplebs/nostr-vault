@@ -121,8 +121,11 @@ extension VaultView {
 
     /// Fetch a larger set of zap receipts from the relay when entering zaps mode.
     func fetchMoreZapReceipts() {
-        guard !hasFetchedZapReceipts else { return }
-        hasFetchedZapReceipts = true
+        let generation = nostrService.eventsResetGeneration
+        guard zapReceiptsFetchGeneration != generation else { return }
+        zapReceiptsFetchGeneration = generation
+        // The notes those receipts point at were wiped with them.
+        requestedMissingZapNoteIds.removeAll()
 
         var urls = [configService.config.nostrURL, configService.config.nostrURL + "/inbox"].compactMap { URL(string: $0) }
         guard !urls.isEmpty else { return }

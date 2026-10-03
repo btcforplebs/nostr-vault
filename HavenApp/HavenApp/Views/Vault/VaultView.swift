@@ -117,7 +117,10 @@ struct VaultView: View {
     @State var updateTask: Task<Void, Never>?
     @State var updateGeneration: Int = 0
     @State var showingRelayDashboard = false
-    @State var hasFetchedZapReceipts = false
+    /// The `eventsResetGeneration` the extended zap receipts were fetched in;
+    /// nil until the first fetch. A refresh anywhere (this tab, Media) wipes
+    /// the receipts pulled from feed relays, so a stale generation refetches.
+    @State var zapReceiptsFetchGeneration: Int?
 
     // Static regex pattern to avoid recompilation
     nonisolated static let hexPattern = try! NSRegularExpression(pattern: "[a-f0-9]{64}", options: .caseInsensitive)
@@ -285,6 +288,7 @@ struct VaultView: View {
                     fetchMissingLikedNotes()
                 }
                 if viewMode == .zaps {
+                    fetchMoreZapReceipts()
                     fetchMissingZappedNotes()
                 }
             }
@@ -310,7 +314,7 @@ struct VaultView: View {
             likesInitialSettled = false
             zapsHasLoadedOnce = false
             zapsInitialSettled = false
-            hasFetchedZapReceipts = false
+            zapReceiptsFetchGeneration = nil
             zapReceiptCache = [:]
             refreshAll()
         }
@@ -718,6 +722,7 @@ struct VaultView: View {
                     fetchMissingLikedNotes()
                 }
                 if viewMode == .zaps {
+                    fetchMoreZapReceipts()
                     fetchMissingZappedNotes()
                 }
             }
@@ -743,7 +748,7 @@ struct VaultView: View {
             likesInitialSettled = false
             zapsHasLoadedOnce = false
             zapsInitialSettled = false
-            hasFetchedZapReceipts = false
+            zapReceiptsFetchGeneration = nil
             zapReceiptCache = [:]
             refreshAll()
         }
