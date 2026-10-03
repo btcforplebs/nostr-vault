@@ -41,6 +41,9 @@ enum NIP46Error: Error, LocalizedError {
 
 @MainActor
 class NIP46Service: ObservableObject {
+    /// Background signer requests queue here, one at a time.
+    static let backgroundGate = SignerRequestGate()
+
     static let shared = NIP46Service()
 
     enum ConnectionState: String {
@@ -153,6 +156,32 @@ class NIP46Service: ObservableObject {
         }
 
         let clientSK = ConfigService.shared.config.nip46ClientSecretKey
+
+        // Switching back to an account whose signer session is still alive:
+        // make it active and go. No connect / get_public_key round trip, so
+        // nothing reaches the signer at all.
+        let signerKey = URLComponents(string: bunkerURL)?.host ?? config.nip46SignerPubkey
+        if !signerKey.isEmpty,
+           let cStr = NIP46ActivateC(UnsafeMutablePointer(mutating: (signerKey as NSString).utf8String)) {
+            let cached = String(cString: cStr)
+            free(cStr)
+            // A background session can have lost its socket while it sat
+            // unused: one ping (a single cheap request) proves it still
+            // answers before posts are sent to it; if not, log in afresh.
+            let alive = cached == expectedHex
+                ? await Task.detached { NIP46PingC() }.value == 0
+                : false
+            if alive {
+                connectionState = .connected
+                connectedSignerPubkey = cached
+                startPingLoop()
+                print("[NIP46] connect() reused live session for \(cached.prefix(8))")
+                RelayProcessManager.shared.addLog("NIP-46: Switched to signer \(cached.prefix(8))... (already connected)", level: "INFO")
+                return cached
+            }
+            NIP46DropC(UnsafeMutablePointer(mutating: (signerKey as NSString).utf8String))
+        }
+
         print("[NIP46] Calling NIP46ConnectC with bunkerURL=\(bunkerURL.prefix(40))...")
 
         // Start auth URL polling during connect (ConnectBunker blocks)
@@ -191,7 +220,12 @@ class NIP46Service: ObservableObject {
         let adopting = adoptSignerAccount && accountNpub.isEmpty
         let accountMismatch = !adopting && (expectedHex.isEmpty || pubkey != expectedHex)
         if accountMismatch || nowNpub != accountNpub {
-            NIP46DisconnectC()
+            // A signer that answered for the wrong account is closed. A login
+            // that finished after a switch is kept in the background for when
+            // that account is active again; the Go side did not make it active.
+            if accountMismatch {
+                NIP46DropC(UnsafeMutablePointer(mutating: (signerKey as NSString).utf8String))
+            }
             authPollerTask?.cancel()
             authPollerTask = nil
             connectionState = nowNpub != accountNpub ? .disconnected : .error
@@ -306,6 +340,23 @@ class NIP46Service: ObservableObject {
         }
     }
 
+    /// Leaves the current account's signer session connected in the
+    /// background and stops treating it as this app's signer. Used on account
+    /// switch, so switching back is instant instead of a fresh login.
+    func detachForAccountSwitch() {
+        connectTask?.cancel()
+        connectTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        pingTask?.cancel()
+        pingTask = nil
+        authPollerTask?.cancel()
+        authPollerTask = nil
+        connectionState = .disconnected
+        connectedSignerPubkey = nil
+        authChallengeURL = nil
+    }
+
     func disconnect() {
         connectTask?.cancel()
         connectTask = nil
@@ -326,6 +377,20 @@ class NIP46Service: ObservableObject {
     }
 
     // MARK: - NIP-46 Methods
+
+    /// Signs through `signerPubkey`'s session without making it active and
+    /// without logging in: the owner's relay AUTH while another bunker account
+    /// is active. No live session means an error, not a request to a signer
+    /// that cannot sign for that key.
+    func signEvent(eventJSON: String, withSigner signerPubkey: String) async throws -> String {
+        let label = Self.approvalLabel(forEventJSON: eventJSON)
+        return try await signerRequest(label) {
+            try await self.callGo { NIP46SignEventWithC(
+                UnsafeMutablePointer(mutating: (signerPubkey as NSString).utf8String),
+                UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
+            )}
+        }
+    }
 
     func signEvent(eventJSON: String) async throws -> String {
         print("NIP46Service: signEvent called, connectionState=\(connectionState.rawValue)")
@@ -351,7 +416,7 @@ class NIP46Service: ObservableObject {
 
     func nip04Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest(nil) {
+        return try await signerRequest(nil, queued: false) {
             try await self.callGo { NIP46NIP04EncryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
@@ -371,7 +436,7 @@ class NIP46Service: ObservableObject {
 
     func nip44Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest(nil) {
+        return try await signerRequest(nil, queued: false) {
             try await self.callGo { NIP46NIP44EncryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
@@ -479,7 +544,14 @@ class NIP46Service: ObservableObject {
     /// - Parameter label: banner text if this request waits on the person, or
     ///   nil for background work (decrypting the DM backlog, relay AUTH), which
     ///   never shows the banner however long the signer takes.
-    private func signerRequest<T>(_ label: String?, _ body: @escaping () async throws -> T) async throws -> T {
+    private func signerRequest<T>(_ label: String?, queued: Bool = true, _ body: @escaping () async throws -> T) async throws -> T {
+        // Background work (decrypting the DM backlog, relay AUTH, Blossom auth,
+        // list syncs) goes to the signer one request at a time, however many
+        // callers ask at once. Things the person did (label != nil) skip the
+        // queue so a post never waits behind a backlog.
+        let gated = label == nil && queued
+        if gated { await Self.backgroundGate.wait() }
+        defer { if gated { Task { await Self.backgroundGate.signal() } } }
         outstandingRequests += 1
         if label != nil { bannerRequests += 1 }
         #if os(iOS)
@@ -692,5 +764,20 @@ class NIP46Service: ObservableObject {
 
     var isConnected: Bool {
         connectionState == .connected
+    }
+}
+
+/// A one-at-a-time gate for background signer requests.
+actor SignerRequestGate {
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if !busy { busy = true; return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func signal() {
+        if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() }
     }
 }

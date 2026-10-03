@@ -800,6 +800,33 @@ class NostrService: ObservableObject {
 
         print("NostrService: signEventAsync mode=\(mode) activeNpub=\(config.activeAccountNpub.prefix(20)) ownerNpub=\(config.ownerNpub.prefix(20)) forceOwner=\(forceOwner)")
 
+        // Owner-only events (the local relay's AUTH) while another account is
+        // active: they used to go to the ACTIVE account's bunker, which cannot
+        // sign for the owner's key, so every reconnect sent a doomed request
+        // to that signer. Route them to the owner's own signer instead.
+        if forceOwner, !ownerHexPubkey.isEmpty, ownerHexPubkey != activeHexPubkey {
+            let ownerNpub = config.ownerNpub
+            let ownerUsesBunker = config.accountSigningModes[ownerNpub] == "nip46"
+                && ConfigService.shared.hasBunkerConfig(forNpub: ownerNpub)
+            guard ownerUsesBunker, let ownerSigner = config.accountBunkerConfigs[ownerNpub]?.signerPubkey, !ownerSigner.isEmpty else {
+                return signEvent(kind: kind, content: content, tags: tags, password: password, forceOwner: true)
+            }
+            let finalTags = EventPublisher.appendClientTag(to: tags, kind: kind)
+            let eventDict = EventPublisher.buildUnsignedEvent(pubkey: ownerHexPubkey, kind: kind, content: content, tags: finalTags)
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: eventDict),
+                  let jsonStr = String(data: jsonData, encoding: .utf8) else { return nil }
+            do {
+                // Only through a session that is already live; never a new
+                // login just for this.
+                let signedJSON = try await NIP46Service.shared.signEvent(eventJSON: jsonStr, withSigner: ownerSigner)
+                guard let data = signedJSON.data(using: .utf8) else { return nil }
+                return try JSONDecoder().decode(NostrEvent.self, from: data)
+            } catch {
+                print("NostrService: owner-signed kind \(kind) skipped — no live session for the owner's signer: \(error)")
+                return nil
+            }
+        }
+
         if mode == "nip46" {
             // Determine the signing pubkey from the active account (or owner if forced)
             let signingPubkey = forceOwner ? ownerHexPubkey : activeHexPubkey
