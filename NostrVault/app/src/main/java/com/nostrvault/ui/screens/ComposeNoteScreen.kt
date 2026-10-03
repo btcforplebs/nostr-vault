@@ -1248,6 +1248,19 @@ fun ComposeNoteScreen(
     val attachmentLimitReached = attachments.size >= MAX_ATTACHMENTS
 
     // Image picker launcher
+    var showGifPicker by remember { mutableStateOf(false) }
+    if (showGifPicker) {
+        com.nostrvault.ui.components.GifPickerSheet(
+            onPick = { gif ->
+                showGifPicker = false
+                // Link the GIF where it lives (nostr.build's terms); never re-host it.
+                val text = viewModel.content.value
+                val sep = if (text.isEmpty() || text.endsWith("\n") || text.endsWith(" ")) "" else "\n"
+                viewModel.setContent(text + sep + gif.url)
+            },
+            onDismiss = { showGifPicker = false },
+        )
+    }
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = pickerMaxItems)
     ) { uris ->
@@ -1524,6 +1537,19 @@ fun ComposeNoteScreen(
                         tint = colors.primary,
                         modifier = Modifier.size(20.dp)
                     )
+                }
+
+                // GIF picker (nostr.build). Hidden when this build has no API
+                // key: a picker that finds nothing must not ship.
+                if (com.nostrvault.data.gif.NostrBuildGifs.isConfigured) {
+                    IconButton(
+                        onClick = { showGifPicker = true },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(colors.primary.copy(alpha = 0.1f), CircleShape),
+                    ) {
+                        Text("GIF", color = colors.primary, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    }
                 }
 
                 // Video picker button

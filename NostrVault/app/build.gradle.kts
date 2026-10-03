@@ -46,6 +46,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // nostr.build GIF API key. The repo is public, so it never goes in
+        // git: it comes from the gitignored local.properties. Without it the
+        // GIF button stays hidden (a picker that finds nothing must not ship).
+        val gifKey = (localProps["NOSTR_BUILD_GIF_KEY"] as String?)?.trim().orEmpty()
+        buildConfigField("String", "NOSTR_BUILD_GIF_KEY", "\"$gifKey\"")
+
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
