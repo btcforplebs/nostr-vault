@@ -578,6 +578,33 @@ class FeedService @Inject constructor(
     // Contact list management
     // ══════════════════════════════════════════════════════════════════
 
+    /**
+     * Follow / unfollow taps made before the follow list had loaded. Applied, in
+     * order, once it has (parity with iOS #160): publishing a list before then
+     * could replace the real one on every relay, and the tap used to be dropped
+     * without a word.
+     */
+    private val pendingFollowActions = mutableListOf<Pair<String, Boolean>>()
+
+    private fun queueFollowAction(pubkey: String, follow: Boolean) {
+        pendingFollowActions.removeAll { it.first == pubkey }
+        pendingFollowActions.add(pubkey to follow)
+        notificationManager.showFollow(
+            profileDisplayName(pubkey),
+            FollowKind.FAILED(if (follow) "Following once your follow list loads…" else "Unfollowing once your follow list loads…"),
+        )
+        if (!_isLoadingContacts.value) scope.launch { loadContactList() }
+    }
+
+    private fun applyPendingFollowActions() {
+        if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value || pendingFollowActions.isEmpty()) return
+        val actions = pendingFollowActions.toList()
+        pendingFollowActions.clear()
+        for ((pubkey, follow) in actions) {
+            if (follow) followUser(pubkey) else unfollowUser(pubkey)
+        }
+    }
+
     private suspend fun loadContactList() {
         val myGeneration = ++contactLoadGeneration
         _isLoadingContacts.value = true
@@ -661,6 +688,9 @@ class FeedService @Inject constructor(
                     _isLoadingContacts.value = false
                 }
             }
+        }
+        if (myGeneration == contactLoadGeneration) {
+            withContext(Dispatchers.Main.immediate) { applyPendingFollowActions() }
         }
     }
 
@@ -1850,7 +1880,8 @@ class FeedService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     fun followUser(pubkey: String): Result<Unit> {
-        if (!_hasAttemptedContactLoad.value) {
+        if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
+            queueFollowAction(pubkey, follow = true)
             return Result.failure(FollowActionError.ContactsNotLoaded)
         }
         val displayName = profileDisplayName(pubkey)
@@ -1883,7 +1914,8 @@ class FeedService @Inject constructor(
     }
 
     fun unfollowUser(pubkey: String): Result<Unit> {
-        if (!_hasAttemptedContactLoad.value) {
+        if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
+            queueFollowAction(pubkey, follow = false)
             return Result.failure(FollowActionError.ContactsNotLoaded)
         }
         val displayName = profileDisplayName(pubkey)
