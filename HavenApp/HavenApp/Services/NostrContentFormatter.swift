@@ -12,7 +12,7 @@ public struct NostrContentFormatter {
     /// A #hashtag: letters/digits/underscore after a # that starts a word, so
     /// URL fragments (`page#top`) and markdown labels are left alone.
     private static let hashtagRegex = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}_/#&\]\[])#([\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*)"#)
-    private static let httpURLRegex = try! NSRegularExpression(pattern: #"(?<![(\[])https?://[^\s<>\")\]]*[^\s<>\")\].,;:!?'\"]"#, options: .caseInsensitive)
+    private static var httpURLRegex: NSRegularExpression { NoteURLs.httpRegex }
 
     // Result cache — keyed on content + mediaURLs count. Note content is immutable
     // so the formatted result can be safely reused.
@@ -155,24 +155,16 @@ public struct NostrContentFormatter {
 
     // MARK: - Plain-text mention resolution (for compact views)
 
-    /// Removes each URL from `text`, longest first so a URL that prefixes
-    /// another (`a.com` and `a.com/page`) can't leave half of the longer one.
+    /// Removes each URL from `text` where it stands whole; see `NoteURLs.strip`.
     static func stripURLs(_ urls: [URL], from text: String) -> String {
-        var result = text
-        for url in urls.map(\.absoluteString).sorted(by: { $0.count > $1.count }) {
-            result = result.replacingOccurrences(of: url, with: "")
-        }
-        // A URL cut from mid-sentence leaves its two spaces behind.
-        return result
-            .replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        NoteURLs.strip(urls, from: text)
     }
 
     /// Every HTTP(S) URL in `text`, in order, without duplicates.
     static func httpURLs(in text: String) -> [URL] {
         let ns = text as NSString
         var seen = Set<String>()
-        return httpURLRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        return NoteURLs.cardRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
             .compactMap { URL(string: ns.substring(with: $0.range)) }
             .filter { seen.insert($0.absoluteString).inserted }
     }

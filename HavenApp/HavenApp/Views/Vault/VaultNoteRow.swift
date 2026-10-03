@@ -327,7 +327,7 @@ struct NoteRow: View {
             } else {
                 // Regular note content
                 let urls = event.mediaURLs
-                let links = event.linkURLs
+                let links = LinkCards.shown(event.linkURLs)
 
                 if !cleanContent.isEmpty {
                     let formattedContent = NostrContentFormatter.format(cleanContent, mediaURLs: urls + links)
@@ -700,7 +700,7 @@ struct RepostedNoteView: View {
 
             // Inner note content
             let urls = inner.mediaURLs
-            let links = inner.linkURLs
+            let links = LinkCards.shown(inner.linkURLs)
             let content = inner.content.trimmingCharacters(in: .whitespacesAndNewlines)
             if !content.isEmpty {
                 Text(NostrContentFormatter.format(content, mediaURLs: urls + links))

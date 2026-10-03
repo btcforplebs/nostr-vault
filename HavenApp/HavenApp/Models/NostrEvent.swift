@@ -92,10 +92,6 @@ struct NostrEvent: Codable, Identifiable {
         try? NSRegularExpression(pattern: #"https?://\S+/[a-f0-9]{64}(?=\s|$)"#, options: .caseInsensitive)
     }()
 
-    private static let httpURLRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"https?://[^\s<>\")\]]*[^\s<>\")\].,;:!?'\"]"#, options: .caseInsensitive)
-    }()
-
     var mediaURLs: [URL] {
         let ns = content as NSString
         let range = NSRange(location: 0, length: ns.length)
@@ -134,7 +130,7 @@ struct NostrEvent: Codable, Identifiable {
     }
 
     var linkURLs: [URL] {
-        guard let regex = Self.httpURLRegex else { return [] }
+        let regex = NoteURLs.cardRegex
         let ns = content as NSString
         let range = NSRange(location: 0, length: ns.length)
         let mediaSet = Set(mediaURLs.map { $0.absoluteString })
