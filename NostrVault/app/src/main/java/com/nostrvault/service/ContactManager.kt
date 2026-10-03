@@ -10,6 +10,12 @@ object ContactManager {
 
     sealed class FollowActionError : Exception() {
         data object ContactsNotLoaded : FollowActionError()
+        /**
+         * The load finished without the real list (timeout, error, relays that
+         * never answered). Publishing now would replace the user's follows
+         * with whatever is in memory, possibly nothing.
+         */
+        data object ListUnavailable : FollowActionError()
         data object AlreadyFollowing : FollowActionError()
         data object CannotUnfollowSelf : FollowActionError()
     }
@@ -59,6 +65,37 @@ object ContactManager {
     }
 
     /**
+     * Whether the user's real follow list is known: a kind 3 came back, or
+     * every relay answered (EOSE) with none, i.e. a genuinely new account.
+     * Follow / unfollow and queued taps publish only when this is true
+     * (parity with iOS #180).
+     */
+    fun mayPublishFollowList(hasAttemptedLoad: Boolean, isLoading: Boolean, listConfirmed: Boolean): Boolean =
+        hasAttemptedLoad && !isLoading && listConfirmed
+
+    /** True when a list was found, or when every relay asked answered with none. */
+    fun loadConfirmsList(foundList: Boolean, relaysAsked: Int, relaysAnswered: Int): Boolean =
+        foundList || (relaysAsked > 0 && relaysAnswered >= relaysAsked)
+
+    /**
+     * Which relays finished answering one follow-list request: each relay once,
+     * and only for the subscription id it was sent. A relay repeating EOSE must
+     * not stand in for the relay that holds the list.
+     */
+    class EOSETally {
+        private val subIds = mutableMapOf<String, String>()
+        private val _answered = mutableSetOf<String>()
+        val answered: Set<String> get() = _answered
+
+        @Synchronized fun sent(subId: String, relay: String) { subIds[relay] = subId }
+        @Synchronized fun eose(relay: String, subId: String) {
+            if (subIds[relay] == subId) _answered.add(relay)
+        }
+        @Synchronized fun isAnswer(relay: String, subId: String): Boolean = subIds[relay] == subId
+        @Synchronized fun answeredCount(): Int = _answered.size
+    }
+
+    /**
      * Validate and perform a follow operation on the tag list.
      */
     fun prepareFollow(
@@ -67,9 +104,13 @@ object ContactManager {
         currentPubkeys: List<String>,
         hasAttemptedLoad: Boolean,
         isLoading: Boolean,
+        listConfirmed: Boolean,
     ): Result<FollowResult> {
         if (!hasAttemptedLoad || isLoading) {
             return Result.failure(FollowActionError.ContactsNotLoaded)
+        }
+        if (!listConfirmed) {
+            return Result.failure(FollowActionError.ListUnavailable)
         }
         if (pubkey in currentPubkeys) {
             return Result.failure(FollowActionError.AlreadyFollowing)
@@ -89,9 +130,13 @@ object ContactManager {
         currentPubkeys: List<String>,
         hasAttemptedLoad: Boolean,
         isLoading: Boolean,
+        listConfirmed: Boolean,
     ): Result<FollowResult> {
         if (!hasAttemptedLoad || isLoading) {
             return Result.failure(FollowActionError.ContactsNotLoaded)
+        }
+        if (!listConfirmed) {
+            return Result.failure(FollowActionError.ListUnavailable)
         }
         if (pubkey == activeAccountHex) {
             return Result.failure(FollowActionError.CannotUnfollowSelf)
