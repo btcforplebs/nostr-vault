@@ -3391,7 +3391,7 @@ struct FeedNoteRow: View {
             // path below drew the whole article raw and untitled.
             ArticleInlineBody(note: bodySource, isFocused: isFocused)
         } else {
-            let formattedContent = NostrContentFormatter.format(bodySource.content, mediaURLs: bodySource.mediaURLs)
+            let formattedContent = NostrContentFormatter.format(bodySource.content, mediaURLs: bodySource.mediaURLs + bodySource.linkURLs)
             VStack(alignment: .leading, spacing: 8) {
                 Text(formattedContent)
                     .font(.appSystem(size: 17, weight: .regular, design: .default))
@@ -3408,9 +3408,10 @@ struct FeedNoteRow: View {
                     .padding(.top, 4)
             }
 
-            // Link Preview
-            if !bodySource.linkURLs.isEmpty {
-                LinkPreviewCard(url: bodySource.linkURLs[0])
+            // Link previews — the text no longer carries the URLs, so every
+            // link gets its card.
+            ForEach(bodySource.linkURLs, id: \.self) { url in
+                LinkPreviewCard(url: url)
                     .padding(.top, 4)
             }
         }

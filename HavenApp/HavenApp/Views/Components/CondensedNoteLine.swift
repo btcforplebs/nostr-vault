@@ -93,6 +93,21 @@ struct CondensedNoteLine: View {
         contentOverride ?? note.content
     }
 
+    /// Links in the body that aren't media. Read from the text shown rather
+    /// than `note.linkURLs`, so a repost's override body counts its own.
+    private var linkURLs: [URL] {
+        let media = Set(mediaURLs.map(\.absoluteString))
+        return NostrContentFormatter.httpURLs(in: displayContent)
+            .filter { !media.contains($0.absoluteString) }
+    }
+
+    /// The body as plain text with no URLs: media shows as the thumbnail and
+    /// links as the chip, and a raw URL would spend the line limit.
+    private var bodyPlainText: String {
+        let text = NostrContentFormatter.stripURLs(mediaURLs + linkURLs, from: displayContent)
+        return NostrContentFormatter.resolveMentionsPlainText(text)
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             if depth > 0 {
@@ -108,6 +123,7 @@ struct CondensedNoteLine: View {
                 VStack(alignment: .leading, spacing: 2) {
                     headerRow
                     bodyText
+                    linkChip
                     engagementRow
                 }
 
@@ -182,8 +198,9 @@ struct CondensedNoteLine: View {
 
     @ViewBuilder
     private var bodyText: some View {
-        if !displayContent.isEmpty {
-            Text(NostrContentFormatter.resolveMentionsPlainText(displayContent))
+        let text = bodyPlainText
+        if !text.isEmpty {
+            Text(text)
                 .font(.appSystem(size: bodySize))
                 .foregroundColor(.white.opacity(isRoot ? 1.0 : (isOLED ? 0.8 : 0.85)))
                 .lineLimit(bodyLineLimit)
@@ -191,6 +208,33 @@ struct CondensedNoteLine: View {
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// A condensed stand-in for link cards: the first link's domain, plus a
+    /// count of the rest. A full card would undo the condensing.
+    @ViewBuilder
+    private var linkChip: some View {
+        let links = linkURLs
+        if let first = links.first {
+            HStack(spacing: 3) {
+                Image(systemName: "link")
+                    .font(.appSystem(size: 9, weight: .semibold))
+                Text(CondensedNoteLine.domain(of: first))
+                    .font(.appSystem(size: 11, weight: .medium))
+                    .lineLimit(1)
+                if links.count > 1 {
+                    Text("+\(links.count - 1)")
+                        .font(.appSystem(size: 10, weight: .semibold, design: .monospaced))
+                }
+            }
+            .foregroundColor(Color.havenPurple.opacity(isOLED ? 0.85 : 0.9))
+            .padding(.top, 1)
+        }
+    }
+
+    static func domain(of url: URL) -> String {
+        guard let host = url.host else { return url.absoluteString }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
     @ViewBuilder
@@ -306,14 +350,19 @@ struct CondensedNoteLine: View {
     private var accessibilityLabel: String {
         var parts = [displayName, CondensedNoteLine.relativeTime(note.createdAt)]
         if depth > 0 { parts.append("reply, level \(depth)") }
-        if !displayContent.isEmpty {
-            parts.append(NostrContentFormatter.resolveMentionsPlainText(displayContent))
+        let text = bodyPlainText
+        if !text.isEmpty {
+            parts.append(text)
         }
         if replyCount > 0 {
             parts.append("\(replyCount) \(replyCount == 1 ? "reply" : "replies")")
         }
         if !mediaURLs.isEmpty {
             parts.append(mediaURLs.count == 1 ? "1 attachment" : "\(mediaURLs.count) attachments")
+        }
+        let links = linkURLs
+        if !links.isEmpty {
+            parts.append(links.count == 1 ? "link to \(CondensedNoteLine.domain(of: links[0]))" : "\(links.count) links")
         }
         return parts.joined(separator: ", ")
     }

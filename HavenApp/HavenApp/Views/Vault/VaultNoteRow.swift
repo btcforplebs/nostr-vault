@@ -330,7 +330,7 @@ struct NoteRow: View {
                 let links = event.linkURLs
 
                 if !cleanContent.isEmpty {
-                    let formattedContent = NostrContentFormatter.format(cleanContent, mediaURLs: urls)
+                    let formattedContent = NostrContentFormatter.format(cleanContent, mediaURLs: urls + links)
                     Group {
                         if truncate {
                             Text(formattedContent)
@@ -391,9 +391,9 @@ struct NoteRow: View {
                     }
                 }
 
-                // Link preview
-                if !links.isEmpty {
-                    LinkPreviewCard(url: links[0])
+                // Link previews, one per link — the text no longer shows them.
+                ForEach(links, id: \.self) { url in
+                    LinkPreviewCard(url: url)
                 }
 
                 // Quoted notes and articles
@@ -703,7 +703,7 @@ struct RepostedNoteView: View {
             let links = inner.linkURLs
             let content = inner.content.trimmingCharacters(in: .whitespacesAndNewlines)
             if !content.isEmpty {
-                Text(NostrContentFormatter.format(content, mediaURLs: urls))
+                Text(NostrContentFormatter.format(content, mediaURLs: urls + links))
                     .font(.appSystem(size: 14, weight: .regular, design: .default))
                     .foregroundColor(Color(red: 0.9, green: 0.9, blue: 0.9))
                     .lineSpacing(2)
@@ -727,9 +727,9 @@ struct RepostedNoteView: View {
                 }
             }
 
-            // Link preview
-            if !links.isEmpty {
-                LinkPreviewCard(url: links[0])
+            // Link previews, one per link — the text no longer shows them.
+            ForEach(links, id: \.self) { url in
+                LinkPreviewCard(url: url)
             }
 
             // Quoted notes and articles
