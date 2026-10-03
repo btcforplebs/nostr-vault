@@ -122,6 +122,9 @@ final class LocalNotificationService {
 
     /// How long a DM marker waits for the inbox to decrypt its message.
     private static let dmOpenTimeout: TimeInterval = 3
+    /// The wait while a DM thread is open: a slow decrypt there must end with
+    /// the message appearing in the thread, not a generic alert first.
+    private static let dmOpenTimeoutInThread: TimeInterval = 15
 
     /// A gift wrap is signed by a throwaway key, so its marker cannot say who
     /// wrote it — not even when it was you: every DM you send also wraps a copy
@@ -136,7 +139,11 @@ final class LocalNotificationService {
         if DMService.shared.isOwnSentWrap(id) { return }
 
         Task { @MainActor in
-            let opened = await DMService.shared.waitForMessage(withEventId: id, timeout: Self.dmOpenTimeout)
+            let inThread = appInForeground && DMService.shared.visibleConversation != nil
+            let opened = await DMService.shared.waitForMessage(
+                withEventId: id,
+                timeout: inThread ? Self.dmOpenTimeoutInThread : Self.dmOpenTimeout
+            )
             if let opened {
                 if opened.message.isFromMe { return }
                 // The conversation is already on screen.

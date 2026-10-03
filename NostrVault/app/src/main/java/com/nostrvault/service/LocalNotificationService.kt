@@ -67,6 +67,11 @@ class LocalNotificationService @Inject constructor(
         private const val MAX_SEEN = 500
         /** How long a DM marker waits for the inbox to decrypt its message. */
         private const val DM_OPEN_TIMEOUT_MS = 3_000L
+        /**
+         * The wait while a DM thread is open: a slow decrypt there (Amber) must
+         * end with the message appearing in the thread, not a generic alert first.
+         */
+        private const val DM_OPEN_TIMEOUT_IN_THREAD_MS = 15_000L
 
         private fun isDm(type: String) = type == "dm" || type == "giftwrap"
 
@@ -233,7 +238,11 @@ class LocalNotificationService @Inject constructor(
             return
         }
         scope.launch {
-            val opened = dms.awaitOpenedMessage(id, DM_OPEN_TIMEOUT_MS)
+            val inThread = appInForeground && dms.visibleConversation != null
+            val opened = dms.awaitOpenedMessage(
+                id,
+                if (inThread) DM_OPEN_TIMEOUT_IN_THREAD_MS else DM_OPEN_TIMEOUT_MS,
+            )
             if (opened != null) {
                 if (opened.second.isFromMe) return@launch
                 // The conversation is already on screen.
