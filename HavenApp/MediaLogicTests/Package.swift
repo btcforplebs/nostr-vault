@@ -9,7 +9,14 @@ let package = Package(
     name: "MediaLogicTests",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "MediaLogic", path: "Sources/MediaLogic"),
+        // TENOR_SIDELOAD: the app compiles Tenor only into side builds that
+        // opt in (see GifSource.available). The tests opt in so the Tenor
+        // parser stays tested.
+        .target(
+            name: "MediaLogic",
+            path: "Sources/MediaLogic",
+            swiftSettings: [.define("TENOR_SIDELOAD")]
+        ),
         .testTarget(
             name: "MediaLogicTests",
             dependencies: ["MediaLogic"],
@@ -17,7 +24,8 @@ let package = Package(
             // A trimmed capture of a real tenor.com search page, so the parser
             // is tested against bytes the site actually served rather than
             // against our idea of them.
-            resources: [.copy("Fixtures")]
+            resources: [.copy("Fixtures")],
+            swiftSettings: [.define("TENOR_SIDELOAD")]
         ),
     ]
 )

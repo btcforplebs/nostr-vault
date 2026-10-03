@@ -766,24 +766,28 @@ struct ComposeView: View {
                     .buttonStyle(.plain)
                     .disabled(isAttachmentLimitReached)
 
-                    Button(action: { showingGifPicker = true }) {
-                        Group {
-                            if isFetchingGif {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Text("GIF")
-                                    .font(.appSystem(size: 12, weight: .bold))
+// Hidden when no GIF source is available in this build (no nostr.build
+                    // key, and Tenor not opted in): never show a picker that finds nothing.
+                    if !GifSource.available.isEmpty {
+                        Button(action: { showingGifPicker = true }) {
+                            Group {
+                                if isFetchingGif {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Text("GIF")
+                                        .font(.appSystem(size: 12, weight: .bold))
+                                }
                             }
+                            .frame(width: 22, height: 22)
+                            .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
+                            .padding(8)
+                            .background(purple.opacity(0.1))
+                            .clipShape(Circle())
                         }
-                        .frame(width: 22, height: 22)
-                        .foregroundColor(isAttachmentLimitReached ? purple.opacity(0.3) : purple)
-                        .padding(8)
-                        .background(purple.opacity(0.1))
-                        .clipShape(Circle())
+                        .buttonStyle(.plain)
+                        .disabled(isAttachmentLimitReached || isFetchingGif)
+                        .help("Search GIFs from nostr.build or Tenor")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isAttachmentLimitReached || isFetchingGif)
-                    .help("Search GIFs from nostr.build or Tenor")
 
                     Spacer()
 
@@ -1317,7 +1321,11 @@ struct ComposeView: View {
                     data = file.data
                     if file.isWebP { type = .webP }
                 case .tenor:
+                    #if TENOR_SIDELOAD
                     data = try await TenorGifService.downloadGIF(url: item.attachURL)
+                    #else
+                    throw URLError(.unsupportedURL)
+                    #endif
                 }
                 await MainActor.run {
                     appendAttachment(Attachment(data: data, fileURL: nil, type: type))

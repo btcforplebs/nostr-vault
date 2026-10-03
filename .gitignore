@@ -67,3 +67,6 @@ dist/
 
 # Xcode per-user state
 xcuserdata/
+
+# Build-time secrets for the iOS/macOS app (see HavenApp/Config/Base.xcconfig)
+HavenApp/Config/Secrets.xcconfig

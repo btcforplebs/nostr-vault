@@ -1,5 +1,10 @@
 import Foundation
 
+#if TENOR_SIDELOAD
+// Tenor is read from its website without the service's permission, so it is
+// compiled only into side builds that opt in with TENOR_SIDELOAD. Nothing
+// sets that for the App Store (see GifSource.available).
+
 /// A single Tenor GIF as surfaced by its search page.
 struct TenorGif: Identifiable, Hashable {
     let id: String
@@ -229,6 +234,7 @@ private extension CharacterSet {
         return set
     }()
 }
+#endif
 
 // MARK: - nostr.build GIF API
 
@@ -255,6 +261,19 @@ struct NostrBuildGif: Identifiable, Hashable {
 /// which the picker reports as `notRegistered` and steps past.
 enum NostrBuildGifService {
     static let baseURL = URL(string: "https://gifs.nostr.build/api/v1/")!
+
+    /// API key for a registered client (`Authorization: Bearer gnb_…`), which
+    /// is how the API's guide says native apps identify. It comes from the
+    /// gitignored Config/Secrets.xcconfig through Info.plist; the repo is
+    /// public, so it is never committed. Empty = feature off.
+    static var apiKey: String {
+        let raw = Bundle.main.object(forInfoDictionaryKey: "NostrBuildGIFAPIKey") as? String ?? ""
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // An unexpanded `$(NOSTR_BUILD_GIF_KEY)` means no xcconfig reached the build.
+        return key.hasPrefix("$(") ? "" : key
+    }
+
+    static var isConfigured: Bool { !apiKey.isEmpty }
 
     /// The User-Agent registered with gifs.nostr.build. Changing it means
     /// registering the new one.
@@ -295,6 +314,9 @@ enum NostrBuildGifService {
         request.timeoutInterval = 15
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if isConfigured {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw ServiceError.unavailable(-1) }
@@ -334,6 +356,20 @@ enum NostrBuildGifService {
 }
 
 extension NostrBuildGifService {
+    static let maxDownloadBytes = 25 * 1024 * 1024
+
+    enum DownloadError: LocalizedError {
+        case tooLarge
+        case notAGIF
+
+        var errorDescription: String? {
+            switch self {
+            case .tooLarge: return "GIF is too large to attach"
+            case .notAGIF: return "nostr.build did not return a GIF"
+            }
+        }
+    }
+
     /// Downloads a picked GIF for re-hosting on the user's own Blossom
     /// servers. nostr.build serves both GIF and animated WebP originals.
     static func download(_ url: URL) async throws -> (data: Data, isWebP: Bool) {
@@ -344,10 +380,10 @@ extension NostrBuildGifService {
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw ServiceError.unavailable(http.statusCode)
         }
-        guard data.count <= TenorGifService.maxGIFBytes else { throw TenorGifService.TenorError.tooLarge }
+        guard data.count <= maxDownloadBytes else { throw DownloadError.tooLarge }
         let isGIF = data.prefix(6) == Data("GIF87a".utf8) || data.prefix(6) == Data("GIF89a".utf8)
         let isWebP = data.count >= 12 && data.prefix(4) == Data("RIFF".utf8) && data[8..<12] == Data("WEBP".utf8)
-        guard isGIF || isWebP else { throw TenorGifService.TenorError.notAGIF }
+        guard isGIF || isWebP else { throw DownloadError.notAGIF }
         return (data, isWebP)
     }
 }
