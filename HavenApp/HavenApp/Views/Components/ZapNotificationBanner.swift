@@ -486,22 +486,13 @@ struct PostActionPill: View {
             .frame(width: 60, height: 4)
 
             if let onEdit {
-                Button("Edit") { onEdit() }
-                    .font(.appSystem(size: 13, weight: .bold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.25))
-                    .clipShape(Capsule())
+                pillButton("Edit", horizontalPadding: 10, action: onEdit)
             }
 
-            Button("Undo") { onUndo() }
-                .font(.appSystem(size: 13, weight: .bold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(Color.white.opacity(0.25))
-                .clipShape(Capsule())
+            pillButton("Undo", horizontalPadding: 12, action: onUndo)
         }
-        .padding(.vertical, 12)
+        // The buttons carry the other 10 pt of the pill's vertical padding.
+        .padding(.vertical, 2)
         .padding(.horizontal, 24)
         .background(
             Capsule()
@@ -534,6 +525,21 @@ struct PostActionPill: View {
         .accessibilityLabel("\(actionType.label) in \(max(1, Int(ceil(timeRemaining)))) seconds")
         .accessibilityHint(onDismiss == nil ? "" : "Swipe up to hide. The \(actionType.label.lowercased()) still completes.")
         .accessibilityAction(named: "Hide") { onDismiss?() }
+    }
+
+    /// The capsule and the pill's height above and below it are all inside the
+    /// label, so a tap anywhere on the capsule (or just off it) lands. Padding
+    /// outside a plain Button draws but takes no taps.
+    private func pillButton(_ title: String, horizontalPadding: CGFloat, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.appSystem(size: 13, weight: .bold))
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(0.25), in: Capsule())
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+        }
     }
 }
 

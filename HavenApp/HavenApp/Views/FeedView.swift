@@ -1407,11 +1407,14 @@ struct FeedView: View {
             .environmentObject(nostrService)
             .environmentObject(configService)
         }
+        #if !os(iOS)
+        // iOS reopens the composer from SceneDelegate, over any open sheet.
         .onChange(of: pendingManager.editRequest?.id) { _, _ in
             guard let req = pendingManager.editRequest else { return }
             composeContext = ComposeContext(replyTo: req.replyTo, quoteTo: req.quoteTo, initialContent: req.content, draftId: req.draftId)
             pendingManager.editRequest = nil
         }
+        #endif
         .sheet(isPresented: $showingRelayStatus) {
             FeedDashboardSheet(onDismiss: { showingRelayStatus = false })
                 .environmentObject(relayManager)
