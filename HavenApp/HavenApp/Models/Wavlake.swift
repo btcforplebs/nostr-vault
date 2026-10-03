@@ -17,6 +17,7 @@ struct WavlakeTrack: Identifiable, Hashable, Codable {
     let msatTotal: String?
     /// The artist's Nostr key, when they've linked one on Wavlake.
     var artistNpub: String? = nil
+    var artistArtUrl: String? = nil
 
     var audioURL: URL? { URL(string: mediaUrl) }
     var artworkURL: URL? { albumArtUrl.flatMap(URL.init(string:)) }
@@ -40,6 +41,16 @@ enum WavlakeSearchResult: Identifiable, Hashable {
         case .artist(let id, _, _): return "artist:\(id)"
         }
     }
+}
+
+/// A Wavlake artist, as the Music toolbar lists them.
+struct WavlakeArtist: Identifiable, Hashable, Codable {
+    let id: String
+    let name: String
+    var artUrl: String?
+    var npub: String?
+
+    var artURL: URL? { artUrl.flatMap(URL.init(string:)) }
 }
 
 enum WavlakeAPI {
@@ -83,7 +94,8 @@ enum WavlakeAPI {
             mediaUrl: mediaUrl,
             duration: (json["duration"] as? Int) ?? (json["duration"] as? Double).map { Int($0) },
             msatTotal: msat,
-            artistNpub: (json["artistNpub"] as? String).flatMap { $0.hasPrefix("npub1") ? $0 : nil }
+            artistNpub: (json["artistNpub"] as? String).flatMap { $0.hasPrefix("npub1") ? $0 : nil },
+            artistArtUrl: json["artistArtUrl"] as? String
         )
     }
 
@@ -126,6 +138,20 @@ enum WavlakeAPI {
         return albums.compactMap { $0["id"] as? String }
     }
 
+    /// An artist page's name, picture and Nostr key. Rankings and search
+    /// leave the key out; only this endpoint (and a single track) carry it.
+    static func artist(fromArtist data: Data, id: String) -> WavlakeArtist? {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        let name = (json["name"] as? String) ?? (json["title"] as? String) ?? ""
+        guard !name.isEmpty else { return nil }
+        return WavlakeArtist(
+            id: id,
+            name: name,
+            artUrl: json["artistArtUrl"] as? String,
+            npub: (json["artistNpub"] as? String).flatMap { $0.hasPrefix("npub1") ? $0 : nil }
+        )
+    }
+
     // MARK: - Fetching
 
     static func fetch(_ url: URL) async throws -> Data {
@@ -138,8 +164,13 @@ enum WavlakeAPI {
         return data
     }
 
-    static func trending() async throws -> [WavlakeTrack] {
-        tracks(fromRankings: try await fetch(rankingsURL()))
+    /// Wavlake answers 1 to 90 days; anything longer is a 400.
+    static func trending(days: Int = 7) async throws -> [WavlakeTrack] {
+        tracks(fromRankings: try await fetch(rankingsURL(days: days)))
+    }
+
+    static func artist(_ id: String) async throws -> WavlakeArtist? {
+        artist(fromArtist: try await fetch(artistURL(id)), id: id)
     }
 
     static func search(_ term: String) async throws -> [WavlakeSearchResult] {

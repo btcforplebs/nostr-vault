@@ -1,21 +1,145 @@
+import Combine
 import SwiftUI
 
 // MARK: - Music feed
+
+/// What the Music feed shows. The top-right toolbar sets it and
+/// MusicBrowserView reads it, so the two stay in step across tabs.
+@MainActor
+final class MusicFeedState: ObservableObject {
+    static let shared = MusicFeedState()
+
+    enum Scope: Equatable {
+        case trending
+        case artist(WavlakeArtist)
+        case following
+    }
+
+    /// The rankings windows offered as words. Wavlake answers 1 to 90 days.
+    enum TrendingWindow: Int, CaseIterable {
+        case week = 7
+        case month = 30
+
+        var title: String { self == .week ? "This week" : "This month" }
+    }
+
+    @Published var scope: Scope = .trending
+    @Published var trendingWindow: TrendingWindow = .week
+    /// Artists you've played or opened, newest first.
+    @Published private(set) var recentArtists: [WavlakeArtist] = []
+
+    private static let recentKey = "music.recentArtists"
+    private static let maxRecent = 20
+    /// Artist pages fetched this launch, for their Nostr keys. A missing
+    /// key is cached too (npub nil), so Following doesn't ask twice.
+    private var artistCache: [String: WavlakeArtist] = [:]
+    private var cancellables = Set<AnyCancellable>()
+
+    private init() {
+        if let data = UserDefaults.standard.data(forKey: Self.recentKey),
+           let saved = try? JSONDecoder().decode([WavlakeArtist].self, from: data) {
+            recentArtists = saved
+        }
+        // Every song that starts, from this feed or a post, adds its artist.
+        // Queue and index publish separately; settle before reading them.
+        let player = MusicPlayerService.shared
+        player.$queue.combineLatest(player.$index)
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
+            .compactMap { queue, index in queue.indices.contains(index) ? queue[index].wavlake : nil }
+            .removeDuplicates { $0.artistId == $1.artistId }
+            .sink { [weak self] track in self?.remember(track) }
+            .store(in: &cancellables)
+    }
+
+    func remember(_ track: WavlakeTrack) {
+        guard let id = track.artistId else { return }
+        remember(WavlakeArtist(id: id, name: track.artist, artUrl: track.artistArtUrl, npub: track.artistNpub))
+    }
+
+    func remember(_ artist: WavlakeArtist) {
+        var artist = artist
+        let known = recentArtists.first { $0.id == artist.id }
+        artist.artUrl = artist.artUrl ?? known?.artUrl
+        artist.npub = artist.npub ?? known?.npub
+        recentArtists = Array(([artist] + recentArtists.filter { $0.id != artist.id }).prefix(Self.maxRecent))
+        saveRecent()
+    }
+
+    func clearRecentArtists() {
+        recentArtists = []
+        saveRecent()
+    }
+
+    var currentArtist: WavlakeArtist? {
+        if case .artist(let artist) = scope { return artist }
+        return nil
+    }
+
+    func show(_ artist: WavlakeArtist) {
+        remember(artist)
+        scope = .artist(artist)
+    }
+
+    func showTrending(_ window: TrendingWindow) {
+        trendingWindow = window
+        scope = .trending
+    }
+
+    private func saveRecent() {
+        if let data = try? JSONEncoder().encode(recentArtists) {
+            UserDefaults.standard.set(data, forKey: Self.recentKey)
+        }
+    }
+
+    /// Wavlake artists whose linked Nostr key you follow, and their ranked
+    /// songs. Wavlake can't be asked which artists a key follows, and only
+    /// an artist's own page carries their key, so this checks the artists
+    /// of the last 90 days' rankings plus your recent artists.
+    func followedArtists(follows: Set<String>) async -> (artists: [WavlakeArtist], tracks: [WavlakeTrack]) {
+        let ranked = (try? await WavlakeAPI.trending(days: 90)) ?? []
+        var ids: [String] = []
+        for id in recentArtists.map(\.id) + ranked.compactMap(\.artistId) where !ids.contains(id) {
+            ids.append(id)
+        }
+        let missing = ids.filter { artistCache[$0] == nil }
+        await withTaskGroup(of: WavlakeArtist?.self) { group in
+            for id in missing {
+                group.addTask { try? await WavlakeAPI.artist(id) }
+            }
+            for await artist in group {
+                if let artist { artistCache[artist.id] = artist }
+            }
+        }
+        let artists = ids.compactMap { artistCache[$0] }.filter { artist in
+            artist.npub.flatMap(MusicSheet.hex(fromNpub:)).map(follows.contains) ?? false
+        }
+        let followed = Set(artists.map(\.id))
+        return (artists, ranked.filter { $0.artistId.map(followed.contains) ?? false })
+    }
+}
 
 /// The Music feed: Wavlake's trending tracks, and search across tracks,
 /// albums and artists. Tapping a track plays it and queues the rest of the
 /// list after it; the mini player keeps going while you browse.
 struct MusicBrowserView: View {
     @ObservedObject private var player = MusicPlayerService.shared
+    @ObservedObject private var feed = MusicFeedState.shared
     @State private var sheet: MusicSheet?
     @State private var query = ""
-    @State private var trending: [WavlakeTrack] = []
+    /// The songs for the toolbar's current choice.
+    @State private var tracks: [WavlakeTrack] = []
+    /// Following: the artists found, shown above their songs.
+    @State private var followedArtists: [WavlakeArtist] = []
     @State private var results: [WavlakeSearchResult] = []
-    /// An album or artist opened from search: its title and tracks.
+    /// An album opened from search: its title and tracks.
     @State private var opened: (title: String, tracks: [WavlakeTrack])?
     @State private var isLoading = false
     @State private var errorText: String?
     @State private var searchTask: Task<Void, Never>?
+    /// Search and albums keep their own spinner and message, so clearing a
+    /// search can't stop the toolbar choice's load, or the other way round.
+    @State private var isSearching = false
+    @State private var searchError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -23,32 +147,28 @@ struct MusicBrowserView: View {
 
             if let opened {
                 header(opened.title) {
-                    Button { self.opened = nil } label: {
-                        Label("Back", systemImage: "chevron.left").font(.appSystem(size: 14, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.havenPurple)
+                    backButton { self.opened = nil }
                 }
                 trackList(opened.tracks)
             } else if !query.trimmingCharacters(in: .whitespaces).isEmpty {
                 searchResults
             } else {
-                header("Trending on Wavlake") { EmptyView() }
-                trackList(trending)
+                scopeContent
             }
 
-            if isLoading {
+            if isBrowsing ? isLoading : isSearching {
                 ProgressView().tint(.havenPurple).frame(maxWidth: .infinity).padding(.vertical, 30)
-            } else if let errorText {
-                Text(errorText)
+            } else if let message = isBrowsing ? errorText : searchError {
+                Text(message)
                     .font(.appSystem(size: 14))
                     .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 30)
                     .contentShape(Rectangle())
-                    .accessibilityAddTraits(query.isEmpty && opened == nil ? .isButton : [])
+                    .accessibilityAddTraits(isBrowsing ? .isButton : [])
                     .onTapGesture {
-                        if query.isEmpty && opened == nil { Task { await loadTrending() } }
+                        if isBrowsing { Task { await load() } }
                     }
             }
 
@@ -62,8 +182,64 @@ struct MusicBrowserView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .task { if trending.isEmpty { await loadTrending() } }
+        .task(id: loadKey) { await load() }
+        // A toolbar pick replaces whatever search or album was showing.
+        .onChange(of: loadKey) { _, _ in
+            query = ""
+            opened = nil
+        }
         .modifier(MusicSheetHost(sheet: $sheet))
+    }
+
+    /// Showing the toolbar's choice rather than search or an album.
+    private var isBrowsing: Bool { query.isEmpty && opened == nil }
+
+    /// Changes whenever the toolbar picks something else to show.
+    private var loadKey: String {
+        switch feed.scope {
+        case .trending: return "trending:\(feed.trendingWindow.rawValue)"
+        case .artist(let artist): return "artist:\(artist.id)"
+        case .following: return "following"
+        }
+    }
+
+    @ViewBuilder
+    private var scopeContent: some View {
+        switch feed.scope {
+        case .trending:
+            header("Trending \(feed.trendingWindow.title.lowercased())") { EmptyView() }
+            trackList(tracks)
+        case .artist(let artist):
+            header(artist.name) {
+                backButton { feed.scope = .trending }
+            }
+            trackList(tracks)
+        case .following:
+            if !followedArtists.isEmpty {
+                header("Artists you follow") { EmptyView() }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(followedArtists) { artist in
+                            collectionTile(title: artist.name, subtitle: "Artist", art: artist.artUrl, round: true) {
+                                feed.show(artist)
+                            }
+                        }
+                    }
+                }
+            }
+            if !tracks.isEmpty {
+                header("Their songs") { EmptyView() }
+                trackList(tracks)
+            }
+        }
+    }
+
+    private func backButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label("Back", systemImage: "chevron.left").font(.appSystem(size: 14, weight: .semibold))
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.havenPurple)
     }
 
     private var searchField: some View {
@@ -144,7 +320,10 @@ struct MusicBrowserView: View {
         case .album(let id, let title, let art):
             collectionTile(title: title, subtitle: "Album", art: art, round: false) { await open(title: title) { try await WavlakeAPI.album(id) } }
         case .artist(let id, let name, let art):
-            collectionTile(title: name, subtitle: "Artist", art: art, round: true) { await open(title: name) { try await WavlakeAPI.artistTracks(id) } }
+            collectionTile(title: name, subtitle: "Artist", art: art, round: true) {
+                feed.show(WavlakeArtist(id: id, name: name, artUrl: art))
+                query = ""
+            }
         case .track:
             EmptyView()
         }
@@ -165,15 +344,41 @@ struct MusicBrowserView: View {
 
     // MARK: - Loading
 
-    private func loadTrending() async {
+    private func load() async {
+        tracks = []
+        followedArtists = []
         isLoading = true
         errorText = nil
-        do {
-            trending = try await WavlakeAPI.trending()
-            if trending.isEmpty { errorText = "Nothing trending right now." }
-        } catch {
-            errorText = "Couldn't reach Wavlake. Tap to try again."
+        var found: [WavlakeTrack] = []
+        var artists: [WavlakeArtist] = []
+        var message: String?
+        switch feed.scope {
+        case .trending:
+            do {
+                found = try await WavlakeAPI.trending(days: feed.trendingWindow.rawValue)
+                if found.isEmpty { message = "Nothing trending right now." }
+            } catch {
+                message = "Couldn't reach Wavlake. Tap to try again."
+            }
+        case .artist(let artist):
+            found = (try? await WavlakeAPI.artistTracks(artist.id)) ?? []
+            if found.isEmpty { message = "Couldn't load \(artist.name). Tap to try again." }
+        case .following:
+            let follows = Set(FeedService.shared.followedPubkeys)
+            if follows.isEmpty {
+                message = "Follow people on Nostr, and the Wavlake artists among them show up here."
+            } else {
+                (artists, found) = await feed.followedArtists(follows: follows)
+                if artists.isEmpty {
+                    message = "None of the Wavlake artists checked are people you follow. Artists show up here once they link their Nostr key on Wavlake."
+                }
+            }
         }
+        // A newer choice took over while this one loaded; it owns the page.
+        guard !Task.isCancelled else { return }
+        tracks = found
+        followedArtists = artists
+        errorText = message
         isLoading = false
     }
 
@@ -182,29 +387,132 @@ struct MusicBrowserView: View {
         searchTask?.cancel()
         opened = nil
         let term = query.trimmingCharacters(in: .whitespaces)
-        guard !term.isEmpty else { results = []; errorText = nil; isLoading = false; return }
+        guard !term.isEmpty else { results = []; searchError = nil; isSearching = false; return }
         searchTask = Task {
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled else { return }
-            isLoading = true
-            errorText = nil
+            isSearching = true
+            searchError = nil
             let found = (try? await WavlakeAPI.search(term)) ?? []
             guard !Task.isCancelled else { return }
             results = found
-            isLoading = false
-            if found.isEmpty { errorText = "No music found for \"\(term)\"." }
+            isSearching = false
+            if found.isEmpty { searchError = "No music found for \"\(term)\"." }
         }
     }
 
     private func open(title: String, load: () async throws -> [WavlakeTrack]) async {
-        isLoading = true
-        errorText = nil
+        isSearching = true
+        searchError = nil
         let tracks = (try? await load()) ?? []
-        isLoading = false
+        isSearching = false
         if tracks.isEmpty {
-            errorText = "Couldn't load \(title)."
+            searchError = "Couldn't load \(title)."
         } else {
             opened = (title, tracks)
+        }
+    }
+}
+
+/// The Music feed's top-right controls: Trending (this week or month),
+/// an artist picker, and Wavlake artists you follow on Nostr.
+struct MusicToolbarButtons: View {
+    @ObservedObject private var feed = MusicFeedState.shared
+
+    var body: some View {
+        HStack(spacing: 4) {
+            toolbarMenu(icon: isTrending ? "flame.fill" : "flame", label: "Trending", isSelected: isTrending) {
+                MusicTrendingMenuItems()
+            }
+            toolbarMenu(icon: artist != nil ? "person.crop.circle.fill" : "person.crop.circle",
+                        label: artist.map { "Artist: \($0.name)" } ?? "Artists", isSelected: artist != nil) {
+                MusicArtistMenuItems()
+            }
+            IconFilterButton(icon: isFollowing ? "person.2.fill" : "person.2", tooltip: "Artists you follow",
+                             isSelected: isFollowing, color: .havenPurple) {
+                feed.scope = .following
+            }
+            #if os(macOS)
+            .help("Wavlake artists you follow on Nostr")
+            #endif
+        }
+    }
+
+    private var isTrending: Bool { feed.scope == .trending }
+    private var isFollowing: Bool { feed.scope == .following }
+    private var artist: WavlakeArtist? { feed.currentArtist }
+
+    private func toolbarMenu<Items: View>(icon: String, label: String, isSelected: Bool, @ViewBuilder items: () -> Items) -> some View {
+        Menu {
+            items()
+        } label: {
+            Image(systemName: icon)
+                .font(.appSystem(size: 15, weight: .semibold))
+                .foregroundColor(isSelected ? .havenPurple : .secondary)
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+                .animation(Motion.toggle, value: isSelected)
+        }
+        .menuIndicator(.hidden)
+        #if os(macOS)
+        // .borderlessButton flattens the label's modifiers on macOS.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .help(label)
+        #endif
+        .accessibilityLabel(label)
+    }
+}
+
+/// This week / This month, for the toolbar's Trending menu and the
+/// compact toolbar's single menu.
+struct MusicTrendingMenuItems: View {
+    @ObservedObject private var feed = MusicFeedState.shared
+
+    var body: some View {
+        ForEach(MusicFeedState.TrendingWindow.allCases, id: \.self) { window in
+            Button { feed.showTrending(window) } label: {
+                Label("Trending \(window.title.lowercased())",
+                      systemImage: feed.scope == .trending && feed.trendingWindow == window ? "checkmark" : "flame")
+            }
+        }
+    }
+}
+
+/// Artists you've played or opened, newest first.
+struct MusicArtistMenuItems: View {
+    @ObservedObject private var feed = MusicFeedState.shared
+
+    var body: some View {
+        if feed.recentArtists.isEmpty {
+            Text("Artists you play or open show up here")
+        } else {
+            ForEach(feed.recentArtists) { artist in
+                Button { feed.show(artist) } label: {
+                    Label(artist.name, systemImage: feed.currentArtist?.id == artist.id ? "checkmark" : "person.crop.circle")
+                }
+            }
+            Divider()
+            Button(role: .destructive) { feed.clearRecentArtists() } label: {
+                Label("Clear artists", systemImage: "trash")
+            }
+        }
+    }
+}
+
+/// Everything in MusicToolbarButtons, as items for the compact toolbar menu.
+struct MusicToolbarMenuItems: View {
+    @ObservedObject private var feed = MusicFeedState.shared
+
+    var body: some View {
+        MusicTrendingMenuItems()
+        Button { feed.scope = .following } label: {
+            Label("Artists you follow", systemImage: feed.scope == .following ? "checkmark" : "person.2")
+        }
+        Menu {
+            MusicArtistMenuItems()
+        } label: {
+            Label("Artists", systemImage: "person.crop.circle")
         }
     }
 }

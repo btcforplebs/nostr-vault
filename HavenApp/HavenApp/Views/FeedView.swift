@@ -808,8 +808,7 @@ struct FeedView: View {
                     showingGlobalRecipeWarning = true
                 }
             } else if feedService.feedMode == .music {
-                // Music has no relay filters; search lives on the page.
-                EmptyView()
+                MusicToolbarButtons()
             } else if feedService.feedMode == .live {
                 IconFilterButton(icon: liveService.scope == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: liveService.scope == .following, color: .havenPurple) {
                     liveService.setScope(.following)
@@ -966,8 +965,7 @@ struct FeedView: View {
                     Label("Global", systemImage: "globe")
                 }
             } else if feedService.feedMode == .music {
-                // Music has no relay filters; search lives on the page.
-                EmptyView()
+                MusicToolbarMenuItems()
             } else if feedService.feedMode == .live {
                 Button { liveService.setScope(.following) } label: {
                     Label("Following", systemImage: "person.2.fill")
@@ -1218,8 +1216,7 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help("Recipes from everyone")
             } else if feedService.feedMode == .music {
-                // Music has no relay filters; search lives on the page.
-                EmptyView()
+                MusicToolbarButtons()
             } else if feedService.feedMode == .live {
                 Button(action: { liveService.setScope(.following) }) {
                     Image(systemName: liveService.scope == .following ? "person.2.fill" : "person.2")
