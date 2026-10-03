@@ -575,8 +575,14 @@ data class HavenConfig(
         accountBunkerConfigs[forNpub]?.takeIf { it.isConfigured }
 
     /** Current signing mode for the active account (resolves per-account state). */
-    fun activeSigningMode(): String {
-        val npub = activeOrOwnerNpub()
+    fun activeSigningMode(): String = effectiveSigningMode(activeOrOwnerNpub())
+
+    /**
+     * The signing mode [npub] actually signs with: its chosen mode, with
+     * nip46 only when a bunker is configured for it. Owner-forced events use
+     * this for the owner, never the active account's mode (#168 parity).
+     */
+    fun effectiveSigningMode(npub: String): String {
         when (accountSigningModes[npub]) {
             "nip46" -> if (bunkerConfig(npub) != null) return "nip46"
             "amber" -> return "amber"

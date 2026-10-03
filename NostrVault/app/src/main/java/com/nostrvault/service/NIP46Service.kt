@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -14,12 +16,45 @@ import kotlinx.coroutines.withContext
  * All operations delegate to the Go FFI bridge which manages the bunker
  * client lifecycle, WebSocket subscriptions, and RPC timeouts.
  *
- * The Go bridge holds a SINGLE bunker session, so only the active account's
- * signer is connected at any time; switching accounts disconnects/reconnects.
+ * The Go core (#168) keeps one live bunker session per signer; one of them is
+ * active. Switching back to an account whose session is alive re-activates it
+ * (one ping) instead of logging in again.
  */
 object NIP46Service {
 
     private const val TAG = "NIP46Service"
+
+    /** The bunker calls this service makes, so tests can stand in for the native bridge. */
+    interface Bridge {
+        fun connect(clientSecretKey: String, bunkerUrl: String): String?
+        fun activate(signerPubkey: String): String?
+        fun drop(signerPubkey: String)
+        fun ping(): Int
+    }
+
+    private object NativeBridge : Bridge {
+        override fun connect(clientSecretKey: String, bunkerUrl: String) = HavenBridge.nip46Connect(clientSecretKey, bunkerUrl)
+        override fun activate(signerPubkey: String) = HavenBridge.nip46Activate(signerPubkey)
+        override fun drop(signerPubkey: String) = HavenBridge.nip46Drop(signerPubkey)
+        override fun ping() = HavenBridge.nip46Ping()
+    }
+
+    @Volatile internal var bridge: Bridge = NativeBridge
+
+    /**
+     * Guards the connect / ensure decision only, so two callers cannot both
+     * log in (the second used to tear down, or cancel, the first). It is never
+     * held across a sign request: one hung bunker must not freeze every sign.
+     */
+    private val connectMutex = Mutex()
+
+    /** The user pubkey the active session answers for, when connected. */
+    @Volatile var connectedPubkey: String? = null
+        private set
+
+    private val _lastError = MutableStateFlow<String?>(null)
+    /** Why the last connect for an account failed (e.g. a signer answering as another key). */
+    val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
     private val _isConnected = MutableStateFlow(false)
     /** Whether a bunker session is currently connected (active account's signer). */
@@ -35,6 +70,7 @@ object NIP46Service {
         withContext(Dispatchers.IO) {
             try {
                 val pubkey = HavenBridge.nip46Connect(clientSecretKey, bunkerUrl)
+                connectedPubkey = pubkey
                 _isConnected.value = pubkey != null
                 pubkey
             } catch (e: Exception) {
@@ -44,9 +80,83 @@ object NIP46Service {
             }
         }
 
-    /** Connect using a stored per-account bunker config. */
-    suspend fun connectForAccount(cfg: AccountBunkerConfig): String? =
-        connect(cfg.clientSecretKey, cfg.bunkerURI)
+    /**
+     * Makes [expectedPubkey]'s bunker the active signer, under one lock:
+     * re-activates its live session when it still answers (one ping), else
+     * logs in. A signer that answers for any other key is dropped and the
+     * account left disconnected with an error; it is never kept as connected.
+     * @return [expectedPubkey] on success, null otherwise.
+     */
+    suspend fun connectForAccount(cfg: AccountBunkerConfig, expectedPubkey: String): String? =
+        connectMutex.withLock {
+            withContext(Dispatchers.IO) {
+                if (_isConnected.value && connectedPubkey == expectedPubkey) return@withContext expectedPubkey
+                _isConnected.value = false
+                connectedPubkey = null
+                val signer = cfg.signerPubkey.ifEmpty { bunkerHost(cfg.bunkerURI) }
+
+                val reused = try {
+                    if (signer.isEmpty()) null else bridge.activate(signer)
+                } catch (e: Exception) { null }
+                if (reused != null) {
+                    if (reused == expectedPubkey && bridge.ping() == 0) return@withContext accept(expectedPubkey)
+                    bridge.drop(signer)
+                }
+
+                val pubkey = try {
+                    bridge.connect(cfg.clientSecretKey, cfg.bunkerURI)
+                } catch (e: Exception) {
+                    Log.e(TAG, "NIP-46 connect failed: ${e.message}")
+                    null
+                }
+                when {
+                    pubkey == null -> {
+                        _lastError.value = "Could not reach the bunker"
+                        null
+                    }
+                    pubkey != expectedPubkey -> {
+                        if (signer.isNotEmpty()) bridge.drop(signer)
+                        _lastError.value = "This bunker signs as ${pubkey.take(8)}…, not this account"
+                        Log.e(TAG, "NIP-46 connect rejected: signer answered as ${pubkey.take(8)}, expected ${expectedPubkey.take(8)}")
+                        null
+                    }
+                    else -> accept(pubkey)
+                }
+            }
+        }
+
+    /** Resets state between unit tests (no native call). */
+    internal fun disconnectForTest() {
+        _isConnected.value = false
+        connectedPubkey = null
+        _lastError.value = null
+        bridge = NativeBridge
+    }
+
+    private fun accept(pubkey: String): String {
+        connectedPubkey = pubkey
+        _isConnected.value = true
+        _lastError.value = null
+        return pubkey
+    }
+
+    private fun bunkerHost(uri: String): String =
+        runCatching { java.net.URI(uri).host }.getOrNull().orEmpty()
+
+    /**
+     * Signs through [signerPubkey]'s live session without making it active and
+     * without logging in (the owner's relay AUTH while another account is
+     * active). Null when there is no live session for it.
+     */
+    suspend fun signEventWith(signerPubkey: String, eventJson: String): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                HavenBridge.nip46SignEventWith(signerPubkey, eventJson)
+            } catch (e: Exception) {
+                Log.e(TAG, "NIP-46 signWith failed: ${e.message}")
+                null
+            }
+        }
 
     /** Disconnect from the NIP-46 bunker. */
     fun disconnect() {
@@ -56,6 +166,7 @@ object NIP46Service {
             Log.e(TAG, "NIP-46 disconnect failed: ${e.message}")
         } finally {
             _isConnected.value = false
+            connectedPubkey = null
         }
     }
 

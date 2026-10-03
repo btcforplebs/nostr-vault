@@ -237,7 +237,9 @@ class ConfigStore @Inject constructor(
             val newCfg = _config.value
             if (newCfg.activeSigningMode() == "nip46") {
                 newCfg.bunkerConfig(newCfg.activeOrOwnerNpub())?.let {
-                    NIP46Service.connectForAccount(it)
+                    // Checked against the account: a signer answering as any
+                    // other key is dropped, never kept as connected.
+                    NIP46Service.connectForAccount(it, _activeAccountHexPubkey.value)
                 }
             }
         } finally {
