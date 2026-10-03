@@ -1,6 +1,7 @@
 import UIKit
 import SwiftUI
 import BackgroundTasks
+import Combine
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
@@ -61,9 +62,52 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         banners.rootViewController = host
         banners.isHidden = false
         self.bannerWindow = banners
+
+        // Edit on the post countdown pill reopens the composer here, over
+        // whatever is on top. A FeedView can't do it: there is one per tab,
+        // and none of them can present over a note or profile sheet.
+        editRequestSubscription = PendingPostManager.shared.$editRequest
+            .compactMap { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] request in
+                PendingPostManager.shared.editRequest = nil
+                self?.presentComposer(for: request)
+            }
     }
 
     var bannerWindow: UIWindow?
+    private var editRequestSubscription: AnyCancellable?
+
+    private func presentComposer(for request: PendingPostManager.EditRequest) {
+        guard var top = window?.rootViewController else { return }
+        while let next = top.presentedViewController, !next.isBeingDismissed {
+            top = next
+        }
+        weak var host: UIViewController?
+        let composer = ComposeView(
+            onDismiss: { host?.dismiss(animated: true) },
+            replyTo: request.replyTo,
+            quoteTo: request.quoteTo,
+            initialContent: request.content,
+            restoredDraftId: request.draftId
+        )
+        .hashtagLinks()
+        .environmentObject(ConfigService.shared)
+        .environmentObject(RelayProcessManager.shared)
+        .environmentObject(NostrService.shared)
+        .environmentObject(StatsService.shared)
+        .environmentObject(AppState.shared)
+        let controller = UIHostingController(rootView: composer)
+        host = controller
+        // The composer that just posted may still be sliding away.
+        if let leaving = top.presentedViewController, let coordinator = leaving.transitionCoordinator {
+            coordinator.animate(alongsideTransition: nil) { [weak top] _ in
+                top?.present(controller, animated: true)
+            }
+        } else {
+            top.present(controller, animated: true)
+        }
+    }
 
     func sceneDidDisconnect(_ scene: UIScene) {
         // Stop through the manager, never StopRelayC() directly:
@@ -228,28 +272,33 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 }
 
 /// A window that passes every touch through to the app below, except
-/// touches that land on something it draws (a banner's button).
+/// touches that land on a banner.
 final class BannerWindow: UIWindow {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // The hosting view answers for every point it covers, drawn or not, and
+        // on iOS 26 it has no subviews to ask instead. Banners report their own
+        // frames (`bannerHitRegion`); anywhere else the touch goes to the app.
         guard let hit = super.hitTest(point, with: event),
-              let root = rootViewController?.view else { return nil }
-        if #available(iOS 18.0, *) {
-            // SwiftUI content no longer shows up as separate hit views: the
-            // hosting view answers for all of it. Ask its drawn layers instead,
-            // and pass the touch on when nothing is drawn under it.
-            for subview in root.subviews.reversed() {
-                let converted = subview.convert(point, from: root)
-                guard let target = subview.hitTest(converted, with: event) else { continue }
-                // Never claim a screen-sized view: if the banner layout ever
-                // grew a full-size layer, taking its touches would freeze the
-                // app underneath. Fail toward passing the touch through.
-                let size = target.bounds.size
-                if size.width >= root.bounds.width && size.height >= root.bounds.height * 0.5 { continue }
-                return hit
-            }
-            return nil
+              BannerHitRegions.contains(point) else { return nil }
+        return hit
+    }
+}
+
+/// Where each banner is on screen, in BannerWindow coordinates.
+@MainActor
+enum BannerHitRegions {
+    fileprivate static var frames: [String: CGRect] = [:]
+
+    static func contains(_ point: CGPoint) -> Bool {
+        frames.values.contains { $0.contains(point) }
+    }
+}
+
+private extension View {
+    func bannerHitRegion(_ name: String) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+            BannerHitRegions.frames[name] = $0
         }
-        return hit === root ? nil : hit
     }
 }
 
@@ -257,14 +306,14 @@ final class BannerWindow: UIWindow {
 struct AppBannerStack: View {
     var body: some View {
         VStack(spacing: 6) {
-            SignerApprovalBanner()
-            PostActionNotificationBanner()
-            ZapNotificationBanner()
-            FollowNotificationBanner()
-            MediaUploadNotificationBanner()
-            RelayActivityBanner()
-            ActionToastBanner()
-            ErrorNotificationBanner()
+            SignerApprovalBanner().bannerHitRegion("signer")
+            PostActionNotificationBanner().bannerHitRegion("postAction")
+            ZapNotificationBanner().bannerHitRegion("zap")
+            FollowNotificationBanner().bannerHitRegion("follow")
+            MediaUploadNotificationBanner().bannerHitRegion("upload")
+            RelayActivityBanner().bannerHitRegion("relayActivity")
+            ActionToastBanner().bannerHitRegion("toast")
+            ErrorNotificationBanner().bannerHitRegion("error")
             Spacer(minLength: 0)
         }
         // Below the navigation bar (44 pt on iPhone, 50 pt on iPad), not over its buttons.
