@@ -136,6 +136,11 @@ if [ "$SKIP_ANDROID" = 0 ]; then
     log "Android: rebuilding Go relay (.so) and assembling release APK"
     (cd "$ANDROID_DIR" && ./build_haven_android.sh arm64)
     (cd "$ANDROID_DIR" && ./gradlew assembleRelease -q)
+    # jniLibs are gitignored, so a stale libhaven.so ships silently. Refuse an
+    # APK whose Go core predates the per-account signer sessions (#168).
+    unzip -p "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" lib/arm64-v8a/libhaven.so \
+        | strings | grep -q NIP46SignEventWithC \
+        || die "APK's libhaven.so is stale (no NIP46SignEventWithC) — rebuild it from master"
     cp "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" "$APK_PATH"
     APK_SHA256="$(shasum -a 256 "$APK_PATH" | awk '{print $1}')"
     echo "  APK: $APK_PATH"
