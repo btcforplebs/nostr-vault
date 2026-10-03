@@ -2011,6 +2011,7 @@ struct ProfileView: View {
     private func followErrorMessage(_ err: FeedService.FollowActionError) -> String {
         switch err {
         case .contactsNotLoaded: return "Following once your follow list loads…"
+        case .listUnavailable: return "Couldn't load your follow list. Not changing it."
         case .alreadyFollowing:  return "Already following"
         case .cannotUnfollowSelf: return "Follow failed"
         }
@@ -2019,6 +2020,7 @@ struct ProfileView: View {
     private func unfollowErrorMessage(_ err: FeedService.FollowActionError) -> String {
         switch err {
         case .contactsNotLoaded:  return "Unfollowing once your follow list loads…"
+        case .listUnavailable:    return "Couldn't load your follow list. Not changing it."
         case .cannotUnfollowSelf: return "Can't unfollow yourself"
         case .alreadyFollowing:   return "Unfollow failed"
         }
