@@ -135,6 +135,19 @@ extension VaultView {
         print("VaultView: Fetching extended zap receipts history")
         #endif
         nostrService.fetchZapReceipts(from: urls, limit: 1000)
+
+        // Your relay only holds receipts that tag you with `p`, i.e. zaps you
+        // received. The receipt for a zap you sent is published to the
+        // relays of the person you zapped and tags you with `P`, so "Given"
+        // stayed empty. Ask the feed relays for those.
+        let owner = nostrService.activeHexPubkey
+        guard !owner.isEmpty else { return }
+        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
+            "wss://relay.primal.net",
+            "wss://nos.lol",
+        ] : configService.config.activeFeedRelays
+        let externalURLs = externalStrs.compactMap { URL(string: $0) }
+        nostrService.fetchZapReceipts(from: externalURLs, limit: 500, tagFilter: ["#P": [owner]])
     }
 
     /// Fetch notes referenced by zap receipts that aren't already in the events array.

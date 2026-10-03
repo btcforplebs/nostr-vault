@@ -2196,8 +2196,10 @@ class NostrService: ObservableObject {
     }
 
     /// Fetches zap receipts (kind 9735) with a larger limit to cover more history.
-    func fetchZapReceipts(from relayURLs: [URL], limit: Int = 1000) {
-        let filter: [String: Any] = ["kinds": [9735], "limit": limit]
+    /// `tagFilter` narrows the request, e.g. `["#P": [me]]` for zaps you sent.
+    func fetchZapReceipts(from relayURLs: [URL], limit: Int = 1000, tagFilter: [String: [String]] = [:]) {
+        var filter: [String: Any] = ["kinds": [9735], "limit": limit]
+        for (key, values) in tagFilter { filter[key] = values }
 
         for url in relayURLs {
             let urlString = url.absoluteString
