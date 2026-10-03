@@ -216,10 +216,31 @@ struct FeedActions {
                 ConfigService.shared.blockProfile(npub)
             },
             followUser: { hexPubkey in
-                let _ = feedService.followUser(hexPubkey)
+                // Same confirmation as following from a profile page.
+                let name = nostrService.profiles[hexPubkey]?.bestName ?? "npub…" + String(hexPubkey.suffix(6))
+                switch feedService.followUser(hexPubkey) {
+                case .success:
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .followed)
+                case .failure(.contactsNotLoaded):
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Following once your follow list loads…"))
+                case .failure(.alreadyFollowing):
+                    break
+                case .failure:
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Follow failed"))
+                }
             },
             unfollowUser: { hexPubkey in
-                let _ = feedService.unfollowUser(hexPubkey)
+                let name = nostrService.profiles[hexPubkey]?.bestName ?? "npub…" + String(hexPubkey.suffix(6))
+                switch feedService.unfollowUser(hexPubkey) {
+                case .success:
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .unfollowed)
+                case .failure(.contactsNotLoaded):
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Unfollowing once your follow list loads…"))
+                case .failure(.cannotUnfollowSelf):
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Can't unfollow yourself"))
+                case .failure:
+                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Unfollow failed"))
+                }
             },
             throttleUser: { hexPubkey, maxPosts in
                 guard let data = Bech32.hexToData(hexPubkey),

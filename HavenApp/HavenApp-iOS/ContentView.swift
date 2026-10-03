@@ -332,20 +332,6 @@ struct iPadSidebarView: View {
             if tab == 0 { feedService.markViewed() }
             if tab == 4 { relayManager.markRelayViewed() }
         }
-        .overlay(alignment: .top) {
-            VStack(spacing: 6) {
-                SignerApprovalBanner()
-                PostActionNotificationBanner()
-                ZapNotificationBanner()
-                FollowNotificationBanner()
-                MediaUploadNotificationBanner()
-                RelayActivityBanner()
-                ActionToastBanner()
-                ErrorNotificationBanner()
-            }
-            // Below the navigation bar (50 pt on iPad), not over its buttons.
-            .padding(.top, 4 + 50)
-        }
         .overlay { ZapFlightStage() }
         .sheet(isPresented: $showingAccountSwitcher) {
             AccountSwitcherView(configService: configService)
@@ -537,20 +523,6 @@ struct iPhoneTabView: View {
                         .onChange(of: geo.size.height) { _, height in tabBarHeight = height }
                 }
             )
-        }
-        .overlay(alignment: .top) {
-            VStack(spacing: 6) {
-                SignerApprovalBanner()
-                PostActionNotificationBanner()
-                ZapNotificationBanner()
-                FollowNotificationBanner()
-                MediaUploadNotificationBanner()
-                RelayActivityBanner()
-                ActionToastBanner()
-                ErrorNotificationBanner()
-            }
-            // Below the navigation bar (44 pt on iPhone), not over its buttons.
-            .padding(.top, 4 + 44)
         }
         .overlay { ZapFlightStage() }
         .onAppear {

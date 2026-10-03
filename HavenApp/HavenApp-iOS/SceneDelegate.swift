@@ -43,7 +43,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = UIHostingController(rootView: contentView)
         self.window = window
         window.makeKeyAndVisible()
+
+        // In-app banners get a window of their own, above the app's, so a
+        // sheet (a profile, a note, compose) can never cover them. It takes
+        // no touches except on the banners themselves.
+        let banners = BannerWindow(windowScene: windowScene)
+        banners.windowLevel = .alert - 1
+        banners.overrideUserInterfaceStyle = .dark
+        let host = UIHostingController(rootView: AppBannerStack())
+        host.view.backgroundColor = .clear
+        banners.rootViewController = host
+        banners.isHidden = false
+        self.bannerWindow = banners
     }
+
+    var bannerWindow: UIWindow?
 
     func sceneDidDisconnect(_ scene: UIScene) {
         // Stop through the manager, never StopRelayC() directly:
@@ -204,5 +218,51 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard backgroundTaskID != .invalid else { return }
         UIApplication.shared.endBackgroundTask(backgroundTaskID)
         backgroundTaskID = .invalid
+    }
+}
+
+/// A window that passes every touch through to the app below, except
+/// touches that land on something it draws (a banner's button).
+final class BannerWindow: UIWindow {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard let hit = super.hitTest(point, with: event),
+              let root = rootViewController?.view else { return nil }
+        if #available(iOS 18.0, *) {
+            // SwiftUI content no longer shows up as separate hit views: the
+            // hosting view answers for all of it. Ask its drawn layers instead,
+            // and pass the touch on when nothing is drawn under it.
+            for subview in root.subviews.reversed() {
+                let converted = subview.convert(point, from: root)
+                guard let target = subview.hitTest(converted, with: event) else { continue }
+                // Never claim a screen-sized view: if the banner layout ever
+                // grew a full-size layer, taking its touches would freeze the
+                // app underneath. Fail toward passing the touch through.
+                let size = target.bounds.size
+                if size.width >= root.bounds.width && size.height >= root.bounds.height * 0.5 { continue }
+                return hit
+            }
+            return nil
+        }
+        return hit === root ? nil : hit
+    }
+}
+
+/// Every in-app banner, top-centred below the navigation bar.
+struct AppBannerStack: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            SignerApprovalBanner()
+            PostActionNotificationBanner()
+            ZapNotificationBanner()
+            FollowNotificationBanner()
+            MediaUploadNotificationBanner()
+            RelayActivityBanner()
+            ActionToastBanner()
+            ErrorNotificationBanner()
+            Spacer(minLength: 0)
+        }
+        // Below the navigation bar (44 pt on iPhone, 50 pt on iPad), not over its buttons.
+        .padding(.top, 4 + (UIDevice.current.userInterfaceIdiom == .pad ? 50 : 44))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
