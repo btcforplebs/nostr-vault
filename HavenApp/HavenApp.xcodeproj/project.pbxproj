@@ -346,6 +346,7 @@
 		BE62A6B14BFD12B691DE6D3F /* LiveChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BE879845BEF9A356B7CB5EB /* LiveChatService.swift */; };
 		BEAB1A49455D2E415783E4E1 /* GroupChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7491F74869677E43C247E1B4 /* GroupChatView.swift */; };
 		BEFE3D99EBF476B6AAA764C1 /* YarnClipService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD258416653D3DE8614C5C5E /* YarnClipService.swift */; };
+		BEB47203878B6C129795206B /* ClipGIFEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625EA6D90855B19BAE59B798 /* ClipGIFEncoder.swift */; };
 		BF1F6EADB3CD222E4B0C6072 /* MediaGalleryToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC26E9FB9DE4AFA3840A2CB /* MediaGalleryToolbar.swift */; };
 		C244EE2E8FA58AC58748CA0C /* LocalRelaySearchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A847D1496121BC4956AAF6 /* LocalRelaySearchPlan.swift */; };
 		C2E2BF0D5F5E31C7BFB2D179 /* ProfileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14E3BC6EB9439A763E73FE2 /* ProfileRepository.swift */; };
@@ -441,6 +442,7 @@
 		EF8DF414D640B5AC1CE1F212 /* MediaGalleryTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EA2FCD67EDBE04915305C51 /* MediaGalleryTypes.swift */; };
 		F0A25A9631B2DA7F4906AB39 /* Ping.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = C375F066296CAA325CD86CFE /* Ping.mp3 */; };
 		F0BFD54432F04456E43C0186 /* YarnClipService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD258416653D3DE8614C5C5E /* YarnClipService.swift */; };
+		B6285964869053632DD1A0A0 /* ClipGIFEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625EA6D90855B19BAE59B798 /* ClipGIFEncoder.swift */; };
 		F10135C9F1B704EF4CFDCDB7 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */; };
 		F11DF1086DA8F6B030403814 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
 		F1969630DB545EB78256124E /* SettingsHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7507E56424A5CF8EA46857DA /* SettingsHelp.swift */; };
@@ -701,6 +703,7 @@
 		DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven_ios.a; path = build/ios/libhaven_ios.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		DCF37340A315B6541EC46EDD /* GroupInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupInfoView.swift; sourceTree = "<group>"; };
 		DD258416653D3DE8614C5C5E /* YarnClipService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YarnClipService.swift; sourceTree = "<group>"; };
+		625EA6D90855B19BAE59B798 /* ClipGIFEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipGIFEncoder.swift; sourceTree = "<group>"; };
 		DE2003F8C6D98618A746D1E7 /* SwiftNIP46Handshake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftNIP46Handshake.swift; sourceTree = "<group>"; };
 		DEF0159EC6004E767A239389 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		DF76B5373E734C5934402DBD /* NostrContentFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrContentFormatter.swift; sourceTree = "<group>"; };
@@ -1160,6 +1163,7 @@
 				2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */,
 				3CB15AE080BDC0999543399A /* WebSocketClient.swift */,
 				DD258416653D3DE8614C5C5E /* YarnClipService.swift */,
+				625EA6D90855B19BAE59B798 /* ClipGIFEncoder.swift */,
 				9BA557D10C9E58C90C37C72A /* ZapHistoryService.swift */,
 				EDCFC8091B14D6C67AADFEFE /* MusicPlayerService.swift */,
 				A6DAA5E7383F9175577A61C7 /* ZapService.swift */,
@@ -1577,6 +1581,7 @@
 				4F12CB28845F57A334AECA84 /* WebSocketClient.swift in Sources */,
 				F909E9664DAB54DA38575736 /* WelcomeWindowView.swift in Sources */,
 				F0BFD54432F04456E43C0186 /* YarnClipService.swift in Sources */,
+				B6285964869053632DD1A0A0 /* ClipGIFEncoder.swift in Sources */,
 				876A3213A547A96B0D26E7A9 /* ZapBurstView.swift in Sources */,
 				9311DBEC8D73D7A39BCD6B9A /* ZapFlightView.swift in Sources */,
 				583ECEAC18133543D3165366 /* MusicViews.swift in Sources */,
@@ -1809,6 +1814,7 @@
 				8ADB489FAB643EBB11BB577E /* WebSocketClient.swift in Sources */,
 				2A158B439B79BA956648F917 /* WelcomeWindowView.swift in Sources */,
 				BEFE3D99EBF476B6AAA764C1 /* YarnClipService.swift in Sources */,
+				BEB47203878B6C129795206B /* ClipGIFEncoder.swift in Sources */,
 				067B8021AC2BAF187223891B /* ZapBurstView.swift in Sources */,
 				64353876FABFAB7F823B12FA /* ZapFlightView.swift in Sources */,
 				BC8B07EEA62ADE857FBE385C /* MusicViews.swift in Sources */,

@@ -9,7 +9,8 @@ struct YarnClip: Identifiable, Hashable {
 
     var id: String { uuid }
 
-    /// Full-resolution GIF with the caption burned in — what we attach.
+    /// Full-resolution GIF with the caption burned in. Only a fallback now:
+    /// `downloadCleanGIF` attaches the clip without the quote.
     var gifHiURL: URL { YarnClipService.mediaURL(uuid: uuid, suffix: "_text_hi.gif") }
     /// Small looping preview GIF for the picker grid.
     var gifSmallURL: URL { YarnClipService.mediaURL(uuid: uuid, suffix: "_text_200_10.gif") }
@@ -113,6 +114,25 @@ enum YarnClipService {
         let magic = data.prefix(6)
         guard magic == Data("GIF87a".utf8) || magic == Data("GIF89a".utf8) else { throw YarnError.notAGIF }
         return data
+    }
+
+    /// The clip as a GIF without the quote burned in. getyarn's full-size
+    /// GIFs all carry the caption; its MP4 doesn't, so the GIF is made from
+    /// that on device. Falls back to the captioned GIF if the MP4 can't be
+    /// fetched or converted, so picking a clip still attaches something.
+    static func downloadCleanGIF(uuid: String) async throws -> Data {
+        do {
+            let (video, response) = try await URLSession.shared.data(for: request(mediaURL(uuid: uuid, suffix: ".mp4")))
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                throw YarnError.badStatus(http.statusCode)
+            }
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("yarn-\(uuid).mp4")
+            try video.write(to: file)
+            defer { try? FileManager.default.removeItem(at: file) }
+            return try await ClipGIFEncoder.gif(fromVideoAt: file, maxBytes: maxGIFBytes)
+        } catch {
+            return try await downloadGIF(uuid: uuid)
+        }
     }
 
     // MARK: - Parsing

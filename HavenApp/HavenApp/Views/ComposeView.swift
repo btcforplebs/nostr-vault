@@ -1317,7 +1317,8 @@ struct ComposeView: View {
                     data = file.data
                     if file.isWebP { type = .webP }
                 case .yarn:
-                    data = try await YarnClipService.downloadGIF(uuid: item.sourceID)
+                    // Without the quote burned in (Logen, 2026-10-03).
+                    data = try await YarnClipService.downloadCleanGIF(uuid: item.sourceID)
                 case .tenor:
                     data = try await TenorGifService.downloadGIF(url: item.attachURL)
                 }
