@@ -38,9 +38,10 @@ extension VaultView {
             counts[event.kind, default: 0] += 1
         }
 
-        // Notes: kinds 1, 6, 30023
-        let noteCount = (counts[1] ?? 0) + (counts[6] ?? 0) + (counts[30023] ?? 0)
-        let baselineNotes = (notificationBaseline[1] ?? 0) + (notificationBaseline[6] ?? 0) + (notificationBaseline[30023] ?? 0)
+        // Notes: NostrService.relayTabNoteKinds
+        let noteKinds = NostrService.relayTabNoteKinds
+        let noteCount = noteKinds.reduce(0) { $0 + (counts[$1] ?? 0) }
+        let baselineNotes = noteKinds.reduce(0) { $0 + (notificationBaseline[$1] ?? 0) }
         if noteCount > baselineNotes && viewMode != .notes {
             withAnimation(Motion.fade) { hasNewNotes = true }
         }
@@ -65,9 +66,9 @@ extension VaultView {
             if hasNewNotes {
                 withAnimation(Motion.fade) { hasNewNotes = false }
             }
-            notificationBaseline[1] = events.filter { $0.kind == 1 }.count
-            notificationBaseline[6] = events.filter { $0.kind == 6 }.count
-            notificationBaseline[30023] = events.filter { $0.kind == 30023 }.count
+            for kind in NostrService.relayTabNoteKinds {
+                notificationBaseline[kind] = events.filter { $0.kind == kind }.count
+            }
         case .likes:
             if hasNewLikes {
                 withAnimation(Motion.fade) { hasNewLikes = false }
@@ -192,7 +193,7 @@ extension VaultView {
         Task.detached(priority: .userInitiated) {
             if currentMode == .likes {
                 // MARK: - Likes Mode
-                let noteKinds = [1, 6, 30023]
+                let noteKinds = NostrService.relayTabNoteKinds
 
                 if currentLikesFilter == .myLikes {
                     // My Likes: notes I reacted to (kind 7 from me)
@@ -276,7 +277,7 @@ extension VaultView {
                 }
             } else if currentMode == .zaps {
                 // MARK: - Zaps Mode (cached parsing)
-                let noteKinds = [1, 6, 30023]
+                let noteKinds = NostrService.relayTabNoteKinds
                 let zapReceipts = currentEvents.filter { $0.kind == 9735 }
 
                 // Parse all zap receipts, using cache for already-parsed ones
@@ -374,9 +375,9 @@ extension VaultView {
                     }
                 }
             } else if currentMode == .notes {
-                // MARK: - Notes Mode (Kinds: 1, 6, 30023)
+                // MARK: - Notes Mode (NostrService.relayTabNoteKinds)
                 let filtered = currentEvents.filter { event in
-                    let validKinds = [1, 6, 30023]
+                    let validKinds = NostrService.relayTabNoteKinds
                     if !validKinds.contains(event.kind) { return false }
 
                     if blacklist.contains(event.pubkey) { return false }
