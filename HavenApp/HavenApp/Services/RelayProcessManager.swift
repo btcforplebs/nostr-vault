@@ -33,6 +33,11 @@ class RelayProcessManager: ObservableObject {
     @Published var isRunning = false
     @Published var isBooting = false
     @Published var isWotSyncing = false
+    /// The relay has logged "subscribing to inbox" this run. With a warm WoT
+    /// cache that line comes BEFORE "listening at" (boot done), so boot-done
+    /// must not turn Syncing on after it: nothing would ever turn it off, and
+    /// an always-on Mac sat on "Syncing" for good (2026-10-03).
+    private var inboxSubscribed = false
     @Published var isImporting = false
     @Published var importCompleted = false
     @Published var isLocked = false
@@ -306,6 +311,7 @@ class RelayProcessManager: ObservableObject {
         self.state = .booting
         isRunning = true
         isBooting = true
+        inboxSubscribed = false
         bootStatusMessage = "Starting system..."
         startBootWatchdog()
         beginRelayActivity()
@@ -543,6 +549,7 @@ class RelayProcessManager: ObservableObject {
         cancelBootWatchdog()
         isBooting = false
         isWotSyncing = false
+        inboxSubscribed = false
 
         logStore.append(LogEntry(timestamp: Date(), level: "INFO", message: "Stopping C-Shared relay natively..."))
 
@@ -572,6 +579,7 @@ class RelayProcessManager: ObservableObject {
         state = .idle
         isRunning = false
         isWotSyncing = false
+        inboxSubscribed = false
         // Cleared so the dashboard's uptime readout does not keep counting
         // against a run that has already ended.
         startDate = nil
@@ -975,7 +983,9 @@ class RelayProcessManager: ObservableObject {
                 isBooting = false
                 state = .running  // Transition from .booting to .running
                 bootStatusMessage = ""
-                isWotSyncing = true  // Relay is up, WoT may still be syncing
+                // Relay is up; WoT may still be building, unless the inbox
+                // subscription (which waits on WoT) already started.
+                isWotSyncing = !inboxSubscribed
                 cancelBootWatchdog()
                 #if os(macOS)
                 NetworkSyncService.shared.start()
@@ -993,6 +1003,7 @@ class RelayProcessManager: ObservableObject {
 
         // WoT sync completion (outside isBooting guard since boot already ended)
         if batch.stopWotSyncing {
+            inboxSubscribed = true
             isWotSyncing = false
             bootStatusMessage = ""
         }
