@@ -51,6 +51,13 @@ struct HavenConfig: Codable, Equatable {
     var appIcon: String = "Default" // Selected app icon name
     var zapsOnlyMode: Bool = false // When true, likes/reactions are removed from the UI entirely; zaps become the primary engagement + notification signal
     var disableTabBarAnimation: Bool = false // When true, the bottom tab bar stays fully expanded and never shrinks/hides on scroll
+    /// Lines of note text a row shows in Compact View.
+    var compactLineLimit: Int = HavenConfig.defaultCompactLineLimit
+    /// Lines of text a thread's root shows in Threaded View; replies show one fewer.
+    var threadedLineLimit: Int = HavenConfig.defaultThreadedLineLimit
+    static let defaultCompactLineLimit = 3
+    static let defaultThreadedLineLimit = 3
+    static let lineLimitRange = 1...12
     /// ISO 639-1 codes the Global feed is narrowed to. Empty shows every language.
     var globalFeedLanguages: [String] = []
     /// Global shows everyone, not only people in your Web of Trust. Off by default.
@@ -178,10 +185,6 @@ struct HavenConfig: Codable, Equatable {
         "wss://relay.btcforplebs.com"
     ]
 
-    // NIP-29: Group Relays
-    var groupRelayURLs: [String] = []
-    var joinedGroups: [JoinedGroup] = []
-
     // Whitelisted Npubs (multi-npub support)
     var whitelistedNpubs: [String] = []
     var whitelistedNpubsFile: String = "whitelisted_npubs.json"
@@ -247,7 +250,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, globalFeedLanguages, globalShowsEveryone
+        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, compactLineLimit, threadedLineLimit, globalFeedLanguages, globalShowsEveryone
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications
         case macRelayURL
@@ -272,7 +275,6 @@ struct HavenConfig: Codable, Equatable {
         case publishRelayListPerAccount
         case backupProvider, backupIntervalHours
         case s3AccessKeyId, s3SecretKey, s3Endpoint, s3Region, s3BucketName
-        case groupRelayURLs, joinedGroups
     }
     
     init() {}
@@ -323,6 +325,8 @@ struct HavenConfig: Codable, Equatable {
         appIcon = try container.decodeIfPresent(String.self, forKey: .appIcon) ?? defaults.appIcon
         zapsOnlyMode = try container.decodeIfPresent(Bool.self, forKey: .zapsOnlyMode) ?? defaults.zapsOnlyMode
         disableTabBarAnimation = try container.decodeIfPresent(Bool.self, forKey: .disableTabBarAnimation) ?? defaults.disableTabBarAnimation
+        compactLineLimit = try container.decodeIfPresent(Int.self, forKey: .compactLineLimit) ?? defaults.compactLineLimit
+        threadedLineLimit = try container.decodeIfPresent(Int.self, forKey: .threadedLineLimit) ?? defaults.threadedLineLimit
         globalFeedLanguages = try container.decodeIfPresent([String].self, forKey: .globalFeedLanguages) ?? defaults.globalFeedLanguages
         globalShowsEveryone = try container.decodeIfPresent(Bool.self, forKey: .globalShowsEveryone) ?? defaults.globalShowsEveryone
 
@@ -400,8 +404,6 @@ struct HavenConfig: Codable, Equatable {
         feedRelays = try container.decodeIfPresent([String].self, forKey: .feedRelays) ?? defaults.feedRelays
         dmRelays = try container.decodeIfPresent([String].self, forKey: .dmRelays) ?? defaults.dmRelays
 
-        groupRelayURLs = try container.decodeIfPresent([String].self, forKey: .groupRelayURLs) ?? defaults.groupRelayURLs
-        joinedGroups = try container.decodeIfPresent([JoinedGroup].self, forKey: .joinedGroups) ?? defaults.joinedGroups
         
         whitelistedNpubs = try container.decodeIfPresent([String].self, forKey: .whitelistedNpubs) ?? defaults.whitelistedNpubs
         whitelistedNpubsFile = try container.decodeIfPresent(String.self, forKey: .whitelistedNpubsFile) ?? defaults.whitelistedNpubsFile

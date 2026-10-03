@@ -33,7 +33,6 @@ class DeepLinkRouterTest {
         assertEquals(Screen.Dashboard.route, route("nostrvault://relay"))
         assertEquals(Screen.MediaGallery.route, route("nostrvault://media"))
         assertEquals(Screen.Wallet.route, route("nostrvault://wallet"))
-        assertEquals(Screen.GroupList.route, route("nostrvault://groups"))
         assertEquals(Screen.ComposeNote.createRoute(), route("nostrvault://compose"))
         assertEquals(Screen.ComposeNote.createRoute(), route("nostrvault://mediapaste"))
     }

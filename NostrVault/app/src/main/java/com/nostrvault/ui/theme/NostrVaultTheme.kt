@@ -73,6 +73,9 @@ val LocalOledMode = staticCompositionLocalOf { false }
  */
 val LocalZapsOnlyMode = staticCompositionLocalOf { false }
 
+/** The Feed Text settings: how many lines of a post the condensed layouts show. */
+val LocalFeedLineLimits = staticCompositionLocalOf { FeedLineLimits() }
+
 /**
  * Master theme composable for Nostr Vault.
  *
@@ -85,6 +88,7 @@ fun NostrVaultTheme(
     textSizeScale: Float = 1.0f,
     oledMode: Boolean = false,
     zapsOnlyMode: Boolean = false,
+    feedLineLimits: FeedLineLimits = FeedLineLimits(),
     content: @Composable () -> Unit,
 ) {
     val colors = appTheme.colors
@@ -148,6 +152,7 @@ fun NostrVaultTheme(
         LocalTextSizeScale provides textSizeScale,
         LocalOledMode provides oledMode,
         LocalZapsOnlyMode provides zapsOnlyMode,
+        LocalFeedLineLimits provides feedLineLimits,
         LocalDensity provides scaledDensity,
     ) {
         MaterialTheme(

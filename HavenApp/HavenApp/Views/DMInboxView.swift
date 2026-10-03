@@ -4,43 +4,15 @@ struct DMInboxView: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     @StateObject private var dmService = DMService.shared
-    @StateObject private var groupService = GroupService.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedConversation: String?
     @State private var showingDMThread = false
     @State private var showingCompose = false
-    @State private var showingGroupBrowser = false
-    @State private var showingGroupCreate = false
-    @State private var selectedTab: InboxTab = .dms
-
-    enum InboxTab: String, CaseIterable {
-        case dms = "DMs"
-        case groups = "Groups"
-    }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Segmented picker
-                Picker("", selection: $selectedTab) {
-                    ForEach(InboxTab.allCases, id: \.self) { tab in
-                        Text(tab.rawValue).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-
-                switch selectedTab {
-                case .dms:
-                    dmContentView
-                case .groups:
-                    GroupListView()
-                        .environmentObject(nostrService)
-                        .environmentObject(configService)
-                }
-            }
+            dmContentView
             .navigationTitle(String(localized: "dm.inbox.title"))
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -52,31 +24,17 @@ struct DMInboxView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: 16) {
-                        if selectedTab == .dms {
-                            Button(action: { dmService.markAllAsRead() }) {
-                                Image(systemName: "checkmark.circle")
-                                    .font(.appSystem(size: 16, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
-                            }
-                            .help(String(localized: "dm.inbox.markAllRead"))
+                        Button(action: { dmService.markAllAsRead() }) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.appSystem(size: 16, weight: .semibold))
+                                .foregroundColor(.havenPurple)
+                        }
+                        .help(String(localized: "dm.inbox.markAllRead"))
 
-                            Button(action: { showingCompose = true }) {
-                                Image(systemName: "square.and.pencil")
-                                    .font(.appSystem(size: 16, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
-                            }
-                        } else {
-                            Button(action: { showingGroupBrowser = true }) {
-                                Image(systemName: "magnifyingglass")
-                                    .font(.appSystem(size: 16, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
-                            }
-
-                            Button(action: { showingGroupCreate = true }) {
-                                Image(systemName: "plus")
-                                    .font(.appSystem(size: 16, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
-                            }
+                        Button(action: { showingCompose = true }) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.appSystem(size: 16, weight: .semibold))
+                                .foregroundColor(.havenPurple)
                         }
                     }
                 }
@@ -84,15 +42,6 @@ struct DMInboxView: View {
             .sheet(isPresented: $showingCompose) {
                 MessageComposerView(recipientPubkey: nil)
                     .environmentObject(nostrService)
-                    .environmentObject(configService)
-            }
-            .sheet(isPresented: $showingGroupBrowser) {
-                GroupBrowserView()
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-            }
-            .sheet(isPresented: $showingGroupCreate) {
-                GroupCreateView()
                     .environmentObject(configService)
             }
             #else
@@ -105,63 +54,36 @@ struct DMInboxView: View {
                 }
                 ToolbarItem(placement: .automatic) {
                     HStack(spacing: 12) {
-                        if selectedTab == .dms {
-                            // macOS has no pull-to-refresh, so `.refreshable` on the
-                            // conversation list was a refresh path with no pointer or
-                            // keyboard way to reach it.
-                            Button(action: { dmService.refresh() }) {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.appSystem(size: 15, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
-                            }
-                            .help(String(localized: "dm.inbox.refresh"))
-                            .keyboardShortcut("r", modifiers: .command)
-
-                            Button(action: { dmService.markAllAsRead() }) {
-                                Image(systemName: "checkmark.circle")
-                                    .font(.appSystem(size: 15, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
-                            }
-                            .help(String(localized: "dm.inbox.markAllRead"))
-
-                            Button(action: { showingCompose = true }) {
-                                Image(systemName: "square.and.pencil")
-                                    .font(.appSystem(size: 15, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
-                            }
-                            .help(String(localized: "dm.inbox.newMessage"))
-                        } else {
-                            Button(action: { showingGroupBrowser = true }) {
-                                Image(systemName: "magnifyingglass")
-                                    .font(.appSystem(size: 15, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
-                            }
-                            .help(String(localized: "group.toolbar.browse"))
-
-                            Button(action: { showingGroupCreate = true }) {
-                                Image(systemName: "plus")
-                                    .font(.appSystem(size: 15, weight: .semibold))
-                                    .foregroundColor(.havenPurple)
-                            }
-                            .help(String(localized: "group.toolbar.create"))
+                        // macOS has no pull-to-refresh, so `.refreshable` on the
+                        // conversation list was a refresh path with no pointer or
+                        // keyboard way to reach it.
+                        Button(action: { dmService.refresh() }) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.appSystem(size: 15, weight: .semibold))
+                                .foregroundColor(.havenPurple)
                         }
+                        .help(String(localized: "dm.inbox.refresh"))
+                        .keyboardShortcut("r", modifiers: .command)
+
+                        Button(action: { dmService.markAllAsRead() }) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.appSystem(size: 15, weight: .semibold))
+                                .foregroundColor(.havenPurple)
+                        }
+                        .help(String(localized: "dm.inbox.markAllRead"))
+
+                        Button(action: { showingCompose = true }) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.appSystem(size: 15, weight: .semibold))
+                                .foregroundColor(.havenPurple)
+                        }
+                        .help(String(localized: "dm.inbox.newMessage"))
                     }
                 }
             }
             .sheet(isPresented: $showingCompose) {
                 MacComposeView()
                     .environmentObject(nostrService)
-                    .environmentObject(configService)
-                    .frame(minWidth: 400, minHeight: 350)
-            }
-            .sheet(isPresented: $showingGroupBrowser) {
-                GroupBrowserView()
-                    .environmentObject(nostrService)
-                    .environmentObject(configService)
-                    .frame(minWidth: 450, minHeight: 400)
-            }
-            .sheet(isPresented: $showingGroupCreate) {
-                GroupCreateView()
                     .environmentObject(configService)
                     .frame(minWidth: 400, minHeight: 350)
             }

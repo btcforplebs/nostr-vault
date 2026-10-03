@@ -123,7 +123,11 @@ fun CondensedNoteLine(
     val avatarSize = if (isRoot) 32.dp else 26.dp
     val nameSize = if (isRoot) 13.sp else 12.sp
     val bodySize = if (isRoot) 14.sp else 13.sp
-    val bodyLineLimit = if (isRoot) 3 else 2
+    // From Settings: a feed row (CARD) is Compact View; a line in a thread
+    // card (PLAIN) is Threaded View, where replies show one fewer than the root.
+    val bodyLineLimit = LocalFeedLineLimits.current.let { limits ->
+        if (style == CondensedLineStyle.CARD) limits.compactLines else limits.threadedLines(isRoot)
+    }
 
     val backgroundColor = when (style) {
         CondensedLineStyle.CARD ->

@@ -40,6 +40,7 @@ import com.nostrvault.ui.navigation.NostrVaultNavHost
 import com.nostrvault.ui.navigation.PendingDeepLink
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.AppTheme
+import com.nostrvault.ui.theme.FeedLineLimits
 import com.nostrvault.ui.theme.NostrVaultTheme
 import com.nostrvault.ui.theme.Surface0
 import com.nostrvault.widget.WidgetPublisher
@@ -132,6 +133,7 @@ class MainActivity : FragmentActivity() {
                 textSizeScale = config.textSizeScale,
                 oledMode = true,
                 zapsOnlyMode = config.zapsOnlyMode,
+                feedLineLimits = FeedLineLimits(config.compactLineLimit, config.threadedLineLimit),
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

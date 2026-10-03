@@ -54,8 +54,16 @@ class AppearanceViewModel @Inject constructor(
     private val _disableTabBarAnimation = MutableStateFlow(false)
     val disableTabBarAnimation = _disableTabBarAnimation.asStateFlow()
 
+    private val _compactLines = MutableStateFlow(FeedLineLimits.DEFAULT_COMPACT)
+    val compactLines = _compactLines.asStateFlow()
+
+    private val _threadedLines = MutableStateFlow(FeedLineLimits.DEFAULT_THREADED)
+    val threadedLines = _threadedLines.asStateFlow()
+
     init {
         val config = configStore.config.value
+        _compactLines.value = config.compactLineLimit.coerceIn(FeedLineLimits.RANGE)
+        _threadedLines.value = config.threadedLineLimit.coerceIn(FeedLineLimits.RANGE)
         _textScale.value = config.textSizeScale
         _defaultEmoji.value = config.defaultReactionEmoji
         _zapsOnly.value = config.zapsOnlyMode
@@ -84,6 +92,18 @@ class AppearanceViewModel @Inject constructor(
         }
     }
 
+    fun setCompactLines(lines: Int) {
+        val value = lines.coerceIn(FeedLineLimits.RANGE)
+        _compactLines.value = value
+        viewModelScope.launch { configStore.update { it.copy(compactLineLimit = value) } }
+    }
+
+    fun setThreadedLines(lines: Int) {
+        val value = lines.coerceIn(FeedLineLimits.RANGE)
+        _threadedLines.value = value
+        viewModelScope.launch { configStore.update { it.copy(threadedLineLimit = value) } }
+    }
+
     fun toggleTabBarAnimation(disabled: Boolean) {
         _disableTabBarAnimation.value = disabled
         viewModelScope.launch {
@@ -105,6 +125,8 @@ fun AppearanceSettingsScreen(
     val defaultEmoji by viewModel.defaultEmoji.collectAsState()
     val zapsOnly by viewModel.zapsOnly.collectAsState()
     val disableTabBarAnimation by viewModel.disableTabBarAnimation.collectAsState()
+    val compactLines by viewModel.compactLines.collectAsState()
+    val threadedLines by viewModel.threadedLines.collectAsState()
 
     Scaffold(
         topBar = {
@@ -174,6 +196,24 @@ fun AppearanceSettingsScreen(
             Spacer(Modifier.height(32.dp))
 
             // OLED toggle removed — OLED black is the only appearance now.
+
+            // Feed text: lines per post in the condensed layouts
+            Text(
+                text = "Feed Text",
+                color = PrimaryText,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "Lines of text each post shows before it is cut off. In Threaded View, replies show one line fewer.",
+                color = SecondaryText,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            LineCountRow("Compact View", compactLines, viewModel::setCompactLines)
+            LineCountRow("Threaded View", threadedLines, viewModel::setThreadedLines)
+
+            Spacer(Modifier.height(32.dp))
 
             // Disable tab bar animation
             Row(
@@ -298,3 +338,36 @@ fun AppearanceSettingsScreen(
     }
 }
 
+/** One feed layout's line count with minus/plus buttons, clamped to [FeedLineLimits.RANGE]. */
+@Composable
+private fun LineCountRow(title: String, lines: Int, onChange: (Int) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    ) {
+        Text(title, color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        LineCountButton("−", "Fewer lines", enabled = lines > FeedLineLimits.RANGE.first) { onChange(lines - 1) }
+        Text(
+            text = if (lines == 1) "1 line" else "$lines lines",
+            color = SecondaryText,
+            fontSize = 15.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.width(72.dp),
+        )
+        LineCountButton("+", "More lines", enabled = lines < FeedLineLimits.RANGE.last) { onChange(lines + 1) }
+    }
+}
+
+@Composable
+private fun LineCountButton(symbol: String, label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(SecondaryText.copy(alpha = if (enabled) 0.15f else 0.06f))
+            .clickable(enabled = enabled, onClickLabel = label, onClick = onClick),
+    ) {
+        Text(symbol, color = if (enabled) PrimaryText else TertiaryText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+    }
+}

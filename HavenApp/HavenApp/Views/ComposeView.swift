@@ -31,8 +31,8 @@ struct ImportedVideoFile: Transferable {
 
 private extension View {
     /// Overlays a small numbered badge on the top-trailing corner, matching the
-    /// unread-dot treatment used for conversation/group rows elsewhere in the app
-    /// (see GroupListView/DMInboxView) but with a count instead of a plain dot.
+    /// unread-dot treatment used for conversation rows elsewhere in the app
+    /// (see DMInboxView) but with a count instead of a plain dot.
     func draftCountBadge(_ count: Int, ringColor: Color) -> some View {
         overlay(alignment: .topTrailing) {
             Text("\(count)")
