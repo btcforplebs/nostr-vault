@@ -132,7 +132,10 @@ enum ZapHistoryService {
     /// first valid event per id wins (a forged copy reusing a real id cannot
     /// replace it), and each relay is held to the total `limit` it was asked
     /// for, since `limit` is only a request (Tron, #189).
-    static func query(filters: [[String: Any]], relays: [URL], timeout: TimeInterval = 5) async -> [[String: Any]] {
+    /// `onProgress`, when given, gets the events so far each time a relay
+    /// finishes, on the main queue, before the final result.
+    static func query(filters: [[String: Any]], relays: [URL], timeout: TimeInterval = 5,
+                      onProgress: (([[String: Any]]) -> Void)? = nil) async -> [[String: Any]] {
         guard !relays.isEmpty else { return [] }
         let perRelayCap = filters.reduce(0) { $0 + (($1["limit"] as? Int) ?? 500) }
         return await withCheckedContinuation { continuation in
@@ -153,7 +156,7 @@ enum ZapHistoryService {
 
             func relayFinished() {
                 pending -= 1
-                if pending <= 0 { finish() }
+                if pending <= 0 { finish() } else if !events.isEmpty { onProgress?(Array(events.values)) }
             }
 
             for url in relays {

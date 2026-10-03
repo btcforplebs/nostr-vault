@@ -211,6 +211,10 @@ struct ArticleReaderView: View {
     /// thread — never in `body`, which re-runs on every profile update.
     @State private var highlightsByBlock: [String: [ArticleHighlight]] = [:]
     @State private var shownHighlights: HighlightGroup?
+    /// Replying to a highlight from inside the highlights sheet, which needs
+    /// its own compose sheet: a second sheet can't stack on the reader's.
+    @State private var highlightCommentContext: ComposeContext?
+    @Environment(\.floatingTabBarHeight) private var tabBarHeight
 
     private var metadata: LongFormMetadata { note.longFormMetadata }
     private var profile: FeedProfile? { nostrService.profiles[note.pubkey] }
@@ -282,9 +286,13 @@ struct ArticleReaderView: View {
                 actionBar
             }
             .padding(20)
+            // The iPhone's tab bar floats over the reader; without this the
+            // bottom action bar sits under it and can't be tapped.
+            .padding(.bottom, tabBarHeight)
             .frame(maxWidth: 720, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
+        .scrollDirectionTracking(feedService: feedService)
         .background(Color.platformWindowBackground)
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .sheet(item: $composeContext) { ctx in
@@ -305,9 +313,16 @@ struct ArticleReaderView: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        ForEach(group.highlights) { HighlightRow(highlight: $0) }
+                        ForEach(group.highlights) { highlight in
+                            HighlightRow(highlight: highlight) {
+                                highlightCommentContext = ComposeContext(replyTo: highlight.note, quoteTo: nil)
+                            }
+                        }
                     }
                     .padding(20)
+                }
+                .sheet(item: $highlightCommentContext) { ctx in
+                    ComposeView(onDismiss: { highlightCommentContext = nil }, replyTo: ctx.replyTo, quoteTo: ctx.quoteTo)
                 }
                 .navigationTitle(Text("Highlights"))
                 #if os(iOS)
@@ -441,7 +456,11 @@ struct ArticleReaderView: View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Highlights · \(highlights.count)", systemImage: "highlighter")
                 .font(.appSystem(size: 15, weight: .semibold))
-            ForEach(highlights) { HighlightRow(highlight: $0) }
+            ForEach(highlights) { highlight in
+                HighlightRow(highlight: highlight) {
+                    composeContext = ComposeContext(replyTo: highlight.note, quoteTo: nil)
+                }
+            }
         }
     }
 
@@ -460,14 +479,28 @@ struct ArticleReaderView: View {
             .compactMap { URL(string: $0) }
     }
 
+    /// Highlights already fetched this session, so reopening an article
+    /// shows them at once while the relays are asked again.
+    @MainActor private static var highlightCache: [String: [[String: Any]]] = [:]
+
     private func loadHighlights() async {
+        let articleId = note.id
+        if let cached = Self.highlightCache[articleId] { await showHighlights(cached) }
+        // `query` returns only signature-checked events. Show them as each
+        // relay answers rather than after the slowest one, which could hold
+        // the whole list back for the full timeout.
+        let events = await ZapHistoryService.query(
+            filters: ArticleEngagement.highlightFilters(id: articleId, coordinate: coordinate),
+            relays: highlightRelays,
+            onProgress: { partial in Task { await showHighlights(partial) } })
+        Self.highlightCache[articleId] = events
+        await showHighlights(events)
+    }
+
+    private func showHighlights(_ events: [[String: Any]]) async {
         let articleId = note.id
         let coordinate = coordinate
         let content = note.content
-        // `query` returns only signature-checked events.
-        let events = await ZapHistoryService.query(
-            filters: ArticleEngagement.highlightFilters(id: articleId, coordinate: coordinate),
-            relays: highlightRelays)
         let (found, placed) = await Task.detached(priority: .userInitiated) { () -> ([ArticleHighlight], [String: [ArticleHighlight]]) in
             // Only a 9802 that points at this article counts, spam dropped
             // the same way the thread view drops it.
@@ -482,6 +515,8 @@ struct ArticleReaderView: View {
             return (highlights, ArticleEngagement.place(highlights, in: blocks))
         }.value
         await MainActor.run {
+            // An earlier, smaller snapshot can finish placing after a later one.
+            guard found.count >= highlights.count else { return }
             highlights = found
             highlightsByBlock = placed
             let missing = Set(found.map(\.pubkey)).filter { nostrService.profiles[$0] == nil }
@@ -504,6 +539,14 @@ struct ArticleReaderView: View {
     }
 }
 
+extension ArticleHighlight {
+    /// The highlight as a note, for composing a comment on it.
+    var note: FeedNote {
+        FeedNote(id: id, pubkey: pubkey, content: passage, createdAt: createdAt, tags: tags,
+                 kind: ArticleEngagement.highlightKind)
+    }
+}
+
 /// The highlights behind one tinted passage, for the sheet.
 struct HighlightGroup: Identifiable {
     let id = UUID()
@@ -513,11 +556,31 @@ struct HighlightGroup: Identifiable {
 /// One person's highlight: who, the passage, and their comment if any.
 struct HighlightRow: View {
     let highlight: ArticleHighlight
+    /// Opens a reply (a NIP-22 comment) to this highlight.
+    var onComment: (() -> Void)? = nil
     @EnvironmentObject var nostrService: NostrService
 
     var body: some View {
-        let profile = nostrService.profiles[highlight.pubkey]
         VStack(alignment: .leading, spacing: 6) {
+            content
+            if let onComment {
+                Button(action: onComment) {
+                    Label("Comment", systemImage: "bubble.left")
+                        .font(.appSystem(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.secondary.opacity(0.1), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 11)
+            }
+        }
+    }
+
+    private var content: some View {
+        let profile = nostrService.profiles[highlight.pubkey]
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 AvatarView(url: profile?.pictureURL, pubkey: highlight.pubkey, size: 22)
                 Text(profile?.bestName ?? "npub…" + String(highlight.pubkey.suffix(6)))

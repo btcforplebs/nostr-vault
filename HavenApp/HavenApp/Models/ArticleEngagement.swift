@@ -118,6 +118,8 @@ struct ArticleHighlight: Identifiable, Equatable {
     let passage: String
     let comment: String?
     let createdAt: Date
+    /// The 9802's own tags, kept so a reply can thread onto it.
+    let tags: [[String]]
 
     /// Accepts only a 9802 that points at this article — by its coordinate or
     /// by this version's id — and has a passage. The caller checks the
@@ -150,5 +152,6 @@ struct ArticleHighlight: Identifiable, Equatable {
         self.passage = passage
         self.comment = (comment?.isEmpty ?? true) ? nil : comment
         self.createdAt = Date(timeIntervalSince1970: createdAt)
+        self.tags = tags
     }
 }
