@@ -355,6 +355,11 @@ class DMService @Inject constructor(
         val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
         if (switchGeneration != generation) return
         if (seenGiftWrapIds.contains(eventId)) { Log.w(TAG, "DBG: giftwrap ${eventId.take(8)} skipped (already seen)"); return }
+        // Before any seen/queued claim, so a forged copy carrying a real event's
+        // id cannot shadow the real one. A relay can serve any event under any
+        // author; NIP-04 has no MAC, so a re-IV'd copy of a real DM decrypts to
+        // altered text. Only the signature ties it to its author.
+        if (!HavenBridge.verifyEvent(eventObj.toString())) return
 
         // Amber mode: queue instead of decrypting now (see pendingDecryptQueue).
         if (isAmberMode()) { enqueuePendingDecrypt(eventObj, eventId); return }
@@ -435,6 +440,7 @@ class DMService @Inject constructor(
         val eventId = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return
         if (switchGeneration != generation) return
         if (seenGiftWrapIds.contains(eventId)) { Log.w(TAG, "DBG: nip04 ${eventId.take(8)} skipped (already seen)"); return }
+        if (!HavenBridge.verifyEvent(eventObj.toString())) return
 
         // Amber mode: queue instead of decrypting now (see pendingDecryptQueue).
         if (isAmberMode()) { enqueuePendingDecrypt(eventObj, eventId); return }

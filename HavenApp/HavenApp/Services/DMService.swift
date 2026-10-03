@@ -669,6 +669,9 @@ class DMService: ObservableObject {
                let eventData = json[safe: 2] as? [String: Any],
                let eventJSON = try? JSONSerialization.data(withJSONObject: eventData),
                let event = try? JSONDecoder().decode(NostrEvent.self, from: eventJSON) {
+                // Unsigned or forged: neither show it nor store it locally.
+                guard Self.isAuthentic(event) else { return }
+
                 // Process the DM for display
                 if event.kind == 1059 {
                     self.handleIncomingGiftWrap(event)
@@ -953,6 +956,9 @@ class DMService: ObservableObject {
     private func handleIncomingNIP04(_ event: NostrEvent) {
         guard event.kind == 4 else { return }
         guard !seenGiftWrapIds.contains(event.id) else { return }
+        // Checked before marking the id seen, so a forged copy carrying a real
+        // event's id cannot shadow the real one.
+        guard Self.isAuthentic(event) else { return }
 
         // Watch-only: no key to decrypt NIP-04. Skip WITHOUT marking the event
         // seen (so a later unlock/reconnect can still process it) and warn once,
@@ -1038,11 +1044,21 @@ class DMService: ObservableObject {
         } // end Task
     }
 
+    /// A relay can serve any event under any author. NIP-04 has no MAC, so a
+    /// re-IV'd copy of a real DM decrypts to altered text; only the signature
+    /// ties it to its author.
+    private static func isAuthentic(_ event: NostrEvent) -> Bool {
+        guard let data = try? JSONEncoder().encode(event),
+              let json = String(data: data, encoding: .utf8) else { return false }
+        return NostrEventVerifier.isValid(json: json)
+    }
+
     // MARK: - NIP-17 Processing
 
     private func handleIncomingGiftWrap(_ event: NostrEvent) {
         guard event.kind == 1059 else { return }
         guard !seenGiftWrapIds.contains(event.id) else { return }
+        guard Self.isAuthentic(event) else { return }
 
         seenGiftWrapIds.insert(event.id)
         trimSeenGiftWrapIdsIfNeeded()
