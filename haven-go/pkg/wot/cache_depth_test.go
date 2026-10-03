@@ -36,3 +36,19 @@ func TestRefreshWritesCacheAtEveryDepth(t *testing.T) {
 		}
 	}
 }
+
+// Changing the depth setting must not keep serving a graph built at the old
+// depth until the TTL runs out.
+func TestCacheFromAnotherDepthIsRebuilt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "wot_cache.json")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	NewSimpleInMemory(nostr.NewSimplePool(ctx), map[string]struct{}{"owner": {}}, nil, 2, 1, 1, path, 60).Refresh(ctx)
+
+	if ok, _ := NewSimpleInMemory(nil, nil, nil, 2, 1, 1, path, 60).LoadFromCache(); !ok {
+		t.Fatal("same-depth cache did not load")
+	}
+	if ok, _ := NewSimpleInMemory(nil, nil, nil, 3, 1, 1, path, 60).LoadFromCache(); ok {
+		t.Fatal("a depth-2 cache was served at depth 3")
+	}
+}

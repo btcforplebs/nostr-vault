@@ -24,6 +24,11 @@ const DefaultWotLevel = 3
 type wotCache struct {
 	Pubkeys   map[string]bool `json:"pubkeys"`
 	Timestamp int64           `json:"timestamp"`
+	// Depth the graph was built at. A cache from another depth is a different
+	// graph: without this, changing the depth setting kept serving the old one
+	// until the TTL ran out. Caches written before this field read as 0 and
+	// are rebuilt once.
+	Depth int `json:"depth"`
 }
 
 type SimpleInMemory struct {
@@ -112,6 +117,11 @@ func (wt *SimpleInMemory) LoadFromCache() (ok bool, ageMinutes int64) {
 		return false, 0
 	}
 
+	if cache.Depth != wt.WotDepth {
+		slog.Info("🔁 WoT cache built at another depth, rebuilding", "cached_depth", cache.Depth, "depth", wt.WotDepth)
+		return false, 0
+	}
+
 	// Check if cache is still valid
 	now := time.Now().Unix()
 	age := (now - cache.Timestamp) / 60 // age in minutes
@@ -139,6 +149,7 @@ func (wt *SimpleInMemory) SaveCache() {
 	cache := wotCache{
 		Pubkeys:   *m,
 		Timestamp: time.Now().Unix(),
+		Depth:     wt.WotDepth,
 	}
 
 	data, err := json.Marshal(cache)
