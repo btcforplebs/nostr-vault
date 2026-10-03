@@ -127,9 +127,15 @@ object ProfileRepository {
         return inbox to write
     }
 
-    /** Parse Kind 10050 (NIP-17 DM Relay List) tags. */
+    /**
+     * Parse Kind 10050 (NIP-17 DM Relay List) tags. NIP-17 tags are
+     * ["relay", url]; ["r", url] is also read because older Nostr Vault builds
+     * published that shape.
+     */
     fun parseDMRelayListTags(tags: List<List<String>>): List<String> =
-        tags.filter { it.size >= 2 && it[0] == "r" && isValidRelayUrl(it[1]) }.map { it[1] }
+        tags.filter { it.size >= 2 && (it[0] == "relay" || it[0] == "r") && isValidRelayUrl(it[1]) }
+            .map { it[1] }
+            .distinct()
 
     /** Parse Kind 10063 (BUD-03 User Server List) tags. */
     fun parseServerListTags(tags: List<List<String>>): List<String> =

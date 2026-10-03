@@ -148,10 +148,13 @@ enum ProfileRepository {
     }
 
     /// Parses Kind 10050 (NIP-17 DM Relay List) tags into relay URLs.
-    /// Tags: ["r", relay_url].
+    /// NIP-17 tags are ["relay", relay_url]. ["r", relay_url] is also read
+    /// because older Nostr Vault builds published that shape.
     static func parseDMRelayListTags(_ tags: [[String]]) -> [String] {
-        tags.compactMap { tag in
-            tag.count >= 2 && tag[0] == "r" ? tag[1] : nil
+        var seen = Set<String>()
+        return tags.compactMap { tag in
+            guard tag.count >= 2, tag[0] == "relay" || tag[0] == "r" else { return nil }
+            return seen.insert(tag[1]).inserted ? tag[1] : nil
         }
     }
 
