@@ -2381,12 +2381,15 @@ class NostrService @Inject constructor(
     }
 
     /**
-     * Background signer work (relay AUTH, Blossom auth, the 10050 / 10063
-     * lists) goes to a remote signer one request at a time; what the person
-     * does (posts, reactions, zaps) is never queued behind it.
+     * Background signer work (relay AUTH, the 10050 / 10063 lists) goes to a
+     * remote signer one request at a time; what the person does (posts,
+     * reactions, zaps) is never queued behind it. Upload auth (24242 Blossom,
+     * 27235 HTTP) is not queued either: it is almost always a photo the person
+     * just attached, and queued it waited silently behind an unanswered relay
+     * AUTH for the signer's full timeout.
      */
     private val backgroundSignerGate = kotlinx.coroutines.sync.Semaphore(1)
-    private val backgroundSignerKinds = setOf(22242, 24242, 27235, 10002, 10050, 10063, 10000)
+    private val backgroundSignerKinds = setOf(22242, 10002, 10050, 10063, 10000)
 
     private suspend fun <T> gatedIfBackground(kind: Int, block: suspend () -> T): T =
         if (kind in backgroundSignerKinds) backgroundSignerGate.withPermit { block() } else block()
