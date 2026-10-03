@@ -227,21 +227,7 @@ object NIP17Service {
                     return null
                 }
 
-            // Impersonation guard: the rumor author must equal the seal author
-            // (parity with iOS). Reject mismatches rather than display a forged sender.
-            val rumorObj = try {
-                kotlinx.serialization.json.Json.parseToJsonElement(rumorJson).jsonObject
-            } catch (_: Exception) {
-                Log.e(TAG, "Failed to parse rumor JSON")
-                return null
-            }
-            val rumorPubkey = rumorObj["pubkey"]?.jsonPrimitive?.contentOrNull
-            if (rumorPubkey != null && rumorPubkey != sealerPubkey) {
-                Log.w(TAG, "Seal pubkey != rumor pubkey — possible impersonation, dropping")
-                return null
-            }
-
-            return rumorJson
+            return rumorJson.takeIf { isAuthoredBySealer(sealObj, it) }
         } catch (e: Exception) {
             Log.e(TAG, "Amber gift wrap unwrap failed: ${e.message}")
             return null
@@ -281,11 +267,41 @@ object NIP17Service {
             val sealContent = sealObj["content"]?.jsonPrimitive?.contentOrNull ?: return null
 
             // Decrypt the seal to get the rumor
-            return NIP44Service.decrypt(sealContent, sealerPubkey, recipientSecretKey)
+            val rumorJson = NIP44Service.decrypt(sealContent, sealerPubkey, recipientSecretKey)
+                ?: return null
+            return rumorJson.takeIf { isAuthoredBySealer(sealObj, it) }
         } catch (e: Exception) {
             Log.e(TAG, "Gift wrap unwrap failed: ${e.message}")
             return null
         }
+    }
+
+    /**
+     * Impersonation guard (parity with iOS NIP17Service). The seal decrypts only
+     * under its sealer's key, so the sealer is the one authenticated sender; the
+     * rumor's pubkey is just a claim inside it. Anyone can seal with their own key
+     * and claim another author — or claim to be the recipient themselves.
+     */
+    internal fun isAuthoredBySealer(sealObj: kotlinx.serialization.json.JsonObject, rumorJson: String): Boolean {
+        val rumorObj = try {
+            kotlinx.serialization.json.Json.parseToJsonElement(rumorJson).jsonObject
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to parse rumor JSON")
+            return false
+        }
+        val sealKind = (sealObj["kind"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+        val rumorKind = (rumorObj["kind"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+        if (sealKind != "13" || rumorKind != "14") {
+            Log.w(TAG, "Unexpected seal/rumor kind ($sealKind/$rumorKind), dropping")
+            return false
+        }
+        val sealerPubkey = sealObj["pubkey"]?.jsonPrimitive?.contentOrNull
+        val rumorPubkey = rumorObj["pubkey"]?.jsonPrimitive?.contentOrNull
+        if (sealerPubkey == null || rumorPubkey != sealerPubkey) {
+            Log.w(TAG, "Seal pubkey != rumor pubkey — possible impersonation, dropping")
+            return false
+        }
+        return true
     }
 }
 
