@@ -13,6 +13,7 @@ struct ContentView: View {
 
     @State private var selectedTab = 0
     @State private var showingDMInbox = false
+    @State private var dmInboxConversation: String?
     @State private var pendingMentionNoteId: IdentifiableString?
     @State private var isLandscapeLayout = UIScreen.main.bounds.width >= UIScreen.main.bounds.height
 
@@ -104,8 +105,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenMedia)) { _ in
             selectedTab = 3 // Media tab
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
             selectedTab = 2 // Profile tab
+            dmInboxConversation = note.object as? String
             showingDMInbox = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenMentions)) { notification in
@@ -128,7 +130,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingDMInbox) {
             NavigationStack {
-                DMInboxView()
+                DMInboxView(openConversation: dmInboxConversation)
                     .environmentObject(NostrService.shared)
                     .environmentObject(ConfigService.shared)
             }

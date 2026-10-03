@@ -6,6 +6,11 @@ struct DMInboxView: View {
     @StateObject private var dmService = DMService.shared
     @Environment(\.dismiss) private var dismiss
 
+    /// A conversation to open on arrival — set when a DM notification is tapped.
+    var openConversation: String? = nil
+
+    @State private var openedConversation: String?
+    @State private var didOpenConversation = false
     @State private var selectedConversation: String?
     @State private var showingDMThread = false
     @State private var showingCompose = false
@@ -13,6 +18,21 @@ struct DMInboxView: View {
     var body: some View {
         NavigationStack {
             dmContentView
+            .navigationDestination(item: $openedConversation) { pubkey in
+                DMThreadView(counterpartyPubkey: pubkey)
+                    .environmentObject(nostrService)
+                    .environmentObject(configService)
+            }
+            .onAppear {
+                // Once: the root reappears every time the thread is popped.
+                guard !didOpenConversation else { return }
+                didOpenConversation = true
+                if let openConversation { openedConversation = openConversation }
+            }
+            // A notification tapped while the inbox is already open.
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
+                if let peer = note.object as? String { openedConversation = peer }
+            }
             .navigationTitle(String(localized: "dm.inbox.title"))
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

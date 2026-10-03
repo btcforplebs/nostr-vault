@@ -403,6 +403,10 @@ class DMService: ObservableObject {
 
                 guard self.switchGeneration == generation else { return }
 
+                // Its relay notification must not announce your own message.
+                if self.sentSelfWrapIds.count > 500 { self.sentSelfWrapIds.removeAll() }
+                self.sentSelfWrapIds.insert(selfGiftWrap.id)
+
                 // Publish both to local relay (non-blocking, reuses persistent connection)
                 self.publishToInbox(giftWrap)
                 self.publishToInbox(selfGiftWrap)
@@ -497,6 +501,45 @@ class DMService: ObservableObject {
             for relayURL in oRelays where !rRelays.contains(relayURL) {
                 self.fireAndForgetPublish(event, url: relayURL)
             }
+        }
+    }
+
+    /// The conversation whose thread is on screen, so a notification for a
+    /// message already in front of the user can stay quiet.
+    var visibleConversation: String?
+
+    /// Ids of the self-copy wraps this device sent. Every DM you send also
+    /// wraps a copy to yourself; this is how its notification is recognised
+    /// without decrypting it (a NIP-46 signer may not answer in time).
+    private var sentSelfWrapIds = Set<String>()
+
+    func isOwnSentWrap(_ eventId: String) -> Bool {
+        sentSelfWrapIds.contains(eventId)
+    }
+
+    /// The conversation holding the message decrypted from event `eventId`
+    /// (a gift wrap's id, or a NIP-04 event's), and that message.
+    func message(withEventId eventId: String) -> (conversationId: String, message: DMMessage)? {
+        for conversation in conversations {
+            if let message = conversation.messages.last(where: { $0.id == eventId }) {
+                return (conversation.id, message)
+            }
+        }
+        return nil
+    }
+
+    /// Waits for the inbox to decrypt an event the relay has just reported.
+    /// The relay's notification marker and this service's own subscription see
+    /// the same event at nearly the same moment, so the message is usually
+    /// here already or within a beat. Nil when it does not arrive in time —
+    /// another account's inbox, a signer that is offline, or a connection that
+    /// is asleep in the background.
+    func waitForMessage(withEventId eventId: String, timeout: TimeInterval) async -> (conversationId: String, message: DMMessage)? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if let found = message(withEventId: eventId) { return found }
+            guard Date() < deadline else { return nil }
+            try? await Task.sleep(nanoseconds: 200_000_000)
         }
     }
 

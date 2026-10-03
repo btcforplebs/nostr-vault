@@ -46,6 +46,8 @@ class DMService @Inject constructor(
         private const val OPTIMISTIC_DEDUP_THRESHOLD_MS = 30_000L
         private const val MAX_INJECTED_DM_IDS = 5_000
         private const val CACHE_SAVE_DEBOUNCE_MS = 500L
+        private const val MAX_OPENED_MESSAGES = 200
+        private const val MAX_SENT_SELF_WRAP_IDS = 500
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -83,6 +85,55 @@ class DMService @Inject constructor(
     private var chatResubJob: Job? = null
 
     private val seenGiftWrapIds = ConcurrentHashMap.newKeySet<String>()
+
+    // ── Notification lookups ──────────────────────────────────────────
+    // The relay raises a notification marker for every DM event it stores,
+    // and the marker cannot say who wrote a gift wrap. These let
+    // LocalNotificationService tell your own sent copies apart and show the
+    // real sender and text.
+
+    /** Ids of the self-copy wraps this device sent. */
+    private val sentSelfWrapIds = ConcurrentHashMap.newKeySet<String>()
+
+    /** Recently decrypted DMs by event id → (counterparty, message). */
+    private val openedMessages = java.util.Collections.synchronizedMap(
+        object : LinkedHashMap<String, Pair<String, DMMessage>>() {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, DMMessage>>?) =
+                size > MAX_OPENED_MESSAGES
+        },
+    )
+
+    /** The conversation whose thread is on screen, so its notifications can stay quiet. */
+    @Volatile var visibleConversation: String? = null
+
+    /** True when [eventId] is the copy of a DM this device just sent to itself. */
+    fun isOwnSentWrap(eventId: String): Boolean = sentSelfWrapIds.contains(eventId)
+
+    /** The counterparty and message decrypted from [eventId], if the inbox has opened it. */
+    fun openedMessage(eventId: String): Pair<String, DMMessage>? =
+        openedMessages[eventId]
+            ?: _conversations.value.firstNotNullOfOrNull { convo ->
+                convo.messages.lastOrNull { it.id == eventId }?.let { convo.id to it }
+            }
+
+    /**
+     * Waits for the inbox to decrypt an event the relay has just reported. The
+     * marker and this service's subscription see the same event at nearly the
+     * same moment. Null when it does not open in time: another account's inbox,
+     * or Amber, which only decrypts while a DM screen is open.
+     */
+    suspend fun awaitOpenedMessage(eventId: String, timeoutMs: Long): Pair<String, DMMessage>? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            openedMessage(eventId)?.let { return it }
+            if (System.currentTimeMillis() >= deadline) return null
+            delay(200)
+        }
+    }
+
+    private fun recordOpened(counterparty: String, message: DMMessage) {
+        openedMessages[message.id] = counterparty to message
+    }
     private val injectedDmIds = ConcurrentHashMap.newKeySet<String>()
 
     // ── Lazy (Amber) decryption queue ─────────────────────────────────
@@ -427,6 +478,7 @@ class DMService @Inject constructor(
                     isNIP04 = false,
                 )
 
+                recordOpened(counterparty, message)
                 withContext(Dispatchers.Main.immediate) {
                     addMessageToConversation(counterparty, message)
                 }
@@ -502,6 +554,7 @@ class DMService @Inject constructor(
                     isNIP04 = true,
                 )
 
+                recordOpened(counterparty, message)
                 withContext(Dispatchers.Main.immediate) {
                     addMessageToConversation(counterparty, message)
                 }
@@ -704,7 +757,12 @@ class DMService @Inject constructor(
                 runCatching {
                     json.parseToJsonElement(selfEvent).jsonObject["id"]
                         ?.jsonPrimitive?.contentOrNull
-                }.getOrNull()?.let { seenGiftWrapIds.add(it) }
+                }.getOrNull()?.let {
+                    seenGiftWrapIds.add(it)
+                    // Its relay notification must not announce your own message.
+                    if (sentSelfWrapIds.size > MAX_SENT_SELF_WRAP_IDS) sentSelfWrapIds.clear()
+                    sentSelfWrapIds.add(it)
+                }
 
                 // Publish to local /chat relay
                 val config = configStore.config.value

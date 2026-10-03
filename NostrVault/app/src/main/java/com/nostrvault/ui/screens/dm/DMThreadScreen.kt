@@ -95,6 +95,15 @@ class DMThreadViewModel @Inject constructor(
     private val _attachedImage = MutableStateFlow<Uri?>(null)
     val attachedImage = _attachedImage.asStateFlow()
 
+    /** Called while the thread is on screen, so its notifications stay quiet. */
+    fun setVisible(visible: Boolean) {
+        if (visible) {
+            dmService.visibleConversation = counterpartyPubkey
+        } else if (dmService.visibleConversation == counterpartyPubkey) {
+            dmService.visibleConversation = null
+        }
+    }
+
     init {
         viewModelScope.launch {
             nostrService.fetchMissingProfiles(listOf(counterpartyPubkey))
@@ -177,6 +186,11 @@ fun DMThreadScreen(
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> uri?.let { viewModel.setAttachedImage(it) } }
+
+    DisposableEffect(viewModel) {
+        viewModel.setVisible(true)
+        onDispose { viewModel.setVisible(false) }
+    }
 
     // Scroll to bottom on new messages
     LaunchedEffect(messages.size) {

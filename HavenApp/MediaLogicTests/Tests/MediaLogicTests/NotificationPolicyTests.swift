@@ -124,4 +124,23 @@ final class NotificationPolicyTests: XCTestCase {
             XCTAssertFalse(NotificationPolicy.allowsWithPushOff(type: type, appInForeground: true), type)
         }
     }
+
+    /// A decrypted DM becomes one readable banner line.
+    func testDMPreviewIsOneLine() {
+        XCTAssertEqual(NotificationPolicy.dmPreview("hey\n\n  are you  around?\t"), "hey are you around?")
+    }
+
+    /// Nothing to read keeps the generic line.
+    func testDMPreviewOfBlankIsNil() {
+        XCTAssertNil(NotificationPolicy.dmPreview(""))
+        XCTAssertNil(NotificationPolicy.dmPreview(" \n\t "))
+    }
+
+    func testDMPreviewIsCutToTheLimit() {
+        let long = String(repeating: "a", count: 300)
+        let preview = NotificationPolicy.dmPreview(long, limit: 160)
+        XCTAssertEqual(preview?.count, 160)
+        XCTAssertEqual(preview?.last, "…")
+        XCTAssertEqual(NotificationPolicy.dmPreview(String(repeating: "b", count: 160), limit: 160)?.count, 160)
+    }
 }

@@ -76,6 +76,18 @@ enum NotificationPolicy {
         appInForeground && (type == "dm" || type == "giftwrap")
     }
 
+    /// A decrypted DM as notification text: one line, cut to fit a banner.
+    /// Nil when there is nothing to read (an empty message), so the caller
+    /// keeps the generic line.
+    static func dmPreview(_ content: String, limit: Int = 160) -> String? {
+        let oneLine = content
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        guard !oneLine.isEmpty else { return nil }
+        guard oneLine.count > limit else { return oneLine }
+        return String(oneLine.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
     /// Kind 0 (profile metadata) never produces a notification, so listing it
     /// alone is how "notify for nothing" is expressed to the relay.
     static let silentKind = 0
