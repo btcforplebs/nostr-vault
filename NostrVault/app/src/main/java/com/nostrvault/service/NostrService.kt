@@ -2113,12 +2113,14 @@ class NostrService @Inject constructor(
      * objects) to every relay in [relayUrls] on temporary clients and
      * collects events, deduplicated by id, until each relay has sent EOSE or
      * CLOSED (or dropped the connection) or [timeoutMs] passes. Any kind; the
-     * caller decides what the events are.
+     * caller decides what the events are. [onProgress], when given, gets the
+     * events so far each time a relay finishes, on an IO thread.
      */
     suspend fun queryRawEvents(
         filters: List<String>,
         relayUrls: List<String>,
         timeoutMs: Long = 5_000L,
+        onProgress: ((List<JsonObject>) -> Unit)? = null,
     ): List<JsonObject> {
         if (filters.isEmpty() || relayUrls.isEmpty()) return emptyList()
         val subId = "q-${UUID.randomUUID().toString().take(8)}"
@@ -2132,6 +2134,9 @@ class NostrService @Inject constructor(
                     lookupPool.query(relayUrl, subId, filters, timeoutMs) { msg ->
                         handleRawQueryMessage(msg, subId, collected)
                     }
+                    // What has arrived so far, as each relay finishes, so a
+                    // caller need not wait for the slowest one.
+                    if (onProgress != null && collected.isNotEmpty()) onProgress(collected.values.toList())
                 }
             }
         }
