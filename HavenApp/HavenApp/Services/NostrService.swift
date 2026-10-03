@@ -1181,7 +1181,9 @@ class NostrService: ObservableObject {
                 self.events.sort(by: { $0.created_at > $1.created_at })
 
                 // Extract media URLs and add to noteMedia
-                let urls = self.extractMediaURLs(from: event.content)
+                let urls = NoteTagging.contentMediaIsAuthors(kind: event.kind)
+                    ? self.extractMediaURLs(from: event.content)
+                    : []
                 let items = urls.map { url in
                     let mime = Self.mimeFromExtension(url)
                     let mediaType = Self.mediaTypeFromMime(mime, url: url)
@@ -1936,7 +1938,7 @@ class NostrService: ObservableObject {
                     let mediaType = Self.mediaTypeFromMime(mime, url: url)
                     items.append(MediaItem(id: UUID(), url: url, type: mediaType, dateAdded: event.createdAtDate, pubkey: event.pubkey, tags: event.tags, mimeType: mime))
                 }
-            } else {
+            } else if NoteTagging.contentMediaIsAuthors(kind: event.kind) {
                 let urls = extractMediaURLs(from: event.content)
                 items = urls.map { url in
                     let mime = Self.mimeFromExtension(url)

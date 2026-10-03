@@ -10,6 +10,18 @@ import Foundation
 /// `NostrVault/app/src/main/java/com/nostrvault/data/model/NoteTagging.kt`.
 enum NoteTagging {
 
+    // MARK: - Whose media
+
+    /// Whether the media URLs in an event's content are the author's own.
+    ///
+    /// A repost (kind 6, or a NIP-18 generic repost, kind 16) carries the
+    /// reposted note's JSON as its content — URLs included — under the
+    /// reposter's pubkey. Reading media out of it filed everyone you reposted
+    /// into your own media gallery.
+    static func contentMediaIsAuthors(kind: Int) -> Bool {
+        kind != 6 && kind != 16
+    }
+
     // MARK: - Hashtags
 
     /// `#tag` runs that are not part of a URL or a `nostr:` reference.
