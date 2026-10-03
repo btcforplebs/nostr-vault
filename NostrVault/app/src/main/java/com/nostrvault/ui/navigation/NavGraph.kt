@@ -239,6 +239,9 @@ fun NostrVaultNavHost(
                     onCompose = {
                         navController.navigate(Screen.ComposeNote.createRoute())
                     },
+                    onComposeMode = { kind ->
+                        navController.navigate(Screen.ModeCompose.createRoute(kind.route))
+                    },
                     onReply = { noteId ->
                         navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
                     },
@@ -423,6 +426,13 @@ fun NostrVaultNavHost(
                     onBack = { navController.popBackStack() },
                     onOpenDrafts = { navController.navigate(Screen.Drafts.route) },
                 )
+            }
+
+            composable(
+                route = Screen.ModeCompose.route,
+                arguments = listOf(navArgument("kind") { type = NavType.StringType }),
+            ) {
+                ModeComposeScreen(onDone = { navController.popBackStack() })
             }
 
             composable(Screen.Drafts.route) {

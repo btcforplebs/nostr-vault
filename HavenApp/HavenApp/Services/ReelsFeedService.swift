@@ -3,13 +3,10 @@ import Combine
 
 /// Reels: one playable video per page, swiped vertically.
 ///
-/// Two sources feed it. NIP-71 video events (kinds 21/22 and their addressable
-/// 34235/34236 forms) are video by definition. Ordinary kind-1 notes are where
-/// most video on Nostr actually lives, so they are fetched too and kept only
-/// when a URL in them is known to be video — by extension or by the `m` field
-/// of its NIP-92 `imeta` tag. Extensionless links with no MIME hint are left
-/// out rather than HEAD-requested one by one: a page that turns out to be an
-/// image is worse than a missing one.
+/// Reels are diVine videos: short looping clips published as NIP-71
+/// addressable short-video events (kind 34236). Most live on diVine's own
+/// relay, so it is asked alongside the feed relays. Ordinary notes that
+/// happen to carry a video stay in the timeline.
 @MainActor
 final class ReelsFeedService: ObservableObject {
     static let shared = ReelsFeedService()
@@ -25,16 +22,15 @@ final class ReelsFeedService: ObservableObject {
     /// so it is opt-in behind the sensitive-content warning, like Media.
     @Published private(set) var scope: RecipeScope = .following
 
-    static let videoKinds = [21, 22, 34235, 34236]
-
-    /// The two filters a page asks for. Each pages on its own cursor: kind-1
-    /// notes are dense and NIP-71 events are sparse, so one shared cursor would
-    /// either skip notes or re-ask for the same video window.
-    private enum Stream: CaseIterable { case video, note }
+    static let videoKinds = [34236]
+    static let divineRelay = "wss://relay.divine.video"
 
     private var clients: [WebSocketClient] = []
     private var cancellables = Set<AnyCancellable>()
     private var collected: [String: Reel] = [:]
+    /// Addressable events can be re-published under the same `d` tag; only the
+    /// newest version of each is a reel. Address → event id in `collected`.
+    private var idByAddress: [String: String] = [:]
     private var seenVideoURLs: Set<String> = []
     private var loadTimeout: Timer?
     private var publishWork: DispatchWorkItem?
@@ -44,19 +40,18 @@ final class ReelsFeedService: ObservableObject {
     private var orderIsFrozen = false
     private var shownReelId: String?
 
-    /// Where the next page starts, per stream. A stream missing from the map
-    /// has run out of history.
-    private var cursors: [Stream: Int64] = [:]
-    private var exhausted: Set<Stream> = []
-    /// Per relay, per stream: the oldest event this page returned.
-    private var pageOldest: [Int: [Stream: Int64]] = [:]
+    /// Where the next page starts; nil before the first page.
+    private var cursor: Int64?
+    private var exhausted = false
+    /// Per relay: the oldest event this page returned.
+    private var pageOldest: [Int: Int64] = [:]
     private var eoseThisFetch = 0
     private var countBeforeFetch = 0
     /// Consecutive pages that produced no reel; stops a video-less stretch of
     /// history from paging forever.
     private var emptyPages = 0
     private var isFetching: Bool { !clients.isEmpty }
-    private var reachedEnd: Bool { exhausted.count == Stream.allCases.count || emptyPages >= 4 }
+    private var reachedEnd: Bool { exhausted || emptyPages >= 4 }
 
     private init() {}
 
@@ -74,12 +69,13 @@ final class ReelsFeedService: ObservableObject {
     func refresh() {
         disconnect()
         collected.removeAll()
+        idByAddress.removeAll()
         seenVideoURLs.removeAll()
         reels = []
         orderIsFrozen = false
         shownReelId = nil
-        cursors.removeAll()
-        exhausted.removeAll()
+        cursor = nil
+        exhausted = false
         emptyPages = 0
         loadFailed = false
         followSetIsEmpty = false
@@ -141,20 +137,14 @@ final class ReelsFeedService: ObservableObject {
             authors = follows
         }
 
-        var filters: [[String: Any]] = []
-        for stream in Stream.allCases where !exhausted.contains(stream) {
-            var filter: [String: Any] = stream == .video
-                ? ["kinds": Self.videoKinds, "limit": 100]
-                : ["kinds": [1], "limit": 300]
-            if let authors { filter["authors"] = authors }
-            if let cursor = cursors[stream] { filter["until"] = cursor }
-            filters.append(filter)
-        }
-        guard !filters.isEmpty else {
+        guard !exhausted else {
             isLoading = false
             isLoadingMore = false
             return
         }
+        var filter: [String: Any] = ["kinds": Self.videoKinds, "limit": 100]
+        if let authors { filter["authors"] = authors }
+        if let cursor { filter["until"] = cursor }
 
         let relayURLs = Self.relayURLs(scope: scope)
         guard !relayURLs.isEmpty else {
@@ -184,7 +174,7 @@ final class ReelsFeedService: ObservableObject {
 
             client.connect(url: url)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                let req = ["REQ", subId] + filters.map { $0 as Any }
+                let req: [Any] = ["REQ", subId, filter]
                 if let data = try? JSONSerialization.data(withJSONObject: req),
                    let text = String(data: data, encoding: .utf8) {
                     client.send(text: text)
@@ -199,7 +189,7 @@ final class ReelsFeedService: ObservableObject {
     }
 
     /// The device's own relay (and its feed cache) answer first and hold the
-    /// follow set's history; the external relays fill in the rest.
+    /// follow set's history; diVine's relay and the feed relays fill in the rest.
     static func relayURLs(scope: RecipeScope) -> [URL] {
         var strings: [String] = []
         if scope == .following,
@@ -208,6 +198,7 @@ final class ReelsFeedService: ObservableObject {
             let local = ConfigService.shared.config.nostrURL
             strings += [local, local + "/feed"]
         }
+        strings.append(divineRelay)
         let configured = ConfigService.shared.config.activeFeedRelays
         strings += configured.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : configured
         var seen = Set<String>()
@@ -236,13 +227,24 @@ final class ReelsFeedService: ObservableObject {
               let kind = event["kind"] as? Int,
               let tags = event["tags"] as? [[String]],
               let content = event["content"] as? String,
-              kind == 1 || Self.videoKinds.contains(kind)
+              Self.videoKinds.contains(kind)
         else { return }
 
-        let stream: Stream = kind == 1 ? .note : .video
-        pageOldest[relay, default: [:]][stream] = min(pageOldest[relay]?[stream] ?? createdAt, createdAt)
+        pageOldest[relay] = min(pageOldest[relay] ?? createdAt, createdAt)
 
         guard !blocked.contains(pubkey), collected[id] == nil else { return }
+
+        // A newer version of a video already collected replaces it; an older
+        // one is dropped.
+        let dTag = tags.first(where: { $0.count >= 2 && $0[0] == "d" })?[1] ?? ""
+        let address = "\(kind):\(pubkey):\(dTag)"
+        if let existingId = idByAddress[address], let existing = collected[existingId] {
+            guard createdAt > existing.createdAt else { return }
+            // Shown reels keep their place; only an unshown one is swapped.
+            guard !reels.contains(where: { $0.id == existingId }) else { return }
+            collected[existingId] = nil
+            seenVideoURLs.remove(existing.videoURL.absoluteString)
+        }
 
         let note = FeedNote(
             id: id,
@@ -257,6 +259,7 @@ final class ReelsFeedService: ObservableObject {
         else { return }
 
         collected[id] = reel
+        idByAddress[address] = id
         schedulePublish(immediate: false)
     }
 
@@ -296,17 +299,14 @@ final class ReelsFeedService: ObservableObject {
             return
         }
 
-        // Next cursor per stream: the NEWEST of the relays' oldest events.
-        // Taking the oldest overall would jump a dense relay past history a
-        // sparse relay never had; this way every relay resumes where it
-        // stopped, and the overlap is deduplicated by event id.
-        for stream in Stream.allCases where !exhausted.contains(stream) {
-            let oldest = pageOldest.values.compactMap { $0[stream] }
-            if let resume = oldest.max() {
-                cursors[stream] = resume - 1
-            } else {
-                exhausted.insert(stream)
-            }
+        // Next cursor: the NEWEST of the relays' oldest events. Taking the
+        // oldest overall would jump a dense relay past history a sparse relay
+        // never had; this way every relay resumes where it stopped, and the
+        // overlap is deduplicated by event id.
+        if let resume = pageOldest.values.max() {
+            cursor = resume - 1
+        } else {
+            exhausted = true
         }
 
         emptyPages = collected.count == countBeforeFetch ? emptyPages + 1 : 0
@@ -315,8 +315,8 @@ final class ReelsFeedService: ObservableObject {
         isLoadingMore = false
         loadFailed = false
 
-        // Keep paging when the viewer is already near the end — a page of
-        // notes with no video in it would otherwise park the pager on its last
+        // Keep paging when the viewer is already near the end — a page with
+        // nothing playable in it would otherwise park the pager on its last
         // reel with nothing left to trigger the next page.
         guard !reachedEnd else { return }
         let shownIndex = shownReelId.flatMap { id in reels.firstIndex { $0.id == id } } ?? 0

@@ -35,10 +35,9 @@ import javax.inject.Singleton
  * `ReelsFeedService`, shaped like [LiveFeedService]: its own short-lived relay
  * connections, never the note subscription.
  *
- * Two sources feed it. NIP-71 video events (kinds 21/22 and their addressable
- * 34235/34236 forms) are video by definition. Ordinary kind-1 notes are where
- * most video on Nostr actually lives, so they are fetched too and kept only
- * when a URL in them is known to be video — see [Reel.from].
+ * Reels are diVine videos: NIP-71 addressable short-video events (kind
+ * 34236). Most live on diVine's own relay, so it is asked alongside the feed
+ * relays. Ordinary notes that carry a video stay in the timeline.
  *
  * Threading: relay messages are parsed on a background dispatcher, one
  * collector per relay, and every piece of paging state is read and written
@@ -119,6 +118,8 @@ class ReelsFeedService @Inject constructor(
 
     private val collected = HashMap<String, Reel>()
     private val seenVideoUrls = HashSet<String>()
+    /** Addressable event coordinate → id of its newest version in [collected]. */
+    private val idByAddress = HashMap<String, String>()
     /**
      * Once the viewer has swiped past the first reel the order is frozen:
      * arrivals are appended instead of sorted in, so the video under their
@@ -209,6 +210,7 @@ class ReelsFeedService @Inject constructor(
         disconnectLocked()
         collected.clear()
         seenVideoUrls.clear()
+        idByAddress.clear()
         _reels.value = emptyList()
         orderIsFrozen = false
         shownReelId = null
@@ -299,7 +301,7 @@ class ReelsFeedService @Inject constructor(
 
     /**
      * The device's own relay (and its feed cache) answer first and hold the
-     * follow set's history; the feed relays fill in the rest.
+     * follow set's history; diVine's relay and the feed relays fill in the rest.
      */
     private fun relayUrls(scope: ReelsScope): List<String> {
         val config = configStore.config.value
@@ -308,6 +310,7 @@ class ReelsFeedService @Inject constructor(
                 config.nostrURL?.let(::add)
                 config.localRelayURL("feed")?.let(::add)
             }
+            add(Reel.DIVINE_RELAY)
             addAll(config.activeFeedRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") })
         }.distinct()
     }
@@ -346,9 +349,20 @@ class ReelsFeedService @Inject constructor(
 
                     val candidate = reel.reel ?: return
                     if (collected.containsKey(candidate.id)) return
-                    // The same clip re-posted, or a NIP-71 event and the note announcing it.
+                    // A newer version of an addressable video replaces an
+                    // unshown older one; an older version is dropped.
+                    val address = candidate.address
+                    val existing = idByAddress[address]?.let(collected::get)
+                    if (existing != null) {
+                        if (candidate.createdAt <= existing.createdAt) return
+                        if (_reels.value.any { it.id == existing.id }) return
+                        collected.remove(existing.id)
+                        seenVideoUrls.remove(existing.videoUrl)
+                    }
+                    // The same clip re-posted under another address.
                     if (!seenVideoUrls.add(candidate.videoUrl)) return
                     collected[candidate.id] = candidate
+                    idByAddress[address] = candidate.id
                     schedulePublishLocked(immediate = false)
                 }
             }

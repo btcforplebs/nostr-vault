@@ -413,7 +413,11 @@ enum FeedMode: String, CaseIterable {
 extension FeedMode {
     /// Name shown in the feed picker and the top bar.
     var displayName: String {
-        self == .discovery ? "Discover" : rawValue
+        switch self {
+        case .discovery: return "Discover"
+        case .reels: return "diVines"
+        default: return rawValue
+        }
     }
 
     /// Icon for the feed picker and the top bar. Popular, Articles, Recipes

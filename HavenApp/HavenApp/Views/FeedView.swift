@@ -386,6 +386,8 @@ struct FeedView: View {
     @EnvironmentObject var nostrService: NostrService
     @ObservedObject private var pendingManager = PendingPostManager.shared
     @State private var composeContext: ComposeContext?
+    /// The diVine, article or recipe composer, when the post button opens one.
+    @State private var modeComposer: ModeComposer?
     @State private var showingRelayStatus = false
     @State private var showingNoteId: String?
     @State private var showingProfileKey: IdentifiableString?
@@ -1427,6 +1429,20 @@ struct FeedView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        .sheet(item: $modeComposer) { composer in
+            Group {
+                switch composer {
+                case .divine:
+                    DivineComposeView(onDismiss: { modeComposer = nil })
+                case .article:
+                    LongFormComposeView(flavor: .article, onDismiss: { modeComposer = nil })
+                case .recipe:
+                    LongFormComposeView(flavor: .recipe, onDismiss: { modeComposer = nil })
+                }
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
+        }
         .onChange(of: pendingManager.editRequest?.id) { _, _ in
             guard let req = pendingManager.editRequest else { return }
             composeContext = ComposeContext(replyTo: req.replyTo, quoteTo: req.quoteTo, initialContent: req.content, draftId: req.draftId)
@@ -2282,9 +2298,16 @@ struct FeedView: View {
             onOpenNote: { openNoteDetail($0) },
             onLike: { feedActionsValue.likeNote($0) },
             onShowGlobal: { showingGlobalReelsWarning = true },
-            isCovered: composeContext != nil || showingProfileKey != nil || showingNoteId != nil
+            onPost: { modeComposer = .divine },
+            isCovered: composeContext != nil || modeComposer != nil || showingProfileKey != nil || showingNoteId != nil
                 || showingMediaUrl != nil || showingRelayStatus
         )
+        // feedList is not on screen in diVines, so the collapsed tab bar's
+        // compose button is answered here.
+        .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
+            guard (note.object as? Int) == 0 else { return }
+            modeComposer = .divine
+        }
     }
 
     /// Live streams: NIP-53 events that are running *and* carry a URL Apple's
@@ -2660,19 +2683,19 @@ struct FeedView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in
                 guard (note.object as? Int) == 0 else { return }
-                composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
+                openComposer()
             }
         }
         .overlay(alignment: .bottomTrailing) {
             #if os(iOS)
             ChromeFold(anchor: .bottomTrailing) {
                 Button {
-                    composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
+                    openComposer()
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "square.and.pencil")
+                        Image(systemName: ModeComposer(feedMode: feedService.feedMode)?.symbolName ?? "square.and.pencil")
                             .font(.appSystem(size: 15, weight: .bold))
-                        Text(String(localized: "feed.action.post"))
+                        Text(ModeComposer(feedMode: feedService.feedMode)?.buttonTitle ?? String(localized: "feed.action.post"))
                             .font(.appSystem(size: 14, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(.white)
@@ -2690,13 +2713,23 @@ struct FeedView: View {
                             .shadow(color: Color.havenPurple.opacity(0.35), radius: 8, x: 0, y: 4)
                     )
                 }
-                .accessibilityLabel("Compose new post")
+                .accessibilityLabel(ModeComposer(feedMode: feedService.feedMode)?.accessibilityLabel ?? "Compose new post")
                 .buttonStyle(PressScaleButtonStyle())
                 .padding(.trailing, 20)
                 .padding(.bottom, 90)
                 .hoverEffect(.lift)
             }
             #endif
+        }
+    }
+
+    /// The post button writes what the feed shows: a diVine in diVines, an
+    /// article in Articles, a recipe in Recipes, a note everywhere else.
+    private func openComposer() {
+        if let composer = ModeComposer(feedMode: feedService.feedMode) {
+            modeComposer = composer
+        } else {
+            composeContext = ComposeContext(replyTo: nil, quoteTo: nil)
         }
     }
 

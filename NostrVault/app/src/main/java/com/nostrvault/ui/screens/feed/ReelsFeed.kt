@@ -27,9 +27,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -115,6 +118,8 @@ internal fun ReelsFeed(
     onProfile: (String) -> Unit,
     onReply: (FeedNote) -> Unit,
     onOpenNote: (FeedNote) -> Unit,
+    /** Opens the diVine composer. */
+    onPost: () -> Unit,
     onShowGlobal: () -> Unit,
 ) {
     val reels by viewModel.reels.collectAsState()
@@ -173,6 +178,7 @@ internal fun ReelsFeed(
                     scope = scope,
                     onShowGlobal = onShowGlobal,
                     onRetry = viewModel::refreshReels,
+                    onPost = onPost,
                 )
             }
         } else {
@@ -221,6 +227,7 @@ internal fun ReelsFeed(
                     onOpenNote = { onOpenNote(reel.note) },
                     onLike = { viewModel.likeNote(reel.id) },
                     onShare = { shareNote(context, reel.note) },
+                    onPost = onPost,
                 )
             }
 
@@ -261,6 +268,7 @@ private fun ReelPage(
     onOpenNote: () -> Unit,
     onLike: () -> Unit,
     onShare: () -> Unit,
+    onPost: () -> Unit,
 ) {
     val context = LocalContext.current
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
@@ -478,7 +486,12 @@ private fun ReelPage(
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(12.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        RailPostButton(onClick = onPost)
+                        Spacer(Modifier.height(6.dp))
                         RailButton(
                             icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
                             tint = if (isLiked) Color(0xFFFF3B30) else Color.White,
@@ -486,7 +499,7 @@ private fun ReelPage(
                             onClick = onLike,
                         )
                         RailButton(NostrVaultIcons.Reply, label = "Reply", onClick = onReply)
-                        RailButton(NostrVaultIcons.Chat, label = "Open thread", onClick = onOpenNote)
+                        RailButton(NostrVaultIcons.Chat, label = "Thread", onClick = onOpenNote)
                         RailButton(NostrVaultIcons.Share, label = "Share", onClick = onShare)
                         RailButton(
                             icon = if (isMuted) NostrVaultIcons.VolumeOff else NostrVaultIcons.VolumeUp,
@@ -593,13 +606,58 @@ private fun RailButton(
     tint: Color = Color.White,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .widthIn(min = 48.dp)
+            .clickable(onClickLabel = label, onClick = onClick)
+            .semantics(mergeDescendants = true) {},
+    ) {
         Icon(
             imageVector = icon,
-            contentDescription = label,
+            contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.padding(top = 4.dp).size(28.dp),
         )
+        RailLabel(label)
+    }
+}
+
+@Composable
+private fun RailLabel(text: String) {
+    Text(
+        text,
+        color = Color.White.copy(alpha = 0.9f),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        style = LocalTextStyle.current.copy(shadow = Shadow(Color.Black.copy(alpha = 0.6f), blurRadius = 4f)),
+    )
+}
+
+/**
+ * Posting is the one action that makes something new, so it reads as a
+ * filled button rather than another white glyph in the column.
+ */
+@Composable
+private fun RailPostButton(onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clickable(onClickLabel = "Post a diVine", onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "Post a diVine" },
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(46.dp)
+                .background(LocalNostrVaultColors.current.primary, CircleShape)
+                .border(2.dp, Color.White, CircleShape),
+        ) {
+            Icon(NostrVaultIcons.Create, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
+        }
+        Spacer(Modifier.height(3.dp))
+        RailLabel("Post")
     }
 }
 
@@ -610,6 +668,7 @@ private fun ReelsEmptyState(
     scope: ReelsScope,
     onShowGlobal: () -> Unit,
     onRetry: () -> Unit,
+    onPost: () -> Unit,
 ) {
     val following = scope == ReelsScope.FOLLOWING
     val title = when {
@@ -620,9 +679,9 @@ private fun ReelsEmptyState(
     }
     val message = when {
         followSetIsEmpty -> "Switch to Global to see everyone's videos."
-        loadFailed -> "Reels come from relays, so this one needs a connection."
-        following -> "Nobody you follow has posted a video recently."
-        else -> "Nothing playable came back from your relays."
+        loadFailed -> "diVines come from relays, so this one needs a connection."
+        following -> "Nobody you follow has posted a diVine video recently."
+        else -> "No diVine videos came back from the relays."
     }
     val offerGlobal = followSetIsEmpty || (following && !loadFailed)
 
@@ -639,6 +698,15 @@ private fun ReelsEmptyState(
         )
         Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Text(message, color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp, textAlign = TextAlign.Center)
+        Button(
+            onClick = onPost,
+            colors = ButtonDefaults.buttonColors(containerColor = LocalNostrVaultColors.current.primary),
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            Icon(NostrVaultIcons.Create, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Post a diVine", color = Color.White, fontWeight = FontWeight.Bold)
+        }
         TextButton(onClick = if (offerGlobal) onShowGlobal else onRetry) {
             Text(
                 text = if (offerGlobal) "Show everyone's videos" else "Try again",

@@ -476,12 +476,12 @@ enum class FeedMode(val displayName: String) {
     MEDIA("Media"),
 
     /**
-     * Full-screen vertical video, one per page. Like [LIVE], not a view of the
-     * note list: ReelsFeedService runs its own queries (NIP-71 video events and
-     * kind-1 notes carrying a video), and the note subscription idles while
-     * this mode is showing.
+     * diVines: full-screen looping short videos, one per page. Like [LIVE],
+     * not a view of the note list: ReelsFeedService runs its own queries
+     * (diVine's kind-34236 videos), and the note subscription idles while this
+     * mode is showing.
      */
-    REELS("Reels"),
+    REELS("diVines"),
 
     /**
      * Long-form articles (kind 30023). The events were already arriving — the

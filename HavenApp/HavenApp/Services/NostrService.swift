@@ -1273,7 +1273,8 @@ class NostrService: ObservableObject {
     /// Broadcasts a raw signed event dict (including sig) to configured Blastr relays.
     /// Use this to re-broadcast an existing event without re-signing it.
     /// If `onRelayResult` is provided, it's called for each relay with (relayURL, success, message).
-    func broadcastRawEvent(_ eventDict: [String: Any], onRelayResult: ((String, Bool, String) -> Void)? = nil) {
+    /// `extraRelays` are sent to as well, e.g. diVine's relay for a diVine.
+    func broadcastRawEvent(_ eventDict: [String: Any], extraRelays: [String] = [], onRelayResult: ((String, Bool, String) -> Void)? = nil) {
         let msg = ["EVENT", eventDict] as [Any]
         guard let data = try? JSONSerialization.data(withJSONObject: msg),
               let str = String(data: data, encoding: .utf8) else { return }
@@ -1281,6 +1282,9 @@ class NostrService: ObservableObject {
         var relays = ConfigService.shared.config.activeBlastrRelays
         if relays.isEmpty {
             relays = ["wss://relay.primal.net", "wss://nos.lol"]
+        }
+        for extra in extraRelays where !relays.contains(extra) {
+            relays.append(extra)
         }
 
         for urlStr in relays {
