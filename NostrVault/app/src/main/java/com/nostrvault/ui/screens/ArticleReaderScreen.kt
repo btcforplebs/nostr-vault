@@ -35,10 +35,12 @@ import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.ArticleEngagement
+import com.nostrvault.data.model.ArticleHighlight
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.NIP10Thread
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.ZapSendService
+import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.threadLink
 import com.nostrvault.data.model.FeedNote
@@ -48,13 +50,23 @@ import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.jeziellago.compose.markdowntext.MarkdownText
+import android.text.format.DateUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.text.DateFormat
+import java.util.Optional
 import javax.inject.Inject
 
 /**
@@ -75,6 +87,11 @@ class ArticleReaderViewModel @Inject constructor(
 ) : ViewModel() {
 
     val noteId: String = savedStateHandle["noteId"] ?: ""
+
+    private companion object {
+        /** Highlights already fetched this session, by article id. */
+        val highlightCache = ConcurrentHashMap<String, List<ArticleHighlight>>()
+    }
 
     private val _note = MutableStateFlow<FeedNote?>(null)
     val note: StateFlow<FeedNote?> = _note.asStateFlow()
@@ -125,10 +142,91 @@ class ArticleReaderViewModel @Inject constructor(
             if (event != null) {
                 nostrService.postEvent(event)
                 _message.emit("Highlight published")
+                // Show it among everyone else's once a relay has it.
+                loadHighlights(note)
             } else {
                 _message.emit("Highlight not signed")
             }
         }
+    }
+
+    // ── Highlights from the network ──────────────────────────────────
+
+    private val _highlights = MutableStateFlow<List<ArticleHighlight>>(emptyList())
+    /** Other people's highlights of this article, newest first. */
+    val highlights: StateFlow<List<ArticleHighlight>> = _highlights.asStateFlow()
+
+    /**
+     * The article's relay, the feed relays and the author's outbox: where a
+     * highlight of it is likely to have been sent.
+     */
+    private fun highlightRelays(note: FeedNote): List<String> {
+        val config = configStore.config.value
+        val candidates = buildList {
+            config.nostrURL?.let { add(it) }
+            addAll(config.activeFeedRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") })
+            addAll(nostrService.outboxRelays.value[note.pubkey].orEmpty())
+        }
+        return candidates.map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinctBy { it.lowercase().trimEnd('/') }
+            .take(8)
+    }
+
+    /**
+     * Fetch highlights of [note], showing them as each relay answers rather
+     * than after the slowest one, which could hold the list back for the
+     * whole timeout. A reopened article shows the last result at once.
+     */
+    fun loadHighlights(note: FeedNote) {
+        highlightCache[note.id]?.let { cached -> _highlights.update { if (cached.size >= it.size) cached else it } }
+        val coordinate = NIP10Thread.coordinate(note.kind, note.pubkey, note.tags)
+        // Each event is checked once, however many snapshots it appears in.
+        val checked = ConcurrentHashMap<String, Optional<ArticleHighlight>>()
+        fun show(events: List<JsonObject>): List<ArticleHighlight> {
+            val found = ArticleEngagement.shown(events.mapNotNull { ev ->
+                val id = (ev["id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                checked.getOrPut(id) { Optional.ofNullable(parseHighlight(ev, note.id, coordinate)) }.orElse(null)
+            })
+            // An earlier, smaller snapshot can finish after a later one.
+            _highlights.update { if (found.size >= it.size) found else it }
+            val profiles = nostrService.profiles.value
+            val missing = found.map { it.pubkey }.distinct().filter { it !in profiles }
+            if (missing.isNotEmpty()) nostrService.fetchMissingProfiles(missing)
+            return found
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            val events = nostrService.queryRawEvents(
+                filters = ArticleEngagement.highlightFilters(note.id, coordinate),
+                relayUrls = highlightRelays(note),
+                onProgress = { show(it) },
+            )
+            highlightCache[note.id] = show(events)
+        }
+    }
+
+    /** A signed 9802 that points at this article and isn't spam, or null. */
+    private fun parseHighlight(ev: JsonObject, articleId: String, coordinate: String?): ArticleHighlight? {
+        fun str(key: String) = (ev[key] as? JsonPrimitive)?.contentOrNull
+        val id = str("id") ?: return null
+        val pubkey = str("pubkey") ?: return null
+        val content = str("content") ?: return null
+        val kind = (ev["kind"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: return null
+        val createdAt = (ev["created_at"] as? JsonPrimitive)?.longOrNull ?: return null
+        val tags = (ev["tags"] as? JsonArray)?.map { tag ->
+            (tag as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+        } ?: return null
+        // Spam dropped the same way the thread view drops it.
+        if (FeedNote.isNoiseOrSpam(content, tags)) return null
+        val highlight = ArticleHighlight.from(kind, id, pubkey, content, createdAt, tags, articleId, coordinate)
+            ?: return null
+        return highlight.takeIf { HavenBridge.verifyEvent(ev.toString()) }
+    }
+
+    /** Makes [highlight] resolvable by id for the compose screen; returns that id. */
+    fun prepareComment(highlight: ArticleHighlight): String {
+        feedService.cacheNote(highlight.toNote())
+        return highlight.id
     }
 
     init {
@@ -173,6 +271,13 @@ fun ArticleReaderScreen(
     }
     val isLoading by viewModel.isLoading.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
+    val highlights by viewModel.highlights.collectAsState()
+    var shownHighlights by remember { mutableStateOf<List<ArticleHighlight>?>(null) }
+    val highlightSheetState = rememberModalBottomSheetState()
+    val commentOnHighlight: (ArticleHighlight) -> Unit = { h ->
+        shownHighlights = null
+        onComment(viewModel.prepareComment(h))
+    }
     val colors = LocalNostrVaultColors.current
 
     Scaffold(
@@ -190,6 +295,9 @@ fun ArticleReaderScreen(
         },
     ) { padding ->
         val current = note
+        if (current != null) {
+            LaunchedEffect(current.id) { viewModel.loadHighlights(current) }
+        }
         when {
             current != null -> ArticleBody(
                 note = current,
@@ -217,6 +325,10 @@ fun ArticleReaderScreen(
                     )
                 },
                 onHighlightBlock = if (highlighting) { text -> highlightContext = text } else null,
+                highlights = highlights,
+                profiles = profiles,
+                onShowHighlights = { shownHighlights = it },
+                onCommentHighlight = commentOnHighlight,
                 modifier = Modifier
                     .padding(padding)
                     .verticalScroll(rememberScrollState())
@@ -235,6 +347,27 @@ fun ArticleReaderScreen(
                     color = SecondaryText,
                     fontSize = 14.sp,
                 )
+            }
+        }
+    }
+
+    shownHighlights?.let { group ->
+        ModalBottomSheet(
+            onDismissRequest = { shownHighlights = null },
+            sheetState = highlightSheetState,
+            containerColor = WindowBackground,
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 32.dp),
+            ) {
+                Text("Highlights", color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                group.forEach { h ->
+                    HighlightRow(h, profiles[h.pubkey], onComment = { commentOnHighlight(h) })
+                }
             }
         }
     }
@@ -350,9 +483,15 @@ private fun ArticleBody(
     onProfileClick: (String) -> Unit,
     actions: @Composable () -> Unit,
     onHighlightBlock: ((String) -> Unit)?,
+    highlights: List<ArticleHighlight>,
+    profiles: Map<String, FeedProfile>,
+    onShowHighlights: (List<ArticleHighlight>) -> Unit,
+    onCommentHighlight: (ArticleHighlight) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
+    val blocks = remember(note.content) { ArticleEngagement.blocks(note.content) }
+    val placed = remember(blocks, highlights) { ArticleEngagement.place(highlights, blocks) }
     val colors = LocalNostrVaultColors.current
 
     Column(modifier = modifier) {
@@ -394,19 +533,59 @@ private fun ArticleBody(
         Spacer(Modifier.height(16.dp))
         actions()
         Spacer(Modifier.height(20.dp))
-        if (onHighlightBlock == null) {
+        val bodyStyle = TextStyle(color = PrimaryText, fontSize = 16.sp, lineHeight = 24.sp)
+        if (onHighlightBlock == null && placed.isEmpty()) {
             MarkdownText(
                 markdown = note.content,
-                style = TextStyle(color = PrimaryText, fontSize = 16.sp, lineHeight = 24.sp),
+                style = bodyStyle,
                 linkColor = colors.primary,
                 modifier = Modifier.fillMaxWidth(),
             )
+        } else if (onHighlightBlock == null) {
+            // Block by block, so a passage other people highlighted gets a
+            // soft yellow tint and a count that opens who highlighted it.
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                blocks.forEachIndexed { index, block ->
+                    val shown = placed[index]
+                    if (shown == null) {
+                        MarkdownText(markdown = block, style = bodyStyle, linkColor = colors.primary,
+                            modifier = Modifier.fillMaxWidth())
+                    } else {
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            MarkdownText(
+                                markdown = block,
+                                style = bodyStyle,
+                                linkColor = colors.primary,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(HighlightYellow.copy(alpha = 0.16f))
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(HighlightYellow.copy(alpha = 0.16f))
+                                    .clickable(onClickLabel = if (shown.size == 1) "1 highlight" else "${shown.size} highlights") {
+                                        onShowHighlights(shown)
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                            ) {
+                                Icon(Icons.Outlined.BorderColor, contentDescription = null, tint = SecondaryText,
+                                    modifier = Modifier.size(13.dp))
+                                Text("${shown.size}", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            }
         } else {
             // Highlight mode: one tappable block per paragraph, tinted so the
             // reader can see what a tap will pick up.
             Text("Tap a paragraph to highlight it", color = colors.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(12.dp))
-            val blocks = remember(note.content) { ArticleEngagement.blocks(note.content) }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 blocks.forEach { block ->
                     Text(
@@ -424,10 +603,79 @@ private fun ArticleBody(
                 }
             }
         }
+        if (highlights.isNotEmpty()) {
+            Spacer(Modifier.height(24.dp))
+            HorizontalDivider(color = SecondaryText.copy(alpha = 0.2f))
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Outlined.BorderColor, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(16.dp))
+                Text("Highlights · ${highlights.size}", color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(14.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                highlights.forEach { h ->
+                    HighlightRow(h, profiles[h.pubkey], onComment = { onCommentHighlight(h) })
+                }
+            }
+        }
         Spacer(Modifier.height(24.dp))
         HorizontalDivider(color = SecondaryText.copy(alpha = 0.2f))
         Spacer(Modifier.height(12.dp))
         actions()
         Spacer(Modifier.height(48.dp))
+    }
+}
+
+private val HighlightYellow = Color(0xFFFFD60A)
+
+/** One person's highlight: who, the passage, their comment if any, and a reply button. */
+@Composable
+private fun HighlightRow(highlight: ArticleHighlight, author: FeedProfile?, onComment: () -> Unit) {
+    val name = author?.bestName ?: ("npub…" + highlight.pubkey.takeLast(6))
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AvatarImage(url = author?.pictureURL, pubkey = highlight.pubkey, size = 22.dp, displayName = author?.bestName)
+            Text(name, color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                DateUtils.getRelativeTimeSpanString(
+                    highlight.createdAt * 1000, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS,
+                ).toString(),
+                color = SecondaryText,
+                fontSize = 11.sp,
+            )
+        }
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            Box(
+                Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(HighlightYellow.copy(alpha = 0.8f)),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                highlight.passage,
+                color = PrimaryText,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+            )
+        }
+        highlight.comment?.let {
+            Text(it, color = SecondaryText, fontSize = 14.sp, lineHeight = 20.sp)
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .padding(start = 11.dp)
+                .clip(RoundedCornerShape(50))
+                .background(SecondaryText.copy(alpha = 0.1f))
+                .clickable(onClick = onComment)
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+        ) {
+            Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(13.dp))
+            Text("Comment", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
