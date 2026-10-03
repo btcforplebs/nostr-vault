@@ -24,7 +24,20 @@ const DefaultWotLevel = 3
 type wotCache struct {
 	Pubkeys   map[string]bool `json:"pubkeys"`
 	Timestamp int64           `json:"timestamp"`
+	// Depth the graph was built at. A cache from another depth is a different
+	// graph: without this, changing the depth setting kept serving the old one
+	// until the TTL ran out. Caches written before this field read as 0 and
+	// are rebuilt once.
+	Depth int `json:"depth"`
+	// Version of how the graph was built. Bump it when a fix changes the
+	// result, so graphs built by the broken code are rebuilt instead of being
+	// served for the rest of their TTL.
+	Version int `json:"version"`
 }
+
+// wotCacheVersion 2: the depth-3 pass no longer drops every contact list a
+// batch had collected when one seed relay was slow to send EOSE.
+const wotCacheVersion = 2
 
 type SimpleInMemory struct {
 	pubkeys atomic.Pointer[map[string]bool]
@@ -112,6 +125,15 @@ func (wt *SimpleInMemory) LoadFromCache() (ok bool, ageMinutes int64) {
 		return false, 0
 	}
 
+	if cache.Version != wotCacheVersion {
+		slog.Info("🔁 WoT cache from an older build, rebuilding", "cached_version", cache.Version, "version", wotCacheVersion)
+		return false, 0
+	}
+	if cache.Depth != wt.WotDepth {
+		slog.Info("🔁 WoT cache built at another depth, rebuilding", "cached_depth", cache.Depth, "depth", wt.WotDepth)
+		return false, 0
+	}
+
 	// Check if cache is still valid
 	now := time.Now().Unix()
 	age := (now - cache.Timestamp) / 60 // age in minutes
@@ -139,6 +161,8 @@ func (wt *SimpleInMemory) SaveCache() {
 	cache := wotCache{
 		Pubkeys:   *m,
 		Timestamp: time.Now().Unix(),
+		Depth:     wt.WotDepth,
+		Version:   wotCacheVersion,
 	}
 
 	data, err := json.Marshal(cache)
@@ -221,8 +245,13 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 		}
 	}
 
+	// Every depth persists its graph: the apps read wot_cache.json to filter
+	// Global and Discovery, and depths 1 and 2 used to return without saving,
+	// so on Android (depth 2 by default) that file never existed and both
+	// feeds came up empty.
 	if wt.WotDepth == 1 {
 		wt.pubkeys.Store(&newWot)
+		wt.SaveCache()
 		return
 	}
 
@@ -258,6 +287,7 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 		slog.Info("🕸️ analysed Nostr events", "count", eventsAnalysed.Load())
 		slog.Info("📈 direct followers in import relays", "🫂pubkeys", len(newWot), "🔗relays", len(wt.SeedRelays))
 		wt.pubkeys.Store(&newWot)
+		wt.SaveCache()
 		return
 	}
 
@@ -370,10 +400,12 @@ func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEv
 		defer close(ch)
 		runsafe.Run("wot.latestEventByKindAndPubkey", func() {
 			latestEvents := make(map[string]*nostr.Event)
+		collect:
 			for ev := range events {
 				select {
 				case <-ctx.Done():
-					return
+					// Stop collecting, but keep what arrived (see below).
+					break collect
 				default:
 					counter.Add(1)
 					key := fmt.Sprintf("%d:%s", ev.Kind, ev.PubKey)
@@ -382,12 +414,15 @@ func latestEventByKindAndPubkey(ctx context.Context, events <-chan nostr.RelayEv
 					}
 				}
 			}
+			// Hand over everything collected, even when ctx has expired. ctx is
+			// the fetch timeout: FetchMany only closes once every seed relay
+			// has sent EOSE, so one slow or dead relay makes the timeout the
+			// normal way a batch ends. Selecting on ctx.Done here dropped what
+			// the healthy relays had already sent (Go picks a ready case at
+			// random), which emptied the depth-3 graph. The consumer in
+			// Refresh always drains ch, so these sends cannot block for good.
 			for _, ev := range latestEvents {
-				select {
-				case <-ctx.Done():
-					return
-				case ch <- ev:
-				}
+				ch <- ev
 			}
 		})
 	}()

@@ -1,6 +1,7 @@
 package com.nostrvault.service
 
 import android.content.Context
+import android.os.FileObserver
 import android.util.Log
 import coil.ImageLoader
 import coil.request.CachePolicy
@@ -52,6 +53,8 @@ class FeedService @Inject constructor(
     private val lookupPool: LookupSocketPool,
 ) {
     companion object {
+        /** The relay writes this into its data root (haven-go WOT_CACHE_PATH default). */
+        private const val WOT_CACHE_FILE = "wot_cache.json"
         private const val TAG = "FeedService"
         // High bound so the user can scroll back through effectively their whole
         // history (lazy list virtualizes rendering; only a ceiling vs runaway memory).
@@ -479,6 +482,8 @@ class FeedService @Inject constructor(
                 subscribeToAllRelays()
             }
             FeedMode.DISCOVERY -> {
+                // Discovery keeps only authors in the trust graph, same as Global.
+                loadWotPubkeys()
                 if (needsExtendedNetworkRefresh()) {
                     scope.launch {
                         loadExtendedNetwork()
@@ -552,6 +557,10 @@ class FeedService @Inject constructor(
      */
     fun resumeFeed() {
         Log.d(TAG, "resumeFeed: notes=${_notes.value.size}, followedPubkeys=${_followedPubkeys.value.size}")
+
+        // A launch that restores the saved feed never reaches startInitialLoad,
+        // which is otherwise where Global and Discovery get their trust graph.
+        loadWotPubkeys()
 
         // If we still have notes in memory (brief background), just reconnect —
         // no need to hit disk or re-fetch contacts at all.
@@ -1898,17 +1907,40 @@ class FeedService @Inject constructor(
         recomputeFilteredNotes()
     }
 
+    /**
+     * Reloads the trust graph whenever the relay rewrites wot_cache.json. The
+     * relay builds the graph in the background after it boots — usually after
+     * the feed has already read the file (or found none) — so without this a
+     * first launch kept Global and Discovery empty until the user happened to
+     * refresh. Held in a field: a FileObserver stops when it is collected.
+     */
+    private var wotCacheObserver: FileObserver? = null
+
+    @Suppress("DEPRECATION") // FileObserver(File) needs API 29; minSdk is 26.
+    private fun watchWotCache(relayDataDir: String) {
+        if (wotCacheObserver != null) return
+        wotCacheObserver = object : FileObserver(relayDataDir, CLOSE_WRITE or MOVED_TO) {
+            override fun onEvent(event: Int, path: String?) {
+                if (path == WOT_CACHE_FILE) loadWotPubkeys()
+            }
+        }.also { it.startWatching() }
+    }
+
     fun loadWotPubkeys() {
         scope.launch(Dispatchers.IO) {
             try {
                 val config = configStore.config.value
-                val wotCachePath = config.relayDataDir?.let { "$it/wot_cache.json" }
+                config.relayDataDir?.let { watchWotCache(it) }
+                val wotCachePath = config.relayDataDir?.let { "$it/$WOT_CACHE_FILE" }
                 if (wotCachePath != null) {
                     val file = File(wotCachePath)
                     if (file.exists()) {
-                        val content = file.readText()
-                        val pubkeys = json.decodeFromString<List<String>>(content)
-                        val loaded = pubkeys.toSet()
+                        val loaded = FeedFilterEngine.parseWotCache(file.readText(), nostrService.activeHexPubkey)
+                        if (loaded == null) {
+                            Log.w(TAG, "WoT cache unreadable: $wotCachePath")
+                            return@launch
+                        }
+                        Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
                             if (loaded != _wotPubkeys.value) {
                                 _wotPubkeys.value = loaded
