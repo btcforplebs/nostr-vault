@@ -17,6 +17,12 @@ struct ProfileView: View {
     @Environment(\.openURL) private var openURL
 
     @State private var showingNoteDetail: FeedNote?
+    /// Non-nil when an iPad split pane owns the note detail column.
+    @Environment(\.noteDetailSelection) private var noteDetailSelection
+    /// True when this profile is a sheet or a pushed page. Sheets inherit the
+    /// environment, so without this a profile opened over the split would
+    /// select into the detail column hidden behind it.
+    @Environment(\.isPresented) private var isPresented
     @State private var showingProfileKey: IdentifiableString?
     @State private var showingMediaUrl: IdentifiableURL?
     @Namespace private var mediaZoom
@@ -236,6 +242,16 @@ struct ProfileView: View {
         let notes = (isOwnProfile ? totalNoteCount : nil) ?? topNotes.count
         let media = (isOwnProfile ? totalMediaCount : nil) ?? mediaNotes.count
         return (notes, media, replyNotes.count, taggedFilteredNotes.count)
+    }
+
+    /// Opens a note in the split pane's detail column when this profile is the
+    /// pane's list, and falls back to the sheet everywhere else.
+    private func openNote(_ note: FeedNote) {
+        if let noteDetailSelection, !isPresented {
+            noteDetailSelection.select(note)
+        } else {
+            showingNoteDetail = note
+        }
     }
 
     // MARK: - Body
@@ -1111,7 +1127,7 @@ struct ProfileView: View {
                     )
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            showingNoteDetail = note
+                            openNote(note)
                         }
                 }
 

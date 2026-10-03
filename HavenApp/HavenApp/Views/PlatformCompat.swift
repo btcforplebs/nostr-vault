@@ -367,3 +367,21 @@ extension EnvironmentValues {
         set { self[FloatingTabBarHeightKey.self] = newValue }
     }
 }
+
+/// Lifts a floating action button (Post, Relay, Blossom) clear of the iPhone's
+/// floating tab bar. Where there is no bar -- the iPad split -- the fixed 90pt
+/// lift left the button hovering over the list's cards, so it drops to the
+/// ordinary margin there.
+private struct FloatingActionBottomPadding: ViewModifier {
+    @Environment(\.floatingTabBarHeight) private var tabBarHeight
+
+    func body(content: Content) -> some View {
+        content.padding(.bottom, tabBarHeight > 0 ? 90 : 20)
+    }
+}
+
+extension View {
+    func floatingActionBottomPadding() -> some View {
+        modifier(FloatingActionBottomPadding())
+    }
+}

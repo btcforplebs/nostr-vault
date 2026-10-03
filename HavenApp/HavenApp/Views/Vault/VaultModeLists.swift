@@ -116,14 +116,14 @@ extension VaultView {
                     ForEach(displayNotes) { event in
                         let showEngagement = event.pubkey == owner || whitelisted.contains(event.pubkey)
                         #if os(iOS)
-                        NavigationLink(destination: NoteDetailView(note: FeedNote(
+                        NoteNavigationLink(note: FeedNote(
                             id: event.id,
                             pubkey: event.pubkey,
                             content: event.content,
                             createdAt: event.createdAtDate,
                             tags: event.tags,
                             kind: event.kind
-                        ))) {
+                        )) {
                             NoteRow(
                                 event: event,
                                 layoutMode: rowLayoutMode,
@@ -229,14 +229,14 @@ extension VaultView {
                         let rowReactionDate = likesFilter != .myLikes ? latestReactionDates[event.id] : nil
                         VStack(alignment: .leading, spacing: 0) {
                             #if os(iOS)
-                            NavigationLink(destination: NoteDetailView(note: FeedNote(
+                            NoteNavigationLink(note: FeedNote(
                                 id: event.id,
                                 pubkey: event.pubkey,
                                 content: event.content,
                                 createdAt: event.createdAtDate,
                                 tags: event.tags,
                                 kind: event.kind
-                            ))) {
+                            )) {
                                 NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
                                     .relayFocusOutline(focusedEventId == event.id)
                                     .padding(.horizontal, 16)
@@ -327,14 +327,14 @@ extension VaultView {
                         let rowZappers = zapsFilter != .myZaps ? zapMap[event.id] : nil
                         VStack(alignment: .leading, spacing: 0) {
                             #if os(iOS)
-                            NavigationLink(destination: NoteDetailView(note: FeedNote(
+                            NoteNavigationLink(note: FeedNote(
                                 id: event.id,
                                 pubkey: event.pubkey,
                                 content: event.content,
                                 createdAt: event.createdAtDate,
                                 tags: event.tags,
                                 kind: event.kind
-                            ))) {
+                            )) {
                                 NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers)
                                     .relayFocusOutline(focusedEventId == event.id)
                                     .padding(.horizontal, 16)

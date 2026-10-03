@@ -264,23 +264,33 @@ struct iPadSidebarView: View {
                 }
             case 1:
                 NavigationStack(path: $searchPath) {
-                    SearchView()
-                        .navigationTitle("Search")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.hidden, for: .navigationBar)
-                        .navigationDestination(for: FeedNote.self) { note in
-                            NoteDetailView(note: note)
-                        }
+                    NoteSplitPane(
+                        emptyTitle: "No Note Selected",
+                        emptyMessage: "Pick a note from the results to read it here."
+                    ) {
+                        SearchView()
+                            .navigationTitle("Search")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.hidden, for: .navigationBar)
+                    }
+                    .navigationDestination(for: FeedNote.self) { note in
+                        NoteDetailView(note: note)
+                    }
                 }
             case 2:
                 NavigationStack(path: $profilePath) {
-                    ProfileView(pubkey: activeHex, embeddedInNavigation: false)
-                        .navigationTitle("Profile")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.hidden, for: .navigationBar)
-                        .navigationDestination(for: FeedNote.self) { note in
-                            NoteDetailView(note: note)
-                        }
+                    NoteSplitPane(
+                        emptyTitle: "No Note Selected",
+                        emptyMessage: "Pick a note from your profile to read it here."
+                    ) {
+                        ProfileView(pubkey: activeHex, embeddedInNavigation: false)
+                            .navigationTitle("Profile")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.hidden, for: .navigationBar)
+                    }
+                    .navigationDestination(for: FeedNote.self) { note in
+                        NoteDetailView(note: note)
+                    }
                 }
                 .id(activeHex)
             case 3:
@@ -391,38 +401,74 @@ struct iPhoneTabView: View {
     @ObservedObject private var buttonRow = FloatingButtonRow.shared
     @ObservedObject private var musicPlayer = MusicPlayerService.shared
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     private var activeHex: String { configService.activeAccountHexPubkey }
 
     private func syncButtonRow() {
         buttonRow.update(tabBarOnlyHeight: tabBarOnlyHeight, miniPlayerShowing: musicPlayer.current != nil)
     }
 
+    /// iPad in portrait keeps this tab layout (the sidebar would collapse and
+    /// leave no visible navigation), but every iPad is wide enough for the list
+    /// and the note side by side, so notes open beside the list there instead
+    /// of covering it. iPhone and compact multitasking widths are unchanged.
+    private var usesNoteSplit: Bool { horizontalSizeClass == .regular }
+
+    /// The tab's list in a `NoteSplitPane` when `usesNoteSplit`, otherwise as is.
+    @ViewBuilder
+    private func noteSplit<Content: View>(
+        _ emptyMessage: String,
+        @ViewBuilder _ content: @escaping () -> Content
+    ) -> some View {
+        if usesNoteSplit {
+            NoteSplitPane(emptyTitle: "No Note Selected", emptyMessage: emptyMessage, content: content)
+        } else {
+            content()
+        }
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
-            FeedView()
-                .toolbar(.hidden, for: .tabBar)
-                .tag(0)
+            Group {
+                // In the split, Feed and Relay do not build their own stack
+                // (NoteSplitPane owns the detail column), so the pane needs one
+                // for their toolbars.
+                if usesNoteSplit {
+                    NavigationStack {
+                        noteSplit("Pick a note from the feed to read it here.") { FeedView() }
+                    }
+                } else {
+                    FeedView()
+                }
+            }
+            .toolbar(.hidden, for: .tabBar)
+            .tag(0)
 
             NavigationStack(path: $searchPath) {
-                SearchView()
-                    .navigationTitle("")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarBackground(.hidden, for: .navigationBar)
-                    .navigationDestination(for: FeedNote.self) { note in
-                        NoteDetailView(note: note)
-                    }
+                noteSplit("Pick a note from the results to read it here.") {
+                    SearchView()
+                        .navigationTitle("")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.hidden, for: .navigationBar)
+                }
+                .navigationDestination(for: FeedNote.self) { note in
+                    NoteDetailView(note: note)
+                }
             }
             .toolbar(.hidden, for: .tabBar)
             .tag(1)
 
             NavigationStack(path: $profilePath) {
-                ProfileView(pubkey: activeHex, embeddedInNavigation: false)
-                    .navigationTitle("Profile")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarBackground(.hidden, for: .navigationBar)
-                    .navigationDestination(for: FeedNote.self) { note in
-                        NoteDetailView(note: note)
-                    }
+                noteSplit("Pick a note from your profile to read it here.") {
+                    ProfileView(pubkey: activeHex, embeddedInNavigation: false)
+                        .navigationTitle("Profile")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.hidden, for: .navigationBar)
+                }
+                .navigationDestination(for: FeedNote.self) { note in
+                    NoteDetailView(note: note)
+                }
             }
             .id(activeHex)
             .toolbar(.hidden, for: .tabBar)
@@ -432,9 +478,17 @@ struct iPhoneTabView: View {
                 .toolbar(.hidden, for: .tabBar)
                 .tag(3)
 
-            VaultView()
-                .toolbar(.hidden, for: .tabBar)
-                .tag(4)
+            Group {
+                if usesNoteSplit {
+                    NavigationStack {
+                        noteSplit("Pick a note from the relay to read it here.") { VaultView() }
+                    }
+                } else {
+                    VaultView()
+                }
+            }
+            .toolbar(.hidden, for: .tabBar)
+            .tag(4)
         }
         .tint(.havenPurple)
         .toolbar(.hidden, for: .tabBar)
