@@ -1907,6 +1907,28 @@ class FeedService: ObservableObject {
 
     private var contactLoadingTimeout: Timer?
 
+    /// Follow / unfollow taps made before the follow list had loaded. They
+    /// are applied, in order, as soon as it has — publishing a list before
+    /// then could replace the real one on every relay.
+    private var pendingFollowActions: [(pubkey: String, follow: Bool)] = []
+
+    /// Starts loading the follow list if nothing has yet. The Popular, Live,
+    /// Reels and Music feeds never load it on their own, so on a launch into
+    /// one of them Follow was refused until you visited Following.
+    func ensureContactListLoading() {
+        guard !isLoadingContacts, !hasAttemptedContactLoad else { return }
+        loadContactList {}
+    }
+
+    private func applyPendingFollowActions() {
+        guard hasAttemptedContactLoad, !isLoadingContacts, !pendingFollowActions.isEmpty else { return }
+        let actions = pendingFollowActions
+        pendingFollowActions.removeAll()
+        for action in actions {
+            if action.follow { followUser(action.pubkey) } else { unfollowUser(action.pubkey) }
+        }
+    }
+
     private func loadContactList(completion: @escaping () -> Void) {
         let activeNpub = ConfigService.shared.config.activeAccountNpub.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetNpub = activeNpub.isEmpty ? ConfigService.shared.config.ownerNpub : activeNpub
@@ -1934,6 +1956,9 @@ class FeedService: ObservableObject {
         // await doesn't kick off a duplicate fetch.
         isLoadingContacts = true
         connectionStatus = "Fetching contact list…"
+        // The safety timeout starts now, not after the relay-readiness wait
+        // below: otherwise the window in which Follow is refused ran to 23s.
+        startContactLoadingTimeout(completion: completion)
 
         Task { @MainActor [weak self] in
             guard let self = self else { return }
@@ -1948,7 +1973,7 @@ class FeedService: ObservableObject {
         }
     }
 
-    private func beginContactFetch(ownerHex: String, completion: @escaping () -> Void) {
+    private func startContactLoadingTimeout(completion: @escaping () -> Void) {
         // Safety timeout: if contact loading hasn't finished in 15 seconds, force completion
         contactLoadingTimeout?.invalidate()
         contactLoadingTimeout = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: false) { [weak self] _ in
@@ -1964,7 +1989,9 @@ class FeedService: ObservableObject {
                 completion()
             }
         }
+    }
 
+    private func beginContactFetch(ownerHex: String, completion: @escaping () -> Void) {
         // Connect to all relays in parallel — use the first one that returns a non-empty contact list.
         let candidates: [URL] = ([localRelayURL] + externalRelayURLs).compactMap { $0 }
         fetchContactListInParallel(from: candidates, ownerHex: ownerHex, completion: completion)
@@ -1977,6 +2004,7 @@ class FeedService: ObservableObject {
     /// has drifted. Fresh connects are handled by the caller's completion
     /// (e.g. refresh → subscribeToAllRelays); here we only repair live subs.
     private func handleContactLoadResolved() {
+        defer { applyPendingFollowActions() }
         if followedPubkeys.isEmpty {
             let backup = FollowingBackupService.shared
             backup.loadSnapshots(forAccountKey: currentSnapshotKey())
@@ -2366,6 +2394,11 @@ class FeedService: ObservableObject {
             hasAttemptedLoad: hasAttemptedContactLoad,
             isLoading: isLoadingContacts
         ) {
+        case .failure(.contactsNotLoaded):
+            pendingFollowActions.removeAll { $0.pubkey == pubkey }
+            pendingFollowActions.append((pubkey, true))
+            ensureContactListLoading()
+            return .failure(.contactsNotLoaded)
         case .failure(let err): return .failure(err)
         case .success(let result):
             contactListPTags = result.pTags
@@ -2398,6 +2431,11 @@ class FeedService: ObservableObject {
             hasAttemptedLoad: hasAttemptedContactLoad,
             isLoading: isLoadingContacts
         ) {
+        case .failure(.contactsNotLoaded):
+            pendingFollowActions.removeAll { $0.pubkey == pubkey }
+            pendingFollowActions.append((pubkey, false))
+            ensureContactListLoading()
+            return .failure(.contactsNotLoaded)
         case .failure(let err): return .failure(err)
         case .success(let result):
             contactListPTags = result.pTags
