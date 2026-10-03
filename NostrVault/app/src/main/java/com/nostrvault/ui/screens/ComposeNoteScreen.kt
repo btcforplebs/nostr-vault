@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -257,6 +258,24 @@ class ComposeNoteViewModel @Inject constructor(
     private val mentionMap = mutableMapOf<String, String>()
 
     val isReply: Boolean get() = replyToNoteId != null
+
+    /** Answer an original note with a NIP-22 comment (1111) instead of a kind
+     *  1 reply. Off by default: most clients show kind 1 under a note. */
+    private val _postAsComment = MutableStateFlow(false)
+    val postAsComment = _postAsComment.asStateFlow()
+    fun setPostAsComment(on: Boolean) { _postAsComment.value = on }
+
+    /** What a response to the parent will be: "choice" on an original note
+     *  (reply, or comment), "comment" when it can only be a comment (an
+     *  article, a video…), null for a plain reply or a new note. */
+    val responseKindHint: String?
+        get() {
+            val parent = replyToNoteId?.let { feedService.findNote(it) } ?: return null
+            if (parent.kind == 6) return null
+            if (NIP10Thread.isOriginalNote(parent.kind, parent.tags)) return "choice"
+            return if (parent.kind != NIP10Thread.COMMENT_KIND &&
+                NIP10Thread.replyKind(parent.kind) == NIP10Thread.COMMENT_KIND) "comment" else null
+        }
     val isQuote: Boolean get() = quoteToNoteId != null
 
     /**
@@ -1112,12 +1131,17 @@ class ComposeNoteViewModel @Inject constructor(
         val effectiveParentKind = if (parentNote.kind == 6) {
             parentNote.repostedEventId?.let { feedService.findNote(it)?.kind } ?: 1
         } else parentNote.kind
-        val eventKind = NIP10Thread.replyKind(effectiveParentKind)
+        // Kind 1 replies only onto kind 1 notes; anything else (and a note
+        // when "Post as comment" is on) gets a NIP-22 comment.
+        val asComment = _postAsComment.value && NIP10Thread.isOriginalNote(effectiveParentKind, parentNote.tags)
+        val eventKind = NIP10Thread.replyKind(effectiveParentKind, asComment)
         if (eventKind == NIP10Thread.COMMENT_KIND) {
-            // NIP-22: answering a comment sends a comment, scoped to the same
-            // root. commentReplyTags already tags the parent author.
-            tags.addAll(NIP10Thread.commentReplyTags(
+            // NIP-22: on a comment, copy its root and point at it; on anything
+            // else the parent is the root (E, or A alone for addressables and
+            // replaceables). The tags already name the parent author.
+            tags.addAll(NIP10Thread.commentTags(
                 parentId = parentNote.effectiveEventId,
+                parentKind = effectiveParentKind,
                 parentPubkey = parentNote.pubkey,
                 parentTags = parentNote.tags,
                 relayHint = configStore.config.value.nostrURL ?: "",
@@ -1137,16 +1161,6 @@ class ComposeNoteViewModel @Inject constructor(
         val parentETags = parentNote.tags.filter { it.size >= 2 && it[0] == "e" }
         val parentNonMentionETags = parentETags.filter { it.size < 4 || it[3] != "mention" }
 
-        // NIP-10/NIP-01: addressable-event a-tags, alongside the e-tags above. A
-        // parameterized replaceable event (kind 30000–39999, e.g. a long-form article)
-        // gets a new event id every time it's edited, so an e-tag-only reply silently
-        // becomes orphaned from other clients' view of the thread once the author edits
-        // it — the "a" coordinate (kind:pubkey:d-tag) is what stays stable across edits.
-        fun addressableCoordinate(kind: Int, pubkey: String, noteTags: List<List<String>>): String? {
-            if (kind < 30000 || kind >= 40000) return null
-            val dTag = noteTags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1) ?: return null
-            return "$kind:$pubkey:$dTag"
-        }
         val parentNonMentionATags = parentNote.tags.filter { it.size >= 2 && it[0] == "a" }
             .filter { it.size < 4 || it[3] != "mention" }
 
@@ -1155,9 +1169,6 @@ class ComposeNoteViewModel @Inject constructor(
             // optional 5th element is the event author's pubkey, used by the outbox
             // model to know whose relays to fetch it from.
             tags.add(listOf("e", parentId, "", "root", parentNote.pubkey))
-            addressableCoordinate(parentNote.kind, parentNote.pubkey, parentNote.tags)?.let { coord ->
-                tags.add(listOf("a", coord, "", "root"))
-            }
         } else {
             // Parent is itself a reply — find the thread root
             val rootTag = parentNonMentionETags.firstOrNull { it.size >= 4 && it[3] == "root" }
@@ -1170,16 +1181,11 @@ class ComposeNoteViewModel @Inject constructor(
             )
             tags.add(listOf("e", parentId, "", "reply", parentNote.pubkey))
 
-            // Root a-tag: we only have the root's event id here (not its kind/pubkey/
-            // d-tag), so propagate it forward from the parent's own root a-tag if it had one.
+            // A legacy thread under an addressable root carries its coordinate
+            // forward. a/A tags have no marker field.
             val rootATag = parentNonMentionATags.firstOrNull { it.size >= 4 && it[3] == "root" }
                 ?: parentNonMentionATags.firstOrNull()
-            rootATag?.let { tags.add(listOf("a", it[1], "", "root")) }
-
-            // Reply a-tag: the immediate parent might itself be addressable.
-            addressableCoordinate(parentNote.kind, parentNote.pubkey, parentNote.tags)?.let { coord ->
-                tags.add(listOf("a", coord, "", "reply"))
-            }
+            rootATag?.let { tags.add(listOf("a", it[1], "")) }
         }
 
         // Always tag the parent author
@@ -1232,6 +1238,7 @@ fun ComposeNoteScreen(
     val uploadMessage by viewModel.uploadMessage.collectAsState()
     val error by viewModel.error.collectAsState()
     val replyingToName by viewModel.replyingToName.collectAsState()
+    val postAsComment by viewModel.postAsComment.collectAsState()
     val quotedNote by viewModel.quotedNote.collectAsState()
     val quotedProfile by viewModel.quotedProfile.collectAsState()
     val attachments by viewModel.attachments.collectAsState()
@@ -1404,6 +1411,18 @@ fun ComposeNoteScreen(
                     color = SecondaryText,
                     fontSize = 13.sp,
                 )
+                when (viewModel.responseKindHint) {
+                    "choice" -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Post as comment", color = SecondaryText, fontSize = 12.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Switch(
+                            checked = postAsComment,
+                            onCheckedChange = viewModel::setPostAsComment,
+                            modifier = Modifier.scale(0.75f),
+                        )
+                    }
+                    "comment" -> Text("Posting as a comment", color = SecondaryText, fontSize = 12.sp)
+                }
                 Spacer(Modifier.height(8.dp))
             }
 

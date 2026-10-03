@@ -27,6 +27,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,6 +61,21 @@ import javax.inject.Inject
 /** Loading-row fallback when relays never send EOSE (iOS uses 6 s too). */
 private const val LOADING_TIMEOUT_MS = 6_000L
 
+/**
+ * A response that isn't a thread row: a quote (a `q` tag on the root, and not
+ * itself a reply), a highlight, a voice reply, or any other kind pointing at
+ * the root. Replies, comments, reactions, reposts and zaps live elsewhere.
+ * iOS: NoteDetailView.isOtherResponse.
+ */
+internal fun isOtherResponse(note: FeedNote, rootId: String): Boolean {
+    if (note.kind in setOf(1, NIP10Thread.COMMENT_KIND, 6, 7, 9735)) {
+        if (note.kind != 1) return false
+        val quotesRoot = note.tags.any { it.size >= 2 && it[0] == "q" && it[1] == rootId }
+        return quotesRoot && NIP10Thread.parentEventId(note.kind, note.tags) == null
+    }
+    return true
+}
+
 @HiltViewModel
 class NoteDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -85,6 +101,10 @@ class NoteDetailViewModel @Inject constructor(
     /** All replies in the thread (flat list used to build the tree). */
     private val _allReplies = MutableStateFlow<List<FeedNote>>(emptyList())
     val allReplies: StateFlow<List<FeedNote>> = _allReplies.asStateFlow()
+
+    /** Quotes, highlights and voice replies: shown under the thread, not as rows. */
+    private val _otherResponses = MutableStateFlow<List<FeedNote>>(emptyList())
+    val otherResponses: StateFlow<List<FeedNote>> = _otherResponses.asStateFlow()
 
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
     val noteStats: StateFlow<Map<String, NoteStats>> = feedService.noteStats
@@ -192,7 +212,20 @@ class NoteDetailViewModel @Inject constructor(
         val ancestorIds = foundNote.tags
             .filter { it.size >= 2 && it[0] == "e" && (it.size < 4 || it[3] != "mention") }
             .map { it[1] }
-        nostrService.fetchThread(rootId, effectiveId, ancestorIds, onRawEvent = feedService::cacheRawEvent) { threadNotes ->
+        // The root's address when it's addressable or replaceable (or the
+        // A a comment carries), so comments on an edited article still load.
+        val rootCoordinate = if (foundNote.kind == NIP10Thread.COMMENT_KIND) {
+            foundNote.tags.firstOrNull { it.size >= 2 && it[0] == "A" }?.get(1)
+        } else if (rootId == foundNote.id) {
+            NIP10Thread.coordinate(foundNote.kind, foundNote.pubkey, foundNote.tags)
+        } else null
+        nostrService.fetchOtherResponses(rootId) { found ->
+            _otherResponses.value = found
+                .filter { isOtherResponse(it, rootId) && !FeedNote.isNoiseOrSpam(it.content, it.tags) }
+                .sortedByDescending { it.createdAt }
+            nostrService.fetchMissingProfiles(found.map { it.pubkey }.distinct())
+        }
+        nostrService.fetchThread(rootId, effectiveId, ancestorIds, rootCoordinate, onRawEvent = feedService::cacheRawEvent) { threadNotes ->
             mergeReplies(threadNotes)
             // Rebuild the chain now that fetched notes may fill gaps.
             _parentNotes.value = buildAncestorChain(foundNote, _allReplies.value)
@@ -424,6 +457,7 @@ fun NoteDetailScreen(
     val note by viewModel.note.collectAsState()
     val parentNotes by viewModel.parentNotes.collectAsState()
     val allReplies by viewModel.allReplies.collectAsState()
+    val otherResponses by viewModel.otherResponses.collectAsState()
     val isLoadingNote by viewModel.isLoadingNote.collectAsState()
     val isLoadingParents by viewModel.isLoadingParents.collectAsState()
     val isLoadingReplies by viewModel.isLoadingReplies.collectAsState()
@@ -825,6 +859,26 @@ fun NoteDetailScreen(
                         },
                         onLongPressLikeNote = { emojiTargetNote = it },
                     )
+                }
+
+                // ── Quotes & highlights (below the fold) ─────────
+                if (otherResponses.isNotEmpty()) {
+                    item(key = "other_header") {
+                        Text(
+                            text = "Quotes & highlights",
+                            color = PrimaryText,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
+                        )
+                    }
+                    items(otherResponses, key = { "other_${it.id}" }) { response ->
+                        OtherResponseCard(
+                            note = response,
+                            profile = profiles[response.pubkey],
+                            onClick = { if (response.kind == 1) onNoteClick(response.id) },
+                        )
+                    }
                 }
 
                 // Bottom spacer
@@ -1351,5 +1405,47 @@ private fun EngagementStat(count: Int, label: String, onClick: () -> Unit = {}) 
             color = SecondaryText,
             fontSize = 14.sp,
         )
+    }
+}
+
+/** One "below the fold" response: who, what kind, and the text. */
+@Composable
+private fun OtherResponseCard(note: FeedNote, profile: FeedProfile?, onClick: () -> Unit) {
+    val label = when (note.kind) {
+        1 -> "Quoted"
+        9802 -> "Highlighted"
+        1244 -> "Voice reply"
+        else -> "Responded"
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(SecondaryText.copy(alpha = 0.08f))
+            .clickable(enabled = note.kind == 1, onClick = onClick)
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AvatarImage(url = profile?.pictureURL, pubkey = note.pubkey, size = 22.dp, displayName = profile?.bestName)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = profile?.bestName ?: note.pubkey.take(8),
+                color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(label, color = SecondaryText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        }
+        if (note.content.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = note.content,
+                color = PrimaryText,
+                fontSize = 14.sp,
+                maxLines = if (note.kind == 9802) 6 else 4,
+                overflow = TextOverflow.Ellipsis,
+                fontStyle = if (note.kind == 9802) FontStyle.Italic else FontStyle.Normal,
+            )
+        }
     }
 }
