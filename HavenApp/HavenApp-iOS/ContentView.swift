@@ -445,9 +445,14 @@ struct iPhoneTabView: View {
             VStack(spacing: 6) {
                 // Leaves room on the right for the screen's floating button
                 // (Post, Blossom, Relay), which drops level with it.
-                MiniPlayerBar()
-                    .padding(.leading, 12)
-                    .padding(.trailing, max(12, buttonRow.reservedWidth))
+                // Folds away with the floating button as the bar shrinks;
+                // the folded bar carries a small now-playing button instead.
+                // Faded rather than removed, so the inset never relayouts.
+                ChromeFold(anchor: .bottomLeading) {
+                    MiniPlayerBar()
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, max(12, buttonRow.reservedWidth))
                 BottomTabBar(
                     selectedTab: $selectedTab,
                     searchPath: $searchPath,
@@ -655,6 +660,9 @@ struct BottomTabBar: View {
     @ViewBuilder
     private var collapsedContent: some View {
         HStack(spacing: 16) {
+            // Music or a minimized live stream: play/pause, left of the avatar.
+            CollapsedNowPlayingButton()
+
             // Profile avatar — tap to expand tab bar, hold to switch account
             accountSwitchButton {
                 chrome.reset()
