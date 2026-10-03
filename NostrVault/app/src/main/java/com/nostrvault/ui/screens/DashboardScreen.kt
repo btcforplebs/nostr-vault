@@ -91,6 +91,11 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
+/** What the Relay tab counts as a post: notes, reposts, articles, NIP-22
+ *  comments and highlights. Comments and highlights that tag you were never
+ *  requested, so they never showed up there. iOS: NostrService.relayTabNoteKinds. */
+private val RELAY_TAB_NOTE_KINDS = setOf(1, 6, 30023, NIP10Thread.COMMENT_KIND, 9802)
+
 /**
  * Relay tab screen matching iOS VaultView:
  * - Notes / Likes / Zaps mode switcher in the leading toolbar pill
@@ -810,13 +815,13 @@ class DashboardViewModel @Inject constructor(
         val newest = newestEventCreatedAt
         val sinceClause = if (!isFullReload && newest > 0) ",\"since\":${newest - 60}" else ""
 
-        val authorFilter = """{"kinds":[1,6,7,30023,9735],"authors":[$authorsJson]$sinceClause,"limit":500}"""
+        val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735],"authors":[$authorsJson]$sinceClause,"limit":500}"""
 
         val filters = if (ownerHex.isNotEmpty()) {
             // IMPORTANT: Mentions filter should NOT use sinceClause - we want ALL notes
             // where the user is tagged, not just recent ones. This fixes the bug where
             // older tagged notes never appear in the TAGGED filter.
-            val mentionsFilter = """{"kinds":[1,6,7,30023,9735],"#p":["$ownerHex"],"limit":500}"""
+            val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735],"#p":["$ownerHex"],"limit":500}"""
             "$authorFilter,$mentionsFilter"
         } else {
             authorFilter
@@ -1093,10 +1098,10 @@ class DashboardViewModel @Inject constructor(
             viewModelScope.launch(Dispatchers.IO) {
                 val untilSecs = oldest.time / 1000 - 1
                 val authorsJson = authors.joinToString(",") { "\"$it\"" }
-                val authorFilter = """{"kinds":[1,6,7,30023,9735],"authors":[$authorsJson],"until":$untilSecs,"limit":200}"""
+                val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735],"authors":[$authorsJson],"until":$untilSecs,"limit":200}"""
 
                 val filters = if (ownerHex.isNotEmpty()) {
-                    val mentionsFilter = """{"kinds":[1,6,7,30023,9735],"#p":["$ownerHex"],"until":$untilSecs,"limit":300}"""
+                    val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735],"#p":["$ownerHex"],"until":$untilSecs,"limit":300}"""
                     "$authorFilter,$mentionsFilter"
                 } else {
                     authorFilter
@@ -1322,7 +1327,7 @@ class DashboardViewModel @Inject constructor(
         for (event in events) {
             if (!partitionedIds.add(event.id)) continue
             when (event.kind) {
-                1, 6, 30023 -> noteEvents.add(event)
+                in RELAY_TAB_NOTE_KINDS -> noteEvents.add(event)
                 7 -> reactionEvents.add(event)
                 9735 -> zapEvents.add(event)
             }
@@ -1341,7 +1346,7 @@ class DashboardViewModel @Inject constructor(
                         Log.d(TAG, "Event with user p-tag BEFORE filter: id=${event.id.take(8)}, kind=${event.kind}, from=${event.pubkey.take(8)}")
                     }
 
-                    if (event.kind !in listOf(1, 6, 30023)) {
+                    if (event.kind !in RELAY_TAB_NOTE_KINDS) {
                         if (hasUserPTag && event.pubkey != owner) {
                             Log.w(TAG, "DROPPING event kind ${event.kind} that tags user: id=${event.id.take(8)}")
                         }
@@ -1769,7 +1774,7 @@ class DashboardViewModel @Inject constructor(
                             )
                             rawEvents.add(nostrEvent)
 
-                            if (kind in listOf(1, 6, 30023)) {
+                            if (kind in RELAY_TAB_NOTE_KINDS) {
                                 val note = FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)
                                 if (!note.isNoiseOrSpam()) {
                                     contentNotes.add(note)
