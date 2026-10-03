@@ -54,9 +54,6 @@ struct ComposeView: View {
     @EnvironmentObject var relayManager: RelayProcessManager
 
     @State private var content: String = ""
-    /// Answer an original note with a NIP-22 comment (1111) instead of a
-    /// kind 1 reply. Off by default: most clients show kind 1 under a note.
-    @State private var postAsComment = false
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var attachments: [Attachment] = []
     @State private var isUploading = false
@@ -820,31 +817,6 @@ struct ComposeView: View {
         .frame(minHeight: 44)
     }
     
-    /// What this response will be sent as. On an original note it's a choice
-    /// (reply, or "Post as comment"); on anything that isn't a note it's
-    /// always a comment, and the line says so.
-    @ViewBuilder
-    private func responseKindChoice(parent: FeedNote) -> some View {
-        if parent.kind == 6 {
-            EmptyView()
-        } else if NIP10Thread.isOriginalNote(kind: parent.kind, tags: parent.tags) {
-            Toggle(isOn: $postAsComment) {
-                Text("Post as comment")
-                    .font(.appSystem(size: 12, weight: .semibold))
-                    .foregroundColor(.secondary)
-            }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .tint(.havenPurple)
-            .fixedSize()
-            .accessibilityHint("Sends a NIP-22 comment instead of a reply. Some apps don't show comments under notes yet.")
-        } else if NIP10Thread.replyKind(parentKind: parent.kind) == NIP10Thread.commentKind && parent.kind != NIP10Thread.commentKind {
-            Label("Posting as a comment", systemImage: "text.bubble")
-                .font(.appSystem(size: 12, weight: .semibold))
-                .foregroundColor(.secondary)
-        }
-    }
-
     private func replyHeader(parent: FeedNote) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 0) {
@@ -879,7 +851,6 @@ struct ComposeView: View {
                         .padding(.bottom, 4)
                 }
 
-                responseKindChoice(parent: parent)
             }
         }
         .padding(12)
@@ -1660,10 +1631,9 @@ struct ComposeView: View {
                     return tag[3] != "mention"
                 }
 
-                // Kind 1 replies only onto kind 1 notes; anything else (and a
-                // note when "Post as comment" is on) gets a NIP-22 comment.
-                let asComment = postAsComment && NIP10Thread.isOriginalNote(kind: effectiveParentKind, tags: effectiveParentTags)
-                eventKind = NIP10Thread.replyKind(parentKind: effectiveParentKind, asComment: asComment)
+                // Automatic (Logen, 2026-10-03): a note gets a kind 1 reply,
+                // anything else a NIP-22 comment. No switch to explain.
+                eventKind = NIP10Thread.replyKind(parentKind: effectiveParentKind)
                 if eventKind == NIP10Thread.commentKind {
                     // NIP-22: on a comment, copy its root and point at it; on
                     // anything else the parent is the root (E, or A alone for
