@@ -24,12 +24,16 @@ import com.nostrvault.ui.theme.*
  * - Bare URLs → clickable links in theme color
  * - `#hashtag` → theme-colored text
  * - Media URLs → stripped (rendered as MediaPreviewRow elsewhere)
+ * - [linkURLs] → stripped too, for callers that draw a LinkPreviewCard per
+ *   link (#170 parity). A caller that draws no card must not pass them, or
+ *   the link disappears from the note.
  */
 @Composable
 fun NostrContentText(
     content: String,
     profiles: Map<String, FeedProfile>,
     mediaURLs: Set<String> = emptySet(),
+    linkURLs: Set<String> = emptySet(),
     onProfileClick: (String) -> Unit = {},
     onPlainTextClick: (() -> Unit)? = null,
     textColor: Color = PrimaryText,
@@ -45,7 +49,7 @@ fun NostrContentText(
     // memoize them — otherwise they re-run on every recomposition (e.g. each
     // time the global profile map updates while scrolling), which is the main
     // feed-scroll jank source.
-    val segments = remember(content, mediaURLs) { parseContentSegments(content, mediaURLs) }
+    val segments = remember(content, mediaURLs, linkURLs) { parseContentSegments(content, mediaURLs + linkURLs) }
 
     // Resolve mention display-names + build the styled string. This is cheap
     // (map lookups + string appends, no regex), so it can re-run when profiles
@@ -115,7 +119,7 @@ fun NostrContentText(
 
 // ── Content parsing ──────────────────────────────────────────────
 
-private sealed class ContentSegment {
+internal sealed class ContentSegment {
     data class PlainText(val text: String) : ContentSegment()
     data class Mention(val pubkey: String) : ContentSegment()
     data class Url(val url: String, val displayUrl: String) : ContentSegment()
@@ -136,9 +140,10 @@ private val HASHTAG_REGEX = Regex(
     """(?<=\s|^)#(\w{1,50})(?=\s|$)""",
 )
 
-private fun parseContentSegments(
+/** [strippedURLs] are dropped from the text: media, and links drawn as cards. */
+internal fun parseContentSegments(
     content: String,
-    mediaURLs: Set<String>,
+    strippedURLs: Set<String>,
 ): List<ContentSegment> {
     // Collect all matches with their ranges
     data class Match(val range: IntRange, val segment: ContentSegment)
@@ -166,7 +171,7 @@ private fun parseContentSegments(
         // Skip if this range overlaps a nostr: mention/quote already captured
         if (matches.any { it.range.first <= m.range.last && it.range.last >= m.range.first }) continue
 
-        if (url in mediaURLs) {
+        if (url in strippedURLs) {
             matches.add(Match(m.range, ContentSegment.MediaUrl(url)))
         } else {
             val displayUrl = url
@@ -203,5 +208,35 @@ private fun parseContentSegments(
         segments.add(ContentSegment.PlainText(content.substring(cursor)))
     }
 
-    return segments
+    return closeGaps(segments)
+}
+
+/**
+ * Close the holes that stripped URLs and quote references leave behind, the
+ * way iOS `stripURLs` does: "see https://x.com now" reads "see now", not
+ * "see  now", and nothing hangs at either end. Text either side of a stripped
+ * piece is joined first, so the gap that spans it collapses too.
+ */
+private fun closeGaps(segments: List<ContentSegment>): List<ContentSegment> {
+    val joined = mutableListOf<ContentSegment>()
+    for (segment in segments) {
+        when (segment) {
+            is ContentSegment.QuoteRef, is ContentSegment.MediaUrl -> {}
+            is ContentSegment.PlainText -> {
+                val last = joined.lastOrNull()
+                if (last is ContentSegment.PlainText) {
+                    joined[joined.lastIndex] = ContentSegment.PlainText(last.text + segment.text)
+                } else {
+                    joined.add(segment)
+                }
+            }
+            else -> joined.add(segment)
+        }
+    }
+    val tidied = joined.map {
+        if (it is ContentSegment.PlainText) ContentSegment.PlainText(NostrMentions.collapseGaps(it.text)) else it
+    }.toMutableList()
+    (tidied.firstOrNull() as? ContentSegment.PlainText)?.let { tidied[0] = ContentSegment.PlainText(it.text.trimStart()) }
+    (tidied.lastOrNull() as? ContentSegment.PlainText)?.let { tidied[tidied.lastIndex] = ContentSegment.PlainText(it.text.trimEnd()) }
+    return tidied.filterNot { it is ContentSegment.PlainText && it.text.isEmpty() }
 }

@@ -50,7 +50,8 @@ class NostrMentionsTest {
     @Test
     fun `quote references are still stripped`() {
         val text = NostrMentions.toPlainText("see nostr:nevent1abc for more", emptyMap())
-        assertEquals("see  for more", text)
+        // The gap closes to one space, as iOS does since #170.
+        assertEquals("see for more", text)
     }
 
     @Test

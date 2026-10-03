@@ -152,10 +152,20 @@ data class FeedNote(
     val effectiveEventId: String
         get() = if (kind == 6) repostedEventId ?: id else id
 
+    /**
+     * The links that get a card, and so leave the text. Capped: each card
+     * fetches its page, and a note can carry thousands of URLs to a host the
+     * poster controls (Tron, #183). Links past the cap stay in the text.
+     */
+    val cardLinkURLs: List<String>
+        get() = linkURLs.take(MAX_LINK_CARDS)
+
     override fun equals(other: Any?): Boolean = other is FeedNote && id == other.id
     override fun hashCode(): Int = id.hashCode()
 
     companion object {
+        const val MAX_LINK_CARDS = 3
+
         /**
          * Every event id these notes can ask the referenced-note cache for:
          * thread parents, thread roots, kind-6 originals and quoted notes.
@@ -321,14 +331,15 @@ data class FeedNote(
             )
         }
 
-        private fun parseMediaURLs(content: String): List<String> {
+        internal fun parseMediaURLs(content: String): List<String> {
             val urls = mutableListOf<String>()
             urls += MEDIA_REGEX.findAll(content).map { it.value }
             urls += BLOSSOM_REGEX.findAll(content).map { it.value }
             return urls
         }
 
-        private fun parseLinkURLs(content: String, mediaSet: Set<String>): List<String> {
+        /** Every non-media http(s) URL in [content], in order, each once. */
+        internal fun parseLinkURLs(content: String, mediaSet: Set<String>): List<String> {
             val seen = mutableSetOf<String>()
             return HTTP_URL_REGEX.findAll(content)
                 .map { it.value }

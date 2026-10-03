@@ -17,6 +17,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -224,11 +226,19 @@ fun CondensedNoteLine(
                     }
                 }
 
-                if (displayContent.isNotBlank()) {
+                // Every URL comes out of the line (#170 parity); links come
+                // from the text actually shown, which an override replaces.
+                val (bodyMedia, bodyLinks) = remember(displayContent, mediaURLs, note.mediaURLs) {
+                    val media = FeedNote.parseMediaURLs(displayContent).toSet() + mediaURLs + note.mediaURLs
+                    media to FeedNote.parseLinkURLs(displayContent, media)
+                }
+                val plainText = remember(note.id, displayContent, profiles, bodyMedia, bodyLinks) {
+                    NostrMentions.collapseGaps(
+                        NostrMentions.toPlainText(displayContent, profiles, bodyMedia, bodyLinks.toSet()).replace("\n", " ")
+                    ).trim()
+                }
+                if (plainText.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
-                    val plainText = remember(note.id, displayContent, profiles) {
-                        NostrMentions.toPlainText(displayContent, profiles, note.mediaURLs.toSet()).replace("\n", " ").trim()
-                    }
                     Text(
                         text = plainText,
                         color = SecondaryText,
@@ -237,6 +247,11 @@ fun CondensedNoteLine(
                         overflow = TextOverflow.Ellipsis,
                         lineHeight = (bodySize.value + 4).sp,
                     )
+                }
+
+                if (bodyLinks.isNotEmpty()) {
+                    Spacer(Modifier.height(3.dp))
+                    CondensedLinkChip(bodyLinks, themeColor)
                 }
 
                 if (!engagement.isEmpty) {
@@ -260,6 +275,31 @@ fun CondensedNoteLine(
                 CondensedMediaThumbnail(mediaURLs, isRoot)
             }
         }
+    }
+}
+
+/** The first link's domain, `+N` for the rest: links the line no longer prints. */
+@Composable
+private fun CondensedLinkChip(links: List<String>, tint: Color) {
+    val label = if (links.size == 1) "Link to ${linkDomain(links[0])}" else "${links.size} links"
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = label },
+    ) {
+        Icon(
+            imageVector = NostrVaultIcons.LinkIcon,
+            contentDescription = null,
+            tint = tint.copy(alpha = 0.8f),
+            modifier = Modifier.size(10.dp),
+        )
+        Text(
+            text = linkDomain(links[0]) + if (links.size > 1) " +${links.size - 1}" else "",
+            color = SecondaryText,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
