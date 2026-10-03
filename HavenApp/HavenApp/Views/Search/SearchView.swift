@@ -1354,6 +1354,10 @@ final class HashtagFeedModel: ObservableObject {
 
     init(tag: String) { self.tag = tag }
 
+    /// Set when "People I follow" was asked for before the follow list loaded:
+    /// showing Everyone under that label would show strangers.
+    @Published private(set) var waitingForFollows = false
+
     /// `authors` narrows the query to those people (the "People I follow" view).
     func start(authors: [String]?) {
         stop()
@@ -1362,6 +1366,14 @@ final class HashtagFeedModel: ObservableObject {
         notes = []
         seen = []
         isLoading = true
+        waitingForFollows = false
+        if let authors, authors.isEmpty {
+            waitingForFollows = true
+            isLoading = false
+            return
+        }
+        let wantedTags = Set([tag, tag.lowercased()])
+        let wantedAuthors = authors.map(Set.init)
 
         var filter: [String: Any] = [
             "kinds": [1],
@@ -1391,7 +1403,7 @@ final class HashtagFeedModel: ObservableObject {
             client.messageSubject
                 .receive(on: queue)
                 .compactMap { message -> FeedNote?? in
-                    Self.parse(message, subId: subId, blocked: blocked)
+                    Self.parse(message, subId: subId, blocked: blocked, tags: wantedTags, authors: wantedAuthors)
                 }
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] parsed in
@@ -1429,7 +1441,10 @@ final class HashtagFeedModel: ObservableObject {
     /// `.some(note)` for a usable event, `.some(nil)` for EOSE, nil otherwise.
     /// Runs off the main thread: every event's signature is checked, since a
     /// relay can send anything under any author.
-    nonisolated private static func parse(_ message: String, subId: String, blocked: Set<String>) -> FeedNote?? {
+    /// Only what was asked for: a relay can send validly signed posts that
+    /// lack the tag, or come from people outside the requested authors.
+    nonisolated private static func parse(_ message: String, subId: String, blocked: Set<String>,
+                                          tags wanted: Set<String>, authors: Set<String>?) -> FeedNote?? {
         guard let data = message.data(using: .utf8),
               let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = array.first as? String,
@@ -1444,6 +1459,8 @@ final class HashtagFeedModel: ObservableObject {
               let kind = ev["kind"] as? Int, kind == 1,
               let tags = ev["tags"] as? [[String]],
               !blocked.contains(pubkey),
+              authors.map({ $0.contains(pubkey) }) ?? true,
+              tags.contains(where: { $0.count >= 2 && $0[0] == "t" && wanted.contains($0[1].lowercased()) }),
               !FeedNote.isNoiseOrSpam(content: content, tags: tags),
               NostrEventVerifier.isValid(ev) else { return nil }
         return .some(FeedNote(id: id, pubkey: pubkey, content: content,
@@ -1484,7 +1501,12 @@ struct HashtagFeedView: View {
 
                     if model.notes.isEmpty {
                         VStack(spacing: 10) {
-                            if model.isLoading {
+                            if model.waitingForFollows {
+                                ProgressView()
+                                Text("Loading the people you follow…")
+                                    .font(.appSubheadline)
+                                    .foregroundColor(.secondary)
+                            } else if model.isLoading {
                                 ProgressView()
                             } else {
                                 Image(systemName: "number").font(.appSystem(size: 28)).foregroundColor(.secondary)
@@ -1531,6 +1553,12 @@ struct HashtagFeedView: View {
         .task { model.start(authors: nil) }
         .onChange(of: followingOnly) { _, onlyFollows in
             model.start(authors: onlyFollows ? feedService.followedPubkeys : nil)
+        }
+        // The follow list can arrive after the switch was flipped.
+        .onChange(of: feedService.followedPubkeys.count) { _, _ in
+            if followingOnly && model.waitingForFollows {
+                model.start(authors: feedService.followedPubkeys)
+            }
         }
         .onDisappear { model.stop() }
         .sheet(item: $showingProfile) { profile in
