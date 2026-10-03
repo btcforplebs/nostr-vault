@@ -27,6 +27,7 @@ struct MenuBarView: View {
     /// reason iOS presents it from ContentView: a notification route has to be
     /// able to open it without depending on which tab happens to be mounted.
     @State private var showingDMInbox = false
+    @State private var dmInboxConversation: String?
     /// macOS has no navigation stack around the feed and vault, so a
     /// `NavigationLink(value:)` inside a note row has nothing to push onto and the
     /// click is swallowed — quoted notes and parent previews did nothing at all.
@@ -916,7 +917,7 @@ struct MenuBarView: View {
                 .environmentObject(configService)
         }
         .sheet(isPresented: $showingDMInbox) {
-            DMInboxView()
+            DMInboxView(openConversation: dmInboxConversation)
                 .environmentObject(nostrService)
                 .environmentObject(configService)
                 .frame(minWidth: 480, minHeight: 500)
@@ -939,11 +940,12 @@ struct MenuBarView: View {
                 noteSelection.select(id: eventId)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenDMInbox)) { note in
             // Matches iOS: the profile tab comes up behind the inbox, so
             // dismissing the sheet leaves you somewhere related rather than on
             // whatever tab you happened to be on when the message arrived.
             selectedTab = .profile
+            dmInboxConversation = note.object as? String
             showingDMInbox = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .composeFromTabBar)) { note in

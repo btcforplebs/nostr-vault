@@ -186,6 +186,12 @@ struct DMThreadView: View {
             }
             .onAppear {
                 dmService.markRead(conversationWith: counterpartyPubkey)
+                dmService.visibleConversation = counterpartyPubkey
+            }
+            .onDisappear {
+                if dmService.visibleConversation == counterpartyPubkey {
+                    dmService.visibleConversation = nil
+                }
             }
         }
     }

@@ -111,8 +111,43 @@ final class LocalNotificationService {
         // so the next background wake's round does not repeat it.
         if type == "summary" { NotificationActivityLog.recordCatchUpSummary() }
 
-        let name = author.isEmpty ? nil : NostrService.shared.profiles[author]?.bestName
+        if type == "dm" || type == "giftwrap" {
+            announceDM(id: id, type: type, author: author, recipientHex: recipientHex, npub: npub)
+            return
+        }
 
+        let name = author.isEmpty ? nil : NostrService.shared.profiles[author]?.bestName
+        deliver(id: id, type: type, name: name, preview: preview, npub: npub)
+    }
+
+    /// How long a DM marker waits for the inbox to decrypt its message.
+    private static let dmOpenTimeout: TimeInterval = 3
+
+    /// A gift wrap is signed by a throwaway key, so its marker cannot say who
+    /// wrote it — not even when it was you: every DM you send also wraps a copy
+    /// to yourself, and that copy lands in your own inbox. The inbox decrypts
+    /// it a moment later, so wait for that, then drop your own copies and show
+    /// the real sender and text. If it never opens (another account, an
+    /// offline signer) the generic line still goes out.
+    private func announceDM(id: String, type: String, author: String, recipientHex: String, npub: String) {
+        // A NIP-04 DM names its author in the clear.
+        if !author.isEmpty, author.lowercased() == recipientHex.lowercased() { return }
+
+        Task { @MainActor in
+            let opened = await DMService.shared.waitForMessage(withEventId: id, timeout: Self.dmOpenTimeout)
+            if let opened {
+                if opened.message.isFromMe { return }
+                // The conversation is already on screen.
+                if appInForeground, DMService.shared.visibleConversation == opened.conversationId { return }
+            }
+            let sender = opened?.message.senderPubkey ?? author
+            let name = sender.isEmpty ? nil : NostrService.shared.profiles[sender]?.bestName
+            let text = opened.flatMap { NotificationPolicy.dmPreview($0.message.content) } ?? ""
+            deliver(id: id, type: type, name: name, preview: text, npub: npub)
+        }
+    }
+
+    private func deliver(id: String, type: String, name: String?, preview: String, npub: String) {
         if appInForeground {
             showInAppBanner(id: id, type: type, name: name, preview: preview, npub: npub)
         } else {
@@ -153,7 +188,7 @@ final class LocalNotificationService {
                     preview.isEmpty ? "Tap to view the reply" : preview)
         case "dm", "giftwrap":
             return (name != nil ? "Message from \(who)" : "New message",
-                    "You have a new encrypted message")
+                    preview.isEmpty ? "You have a new encrypted message" : preview)
         case "zap":
             return ("⚡ New zap",
                     name != nil ? "\(who) zapped you" : "You received a zap")
@@ -232,7 +267,10 @@ final class LocalNotificationService {
             NotificationCenter.default.post(name: .havenOpenRelayZaps, object: nil)
             RelayFocus.request(type: type, eventId: id)
         case "dm", "giftwrap":
-            NotificationCenter.default.post(name: .havenOpenDMInbox, object: nil)
+            // Straight to the conversation when the inbox has the message;
+            // the object is the counterparty the inbox should open.
+            let peer = DMService.shared.message(withEventId: id)?.conversationId
+            NotificationCenter.default.post(name: .havenOpenDMInbox, object: peer)
         default:
             break
         }
