@@ -52,17 +52,6 @@ sealed class Screen(val route: String) {
     data object ProfileEdit : Screen("profile_edit")
     data object Drafts : Screen("drafts")
 
-    // Groups
-    data object GroupList : Screen("groups")
-    data object GroupChat : Screen("group_chat/{groupId}/{relayUrl}") {
-        fun createRoute(groupId: String, relayUrl: String) = "group_chat/$groupId/$relayUrl"
-    }
-    data object GroupInfo : Screen("group_info/{groupId}/{relayUrl}") {
-        fun createRoute(groupId: String, relayUrl: String) = "group_info/$groupId/$relayUrl"
-    }
-    data object GroupBrowser : Screen("group_browser")
-    data object GroupCreate : Screen("group_create")
-
     // Wallet
     data object Wallet : Screen("wallet")
     data object BitcoinSweep : Screen("bitcoin_sweep")

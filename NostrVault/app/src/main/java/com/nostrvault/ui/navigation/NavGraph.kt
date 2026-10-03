@@ -47,10 +47,6 @@ import com.nostrvault.ui.screens.dm.DMInboxScreen
 import com.nostrvault.ui.screens.dm.DMThreadScreen
 import com.nostrvault.ui.screens.dm.NewMessageScreen
 import com.nostrvault.ui.screens.feed.FeedScreen
-import com.nostrvault.ui.screens.groups.GroupBrowserScreen
-import com.nostrvault.ui.screens.groups.GroupChatScreen
-import com.nostrvault.ui.screens.groups.GroupInfoScreen
-import com.nostrvault.ui.screens.groups.GroupListScreen
 import com.nostrvault.ui.screens.profile.ProfileEditScreen
 import com.nostrvault.ui.screens.profile.ProfileScreen
 import com.nostrvault.ui.screens.settings.AccountSettingsScreen
@@ -69,8 +65,6 @@ import com.nostrvault.ui.screens.settings.HavenRelaySettingsScreen
 import com.nostrvault.ui.screens.settings.RelayListEditorScreen
 import com.nostrvault.ui.screens.settings.SettingsScreen
 import kotlinx.coroutines.flow.StateFlow
-import java.net.URLDecoder
-import java.net.URLEncoder
 
 /**
  * Page transitions take the shared motion vocabulary: a lateral tab switch is a
@@ -300,9 +294,6 @@ fun NostrVaultNavHost(
                     onNewMessage = {
                         navController.navigate(Screen.NewMessage.createRoute())
                     },
-                    onGroups = {
-                        navController.navigate(Screen.GroupList.route)
-                    },
                 )
             }
 
@@ -467,86 +458,6 @@ fun NostrVaultNavHost(
             composable(Screen.ProfileEdit.route) {
                 ProfileEditScreen(
                     onSaved = { navController.popBackStack() },
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            // ── Groups ────────────────────────────────────────────
-            composable(Screen.GroupList.route) {
-                GroupListScreen(
-                    onGroupClick = { groupId, relayUrl ->
-                        val encoded = URLEncoder.encode(relayUrl, "UTF-8")
-                        navController.navigate(Screen.GroupChat.createRoute(groupId, encoded))
-                    },
-                    onBrowse = {
-                        navController.navigate(Screen.GroupBrowser.route)
-                    },
-                    onCreate = {
-                        navController.navigate(Screen.GroupCreate.route)
-                    },
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable(
-                route = Screen.GroupChat.route,
-                arguments = listOf(
-                    navArgument("groupId") { type = NavType.StringType },
-                    navArgument("relayUrl") { type = NavType.StringType },
-                ),
-            ) { entry ->
-                val groupId = entry.arguments?.getString("groupId") ?: return@composable
-                val relayUrl = URLDecoder.decode(
-                    entry.arguments?.getString("relayUrl") ?: return@composable, "UTF-8"
-                )
-                GroupChatScreen(
-                    groupId = groupId,
-                    relayUrl = relayUrl,
-                    onInfo = {
-                        val encoded = URLEncoder.encode(relayUrl, "UTF-8")
-                        navController.navigate(Screen.GroupInfo.createRoute(groupId, encoded))
-                    },
-                    onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
-                    },
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable(
-                route = Screen.GroupInfo.route,
-                arguments = listOf(
-                    navArgument("groupId") { type = NavType.StringType },
-                    navArgument("relayUrl") { type = NavType.StringType },
-                ),
-            ) { entry ->
-                val groupId = entry.arguments?.getString("groupId") ?: return@composable
-                val relayUrl = URLDecoder.decode(
-                    entry.arguments?.getString("relayUrl") ?: return@composable, "UTF-8"
-                )
-                GroupInfoScreen(
-                    groupId = groupId,
-                    relayUrl = relayUrl,
-                    onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
-                    },
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable(Screen.GroupBrowser.route) {
-                GroupBrowserScreen(
-                    onGroupClick = { groupId, relayUrl ->
-                        val encoded = URLEncoder.encode(relayUrl, "UTF-8")
-                        navController.navigate(Screen.GroupChat.createRoute(groupId, encoded))
-                    },
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            composable(Screen.GroupCreate.route) {
-                GroupCreateScreen(
-                    onCreated = { navController.popBackStack() },
                     onBack = { navController.popBackStack() },
                 )
             }

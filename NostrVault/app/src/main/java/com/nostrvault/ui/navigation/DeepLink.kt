@@ -72,7 +72,6 @@ object DeepLinkRouter {
             "relay" -> DeepLinkTarget(Screen.Dashboard.route)
             "media" -> DeepLinkTarget(Screen.MediaGallery.route)
             "wallet" -> DeepLinkTarget(Screen.Wallet.route)
-            "groups" -> DeepLinkTarget(Screen.GroupList.route)
             "note" -> segments.getOrNull(1)?.let { noteRoute(it, decoder) }
             "profile" -> segments.getOrNull(1)?.let { profileRoute(it, decoder) }
             else -> null
