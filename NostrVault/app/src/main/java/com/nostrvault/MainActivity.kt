@@ -18,6 +18,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -33,6 +34,7 @@ import com.nostrvault.service.MediaUploadManager
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.ui.components.FullScreenMediaHost
+import com.nostrvault.ui.components.InAppBannerHost
 import com.nostrvault.ui.components.VideoPiPBridge
 import com.nostrvault.ui.navigation.BridgeEntityDecoder
 import com.nostrvault.ui.navigation.DeepLinkRouter
@@ -159,6 +161,8 @@ class MainActivity : FragmentActivity() {
                         // Full-screen media viewer overlay — lives in the activity window
                         // (not a Dialog) so Picture-in-Picture can capture the video.
                         FullScreenMediaHost()
+                        // DMs that arrive while the app is open.
+                        InAppBannerHost(modifier = Modifier.align(Alignment.TopCenter))
                     }
                 }
             }

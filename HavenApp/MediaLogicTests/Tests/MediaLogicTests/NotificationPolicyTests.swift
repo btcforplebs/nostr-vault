@@ -113,4 +113,15 @@ final class NotificationPolicyTests: XCTestCase {
         XCTAssertEqual(kinds, [NotificationPolicy.silentKind])
         XCTAssertFalse(kinds.isEmpty)
     }
+
+    /// Phone notifications off: a DM still gets the in-app banner while the app
+    /// is open, and nothing else gets through.
+    func testPushOffAllowsOnlyForegroundDMs() {
+        XCTAssertTrue(NotificationPolicy.allowsWithPushOff(type: "giftwrap", appInForeground: true))
+        XCTAssertTrue(NotificationPolicy.allowsWithPushOff(type: "dm", appInForeground: true))
+        XCTAssertFalse(NotificationPolicy.allowsWithPushOff(type: "giftwrap", appInForeground: false))
+        for type in ["mention", "reply", "zap", "reaction", "repost", "summary"] {
+            XCTAssertFalse(NotificationPolicy.allowsWithPushOff(type: type, appInForeground: true), type)
+        }
+    }
 }

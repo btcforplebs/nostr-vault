@@ -68,6 +68,14 @@ enum NotificationPolicy {
         return kinds.isEmpty ? [silentKind] : kinds.sorted()
     }
 
+    /// Whether a notification marker may be shown while phone notifications are
+    /// switched off. Only a DM, and only as the in-app banner while the app is
+    /// open: that banner is part of the app, not a phone notification, so the
+    /// switch shouldn't hide it. Everything else stays silent.
+    static func allowsWithPushOff(type: String, appInForeground: Bool) -> Bool {
+        appInForeground && (type == "dm" || type == "giftwrap")
+    }
+
     /// Kind 0 (profile metadata) never produces a notification, so listing it
     /// alone is how "notify for nothing" is expressed to the relay.
     static let silentKind = 0

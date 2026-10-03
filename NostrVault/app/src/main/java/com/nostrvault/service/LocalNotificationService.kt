@@ -64,6 +64,17 @@ class LocalNotificationService @Inject constructor(
         private const val MARKER = "🔔NOTIFY|"
         private const val PREVIEW_MARKER = "|preview="
         private const val MAX_SEEN = 500
+
+        private fun isDm(type: String) = type == "dm" || type == "giftwrap"
+
+        /**
+         * Whether a marker may be shown while phone notifications are switched
+         * off. Only a DM, and only as the in-app banner while the app is open:
+         * that banner is part of the app, not a phone notification, so the
+         * switch shouldn't hide it. Everything else stays silent.
+         */
+        fun allowsWithPushOff(type: String, appInForeground: Boolean): Boolean =
+            appInForeground && isDm(type)
     }
 
     /** True while the app is on screen. Set by MainActivity's onStart/onStop. */
@@ -147,7 +158,7 @@ class LocalNotificationService @Inject constructor(
         }
 
         val config = configStore.config.value
-        if (!config.enablePushNotifications) {
+        if (!config.enablePushNotifications && !allowsWithPushOff(type, appInForeground)) {
             Log.i(TAG, "skip: enablePushNotifications is OFF (turn it on in Settings → Notifications)")
             return
         }
@@ -184,6 +195,12 @@ class LocalNotificationService @Inject constructor(
 
         val profile = if (author.length == 64) nostrService.get().profiles.value[author] else null
         val (title, text) = buildContent(type, profile?.bestName, preview)
+        // A DM while the app is open shows the in-app banner instead of a
+        // system notification, as on iOS.
+        if (appInForeground && isDm(type)) {
+            InAppBannerBus.show(InAppBanner(id, title, text, type, author, npub))
+            return
+        }
         post(id, title, text, type, author, npub, profile?.pictureURL)
     }
 
