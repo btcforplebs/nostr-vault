@@ -2,24 +2,24 @@ import Foundation
 
 /// Where the GIF picker is searching.
 ///
-/// The two sources are not interchangeable, and the picker leans on the
-/// differences rather than flattening them: getyarn returns captioned movie
-/// and TV quotes in a fixed 16:9 frame and pages on request, Tenor returns
-/// fifty uncaptioned GIFs of every shape in a single request.
+/// The sources are not interchangeable, and the picker leans on the
+/// differences rather than flattening them: nostr.build pages on request,
+/// Tenor returns fifty GIFs of every shape in a single request.
+///
+/// getyarn (movie and TV quote clips) was removed on 2026-10-03: we have no
+/// permission to use the site (Logen).
 enum GifSource: String, CaseIterable, Identifiable, Hashable {
     case nostrBuild
-    case yarn
     case tenor
 
     /// Sources this build offers, in picker order. The App Store build
-    /// (`APPSTORE`, set by release_all.sh) leaves out the two that are read
-    /// from a website without the service's permission: getyarn's movie and
-    /// TV clips, and Tenor's search page. nostr.build is an official API.
+    /// (`APPSTORE`, set by release_all.sh) leaves out Tenor, whose search page
+    /// is read without the service's permission. nostr.build is an official API.
     static var available: [GifSource] {
         #if APPSTORE
         return [.nostrBuild]
         #else
-        return [.nostrBuild, .yarn, .tenor]
+        return [.nostrBuild, .tenor]
         #endif
     }
 
@@ -29,7 +29,6 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .nostrBuild: return "nostr.build"
-        case .yarn: return "Quotes"
         case .tenor: return "Tenor"
         }
     }
@@ -38,7 +37,6 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     var searchPrompt: String {
         switch self {
         case .nostrBuild: return "Search nostr.build for a GIF"
-        case .yarn: return "Search a movie or TV quote to find a clip"
         case .tenor: return "Search Tenor for a GIF"
         }
     }
@@ -47,7 +45,6 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     var fieldPrompt: String {
         switch self {
         case .nostrBuild: return "Search GIFs, then press return"
-        case .yarn: return "Search a quote, then press return"
         case .tenor: return "Search GIFs, then press return"
         }
     }
@@ -57,7 +54,6 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     var moreLabel: String {
         switch self {
         case .nostrBuild: return "Show more GIFs"
-        case .yarn: return "Show more clips"
         case .tenor: return "Show more GIFs"
         }
     }
@@ -65,7 +61,6 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     func noResults(for query: String) -> String {
         switch self {
         case .nostrBuild: return "No GIFs found for \u{201C}\(query)\u{201D}"
-        case .yarn: return "No clips found for \u{201C}\(query)\u{201D}"
         case .tenor: return "No GIFs found for \u{201C}\(query)\u{201D}"
         }
     }
@@ -73,18 +68,16 @@ enum GifSource: String, CaseIterable, Identifiable, Hashable {
     var attribution: String {
         switch self {
         case .nostrBuild: return "GIFs from nostr.build"
-        case .yarn: return "Clips from getyarn.io"
         case .tenor: return "GIFs via Tenor"
         }
     }
 
-    /// getyarn serves pages; Tenor's search page renders one set of 50 and
+    /// nostr.build serves pages; Tenor's search page renders one set of 50 and
     /// ignores a request for a second, so "show more" there only ever reveals
     /// what is already in hand.
     var supportsPaging: Bool {
         switch self {
         case .nostrBuild: return true
-        case .yarn: return true
         case .tenor: return false
         }
     }
@@ -113,20 +106,6 @@ struct GifItem: Identifiable, Hashable {
     let aspectRatio: Double
 
     var id: String { "\(source.rawValue):\(sourceID)" }
-
-    init(_ clip: YarnClip) {
-        source = .yarn
-        sourceID = clip.uuid
-        previewURL = clip.gifSmallURL
-        stillURL = clip.thumbURL
-        attachURL = clip.gifHiURL
-        caption = clip.transcript
-        subcaption = clip.videoTitle
-        accessibilityText = clip.videoTitle.isEmpty
-            ? clip.transcript
-            : "\(clip.transcript), from \(clip.videoTitle)"
-        aspectRatio = 16.0 / 9.0
-    }
 
     init(_ gif: NostrBuildGif) {
         source = .nostrBuild

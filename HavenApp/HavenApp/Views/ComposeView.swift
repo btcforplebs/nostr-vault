@@ -783,7 +783,7 @@ struct ComposeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isAttachmentLimitReached || isFetchingGif)
-                    .help("Search GIFs from getyarn.io or Tenor")
+                    .help("Search GIFs from nostr.build or Tenor")
 
                     Spacer()
 
@@ -1316,8 +1316,6 @@ struct ComposeView: View {
                     let file = try await NostrBuildGifService.download(item.attachURL)
                     data = file.data
                     if file.isWebP { type = .webP }
-                case .yarn:
-                    data = try await YarnClipService.downloadGIF(uuid: item.sourceID)
                 case .tenor:
                     data = try await TenorGifService.downloadGIF(url: item.attachURL)
                 }
@@ -1363,13 +1361,7 @@ struct ComposeView: View {
             let trimmed = clipboardString.trimmingCharacters(in: .whitespacesAndNewlines)
             if let pasted = URL(string: trimmed),
                (pasted.scheme == "http" || pasted.scheme == "https") {
-                // A getyarn.io clip link (or its y.yarn.co media) pastes as the clip's GIF.
-                let url: URL
-                if let yarnUUID = YarnClipService.clipUUID(from: pasted) {
-                    url = YarnClipService.mediaURL(uuid: yarnUUID, suffix: "_text_hi.gif")
-                } else {
-                    url = pasted
-                }
+                let url = pasted
                 let ext = url.pathExtension.lowercased()
                 let hasKnownExt = SupportedMediaFormats.allExtensions.contains(ext)
                 // Media URL — download and add as attachment
