@@ -464,7 +464,7 @@ struct FeedView: View {
     /// timeline feeds follow the legacy global preference.
     private var defaultCompactForCurrentFeed: Bool {
         switch feedService.feedMode {
-        case .following, .articles, .recipes, .live, .reels:
+        case .following, .articles, .recipes, .live, .reels, .music:
             return false
         case .discovery, .global, .popular, .media:
             return configService.config.useFeedCompactMode
@@ -477,7 +477,7 @@ struct FeedView: View {
         switch feedService.feedMode {
         case .following, .discovery, .global, .popular:
             return true
-        case .media, .articles, .recipes, .live, .reels:
+        case .media, .articles, .recipes, .live, .reels, .music:
             return false
         }
     }
@@ -600,7 +600,7 @@ struct FeedView: View {
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
         // compact mode has nothing to condense.
-        case .media, .articles, .recipes, .live, .reels:
+        case .media, .articles, .recipes, .live, .reels, .music:
             return false
         }
     }
@@ -807,6 +807,9 @@ struct FeedView: View {
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: recipeService.scope == .global, color: .havenPurple) {
                     showingGlobalRecipeWarning = true
                 }
+            } else if feedService.feedMode == .music {
+                // Music has no relay filters; search lives on the page.
+                EmptyView()
             } else if feedService.feedMode == .live {
                 IconFilterButton(icon: liveService.scope == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: liveService.scope == .following, color: .havenPurple) {
                     liveService.setScope(.following)
@@ -962,6 +965,9 @@ struct FeedView: View {
                 Button { showingGlobalRecipeWarning = true } label: {
                     Label("Global", systemImage: "globe")
                 }
+            } else if feedService.feedMode == .music {
+                // Music has no relay filters; search lives on the page.
+                EmptyView()
             } else if feedService.feedMode == .live {
                 Button { liveService.setScope(.following) } label: {
                     Label("Following", systemImage: "person.2.fill")
@@ -1211,6 +1217,9 @@ struct FeedView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Recipes from everyone")
+            } else if feedService.feedMode == .music {
+                // Music has no relay filters; search lives on the page.
+                EmptyView()
             } else if feedService.feedMode == .live {
                 Button(action: { liveService.setScope(.following) }) {
                     Image(systemName: liveService.scope == .following ? "person.2.fill" : "person.2")
@@ -1321,8 +1330,13 @@ struct FeedView: View {
     }
     #endif
 
-    @ViewBuilder
+    /// The feed, with the music mini player docked at the bottom where
+    /// there's no iPhone tab bar to carry it (iPad, Mac).
     private var rootContent: some View {
+        rootContentBase.modifier(MiniPlayerInset())
+    }
+
+    private var rootContentBase: some View {
         ZStack {
             // Match the platform theme background
             Color.platformWindowBackground.ignoresSafeArea()
@@ -2424,6 +2438,8 @@ struct FeedView: View {
                             articleListView
                         } else if feedService.feedMode == .recipes {
                             recipeGridView
+                        } else if feedService.feedMode == .music {
+                            MusicBrowserView()
                         } else if feedService.feedMode == .live {
                             liveGridView
                         } else {
@@ -2726,8 +2742,8 @@ struct FeedView: View {
                 }
                 .accessibilityLabel(ModeComposer(feedMode: feedService.feedMode)?.accessibilityLabel ?? "Compose new post")
                 .buttonStyle(PressScaleButtonStyle())
-                .padding(.trailing, 20)
-                .padding(.bottom, 90)
+                // Shares the row above the tab bar with the music mini player.
+                .modifier(FloatingButtonSlot())
                 .hoverEffect(.lift)
             }
             #endif
