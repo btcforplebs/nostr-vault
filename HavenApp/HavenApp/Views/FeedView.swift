@@ -2970,6 +2970,9 @@ struct FeedNoteRow: View {
 
     // Zero ObservableObject subscriptions — all data comes via rowData/actions
     @Environment(\.feedActions) private var actions
+    /// The openURL of the screen around this row: the row overrides it for
+    /// its own subtree, and hands hashtag links back up to it.
+    @Environment(\.openURL) private var inheritedOpenURL
 
     @State private var showingEmojiPicker = false
     @State private var showLightning = false
@@ -3636,6 +3639,11 @@ struct FeedNoteRow: View {
                     showingNoteIdInRow = identifier
                     return .handled
                 }
+            }
+            // A #hashtag goes up to the screen that presents hashtag feeds.
+            if HashtagLink.tag(from: url) != nil {
+                inheritedOpenURL(url)
+                return .handled
             }
             return .systemAction
         })

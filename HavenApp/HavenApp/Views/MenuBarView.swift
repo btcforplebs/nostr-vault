@@ -884,6 +884,7 @@ struct MenuBarView: View {
             .padding(.top, 4)
         }
         .overlay { ZapFlightStage() }
+        .hashtagLinks()
         #if os(macOS)
         .environment(\.noteDetailSelection, noteSelection)
         .sheet(isPresented: Binding(

@@ -7,6 +7,8 @@ struct VaultView: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var relayManager: RelayProcessManager
     @StateObject private var feedService = FeedService.shared
+    /// The openURL around this tab, for #hashtag links (see nostrLinkAction).
+    @Environment(\.openURL) var inheritedOpenURL
 
     @State var navigationPath = NavigationPath()
     @State var committedSearch = ""

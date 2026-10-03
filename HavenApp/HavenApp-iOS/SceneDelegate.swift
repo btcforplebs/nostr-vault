@@ -33,6 +33,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let statsService = StatsService.shared
         
         let contentView = ContentView()
+            .hashtagLinks()
             .environmentObject(configService)
             .environmentObject(relayManager)
             .environmentObject(nostrService)

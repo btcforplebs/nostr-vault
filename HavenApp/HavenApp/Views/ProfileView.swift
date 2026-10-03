@@ -325,6 +325,7 @@ struct ProfileView: View {
                 #endif
         }
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
+        .hashtagLinks()
         .sheet(isPresented: $showSweep) {
             BitcoinSweepDisclaimerView(onDismiss: { showSweep = false })
                 .environmentObject(ConfigService.shared)

@@ -45,6 +45,10 @@ extension VaultView {
     /// a quoted article there fell through to the system and did nothing.
     var nostrLinkAction: OpenURLAction {
         OpenURLAction { url in
+            if HashtagLink.tag(from: url) != nil {
+                inheritedOpenURL(url)
+                return .handled
+            }
             guard url.scheme == "nostr" else { return .systemAction }
             let id = url.absoluteString.replacingOccurrences(of: "nostr:", with: "")
             if id.hasPrefix("npub1") || id.hasPrefix("nprofile1") {
