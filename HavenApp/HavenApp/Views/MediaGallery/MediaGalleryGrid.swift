@@ -63,11 +63,11 @@ extension MediaGalleryView {
 
     /// The list broken into dated runs. Under a non-date sort this collapses to
     /// a single untitled section, so the same rendering path serves both.
-    var mediaSections: [MediaDateSection] {
+    static func sections(for items: [MediaItem], sortOption: MediaSortOption) -> [MediaDateSection] {
         guard sortOption.groupsByDate else {
-            return [MediaDateSection(id: "all", title: "", items: displayMedia)]
+            return [MediaDateSection(id: "all", title: "", items: items)]
         }
-        return MediaDateSection.sections(for: displayMedia)
+        return MediaDateSection.sections(for: items)
     }
 
     /// Pinned heading for a dated run. Renders nothing for the untitled
