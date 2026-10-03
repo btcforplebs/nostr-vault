@@ -1,0 +1,11 @@
+// Shared build settings for the Nostr Vault app targets (iOS and macOS).
+//
+// Secrets never live in git: the repo is public. Put them in
+// Config/Secrets.xcconfig (gitignored; copy Secrets.xcconfig.example).
+// Without it these stay empty and the features that need them stay off.
+
+// nostr.build GIF API key (gifs.nostr.build/developers). Empty = no GIF
+// picker: the GIF button hides rather than open a picker that finds nothing.
+NOSTR_BUILD_GIF_KEY =
+
+#include? "Secrets.xcconfig"

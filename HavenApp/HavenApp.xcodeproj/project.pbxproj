@@ -488,6 +488,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D5ADBFD4ECE8C92F3162B208 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		01EFA5F14E595113B47E8FC2 /* EngagementTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngagementTracker.swift; sourceTree = "<group>"; };
 		0419EB3F68D0DEFEAAB8BEC5 /* NVThumbnails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVThumbnails.swift; sourceTree = "<group>"; };
 		056C6D389655475872FFE265 /* GifGridLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GifGridLayout.swift; sourceTree = "<group>"; };
@@ -752,6 +753,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		50F2265ADDEE55D09D994B3A /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				D5ADBFD4ECE8C92F3162B208 /* Base.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
 		0D0EC42ECC4212D7E35F0A45 /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -903,6 +912,7 @@
 			isa = PBXGroup;
 			children = (
 				4272DF46BE95D61C6BF55089 /* App */,
+				50F2265ADDEE55D09D994B3A /* Config */,
 				DFE9BC7D30030B94E1209B4E /* HavenApp */,
 				C771C5975780DEB107590D5C /* HavenApp-iOS */,
 				D2F039631F5DCD9EAE61B656 /* Models */,
@@ -1850,6 +1860,7 @@
 		};
 		46DCE53B147ED49828D2A86D /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D5ADBFD4ECE8C92F3162B208 /* Base.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
@@ -1889,6 +1900,7 @@
 		};
 		58DAFB811E0E4D13CE75FA43 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D5ADBFD4ECE8C92F3162B208 /* Base.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
@@ -1928,6 +1940,7 @@
 		};
 		5C87C225FF2B44B55AE4BA58 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D5ADBFD4ECE8C92F3162B208 /* Base.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "HavenApp-iOS/HavenApp-iOS.entitlements";
@@ -1960,6 +1973,7 @@
 		};
 		6E2749F7B8F5B57F5A25F985 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = D5ADBFD4ECE8C92F3162B208 /* Base.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "HavenApp-iOS/HavenApp-iOS.entitlements";

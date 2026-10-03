@@ -86,6 +86,10 @@ targets:
       # Initial Follows step silently shows nothing.
       - path: HavenApp/Resources/starter_packs.json
 
+    # Secrets come from the gitignored Config/Secrets.xcconfig (see Base.xcconfig).
+    configFiles:
+      Debug: Config/Base.xcconfig
+      Release: Config/Base.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.havenapp.relay
@@ -172,6 +176,10 @@ targets:
       # Initial Follows step silently shows nothing.
       - path: HavenApp/Resources/starter_packs.json
 
+    # Secrets come from the gitignored Config/Secrets.xcconfig (see Base.xcconfig).
+    configFiles:
+      Debug: Config/Base.xcconfig
+      Release: Config/Base.xcconfig
     settings:
       base:
         CODE_SIGN_ENTITLEMENTS: HavenApp-iOS/HavenApp-iOS.entitlements

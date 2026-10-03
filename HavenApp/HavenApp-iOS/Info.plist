@@ -99,5 +99,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NostrBuildGIFAPIKey</key>
+	<string>$(NOSTR_BUILD_GIF_KEY)</string>
 </dict>
 </plist>
