@@ -3149,6 +3149,17 @@ struct AppearanceSettingsView: View {
             // left to toggle here — the section was removed along with the
             // colour-theme picker below.
 
+            Section {
+                lineLimitStepper("Compact View", systemImage: "rectangle.compress.vertical",
+                                 value: $configService.config.compactLineLimit, info: .displayCompactLines)
+                lineLimitStepper("Threaded View", systemImage: "list.bullet.indent",
+                                 value: $configService.config.threadedLineLimit, info: .displayThreadedLines)
+            } header: {
+                Text("Feed Text")
+            } footer: {
+                Text("Lines of text each post shows before it is cut off. In Threaded View, replies show one line fewer.")
+            }
+
             #if os(iOS)
             Section {
                 Toggle(isOn: $configService.config.disableTabBarAnimation) {
@@ -3227,6 +3238,25 @@ struct AppearanceSettingsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+    }
+
+    /// One feed layout's line count, saved as it changes.
+    private func lineLimitStepper(_ title: LocalizedStringKey, systemImage: String,
+                                  value: Binding<Int>, info: SettingsHelp) -> some View {
+        Stepper(value: value, in: HavenConfig.lineLimitRange) {
+            Label {
+                HStack {
+                    Text(title).settingInfo(info)
+                    Spacer()
+                    Text(value.wrappedValue == 1 ? "1 line" : "\(value.wrappedValue) lines")
+                        .foregroundColor(.secondary)
+                        .monospacedDigit()
+                }
+            } icon: {
+                Image(systemName: systemImage)
+            }
+        }
+        .onChange(of: value.wrappedValue) { _, _ in configService.save() }
     }
 
     #if os(iOS)

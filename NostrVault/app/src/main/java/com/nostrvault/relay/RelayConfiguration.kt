@@ -380,6 +380,10 @@ data class HavenConfig(
     // When true, the bottom tab bar stays fully expanded and never shrinks/hides
     // on scroll. Mirrors iOS HavenConfig.disableTabBarAnimation.
     val disableTabBarAnimation: Boolean = false,
+    /** Lines of note text a row shows in Compact View. Mirrors iOS HavenConfig.compactLineLimit. */
+    val compactLineLimit: Int = 3,
+    /** Lines a thread's root shows in Threaded View; replies show one fewer. Mirrors iOS. */
+    val threadedLineLimit: Int = 3,
     val autoplayVideos: Boolean = true,
     /** ISO 639-1 codes the Global feed is narrowed to. Empty shows every language. Mirrors iOS. */
     val globalFeedLanguages: List<String> = emptyList(),
