@@ -116,4 +116,13 @@ final class NoteTaggingTests: XCTestCase {
     func testDescriptorWithoutAURLProducesNoTag() {
         XCTAssertNil(NoteTagging.imetaTag(for: NoteTagging.MediaDescriptor(url: "   ")))
     }
+
+    /// A repost's content is someone else's note, so its media is not yours.
+    func testRepostMediaIsNotTheAuthors() {
+        XCTAssertFalse(NoteTagging.contentMediaIsAuthors(kind: 6))
+        XCTAssertFalse(NoteTagging.contentMediaIsAuthors(kind: 16))
+        for kind in [1, 1063, 1111, 20, 21, 22, 30023] {
+            XCTAssertTrue(NoteTagging.contentMediaIsAuthors(kind: kind), "\(kind)")
+        }
+    }
 }
