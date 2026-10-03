@@ -8,6 +8,10 @@ enum ContactManager {
     /// Errors that can occur during follow/unfollow operations.
     enum FollowActionError: Error {
         case contactsNotLoaded
+        /// The load finished without the real list: a timeout, an error, or
+        /// relays that never answered. Publishing now would replace the
+        /// user's follows with whatever is in memory, possibly nothing.
+        case listUnavailable
         case alreadyFollowing
         case cannotUnfollowSelf
     }
@@ -63,9 +67,11 @@ enum ContactManager {
         currentPTags: [[String]],
         currentPubkeys: [String],
         hasAttemptedLoad: Bool,
-        isLoading: Bool
+        isLoading: Bool,
+        listConfirmed: Bool
     ) -> Result<(pTags: [[String]], pubkeys: [String]), FollowActionError> {
         guard hasAttemptedLoad, !isLoading else { return .failure(.contactsNotLoaded) }
+        guard listConfirmed else { return .failure(.listUnavailable) }
         guard !currentPubkeys.contains(pubkey) else { return .failure(.alreadyFollowing) }
         var newPTags = currentPTags
         var newPubkeys = currentPubkeys
@@ -82,9 +88,11 @@ enum ContactManager {
         currentPTags: [[String]],
         currentPubkeys: [String],
         hasAttemptedLoad: Bool,
-        isLoading: Bool
+        isLoading: Bool,
+        listConfirmed: Bool
     ) -> Result<(pTags: [[String]], pubkeys: [String]), FollowActionError> {
         guard hasAttemptedLoad, !isLoading else { return .failure(.contactsNotLoaded) }
+        guard listConfirmed else { return .failure(.listUnavailable) }
         guard pubkey != activeAccountHex else { return .failure(.cannotUnfollowSelf) }
         var newPTags = currentPTags
         var newPubkeys = currentPubkeys
@@ -94,6 +102,20 @@ enum ContactManager {
     }
 
     // MARK: - Safety Checks
+
+    /// Whether the user's real follow list is known: a kind 3 came back, or
+    /// every relay answered (EOSE) with none, i.e. a genuinely new account.
+    /// A timeout, an error or no relays leave it false. Follow / unfollow and
+    /// queued taps publish only when it is true.
+    static func mayPublishFollowList(hasAttemptedLoad: Bool, isLoading: Bool, listConfirmed: Bool) -> Bool {
+        hasAttemptedLoad && !isLoading && listConfirmed
+    }
+
+    /// `listConfirmed` after one load: true when a list was found, or when no
+    /// list was found but every relay answered. False on timeout / error.
+    static func loadConfirmsList(foundList: Bool, relaysAsked: Int, relaysAnswered: Int) -> Bool {
+        foundList || (relaysAsked > 0 && relaysAnswered >= relaysAsked)
+    }
 
     /// Returns true if publishing the contact list should be BLOCKED because
     /// it would shrink drastically relative to the last relay-fetched count

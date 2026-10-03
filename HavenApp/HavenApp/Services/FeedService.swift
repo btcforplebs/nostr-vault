@@ -76,6 +76,11 @@ class FeedService: ObservableObject {
     /// and — published, because the view needs it — to keep the Following feed from telling you that
     /// you follow nobody before it has ever asked. See `FollowingFeedState`.
     @Published private(set) var hasAttemptedContactLoad = false
+    /// The user's real follow list is known for this account (see
+    /// ContactManager.loadConfirmsList). Until it is, follow / unfollow never
+    /// publish: a timed-out load leaves an empty or partial list in memory,
+    /// and publishing it would replace every follow on every relay.
+    private(set) var contactListConfirmed = false
     @Published var isLoadingExtendedNetwork = false
     @Published var isLoadingPopular = false
     @Published var popularFilter: PopularFilter = .all
@@ -725,6 +730,8 @@ class FeedService: ObservableObject {
         ownContactListCreatedAt = 0
         ownContactListAccountKey = ""
         hasAttemptedContactLoad = false
+        contactListConfirmed = false
+        pendingFollowActions.removeAll()
         lastEventTimestamp = 0
         recomputeFilteredNotes()
     }
@@ -908,6 +915,10 @@ class FeedService: ObservableObject {
 
         // 3. Cancel in-flight loading flags + timers so the new flow isn't blocked.
         isLoadingContacts = false
+        // The new account's list is unknown until its own load answers, and a
+        // tap queued under the previous account must not reach this one.
+        contactListConfirmed = false
+        pendingFollowActions.removeAll()
         isLoadingExtendedNetwork = false
         extendedNetworkComputedAt = nil
         isLoadingFeed = false
@@ -1910,7 +1921,7 @@ class FeedService: ObservableObject {
     /// Follow / unfollow taps made before the follow list had loaded. They
     /// are applied, in order, as soon as it has — publishing a list before
     /// then could replace the real one on every relay.
-    private var pendingFollowActions: [(pubkey: String, follow: Bool)] = []
+    private var pendingFollowActions: [(pubkey: String, follow: Bool, account: String)] = []
 
     /// Starts loading the follow list if nothing has yet. The Popular, Live,
     /// Reels and Music feeds never load it on their own, so on a launch into
@@ -1920,12 +1931,26 @@ class FeedService: ObservableObject {
         loadContactList {}
     }
 
+    /// Applies queued taps only once the real list is known; after a timeout
+    /// they stay queued. Taps made under another account are discarded.
     private func applyPendingFollowActions() {
-        guard hasAttemptedContactLoad, !isLoadingContacts, !pendingFollowActions.isEmpty else { return }
-        let actions = pendingFollowActions
+        guard ContactManager.mayPublishFollowList(hasAttemptedLoad: hasAttemptedContactLoad,
+                                                  isLoading: isLoadingContacts,
+                                                  listConfirmed: contactListConfirmed),
+              !pendingFollowActions.isEmpty else { return }
+        let account = currentSnapshotKey()
+        let actions = pendingFollowActions.filter { $0.account == account }
         pendingFollowActions.removeAll()
         for action in actions {
             if action.follow { followUser(action.pubkey) } else { unfollowUser(action.pubkey) }
+        }
+    }
+
+    private func queueFollowAction(_ pubkey: String, follow: Bool) {
+        pendingFollowActions.removeAll { $0.pubkey == pubkey }
+        pendingFollowActions.append((pubkey, follow, currentSnapshotKey()))
+        if !isLoadingContacts {
+            if hasAttemptedContactLoad { scheduleContactRetry() } else { ensureContactListLoading() }
         }
     }
 
@@ -2071,6 +2096,9 @@ class FeedService: ObservableObject {
             completed = true
             graceWork?.cancel()
             self.contactLoadingTimeout?.invalidate()
+            if ContactManager.loadConfirmsList(foundList: best != nil, relaysAsked: relays.count, relaysAnswered: eoseCount) {
+                self.contactListConfirmed = true
+            }
             clients.forEach { $0.disconnect() }
 
             if let best = best, Int64(best.createdAt) >= self.ownContactListCreatedAt {
@@ -2392,13 +2420,16 @@ class FeedService: ObservableObject {
             currentPTags: contactListPTags,
             currentPubkeys: followedPubkeys,
             hasAttemptedLoad: hasAttemptedContactLoad,
-            isLoading: isLoadingContacts
+            isLoading: isLoadingContacts,
+            listConfirmed: contactListConfirmed
         ) {
         case .failure(.contactsNotLoaded):
-            pendingFollowActions.removeAll { $0.pubkey == pubkey }
-            pendingFollowActions.append((pubkey, true))
-            ensureContactListLoading()
+            queueFollowAction(pubkey, follow: true)
             return .failure(.contactsNotLoaded)
+        case .failure(.listUnavailable):
+            // Kept queued and retried; never published against an unknown list.
+            queueFollowAction(pubkey, follow: true)
+            return .failure(.listUnavailable)
         case .failure(let err): return .failure(err)
         case .success(let result):
             contactListPTags = result.pTags
@@ -2429,13 +2460,16 @@ class FeedService: ObservableObject {
             currentPTags: contactListPTags,
             currentPubkeys: followedPubkeys,
             hasAttemptedLoad: hasAttemptedContactLoad,
-            isLoading: isLoadingContacts
+            isLoading: isLoadingContacts,
+            listConfirmed: contactListConfirmed
         ) {
         case .failure(.contactsNotLoaded):
-            pendingFollowActions.removeAll { $0.pubkey == pubkey }
-            pendingFollowActions.append((pubkey, false))
-            ensureContactListLoading()
+            queueFollowAction(pubkey, follow: false)
             return .failure(.contactsNotLoaded)
+        case .failure(.listUnavailable):
+            // Kept queued and retried; never published against an unknown list.
+            queueFollowAction(pubkey, follow: false)
+            return .failure(.listUnavailable)
         case .failure(let err): return .failure(err)
         case .success(let result):
             contactListPTags = result.pTags
