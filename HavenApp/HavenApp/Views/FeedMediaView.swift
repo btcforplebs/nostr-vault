@@ -9,6 +9,7 @@ enum FeedMediaType {
     case photo
     case gif
     case video
+    case audio
     case unknown
 
     /// Fast classification from file extension alone — no network needed.
@@ -17,6 +18,7 @@ enum FeedMediaType {
         if ext == "gif" { return .gif }
         if SupportedMediaFormats.imageExtensions.contains(ext) { return .photo }
         if SupportedMediaFormats.videoExtensions.contains(ext) { return .video }
+        if SupportedMediaFormats.audioExtensions.contains(ext) { return .audio }
         return ext.isEmpty ? nil : nil // Unknown extension — need HEAD
     }
 
@@ -30,7 +32,8 @@ enum FeedMediaType {
         case .video: self = .video
         case .gif: self = .gif
         case .image: self = .photo
-        case .audio, .unknown: self = .unknown
+        case .audio: self = .audio
+        case .unknown: self = .unknown
         }
     }
 }
@@ -42,6 +45,7 @@ enum FeedMediaType {
 /// - **Photos**: Cached image with aspect ratio preservation and fade-in
 /// - **GIFs**: AnimatedImage (native UIImageView/NSImageView) with auto-play
 /// - **Videos**: Inline muted autoplay with looping
+/// - **Audio**: A play card on the app-wide player
 struct FeedMediaView: View {
     let url: URL
     /// When true, tapping opens the full-screen media viewer.
@@ -86,6 +90,9 @@ struct FeedMediaView: View {
             gifView
         case .video:
             videoView
+        case .audio:
+            // Plays in place; there is nothing for the media viewer to show.
+            FeedAudioCard(url: url, isThumbnail: isThumbnail)
         case .photo, .unknown:
             photoView
         }
@@ -618,5 +625,73 @@ enum BlurHashDecoder {
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
             provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent
         )
+    }
+}
+
+// MARK: - FeedAudioCard
+
+/// An audio file shared in a post (an MP3 link, or a Blossom blob that turns
+/// out to be audio): a play button on the app-wide player, so it keeps going
+/// in the mini player and on the lock screen like a Wavlake song.
+struct FeedAudioCard: View {
+    let url: URL
+    /// A grid or one-line thumbnail: just the audio glyph, no controls.
+    var isThumbnail: Bool = false
+    @ObservedObject private var player = MusicPlayerService.shared
+
+    private var title: String {
+        let name = url.deletingPathExtension().lastPathComponent.removingPercentEncoding
+            ?? url.deletingPathExtension().lastPathComponent
+        // A Blossom hash, or no file name at all, says nothing to a person.
+        let isHash = name.count == 64 && name.allSatisfy(\.isHexDigit)
+        return name.isEmpty || name == "/" || isHash ? "Audio" : name
+    }
+
+    private var track: PlayerTrack {
+        PlayerTrack(id: url.absoluteString, title: title, artist: url.host ?? "",
+                    artworkURL: nil, audioURL: url, duration: nil)
+    }
+
+    var body: some View {
+        if isThumbnail {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.platformTertiaryGroupedBackground)
+                .overlay(Image(systemName: "waveform").font(.appSystem(size: 22)).foregroundColor(.secondary))
+                .accessibilityLabel("Audio")
+        } else {
+            card
+        }
+    }
+
+    private var card: some View {
+        let isCurrent = player.current?.id == url.absoluteString
+        return HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.havenPurple.opacity(0.15))
+                .frame(width: 52, height: 52)
+                .overlay(Image(systemName: "waveform").font(.appSystem(size: 22)).foregroundColor(.havenPurple))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.appSystem(size: 15, weight: .semibold)).lineLimit(1)
+                if let host = url.host {
+                    Text(host).font(.appSystem(size: 13)).foregroundColor(.secondary).lineLimit(1)
+                }
+                Label(url.pathExtension.isEmpty ? "Audio" : url.pathExtension.uppercased(), systemImage: "music.note")
+                    .font(.appSystem(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button {
+                if isCurrent { player.togglePlayPause() } else { player.play(tracks: [track]) }
+            } label: {
+                Image(systemName: isCurrent && player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.appSystem(size: 38))
+                    .foregroundColor(.havenPurple)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isCurrent && player.isPlaying ? "Pause \(title)" : "Play \(title)")
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.1)))
     }
 }
