@@ -1825,7 +1825,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.7.3;
+				MARKETING_VERSION = 2.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay.widgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1866,7 +1866,7 @@
 					"$(PROJECT_DIR)/build",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.7.3;
+				MARKETING_VERSION = 2.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = "Nostr Vault";
 				SDKROOT = macosx;
@@ -1906,7 +1906,7 @@
 					"$(PROJECT_DIR)/build",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.7.3;
+				MARKETING_VERSION = 2.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = "Nostr Vault";
 				SDKROOT = macosx;
@@ -1938,7 +1938,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/build/ios",
 				);
-				MARKETING_VERSION = 2.7.3;
+				MARKETING_VERSION = 2.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1971,7 +1971,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/build/ios",
 				);
-				MARKETING_VERSION = 2.7.3;
+				MARKETING_VERSION = 2.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -2122,7 +2122,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.7.3;
+				MARKETING_VERSION = 2.7.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay.widgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;

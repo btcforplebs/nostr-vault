@@ -1,4 +1,4 @@
-# Nostr Vault v2.7.3 Build 19 (macOS / iOS) Release Notes
+# Nostr Vault v2.7.2 Build 19 (macOS / iOS) Release Notes
 
 Music, hashtags, highlights, and direct messages that finally reach every device you own. This release adds a Wavlake music player that keeps playing while you browse, tappable hashtags, a full action bar in the article reader with NIP-84 highlights, and diVine video posting. Replies to anything that isn't a plain note now go out as NIP-22 comments, so other clients thread them correctly. Three things that were quietly unsafe are fixed: a crafted profile name could plant a fake link in a note, a note full of links could make your phone call out to hundreds of hosts, and an early Follow tap could wipe your whole follow list.
 
