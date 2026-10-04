@@ -1518,6 +1518,16 @@ class NostrService @Inject constructor(
      * let a device adopt its own stale copy.
      */
     private suspend fun fetchNewestDMRelayList(pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): Pair<List<String>, Long>? {
+        val winner = fetchNewestReplaceable(10050, pubkey, alsoAsk, timeoutMs) ?: return null
+        return profileRepository.parseDMRelayListTags(winner.tags) to winner.createdAt
+    }
+
+    /**
+     * The newest signed replaceable event of [kind] by [pubkey] across the
+     * blastr relays and [alsoAsk], or null if none answered in time. Asks
+     * fresh: the profile caches can hold a list replaced long ago.
+     */
+    suspend fun fetchNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): NostrEvent? {
         val targets = (configStore.config.value.activeBlastrRelays + alsoAsk)
             .map { it.trim() }
             .filter { it.isNotEmpty() && !isLoopbackRelay(it) }
@@ -1539,7 +1549,7 @@ class NostrService @Inject constructor(
                                         "EVENT" -> {
                                             val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
                                             val ev = parseSignedEvent(obj.toString()) ?: return@collect
-                                            if (ev.kind != 10050 || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
+                                            if (ev.kind != kind || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
                                             best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
                                         }
                                         "EOSE", "CLOSED" -> done.complete(Unit)
@@ -1548,7 +1558,7 @@ class NostrService @Inject constructor(
                             }
                             launch {
                                 client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
-                                client.send("""["REQ","$subId",{"kinds":[10050],"authors":["$pubkey"],"limit":1}]""")
+                                client.send("""["REQ","$subId",{"kinds":[$kind],"authors":["$pubkey"],"limit":1}]""")
                             }
                             client.connect()
                             done.await()
@@ -1560,8 +1570,7 @@ class NostrService @Inject constructor(
                 }
             }.joinAll()
         }
-        val winner = best.get() ?: return null
-        return profileRepository.parseDMRelayListTags(winner.tags) to winner.createdAt
+        return best.get()
     }
 
     fun publishDMRelayList(dmRelays: List<String>) {
