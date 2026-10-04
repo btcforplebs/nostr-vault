@@ -1509,6 +1509,8 @@ struct FeedView: View {
                     LongFormComposeView(flavor: .article, onDismiss: { modeComposer = nil })
                 case .recipe:
                     LongFormComposeView(flavor: .recipe, onDismiss: { modeComposer = nil })
+                case .listing:
+                    MarketplaceSellView(onDismiss: { modeComposer = nil })
                 }
             }
             .environmentObject(nostrService)
@@ -2942,7 +2944,8 @@ struct FeedView: View {
     }
 
     /// The post button writes what the feed shows: a diVine in diVines, an
-    /// article in Articles, a recipe in Recipes, a note everywhere else.
+    /// article in Articles, a recipe in Recipes, a listing in Marketplace,
+    /// a note everywhere else.
     private func openComposer() {
         if let composer = ModeComposer(feedMode: feedService.feedMode) {
             modeComposer = composer
