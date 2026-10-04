@@ -81,6 +81,7 @@ final class MusicPlayerService: ObservableObject {
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var interruptionObserver: NSObjectProtocol?
+    private var foregroundObserver: NSObjectProtocol?
     private var statusObservation: NSKeyValueObservation?
     private var bufferingObservation: NSKeyValueObservation?
     private var artwork: MPMediaItemArtwork?
@@ -98,6 +99,13 @@ final class MusicPlayerService: ObservableObject {
             Task { @MainActor in self?.isBuffering = waiting }
         }
         configureRemoteCommands()
+        #if os(iOS)
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.resumeAfterReturning() }
+        }
+        #endif
         AudioSessionManager.shared.pauseAppAudio = { [weak self] in
             MainActor.assumeIsolated { self?.pause() }
         }
@@ -183,14 +191,39 @@ final class MusicPlayerService: ObservableObject {
     }
 
     func resume() {
-        guard current != nil else { return }
+        guard let track = current else { return }
+        pausedByInterruption = false
+        // A live stream picks up where the broadcast is now. Its paused item
+        // was left behind the live window — another app playing video stops
+        // ours, and on coming back `play()` on that item did nothing — so it
+        // is loaded fresh. A failed item of any kind is too.
+        if track.isLive || player.currentItem == nil || player.currentItem?.status == .failed {
+            loadCurrent(autoplay: false)
+        }
+        startPlayback()
+    }
+
+    private func startPlayback() {
         activateSession()
         player.play()
         isPlaying = true
         updateNowPlaying()
     }
 
+    /// Set when another app took the sound from a playing live stream, so
+    /// coming back to the app carries on with it (`resumeAfterReturning`).
+    private var pausedByInterruption = false
+
+    /// Coming back to the app: a live stream that was playing until another
+    /// app took the sound plays again. Songs, and anything the owner paused,
+    /// stay paused.
+    func resumeAfterReturning() {
+        guard pausedByInterruption, current?.isLive == true, !isPlaying else { return }
+        resume()
+    }
+
     func pause() {
+        pausedByInterruption = false
         player.pause()
         isPlaying = false
         updateNowPlaying()
@@ -274,7 +307,7 @@ final class MusicPlayerService: ObservableObject {
         commands.previousTrackCommand.isEnabled = !track.isLive
         player.replaceCurrentItem(with: item)
         loadArtwork(for: track)
-        if autoplay { resume() } else { updateNowPlaying() }
+        if autoplay { startPlayback() } else { updateNowPlaying() }
     }
 
     /// A live HLS stream plays through `HLSLowLatencyStripper`: zap.stream's
@@ -335,7 +368,11 @@ final class MusicPlayerService: ObservableObject {
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         switch type {
         case .began:
-            if isPlaying { isPlaying = false; updateNowPlaying() }
+            if isPlaying {
+                isPlaying = false
+                pausedByInterruption = current?.isLive == true
+                updateNowPlaying()
+            }
         case .ended:
             let options = AVAudioSession.InterruptionOptions(
                 rawValue: info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)

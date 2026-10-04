@@ -324,6 +324,29 @@ final class VideoPlaybackService: @unchecked Sendable {
         player.play()
     }
 
+    /// Puts a live stream's player back on the broadcast as it is now. A live
+    /// item left paused falls behind the live window — backgrounded, or
+    /// stopped by another app's video — and `play()` on it does nothing. The
+    /// source that last worked is loaded fresh; a stream whose sources all
+    /// failed while it sat paused gets the whole ladder again.
+    @MainActor
+    func rejoinLive(_ player: AVPlayer, sourceURL url: URL) {
+        lock.lock()
+        let ladder = ladders[url]
+        lock.unlock()
+        guard let ladder, !ladder.candidates.isEmpty else {
+            player.play()
+            return
+        }
+        if ladder.index >= ladder.candidates.count { ladder.index = 0 }
+        VideoPlaybackFailures.shared.clear(url)
+        player.replaceCurrentItem(with: makeItem(for: ladder.candidates[ladder.index]))
+        attach(ladder, to: player)
+        if !player.isMuted { AudioSessionManager.shared.enablePlayback() }
+        player.play()
+        log(url, "rejoined live via \(ladder.candidates[ladder.index].label)")
+    }
+
     /// Drops ladder state for a URL. Called when the player cache evicts its
     /// player (LRU, memory pressure, or explicit removal).
     func invalidateLadder(for url: URL) {
