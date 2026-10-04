@@ -2392,15 +2392,25 @@ struct FeedView: View {
     /// was open; if that sat above, the line would slide up, possibly out of
     /// view. A line whose top was already above the screen is brought down
     /// to the top edge.
+    ///
+    /// The scroll runs with no animation from the line's own geometry change,
+    /// so it lands in the same frame as the close. An animated scroll a
+    /// runloop later showed as the line jumping and then sliding back.
     private func holdThreadLine(_ noteId: String, at y: CGFloat, proxy: ScrollViewProxy) {
         let height = threadLineTops.viewportHeight
         guard height > 0 else { return }
         let fraction = min(max(y / height, 0), 1)
-        // Next runloop turn, once the open/close has laid out.
-        DispatchQueue.main.async {
-            withAnimation(Motion.panel) {
-                proxy.scrollTo(ThreadLineTops.anchorId(for: noteId), anchor: UnitPoint(x: 0.5, y: fraction))
+        let anchor = UnitPoint(x: 0.5, y: fraction)
+        threadLineTops.hold = (noteId, y, {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) {
+                proxy.scrollTo(ThreadLineTops.anchorId(for: noteId), anchor: anchor)
             }
+        })
+        // The open line sat below the tapped one, so nothing above moved.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [threadLineTops] in
+            if threadLineTops.hold?.noteId == noteId { threadLineTops.hold = nil }
         }
     }
 

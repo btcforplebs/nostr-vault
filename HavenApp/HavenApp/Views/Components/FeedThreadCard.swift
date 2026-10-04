@@ -138,6 +138,7 @@ struct FeedThreadCard: View {
             $0.frame(in: .named(ThreadLineTops.coordinateSpace)).minY
         } action: { y in
             lineTops?.tops[id] = y
+            lineTops?.lineMoved(id, to: y)
         }
     }
 
@@ -164,8 +165,18 @@ struct FeedThreadCard: View {
         guard canOpenInPlace else { return { onOpen(note) } }
         return {
             let y = lineTops?.tops[note.id]
-            openNoteId = note.id
+            // No animation: the close above and the scroll that makes up for
+            // it land in the same frame, so the tapped line never moves.
+            // Animated, the close slid the line up and the scroll slid it
+            // back down, two motions for one tap.
+            var t = Transaction()
+            t.disablesAnimations = true
             if let y { onOpenedInPlace?(note.id, y) }
+            lineTops?.justOpened = note.id
+            withTransaction(t) { openNoteId = note.id }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [lineTops] in
+                if lineTops?.justOpened == note.id { lineTops?.justOpened = nil }
+            }
         }
     }
 
@@ -204,7 +215,9 @@ struct FeedThreadCard: View {
             .onTapGesture { onOpen?(note) }
         }
         .padding(.leading, CondensedNoteLine.indentWidth(forDepth: entry.depth))
-        .transition(.opacity)
+        // The tap swaps the lines with no motion; the opened note fades in
+        // so the swap doesn't read as a cut. Not when it scrolls back in.
+        .modifier(OpenRowFade(fades: lineTops?.justOpened == note.id))
     }
 
     /// Stands in for a root the relay hasn't returned yet, so replies aren't
@@ -297,4 +310,32 @@ final class ThreadLineTops {
 
     var tops: [String: CGFloat] = [:]
     var viewportHeight: CGFloat = 0
+    /// The line opened by the last tap, which fades in as it appears.
+    var justOpened: String?
+
+    /// A line to keep where it was tapped, and the scroll that puts it back.
+    /// Run from the line's own geometry change, the first layout pass that
+    /// sees it moved, so the correction lands before that frame is shown.
+    var hold: (noteId: String, y: CGFloat, restore: () -> Void)?
+
+    func lineMoved(_ noteId: String, to y: CGFloat) {
+        guard let hold, hold.noteId == noteId, abs(y - hold.y) > 0.5 else { return }
+        self.hold = nil
+        hold.restore()
+    }
+}
+
+/// Fades an opened line in once, as it appears.
+private struct OpenRowFade: ViewModifier {
+    let fades: Bool
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(!fades || shown ? 1 : 0)
+            .onAppear {
+                guard fades else { return }
+                withAnimation(Motion.media) { shown = true }
+            }
+    }
 }
