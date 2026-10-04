@@ -399,6 +399,8 @@ struct FeedView: View {
     /// macOS presents the article reader as a sheet; iOS pushes it.
     @State private var showingArticle: ArticleRoute?
     @StateObject private var recipeService = RecipeFeedService.shared
+    @StateObject private var marketplaceService = MarketplaceFeedService.shared
+    @State private var selectedListing: MarketListing?
     @StateObject private var liveService = LiveFeedService.shared
     @StateObject private var reelsService = ReelsFeedService.shared
     @State private var showingGlobalReelsWarning = false
@@ -468,7 +470,7 @@ struct FeedView: View {
     /// timeline feeds follow the legacy global preference.
     private var defaultCompactForCurrentFeed: Bool {
         switch feedService.feedMode {
-        case .following, .articles, .recipes, .live, .reels, .music:
+        case .following, .articles, .recipes, .marketplace, .live, .reels, .music:
             return false
         case .discovery, .global, .popular, .media:
             return configService.config.useFeedCompactMode
@@ -481,7 +483,7 @@ struct FeedView: View {
         switch feedService.feedMode {
         case .following, .discovery, .global, .popular:
             return true
-        case .media, .articles, .recipes, .live, .reels, .music:
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
             return false
         }
     }
@@ -611,7 +613,7 @@ struct FeedView: View {
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
         // compact mode has nothing to condense.
-        case .media, .articles, .recipes, .live, .reels, .music:
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
             return false
         }
     }
@@ -767,6 +769,15 @@ struct FeedView: View {
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: recipeService.scope == .global, color: .havenPurple) {
                     showingGlobalRecipeWarning = true
+                }
+            } else if feedService.feedMode == .marketplace {
+                // Global is the default and holds almost every listing, so
+                // neither direction needs a warning.
+                IconFilterButton(icon: marketplaceService.scope == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: marketplaceService.scope == .following, color: .havenPurple) {
+                    marketplaceService.setScope(.following)
+                }
+                IconFilterButton(icon: "globe", tooltip: "Global", isSelected: marketplaceService.scope == .global, color: .havenPurple) {
+                    marketplaceService.setScope(.global)
                 }
             } else if feedService.feedMode == .music {
                 MusicToolbarButtons()
@@ -948,6 +959,13 @@ struct FeedView: View {
                 }
                 Button { showingGlobalRecipeWarning = true } label: {
                     Label("Global", systemImage: recipeService.scope == .following ? "globe" : "checkmark")
+                }
+            } else if feedService.feedMode == .marketplace {
+                Button { marketplaceService.setScope(.following) } label: {
+                    Label("Following", systemImage: marketplaceService.scope == .following ? "checkmark" : "person.2")
+                }
+                Button { marketplaceService.setScope(.global) } label: {
+                    Label("Global", systemImage: marketplaceService.scope == .global ? "checkmark" : "globe")
                 }
             } else if feedService.feedMode == .music {
                 MusicToolbarMenuItems()
@@ -1219,6 +1237,22 @@ struct FeedView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Recipes from everyone")
+            } else if feedService.feedMode == .marketplace {
+                Button(action: { marketplaceService.setScope(.following) }) {
+                    Image(systemName: marketplaceService.scope == .following ? "person.2.fill" : "person.2")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(marketplaceService.scope == .following ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Listings from people you follow")
+
+                Button(action: { marketplaceService.setScope(.global) }) {
+                    Image(systemName: "globe")
+                        .font(.appSystem(size: 15, weight: .semibold))
+                        .foregroundColor(marketplaceService.scope == .global ? Color.havenPurple : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Listings from everyone")
             } else if feedService.feedMode == .music {
                 MusicToolbarButtons()
             } else if feedService.feedMode == .live {
@@ -1588,6 +1622,10 @@ struct FeedView: View {
             Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
         } message: {
             Text(String(localized: "feed.alert.sensitiveContent.message"))
+        }
+        .sheet(item: $selectedListing) { listing in
+            MarketplaceListingSheet(listing: listing, onOpenProfile: { showingProfileKey = IdentifiableString(id: $0) })
+                .environmentObject(nostrService)
         }
         .sheet(item: $playingStream) { stream in
             LiveStreamPlayerView(stream: stream, onBlocked: { pubkey in
@@ -2360,6 +2398,74 @@ struct FeedView: View {
             : "Nothing tagged zapcooking or nostrcooking came back."
     }
 
+    /// Marketplace: NIP-15 products/auctions and NIP-99 classifieds from the
+    /// listing relays. A listing opens as a sheet for the same reason a
+    /// recipe does: it behaves the same in all three containers.
+    @ViewBuilder
+    private var marketplaceGridView: some View {
+        VStack(spacing: 12) {
+            if !marketplaceService.categories.isEmpty {
+                MarketplaceCategoryBar(categories: marketplaceService.categories, selected: $marketplaceService.selectedCategory)
+            }
+
+            if marketplaceService.isLoading && marketplaceService.visibleListings.isEmpty {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(Color.havenPurple)
+                    .padding(.vertical, 60)
+            } else if marketplaceService.visibleListings.isEmpty {
+                emptyMarketplaceStateView
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
+                    ForEach(marketplaceService.visibleListings) { listing in
+                        MarketplaceCardView(listing: listing, profile: nostrService.profiles[listing.pubkey])
+                            .onTapGesture { selectedListing = listing }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+        .padding(.vertical, 16)
+        .onAppear { marketplaceService.loadIfNeeded() }
+        // Sellers are mostly strangers, so their names aren't cached yet.
+        .task(id: marketplaceService.listings.count) {
+            nostrService.fetchMissingProfiles(for: Array(Set(marketplaceService.listings.map(\.pubkey))))
+        }
+    }
+
+    private var emptyMarketplaceStateView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: marketplaceService.loadFailed ? "wifi.slash" : "bag")
+                .font(.appSystem(size: 34))
+                .foregroundColor(.havenPurple.opacity(0.7))
+            Text(marketplaceService.followSetIsEmpty || marketplaceService.scope == .following
+                 ? "No listings from your follows"
+                 : (marketplaceService.loadFailed ? "Could not reach any relay" : "No listings found"))
+                .font(.appSystem(size: 16, weight: .bold))
+            Text(marketplaceService.scope == .following
+                 ? "Nobody you follow is selling anything. Switch to Global to see every listing."
+                 : (marketplaceService.loadFailed
+                    ? "Listings come from other people's relays, so this one needs a connection."
+                    : "No products, auctions or classifieds with a photo came back."))
+                .font(.appSystem(size: 13))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            if marketplaceService.scope == .following {
+                Button("Show every listing") { marketplaceService.setScope(.global) }
+                    .buttonStyle(.borderless)
+                    .foregroundColor(.havenPurple)
+                    .padding(.top, 4)
+            } else {
+                Button("Try again") { marketplaceService.refresh() }
+                    .buttonStyle(.borderless)
+                    .foregroundColor(.havenPurple)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 60)
+    }
+
     /// Reels: full-screen vertical video pager, one video per swipe.
     private var reelsFeedView: some View {
         ReelsFeedView(
@@ -2510,6 +2616,8 @@ struct FeedView: View {
                             articleListView
                         } else if feedService.feedMode == .recipes {
                             recipeGridView
+                        } else if feedService.feedMode == .marketplace {
+                            marketplaceGridView
                         } else if feedService.feedMode == .music {
                             MusicBrowserView()
                         } else if feedService.feedMode == .live {

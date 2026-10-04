@@ -1284,6 +1284,9 @@ class FeedService: ObservableObject {
         if feedMode == .recipes && mode != .recipes {
             RecipeFeedService.shared.disconnect()
         }
+        if feedMode == .marketplace && mode != .marketplace {
+            MarketplaceFeedService.shared.disconnect()
+        }
         if feedMode == .live && mode != .live {
             LiveFeedService.shared.disconnect()
         }
@@ -1340,6 +1343,10 @@ class FeedService: ObservableObject {
             // the note pipeline has nothing to subscribe to here, and starting
             // it would open follow-set subscriptions nothing will read.
             RecipeFeedService.shared.loadIfNeeded()
+        } else if mode == .marketplace {
+            // Same as Recipes: MarketplaceFeedService queries listing relays
+            // itself, so the note pipeline stays idle underneath the grid.
+            MarketplaceFeedService.shared.loadIfNeeded()
         } else if mode == .popular {
             loadPopularFeed()
         } else if isGlobal {
@@ -1450,7 +1457,7 @@ class FeedService: ObservableObject {
         case .following, .discovery: return true
         case .media: return mediaFeedMode == .following
         case .articles: return articlesFeedMode == .following
-        case .global, .popular, .recipes, .live, .reels, .music: return false
+        case .global, .popular, .recipes, .marketplace, .live, .reels, .music: return false
         }
     }
 
@@ -1477,7 +1484,7 @@ class FeedService: ObservableObject {
         case .articles: return articlesFeedMode == .following ? followedPubkeys : []
         case .media: return mediaFeedMode == .following ? followedPubkeys : []
         case .discovery: return extendedNetworkPubkeys
-        case .global, .popular, .recipes, .live, .reels, .music: return []
+        case .global, .popular, .recipes, .marketplace, .live, .reels, .music: return []
         }
     }
 
@@ -1503,6 +1510,11 @@ class FeedService: ObservableObject {
         guard !isPaused else { return }
         guard feedMode != .popular else { return }   // popular has no relay subs
         guard feedMode != .reels else { return }     // ReelsFeedService owns its own
+        // Recipes, Marketplace and Live run their own services and Music has
+        // no relay feed. Reconciling here opened an author-less kind-1 REQ
+        // underneath them, so the hidden note pipeline filled with strangers'
+        // posts and a "New Posts" pill appeared over the grid.
+        guard ![.recipes, .marketplace, .live, .music].contains(feedMode) else { return }
 
         // Author-filtered mode with no follows yet → no valid primary sub. Don't
         // send a dead authors:[] REQ; instead self-heal by (re)fetching contacts
@@ -1705,7 +1717,7 @@ class FeedService: ObservableObject {
         case .following: searchAuthors = followedPubkeys
         case .articles: searchAuthors = articlesFeedMode == .following ? followedPubkeys : nil
         case .discovery: searchAuthors = extendedNetworkPubkeys
-        case .global, .popular, .media, .recipes, .live, .reels, .music: searchAuthors = nil
+        case .global, .popular, .media, .recipes, .marketplace, .live, .reels, .music: searchAuthors = nil
         }
         if let searchAuthors, searchAuthors.isEmpty {
             searchCancellable?.cancel()
