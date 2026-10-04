@@ -18,8 +18,8 @@ final class ReelsFeedService: ObservableObject {
     @Published private(set) var isLoadingMore = false
     @Published private(set) var loadFailed = false
     @Published private(set) var followSetIsEmpty = false
-    /// Following by default. Global video is unmoderated third-party content,
-    /// so it is opt-in behind the sensitive-content warning, like Media.
+    /// Following by default. Global is filtered by the Web of Trust shield;
+    /// Everyone (unfiltered) is behind the sensitive-content warning.
     @Published private(set) var scope: RecipeScope = .following
 
     static let videoKinds = [34236]
@@ -51,6 +51,8 @@ final class ReelsFeedService: ObservableObject {
     /// history from paging forever.
     private var emptyPages = 0
     private var isFetching: Bool { !clients.isEmpty }
+    /// Who Global may show; nil = everyone (see FeedService.globalTrustSet).
+    private var trust: Set<String>?
     private var reachedEnd: Bool { exhausted || emptyPages >= 4 }
 
     private init() {}
@@ -136,6 +138,9 @@ final class ReelsFeedService: ObservableObject {
             }
             authors = follows
         }
+        // Global follows the app-wide shield: Web of Trust, or everyone.
+        // Captured per page so a page fetched after a toggle obeys it.
+        trust = scope == .global ? FeedService.shared.globalTrustSet() : nil
 
         guard !exhausted else {
             isLoading = false
@@ -145,6 +150,7 @@ final class ReelsFeedService: ObservableObject {
         var filter: [String: Any] = ["kinds": Self.videoKinds, "limit": 100]
         if let authors { filter["authors"] = authors }
         if let cursor { filter["until"] = cursor }
+        let filters = FeedService.trustScopedFilters(filter, trust: trust)
 
         let relayURLs = Self.relayURLs(scope: scope)
         guard !relayURLs.isEmpty else {
@@ -174,7 +180,7 @@ final class ReelsFeedService: ObservableObject {
 
             client.connect(url: url)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                let req: [Any] = ["REQ", subId, filter]
+                let req: [Any] = ["REQ", subId] + filters
                 if let data = try? JSONSerialization.data(withJSONObject: req),
                    let text = String(data: data, encoding: .utf8) {
                     client.send(text: text)
@@ -232,7 +238,7 @@ final class ReelsFeedService: ObservableObject {
 
         pageOldest[relay] = min(pageOldest[relay] ?? createdAt, createdAt)
 
-        guard !blocked.contains(pubkey), collected[id] == nil else { return }
+        guard !blocked.contains(pubkey), trust?.contains(pubkey) != false, collected[id] == nil else { return }
 
         // A newer version of a video already collected replaces it; an older
         // one is dropped.

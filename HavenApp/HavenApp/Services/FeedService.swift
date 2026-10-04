@@ -449,6 +449,31 @@ class FeedService: ObservableObject {
         }
     }
 
+    /// The one rule every feed with a Global button follows (Global, Media,
+    /// Articles, diVines, Recipes, Live, Marketplace): Global shows your Web of
+    /// Trust until the shield is switched to Everyone. nil means everyone.
+    /// Fails closed like the Global feed: with no graph yet, nobody passes.
+    func globalTrustSet() -> Set<String>? {
+        guard !ConfigService.shared.config.globalShowsEveryone else { return nil }
+        if wotPubkeys.isEmpty { loadWotPubkeys() }
+        return wotPubkeys
+    }
+
+    /// REQ filters for a Global view under `trust`. Everyone: the filter as
+    /// is. Web of Trust: the same filter asked twice, once restricted to
+    /// trusted authors, so a page of strangers cannot crowd out the people
+    /// the view will actually show, and once open, for trusted authors past
+    /// the cap. The caller still drops untrusted authors from both.
+    static func trustScopedFilters(_ base: [String: Any], trust: Set<String>?) -> [[String: Any]] {
+        guard let trust, !trust.isEmpty else { return [base] }
+        var byAuthor = base
+        byAuthor["authors"] = Array(trust.sorted().prefix(trustedAuthorsCap))
+        return [byAuthor, base]
+    }
+
+    /// Authors per trusted-author REQ; relays reject very large filters.
+    static let trustedAuthorsCap = 500
+
     /// True when the Global feed has a trust graph to filter against. The
     /// relay writes `wot_cache.json` shortly after first launch, seeded from
     /// the starter pack for an owner who follows nobody — so on a brand-new
