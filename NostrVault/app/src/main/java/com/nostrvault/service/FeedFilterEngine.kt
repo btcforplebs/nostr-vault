@@ -50,6 +50,33 @@ object FeedFilterEngine {
     }
 
     /**
+     * Whether a row would put a blocked person in front of the user (iOS #211).
+     * `note.pubkey` alone misses most of it: a bare kind-6 repost carries the
+     * reposter as its pubkey and shows the original author's post, an embedded
+     * one has the original author as pubkey and the reposter in `repostedBy`,
+     * and a reply shows the post it answers above itself.
+     *
+     * @param authorOf the author of a referenced event id, or null when it
+     *   hasn't loaded. A bare repost falls back to its `p` tag.
+     */
+    fun involvesBlocked(
+        note: FeedNote,
+        blocked: Set<String>,
+        authorOf: (String) -> String? = { null },
+    ): Boolean {
+        if (blocked.isEmpty()) return false
+        if (note.pubkey in blocked) return true
+        if (note.repostedBy != null && note.repostedBy in blocked) return true
+        if (note.kind == 6 && note.repostedEventId != null) {
+            val original = authorOf(note.repostedEventId)
+                ?: note.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1)
+            if (original != null && original in blocked) return true
+        }
+        val parentAuthor = note.parentEventId?.let(authorOf)
+        return parentAuthor != null && parentAuthor in blocked
+    }
+
+    /**
      * Main feed filter: applies blocked list, reply/repost visibility,
      * WoT membership, popular scoring, and throttle limits.
      */
@@ -67,11 +94,11 @@ object FeedFilterEngine {
         globalLanguages: Set<String> = emptySet(),
         globalRequiresTrust: Boolean = true,
         languageOf: (FeedNote) -> String? = { null },
+        authorOf: (String) -> String? = { null },
     ): List<FeedNote> {
         var filtered = notes.filter { note ->
-            // Always exclude blocked pubkeys
-            if (note.pubkey in blocked) return@filter false
-            if (note.repostedBy != null && note.repostedBy in blocked) return@filter false
+            // Always exclude blocked people, wherever the row would show them
+            if (involvesBlocked(note, blocked, authorOf)) return@filter false
 
             // Exclude kind-6 reposts if disabled
             if (!showReposts && note.kind == 6) return@filter false
@@ -157,9 +184,10 @@ object FeedFilterEngine {
         isGlobalMedia: Boolean,
         globalRequiresTrust: Boolean = true,
         throttledPubkeys: Map<String, Int> = emptyMap(),
+        authorOf: (String) -> String? = { null },
     ): List<FeedNote> {
         var filtered = notes.filter { note ->
-            if (note.pubkey in blocked) return@filter false
+            if (involvesBlocked(note, blocked, authorOf)) return@filter false
             // Web-of-trust scoping applies only to Global media (matches iOS
             // FeedFilterEngine.filterMediaNotes). Following media is already scoped
             // to followed authors by the subscription, so it shows all media here —

@@ -187,6 +187,16 @@ class FeedService @Inject constructor(
                     forceReload()
                 }
         }
+        // Blocking someone (from a menu, Settings, or a mute list synced from
+        // another client) must drop their posts now, not when some unrelated
+        // note next arrives.
+        scope.launch {
+            configStore.config
+                .map { it.blockedForActiveAccount() }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { recomputeFilteredNotes() }
+        }
     }
 
     private val _filteredNotes = MutableStateFlow<List<FeedNote>>(emptyList())
@@ -1803,6 +1813,7 @@ class FeedService @Inject constructor(
             isGlobalMedia = _mediaFeedMode.value == MediaFeedMode.GLOBAL,
             globalRequiresTrust = !config.globalShowsEveryone,
             throttledPubkeys = throttledPubkeys,
+            authorOf = ::authorOf,
         )
 
         _parentIsNextNote.value = feedFilterEngine.computeParentIsNext(_filteredNotes.value)
@@ -1827,7 +1838,16 @@ class FeedService @Inject constructor(
         globalLanguages = config.globalFeedLanguages.toSet(),
         globalRequiresTrust = !config.globalShowsEveryone,
         languageOf = ::languageOf,
+        authorOf = ::authorOf,
     )
+
+    /** Author of a note the feed has loaded, for the blocked-person check. */
+    private fun authorOf(id: String): String? = findNote(id)?.pubkey
+
+    /** The active account's blocked people, as hex pubkeys. */
+    fun blockedHexForActiveAccount(): Set<String> =
+        configStore.config.value.blockedForActiveAccount()
+            .mapNotNull { nostrService.npubToHex(it) }.toSet()
 
     /**
      * How many staged new posts the current feed would actually show. The raw
@@ -1847,6 +1867,7 @@ class FeedService @Inject constructor(
                 wotPubkeys = _wotPubkeys.value,
                 isGlobalMedia = _mediaFeedMode.value == MediaFeedMode.GLOBAL,
                 globalRequiresTrust = !config.globalShowsEveryone,
+                authorOf = ::authorOf,
             ).size
         } else {
             filterForCurrentFeed(pending, config, blockedPubkeys, emptyMap()).size
@@ -2103,33 +2124,39 @@ class FeedService @Inject constructor(
     // User moderation
     // ══════════════════════════════════════════════════════════════════
 
+    /**
+     * Block for the active account. This wrote the legacy flat `blockedNpubs`,
+     * which the feed filter ignores once a per-account list exists, and then
+     * published that stale list as the owner's mute list, dropping anyone
+     * blocked from Settings and, on a second account, signing as the owner.
+     */
     fun blockUser(hexPubkey: String) {
         val npub = nostrService.hexToNpub(hexPubkey) ?: return
-        val current = configStore.config.value.blockedNpubs?.toMutableList() ?: mutableListOf()
-        if (npub in current) return
-        current.add(npub)
-        configStore.update { it.copy(blockedNpubs = current) }
-        scope.launch(Dispatchers.IO) {
-            nostrService.publishMuteList(configStore.config.value.ownerNpub, current)
-        }
+        if (npub in configStore.config.value.blockedForActiveAccount()) return
+        configStore.blockProfile(npub)
+        publishActiveMuteList()
         _notes.value = _notes.value.filter { it.pubkey != hexPubkey }
         recomputeFilteredNotes()
     }
 
     fun unblockUser(hexPubkey: String) {
         val npub = nostrService.hexToNpub(hexPubkey) ?: return
-        val current = configStore.config.value.blockedNpubs?.toMutableList() ?: return
-        if (npub !in current) return
-        current.remove(npub)
-        configStore.update { it.copy(blockedNpubs = current) }
-        scope.launch(Dispatchers.IO) {
-            nostrService.publishMuteList(configStore.config.value.ownerNpub, current)
-        }
+        if (npub !in configStore.config.value.blockedForActiveAccount()) return
+        configStore.unblockProfile(npub)
+        publishActiveMuteList()
+    }
+
+    /** Same as Settings → Blocked: the active account's list, signed as it. */
+    private fun publishActiveMuteList() {
+        val cfg = configStore.config.value
+        val account = cfg.activeOrOwnerNpub()
+        val list = cfg.blockedForActiveAccount()
+        scope.launch(Dispatchers.IO) { nostrService.publishMuteList(account, list) }
     }
 
     fun isBlocked(hexPubkey: String): Boolean {
         val npub = nostrService.hexToNpub(hexPubkey) ?: return false
-        return configStore.config.value.blockedNpubs?.contains(npub) == true
+        return npub in configStore.config.value.blockedForActiveAccount()
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -2629,6 +2656,9 @@ class FeedService @Inject constructor(
                 }
                 if (published) break
             }
+            // A reply or bare repost of a blocked author is only recognisable
+            // once the post it points at has loaded, so refilter when it's theirs.
+            if (pubkey in blockedHexForActiveAccount()) recomputeFilteredNotes()
             return eventId
         } catch (_: Exception) {
             return null

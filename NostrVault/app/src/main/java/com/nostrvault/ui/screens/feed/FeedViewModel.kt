@@ -326,8 +326,20 @@ class FeedViewModel @Inject constructor(
         filteredNotes,
         threadedModeEnabled,
         resolvedAncestorIds,
-    ) { notes, threaded, _ ->
-        if (!threaded) emptyList() else FeedThreadGrouping.build(notes) { id -> feedService.findNote(id) }
+        // Blocking can hide a thread's root or an ancestor without changing
+        // the visible note list, so regroup on it directly.
+        configStore.config.map { it.blockedForActiveAccount() }.distinctUntilChanged(),
+    ) { notes, threaded, _, _ ->
+        if (!threaded) emptyList() else {
+            val blocked = feedService.blockedHexForActiveAccount()
+            FeedThreadGrouping.withoutBlocked(
+                FeedThreadGrouping.build(notes) { id ->
+                    // A blocked author's post is never pulled in as context.
+                    feedService.findNote(id)?.takeIf { it.pubkey !in blocked }
+                },
+                blocked,
+            ) { id -> feedService.findNote(id) }
+        }
     }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

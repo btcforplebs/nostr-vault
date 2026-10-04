@@ -78,6 +78,24 @@ object FeedThreadGrouping {
      *   the thread is then rooted at the highest ancestor that did load.
      * @return threads ordered by `latestActivity`, newest first.
      */
+    /**
+     * Drops conversations started by a blocked author (iOS #211). Their root
+     * is withheld from [build], so without this the card would sit on
+     * "Loading the start of this thread..." forever.
+     */
+    fun withoutBlocked(
+        threads: List<FeedThread>,
+        blocked: Set<String>,
+        findNote: (String) -> FeedNote?,
+    ): List<FeedThread> {
+        if (blocked.isEmpty()) return threads
+        return threads.filter { thread ->
+            if (thread.root != null) return@filter true
+            val root = findNote(thread.rootId) ?: return@filter true
+            root.pubkey !in blocked
+        }
+    }
+
     fun build(
         notes: List<FeedNote>,
         resolveNote: (String) -> FeedNote? = { null },
