@@ -22,6 +22,11 @@ class AudioSessionManager {
     /// after the mini player had claimed `.playback`.
     var appAudioIsPlaying = false
 
+    /// Pauses the app-wide player when a video takes the sound over. Taking
+    /// the session deactivates it, which silences the mini player without
+    /// telling it, so it went on showing "playing" with nothing coming out.
+    var pauseAppAudio: (() -> Void)?
+
     #if os(iOS)
     private var interruptionObserver: NSObjectProtocol?
 
@@ -94,6 +99,7 @@ class AudioSessionManager {
                 try audioSession.setActive(true)
                 return
             }
+            if appAudioIsPlaying { pauseAppAudio?() }
             // Deactivate current session first to ensure clean transition
             try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
 

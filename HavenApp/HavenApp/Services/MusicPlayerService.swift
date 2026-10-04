@@ -98,6 +98,9 @@ final class MusicPlayerService: ObservableObject {
             Task { @MainActor in self?.isBuffering = waiting }
         }
         configureRemoteCommands()
+        AudioSessionManager.shared.pauseAppAudio = { [weak self] in
+            MainActor.assumeIsolated { self?.pause() }
+        }
         #if os(iOS)
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
@@ -245,7 +248,16 @@ final class MusicPlayerService: ObservableObject {
                 if seconds.isFinite, seconds > 0 { self.duration = seconds }
                 // Past an unplayable song, but never round again under repeat
                 // all: a queue where nothing plays would spin forever.
-                if item.status == .failed, self.index + 1 < self.queue.count { self.next() }
+                guard item.status == .failed, self.current?.audioURL == url else { return }
+                if self.index + 1 < self.queue.count {
+                    self.next()
+                } else {
+                    // Nothing left to play — a stream whose host stopped, say.
+                    // Left "playing", it would keep video surfaces from ever
+                    // handing the sound back to other apps.
+                    self.isPlaying = false
+                    self.updateNowPlaying()
+                }
             }
         }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }

@@ -114,7 +114,14 @@ struct LiveStreamThumbnail: View {
                     .transition(.opacity)
             }
         }
-        .task(id: urls) { await load() }
+        .task(id: urls) {
+            // Again every minute while the tile is on screen, so a fixed-URL
+            // frame moves on too; the task ends when the tile goes.
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(for: .seconds(LiveThumbnailCache.maxAge))
+            }
+        }
     }
 
     private func load() async {
@@ -124,6 +131,7 @@ struct LiveStreamThumbnail: View {
             if held.isFresh { return }
         }
         for url in urls {
+            if Task.isCancelled { return }
             guard let fetched = await cache.fetch(url) else { continue }
             if Task.isCancelled { return }
             withAnimation(Motion.fade) { image = fetched }
