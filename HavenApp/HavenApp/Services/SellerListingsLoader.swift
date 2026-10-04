@@ -11,7 +11,7 @@ final class SellerListingsLoader: ObservableObject {
 
     private var clients: [WebSocketClient] = []
     private var cancellables = Set<AnyCancellable>()
-    private var collected: [String: MarketListing] = [:]
+    private var book = MarketListingBook()
     private var timeout: Timer?
     private var loadedPubkey: String?
 
@@ -19,7 +19,7 @@ final class SellerListingsLoader: ObservableObject {
         guard force || loadedPubkey != pubkey else { return }
         cancel()
         loadedPubkey = pubkey
-        collected.removeAll()
+        book.removeAll()
         listings = []
         isLoading = true
 
@@ -81,16 +81,13 @@ final class SellerListingsLoader: ObservableObject {
               let content = event["content"] as? String,
               let createdAt = event["created_at"] as? Int64,
               let kind = event["kind"] as? Int,
-              let tags = event["tags"] as? [[String]],
-              let listing = MarketListing(id: id, pubkey: pubkey, kind: kind, content: content,
-                                          createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)), tags: tags)
+              let tags = event["tags"] as? [[String]]
         else { return }
 
-        // Newest event per address, as in the Marketplace feed.
-        let address = "\(kind):\(pubkey):\(listing.dTag ?? id)"
-        if let existing = collected[address], existing.createdAt >= listing.createdAt { return }
-        collected[address] = listing
-        listings = collected.values.sorted { $0.createdAt > $1.createdAt }
+        // Newest event per address, as in the Marketplace feed: a sold
+        // re-publish hides the item rather than being ignored.
+        guard book.insert(id: id, pubkey: pubkey, kind: kind, content: content, createdAt: createdAt, tags: tags) else { return }
+        listings = book.listings
         isLoading = false
     }
 }

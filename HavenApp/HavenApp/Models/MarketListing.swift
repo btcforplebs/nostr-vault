@@ -247,3 +247,47 @@ enum MarketCategory: String, CaseIterable, Hashable {
         Set(text.split { !($0.isLetter || $0.isNumber || $0 == "-") }.map(String.init))
     }
 }
+
+/// Listings keyed by address, where the newest event at an address decides
+/// what shows, even when that event is not a showable listing.
+///
+/// A seller marks an item sold by re-publishing it under the same address
+/// with `status sold`. `MarketListing` refuses that version, so a collection
+/// that only stores parsed listings never learns about it and keeps showing
+/// the older, active one. This records the newest `created_at` per address
+/// for every event, and holds a listing only while the newest version is one.
+struct MarketListingBook {
+    private var newestAt: [String: Int64] = [:]
+    private var byAddress: [String: MarketListing] = [:]
+
+    /// Listings newest-first, ties broken by id so the order is stable.
+    var listings: [MarketListing] {
+        byAddress.values.sorted {
+            if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
+            return $0.id > $1.id
+        }
+    }
+
+    var isEmpty: Bool { byAddress.isEmpty }
+
+    mutating func removeAll() {
+        newestAt.removeAll()
+        byAddress.removeAll()
+    }
+
+    /// Feeds one relay event in. Returns true when what the book shows changed.
+    @discardableResult
+    mutating func insert(id: String, pubkey: String, kind: Int, content: String, createdAt: Int64, tags: [[String]]) -> Bool {
+        guard MarketListing.kinds.contains(kind) else { return false }
+        let dTag = tags.first { $0.count >= 2 && $0[0] == "d" }?[1]
+        let address = "\(kind):\(pubkey):\(dTag ?? id)"
+        if let seen = newestAt[address], seen >= createdAt { return false }
+        newestAt[address] = createdAt
+
+        let listing = MarketListing(id: id, pubkey: pubkey, kind: kind, content: content,
+                                    createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)), tags: tags)
+        let hadListing = byAddress[address] != nil
+        byAddress[address] = listing
+        return listing != nil || hadListing
+    }
+}
