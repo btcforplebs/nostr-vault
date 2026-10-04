@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.7.3 (19) — macOS / iOS / Android] - 2026-10-04
+## [2.7.2 (19) — macOS / iOS / Android] - 2026-10-04
 
 > Release notes: `HavenApp/RELEASE_NOTES.md`. Later fixes (DM inbox list, blocked people in feeds, Setup npub checks, Zaps Given, repost times) are in those notes but not itemized here.
 
