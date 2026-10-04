@@ -932,6 +932,9 @@ struct NoteSplitPane<Content: View>: View {
     /// translation from its start, not a delta since the last callback).
     @State private var dragStartWidth: Double?
 
+    /// The reader folded the note column away to give the list the whole
+    /// pane. Remembered across launches; opening a note brings the column back.
+    @AppStorage("ipad.noteSplit.detailHidden") private var detailHidden = false
 
     var body: some View {
         GeometryReader { geo in
@@ -945,19 +948,64 @@ struct NoteSplitPane<Content: View>: View {
 
             HStack(spacing: 0) {
                 content()
-                    .frame(width: width)
+                    .frame(width: detailHidden ? geo.size.width : width)
                     .environment(\.noteDetailSelection, selection)
 
-                resizeHandle(maxListWidth: maxListWidth)
+                if !detailHidden {
+                    resizeHandle(maxListWidth: maxListWidth)
+                        // The fold tab is wider than the handle; keep the
+                        // detail column from drawing over (and taking taps
+                        // from) the half that overhangs it.
+                        .zIndex(1)
 
-                detailColumn
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    detailColumn
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.move(edge: .trailing))
+                }
             }
             // GeometryReader hands its child the full space but does not force
             // it to fill: without this the row sizes to its content and the
             // handle has nothing to span.
             .frame(width: geo.size.width, height: geo.size.height)
+            .overlay(alignment: .trailing) {
+                if detailHidden {
+                    detailToggle
+                }
+            }
+            .clipped()
         }
+        .onChange(of: selection.note?.id) { _, id in
+            if id != nil { setDetailHidden(false) }
+        }
+        .onChange(of: selection.noteId) { _, id in
+            if id != nil { setDetailHidden(false) }
+        }
+    }
+
+    private func setDetailHidden(_ hidden: Bool) {
+        guard hidden != detailHidden else { return }
+        withAnimation(.easeInOut(duration: 0.25)) { detailHidden = hidden }
+    }
+
+    /// The tab that folds the note column away, or brings it back. It sits on
+    /// the divider while the column is open and on the pane's trailing edge
+    /// while it is folded, vertically centred so it stays clear of the
+    /// navigation bar, which would otherwise take its taps.
+    private var detailToggle: some View {
+        Button {
+            setDetailHidden(!detailHidden)
+        } label: {
+            Image(systemName: detailHidden ? "chevron.left" : "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 56)
+                .background(.regularMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(Color(uiColor: .separator), lineWidth: 0.5))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, detailHidden ? 4 : 0)
+        .accessibilityLabel(detailHidden ? "Show note" : "Hide note")
     }
 
     /// The draggable divider. A plain `Divider()` is one hairline wide and
@@ -970,9 +1018,8 @@ struct NoteSplitPane<Content: View>: View {
             Rectangle()
                 .fill(Color(uiColor: .separator))
                 .frame(width: 1)
-            Capsule()
-                .fill(Color(uiColor: .tertiaryLabel))
-                .frame(width: 4, height: 44)
+            // The fold tab doubles as the drag grip's centre mark.
+            detailToggle
         }
         .frame(width: 14)
         .frame(maxHeight: .infinity)
