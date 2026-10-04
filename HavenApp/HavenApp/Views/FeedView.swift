@@ -1504,7 +1504,11 @@ struct FeedView: View {
         .sheet(item: $showingArticle) { route in
             ArticleReaderView(note: route.note)
                 .environmentObject(nostrService)
+                // A Mac sheet sizes to its content; on iPhone a 520pt minimum
+                // is wider than the screen, so the reader drew off both edges.
+                #if os(macOS)
                 .frame(minWidth: 520, minHeight: 480)
+                #endif
         }
         .sheet(isPresented: $isShowingGridMediaViewer) {
             ZStack {
