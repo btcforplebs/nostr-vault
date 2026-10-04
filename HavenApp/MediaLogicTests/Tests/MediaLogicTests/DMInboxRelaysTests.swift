@@ -47,6 +47,12 @@ final class DMInboxRelaysTests: XCTestCase {
         XCTAssertEqual(HavenConfig.dmInboxSyncAction(local: ["wss://a"], localUpdatedAt: nil, published: nil, publishedAt: nil), .publish)
     }
 
+    /// A device that has synced before and finds nothing most likely could
+    /// not reach the relays; publishing would overwrite a newer list.
+    func testSyncedDeviceThatFindsNothingDoesNotPublish() {
+        XCTAssertEqual(HavenConfig.dmInboxSyncAction(local: ["wss://a"], localUpdatedAt: 100, published: nil, publishedAt: nil), .none)
+    }
+
     /// The bug: each device republished its own list at launch, so the last
     /// device opened won. A device that never edited its list must take the
     /// published one instead.

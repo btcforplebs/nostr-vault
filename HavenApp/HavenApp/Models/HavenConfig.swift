@@ -629,7 +629,13 @@ struct HavenConfig: Codable, Equatable {
     /// `publishedAt` its created_at. `local` is this device's merged list.
     static func dmInboxSyncAction(local: [String], localUpdatedAt: Int64?,
                                   published: [String]?, publishedAt: Int64?) -> DMInboxSyncAction {
-        guard let published, let publishedAt else { return .publish }
+        guard let published, let publishedAt else {
+            // Nothing found. For a list that was never set that means no list
+            // is published, so publish one. A device that has synced before
+            // more likely just couldn't reach the relays this launch, and
+            // publishing would overwrite a newer list it never saw.
+            return localUpdatedAt == nil ? .publish : .none
+        }
         let localAt = localUpdatedAt ?? 0
         if publishedAt > localAt { return .adopt }
         if localAt > publishedAt { return .publish }
