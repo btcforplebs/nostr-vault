@@ -38,6 +38,7 @@
 		1170A2AE5A61D5B5FF2510CF /* GifPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A557F0804214239CCFEDDD8 /* GifPickerSheet.swift */; };
 		11CA2627A013602A67310A7D /* MediaGridItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279617C6C46FE95602AF2F5B /* MediaGridItem.swift */; };
 		1254B31953A9E00640351FFC /* EventPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0D438DE03F310940F4D19A /* EventPublisher.swift */; };
+		B4373CB3920F09BAEC3D9E2E /* EventInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA8E98C491128BE3D861466 /* EventInspector.swift */; };
 		14ABF30BD7FF762D64D8EE9A /* NostrEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D0631CF48FD1659E6F1005 /* NostrEvent.swift */; };
 		14FE82E63F5A97838F91AAE6 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8A73E431CE524CF64925E0D /* CredentialStore.swift */; };
 		15393DD23237B42966817286 /* DMThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0D442B3835900C7663D934 /* DMThreadView.swift */; };
@@ -358,6 +359,7 @@
 		CDCA7BD2C08A31E082391BD4 /* NostrEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D0631CF48FD1659E6F1005 /* NostrEvent.swift */; };
 		CE12AE67E50B1FDB1B643D65 /* NetworkSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2F57E728F782BF1D8DD5B13 /* NetworkSyncService.swift */; };
 		CE50FBB4E33CAEAE5056B052 /* EventPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0D438DE03F310940F4D19A /* EventPublisher.swift */; };
+		F98BE12A6D6D38BB2BD932BF /* EventInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA8E98C491128BE3D861466 /* EventInspector.swift */; };
 		CE658646406692011C5ACEF1 /* QuotedNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0470608431CE649B6E55F7D /* QuotedNoteView.swift */; };
 		CF11F2A3B34BC8D6843AE229 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
 		D04D39305F6A1088ECFBE1AE /* AudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */; };
@@ -698,6 +700,7 @@
 		EC33568A91E5B5B737A03D1F /* FeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedService.swift; sourceTree = "<group>"; };
 		EC971B12438093F727E8967F /* Bolt11.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bolt11.swift; sourceTree = "<group>"; };
 		ED0D438DE03F310940F4D19A /* EventPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventPublisher.swift; sourceTree = "<group>"; };
+		0AA8E98C491128BE3D861466 /* EventInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventInspector.swift; sourceTree = "<group>"; };
 		ED924B5483C85E11E4917120 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		F10FAB057E10D3468126BB35 /* VaultEngagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEngagement.swift; sourceTree = "<group>"; };
 		F7689F0347B5A29E25E0CE62 /* MediaGalleryGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryGrid.swift; sourceTree = "<group>"; };
@@ -1093,6 +1096,7 @@
 				3800D9290BD369F4F26BC5C3 /* DraftService.swift */,
 				01EFA5F14E595113B47E8FC2 /* EngagementTracker.swift */,
 				ED0D438DE03F310940F4D19A /* EventPublisher.swift */,
+				0AA8E98C491128BE3D861466 /* EventInspector.swift */,
 				E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */,
 				EC33568A91E5B5B737A03D1F /* FeedService.swift */,
 				A19809A765C51F397B19FD14 /* FeedServiceTypes.swift */,
@@ -1393,6 +1397,7 @@
 				CBCA92A51535C9E34872C0BB /* ErrorNotificationBanner.swift in Sources */,
 				78ADF8C19CAAAA4A58E158A0 /* EventBroadcastSheet.swift in Sources */,
 				CE50FBB4E33CAEAE5056B052 /* EventPublisher.swift in Sources */,
+				F98BE12A6D6D38BB2BD932BF /* EventInspector.swift in Sources */,
 				030FF35B36CBFC4F36DB234A /* FIPSDetectionService.swift in Sources */,
 				26EC34BA41C0258FDC48AAC4 /* FeedActions.swift in Sources */,
 				77F2DF4742BD61D41A930B9A /* FeedDashboardSheet.swift in Sources */,
@@ -1625,6 +1630,7 @@
 				D1B024EAA1105FEC11699EC8 /* ErrorNotificationBanner.swift in Sources */,
 				BBEB6E9E824AA4B887755B8E /* EventBroadcastSheet.swift in Sources */,
 				1254B31953A9E00640351FFC /* EventPublisher.swift in Sources */,
+				B4373CB3920F09BAEC3D9E2E /* EventInspector.swift in Sources */,
 				29E9BEB0514B97A6DCD0257B /* FIPSDetectionService.swift in Sources */,
 				D9E8EC6D2923CC7E627C8F2B /* FeedActions.swift in Sources */,
 				870818EFD99EBF6D0E1F6C30 /* FeedDashboardSheet.swift in Sources */,

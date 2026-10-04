@@ -1463,10 +1463,6 @@ class NostrService: ObservableObject {
     /// If `onRelayResult` is provided, it's called for each relay with (relayURL, success, message).
     /// `extraRelays` are sent to as well, e.g. diVine's relay for a diVine.
     func broadcastRawEvent(_ eventDict: [String: Any], extraRelays: [String] = [], onRelayResult: ((String, Bool, String) -> Void)? = nil) {
-        let msg = ["EVENT", eventDict] as [Any]
-        guard let data = try? JSONSerialization.data(withJSONObject: msg),
-              let str = String(data: data, encoding: .utf8) else { return }
-
         var relays = ConfigService.shared.config.activeBlastrRelays
         if relays.isEmpty {
             relays = ["wss://relay.primal.net", "wss://nos.lol"]
@@ -1474,6 +1470,14 @@ class NostrService: ObservableObject {
         for extra in extraRelays where !relays.contains(extra) {
             relays.append(extra)
         }
+        broadcastRawEvent(eventDict, to: relays, onRelayResult: onRelayResult)
+    }
+
+    /// Broadcasts a raw signed event dict to exactly `relays`, no defaults added.
+    func broadcastRawEvent(_ eventDict: [String: Any], to relays: [String], onRelayResult: ((String, Bool, String) -> Void)? = nil) {
+        let msg = ["EVENT", eventDict] as [Any]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg),
+              let str = String(data: data, encoding: .utf8) else { return }
 
         for urlStr in relays {
             guard let url = URL(string: urlStr) else { continue }
