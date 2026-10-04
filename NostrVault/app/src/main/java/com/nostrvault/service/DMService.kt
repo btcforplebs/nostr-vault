@@ -860,6 +860,7 @@ class DMService @Inject constructor(
     // ══════════════════════════════════════════════════════════════════
 
     fun fetchFromExternalRelays() {
+        backfillSentCopiesIfNeeded()
         scope.launch(Dispatchers.IO) {
             val ownerHex = nostrService.activeHexPubkey
             val dmRelays = nostrService.dmRelayLists.value[ownerHex] ?: emptyList()
@@ -926,6 +927,79 @@ class DMService @Inject constructor(
             }
 
             lastExternalFetchTimestamp = System.currentTimeMillis()
+        }
+    }
+
+    @Volatile private var backfillRunning = false
+
+    /**
+     * One-time catch-up, per account, of your own sent copies stranded on
+     * your general (kind 10002) relays. Before the DM inbox list (#212) a
+     * sent copy could go there, and no device reads DMs from those relays;
+     * the regular fetch only reaches 7 days back. Asks your newest 10002
+     * relays (fetched fresh — the cache can be long out of date), the cached
+     * ones and your DM inbox list for every gift wrap addressed to you, with
+     * no time window. Marked done (a file next to the DM cache) only after a
+     * fresh 10002 lookup answered, so a launch without network retries.
+     * Same as the iOS catch-up in #214.
+     */
+    private fun backfillSentCopiesIfNeeded() {
+        val ownerHex = nostrService.activeHexPubkey
+        val dir = configStore.config.value.appSupportDir ?: return
+        if (ownerHex.isBlank() || backfillRunning) return
+        val marker = File(dir, "dm_backfill_v1_${ownerHex.take(16)}")
+        if (marker.exists()) return
+        backfillRunning = true
+        val generation = switchGeneration
+        scope.launch(Dispatchers.IO) {
+            try {
+                val fresh = nostrService.fetchNewestReplaceable(10002, ownerHex, ownDMInboxRelays(ownerHex))
+                if (switchGeneration != generation) return@launch
+                // Every "r" entry, read or write: old builds sent the copy to the read set.
+                val freshRelays = fresh?.tags?.filter { it.size >= 2 && it[0] == "r" }?.map { it[1] }.orEmpty()
+                val relays = (freshRelays + nostrService.relayLists.value[ownerHex].orEmpty() + ownDMInboxRelays(ownerHex))
+                    .map { it.trim().trimEnd('/') }
+                    .filter { it.isNotEmpty() && !NostrService.isLoopbackRelay(it) }
+                    .distinctBy { it.lowercase() }
+                Log.i(TAG, "DM sent-copy catch-up from ${relays.size} relays (fresh 10002: ${fresh != null})")
+                coroutineScope {
+                    relays.map { url ->
+                        launch {
+                            val client = WebSocketClient(url = url, scope = this, autoReconnect = false)
+                            try {
+                                withTimeoutOrNull(12_000) {
+                                    val subId = "bf-${UUID.randomUUID().toString().take(6)}"
+                                    val done = CompletableDeferred<Unit>()
+                                    val collector = launch {
+                                        client.messages.collect { msg ->
+                                            if (switchGeneration != generation) return@collect
+                                            if (msg.startsWith("[\"EOSE\"") || msg.startsWith("[\"CLOSED\"")) {
+                                                done.complete(Unit)
+                                            } else {
+                                                handleExternalDmMessage(msg, generation)
+                                            }
+                                        }
+                                    }
+                                    launch {
+                                        client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                                        client.send("""["REQ","$subId",{"kinds":[1059],"#p":["$ownerHex"],"limit":1000}]""")
+                                    }
+                                    client.connect()
+                                    done.await()
+                                    collector.cancel()
+                                }
+                            } finally {
+                                client.disconnect()
+                            }
+                        }
+                    }.joinAll()
+                }
+                if (switchGeneration == generation && fresh != null) marker.writeText("done")
+            } catch (e: Exception) {
+                Log.w(TAG, "DM sent-copy catch-up failed: ${e.message}")
+            } finally {
+                backfillRunning = false
+            }
         }
     }
 
