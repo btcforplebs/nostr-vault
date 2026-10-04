@@ -531,7 +531,7 @@ struct HavenConfig: Codable, Equatable {
     /// unreachable to them.
     var ownHavenDMInboxURL: String {
         #if os(macOS)
-        guard !isLocal else { return "" }
+        guard !isLocal, !Self.isPrivateNetworkHost(sanitizedRelayURL) else { return "" }
         return Self.normalizedRelayURL(nostrURL + "/inbox")
         #else
         let base = macRelayNormalizedBase
@@ -558,7 +558,18 @@ struct HavenConfig: Codable, Equatable {
         } else if host.filter({ $0 == ":" }).count == 1, let colon = host.firstIndex(of: ":") {
             host = String(host[..<colon])
         }
-        if host.isEmpty || host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") { return true }
+        while host.hasSuffix(".") { host = String(host.dropLast()) }
+        if host.hasPrefix("::ffff:") {
+            // IPv4-mapped IPv6: judge the IPv4 address it carries.
+            let v4 = String(host.dropFirst("::ffff:".count))
+            if v4.contains(".") { return isPrivateNetworkHost(v4) }
+        }
+        if host.isEmpty || host == "localhost" { return true }
+        // Home-network names, plus Tailscale MagicDNS: a .ts.net name only
+        // reaches outsiders through Funnel, so it can't be relied on.
+        for suffix in [".localhost", ".local", ".lan", ".home.arpa", ".internal", ".ts.net"] where host.hasSuffix(suffix) {
+            return true
+        }
         if host.contains(":") {
             // IPv6: loopback, unspecified, unique-local fc00::/7, link-local fe80::/10
             return host == "::1" || host == "::" || host.hasPrefix("fc") || host.hasPrefix("fd")

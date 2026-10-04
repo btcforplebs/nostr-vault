@@ -33,6 +33,16 @@ final class DMInboxRelaysTests: XCTestCase {
 
     // MARK: - Sync across devices
 
+    /// The Mac branch: a relay address only the home network can reach is
+    /// not published either.
+    func testMacPrivateAddressIsNotAHavenInbox() {
+        var config = HavenConfig()
+        for address in ["https://192.168.1.20", "https://mac.local", "100.68.246.56:3355"] {
+            config.relayURL = address
+            XCTAssertEqual(config.ownHavenDMInboxURL, "", address)
+        }
+    }
+
     func testNothingPublishedMeansPublish() {
         XCTAssertEqual(HavenConfig.dmInboxSyncAction(local: ["wss://a"], localUpdatedAt: nil, published: nil, publishedAt: nil), .publish)
     }
@@ -85,14 +95,16 @@ final class DMInboxRelaysTests: XCTestCase {
     func testPrivateAddressesAreRecognised() {
         for host in ["192.168.1.20:3355", "10.0.0.5", "172.16.4.1:80", "172.31.255.255", "127.0.0.1:3355",
                      "169.254.1.1", "100.68.246.56:8798", "localhost:3355", "mac.local", "studio-mac",
-                     "[::1]:3355", "[fd12::1]", "[fe80::1]:80", "192.168.1.20:3355/inbox"] {
+                     "[::1]:3355", "[fd12::1]", "[fe80::1]:80", "192.168.1.20:3355/inbox",
+                     "[::ffff:192.168.1.20]:3355", "mac.local.", "nas.lan", "box.home.arpa", "svc.internal",
+                     "mac.tail1234.ts.net"] {
             XCTAssertTrue(HavenConfig.isPrivateNetworkHost(host), host)
         }
     }
 
     func testPublicAddressesAreNot() {
         for host in ["logen.btcforplebs.com", "relay.example.com:443", "172.217.4.14", "172.32.0.1",
-                     "100.128.0.1", "8.8.8.8", "mac.tail1234.ts.net", "[2606:4700::1111]"] {
+                     "100.128.0.1", "8.8.8.8", "[2606:4700::1111]", "logen.btcforplebs.com.", "[::ffff:8.8.8.8]"] {
             XCTAssertFalse(HavenConfig.isPrivateNetworkHost(host), host)
         }
     }
