@@ -17,11 +17,13 @@ enum ModePostPublisher {
     enum PublishError: LocalizedError {
         case upload(String)
         case signing
+        case accountChanged
 
         var errorDescription: String? {
             switch self {
             case .upload(let message): return message
             case .signing: return "Couldn't sign the post. Check your key or remote signer in Settings."
+            case .accountChanged: return "The account changed while this was posting, so it was not sent. Switch back and post again."
             }
         }
     }
@@ -60,14 +62,35 @@ enum ModePostPublisher {
         }
     }
 
+    /// The account active right now, for `publish(lockedTo:)`. Take it when
+    /// Post is tapped, before any upload.
+    static func lockAccount(configService: ConfigService) -> PostingAccount.Lock {
+        PostingAccount.Lock(
+            npub: PostingAccount.resolve(active: configService.config.activeAccountNpub, owner: configService.config.ownerNpub),
+            hex: configService.activeAccountHexPubkey
+        )
+    }
+
     /// Signs and sends an event to this device's relay, the configured outside
     /// relays and `extraRelays`. `onRelayResult` reports each outside relay.
+    /// With `lockedTo`, refuses to sign or send unless that account is still
+    /// the active one and the event carries its key.
     @discardableResult
     static func publish(kind: Int, content: String, tags: [[String]], extraRelays: [String] = [],
                         nostrService: NostrService,
+                        lockedTo lock: PostingAccount.Lock? = nil,
                         onRelayResult: ((String, Bool, String) -> Void)? = nil) async throws -> NostrEvent {
+        let config = { ConfigService.shared.config }
+        if let lock, PostingAccount.resolve(active: config().activeAccountNpub, owner: config().ownerNpub) != lock.npub {
+            throw PublishError.accountChanged
+        }
         guard let event = await nostrService.signEventAsync(kind: kind, content: content, tags: tags) else {
             throw PublishError.signing
+        }
+        if let lock, !PostingAccount.signedAsLocked(lockedNpub: lock.npub, lockedHex: lock.hex,
+                                                    activeNow: config().activeAccountNpub, owner: config().ownerNpub,
+                                                    eventPubkey: event.pubkey) {
+            throw PublishError.accountChanged
         }
         nostrService.postEvent(event, directBroadcast: false)
         let eventDict: [String: Any] = [

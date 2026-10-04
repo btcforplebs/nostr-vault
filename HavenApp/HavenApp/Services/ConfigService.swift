@@ -551,6 +551,16 @@ class ConfigService: ObservableObject {
     // MARK: - Per-Account NIP-46 Bunker Configuration
 
     func setBunkerConfig(_ bunkerConfig: AccountBunkerConfig, forNpub npub: String) {
+        // Paired again (new client key or signer): close the old live session,
+        // or switching to this account would reuse it instead of the new link.
+        if let old = config.accountBunkerConfigs[npub],
+           old.clientPubkey != bunkerConfig.clientPubkey || old.signerPubkey != bunkerConfig.signerPubkey {
+            NIP46Service.dropSession(signerKey: NIP46Service.signerKey(bunkerURI: old.bunkerURI, signerPubkey: old.signerPubkey))
+            // The active account's session is gone: stop calling it connected,
+            // so the connect that follows actually runs.
+            let activeNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+            if npub == activeNpub { NIP46Service.shared.detachForAccountSwitch() }
+        }
         config.accountBunkerConfigs[npub] = bunkerConfig
         // Sync to global fields if this is the active account and signing mode is nip46
         let activeNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
@@ -570,6 +580,11 @@ class ConfigService: ObservableObject {
     }
 
     func removeBunkerConfig(forNpub npub: String) {
+        if let old = config.accountBunkerConfigs[npub] {
+            NIP46Service.dropSession(signerKey: NIP46Service.signerKey(bunkerURI: old.bunkerURI, signerPubkey: old.signerPubkey))
+            let activeNpub = config.activeAccountNpub.isEmpty ? config.ownerNpub : config.activeAccountNpub
+            if npub == activeNpub { NIP46Service.shared.detachForAccountSwitch() }
+        }
         config.accountBunkerConfigs.removeValue(forKey: npub)
         // If no accounts use NIP-46 anymore, reset global signing mode
         if config.accountBunkerConfigs.isEmpty {
