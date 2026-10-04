@@ -8,6 +8,10 @@ struct QuotedNoteView: View {
         // A quoted live stream is something to watch, not text to read.
         if let stream = LiveStream(note: note) {
             LiveStreamEmbedView(stream: stream)
+        } else if let listing = MarketListing(note: note) {
+            // A shared listing's content is usually NIP-15 JSON, so the
+            // plain note card would print the JSON.
+            MarketplaceListingEmbedView(listing: listing)
         } else {
             noteCard
         }

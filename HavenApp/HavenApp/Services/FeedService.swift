@@ -1500,6 +1500,11 @@ class FeedService: ObservableObject {
         guard !isPaused else { return }
         guard feedMode != .popular else { return }   // popular has no relay subs
         guard feedMode != .reels else { return }     // ReelsFeedService owns its own
+        // Recipes, Marketplace and Live run their own services and Music has
+        // no relay feed. Reconciling here opened an author-less kind-1 REQ
+        // underneath them, so the hidden note pipeline filled with strangers'
+        // posts and a "New Posts" pill appeared over the grid.
+        guard ![.recipes, .marketplace, .live, .music].contains(feedMode) else { return }
 
         // Author-filtered mode with no follows yet → no valid primary sub. Don't
         // send a dead authors:[] REQ; instead self-heal by (re)fetching contacts
