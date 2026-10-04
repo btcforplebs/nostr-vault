@@ -18,6 +18,7 @@ import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.Reel
 import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.service.LiveFeedService
+import com.nostrvault.service.MarketplaceFeedService
 import com.nostrvault.service.ReelsFeedService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
@@ -47,6 +48,7 @@ class FeedViewModel @Inject constructor(
     private val notificationManager: NotificationManager,
     private val zapSendService: ZapSendService,
     private val liveFeedService: LiveFeedService,
+    private val marketplaceFeedService: MarketplaceFeedService,
     private val reelsFeedService: ReelsFeedService,
 ) : ViewModel() {
 
@@ -65,6 +67,17 @@ class FeedViewModel @Inject constructor(
     val liveLoading = liveFeedService.isLoading
 
     fun refreshLive() = liveFeedService.refresh()
+
+    val marketListings = marketplaceFeedService.listings
+    val marketLoading = marketplaceFeedService.isLoading
+    val marketCategory = marketplaceFeedService.selectedCategory
+    val marketScope = marketplaceFeedService.listingScope
+    val marketFollowSetIsEmpty = marketplaceFeedService.followSetIsEmpty
+    fun setMarketScope(scope: com.nostrvault.data.model.ReelsScope) = marketplaceFeedService.setScope(scope)
+    fun refreshMarketplace() = marketplaceFeedService.refresh()
+    fun loadMarketplaceIfNeeded() = marketplaceFeedService.loadIfNeeded()
+    fun selectMarketCategory(category: com.nostrvault.data.model.MarketCategory?) =
+        marketplaceFeedService.selectCategory(category)
 
     fun liveStream(address: String) = liveFeedService.streams.value.firstOrNull { it.address == address }
 
@@ -230,7 +243,7 @@ class FeedViewModel @Inject constructor(
      */
     private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
         FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR -> true
-        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.REELS, FeedMode.MUSIC -> false
+        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC -> false
     }
 
     private fun defaultCompact(mode: FeedMode): Boolean = when (mode) {
@@ -409,6 +422,11 @@ class FeedViewModel @Inject constructor(
             // out against the full bar.
             feedService.setFeedScrollingDown(false)
             reelsFeedService.loadIfNeeded()
+        }
+        if (mode == FeedMode.MARKETPLACE) {
+            // Same as Live: the listings come from their own service.
+            marketplaceFeedService.loadIfNeeded()
+            return
         }
         if (mode == FeedMode.LIVE) {
             // Nothing to switch on the note subscription — Live has its own.
