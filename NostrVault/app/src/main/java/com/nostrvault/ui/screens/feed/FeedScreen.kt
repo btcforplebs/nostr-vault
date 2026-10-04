@@ -65,6 +65,7 @@ import com.nostrvault.data.model.FeedLayoutMode
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
+import com.nostrvault.data.model.toNote
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.ReelsScope
@@ -131,6 +132,9 @@ fun FeedScreen(
     val postAction: () -> Unit = { modeComposer?.let(onComposeMode) ?: onCompose() }
     val liveStreams by viewModel.liveStreams.collectAsState()
     val liveLoading by viewModel.liveLoading.collectAsState()
+    val marketListings by viewModel.marketListings.collectAsState()
+    val marketLoading by viewModel.marketLoading.collectAsState()
+    val marketCategory by viewModel.marketCategory.collectAsState()
     // The tapped stream is held rather than looked up again by id: a kind-30311
     // event is replaceable and short-lived, so the copy the grid was showing is
     // the one to play.
@@ -240,6 +244,8 @@ fun FeedScreen(
 
     // Broadcast sheet state
     var broadcastNoteId by remember { mutableStateOf<String?>(null) }
+    var openListing by remember { mutableStateOf<com.nostrvault.data.model.MarketListing?>(null) }
+    var listingInfoNote by remember { mutableStateOf<FeedNote?>(null) }
     val broadcastSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Feed config sheet state
@@ -572,6 +578,19 @@ fun FeedScreen(
                         npubToHex = viewModel::npubToHex,
                     ),
                     contentPadding = padding,
+                )
+            } else if (feedMode == FeedMode.MARKETPLACE) {
+                MarketplaceGrid(
+                    listings = marketListings,
+                    selectedCategory = marketCategory,
+                    profiles = allProfiles,
+                    isLoading = marketLoading,
+                    contentPadding = padding,
+                    onSelectCategory = viewModel::selectMarketCategory,
+                    onListingClick = { openListing = it },
+                    onRefresh = viewModel::refreshMarketplace,
+                    onNeedProfiles = viewModel::fetchMissingProfiles,
+                    onAppear = viewModel::loadMarketplaceIfNeeded,
                 )
             } else if (feedMode == FeedMode.LIVE) {
                 LiveGrid(
@@ -929,6 +948,28 @@ fun FeedScreen(
             nostrService = viewModel.nostrServiceRef,
             configStore = viewModel.configStoreRef,
             onDismiss = { broadcastNoteId = null },
+        )
+    }
+
+    openListing?.let { listing ->
+        MarketListingSheet(
+            listing = listing,
+            seller = allProfiles[listing.pubkey],
+            onOpenSeller = { pubkey -> openListing = null; onProfileClick(pubkey) },
+            onEventInfo = { openListing = null; listingInfoNote = it.toNote() },
+            onDismiss = { openListing = null },
+        )
+    }
+    // Event Info for a listing: listings are not in `notes`, so the feed's
+    // broadcast sheet above cannot find them by id.
+    listingInfoNote?.let { note ->
+        BroadcastSheet(
+            note = note,
+            sheetState = broadcastSheetState,
+            feedService = viewModel.feedServiceRef,
+            nostrService = viewModel.nostrServiceRef,
+            configStore = viewModel.configStoreRef,
+            onDismiss = { listingInfoNote = null },
         )
     }
 
@@ -1552,7 +1593,7 @@ private fun FeedTopBar(
             // replies and auto-load are all about kind-1 traffic, and a
             // long-form list is short enough not to need them.
             Box(Modifier.chromeFold(leadingGap = 4.dp).blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
-                FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MUSIC -> Unit
+                FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC -> Unit
                 FeedMode.REELS -> {
                     // Following, or everyone behind the sensitive-content warning.
                     IconButton(onClick = onReelsFollowing, modifier = Modifier.size(40.dp)) {
@@ -1775,7 +1816,7 @@ private fun LanguageFilterButton(selected: List<String>, onChange: (List<String>
 // iOS FeedView empty state: thin gradient icon, bold title, monospaced
 // subtitle, and a full-width gradient "Refresh Feed" button.
 @Composable
-private fun EmptyFeedPlaceholder(
+internal fun EmptyFeedPlaceholder(
     mode: FeedMode,
     onRefresh: (() -> Unit)? = null,
     /// Overrides the per-mode subtitle. Discovery uses it to say which of the
@@ -1801,6 +1842,7 @@ private fun EmptyFeedPlaceholder(
                     FeedMode.ARTICLES -> NostrVaultIcons.Articles
                     FeedMode.RECIPES -> NostrVaultIcons.Recipes
                     FeedMode.LIVE -> NostrVaultIcons.Live
+                    FeedMode.MARKETPLACE -> NostrVaultIcons.Marketplace
                     FeedMode.REELS -> NostrVaultIcons.Reels
                     FeedMode.MUSIC -> NostrVaultIcons.Music
                 },
@@ -1819,6 +1861,7 @@ private fun EmptyFeedPlaceholder(
                     FeedMode.ARTICLES -> "No Articles Yet"
                     FeedMode.RECIPES -> "No Recipes Yet"
                     FeedMode.LIVE -> "Nothing Live"
+                    FeedMode.MARKETPLACE -> "No Listings"
                     FeedMode.REELS -> "No Videos Yet"
                     FeedMode.MUSIC -> "No Music"
                 },
@@ -1838,6 +1881,7 @@ private fun EmptyFeedPlaceholder(
                     FeedMode.ARTICLES -> "Long-form posts in your vault show up here"
                     FeedMode.RECIPES -> "Recipes from zap.cooking show up here"
                     FeedMode.LIVE -> "Streams that are running right now show up here"
+                    FeedMode.MARKETPLACE -> "Items for sale on Nostr show up here"
                     FeedMode.REELS -> "Videos from your feed show up here"
                     FeedMode.MUSIC -> "Songs from Wavlake show up here"
                 },
@@ -1964,5 +2008,6 @@ private val FeedMode.icon: ImageVector
         FeedMode.ARTICLES -> NostrVaultIcons.Articles
         FeedMode.RECIPES -> NostrVaultIcons.Recipes
         FeedMode.LIVE -> NostrVaultIcons.Live
+        FeedMode.MARKETPLACE -> NostrVaultIcons.Marketplace
         FeedMode.MUSIC -> NostrVaultIcons.Music
     }

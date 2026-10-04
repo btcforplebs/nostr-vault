@@ -206,3 +206,7 @@ enum class MarketCategory(val displayName: String, private val keywords: List<St
         }
     }
 }
+
+/** The listing as a note, so Event Info (relays, raw JSON) can open on it. */
+fun MarketListing.toNote(): FeedNote =
+    FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)

@@ -8,6 +8,7 @@ import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -153,6 +154,7 @@ object NostrVaultIcons {
     val Discover: ImageVector = Icons.Filled.AutoAwesome   // sparkles
     val Articles: ImageVector = Icons.Filled.Article       // doc.text
     val Recipes: ImageVector = Icons.Filled.Restaurant     // fork.knife
+    val Marketplace: ImageVector = Icons.Filled.ShoppingBag // bag
     val Live: ImageVector = Icons.Filled.Videocam          // video.fill
     val Reels: ImageVector = Icons.Filled.VideoLibrary     // play.rectangle.on.rectangle
     val More: ImageVector = Icons.Filled.MoreVert          // ellipsis

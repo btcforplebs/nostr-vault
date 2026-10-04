@@ -145,6 +145,8 @@ object FeedFilterEngine {
                 FeedMode.RECIPES -> note.kind == LONG_FORM_KIND && RecipeTopics.matches(note.tags)
                 // Live streams are not notes; LiveFeedService supplies them.
                 FeedMode.LIVE -> false
+                // Listings are not notes; MarketplaceFeedService supplies them.
+                FeedMode.MARKETPLACE -> false
                 // Music is Wavlake, not notes.
                 FeedMode.MUSIC -> false
                 // Reels are served by ReelsFeedService, not the note list.
