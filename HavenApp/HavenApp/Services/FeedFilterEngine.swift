@@ -5,6 +5,37 @@ import Foundation
 /// Direct translation target for Kotlin (pure functions -> pure functions).
 enum FeedFilterEngine {
 
+    // MARK: - Blocked Authors
+
+    /// Whether a row would put a blocked person in front of the user. Checking
+    /// `note.pubkey` alone missed most of it: a bare kind-6 repost carries the
+    /// reposter as its pubkey and shows the original author's post, an
+    /// embedded one swaps in the original author and keeps the reposter in
+    /// `repostedBy`, and a reply shows the post it answers above itself.
+    ///
+    /// - Parameters:
+    ///   - authorOf: looks up the author of a referenced event ID, or nil when
+    ///     that event has not loaded. A bare repost falls back to its `p` tag.
+    static func involvesBlocked(
+        _ note: FeedNote,
+        blocked: Set<String>,
+        authorOf: (String) -> String? = { _ in nil }
+    ) -> Bool {
+        guard !blocked.isEmpty else { return false }
+        if blocked.contains(note.pubkey) { return true }
+        if let reposter = note.repostedBy, blocked.contains(reposter) { return true }
+        if note.kind == 6, let originalId = note.repostedEventId {
+            let original = authorOf(originalId)
+                ?? note.tags.first { $0.count >= 2 && $0[0] == "p" }?[1]
+            if let original, blocked.contains(original) { return true }
+        }
+        if let parentId = note.parentEventId, let parentAuthor = authorOf(parentId),
+           blocked.contains(parentAuthor) {
+            return true
+        }
+        return false
+    }
+
     // MARK: - Feed Note Filtering
 
     /// Filters and sorts notes for the main feed based on mode and user preferences.
@@ -34,7 +65,8 @@ enum FeedFilterEngine {
         throttledPubkeys: [String: Int],
         globalLanguages: Set<String> = [],
         globalRequiresTrust: Bool = true,
-        languageOf: (FeedNote) -> String? = { _ in nil }
+        languageOf: (FeedNote) -> String? = { _ in nil },
+        authorOf: (String) -> String? = { _ in nil }
     ) -> [FeedNote] {
         // Articles: long-form only, from the follow set, one event per
         // `pubkey:d` address. 30023 is a parameterized-replaceable kind, so an
@@ -42,7 +74,7 @@ enum FeedFilterEngine {
         // both would otherwise show as separate rows.
         if mode == .articles {
             let longForm = notes.filter { note in
-                if blocked.contains(note.pubkey) { return false }
+                if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
                 guard note.kind == 30023 else { return false }
                 return followedPubkeys.contains(note.pubkey)
             }
@@ -50,7 +82,7 @@ enum FeedFilterEngine {
         }
 
         var filtered = notes.filter { note in
-            if blocked.contains(note.pubkey) { return false }
+            if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
             if note.kind == 6 && !showReposts { return false }
             if mode == .popular {
                 let isFollowed = followedPubkeys.contains(note.pubkey)
@@ -120,10 +152,11 @@ enum FeedFilterEngine {
         wotPubkeys: Set<String>,
         isGlobalMedia: Bool,
         globalRequiresTrust: Bool = true,
-        throttledPubkeys: [String: Int]
+        throttledPubkeys: [String: Int],
+        authorOf: (String) -> String? = { _ in nil }
     ) -> [FeedNote] {
         var media = notes.filter { note in
-            if blocked.contains(note.pubkey) { return false }
+            if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
             // Fail closed for the same reason as the Global feed above.
             if isGlobalMedia && globalRequiresTrust && !wotPubkeys.contains(note.pubkey) { return false }
             return !note.mediaURLs.isEmpty

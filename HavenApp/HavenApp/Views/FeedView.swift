@@ -356,6 +356,9 @@ private struct RowDataCacheObservers: ViewModifier {
             // potentially every row, so fall back to a full rebuild. Rare event.
             .onChange(of: feedService.followedPubkeys) { _, _ in onFollowsChanged() }
             .onChange(of: feedService.noteStats) { old, new in onNoteStats(old, new) }
+            // Blocking can hide a thread's root or an ancestor without
+            // changing the visible note list, so regroup on it directly.
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))) { _ in onFiltered() }
     }
 }
 
@@ -1874,10 +1877,21 @@ struct FeedView: View {
 
         threadRebuildWork?.cancel()
         let work = DispatchWorkItem { [self] in
+            let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
             feedThreads = FeedThreadGrouping.build(notes: feedService.filteredNotes) { id in
                 // Ancestors the timeline never showed still live in the feed
                 // service's caches; pulling them in keeps a conversation whole.
-                feedService.findNote(id: id)
+                // A blocked author's post is never pulled in as context.
+                guard let note = feedService.findNote(id: id),
+                      !blocked.contains(note.pubkey) else { return nil }
+                return note
+            }.filter { thread in
+                // A conversation started by a blocked author goes entirely.
+                // Its root is withheld above, so without this the card would
+                // sit on "Loading the start of this thread…" forever.
+                guard thread.root == nil,
+                      let root = feedService.findNote(id: thread.rootId) else { return true }
+                return !blocked.contains(root.pubkey)
             }
             // Ask for every missing root now, in one batch, rather than from
             // each card's onAppear: a fast scroll reaches cards faster than a
