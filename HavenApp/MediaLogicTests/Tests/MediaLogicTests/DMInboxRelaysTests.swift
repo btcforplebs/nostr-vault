@@ -79,4 +79,26 @@ final class DMInboxRelaysTests: XCTestCase {
         var stamped = HavenConfig(); stamped.dmRelaysUpdatedAt = 42
         XCTAssertEqual(try JSONDecoder().decode(HavenConfig.self, from: JSONEncoder().encode(stamped)).dmRelaysUpdatedAt, 42)
     }
+
+    // MARK: - Private addresses never get published
+
+    func testPrivateAddressesAreRecognised() {
+        for host in ["192.168.1.20:3355", "10.0.0.5", "172.16.4.1:80", "172.31.255.255", "127.0.0.1:3355",
+                     "169.254.1.1", "100.68.246.56:8798", "localhost:3355", "mac.local", "studio-mac",
+                     "[::1]:3355", "[fd12::1]", "[fe80::1]:80", "192.168.1.20:3355/inbox"] {
+            XCTAssertTrue(HavenConfig.isPrivateNetworkHost(host), host)
+        }
+    }
+
+    func testPublicAddressesAreNot() {
+        for host in ["logen.btcforplebs.com", "relay.example.com:443", "172.217.4.14", "172.32.0.1",
+                     "100.128.0.1", "8.8.8.8", "mac.tail1234.ts.net", "[2606:4700::1111]"] {
+            XCTAssertFalse(HavenConfig.isPrivateNetworkHost(host), host)
+        }
+    }
+
+    func testSameRelaysInAnotherOrderDoNothing() {
+        XCTAssertEqual(HavenConfig.dmInboxSyncAction(local: ["wss://b", "wss://a"], localUpdatedAt: 200,
+                                                     published: ["wss://a", "wss://b"], publishedAt: 200), .none)
+    }
 }

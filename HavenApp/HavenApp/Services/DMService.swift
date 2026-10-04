@@ -1434,8 +1434,9 @@ class DMService: ObservableObject {
     /// write. A Haven inbox (the Mac relay) does: it rejects the event with
     /// "auth-required" until the owner authenticates, and the plain
     /// fire-and-forget publish never noticed. Here an auth-required rejection
-    /// is answered with AUTH — signed by the owner, whom the Haven trusts —
-    /// and the event is sent once more. Relays that need no AUTH accept it on
+    /// is answered with AUTH — signed by the account that is sending, never
+    /// the owner on another account's behalf, which would tie the two
+    /// accounts together for the relay — and the event is sent once more. Relays that need no AUTH accept it on
     /// the first try. Logs the outcome; never blocks the caller.
     private func publishAuthenticated(_ event: NostrEvent, url: String) {
         guard let urlObj = URL(string: url) else { return }
@@ -1448,6 +1449,7 @@ class DMService: ObservableObject {
         }()
         guard let eventMsg else { return }
 
+        let sender = loadedAccountPubkey
         var challenge: String?
         var authSent = false
         var authEventId: String?
@@ -1485,11 +1487,18 @@ class DMService: ObservableObject {
                     guard id == event.id else { return }
                     if accepted || note.hasPrefix("duplicate") {
                         finish(true, note)
-                    } else if note.hasPrefix("auth-required"), !authSent, let challenge, self.canSignAsOwner() {
+                    } else if note.hasPrefix("auth-required"), !authSent, let challenge {
                         authSent = true
                         Task { @MainActor in
+                            // signEventAsync signs as the active account; if
+                            // that changed since the send, don't prove the
+                            // wrong identity.
+                            guard NostrService.shared.activeHexPubkey == sender else {
+                                finish(false, "account switched before AUTH")
+                                return
+                            }
                             let tags = [["relay", url], ["challenge", challenge]]
-                            guard let auth = await NostrService.shared.signEventAsync(kind: 22242, content: "", tags: tags, forceOwner: true) else {
+                            guard let auth = await NostrService.shared.signEventAsync(kind: 22242, content: "", tags: tags) else {
                                 finish(false, "could not sign AUTH")
                                 return
                             }

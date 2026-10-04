@@ -538,8 +538,43 @@ struct HavenConfig: Codable, Equatable {
         guard !base.isEmpty else { return "" }
         let typed = macRelayURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if typed.hasPrefix("ws://") || typed.hasPrefix("http://") { return "" }
+        // A home-network address typed without a scheme would otherwise be
+        // published to everyone as wss://…, put first, and be undeliverable.
+        if Self.isPrivateNetworkHost(base) { return "" }
         return Self.normalizedRelayURL("wss://\(base)/inbox")
         #endif
+    }
+
+    /// True for an address only this network can reach: loopback, private
+    /// and link-local IPv4/IPv6 ranges, CGNAT (Tailscale's 100.64.0.0/10),
+    /// `localhost`, `.local`, and bare names with no dot. `hostPort` may carry
+    /// a port and a path ("192.168.1.20:3355/x").
+    static func isPrivateNetworkHost(_ hostPort: String) -> Bool {
+        var host = hostPort.lowercased()
+        if let slash = host.firstIndex(of: "/") { host = String(host[..<slash]) }
+        if host.hasPrefix("[") {
+            // [IPv6]:port
+            host = String(host.dropFirst().prefix { $0 != "]" })
+        } else if host.filter({ $0 == ":" }).count == 1, let colon = host.firstIndex(of: ":") {
+            host = String(host[..<colon])
+        }
+        if host.isEmpty || host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") { return true }
+        if host.contains(":") {
+            // IPv6: loopback, unspecified, unique-local fc00::/7, link-local fe80::/10
+            return host == "::1" || host == "::" || host.hasPrefix("fc") || host.hasPrefix("fd")
+                || host.hasPrefix("fe8") || host.hasPrefix("fe9") || host.hasPrefix("fea") || host.hasPrefix("feb")
+        }
+        let octets = host.split(separator: ".").map { Int($0) }
+        if octets.count == 4, octets.allSatisfy({ $0 != nil }) {
+            let o = octets.map { $0! }
+            switch (o[0], o[1]) {
+            case (10, _), (127, _), (0, _): return true
+            case (172, 16...31), (192, 168), (169, 254): return true
+            case (100, 64...127): return true
+            default: return false
+            }
+        }
+        return !host.contains(".")
     }
 
     /// The one DM inbox list: where other people send this account's DMs,
@@ -587,7 +622,10 @@ struct HavenConfig: Codable, Equatable {
         let localAt = localUpdatedAt ?? 0
         if publishedAt > localAt { return .adopt }
         if localAt > publishedAt { return .publish }
-        let same = local.map { normalizedRelayURL($0).lowercased() } == published.map { normalizedRelayURL($0).lowercased() }
+        // Compared as sets: two devices that order the same relays differently
+        // must not keep republishing over each other (each publish can ask the
+        // signer app for an approval).
+        let same = Set(local.map { normalizedRelayURL($0).lowercased() }) == Set(published.map { normalizedRelayURL($0).lowercased() })
         return same ? .none : .publish
     }
 
