@@ -5,9 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.7.3 (19) — macOS / iOS / Android] - 2026-10-04
 
-> **Not in a numbered build yet.** Everything below landed on master after build 18 (2026-10-02/03) and has not been archived, bumped, or shipped anywhere — TestFlight, zapstore or GitHub. It needs a version/build decision before it goes out, and release notes of its own.
+> Release notes: `HavenApp/RELEASE_NOTES.md`. Later fixes (DM inbox list, blocked people in feeds, Setup npub checks, Zaps Given, repost times) are in those notes but not itemized here.
 
 ### Security
 - **A Mention Could Inject a Fake Link (iOS)**: A profile name wasn't escaped before being placed inside the markdown link that makes a mention tappable, so a crafted display name could break out of that link and plant an unrelated, attacker-chosen link elsewhere in the rendered note — a phishing vector triggered just by someone mentioning a malicious account. Names are now escaped before being placed in the link.
