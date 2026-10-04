@@ -360,6 +360,54 @@ class FeedService: ObservableObject {
         return strs.compactMap { URL(string: $0) }
     }
 
+    /// Follows the feed relays don't reach, asked on their own write relays:
+    /// extra relay URL → the follows to ask it for. See `FeedOutboxPlan`.
+    private var outboxPlan: [String: [String]] = [:]
+
+    /// Relays that gave up on connecting (three errors) and have not connected
+    /// since. Kept across load rounds, unlike `relayErrorCounts`, so the plan
+    /// stops counting a dead feed relay as reaching anyone.
+    private var downRelayKeys = Set<String>()
+
+    /// Recomputes `outboxPlan` from the follow set and the NIP-65 lists known
+    /// so far, and asks for the lists still missing — the plan grows as they
+    /// arrive, through the next reconcile.
+    private func refreshOutboxPlan() {
+        guard isFollowSetMode || (feedMode == .media && mediaFeedMode == .following),
+              !followedPubkeys.isEmpty else {
+            outboxPlan = [:]
+            return
+        }
+        requestRelayLists(for: Set(followedPubkeys))
+        outboxPlan = FeedOutboxPlan.plan(
+            follows: followedPubkeys,
+            writeRelays: NostrService.shared.outboxRelays,
+            feedRelays: externalRelayURLs.map(\.absoluteString),
+            unreachableRelays: Array(downRelayKeys)
+        )
+    }
+
+    /// Every relay the feed subscribes to: the local relay, its inbox and feed
+    /// cache, the feed relays, then the follows' own relays (`outboxPlan`).
+    private func feedRelayURLs() -> [URL] {
+        var urls: [URL] = []
+        if let local = localRelayURL { urls.append(local) }
+        if let inbox = localInboxURL { urls.append(inbox) }
+        if let feed = localFeedURL { urls.append(feed) }
+        urls.append(contentsOf: externalRelayURLs)
+        let have = Set(urls.map(\.absoluteString))
+        for raw in outboxPlan.keys.sorted() where !have.contains(raw) {
+            if let url = URL(string: raw) { urls.append(url) }
+        }
+        return urls
+    }
+
+    /// The follows to ask a given relay for: an outbox relay is asked only for
+    /// the follows it was picked for, every other relay for all of them.
+    private func followAuthors(forRelayKey key: String) -> [String] {
+        outboxPlan[key] ?? followedPubkeys
+    }
+
     /// Used for de-duping relay URLs across the floor + outbox set.
     private static func normalizeRelayKey(_ urlStr: String) -> String? {
         FeedFilterEngine.normalizeRelayKey(urlStr)
@@ -596,6 +644,16 @@ class FeedService: ObservableObject {
             .removeDuplicates(by: ==)
             .dropFirst()
             .sink { [weak self] _ in self?.recomputeFilteredNotes() }
+            .store(in: &configCancellables)
+
+        // Follows' relay lists arrive in batches after the feed is up; once
+        // they settle, ask the new outbox relays (see `refreshOutboxPlan`).
+        NostrService.shared.$outboxRelays
+            .map(\.count)
+            .removeDuplicates()
+            .dropFirst()
+            .debounce(for: .seconds(5), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in self?.reconcileFeedSubscriptions() }
             .store(in: &configCancellables)
 
         // Blocking someone (here, or a mute list synced from another client)
@@ -1416,7 +1474,9 @@ class FeedService: ObservableObject {
     /// have no authors), so the drift check skips them.
     private func desiredPrimaryAuthors(forRelayKey key: String) -> [String]? {
         if key == localInboxURL?.absoluteString { return nil }
-        return isAuthorFilteredMode ? desiredPrimaryAuthorsForMode() : nil
+        guard isAuthorFilteredMode else { return nil }
+        if feedMode != .discovery, let planned = outboxPlan[key] { return planned }
+        return desiredPrimaryAuthorsForMode()
     }
 
     /// Make the live relay subscriptions match the current authoritative inputs
@@ -1458,11 +1518,8 @@ class FeedService: ObservableObject {
             loadWotPubkeys()
         }
 
-        var desiredURLs: [URL] = []
-        if let local = localRelayURL { desiredURLs.append(local) }
-        if let inbox = localInboxURL { desiredURLs.append(inbox) }
-        if let feed = localFeedURL { desiredURLs.append(feed) }
-        desiredURLs.append(contentsOf: externalRelayURLs)
+        refreshOutboxPlan()
+        let desiredURLs = feedRelayURLs()
 
         let missing = desiredURLs.filter { feedClients[$0.absoluteString] == nil }
         guard !missing.isEmpty else { return }
@@ -1901,11 +1958,7 @@ class FeedService: ObservableObject {
         shouldScrollToTopOnLoad = false
         eoseCount = 0
 
-        var allURLs: [URL] = []
-        if let local = localRelayURL { allURLs.append(local) }
-        if let inbox = localInboxURL { allURLs.append(inbox) }
-        if let feed = localFeedURL { allURLs.append(feed) }
-        allURLs.append(contentsOf: externalRelayURLs)
+        let allURLs = feedRelayURLs()
 
         let totalRelays = allURLs.count
         for url in allURLs {
@@ -2589,11 +2642,8 @@ class FeedService: ObservableObject {
             self?.bgAccumulator.isGlobalMode = isGlobal
         }
 
-        var allURLs: [URL] = []
-        if let local = localRelayURL { allURLs.append(local) }
-        if let inbox = localInboxURL { allURLs.append(inbox) }
-        if let feed = localFeedURL { allURLs.append(feed) }
-        allURLs.append(contentsOf: externalRelayURLs)
+        refreshOutboxPlan()
+        let allURLs = feedRelayURLs()
 
         let allKeys = Set(allURLs.map { $0.absoluteString })
 
@@ -2708,12 +2758,18 @@ class FeedService: ObservableObject {
                 switch state {
                 case .connected:
                     self.relayErrorCounts[key] = 0
+                    self.downRelayKeys.remove(key)
                     self.sendPrimaryFeedSubscription(client: c, label: key)
                 case .error:
                     let errorCount = (self.relayErrorCounts[key] ?? 0) + 1
                     self.relayErrorCounts[key] = errorCount
 
                     if errorCount >= 3 {
+                        // The follows this relay was reaching get asked
+                        // somewhere else.
+                        if self.downRelayKeys.insert(key).inserted {
+                            DispatchQueue.main.async { [weak self] in self?.reconcileFeedSubscriptions() }
+                        }
                         // After 3 failures, count this relay as done so loading can finish
                         #if DEBUG
                         print("FeedService: Relay \(key) failed \(errorCount) times — counting as EOSE")
@@ -2788,6 +2844,11 @@ class FeedService: ObservableObject {
         let isResume = subscriptionRoundSince > 0 && until == nil
         if isResume {
             return (subscriptionRoundSince - 60, feedMode == .media ? 500 : 500)
+        } else if let until {
+            // A page older than `until`: the week before it. Measured from now
+            // instead, every page past the first week asked for an empty
+            // window and scrolling back stopped there.
+            return (until - (7 * 24 * 3600), feedMode == .media ? 300 : 500)
         } else {
             return (Int64(Date().timeIntervalSince1970) - (7 * 24 * 3600), feedMode == .media ? 300 : 500)
         }
@@ -2831,7 +2892,7 @@ class FeedService: ObservableObject {
                 filter["#p"] = [ownerHex]
             }
         } else if isFollowingLike {
-            filter["authors"] = followedPubkeys
+            filter["authors"] = followAuthors(forRelayKey: label)
         } else if feedMode == .discovery {
             filter["authors"] = extendedNetworkPubkeys
         }
@@ -2848,7 +2909,7 @@ class FeedService: ObservableObject {
             if isInbox {
                 subscribedAuthorsByRelay[label] = []
             } else if isFollowingLike {
-                subscribedAuthorsByRelay[label] = followedPubkeys
+                subscribedAuthorsByRelay[label] = followAuthors(forRelayKey: label)
             } else if feedMode == .discovery {
                 subscribedAuthorsByRelay[label] = extendedNetworkPubkeys
             } else {
@@ -2932,7 +2993,7 @@ class FeedService: ObservableObject {
             "limit": limitVal
         ]
         if isFollowSetMode || (feedMode == .media && mediaFeedMode == .following) {
-            filter["authors"] = followedPubkeys
+            filter["authors"] = followAuthors(forRelayKey: label)
         } else if feedMode == .discovery {
             filter["authors"] = extendedNetworkPubkeys
         }
@@ -3126,8 +3187,13 @@ class FeedService: ObservableObject {
             repostedBy: kind == 6 ? pubkey : nil
         )
 
-        // Filter out obvious spam/noise from being processed
-        if FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) {
+        // Filter out obvious spam/noise from being processed. A repost that
+        // only points at the original (empty content plus an `e` tag) is valid
+        // NIP-18 and the row fetches what it points at — but the empty-content
+        // rule threw it away: 2 of the 9 notes missing from two hours of a
+        // Following feed on 2026-10-04 were these.
+        let isBareRepost = note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil
+        if !isBareRepost, FeedNote.isNoiseOrSpam(content: note.content, tags: note.tags) {
             return
         }
 
