@@ -127,6 +127,34 @@ enum LiveChat {
         return url.path.lowercased().hasSuffix(".m3u8")
     }
 
+    /// The first `streaming` tag the player can open. zap.stream publishes two
+    /// — HLS and a `moq://` one — and nothing fixes their order, so taking the
+    /// first tag would drop a playable stream whenever `moq://` comes first.
+    static func playableStreamURL(tags: [[String]]) -> URL? {
+        for tag in tags where tag.count >= 2 && tag[0] == "streaming" {
+            let raw = tag[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            if let url = URL(string: raw), isPlayableStreamURL(url) { return url }
+        }
+        return nil
+    }
+
+    /// Pictures for a stream's tile, best first: `thumb`, a frame of the
+    /// broadcast itself (zap.stream and its forks, refreshed every
+    /// republish), then `image`, the host's cover art. Measured 2026-10-04:
+    /// 3 of 9 live streams carried `thumb`, and every one also had an `image`.
+    static func previewImageURLs(tags: [[String]]) -> [URL] {
+        var urls: [URL] = []
+        for name in ["thumb", "image"] {
+            guard let raw = tags.first(where: { $0.count >= 2 && $0[0] == name })?[1]
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                  let url = URL(string: raw),
+                  let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+                  !urls.contains(url) else { continue }
+            urls.append(url)
+        }
+        return urls
+    }
+
     /// Builds a row from a relay event, or nil if it is not one we render.
     static func message(id: String, pubkey: String, kind: Int, createdAt: Int64,
                         content: String, tags: [[String]]) -> LiveChatMessage? {

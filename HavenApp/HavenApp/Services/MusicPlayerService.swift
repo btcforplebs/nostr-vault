@@ -44,7 +44,10 @@ final class MusicPlayerService: ObservableObject {
 
     @Published private(set) var queue: [PlayerTrack] = []
     @Published private(set) var index: Int = 0
-    @Published private(set) var isPlaying = false
+    @Published private(set) var isPlaying = false {
+        // Video surfaces must not take the session from under this player.
+        didSet { AudioSessionManager.shared.appAudioIsPlaying = isPlaying }
+    }
     @Published private(set) var isBuffering = false
     /// Seconds into the current track, refreshed twice a second while playing.
     @Published private(set) var elapsed: Double = 0
@@ -95,6 +98,9 @@ final class MusicPlayerService: ObservableObject {
             Task { @MainActor in self?.isBuffering = waiting }
         }
         configureRemoteCommands()
+        AudioSessionManager.shared.pauseAppAudio = { [weak self] in
+            MainActor.assumeIsolated { self?.pause() }
+        }
         #if os(iOS)
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
@@ -242,7 +248,16 @@ final class MusicPlayerService: ObservableObject {
                 if seconds.isFinite, seconds > 0 { self.duration = seconds }
                 // Past an unplayable song, but never round again under repeat
                 // all: a queue where nothing plays would spin forever.
-                if item.status == .failed, self.index + 1 < self.queue.count { self.next() }
+                guard item.status == .failed, self.current?.audioURL == url else { return }
+                if self.index + 1 < self.queue.count {
+                    self.next()
+                } else {
+                    // Nothing left to play — a stream whose host stopped, say.
+                    // Left "playing", it would keep video surfaces from ever
+                    // handing the sound back to other apps.
+                    self.isPlaying = false
+                    self.updateNowPlaying()
+                }
             }
         }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }

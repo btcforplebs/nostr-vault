@@ -13,20 +13,7 @@ struct LiveStreamCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topLeading) {
-                Group {
-                    if let imageURL = stream.imageURL {
-                        RetryableAsyncImage(url: imageURL, contentMode: .fill, targetSize: CGSize(width: 600, height: 340))
-                    } else {
-                        // Half the live streams publish no image, so this is the
-                        // common case, not a fallback.
-                        ZStack {
-                            Rectangle().fill(Color.havenPurplePale)
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .font(.appSystem(size: 28))
-                                .foregroundColor(.havenPurple.opacity(0.7))
-                        }
-                    }
-                }
+                LiveStreamThumbnail(urls: stream.previewImageURLs)
                 .frame(height: thumbnailHeight)
                 .frame(maxWidth: .infinity)
                 .clipped()
@@ -90,6 +77,101 @@ struct LiveStreamCardView: View {
         .background(Color.black.opacity(0.55))
         .foregroundColor(.white)
         .clipShape(Capsule())
+    }
+}
+
+/// A live tile's picture: the stream's live frame, else its cover art, else a
+/// placeholder.
+///
+/// Not `RetryableAsyncImage`, which keeps every picture on disk by URL for
+/// good. Cloudflare Stream and the fly.dev radio hosts serve each new frame at
+/// one fixed URL, so the first frame ever fetched stayed on the tile forever;
+/// and a cover that failed to load drew a "Media Missing / Error 404" card on
+/// a stream that was playing fine. A stream's picture is only true while it is
+/// on air, so it is kept in memory for a minute and then fetched again.
+struct LiveStreamThumbnail: View {
+    let urls: [URL]
+    @State private var image: PlatformImage?
+
+    var body: some View {
+        ZStack {
+            // Many streams publish no picture at all, so this is a common
+            // case, not only a fallback.
+            Rectangle().fill(Color.havenPurplePale)
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.appSystem(size: 28))
+                .foregroundColor(.havenPurple.opacity(0.7))
+            if let image {
+                // An overlay on a clear rectangle, so a fill-scaled picture is
+                // cropped to the tile instead of widening it.
+                Color.clear
+                    .overlay {
+                        Image(platformImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    }
+                    .clipped()
+                    .transition(.opacity)
+            }
+        }
+        .task(id: urls) {
+            // Again every minute while the tile is on screen, so a fixed-URL
+            // frame moves on too; the task ends when the tile goes.
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(for: .seconds(LiveThumbnailCache.maxAge))
+            }
+        }
+    }
+
+    private func load() async {
+        let cache = LiveThumbnailCache.shared
+        if let held = cache.entry(for: urls) {
+            image = held.image
+            if held.isFresh { return }
+        }
+        for url in urls {
+            if Task.isCancelled { return }
+            guard let fetched = await cache.fetch(url) else { continue }
+            if Task.isCancelled { return }
+            withAnimation(Motion.fade) { image = fetched }
+            return
+        }
+    }
+}
+
+/// Live-tile pictures, in memory only (see `LiveStreamThumbnail`).
+@MainActor
+final class LiveThumbnailCache {
+    static let shared = LiveThumbnailCache()
+    static let maxAge: TimeInterval = 60
+
+    struct Entry {
+        let image: PlatformImage
+        let fetchedAt: Date
+        var isFresh: Bool { Date().timeIntervalSince(fetchedAt) < LiveThumbnailCache.maxAge }
+    }
+
+    private var entries: [URL: Entry] = [:]
+
+    /// The best picture already held for these candidates, in their order.
+    func entry(for urls: [URL]) -> Entry? {
+        urls.lazy.compactMap { self.entries[$0] }.first
+    }
+
+    /// Fetches past every HTTP cache — a fixed-URL frame must be new each time.
+    /// zap.stream serves its `thumb.webp` as application/octet-stream, so the
+    /// bytes decide what it is, not the content type.
+    func fetch(_ url: URL) async -> PlatformImage? {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+              let image = await ImageDownsampler.downsample(data: data, maxDimension: 600)
+        else { return nil }
+        if entries.count > 200 { entries.removeAll() }
+        entries[url] = Entry(image: image, fetchedAt: Date())
+        return image
     }
 }
 
@@ -172,7 +254,10 @@ struct LiveStreamPlayerView: View {
             nostrService.fetchMissingProfiles(for: [stream.hostPubkey, stream.zapPubkey])
             chat.connect(to: stream)
         }
-        .onDisappear { chat.disconnect() }
+        .onDisappear {
+            chat.disconnect()
+            releaseVideo()
+        }
         .sheet(isPresented: $showingReportDialog) {
             // Reporting also blocks, which is what the existing dialog does
             // everywhere else in the app — so the stream must leave the grid.
@@ -370,13 +455,28 @@ struct LiveStreamPlayerView: View {
             id: "live:\(stream.address)",
             title: stream.title ?? "Live stream",
             artist: hostName,
-            artworkURL: stream.imageURL ?? profile?.pictureURL,
+            artworkURL: stream.imageURL ?? stream.previewImageURLs.first ?? profile?.pictureURL,
             audioURL: stream.streamingURL,
             duration: nil,
             isLive: true,
             hostPubkey: stream.hostPubkey
         ))
         dismiss()
+    }
+
+    /// Stops the stream's video once its player has gone. `FullScreenVideoPlayer`
+    /// only mutes on the way out, leaving the player in `VideoPlayerCache`,
+    /// which suits a feed video the feed cell picks up again — but nothing
+    /// picks up a live stream, so it kept downloading video, muted, until three
+    /// newer videos pushed it out. That is also under the minimized audio,
+    /// which is a separate player. PiP is the one owner allowed to keep it.
+    private func releaseVideo() {
+        guard let url = stream.streamingURL else { return }
+        #if os(iOS)
+        if PiPManager.shared.isPiPActive && PiPManager.shared.activeURL == url { return }
+        #endif
+        VideoPlayerCache.shared.removePlayer(for: url)
+        VideoPlaybackService.shared.invalidateLadder(for: url)
     }
 
     /// A stream zap pays the host named in the event, and carries the stream's

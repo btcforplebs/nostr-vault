@@ -87,6 +87,30 @@ final class LiveChatTests: XCTestCase {
         for raw in unplayable { XCTAssertFalse(LiveChat.isPlayableStreamURL(URL(string: raw)!), raw) }
     }
 
+    /// zap.stream's events carry HLS and `moq://` side by side (measured
+    /// 2026-10-04, HLS first). Order is not part of the format, so the HLS one
+    /// must win from either position.
+    func testPlayableStreamURLSkipsAnUnplayableFirstStreamingTag() {
+        let hls = "https://api-uk.zap.stream/537a/hls/live.m3u8"
+        let moqFirst = [["d", "x"], ["streaming", "moq://api-uk.zap.stream:1443/"], ["streaming", hls]]
+        XCTAssertEqual(LiveChat.playableStreamURL(tags: moqFirst)?.absoluteString, hls)
+        let hlsFirst = [["streaming", hls], ["streaming", "moq://api-uk.zap.stream:1443/"]]
+        XCTAssertEqual(LiveChat.playableStreamURL(tags: hlsFirst)?.absoluteString, hls)
+        XCTAssertNil(LiveChat.playableStreamURL(tags: [["streaming", "moq://e:1443/"], ["streaming", "rtmp://e/live.m3u8"]]))
+        XCTAssertNil(LiveChat.playableStreamURL(tags: [["streaming"]]))
+    }
+
+    /// The live frame (`thumb`) leads, the cover (`image`) is the fallback.
+    func testPreviewImagesPutTheLiveFrameBeforeTheCover() {
+        let thumb = "https://api-uk.zap.stream/537a/thumb.webp?n=1791135949"
+        let cover = "https://blossom.nogood.studio/6d5b"
+        let both = [["image", cover], ["thumb", thumb]]
+        XCTAssertEqual(LiveChat.previewImageURLs(tags: both).map(\.absoluteString), [thumb, cover])
+        XCTAssertEqual(LiveChat.previewImageURLs(tags: [["image", cover]]).map(\.absoluteString), [cover])
+        XCTAssertEqual(LiveChat.previewImageURLs(tags: [["thumb", cover], ["image", cover]]).count, 1, "no duplicate")
+        XCTAssertEqual(LiveChat.previewImageURLs(tags: [["image", " "], ["thumb", "data:image/png;base64,AA"]]), [])
+    }
+
     // MARK: - Where the chat is
 
     /// zap.stream is the documented relay and, measured across every live
