@@ -67,9 +67,6 @@ class NIP46Service: ObservableObject {
     /// Outstanding requests that may show the banner (user actions only).
     private var bannerRequests = 0
 
-    private var reconnectAttempts = 0
-    private let maxReconnectAttempts = 10
-    private var reconnectTask: Task<Void, Never>?
     private var pingTask: Task<Void, Never>?
     private var authPollerTask: Task<Void, Never>?
 
@@ -137,7 +134,6 @@ class NIP46Service: ObservableObject {
         }
 
         connectionState = .connecting
-        reconnectAttempts = 0
 
         // The account this connection is for. A signer is bound to one account;
         // the result is checked against this, not against whatever is active
@@ -162,18 +158,19 @@ class NIP46Service: ObservableObject {
         // Switching back to an account whose signer session is still alive:
         // make it active and go. No connect / get_public_key round trip, so
         // nothing reaches the signer at all.
-        let signerKey = URLComponents(string: bunkerURL)?.host ?? config.nip46SignerPubkey
-        if !signerKey.isEmpty,
+        let signerKey = Self.signerKey(bunkerURI: bunkerURL, signerPubkey: config.nip46SignerPubkey)
+        // A fresh pairing (a new bunker link still carrying its single-use
+        // secret) must reach the signer, not reuse an older session.
+        let freshPairing = !config.nip46Secret.isEmpty
+        if !signerKey.isEmpty, !freshPairing,
            let cStr = NIP46ActivateC(UnsafeMutablePointer(mutating: (signerKey as NSString).utf8String)) {
             let cached = String(cString: cStr)
             free(cStr)
-            // A background session can have lost its socket while it sat
-            // unused: one ping (a single cheap request) proves it still
-            // answers before posts are sent to it; if not, log in afresh.
-            let alive = cached == expectedHex
-                ? await Task.detached { NIP46PingC() }.value == 0
-                : false
-            if alive {
+            // No ping first: the session's relay pool redials a dropped socket
+            // on its own, and a signer app asleep on the phone (Clave) misses
+            // a ping — which used to throw away a working session and log in
+            // from scratch (up to 90 s, often a fresh approval) on every switch.
+            if cached == expectedHex {
                 connectionState = .connected
                 connectedSignerPubkey = cached
                 startPingLoop()
@@ -348,8 +345,6 @@ class NIP46Service: ObservableObject {
     func detachForAccountSwitch() {
         connectTask?.cancel()
         connectTask = nil
-        reconnectTask?.cancel()
-        reconnectTask = nil
         pingTask?.cancel()
         pingTask = nil
         authPollerTask?.cancel()
@@ -362,8 +357,6 @@ class NIP46Service: ObservableObject {
     func disconnect() {
         connectTask?.cancel()
         connectTask = nil
-        reconnectTask?.cancel()
-        reconnectTask = nil
         pingTask?.cancel()
         pingTask = nil
         authPollerTask?.cancel()
@@ -398,11 +391,62 @@ class NIP46Service: ObservableObject {
         print("NIP46Service: signEvent called, connectionState=\(connectionState.rawValue)")
         try await ensureConnected()
         let label = Self.approvalLabel(forEventJSON: eventJSON)
-        return try await signerRequest(label, queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
-            try await self.callGo { NIP46SignEventC(
-                UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
-            )}
+        // The session this request goes to, so a late failure can never drop
+        // the session of an account switched to while it was waiting.
+        let sessionKey = Self.activeSignerKey()
+        do {
+            return try await signerRequest(label, queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
+                try await self.callGo { NIP46SignEventC(
+                    UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
+                )}
+            }
+        } catch let error as NIP46Error {
+            // Only something the person did (a post, a reaction): background
+            // requests such as relay AUTH routinely go unanswered and say
+            // nothing about the session.
+            if label != nil, case .timeout = error { await recheckSession(sessionKey) }
+            if label != nil, case .offline = error { await recheckSession(sessionKey) }
+            throw error
         }
+    }
+
+    /// The Go-side key of the active account's signer session.
+    static func activeSignerKey() -> String {
+        let config = ConfigService.shared.config
+        return signerKey(bunkerURI: config.nip46BunkerURI, signerPubkey: config.nip46SignerPubkey)
+    }
+
+    static func signerKey(bunkerURI: String, signerPubkey: String) -> String {
+        URLComponents(string: bunkerURI)?.host ?? signerPubkey
+    }
+
+    /// Closes one signer's Go session, e.g. when its account is paired again
+    /// with a new link: switching to it must then log in with that link.
+    static func dropSession(signerKey: String) {
+        guard !signerKey.isEmpty else { return }
+        NIP46DropC(UnsafeMutablePointer(mutating: (signerKey as NSString).utf8String))
+    }
+
+    /// A post the signer never answered may mean a broken session: a relay can
+    /// close the reply subscription for good, or the reply listener can sit in
+    /// a long redial backoff after an outage. It may also just mean nobody
+    /// approved it in time. One ping tells them apart; only if that fails too
+    /// is the session dropped, so the next request logs in afresh. (Pings
+    /// alone no longer drop sessions — a sleeping signer app misses them.)
+    private func recheckSession(_ sessionKey: String) async {
+        guard !sessionKey.isEmpty, connectionState == .connected, outstandingRequests == 0,
+              Self.activeSignerKey() == sessionKey else { return }
+        if (try? await ping()) != nil { return }
+        // Re-check: a switch or another request may have moved on meanwhile.
+        guard connectionState == .connected, outstandingRequests == 0,
+              Self.activeSignerKey() == sessionKey else { return }
+        Self.dropSession(signerKey: sessionKey)
+        pingTask?.cancel()
+        pingTask = nil
+        connectionState = .error
+        connectedSignerPubkey = nil
+        print("NIP46Service: signer did not answer a request or a ping; dropped the session, next request logs in again")
+        RelayProcessManager.shared.addLog("NIP-46: Signer did not answer — will log in again on the next request", level: "ERROR")
     }
 
     func getPublicKey() async throws -> String {
@@ -635,35 +679,6 @@ class NIP46Service: ObservableObject {
         RelayProcessManager.shared.addLog("NIP-46: Auth challenge: \(url)", level: "INFO")
     }
 
-    // MARK: - Reconnection
-
-    private func scheduleReconnect() {
-        guard reconnectAttempts < maxReconnectAttempts else {
-            RelayProcessManager.shared.addLog("NIP-46: Max reconnect attempts reached", level: "ERROR")
-            return
-        }
-
-        reconnectTask?.cancel()
-        reconnectTask = Task { @MainActor in
-            let delay = min(pow(2.0, Double(reconnectAttempts)), 30.0)
-            let jitter = Double.random(in: 0...2)
-            let totalDelay = delay + jitter
-            reconnectAttempts += 1
-
-            RelayProcessManager.shared.addLog("NIP-46: Reconnecting in \(Int(totalDelay))s (attempt \(reconnectAttempts))", level: "INFO")
-
-            try? await Task.sleep(nanoseconds: UInt64(totalDelay * 1_000_000_000))
-
-            guard !Task.isCancelled else { return }
-
-            do {
-                try await connect()
-            } catch {
-                print("NIP46Service: Reconnect failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
     // MARK: - Keepalive
 
     private func startPingLoop() {
@@ -675,9 +690,11 @@ class NIP46Service: ObservableObject {
                 do {
                     try await ping()
                 } catch {
-                    print("NIP46Service: Ping failed: \(error.localizedDescription)")
-                    connectionState = .error
-                    scheduleReconnect()
+                    // A missed ping is usually a signer app asleep, not a dead
+                    // session; tearing it down meant a full login (and often a
+                    // fresh approval) the next time anything was signed. Keep it:
+                    // its relay pool redials a dropped socket on its own.
+                    print("NIP46Service: Ping failed, keeping the session: \(error.localizedDescription)")
                 }
             }
         }

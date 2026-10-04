@@ -1382,11 +1382,20 @@ struct ComposeView: View {
         }
     }
 
+    private static let accountChangedMessage = "The account changed while this note was posting, so it was not sent. Your note is saved as a draft."
+
     private func postNote() {
         isPosting = true
         autoSaveTask?.cancel()
         autoSaveTask = nil
         uploadInfoProvider.startUpload(totalCount: attachments.count)
+
+        // The account this note is for, locked now: the signer reads whichever
+        // account is active when it signs, after the media upload, and the
+        // account can change in between (see PostingAccount).
+        let lockedRawNpub = configService.config.activeAccountNpub
+        let lockedNpub = PostingAccount.resolve(active: lockedRawNpub, owner: configService.config.ownerNpub)
+        let lockedHex = configService.activeAccountHexPubkey
 
         // Durably persist the current text to disk BEFORE the (potentially long) post
         // begins, so an unexpected crash during upload/mining/broadcast can't lose it.
@@ -1700,7 +1709,7 @@ struct ComposeView: View {
             if queuedMedia.contains(where: { $0.url == nil }) {
                 let powSnap = PowPreferences.snapshot()
                 let queued = QueuedMediaPost(
-                    accountNpub: configService.config.activeAccountNpub,
+                    accountNpub: lockedRawNpub,
                     body: baseContent,
                     media: queuedMedia,
                     quoteSuffix: quoteSuffix,
@@ -1738,7 +1747,19 @@ struct ComposeView: View {
             // NIP-92 `imeta`, one per uploaded attachment, in content order.
             tags.append(contentsOf: NoteTagging.imetaTags(for: mediaDescriptors))
 
-            // 3. Mine PoW + Sign
+            // 3. Mine PoW + Sign — but not as an account switched to during the
+            // upload: that would ask the new account's signer to sign this note.
+            let accountUnchanged = await MainActor.run {
+                PostingAccount.resolve(active: configService.config.activeAccountNpub, owner: configService.config.ownerNpub) == lockedNpub
+            }
+            guard accountUnchanged else {
+                await MainActor.run {
+                    ErrorNotificationManager.shared.show(Self.accountChangedMessage)
+                    error = Self.accountChangedMessage
+                    isPosting = false
+                }
+                return
+            }
             let isReply = effectiveReplyTo != nil
             let powSnap = PowPreferences.snapshot()
             let powDifficulty = powSnap.noteEnabled ? powSnap.noteDifficulty : 0
@@ -1764,6 +1785,24 @@ struct ComposeView: View {
             }
 
             DispatchQueue.main.async {
+                // Checked here, in the same main-queue turn that hands the note to
+                // PendingPostManager (which cancels on any later switch), so no
+                // switch can slip in between the check and the hand-off.
+                guard PostingAccount.signedAsLocked(
+                    lockedNpub: lockedNpub,
+                    lockedHex: lockedHex,
+                    activeNow: configService.config.activeAccountNpub,
+                    owner: configService.config.ownerNpub,
+                    eventPubkey: event.pubkey
+                ) else {
+                    print("ComposeView: account changed while posting – locked=\(lockedNpub.prefix(20)) signed=\(event.pubkey.prefix(8)); not publishing")
+                    // The switch may have torn down this sheet; the banner is seen either way.
+                    ErrorNotificationManager.shared.show(Self.accountChangedMessage)
+                    error = Self.accountChangedMessage
+                    isPosting = false
+                    return
+                }
+
                 // Add to local feed immediately for preview
                 let feedNote = FeedNote(
                     id: event.id,

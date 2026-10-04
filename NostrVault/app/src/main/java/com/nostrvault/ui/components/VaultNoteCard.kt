@@ -124,7 +124,7 @@ private fun CompactLayout(
     onProfileClick: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val firstMedia = note.mediaURLs.firstOrNull()
+    val firstMedia = note.mediaURLs.firstOrNull { !isAudioUrl(it) }
     val displayName = profile?.bestName ?: "${note.pubkey.take(8)}...${note.pubkey.takeLast(4)}"
 
     Row(

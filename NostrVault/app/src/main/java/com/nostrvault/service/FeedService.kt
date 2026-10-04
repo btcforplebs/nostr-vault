@@ -1144,6 +1144,7 @@ class FeedService @Inject constructor(
                     FeedMode.ARTICLES -> "articles"
                     FeedMode.RECIPES -> "recipes"
                     FeedMode.LIVE -> "live"
+                    FeedMode.MARKETPLACE -> "marketplace"
                     FeedMode.REELS -> "reels"
                     FeedMode.MUSIC -> "music"
                 }
@@ -1198,6 +1199,7 @@ class FeedService @Inject constructor(
             FeedMode.ARTICLES -> "articles"
             FeedMode.RECIPES -> "recipes"
             FeedMode.LIVE -> "live"
+            FeedMode.MARKETPLACE -> "marketplace"
             FeedMode.REELS -> "reels"
             FeedMode.MUSIC -> "music"
         }
@@ -1268,6 +1270,7 @@ class FeedService @Inject constructor(
             FeedMode.ARTICLES -> "articles"
             FeedMode.RECIPES -> "recipes"
             FeedMode.LIVE -> "live"
+            FeedMode.MARKETPLACE -> "marketplace"
             FeedMode.REELS -> return
             FeedMode.MUSIC -> return
         }
@@ -1320,6 +1323,9 @@ class FeedService @Inject constructor(
                     // No author restriction either: the kinds list already
                     // asks for 30023, and long-form is rare enough that
                     // scoping it to follows usually leaves an empty screen.
+                }
+                FeedMode.MARKETPLACE -> {
+                    // Handled entirely by MarketplaceFeedService.
                 }
                 FeedMode.LIVE -> {
                     // Handled entirely by LiveFeedService; this subscription

@@ -491,6 +491,33 @@ object HavenBridge {
         return bech32Encode("nevent", tlv.toByteArray())
     }
 
+    /**
+     * Encode an addressable event to an naddr1 bech32 string (NIP-19 TLV):
+     * type 0 (d tag, UTF-8), type 2 (author pubkey), type 3 (kind). Mirrors
+     * MarketListing.naddr on iOS. Null for a d tag too long for one TLV.
+     */
+    fun encodeNaddr(dTag: String, hexPubkey: String, kind: Int): String? {
+        val dBytes = dTag.toByteArray(Charsets.UTF_8)
+        if (dBytes.size > 255) return null
+        val pubBytes = hexToByteArray(hexPubkey) ?: return null
+        if (pubBytes.size != 32) return null
+        val tlv = mutableListOf<Byte>()
+        fun appendTLV(type: Int, value: ByteArray) {
+            tlv.add(type.toByte())
+            tlv.add(value.size.toByte())
+            value.forEach { tlv.add(it) }
+        }
+        appendTLV(0, dBytes)
+        appendTLV(2, pubBytes)
+        appendTLV(3, byteArrayOf(
+            ((kind ushr 24) and 0xFF).toByte(),
+            ((kind ushr 16) and 0xFF).toByte(),
+            ((kind ushr 8) and 0xFF).toByte(),
+            (kind and 0xFF).toByte(),
+        ))
+        return bech32Encode("naddr", tlv.toByteArray())
+    }
+
     /** Decode an nevent1 bech32 string. Returns the hex event ID (type 0 TLV). */
     fun decodeNevent(nevent1: String): String? {
         val (hrp, payload) = bech32Decode(nevent1) ?: return null

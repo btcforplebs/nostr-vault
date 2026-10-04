@@ -22,6 +22,7 @@ import coil.request.ImageRequest
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.MarketListing
 import com.nostrvault.data.model.QuoteRef
 import com.nostrvault.ui.theme.*
 
@@ -53,6 +54,18 @@ fun QuotedNoteCard(
     onArticleClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    // A shared listing's content is usually NIP-15 JSON, which the note body
+    // below would print. Same as the iPhone (#237): a listing card instead.
+    val listing = if (note.kind in MarketListing.KINDS) {
+        remember(note.id) {
+            MarketListing.parse(note.id, note.pubkey, note.kind, note.content, note.createdAt.time / 1000, note.tags)
+        }
+    } else null
+    if (listing != null) {
+        com.nostrvault.ui.screens.feed.QuotedListingCard(listing, profile, modifier)
+        return
+    }
+
     val colors = LocalNostrVaultColors.current
     val meta = if (note.kind == ArticleMeta.KIND) {
         remember(note.id, note.tags) { ArticleMeta.from(note) }

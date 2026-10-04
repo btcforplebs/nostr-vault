@@ -842,6 +842,9 @@ struct VideoControlBar: View {
     var onPiP: (() -> Void)? = nil
     /// Called on any control interaction so the container can restart its auto-hide timer.
     var onInteract: (() -> Void)? = nil
+    /// Play for a live stream: rejoins the broadcast instead of `play()`,
+    /// which does nothing on an item left behind the live window.
+    var onResumeLive: (() -> Void)? = nil
 
     @State private var isPlaying: Bool = true
     @State private var isMuted: Bool = false
@@ -853,7 +856,13 @@ struct VideoControlBar: View {
         HStack(spacing: 12) {
             Button {
                 onInteract?()
-                if isPlaying { player.pause() } else { player.play() }
+                if isPlaying {
+                    player.pause()
+                } else if let onResumeLive {
+                    onResumeLive()
+                } else {
+                    player.play()
+                }
             } label: {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.appSystem(size: 18, weight: .semibold))
@@ -984,7 +993,8 @@ struct FullScreenVideoPlayer: View {
             if let player = player, showControls {
                 VStack {
                     Spacer()
-                    VideoControlBar(player: player, onPiP: pipAction, onInteract: scheduleAutoHide)
+                    VideoControlBar(player: player, onPiP: pipAction, onInteract: scheduleAutoHide,
+                                    onResumeLive: isLive ? { rejoinLive() } : nil)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 8)
                         .background(alignment: .bottom) {
@@ -1021,6 +1031,16 @@ struct FullScreenVideoPlayer: View {
             setupPlayer()
             scheduleAutoHide()
         }
+        #if os(iOS)
+        // Back from another app: a live stream on screen carries on with the
+        // broadcast. Left alone it sat paused behind the live window, and Play
+        // did nothing (Logen, 2026-10-04: after watching video in another app).
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            guard isLive, let player, player.timeControlStatus != .playing,
+                  VideoPlayerCache.shared.activeFullScreenURL == url else { return }
+            rejoinLive()
+        }
+        #endif
         .onDisappear {
             hideControlsWork?.cancel()
             hideControlsWork = nil
@@ -1041,6 +1061,13 @@ struct FullScreenVideoPlayer: View {
             // Restore audio session to allow mixing with background music
             AudioSessionManager.shared.enableMixingWithOthers()
         }
+    }
+
+    private var isLive: Bool { url.pathExtension.lowercased() == "m3u8" }
+
+    private func rejoinLive() {
+        guard let player else { return }
+        VideoPlaybackService.shared.rejoinLive(player, sourceURL: url)
     }
 
     /// Non-nil only when PiP can actually start right now.

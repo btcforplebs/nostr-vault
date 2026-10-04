@@ -266,6 +266,7 @@ struct DivineComposeView: View {
         isPosting = true
         error = nil
         player?.pause()
+        let lock = ModePostPublisher.lockAccount(configService: configService)
         Task {
             do {
                 status = "Uploading video…"
@@ -301,13 +302,19 @@ struct DivineComposeView: View {
                             try await ModePostPublisher.publish(
                                 kind: 34236, content: trimmedCaption, tags: tags,
                                 extraRelays: [ReelsFeedService.divineRelay],
-                                nostrService: nostrService
+                                nostrService: nostrService,
+                                lockedTo: lock
                             ) { relay, ok, message in
                                 guard relay == ReelsFeedService.divineRelay, once.claim() else { return }
                                 continuation.resume(returning: (ok, message))
                             }
                         } catch {
-                            guard once.claim() else { return }
+                            guard once.claim() else {
+                                // The sheet already closed on the relay deadline;
+                                // a refused or failed post must still be seen.
+                                ErrorNotificationManager.shared.show(error.localizedDescription)
+                                return
+                            }
                             self.error = error.localizedDescription
                             continuation.resume(returning: nil)
                         }
