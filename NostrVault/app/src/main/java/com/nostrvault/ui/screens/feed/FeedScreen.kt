@@ -127,6 +127,7 @@ fun FeedScreen(
         FeedMode.REELS -> com.nostrvault.ui.screens.ModeComposerKind.DIVINE
         FeedMode.ARTICLES -> com.nostrvault.ui.screens.ModeComposerKind.ARTICLE
         FeedMode.RECIPES -> com.nostrvault.ui.screens.ModeComposerKind.RECIPE
+        FeedMode.MARKETPLACE -> com.nostrvault.ui.screens.ModeComposerKind.LISTING
         else -> null
     }
     val postAction: () -> Unit = { modeComposer?.let(onComposeMode) ?: onCompose() }
@@ -537,6 +538,7 @@ fun FeedScreen(
                             when (modeComposer) {
                                 com.nostrvault.ui.screens.ModeComposerKind.ARTICLE -> NostrVaultIcons.Articles
                                 com.nostrvault.ui.screens.ModeComposerKind.RECIPE -> NostrVaultIcons.Recipes
+                                com.nostrvault.ui.screens.ModeComposerKind.LISTING -> NostrVaultIcons.Marketplace
                                 else -> NostrVaultIcons.Create
                             },
                             contentDescription = "Compose",

@@ -328,6 +328,9 @@ fun NostrVaultNavHost(
                     onNavigateToDMs = {
                         navController.navigate(Screen.DMInbox.route)
                     },
+                    onSell = {
+                        navController.navigate(Screen.ModeCompose.createRoute(com.nostrvault.ui.screens.ModeComposerKind.LISTING.route))
+                    },
                     onNavigateToSettings = {
                         navController.navigate(Screen.Settings.route)
                     },

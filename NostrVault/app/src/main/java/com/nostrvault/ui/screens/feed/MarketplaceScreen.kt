@@ -179,7 +179,7 @@ private fun Chip(label: String, isSelected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ListingCard(listing: MarketListing, seller: FeedProfile?, onClick: () -> Unit) {
+internal fun ListingCard(listing: MarketListing, seller: FeedProfile?, onClick: () -> Unit) {
     val colors = LocalNostrVaultColors.current
     Column(modifier = Modifier.clickable(onClick = onClick)) {
         Box {
