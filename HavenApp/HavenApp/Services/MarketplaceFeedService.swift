@@ -27,7 +27,7 @@ final class MarketplaceFeedService: ObservableObject {
 
     private var clients: [WebSocketClient] = []
     private var cancellables = Set<AnyCancellable>()
-    private var collected: [String: MarketListing] = [:]
+    private var book = MarketListingBook()
     private var loadTimeout: Timer?
     private var lastLoadedAt: Date?
     private var lastLoadedScope: RecipeScope?
@@ -83,7 +83,7 @@ final class MarketplaceFeedService: ObservableObject {
 
     func refresh() {
         disconnect()
-        collected.removeAll()
+        book.removeAll()
         loadFailed = false
         followSetIsEmpty = false
         isLoading = true
@@ -170,24 +170,15 @@ final class MarketplaceFeedService: ObservableObject {
               !blocked.contains(pubkey)
         else { return }
 
-        guard let listing = MarketListing(
-            id: id, pubkey: pubkey, kind: kind, content: content,
-            createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)), tags: tags
-        ) else { return }
-
-        // Addressable: a seller editing a listing publishes a new event under
-        // the same address. Keep only the newest.
-        let address = "\(kind):\(pubkey):\(listing.dTag ?? id)"
-        if let existing = collected[address], existing.createdAt >= listing.createdAt { return }
-        collected[address] = listing
-        publish()
+        // Addressable: the newest event at an address wins, including a
+        // re-publish that marks the item sold.
+        if book.insert(id: id, pubkey: pubkey, kind: kind, content: content, createdAt: createdAt, tags: tags) {
+            publish()
+        }
     }
 
     private func publish() {
-        listings = collected.values.sorted {
-            if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
-            return $0.id > $1.id
-        }
+        listings = book.listings
         if !listings.isEmpty {
             isLoading = false
             loadFailed = false
