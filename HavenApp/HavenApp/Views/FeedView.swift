@@ -3351,10 +3351,22 @@ struct FeedNoteRow: View {
             && rowData.resolvedOriginal == nil
     }
 
+    /// An empty-content repost whose original no relay returned (deleted, or
+    /// never reached anywhere we ask). Without this it said "Loading" forever.
+    private var repostedNoteIsUnavailable: Bool {
+        guard isWaitingForRepostedNote, let refId = note.repostedEventId else { return false }
+        return FeedService.shared.unavailableNoteIds.contains(refId)
+    }
+
     @ViewBuilder
     private var noteBodyContent: some View {
         // Content Body — for empty-content reposts this is the reposted note.
-        if isWaitingForRepostedNote {
+        if repostedNoteIsUnavailable {
+            Text(String(localized: "feed.note.repostUnavailable", defaultValue: "The reposted note is unavailable"))
+                .font(.appSystem(size: 13))
+                .foregroundColor(.secondary)
+                .padding(.top, 4)
+        } else if isWaitingForRepostedNote {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)

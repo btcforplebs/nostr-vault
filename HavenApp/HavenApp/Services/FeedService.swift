@@ -405,7 +405,9 @@ class FeedService: ObservableObject {
     /// The follows to ask a given relay for: an outbox relay is asked only for
     /// the follows it was picked for, every other relay for all of them.
     private func followAuthors(forRelayKey key: String) -> [String] {
-        outboxPlan[key] ?? followedPubkeys
+        // Older-page clients are keyed `page-<url>`.
+        let url = key.hasPrefix("page-") ? String(key.dropFirst(5)) : key
+        return outboxPlan[url] ?? followedPubkeys
     }
 
     /// Used for de-duping relay URLs across the floor + outbox set.
@@ -1521,6 +1523,16 @@ class FeedService: ObservableObject {
         refreshOutboxPlan()
         let desiredURLs = feedRelayURLs()
 
+        // An outbox relay the plan dropped (its follows were picked up by
+        // another, or it died) would otherwise stay subscribed — and with no
+        // plan entry it would be re-sent the whole follow list.
+        let desiredKeys = Set(desiredURLs.map(\.absoluteString))
+        for key in feedClients.keys where !key.hasPrefix("page-") && !desiredKeys.contains(key) {
+            feedClients[key]?.disconnect()
+            feedClients.removeValue(forKey: key)
+            subscribedAuthorsByRelay[key] = nil
+        }
+
         let missing = desiredURLs.filter { feedClients[$0.absoluteString] == nil }
         guard !missing.isEmpty else { return }
 
@@ -1541,7 +1553,9 @@ class FeedService: ObservableObject {
     /// must not re-show the full-screen spinner.
     private func resubscribePrimaryIfNeeded() {
         for (key, client) in feedClients {
-            guard client.connectionState == .connected else { continue }
+            // Older-page clients are one-shot; re-sending them a primary REQ
+            // added stray EOSEs to whatever load was running.
+            guard !key.hasPrefix("page-"), client.connectionState == .connected else { continue }
             // nil-author relays (inbox/global/popular) never drift on follows.
             guard let desired = desiredPrimaryAuthors(forRelayKey: key) else { continue }
             if let current = subscribedAuthorsByRelay[key], Set(current) == Set(desired) {
@@ -1964,7 +1978,21 @@ class FeedService: ObservableObject {
         for url in allURLs {
             connectFeedRelayWithUntil(url: url, until: until, totalRelays: totalRelays)
         }
+
+        // A page client that never connects never sends EOSE, and nothing else
+        // ended the page — one dead relay stopped older pages for good. The
+        // outbox relays come from other people's lists, so that is now likely.
+        pageLoadTimeout?.invalidate()
+        pageLoadTimeout = Timer.scheduledTimer(withTimeInterval: 20.0, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isLoadingFeed else { return }
+                self.flushNoteBuffer()
+                self.isLoadingFeed = false
+            }
+        }
     }
+
+    private var pageLoadTimeout: Timer?
 
     func disconnect() {
         feedLoadingTimeout?.invalidate()
@@ -2630,6 +2658,7 @@ class FeedService: ObservableObject {
         primaryEoseRelays.removeAll()
         subIdToRelayKey.removeAll()
         relayErrorCounts.removeAll()
+        pageLoadTimeout?.invalidate()   // must not end this load
         connectionStatus = "Loading feed…"
         // Freeze the resume window for this round before any relay connects.
         subscriptionRoundSince = lastEventTimestamp
@@ -2844,11 +2873,12 @@ class FeedService: ObservableObject {
         let isResume = subscriptionRoundSince > 0 && until == nil
         if isResume {
             return (subscriptionRoundSince - 60, feedMode == .media ? 500 : 500)
-        } else if let until {
-            // A page older than `until`: the week before it. Measured from now
-            // instead, every page past the first week asked for an empty
-            // window and scrolling back stopped there.
-            return (until - (7 * 24 * 3600), feedMode == .media ? 300 : 500)
+        } else if until != nil {
+            // A page older than `until`: no lower bound, so each relay returns
+            // its newest notes before it however far back they are. Measured
+            // from now, as it was, every page past the first week asked for an
+            // empty window and scrolling back stopped there.
+            return (0, feedMode == .media ? 300 : 500)
         } else {
             return (Int64(Date().timeIntervalSince1970) - (7 * 24 * 3600), feedMode == .media ? 300 : 500)
         }
