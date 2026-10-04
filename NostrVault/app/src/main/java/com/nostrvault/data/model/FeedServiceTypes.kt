@@ -18,6 +18,7 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
+import kotlinx.serialization.json.longOrNull
 import java.net.URL
 import java.util.Date
 
@@ -117,7 +118,17 @@ data class FeedNote(
     val linkURLs: List<String>,
     val quotedEventIds: List<String>,
     val repostedEventId: String?,
+    /**
+     * When the reposted note was written (unix seconds), from a kind 6
+     * repost's embedded event. [createdAt] stays the repost's own time, which
+     * orders the feed (iOS e4ae7da3).
+     */
+    val originalCreatedAtSecs: Long? = null,
 ) {
+    /** When the note this row shows was written: a repost's original time. */
+    val postedAt: Date
+        get() = originalCreatedAtSecs?.let { Date(it * 1000) } ?: createdAt
+
     /** Instance-level noise check delegating to companion. */
     fun isNoiseOrSpam(): Boolean = Companion.isNoiseOrSpam(content, tags)
 
@@ -261,6 +272,7 @@ data class FeedNote(
             var resolvedContent = content
             var resolvedTags = tags
             var resolvedRepostedBy = repostedBy
+            var originalCreatedAtSecs: Long? = null
 
             // Kind 6: swap to inner event if content is stringified JSON
             if (kind == 6) {
@@ -281,6 +293,7 @@ data class FeedNote(
                             emptyList()
                         }
                         if (resolvedRepostedBy == null) resolvedRepostedBy = pubkey
+                        originalCreatedAtSecs = inner["created_at"]?.jsonPrimitive?.longOrNull
                     }
                 } catch (_: Exception) {
                     // Content is not JSON, keep outer values
@@ -328,6 +341,7 @@ data class FeedNote(
                 linkURLs = linkURLs,
                 quotedEventIds = quotedEventIds,
                 repostedEventId = outerRepostedEventId,
+                originalCreatedAtSecs = originalCreatedAtSecs,
             )
         }
 

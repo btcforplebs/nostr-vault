@@ -325,7 +325,7 @@ fun NoteCard(
                         Spacer(Modifier.weight(1f))
 
                         Text(
-                            text = formatTimestamp(note.createdAt.time / 1000),
+                            text = formatTimestamp(note.postedAt.time / 1000),
                             color = SecondaryText,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
