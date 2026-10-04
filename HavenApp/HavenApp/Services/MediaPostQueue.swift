@@ -140,10 +140,33 @@ final class MediaPostQueue: ObservableObject {
             return false
         }
 
+        // The uploads above can take a while; the account may have changed
+        // since the check at the top, and the signer follows the active one.
+        let owner = ConfigService.shared.config.ownerNpub
+        let lockedNpub = PostingAccount.resolve(active: post.accountNpub, owner: owner)
+        guard ConfigService.shared.config.activeAccountNpub == post.accountNpub else {
+            log("waiting post \(id.prefix(8)): account changed during upload — holding it until that account is active")
+            update(post)
+            return false
+        }
+        let lockedHex = NostrService.shared.activeHexPubkey
+
         guard let event = await NostrService.shared.mineAndSignEventAsync(
             kind: post.kind ?? 1, content: content, tags: tags, difficulty: post.powDifficulty
         ) else {
             log("waiting post \(id.prefix(8)): media is hosted but signing failed — will retry", level: "ERROR")
+            update(post)
+            return false
+        }
+
+        guard PostingAccount.signedAsLocked(
+            lockedNpub: lockedNpub,
+            lockedHex: lockedHex,
+            activeNow: ConfigService.shared.config.activeAccountNpub,
+            owner: owner,
+            eventPubkey: event.pubkey
+        ) else {
+            log("waiting post \(id.prefix(8)): account changed while signing — not sent, holding it", level: "ERROR")
             update(post)
             return false
         }

@@ -212,6 +212,7 @@ struct LongFormComposeView: View {
     private func publish() {
         isPosting = true
         error = nil
+        let lock = ModePostPublisher.lockAccount(configService: configService)
         Task {
             do {
                 var imageURL: URL?
@@ -230,7 +231,8 @@ struct LongFormComposeView: View {
                 try await ModePostPublisher.publish(
                     kind: 30023, content: draft.content(),
                     tags: draft.tags(publishedAt: Int(Date().timeIntervalSince1970)),
-                    nostrService: nostrService)
+                    nostrService: nostrService,
+                    lockedTo: lock)
                 if isRecipe { RecipeFeedService.shared.refresh() }
                 status = nil
                 isPosting = false
