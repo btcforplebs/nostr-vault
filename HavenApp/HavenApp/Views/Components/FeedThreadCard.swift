@@ -40,6 +40,14 @@ struct FeedThreadCard: View {
     /// No relay returned the root after every fetch pass; say so instead of
     /// loading forever.
     var rootUnavailable: Bool = false
+    /// Where each line's top sits in the feed's scroll view, read when a line
+    /// is tapped. nil outside the feed.
+    var lineTops: ThreadLineTops? = nil
+    /// A line was just opened in place; its top was at `y` in the scroll view
+    /// before the tap. Opening it closes the note that was open, and when that
+    /// note sat above this one — a photo, say — everything below moves up, so
+    /// the feed scrolls to hold the tapped line where it was.
+    var onOpenedInPlace: ((_ noteId: String, _ y: CGFloat) -> Void)? = nil
 
     @Environment(\.feedActions) private var actions
     @EnvironmentObject private var configService: ConfigService
@@ -111,12 +119,25 @@ struct FeedThreadCard: View {
 
     // MARK: - Rows
 
-    @ViewBuilder
     private func line(for entry: FeedThreadEntry<FeedNote>, replyCount: Int) -> some View {
-        if openNoteId == entry.note.id, let rowDataFor {
-            openRow(for: entry, rowData: rowDataFor(entry.note))
-        } else {
-            condensedLine(for: entry, replyCount: replyCount)
+        let id = entry.note.id
+        return VStack(alignment: .leading, spacing: 0) {
+            // A zero-height marker at the line's top, the target the feed
+            // scrolls to. Zero height makes `scrollTo`'s anchor a plain
+            // fraction of the viewport, whatever height the line opens to.
+            Color.clear
+                .frame(height: 0)
+                .id(ThreadLineTops.anchorId(for: id))
+            if openNoteId == id, let rowDataFor {
+                openRow(for: entry, rowData: rowDataFor(entry.note))
+            } else {
+                condensedLine(for: entry, replyCount: replyCount)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) {
+            $0.frame(in: .named(ThreadLineTops.coordinateSpace)).minY
+        } action: { y in
+            lineTops?.tops[id] = y
         }
     }
 
@@ -141,7 +162,11 @@ struct FeedThreadCard: View {
     private func tapAction(for note: FeedNote) -> (() -> Void)? {
         guard let onOpen else { return nil }
         guard canOpenInPlace else { return { onOpen(note) } }
-        return { openNoteId = note.id }
+        return {
+            let y = lineTops?.tops[note.id]
+            openNoteId = note.id
+            if let y { onOpenedInPlace?(note.id, y) }
+        }
     }
 
     /// A line opened in place: the full note, its action bar, and the same
@@ -261,4 +286,15 @@ struct FeedThreadCard: View {
     private func directReplyCount(of id: String) -> Int {
         thread.entries.filter { $0.note.parentEventId == id }.count
     }
+}
+
+/// The feed's record of where each thread line's top is, in the scroll view's
+/// own coordinates. A plain class so the per-frame writes while scrolling
+/// don't invalidate the feed.
+final class ThreadLineTops {
+    static let coordinateSpace = "feedThreadScroll"
+    static func anchorId(for noteId: String) -> String { "thread-line-\(noteId)" }
+
+    var tops: [String: CGFloat] = [:]
+    var viewportHeight: CGFloat = 0
 }
