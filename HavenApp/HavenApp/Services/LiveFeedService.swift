@@ -37,11 +37,20 @@ final class LiveFeedService: ObservableObject {
     }
 
     /// Live streams are the one feed where stale is actively wrong — a stream
-    /// that ended two minutes ago still says `live` in memory. Always refetch.
+    /// that ended two minutes ago still says `live` in memory. So refetch,
+    /// except right after a load: a quick look at another feed and back
+    /// within a minute keeps the grid it just showed.
     func loadIfNeeded() {
         guard !isLoading else { return }
+        if let lastLoadedAt, Date().timeIntervalSince(lastLoadedAt) < Self.reuseFor, !streams.isEmpty,
+           lastLoadedAccount == FeedService.shared.currentSnapshotKey() { return }
         refresh()
     }
+
+    private static let reuseFor: TimeInterval = 60
+    private var lastLoadedAt: Date?
+    /// The account the grid was loaded for; another account never reuses it.
+    private var lastLoadedAccount: String?
 
     func refresh() {
         disconnect()
@@ -183,6 +192,8 @@ final class LiveFeedService: ObservableObject {
 
     private func finishLoading() {
         isLoading = false
+        lastLoadedAt = Date()
+        lastLoadedAccount = FeedService.shared.currentSnapshotKey()
         loadFailed = streams.isEmpty && !followSetIsEmpty
         disconnect()
     }
