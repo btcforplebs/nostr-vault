@@ -13,6 +13,15 @@ import UIKit
 class AudioSessionManager {
     static let shared = AudioSessionManager()
 
+    /// True while the app-wide player (`MusicPlayerService`: a song, or a
+    /// minimized live stream) is playing. Video surfaces hand the session back
+    /// to `.ambient` when they go — and `.ambient` is silenced by the lock
+    /// screen and the ring/silent switch, so doing that under the mini player
+    /// killed its sound the moment the phone locked. Minimizing a live stream
+    /// did it every time: the dismissed video player restored mixing right
+    /// after the mini player had claimed `.playback`.
+    var appAudioIsPlaying = false
+
     #if os(iOS)
     private var interruptionObserver: NSObjectProtocol?
 
@@ -52,6 +61,8 @@ class AudioSessionManager {
         // hit constantly by inline feed players spinning up during scroll; PiPManager
         // restores the mixing session itself when PiP ends.
         if PiPManager.shared.isPiPActive { return }
+        // The mini player owns the session; see `appAudioIsPlaying`.
+        if appAudioIsPlaying { return }
         do {
             let audioSession = AVAudioSession.sharedInstance()
             // Already mixing: nothing to hand back, and deactivating would stop

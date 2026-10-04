@@ -44,7 +44,10 @@ final class MusicPlayerService: ObservableObject {
 
     @Published private(set) var queue: [PlayerTrack] = []
     @Published private(set) var index: Int = 0
-    @Published private(set) var isPlaying = false
+    @Published private(set) var isPlaying = false {
+        // Video surfaces must not take the session from under this player.
+        didSet { AudioSessionManager.shared.appAudioIsPlaying = isPlaying }
+    }
     @Published private(set) var isBuffering = false
     /// Seconds into the current track, refreshed twice a second while playing.
     @Published private(set) var elapsed: Double = 0

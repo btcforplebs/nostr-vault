@@ -199,6 +199,10 @@ struct LiveStream: Identifiable, Equatable {
     let title: String?
     let summary: String?
     let imageURL: URL?
+    /// What the tile tries to draw, best first: the live frame, then the
+    /// cover art. `imageURL` stays the cover — it is the steadier picture for
+    /// the lock screen.
+    let previewImageURLs: [URL]
     let streamingURL: URL?
     let status: String?
     /// NIP-53 `ends`: when the host said the stream finished.
@@ -250,13 +254,11 @@ struct LiveStream: Identifiable, Equatable {
             .map { $0.compactMap(LiveChat.normalizedRelay) } ?? []
         self.participants = value("current_participants").flatMap { Int($0) }
 
+        self.previewImageURLs = LiveChat.previewImageURLs(tags: tags)
+
         // AVPlayer speaks HTTP(S) HLS. The sample also carried rtmp, ftp, a
         // `zapcast:` scheme and plain web pages — none of which it can open,
         // so a tile for one is a tile that can only disappoint.
-        if let raw = value("streaming"), let url = URL(string: raw), LiveChat.isPlayableStreamURL(url) {
-            self.streamingURL = url
-        } else {
-            self.streamingURL = nil
-        }
+        self.streamingURL = LiveChat.playableStreamURL(tags: tags)
     }
 }
