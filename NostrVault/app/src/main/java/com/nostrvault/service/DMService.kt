@@ -772,20 +772,19 @@ class DMService @Inject constructor(
                     inboxClient?.send("[\"EVENT\",$selfEvent]")
                 }
 
-                // Fetch recipient's DM relays and publish
-                val recipientRelays = fetchRecipientDMRelays(recipientHexPubkey)
-                for (relayUrl in recipientRelays) {
-                    fireAndForgetPublish(recipientEvent, relayUrl)
+                // Your own copy goes to your DM inbox list — the list every
+                // device reads from, Mac relay first — never to whichever of
+                // your relay lists a lookup finds first. Resolving it like a
+                // recipient's could land on your general (kind 10002) relays,
+                // which no device reads DMs from, so the message never showed
+                // on your other devices.
+                for (relayUrl in ownDMInboxRelays(ownHexPubkey)) {
+                    publishAuthenticated(selfEvent, relayUrl, ownHexPubkey)
                 }
 
-                // Publish self copy to own DM relays. Use the same fallback-aware
-                // resolver as the recipient path (kind 10050 → 10002 → fetch-and-wait
-                // → blastr); a bare dmRelayLists lookup returns empty when our own DM
-                // relay list isn't cached yet, stranding the self-copy on the local
-                // relay so our OTHER devices never see the message we sent.
-                val ownRelays = fetchRecipientDMRelays(ownHexPubkey)
-                for (relayUrl in ownRelays) {
-                    fireAndForgetPublish(selfEvent, relayUrl)
+                val recipientRelays = fetchRecipientDMRelays(recipientHexPubkey)
+                for (relayUrl in recipientRelays) {
+                    publishAuthenticated(recipientEvent, relayUrl, ownHexPubkey)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "NIP-17 send failed: ${e.message}")
@@ -869,9 +868,9 @@ class DMService @Inject constructor(
             // when our own kind 10050/10002 isn't cached yet (e.g. a fresh setup
             // or an account that never published a relay list) — otherwise
             // pull-to-refresh queried zero relays and nothing ever loaded.
-            val configured = configStore.config.value.dmRelays
+            val configured = ownDMInboxRelays(ownerHex)
             val blastr = configStore.config.value.activeBlastrRelays
-            val allRelays = (dmRelays + inboxRelays + configured + blastr)
+            val allRelays = (configured + dmRelays + inboxRelays + blastr)
                 .distinct()
                 .filter { !it.contains("localhost") && !it.contains("127.0.0.1") }
                 .take(EXTERNAL_FETCH_MAX_RELAYS)
@@ -957,9 +956,9 @@ class DMService @Inject constructor(
     private fun liveExternalRelaySet(ownerHex: String): List<String> {
         val advertised = nostrService.dmRelayLists.value[ownerHex] ?: emptyList()
         val inbox = nostrService.relayLists.value[ownerHex] ?: emptyList()
-        val configured = configStore.config.value.dmRelays
+        val configured = ownDMInboxRelays(ownerHex)
         val blastr = configStore.config.value.activeBlastrRelays
-        return (advertised + configured + inbox + blastr)
+        return (configured + advertised + inbox + blastr)
             .map { it.trim() }
             .filter { it.isNotEmpty() && !it.contains("localhost") && !it.contains("127.0.0.1") }
             .distinct()
@@ -1258,15 +1257,104 @@ class DMService @Inject constructor(
             relays.orEmpty().filter { !NostrService.isLoopbackRelay(it) }
 
         reachable(nostrService.dmRelayLists.value[pubkey]).let { if (it.isNotEmpty()) return it }
-        reachable(nostrService.relayLists.value[pubkey]).let { if (it.isNotEmpty()) return it.take(3) }
 
-        // Trigger fetch and wait briefly
+        // No DM relay list known yet: fetch and wait for it. A general
+        // (kind 10002) list is only the fallback for someone who published no
+        // DM list, so it must not win just because it was already cached.
         nostrService.fetchRelayList(pubkey)
         delay(4_000)
 
         reachable(nostrService.dmRelayLists.value[pubkey]).let { if (it.isNotEmpty()) return it }
         reachable(nostrService.relayLists.value[pubkey]).let { if (it.isNotEmpty()) return it.take(3) }
         return reachable(configStore.config.value.activeBlastrRelays).take(3)
+    }
+
+    /**
+     * This account's DM inbox list, minus loopback. For the owner that is the
+     * published list — the Mac relay's inbox first. Other accounts use the
+     * plain DM relays: the owner's Haven inbox only takes DMs for the owner.
+     */
+    private fun ownDMInboxRelays(accountHex: String): List<String> {
+        val config = configStore.config.value
+        val list = if (accountHex == nostrService.ownerHexPubkey) config.dmInboxRelays else config.dmRelays
+        return list.filter { !NostrService.isLoopbackRelay(it) }
+    }
+
+    /**
+     * Publishes to a relay that may require NIP-42 AUTH before it accepts a
+     * write. A Haven inbox (the Mac relay) rejects with "auth-required" until
+     * the sender authenticates, which the plain fire-and-forget publish never
+     * noticed. An auth-required rejection is answered with AUTH signed by the
+     * sending account — never the owner on another account's behalf, which
+     * would tie the accounts together — and, once the relay accepts the AUTH,
+     * the event is sent again. (Relays handle each message concurrently, so
+     * resending before the AUTH is accepted can lose the race.)
+     */
+    private fun publishAuthenticated(eventJson: String, relayUrl: String, senderHex: String) {
+        val eventId = runCatching { json.parseToJsonElement(eventJson).jsonObject["id"]?.jsonPrimitive?.contentOrNull }.getOrNull() ?: return
+        scope.launch(Dispatchers.IO) {
+            val client = WebSocketClient(url = relayUrl, scope = this, autoReconnect = false)
+            val result = try {
+                withTimeoutOrNull(15_000) {
+                    val outcome = CompletableDeferred<String>()
+                    var challenge: String? = null
+                    var authId: String? = null
+                    val collector = launch {
+                        client.messages.collect { msg ->
+                            val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
+                            when (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull) {
+                                "AUTH" -> challenge = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull
+                                "OK" -> {
+                                    val id = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull
+                                    val ok = arr.getOrNull(2)?.jsonPrimitive?.booleanOrNull ?: false
+                                    val note = arr.getOrNull(3)?.jsonPrimitive?.contentOrNull ?: ""
+                                    if (id != null && id == authId) {
+                                        if (ok) client.send("[\"EVENT\",$eventJson]") else outcome.complete("AUTH rejected: $note")
+                                    } else if (id == eventId) {
+                                        val ch = challenge
+                                        when {
+                                            ok || note.startsWith("duplicate") -> outcome.complete("accepted")
+                                            note.startsWith("auth-required") && authId == null && ch != null -> {
+                                                if (nostrService.activeHexPubkey != senderHex) {
+                                                    outcome.complete("account switched before AUTH")
+                                                } else {
+                                                    val auth = runCatching {
+                                                        nostrService.signEventAsync(
+                                                            kind = 22242, content = "",
+                                                            tags = listOf(listOf("relay", relayUrl), listOf("challenge", ch)),
+                                                        )
+                                                    }.getOrNull()
+                                                    if (auth == null) {
+                                                        outcome.complete("could not sign AUTH")
+                                                    } else {
+                                                        authId = auth.id
+                                                        client.send("[\"AUTH\",${serializeEvent(auth)}]")
+                                                    }
+                                                }
+                                            }
+                                            else -> outcome.complete("rejected: $note")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    launch {
+                        client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                        client.send("[\"EVENT\",$eventJson]")
+                    }
+                    client.connect()
+                    val r = outcome.await()
+                    collector.cancel()
+                    r
+                } ?: "timed out"
+            } catch (e: Exception) {
+                "failed: ${e.message}"
+            } finally {
+                client.disconnect()
+            }
+            Log.d(TAG, "DM wrap ${eventId.take(8)} -> $relayUrl: $result")
+        }
     }
 
     private fun fireAndForgetPublish(eventJson: String, relayUrl: String) {
