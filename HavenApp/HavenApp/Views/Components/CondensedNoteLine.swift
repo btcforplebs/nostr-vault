@@ -208,6 +208,13 @@ struct CondensedNoteLine: View {
                     .font(.appSystem(size: 10))
                     .foregroundColor(.green.opacity(0.7))
             }
+            // Same glyph as the full card's Quote button.
+            if !note.quotedEventIds.isEmpty {
+                Image(systemName: "quote.closing")
+                    .font(.appSystem(size: 10))
+                    .foregroundColor(.blue.opacity(0.7))
+                    .accessibilityLabel("Quote")
+            }
         }
     }
 

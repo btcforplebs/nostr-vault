@@ -228,6 +228,16 @@ fun CondensedNoteLine(
                             modifier = Modifier.size(10.dp),
                         )
                     }
+                    // Same glyph as the full card's Quote button. iOS: CondensedNoteLine.
+                    if (note.quotedEventIds.isNotEmpty()) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = NostrVaultIcons.Quote,
+                            contentDescription = "Quote",
+                            tint = InfoBlue.copy(alpha = 0.7f),
+                            modifier = Modifier.size(10.dp),
+                        )
+                    }
                 }
 
                 // Every URL comes out of the line (#170 parity); links come
