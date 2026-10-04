@@ -733,11 +733,38 @@ internal fun isVideoUrl(url: String): Boolean {
     return ext in VIDEO_EXTENSIONS
 }
 
+private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "wav", "ogg", "aac", "flac", "opus")
+
+/** An audio file: it plays from a card, not in the photo/video viewer. */
+internal fun isAudioUrl(url: String): Boolean {
+    val ext = url.substringAfterLast('.').substringBefore('?').substringBefore('#').lowercase()
+    return ext in AUDIO_EXTENSIONS
+}
+
 @Composable
 fun MediaPreviewRow(
     urls: List<String>,
     /** The note's tags, read for NIP-92 `imeta dim` so the box is right first time. */
     tags: List<List<String>> = emptyList(),
+    modifier: Modifier = Modifier,
+) {
+    // Audio plays from its own card on the app-wide player; the rest open
+    // the viewer. iOS: FeedAudioCard.
+    val (audio, visual) = remember(urls) { urls.partition(::isAudioUrl) }
+    if (audio.isEmpty()) {
+        VisualMediaPreview(visual, tags, modifier)
+        return
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (visual.isNotEmpty()) VisualMediaPreview(visual, tags)
+        audio.forEach { com.nostrvault.ui.screens.music.AudioFileCard(it) }
+    }
+}
+
+@Composable
+private fun VisualMediaPreview(
+    urls: List<String>,
+    tags: List<List<String>>,
     modifier: Modifier = Modifier,
 ) {
     // One id per row, so the viewer can find the photo it opened from.
