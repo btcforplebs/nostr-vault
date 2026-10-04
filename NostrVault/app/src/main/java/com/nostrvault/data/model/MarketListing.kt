@@ -210,3 +210,97 @@ enum class MarketCategory(val displayName: String, private val keywords: List<St
 /** The listing as a note, so Event Info (relays, raw JSON) can open on it. */
 fun MarketListing.toNote(): FeedNote =
     FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)
+
+/**
+ * Listings keyed by address, where the newest event at an address decides
+ * what shows, even when that event is not a showable listing. Mirrors
+ * MarketListingBook in Swift.
+ *
+ * A seller marks an item sold by re-publishing it under the same address
+ * with `status sold`. [MarketListing.parse] refuses that version, so a
+ * collection that only stored parsed listings never learned about it and kept
+ * showing the older, active one. Not thread-safe; callers hold a lock.
+ */
+class MarketListingBook {
+    private val newestAt = HashMap<String, Long>()
+    private val byAddress = HashMap<String, MarketListing>()
+
+    /** Newest-first, ties broken by id so the order is stable. */
+    val listings: List<MarketListing>
+        get() = byAddress.values.sortedWith(
+            compareByDescending<MarketListing> { it.createdAt }.thenByDescending { it.id },
+        )
+
+    fun clear() {
+        newestAt.clear()
+        byAddress.clear()
+    }
+
+    /** Feeds one relay event in. Returns true when what the book shows changed. */
+    fun insert(id: String, pubkey: String, kind: Int, content: String, createdAt: Long, tags: List<List<String>>): Boolean {
+        if (kind !in MarketListing.KINDS) return false
+        val dTag = tags.firstOrNull { it.size >= 2 && it[0] == "d" }?.get(1)
+        val address = "$kind:$pubkey:${dTag ?: id}"
+        val seen = newestAt[address]
+        if (seen != null && seen >= createdAt) return false
+        newestAt[address] = createdAt
+
+        val listing = MarketListing.parse(id, pubkey, kind, content, createdAt, tags)
+        val hadListing = byAddress.containsKey(address)
+        if (listing != null) byAddress[address] = listing else byAddress.remove(address)
+        return listing != null || hadListing
+    }
+}
+
+/**
+ * A NIP-99 classified (kind 30402) as the Sell composer writes it. Port of
+ * ListingDraft.swift: same tags in the same order, so a listing posted from
+ * Android reads back through [MarketListing.parse] exactly as entered, and
+ * Shopstr files it under the same category.
+ */
+data class ListingDraft(
+    val title: String,
+    val summary: String = "",
+    val description: String = "",
+    val price: String,
+    val currency: String = "SATS",
+    val category: MarketCategory = MarketCategory.OTHER,
+    val location: String = "",
+    val imageUrls: List<String> = emptyList(),
+    /** Reused when editing, so the listing keeps its address. */
+    val dTag: String? = null,
+) {
+    /** Digits and at most one decimal point, with grouping commas dropped. */
+    val normalizedPrice: String?
+        get() {
+            val cleaned = price.trim().replace(",", "")
+            if (cleaned.isEmpty() || cleaned.startsWith("-") || cleaned.toDoubleOrNull() == null) return null
+            return cleaned
+        }
+
+    /** Title, price and a photo: the grid hides a listing without them. */
+    val isComplete: Boolean
+        get() = title.isNotBlank() && normalizedPrice != null && imageUrls.isNotEmpty()
+
+    fun content(): String = description.trim()
+
+    fun tags(publishedAt: Long, newDTag: () -> String = { java.util.UUID.randomUUID().toString().lowercase() }): List<List<String>> {
+        val tags = mutableListOf(listOf("d", dTag ?: newDTag()), listOf("title", title.trim()))
+        summary.trim().takeIf { it.isNotEmpty() }?.let { tags += listOf("summary", it) }
+        tags += listOf("published_at", publishedAt.toString())
+        normalizedPrice?.let { tags += listOf("price", it, currency) }
+        location.trim().takeIf { it.isNotEmpty() }?.let { tags += listOf("location", it) }
+        imageUrls.forEach { tags += listOf("image", it) }
+        // Shopstr and MyNostrSpace file listings by these exact names, and
+        // MarketCategory.classify reads them back to the same category.
+        if (category != MarketCategory.OTHER) tags += listOf("t", category.displayName)
+        tags += listOf("status", "active")
+        return tags
+    }
+
+    companion object {
+        const val KIND = MarketListing.CLASSIFIED_KIND
+        /** "SATS" is what Shopstr and Plebeian write; the rest are ISO 4217. */
+        val CURRENCIES = listOf("SATS", "USD", "EUR", "CAD", "GBP")
+    }
+}

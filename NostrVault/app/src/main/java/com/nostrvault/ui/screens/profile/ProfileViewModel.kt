@@ -29,6 +29,8 @@ enum class ProfileSection(val displayName: String) {
     MEDIA("Media"),
     REPLIES("Replies"),
     TAGGED("Tagged"),
+    /** Marketplace listings. Shown only when there are some, or on your own profile. */
+    SHOP("Shop"),
 }
 
 /** Per-tab counts shown next to the section labels. */
@@ -53,6 +55,12 @@ class ProfileViewModel @Inject constructor(
         /** Default zap amount (sats) — no per-user setting on Android yet. */
         const val DEFAULT_ZAP_SATS = 21
     }
+
+    /** The Shop tab: this person's marketplace listings. */
+    private val shop = com.nostrvault.service.SellerListingsLoader(viewModelScope, nostrService)
+    val shopListings = shop.listings
+    val shopLoading = shop.isLoading
+    fun reloadShop() = shop.load(_pubkey.value, force = true)
 
     private val _pubkey = MutableStateFlow(savedStateHandle.get<String>("pubkey") ?: "")
     val pubkey: String get() = _pubkey.value
@@ -124,6 +132,8 @@ class ProfileViewModel @Inject constructor(
             ProfileSection.MEDIA -> notes.filter { it.mediaURLs.isNotEmpty() && !it.isReply && it.repostedBy == null }
             ProfileSection.REPLIES -> notes.filter { it.isReply && it.repostedBy == null }
             ProfileSection.TAGGED -> tagged.filter { it.pubkey != _pubkey.value }
+            // Listings are not notes; the Shop tab reads [shopListings].
+            ProfileSection.SHOP -> emptyList()
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -148,6 +158,7 @@ class ProfileViewModel @Inject constructor(
     init {
         if (_pubkey.value.isNotEmpty()) {
             loadProfile()
+            shop.load(_pubkey.value)
         }
     }
 
@@ -166,6 +177,7 @@ class ProfileViewModel @Inject constructor(
             _hasMoreTagged.value = true
             _selectedSection.value = ProfileSection.NOTES
             loadProfile()
+            shop.load(pubkey)
         }
     }
 
