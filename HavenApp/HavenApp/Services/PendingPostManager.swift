@@ -55,6 +55,27 @@ class PendingPostManager: ObservableObject {
         static let countdownDuration: Double = 5.0
 
         var canEdit: Bool { self != .repost && self != .delete }
+
+        /// Shown once a relay has taken the event.
+        var doneLabel: String {
+            switch self {
+            case .reply:   return "Replied"
+            case .quote:   return "Quoted"
+            case .newPost: return "Posted"
+            case .repost:  return "Reposted"
+            case .delete:  return "Deleted"
+            }
+        }
+    }
+
+    /// What happened after the countdown: sending, then either a relay took it
+    /// (green) or none confirmed it after the retries (grey, not red: it was
+    /// sent, and a slow relay is not a failed post).
+    struct Confirmation: Identifiable, Equatable {
+        enum State: Equatable { case sending, confirmed, unconfirmed }
+        let id = UUID()
+        let actionType: ActionType
+        var state: State
     }
 
     struct EditRequest: Identifiable {
@@ -71,6 +92,7 @@ class PendingPostManager: ObservableObject {
     @Published var actionType: ActionType?
     @Published var timeRemaining: Double = 5.0
     @Published var editRequest: EditRequest?
+    @Published var confirmation: Confirmation?
 
     private var bannerNoteId: String?
     private var pendingEvent: NostrEvent?
@@ -112,7 +134,10 @@ class PendingPostManager: ObservableObject {
         timeRemaining = ActionType.countdownDuration
         withAnimation(Motion.bannerIn) { isShowing = true }
         beginCountdown {
-            nostrService.postEvent(event)
+            let confirmationId = self.beginConfirmation(type)
+            nostrService.postEvent(event) { outcome in
+                self.finishConfirmation(confirmationId, outcome: outcome)
+            }
             // The note is now broadcasting — safe to drop its draft.
             if let draftId {
                 await DraftService.shared.deleteDraft(id: draftId)
@@ -138,6 +163,7 @@ class PendingPostManager: ObservableObject {
         let originalKind = sourceNote.repostedEventId != nil ? 1 : sourceNote.kind
 
         beginCountdown {
+            let confirmationId = self.beginConfirmation(.repost)
             // NIP-18: content SHOULD be the stringified JSON of the reposted event.
             // Look up from FeedService's raw event cache (includes sig for verification).
             let embedded = FeedService.shared.rawEventCache[originalId] ?? ""
@@ -163,7 +189,11 @@ class PendingPostManager: ObservableObject {
                 tags: tags,
                 difficulty: powDiff
             ) {
-                nostrService.postEvent(signed)
+                nostrService.postEvent(signed) { outcome in
+                    self.finishConfirmation(confirmationId, outcome: outcome)
+                }
+            } else {
+                self.finishConfirmation(confirmationId, outcome: nil)
             }
             FeedService.shared.repostedEventIds.insert(originalId)
         }
@@ -232,6 +262,29 @@ class PendingPostManager: ObservableObject {
         let draftId = pendingDraftId
         pendingDraftId = nil
         editRequest = EditRequest(content: content, replyTo: replyTo, quoteTo: quoteTo, draftId: draftId)
+    }
+
+    private func beginConfirmation(_ type: ActionType) -> UUID {
+        let confirmation = Confirmation(actionType: type, state: .sending)
+        withAnimation(Motion.bannerIn) { self.confirmation = confirmation }
+        return confirmation.id
+    }
+
+    /// `nil` outcome: nothing was sent (signing failed), so just clear it.
+    private func finishConfirmation(_ id: UUID, outcome: BroadcastTally.Outcome?) {
+        guard confirmation?.id == id else { return }
+        guard let outcome else {
+            withAnimation(Motion.bannerOut) { confirmation = nil }
+            return
+        }
+        withAnimation(Motion.fade) {
+            confirmation?.state = outcome == .accepted ? .confirmed : .unconfirmed
+        }
+        let delay: TimeInterval = outcome == .accepted ? 2.5 : 4
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard self?.confirmation?.id == id else { return }
+            withAnimation(Motion.bannerOut) { self?.confirmation = nil }
+        }
     }
 
     private func clearPrevious() {

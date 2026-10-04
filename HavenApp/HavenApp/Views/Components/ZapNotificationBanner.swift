@@ -440,10 +440,66 @@ struct PostActionNotificationBanner: View {
                     onDismiss: { manager.dismissBanner() }
                 )
                 .transition(Motion.pillTransition)
+            } else if let confirmation = manager.confirmation {
+                PostConfirmationPill(confirmation: confirmation)
+                    .transition(Motion.pillTransition)
             }
         }
-        .padding(.top, manager.isShowing ? 12 : 0)
+        .padding(.top, manager.isShowing || manager.confirmation != nil ? 12 : 0)
         .animation(Motion.bannerIn, value: manager.isShowing)
+        .animation(Motion.bannerIn, value: manager.confirmation?.id)
+    }
+}
+
+// MARK: - Post Confirmation Pill
+
+/// After the countdown: "Reposting…" until a relay takes it, then a green
+/// "Reposted". If no relay confirms after the retries, a grey note instead of
+/// a red error.
+struct PostConfirmationPill: View {
+    let confirmation: PendingPostManager.Confirmation
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if confirmation.state == .sending {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(.white)
+            } else {
+                Image(systemName: confirmation.state == .confirmed ? "checkmark" : "clock")
+                    .font(.appSystem(size: 12, weight: .bold))
+            }
+            Text(label)
+                .font(.appSystem(size: 13, weight: .bold))
+                .lineLimit(1)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 20)
+        .background(
+            Capsule()
+                .fill(color)
+                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+        )
+        .foregroundColor(.white)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+    }
+
+    private var label: String {
+        switch confirmation.state {
+        case .sending:     return "\(confirmation.actionType.label)…"
+        case .confirmed:   return confirmation.actionType.doneLabel
+        case .unconfirmed: return "Sent. No relay has confirmed it yet"
+        }
+    }
+
+    private var color: Color {
+        switch confirmation.state {
+        case .sending:     return confirmation.actionType.themedColor
+        // Same green as "Followed".
+        case .confirmed:   return Color(red: 0.2, green: 0.8, blue: 0.6)
+        case .unconfirmed: return Color(white: 0.35)
+        }
     }
 }
 
