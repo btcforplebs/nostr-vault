@@ -27,6 +27,9 @@ class FeedService: ObservableObject {
     /// feed reverts to Following automatically.
     private var didAutoSwitchToCurated = false
     @Published var mediaFeedMode: MediaFeedMode = .following
+    /// Articles from follows only, or from everyone (filtered by the same
+    /// Web of Trust / Everyone setting as Global).
+    @Published var articlesFeedMode: MediaFeedMode = .following
     @Published var notes: [FeedNote] = []
     /// O(1) lookup index for notes by ID. Maintained alongside `notes` mutations.
     private(set) var noteIndex: [String: FeedNote] = [:]
@@ -141,6 +144,7 @@ class FeedService: ObservableObject {
         let newFiltered = FeedFilterEngine.filterFeedNotes(
             notes: notes,
             mode: feedMode,
+            articlesGlobal: articlesFeedMode == .global,
             blocked: blocked,
             showReposts: ConfigService.shared.config.showReposts,
             showReplies: ConfigService.shared.config.showReplies,
@@ -440,7 +444,7 @@ class FeedService: ObservableObject {
         print("FeedService: Loaded \(wotPubkeys.count) usable WOT pubkeys from cache")
         #endif
         // Re-filter if we're currently in global mode
-        if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
+        if isGlobalLikeMode {
             recomputeFilteredNotes()
         }
     }
@@ -512,8 +516,10 @@ class FeedService: ObservableObject {
         return "No notes found"
     }
 
-    private var isGlobalLikeMode: Bool {
-        feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+    var isGlobalLikeMode: Bool {
+        feedMode == .global
+            || (feedMode == .media && mediaFeedMode == .global)
+            || (feedMode == .articles && articlesFeedMode == .global)
     }
 
     /// Feeds that cannot be rendered without the trust graph. Global filters
@@ -1045,7 +1051,7 @@ class FeedService: ObservableObject {
             // Background top-up: subscribe to relays but keep the cached feed
             // visible. The inline syncing pill replaces the full-screen spinner.
             topUpFromRelays()
-        } else if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
+        } else if isGlobalLikeMode {
             shouldScrollToTopOnLoad = true
             loadWotPubkeys()
             subscribeToAllRelays()
@@ -1315,7 +1321,9 @@ class FeedService: ObservableObject {
         cancellables.removeAll()
 
         // Reset global mode flag when switching away from global
-        let isGlobal = mode == .global || (mode == .media && mediaFeedMode == .global)
+        let isGlobal = mode == .global
+            || (mode == .media && mediaFeedMode == .global)
+            || (mode == .articles && articlesFeedMode == .global)
         processingQueue.async { [weak self] in
             self?.bgAccumulator.isGlobalMode = isGlobal
         }
@@ -1374,7 +1382,7 @@ class FeedService: ObservableObject {
             ReelsFeedService.shared.refresh()
         } else if feedMode == .popular {
             loadPopularFeed()
-        } else if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
+        } else if isGlobalLikeMode {
             loadWotPubkeys()
             subscribeToAllRelays()
         } else {
@@ -1446,8 +1454,9 @@ class FeedService: ObservableObject {
     /// sub do not, so their subscriptions never drift on the follow set.
     private var isAuthorFilteredMode: Bool {
         switch feedMode {
-        case .following, .discovery, .articles: return true
+        case .following, .discovery: return true
         case .media: return mediaFeedMode == .following
+        case .articles: return articlesFeedMode == .following
         case .global, .popular, .recipes, .marketplace, .live, .reels, .music: return false
         }
     }
@@ -1460,18 +1469,19 @@ class FeedService: ObservableObject {
     }
 
     /// True for the modes whose primary subscription is `authors: followedPubkeys`.
-    /// Articles is Following restricted to kind 30023, so it shares every
-    /// follow-set guard: the empty-follow-set short circuit, pagination, and the
-    /// dead-`authors:[]` REQ guard.
+    /// Articles (Following) is Following restricted to kind 30023, so it shares
+    /// every follow-set guard: the empty-follow-set short circuit, pagination,
+    /// and the dead-`authors:[]` REQ guard. Articles (Global) is global-like.
     var isFollowSetMode: Bool {
-        feedMode == .following || feedMode == .articles
+        feedMode == .following || (feedMode == .articles && articlesFeedMode == .following)
     }
 
     /// The authoritative author set the current mode's primary subscription should
     /// carry. Empty means "no valid primary sub" for author-filtered modes.
     private func desiredPrimaryAuthorsForMode() -> [String] {
         switch feedMode {
-        case .following, .articles: return followedPubkeys
+        case .following: return followedPubkeys
+        case .articles: return articlesFeedMode == .following ? followedPubkeys : []
         case .media: return mediaFeedMode == .following ? followedPubkeys : []
         case .discovery: return extendedNetworkPubkeys
         case .global, .popular, .recipes, .marketplace, .live, .reels, .music: return []
@@ -1528,7 +1538,7 @@ class FeedService: ObservableObject {
     /// aren't yet (notably the local relay/inbox once boot completes). Existing
     /// connections are left untouched. Absorbs the old `addLocalRelayIfReady`.
     private func ensureRelaySetConnected() {
-        if feedMode == .global || (feedMode == .media && mediaFeedMode == .global) {
+        if isGlobalLikeMode {
             loadWotPubkeys()
         }
 
@@ -1607,7 +1617,7 @@ class FeedService: ObservableObject {
     /// kicks off a contact-list re-fetch in parallel so a stale follow set
     /// gets updated without blocking the visible feed.
     private func topUpFromRelays() {
-        let isGlobalLike = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+        let isGlobalLike = isGlobalLikeMode
         guard !followedPubkeys.isEmpty || isGlobalLike else {
             // Snapshot had no follows — fall back to the cold-start flow.
             // An account switch sets isLoadingContacts before calling here, and
@@ -1701,11 +1711,11 @@ class FeedService: ObservableObject {
         // your follows" into "search the whole relay" while the UI still says
         // you are in Following or Discovery. No authors means no results.
         //
-        // Articles is scoped to follows because `isFollowSetMode` counts it as
-        // a follow-set feed, which is what the timeline does too.
+        // Articles follows its own scope: follows in Following, anyone in Global.
         let searchAuthors: [String]?
         switch feedMode {
-        case .following, .articles: searchAuthors = followedPubkeys
+        case .following: searchAuthors = followedPubkeys
+        case .articles: searchAuthors = articlesFeedMode == .following ? followedPubkeys : nil
         case .discovery: searchAuthors = extendedNetworkPubkeys
         case .global, .popular, .media, .recipes, .marketplace, .live, .reels, .music: searchAuthors = nil
         }
@@ -2677,7 +2687,7 @@ class FeedService: ObservableObject {
 
         // Use faster flush interval during initial load for snappier content display.
         // Global mode gets ultra-fast real-time flushing for streaming effect.
-        let isGlobal = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+        let isGlobal = isGlobalLikeMode
         processingQueue.async { [weak self] in
             self?.bgAccumulator.isInitialLoad = true
             self?.bgAccumulator.isGlobalMode = isGlobal
@@ -2963,7 +2973,7 @@ class FeedService: ObservableObject {
     /// Send auxiliary subscriptions (mentions, reactions, zaps) to a relay after
     /// its primary feed EOSE has arrived so feed content isn't bandwidth-starved.
     private func sendAuxiliarySubscriptions(client: WebSocketClient, label: String) {
-        let isGlobal = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+        let isGlobal = isGlobalLikeMode
         guard !isGlobal else { return }
 
         let ownerHex = NostrService.shared.activeHexPubkey
@@ -3048,7 +3058,7 @@ class FeedService: ObservableObject {
             client.send(text: str)
         }
 
-        let isGlobal = feedMode == .global || (feedMode == .media && mediaFeedMode == .global)
+        let isGlobal = isGlobalLikeMode
         guard !isGlobal else { return }
 
         let ownerHex = NostrService.shared.activeHexPubkey
@@ -3423,7 +3433,7 @@ class FeedService: ObservableObject {
     private func scheduleNoteFlush() {
         guard noteFlushTimer == nil else { return }
         // Global feed uses ultra-fast flushing for real-time streaming feel
-        let interval: TimeInterval = (feedMode == .global || (feedMode == .media && mediaFeedMode == .global)) ? 0.05 : 0.8
+        let interval: TimeInterval = isGlobalLikeMode ? 0.05 : 0.8
         noteFlushTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.flushNoteBuffer()

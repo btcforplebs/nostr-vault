@@ -795,6 +795,18 @@ struct FeedView: View {
                     feedService.showPopularEngagement.toggle()
                 }
             } else {
+                if feedService.feedMode == .articles {
+                    // One toggle rather than a Following/Global pair: with the
+                    // trust button beside it the pair overflowed the pill and
+                    // demoted the whole row to the menu.
+                    let following = feedService.articlesFeedMode == .following
+                    IconFilterButton(icon: following ? "person.2.fill" : "globe", tooltip: following ? "Following" : "Global", isSelected: true, color: .havenPurple) {
+                        setArticlesFeedMode(following ? .global : .following)
+                    }
+                    if !following {
+                        trustScopeButton
+                    }
+                }
                 if feedService.feedMode == .global {
                     // One button for who Global shows, so the pill keeps its
                     // width: the shield is your Web of Trust, the globe is
@@ -810,14 +822,18 @@ struct FeedView: View {
                     configService.config.autoLoadNewPosts.toggle()
                     configService.save()
                 }
-                IconFilterButton(icon: "arrow.2.squarepath", tooltip: "Reposts", isSelected: configService.config.showReposts, color: .havenPurple) {
-                    configService.config.showReposts.toggle()
-                    configService.save()
-                    feedService.recomputeFilteredNotes()
+                // Articles are never reposts or replies, so neither toggle
+                // would do anything there.
+                if feedService.feedMode != .articles {
+                    IconFilterButton(icon: "arrow.2.squarepath", tooltip: "Reposts", isSelected: configService.config.showReposts, color: .havenPurple) {
+                        configService.config.showReposts.toggle()
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    }
                 }
                 // Global never shows replies (FeedFilterEngine), so the
                 // toggle would do nothing there.
-                if feedService.feedMode != .global {
+                if feedService.feedMode != .global && feedService.feedMode != .articles {
                     IconFilterButton(icon: configService.config.showReplies ? "message.fill" : "message", tooltip: "Replies", isSelected: configService.config.showReplies, color: .havenPurple) {
                         configService.config.showReplies.toggle()
                         configService.save()
@@ -830,7 +846,7 @@ struct FeedView: View {
 
     // MARK: - Web of Trust / Everyone
 
-    /// Who Global (and Media's Global) shows: the shield is your Web of
+    /// Who Global (and Media and Articles in Global) shows: the shield is your Web of
     /// Trust, the globe is everyone. One button so the pill keeps its width.
     /// Leaving the Web of Trust goes through the sensitive-content warning.
     @ViewBuilder
@@ -861,6 +877,14 @@ struct FeedView: View {
         } label: {
             Label("Everyone", systemImage: configService.config.globalShowsEveryone ? "checkmark" : "globe")
         }
+    }
+
+    /// Articles' Following / Global. Global starts on the Web of Trust, so it
+    /// needs no warning of its own; Everyone keeps the trust-scope warning.
+    private func setArticlesFeedMode(_ mode: MediaFeedMode) {
+        guard feedService.articlesFeedMode != mode else { return }
+        feedService.articlesFeedMode = mode
+        feedService.refresh()
     }
 
     /// Reads the setting at tap time rather than from the last render.
@@ -904,20 +928,20 @@ struct FeedView: View {
 
             if feedService.feedMode == .reels {
                 Button { reelsService.setScope(.following) } label: {
-                    Label("Following", systemImage: "person.2.fill")
+                    Label("Following", systemImage: reelsService.scope == .following ? "checkmark" : "person.2")
                 }
                 Button { showingGlobalReelsWarning = true } label: {
-                    Label("Global", systemImage: "globe")
+                    Label("Global", systemImage: reelsService.scope == .following ? "globe" : "checkmark")
                 }
             } else if feedService.feedMode == .media {
                 Button {
                     feedService.mediaFeedMode = .following
                     feedService.refresh()
                 } label: {
-                    Label("Following", systemImage: "person.2.fill")
+                    Label("Following", systemImage: feedService.mediaFeedMode == .following ? "checkmark" : "person.2")
                 }
                 Button { showingGlobalMediaWarning = true } label: {
-                    Label("Global", systemImage: "globe")
+                    Label("Global", systemImage: feedService.mediaFeedMode == .following ? "globe" : "checkmark")
                 }
                 if feedService.mediaFeedMode == .global {
                     Divider()
@@ -925,10 +949,10 @@ struct FeedView: View {
                 }
             } else if feedService.feedMode == .recipes {
                 Button { recipeService.setScope(.following) } label: {
-                    Label("Following", systemImage: "person.2.fill")
+                    Label("Following", systemImage: recipeService.scope == .following ? "checkmark" : "person.2")
                 }
                 Button { showingGlobalRecipeWarning = true } label: {
-                    Label("Global", systemImage: "globe")
+                    Label("Global", systemImage: recipeService.scope == .following ? "globe" : "checkmark")
                 }
             } else if feedService.feedMode == .marketplace {
                 Button { marketplaceService.setScope(.following) } label: {
@@ -941,10 +965,10 @@ struct FeedView: View {
                 MusicToolbarMenuItems()
             } else if feedService.feedMode == .live {
                 Button { liveService.setScope(.following) } label: {
-                    Label("Following", systemImage: "person.2.fill")
+                    Label("Following", systemImage: liveService.scope == .following ? "checkmark" : "person.2")
                 }
                 Button { showingGlobalLiveWarning = true } label: {
-                    Label("Global", systemImage: "globe")
+                    Label("Global", systemImage: liveService.scope == .following ? "globe" : "checkmark")
                 }
             } else if feedService.feedMode == .popular {
                 Button {
@@ -965,25 +989,44 @@ struct FeedView: View {
                     Label("Engagement", systemImage: "chart.bar")
                 }
             } else {
+                if feedService.feedMode == .articles {
+                    Button { setArticlesFeedMode(.following) } label: {
+                        Label("Following", systemImage: feedService.articlesFeedMode == .following ? "checkmark" : "person.2")
+                    }
+                    Button { setArticlesFeedMode(.global) } label: {
+                        Label("Global", systemImage: feedService.articlesFeedMode == .following ? "globe" : "checkmark")
+                    }
+                    if feedService.articlesFeedMode == .global {
+                        Divider()
+                        trustScopeMenuItems
+                    }
+                    Divider()
+                }
                 Button {
                     configService.config.autoLoadNewPosts.toggle()
                     configService.save()
                 } label: {
                     Label("Auto-load", systemImage: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
                 }
-                Button {
-                    configService.config.showReposts.toggle()
-                    configService.save()
-                    feedService.recomputeFilteredNotes()
-                } label: {
-                    Label("Reposts", systemImage: "arrow.2.squarepath")
+                // Same rules as the inline toolbar: Articles has no reposts or
+                // replies, Global has no replies.
+                if feedService.feedMode != .articles {
+                    Button {
+                        configService.config.showReposts.toggle()
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    } label: {
+                        Label("Reposts", systemImage: "arrow.2.squarepath")
+                    }
                 }
-                Button {
-                    configService.config.showReplies.toggle()
-                    configService.save()
-                    feedService.recomputeFilteredNotes()
-                } label: {
-                    Label("Replies", systemImage: configService.config.showReplies ? "message.fill" : "message")
+                if feedService.feedMode != .global && feedService.feedMode != .articles {
+                    Button {
+                        configService.config.showReplies.toggle()
+                        configService.save()
+                        feedService.recomputeFilteredNotes()
+                    } label: {
+                        Label("Replies", systemImage: configService.config.showReplies ? "message.fill" : "message")
+                    }
                 }
                 if feedService.feedMode == .global {
                     trustScopeMenuItems
@@ -1256,6 +1299,21 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help(feedService.showPopularEngagement ? String(localized: "feed.help.hideEngagementStats") : String(localized: "feed.help.showEngagementStats"))
             } else {
+                if feedService.feedMode == .articles {
+                    let following = feedService.articlesFeedMode == .following
+                    Button(action: { setArticlesFeedMode(following ? .global : .following) }) {
+                        Image(systemName: following ? "person.2.fill" : "globe")
+                            .font(.appSystem(size: 15, weight: .semibold))
+                            .foregroundColor(Color.havenPurple)
+                    }
+                    .buttonStyle(.plain)
+                    .help(following ? "Articles from people you follow. Click for everyone" : "Articles from everyone. Click for people you follow")
+
+                    if feedService.articlesFeedMode == .global {
+                        trustScopeButton
+                    }
+                }
+
                 // Auto-load new posts
                 Button(action: { configService.config.autoLoadNewPosts.toggle(); configService.save() }) {
                     Image(systemName: configService.config.autoLoadNewPosts ? "bolt.circle.fill" : "bolt.circle")
@@ -1265,23 +1323,27 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help(configService.config.autoLoadNewPosts ? String(localized: "feed.help.autoLoadOn") : String(localized: "feed.help.autoLoadOff"))
 
-                // Reposts toggle
-                Button(action: { configService.config.showReposts.toggle(); configService.save(); feedService.recomputeFilteredNotes() }) {
-                    Image(systemName: "arrow.2.squarepath")
-                        .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(configService.config.showReposts ? Color.havenPurple : .secondary)
+                // Reposts toggle (Articles are never reposts)
+                if feedService.feedMode != .articles {
+                    Button(action: { configService.config.showReposts.toggle(); configService.save(); feedService.recomputeFilteredNotes() }) {
+                        Image(systemName: "arrow.2.squarepath")
+                            .font(.appSystem(size: 15, weight: .semibold))
+                            .foregroundColor(configService.config.showReposts ? Color.havenPurple : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(configService.config.showReposts ? String(localized: "feed.help.hideReposts") : String(localized: "feed.help.showReposts"))
                 }
-                .buttonStyle(.plain)
-                .help(configService.config.showReposts ? String(localized: "feed.help.hideReposts") : String(localized: "feed.help.showReposts"))
 
-                // Replies toggle
-                Button(action: { configService.config.showReplies.toggle(); configService.save(); feedService.recomputeFilteredNotes() }) {
-                    Image(systemName: configService.config.showReplies ? "message.fill" : "message")
-                        .font(.appSystem(size: 15, weight: .semibold))
-                        .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                // Replies toggle (Global and Articles never show replies)
+                if feedService.feedMode != .global && feedService.feedMode != .articles {
+                    Button(action: { configService.config.showReplies.toggle(); configService.save(); feedService.recomputeFilteredNotes() }) {
+                        Image(systemName: configService.config.showReplies ? "message.fill" : "message")
+                            .font(.appSystem(size: 15, weight: .semibold))
+                            .foregroundColor(configService.config.showReplies ? Color.havenPurple : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(configService.config.showReplies ? String(localized: "feed.help.hideReplies") : String(localized: "feed.help.showReplies"))
                 }
-                .buttonStyle(.plain)
-                .help(configService.config.showReplies ? String(localized: "feed.help.hideReplies") : String(localized: "feed.help.showReplies"))
 
                 if feedService.feedMode == .global {
                     trustScopeButton
@@ -2228,7 +2290,9 @@ struct FeedView: View {
                 .foregroundColor(.havenPurple.opacity(0.7))
             Text("No articles yet")
                 .font(.appSystem(size: 16, weight: .bold))
-            Text("Long-form posts from people you follow show up here. Nothing to read yet.")
+            Text(feedService.articlesFeedMode == .following
+                 ? "Long-form posts from people you follow show up here. Nothing to read yet."
+                 : "Long-form posts from across Nostr show up here. Nothing to read yet.")
                 .font(.appSystem(size: 13))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

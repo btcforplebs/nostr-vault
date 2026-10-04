@@ -55,6 +55,7 @@ enum FeedFilterEngine {
     static func filterFeedNotes(
         notes: [FeedNote],
         mode: FeedMode,
+        articlesGlobal: Bool = false,
         blocked: Set<String>,
         showReposts: Bool,
         showReplies: Bool,
@@ -68,7 +69,7 @@ enum FeedFilterEngine {
         languageOf: (FeedNote) -> String? = { _ in nil },
         authorOf: (String) -> String? = { _ in nil }
     ) -> [FeedNote] {
-        // Articles: long-form only, from the follow set, one event per
+        // Articles: long-form only, one event per
         // `pubkey:d` address. 30023 is a parameterized-replaceable kind, so an
         // edited article arrives as a second event with the same address and
         // both would otherwise show as separate rows.
@@ -76,6 +77,11 @@ enum FeedFilterEngine {
             let longForm = notes.filter { note in
                 if involvesBlocked(note, blocked: blocked, authorOf: authorOf) { return false }
                 guard note.kind == 30023 else { return false }
+                // Global articles trust the same graph as Global, and fail
+                // closed the same way; Following keeps to the follow set.
+                if articlesGlobal {
+                    return !globalRequiresTrust || wotPubkeys.contains(note.pubkey)
+                }
                 return followedPubkeys.contains(note.pubkey)
             }
             return dedupeAddressable(longForm)
