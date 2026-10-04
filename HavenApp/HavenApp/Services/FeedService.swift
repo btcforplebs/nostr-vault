@@ -151,7 +151,8 @@ class FeedService: ObservableObject {
             throttledPubkeys: throttled,
             globalLanguages: Set(ConfigService.shared.config.globalFeedLanguages),
             globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
-            languageOf: { [unowned self] note in self.language(of: note) }
+            languageOf: { [unowned self] note in self.language(of: note) },
+            authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
         )
 
         // Only publish a change when the visible list actually differs.
@@ -173,7 +174,8 @@ class FeedService: ObservableObject {
             wotPubkeys: wotPubkeys,
             isGlobalMedia: feedMode == .media && mediaFeedMode == .global,
             globalRequiresTrust: !ConfigService.shared.config.globalShowsEveryone,
-            throttledPubkeys: throttled
+            throttledPubkeys: throttled,
+            authorOf: { [unowned self] id in self.findNote(id: id)?.pubkey }
         )
 
         if newMedia.count != filteredMediaNotes.count ||
@@ -593,6 +595,14 @@ class FeedService: ObservableObject {
             .map { ($0.showReposts, $0.showReplies) }
             .removeDuplicates(by: ==)
             .dropFirst()
+            .sink { [weak self] _ in self?.recomputeFilteredNotes() }
+            .store(in: &configCancellables)
+
+        // Blocking someone (here, or a mute list synced from another client)
+        // must drop their posts now. Nothing listened for this before, so a
+        // blocked author stayed on screen until some unrelated note arrived.
+        NotificationCenter.default.publisher(for: NSNotification.Name("BlockedAccountsUpdated"))
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.recomputeFilteredNotes() }
             .store(in: &configCancellables)
 
@@ -3779,6 +3789,11 @@ class FeedService: ObservableObject {
         fetchingNoteTimestamps.removeValue(forKey: id)
         parentNotesCache[id] = note
         noteReferencedNoteArrived(id)
+        // A reply or bare repost of a blocked author is only recognisable once
+        // the post it points at has loaded, so refilter when that post is theirs.
+        if ConfigService.shared.activeAccountBlockedHexPubkeys.contains(pubkey) {
+            recomputeFilteredNotes()
+        }
         if parentNotesCache.count > parentNotesCacheTrimAt {
             // Parent edges alone are not what the timeline asks for: a thread
             // card fetches the *root*, which for anything deeper than a direct
