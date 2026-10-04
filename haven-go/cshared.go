@@ -127,6 +127,10 @@ type nip46Session struct {
 	pool   *nostr.SimplePool
 	client *nip46.BunkerClient
 	userPubkey string
+	// What signReplyRecovery needs to read the signer's replies itself.
+	signer   string
+	relays   []string
+	clientSK string
 }
 
 var (
@@ -1295,7 +1299,8 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 	if old := nip46Sessions[targetPubkey]; old != nil {
 		old.cancel() // a second login for the same signer finished first
 	}
-	nip46Sessions[targetPubkey] = &nip46Session{ctx: ctx, cancel: cancel, pool: pool, client: bunker, userPubkey: pubkey}
+	nip46Sessions[targetPubkey] = &nip46Session{ctx: ctx, cancel: cancel, pool: pool, client: bunker, userPubkey: pubkey,
+		signer: targetPubkey, relays: relays, clientSK: goSK}
 	stillActive := nip46ActiveGen == myGen
 	nip46Mu.Unlock()
 
@@ -1305,6 +1310,13 @@ func NIP46ConnectC(clientSK *C.char, bunkerURL *C.char) *C.char {
 		log.Printf("NIP-46: connected to signer %s, kept in the background (another account became active)", pubkey[:8])
 	}
 	return C.CString(pubkey)
+}
+
+// activeNIP46Session returns the session requests should go to, or nil.
+func activeNIP46Session() *nip46Session {
+	nip46Mu.RLock()
+	defer nip46Mu.RUnlock()
+	return nip46Sessions[nip46Active]
 }
 
 // activeNIP46 returns the session requests should go to, or nils.
@@ -1373,8 +1385,7 @@ func NIP46DisconnectC() {
 
 //export NIP46SignEventC
 func NIP46SignEventC(eventJSON *C.char) *C.char {
-	client, parentCtx := activeNIP46()
-	return nip46Sign(client, parentCtx, eventJSON)
+	return nip46Sign(activeNIP46Session(), eventJSON)
 }
 
 // NIP46SignEventWithC signs through one signer's session even when it is not
@@ -1392,12 +1403,12 @@ func NIP46SignEventWithC(signerPubkey *C.char, eventJSON *C.char) *C.char {
 		nip46LastError.Store("disconnected")
 		return nil
 	}
-	return nip46Sign(sess.client, sess.ctx, eventJSON)
+	return nip46Sign(sess, eventJSON)
 }
 
-func nip46Sign(client *nip46.BunkerClient, parentCtx context.Context, eventJSON *C.char) *C.char {
+func nip46Sign(sess *nip46Session, eventJSON *C.char) *C.char {
 	nip46LastError.Store("")
-	if client == nil {
+	if sess == nil || sess.client == nil {
 		slog.Error("NIP46SignEventC: not connected")
 		nip46LastError.Store("disconnected")
 		return nil
@@ -1418,12 +1429,14 @@ func nip46Sign(client *nip46.BunkerClient, parentCtx context.Context, eventJSON 
 
 	// A signer may put this in front of a person (Clave's lock-screen
 	// Approve), so give them time to read it.
-	ctx, cancel := context.WithTimeout(parentCtx, 90*time.Second)
+	ctx, cancel := context.WithTimeout(sess.ctx, 90*time.Second)
 	defer cancel()
 
 	req := event
 	req.Tags = slices.Clone(event.Tags)
-	if err := client.SignEvent(ctx, &event); err != nil {
+	if err := signWithRecovery(ctx, signerReplies{
+		client: sess.client, pool: sess.pool, signer: sess.signer, relays: sess.relays, clientSK: sess.clientSK,
+	}, &event); err != nil {
 		slog.Error("NIP46SignEventC: SignEvent failed", "kind", event.Kind, "error", err)
 		recordNIP46Error(ctx, err)
 		return nil
