@@ -49,6 +49,10 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
     /// The event ID of the original note referenced by a kind 6 repost (from e-tags).
     let repostedEventId: String?
 
+    /// When the reposted note was written, from a kind 6 repost's embedded
+    /// event. `createdAt` stays the repost's own time, which orders the feed.
+    let originalCreatedAt: Date?
+
     init(id: String, pubkey: String, content: String, createdAt: Date, tags: [[String]], kind: Int, repostedBy: String? = nil) {
         // NIP-18: a kind 6 repost SHOULD embed the full original event as stringified JSON
         // in `content`. When present, swap to the inner author/content/tags so the UI renders
@@ -61,6 +65,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         var resolvedContent = content
         var resolvedTags = tags
         var resolvedRepostedBy = repostedBy
+        var resolvedOriginalCreatedAt: Date?
 
         if kind == 6,
            let data = content.data(using: .utf8),
@@ -73,6 +78,9 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
                 resolvedTags = innerTags
             }
             if resolvedRepostedBy == nil { resolvedRepostedBy = pubkey }
+            if let innerCreatedAt = (inner["created_at"] as? NSNumber)?.doubleValue {
+                resolvedOriginalCreatedAt = Date(timeIntervalSince1970: innerCreatedAt)
+            }
         }
 
         self.id = id
@@ -95,6 +103,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         self.parentEventId = kind != 6 ? NIP10Thread.parentEventId(kind: kind, tags: resolvedTags) : nil
 
         self.repostedEventId = outerRepostedEventId
+        self.originalCreatedAt = resolvedOriginalCreatedAt
 
         // Cache regex-derived properties (expensive — only compute once)
         let contentURLs = Self.parseMediaURLs(from: resolvedContent)
@@ -189,6 +198,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
     enum CodingKeys: String, CodingKey {
         case id, pubkey, content, createdAt, tags, kind, repostedBy
         case isReply, replyToPubkey, parentEventId, mediaURLs, linkURLs, quotedEventIds, repostedEventId
+        case originalCreatedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -207,6 +217,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         self.linkURLs = try c.decodeIfPresent([URL].self, forKey: .linkURLs) ?? []
         self.quotedEventIds = try c.decode([String].self, forKey: .quotedEventIds)
         self.repostedEventId = try c.decodeIfPresent(String.self, forKey: .repostedEventId)
+        self.originalCreatedAt = try c.decodeIfPresent(Date.self, forKey: .originalCreatedAt)
         MediaHints.shared.register(tags: tags)
     }
 
@@ -226,6 +237,7 @@ struct FeedNote: Identifiable, Hashable, Equatable, Codable {
         try c.encode(linkURLs, forKey: .linkURLs)
         try c.encode(quotedEventIds, forKey: .quotedEventIds)
         try c.encodeIfPresent(repostedEventId, forKey: .repostedEventId)
+        try c.encodeIfPresent(originalCreatedAt, forKey: .originalCreatedAt)
     }
 
     /// Technical heuristic to filter out spam, bots, empty, duplicate, or telemetry noise.
