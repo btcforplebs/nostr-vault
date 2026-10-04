@@ -2796,6 +2796,11 @@ struct DMSettingsView: View {
                     }
             } header: {
                 Text("DM Relays").settingInfo(.shareDMRelays)
+            } footer: {
+                let havenInbox = configService.config.ownHavenDMInboxURL
+                if !havenInbox.isEmpty {
+                    Text("\(havenInbox) comes first. People send your DMs to it, your own sent messages go there too, and all your devices read from it. It stays first while it's set as your relay address.")
+                }
             }
 
             if showPublishSuccess {
@@ -2820,21 +2825,13 @@ struct DMSettingsView: View {
     }
 
     private func publishDMRelayList() {
-        var relays = configService.config.dmRelays
-
-        // Deliberately NOT including the local relay. This list tells other
-        // people where to deliver our DMs, and our 127.0.0.1 is their own
-        // machine — senders wrote the gift wrap into their own relay and we
-        // received nothing. Our client subscribes to the local relay directly;
-        // it never needed advertising. publishDMRelayList filters loopback too,
-        // so a stale saved list can't reintroduce it.
-
-        // Include Mac relay if configured
-        if !configService.config.macRelayURL.isEmpty && !relays.contains(configService.config.macRelayURL) {
-            relays.append(configService.config.macRelayURL)
-        }
-
-        NostrService.shared.publishDMRelayList(dmRelays: relays)
+        // Publishes the DM inbox list — the owner's Haven inbox first (the Mac
+        // relay on iOS, this relay on a Mac with a public address), then the
+        // relays above — and stamps it as the newest change, so the other
+        // devices adopt it at their next launch instead of overwriting it.
+        // Loopback entries are dropped: our 127.0.0.1 is the sender's own
+        // machine, so a gift wrap sent there never reached us.
+        NostrService.shared.publishOwnerDMInboxList()
 
         // Show success feedback
         showPublishSuccess = true
@@ -3545,6 +3542,18 @@ struct MacRelaySettingsView: View {
             configService.config.blossomMirrors = configService.config.blossomMirrors
                 .map { $0 == prevHttpsURL ? newHttps : $0 }
                 .filter { !$0.isEmpty }
+        }
+
+        // The DM inbox list leads with the Mac relay's inbox. Drop the old
+        // address (another device may have copied it into dmRelays when it
+        // adopted the published list) and publish, so senders and every
+        // device move to the new one.
+        if prevWssURL != newWss {
+            if !prevWssURL.isEmpty {
+                let oldInbox = HavenConfig.normalizedRelayURL(prevWssURL + "/inbox").lowercased()
+                configService.config.dmRelays.removeAll { HavenConfig.normalizedRelayURL($0).lowercased() == oldInbox }
+            }
+            NostrService.shared.publishOwnerDMInboxList()
         }
 
         prevWssURL = newWss
