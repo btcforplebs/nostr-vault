@@ -108,12 +108,16 @@ struct ProfileView: View {
     @State private var totalMediaCount: Int? = nil
 
     @State private var selectedSection: ProfileSection = .notes
+    @StateObject private var shop = SellerListingsLoader()
+    @State private var showingSell = false
+    @State private var selectedListing: MarketListing?
 
     enum ProfileSection: String, CaseIterable, Identifiable {
         case notes = "Notes"
         case media = "Media"
         case replies = "Replies"
         case tagged = "Tagged"
+        case shop = "Shop"
         var id: String { rawValue }
     }
 
@@ -192,6 +196,7 @@ struct ProfileView: View {
         case .media: return mediaNotes
         case .replies: return replyNotes
         case .tagged: return taggedFilteredNotes
+        case .shop: return []
         }
     }
 
@@ -293,6 +298,7 @@ struct ProfileView: View {
             nostrService.fetchMissingProfiles(for: [pubkey])
             fetchAuthorNotes()
             fetchLocalRelayCounts()
+            shop.load(pubkey: pubkey)
             #if os(macOS)
             installKeyMonitor()
             #endif
@@ -302,6 +308,15 @@ struct ProfileView: View {
             #if os(macOS)
             removeKeyMonitor()
             #endif
+        }
+        .sheet(isPresented: $showingSell, onDismiss: { shop.load(pubkey: pubkey, force: true) }) {
+            MarketplaceSellView(onDismiss: { showingSell = false })
+                .environmentObject(nostrService)
+                .environmentObject(configService)
+        }
+        .sheet(item: $selectedListing) { listing in
+            MarketplaceListingSheet(listing: listing)
+                .environmentObject(nostrService)
         }
         .sheet(item: $showingNoteDetail) { note in
             NavigationStack {
@@ -1025,21 +1040,25 @@ struct ProfileView: View {
 
     private var sectionTabBar: some View {
         HStack(spacing: 0) {
-            ForEach(ProfileSection.allCases) { section in
+            ForEach(visibleSections) { section in
                 Button(action: {
                     withAnimation(Motion.toggle) {
                         selectedSection = section
                     }
                 }) {
+                    // Five tabs with counts overran an iPhone's width and ran
+                    // into each other, so the Shop row sets tighter.
+                    let tight = visibleSections.count > 4
                     VStack(spacing: 6) {
-                        HStack(spacing: 5) {
+                        HStack(spacing: tight ? 3 : 5) {
                             Text(section.rawValue.uppercased())
-                                .font(.appSystem(size: 11, weight: .heavy))
-                                .tracking(0.6)
+                                .font(.appSystem(size: tight ? 10 : 11, weight: .heavy))
+                                .tracking(tight ? 0.2 : 0.6)
                             Text(countLabel(for: section))
-                                .font(.appSystem(size: 11, weight: .semibold, design: .monospaced))
+                                .font(.appSystem(size: tight ? 10 : 11, weight: .semibold, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
+                        .lineLimit(1)
                         .foregroundColor(selectedSection == section ? .havenPurple : .secondary)
 
                         Rectangle()
@@ -1056,8 +1075,15 @@ struct ProfileView: View {
         .padding(.horizontal, 16)
     }
 
+    /// Shop only shows when this person has listings, or on your own profile
+    /// where it holds the Sell button, so most profiles keep four tabs.
+    private var visibleSections: [ProfileSection] {
+        ProfileSection.allCases.filter { $0 != .shop || isOwnProfile || !shop.listings.isEmpty }
+    }
+
     private func count(for section: ProfileSection) -> Int {
         switch section {
+        case .shop: return shop.listings.count
         case .notes: return sectionCount.notes
         case .media: return sectionCount.media
         case .replies: return sectionCount.replies
@@ -1074,6 +1100,53 @@ struct ProfileView: View {
 
     @ViewBuilder
     private var sectionContent: some View {
+        if selectedSection == .shop {
+            shopSection
+        } else {
+            noteSectionContent
+        }
+    }
+
+    @ViewBuilder
+    private var shopSection: some View {
+        VStack(spacing: 14) {
+            if isOwnProfile {
+                Button { showingSell = true } label: {
+                    Label("Sell something", systemImage: "tag")
+                        .font(.appSystem(size: 14, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(Color.havenPurple)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+            if shop.listings.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: sectionEmptyIcon)
+                        .font(.appSystem(size: 24, weight: .thin))
+                        .foregroundColor(.secondary.opacity(0.5))
+                    Text(shop.isLoading ? "Loading…" : (isOwnProfile ? "You haven't listed anything yet" : "Nothing for sale"))
+                        .font(.appSystem(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 36)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                    ForEach(shop.listings) { listing in
+                        MarketplaceCardView(listing: listing, profile: profile)
+                            .onTapGesture { selectedListing = listing }
+                    }
+                }
+            }
+        }
+        .padding(16)
+    }
+
+    @ViewBuilder
+    private var noteSectionContent: some View {
         let notes = currentSectionNotes
         if notes.isEmpty {
             VStack(spacing: 10) {
@@ -1422,6 +1495,7 @@ struct ProfileView: View {
         case .media: return "photo"
         case .replies: return "arrowshape.turn.up.left"
         case .tagged: return "at"
+        case .shop: return "bag"
         }
     }
 
