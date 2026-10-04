@@ -40,7 +40,10 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,6 +85,7 @@ internal fun MarketplaceGrid(
     onRefresh: () -> Unit,
     onNeedProfiles: (List<String>) -> Unit,
     onAppear: () -> Unit,
+    followSetIsEmpty: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
     // Switching modes loads too, but a launch that restores Marketplace as the
@@ -92,7 +96,11 @@ internal fun MarketplaceGrid(
             if (isLoading) {
                 CircularProgressIndicator(color = colors.primary)
             } else {
-                EmptyFeedPlaceholder(FeedMode.MARKETPLACE, onRefresh = onRefresh)
+                EmptyFeedPlaceholder(
+                    FeedMode.MARKETPLACE,
+                    onRefresh = onRefresh,
+                    subtitleOverride = if (followSetIsEmpty) "You don't follow anyone yet. Tap the globe for everyone's listings" else null,
+                )
             }
         }
         return
@@ -238,8 +246,10 @@ private fun sellerName(pubkey: String, profile: FeedProfile?): String =
 internal fun MarketListingSheet(
     listing: MarketListing,
     seller: FeedProfile?,
-    onOpenSeller: (String) -> Unit,
-    onEventInfo: (MarketListing) -> Unit,
+    /** Null hides the tap on the seller row (an embed has nowhere to go). */
+    onOpenSeller: ((String) -> Unit)?,
+    /** Null hides the Event Info button. */
+    onEventInfo: ((MarketListing) -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -316,7 +326,7 @@ internal fun MarketListingSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable { onOpenSeller(listing.pubkey) }
+                    .clickable(enabled = onOpenSeller != null) { onOpenSeller?.invoke(listing.pubkey) }
                     .padding(vertical = 4.dp),
             ) {
                 AsyncImage(
@@ -351,12 +361,65 @@ internal fun MarketListingSheet(
                     Text("View on Shopstr", color = PrimaryText)
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { onEventInfo(listing) }, modifier = Modifier.fillMaxWidth()) {
-                Icon(NostrVaultIcons.Marketplace, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.size(6.dp))
-                Text("Event Info", color = PrimaryText)
+            if (onEventInfo != null) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { onEventInfo(listing) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(NostrVaultIcons.Marketplace, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text("Event Info", color = PrimaryText)
+                }
             }
         }
+    }
+}
+
+/**
+ * A listing quoted in a note: cover photo, title, price and seller in one
+ * row. Tapping opens the same sheet as the Marketplace feed.
+ */
+@Composable
+internal fun QuotedListingCard(listing: MarketListing, seller: FeedProfile?, modifier: Modifier = Modifier) {
+    val colors = LocalNostrVaultColors.current
+    var showSheet by remember { mutableStateOf(false) }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(CardBackground)
+            .border(0.5.dp, colors.primary.copy(alpha = 0.18f), RoundedCornerShape(8.dp))
+            .clickable { showSheet = true }
+            .padding(8.dp),
+    ) {
+        AsyncImage(
+            model = listing.coverImage,
+            contentDescription = listing.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(64.dp)
+                .clip(RoundedCornerShape(6.dp)),
+        )
+        Spacer(Modifier.size(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(listing.title, color = PrimaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = if (listing.isAuction) "Auction · ${listing.priceLabel}" else listing.priceLabel,
+                color = colors.primaryLight,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            Text(sellerName(listing.pubkey, seller), color = TertiaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(NostrVaultIcons.Marketplace, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(16.dp))
+    }
+    if (showSheet) {
+        MarketListingSheet(
+            listing = listing,
+            seller = seller,
+            onOpenSeller = null,
+            onEventInfo = null,
+            onDismiss = { showSheet = false },
+        )
     }
 }

@@ -4,6 +4,7 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.MarketCategory
 import com.nostrvault.data.model.MarketListing
+import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.data.remote.WebSocketClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +35,7 @@ import javax.inject.Singleton
 class MarketplaceFeedService @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
+    private val feedService: FeedService,
 ) {
     companion object {
         private const val TAG = "MarketplaceFeedService"
@@ -72,9 +74,28 @@ class MarketplaceFeedService @Inject constructor(
     private val _selectedCategory = MutableStateFlow<MarketCategory?>(null)
     val selectedCategory: StateFlow<MarketCategory?> = _selectedCategory.asStateFlow()
 
+    /**
+     * Global by default, as on iPhone: almost nobody's follows sell anything,
+     * so Following would open on an empty grid.
+     */
+    private val _scope = MutableStateFlow(ReelsScope.GLOBAL)
+    val listingScope: StateFlow<ReelsScope> = _scope.asStateFlow()
+
+    /** True when Following is selected and the owner follows nobody. */
+    private val _followSetIsEmpty = MutableStateFlow(false)
+    val followSetIsEmpty: StateFlow<Boolean> = _followSetIsEmpty.asStateFlow()
+
     private var clients = mutableListOf<WebSocketClient>()
     private var job: Job? = null
     private var lastLoadedAt = 0L
+
+    /** Switches scope and reloads. The caller shows the warning before GLOBAL. */
+    fun setScope(newScope: ReelsScope) {
+        if (newScope == _scope.value) return
+        _scope.value = newScope
+        _listings.value = emptyList()
+        refresh()
+    }
 
     fun selectCategory(category: MarketCategory?) {
         _selectedCategory.value = category
@@ -92,6 +113,20 @@ class MarketplaceFeedService @Inject constructor(
         job?.cancel()
         disconnect()
         _isLoading.value = true
+        _followSetIsEmpty.value = false
+
+        // An `authors: []` REQ matches nothing and would look like a dead
+        // feed, so say what is actually true instead.
+        var authorsJson = ""
+        if (_scope.value == ReelsScope.FOLLOWING) {
+            val follows = feedService.followedPubkeys.value
+            if (follows.isEmpty()) {
+                _isLoading.value = false
+                _followSetIsEmpty.value = true
+                return
+            }
+            authorsJson = ",\"authors\":[${follows.joinToString(",") { "\"$it\"" }}]"
+        }
 
         val blocked = configStore.config.value.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }
@@ -128,7 +163,7 @@ class MarketplaceFeedService @Inject constructor(
                 launch {
                     client.connectionState.collect { state ->
                         if (state == WebSocketClient.ConnectionState.CONNECTED) {
-                            client.send("""["REQ","$subId",{"kinds":[$kinds],"limit":$LIMIT}]""")
+                            client.send("""["REQ","$subId",{"kinds":[$kinds]$authorsJson,"limit":$LIMIT}]""")
                         }
                     }
                 }

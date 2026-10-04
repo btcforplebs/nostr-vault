@@ -71,6 +71,9 @@ class FeedViewModel @Inject constructor(
     val marketListings = marketplaceFeedService.listings
     val marketLoading = marketplaceFeedService.isLoading
     val marketCategory = marketplaceFeedService.selectedCategory
+    val marketScope = marketplaceFeedService.listingScope
+    val marketFollowSetIsEmpty = marketplaceFeedService.followSetIsEmpty
+    fun setMarketScope(scope: com.nostrvault.data.model.ReelsScope) = marketplaceFeedService.setScope(scope)
     fun refreshMarketplace() = marketplaceFeedService.refresh()
     fun loadMarketplaceIfNeeded() = marketplaceFeedService.loadIfNeeded()
     fun selectMarketCategory(category: com.nostrvault.data.model.MarketCategory?) =

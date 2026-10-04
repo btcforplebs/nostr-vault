@@ -135,6 +135,9 @@ fun FeedScreen(
     val marketListings by viewModel.marketListings.collectAsState()
     val marketLoading by viewModel.marketLoading.collectAsState()
     val marketCategory by viewModel.marketCategory.collectAsState()
+    val marketScope by viewModel.marketScope.collectAsState()
+    val marketFollowSetIsEmpty by viewModel.marketFollowSetIsEmpty.collectAsState()
+    var showGlobalMarketWarning by remember { mutableStateOf(false) }
     // The tapped stream is held rather than looked up again by id: a kind-30311
     // event is replaceable and short-lived, so the copy the grid was showing is
     // the one to play.
@@ -432,7 +435,11 @@ fun FeedScreen(
 
     // Posts are waiting and either auto-load is off or the user has scrolled
     // away from the top.
-    val showNewPosts = pendingCount > 0 && (!autoLoad || !isAtTop) && feedMode != FeedMode.REELS
+    // Reels, Live, Marketplace and Music are not views of the note list; the
+    // note subscription keeps filling `pending` underneath them, so a pill
+    // there would offer posts that cannot show (same fix as iPhone #237).
+    val showNewPosts = pendingCount > 0 && (!autoLoad || !isAtTop) &&
+        feedMode !in setOf(FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC)
     val loadNewPosts: () -> Unit = {
         viewModel.applyPendingNotes()
         // Scroll toward the top right away; if the animation
@@ -472,6 +479,9 @@ fun FeedScreen(
                 reelsGlobal = reelsScope == ReelsScope.GLOBAL,
                 onReelsFollowing = { viewModel.setReelsScope(ReelsScope.FOLLOWING) },
                 onReelsGlobal = { showGlobalReelsWarning = true },
+                marketGlobal = marketScope == ReelsScope.GLOBAL,
+                onMarketFollowing = { viewModel.setMarketScope(ReelsScope.FOLLOWING) },
+                onMarketGlobal = { showGlobalMarketWarning = true },
                 onModeChange = viewModel::setFeedMode,
                 onCycleLayoutMode = {
                     layoutAnchor = captureLayoutAnchor()?.let { it to layoutMode }
@@ -591,6 +601,7 @@ fun FeedScreen(
                     onRefresh = viewModel::refreshMarketplace,
                     onNeedProfiles = viewModel::fetchMissingProfiles,
                     onAppear = viewModel::loadMarketplaceIfNeeded,
+                    followSetIsEmpty = marketFollowSetIsEmpty,
                 )
             } else if (feedMode == FeedMode.LIVE) {
                 LiveGrid(
@@ -814,6 +825,30 @@ fun FeedScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showGlobalEveryoneWarning = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showGlobalMarketWarning) {
+        AlertDialog(
+            onDismissRequest = { showGlobalMarketWarning = false },
+            title = { Text("Sensitive Content Warning") },
+            text = {
+                Text(
+                    "The global marketplace shows unmoderated listings from across the entire " +
+                        "Nostr network. This may include sensitive, explicit, or NSFW media.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.setMarketScope(ReelsScope.GLOBAL)
+                        showGlobalMarketWarning = false
+                    },
+                ) { Text("Proceed", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGlobalMarketWarning = false }) { Text("Cancel") }
             },
         )
     }
@@ -1415,6 +1450,9 @@ private fun FeedTopBar(
     reelsGlobal: Boolean,
     onReelsFollowing: () -> Unit,
     onReelsGlobal: () -> Unit,
+    marketGlobal: Boolean,
+    onMarketFollowing: () -> Unit,
+    onMarketGlobal: () -> Unit,
     onModeChange: (FeedMode) -> Unit,
     onCycleLayoutMode: () -> Unit,
     onToggleAutoLoad: () -> Unit,
@@ -1593,7 +1631,26 @@ private fun FeedTopBar(
             // replies and auto-load are all about kind-1 traffic, and a
             // long-form list is short enough not to need them.
             Box(Modifier.chromeFold(leadingGap = 4.dp).blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
-                FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC -> Unit
+                FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MUSIC -> Unit
+                FeedMode.MARKETPLACE -> {
+                    // Same Following / Global pair as Reels, Global behind the warning.
+                    IconButton(onClick = onMarketFollowing, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            imageVector = if (!marketGlobal) NostrVaultIcons.People else NostrVaultIcons.PeopleOutline,
+                            contentDescription = "Listings from people you follow",
+                            tint = if (!marketGlobal) colors.primary else SecondaryText,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    IconButton(onClick = onMarketGlobal, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            imageVector = if (marketGlobal) NostrVaultIcons.Globe else NostrVaultIcons.GlobeOutline,
+                            contentDescription = "Listings from everyone",
+                            tint = if (marketGlobal) colors.primary else SecondaryText,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
                 FeedMode.REELS -> {
                     // Following, or everyone behind the sensitive-content warning.
                     IconButton(onClick = onReelsFollowing, modifier = Modifier.size(40.dp)) {
