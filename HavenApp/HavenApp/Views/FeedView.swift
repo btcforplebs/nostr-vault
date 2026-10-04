@@ -2981,6 +2981,7 @@ struct FeedNoteRow: View {
             depth: 0,
             style: .card,
             contentOverride: compactContentOverride,
+            postedAt: postedAt,
             mediaURLs: note.mediaURLs + originalMedia,
             engagement: CondensedEngagement(
                 reactions: rowData.zapsOnlyMode ? 0 : rowData.stats.reactions,
@@ -3216,7 +3217,7 @@ struct FeedNoteRow: View {
 
                             Spacer()
 
-                            Text(relativeTime(note.createdAt))
+                            Text(relativeTime(postedAt))
                                 .font(.appSystem(size: 11, weight: .regular, design: .monospaced))
                                 .foregroundColor(.secondary)
                                 .tracking(0.2)
@@ -3288,7 +3289,7 @@ struct FeedNoteRow: View {
 
                         Spacer()
 
-                        Text(relativeTime(note.createdAt))
+                        Text(relativeTime(postedAt))
                             .font(.appSystem(size: 11, weight: .regular, design: .monospaced))
                             .foregroundColor(.secondary)
                             .tracking(0.2)
@@ -3336,6 +3337,12 @@ struct FeedNoteRow: View {
             return original
         }
         return note
+    }
+
+    /// When the note this row shows was written. A repost shows its original's
+    /// time, not the moment it was reposted.
+    private var postedAt: Date {
+        bodySource.originalCreatedAt ?? bodySource.createdAt
     }
 
     /// True while an empty-content repost is waiting for the note it reposted.

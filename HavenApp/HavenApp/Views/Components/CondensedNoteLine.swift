@@ -44,6 +44,9 @@ struct CondensedNoteLine: View {
     /// Text to show instead of `note.content` — an article's title, or the
     /// original note's body behind an empty repost.
     var contentOverride: String? = nil
+    /// When the shown note was written, if not `note.createdAt` — a repost
+    /// shows its original's time, not the moment it was reposted.
+    var postedAt: Date? = nil
     /// Media for the thumbnail. Callers resolve reposts before passing it.
     var mediaURLs: [URL] = []
     var engagement: CondensedEngagement = .none
@@ -178,7 +181,7 @@ struct CondensedNoteLine: View {
                     .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
             }
 
-            Text("· \(CondensedNoteLine.relativeTime(note.createdAt))")
+            Text("· \(CondensedNoteLine.relativeTime(shownDate))")
                 .font(.appSystem(size: 11))
                 .foregroundColor(.secondary)
 
@@ -355,12 +358,14 @@ struct CondensedNoteLine: View {
 
     private var authorPubkey: String { displayPubkey ?? note.pubkey }
 
+    private var shownDate: Date { postedAt ?? note.originalCreatedAt ?? note.createdAt }
+
     private var displayName: String {
         profile?.bestName ?? CondensedNoteLine.shortKey(authorPubkey)
     }
 
     private var accessibilityLabel: String {
-        var parts = [displayName, CondensedNoteLine.relativeTime(note.createdAt)]
+        var parts = [displayName, CondensedNoteLine.relativeTime(shownDate)]
         if depth > 0 { parts.append("reply, level \(depth)") }
         let text = bodyPlainText
         if !text.isEmpty {
