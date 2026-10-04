@@ -119,6 +119,8 @@ class MarketplaceFeedService @Inject constructor(
         // An `authors: []` REQ matches nothing and would look like a dead
         // feed, so say what is actually true instead.
         var authorsJson = ""
+        // Global follows the app-wide shield: Web of Trust, or everyone.
+        val trust = if (_scope.value == ReelsScope.GLOBAL) feedService.globalTrustSet() else null
         if (_scope.value == ReelsScope.FOLLOWING) {
             val follows = feedService.followedPubkeys.value
             if (follows.isEmpty()) {
@@ -148,6 +150,7 @@ class MarketplaceFeedService @Inject constructor(
                     client.messages.collect { raw ->
                         val e = parseListingEvent(json, raw, subId) ?: return@collect
                         if (e.pubkey in blocked) return@collect
+                        if (trust != null && e.pubkey !in trust) return@collect
                         val snapshot = bookLock.withLock {
                             if (book.insert(e.id, e.pubkey, e.kind, e.content, e.createdAt, e.tags)) book.listings else null
                         }

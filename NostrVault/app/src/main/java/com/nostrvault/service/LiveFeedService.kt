@@ -3,6 +3,7 @@ package com.nostrvault.service
 import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.LiveStream
+import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.data.remote.WebSocketClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +37,7 @@ import javax.inject.Singleton
 class LiveFeedService @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
+    private val feedService: FeedService,
 ) {
     companion object {
         private const val TAG = "LiveFeedService"
@@ -60,6 +62,17 @@ class LiveFeedService @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    /** Following by default, as on iPhone; Global follows the shield. */
+    private val _scope = MutableStateFlow(ReelsScope.FOLLOWING)
+    val liveScope: StateFlow<ReelsScope> = _scope.asStateFlow()
+
+    fun setScope(newScope: ReelsScope) {
+        if (newScope == _scope.value) return
+        _scope.value = newScope
+        _streams.value = emptyList()
+        refresh()
+    }
+
     private var clients = mutableListOf<WebSocketClient>()
     private var job: Job? = null
 
@@ -77,7 +90,21 @@ class LiveFeedService @Inject constructor(
         val blocked = configStore.config.value.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }
             .toSet()
+        // Following: streams a follow hosts. Global: the Web of Trust, or
+        // everyone with the shield off. Either way judged on the hosts.
+        val admitted: Set<String>? = when (_scope.value) {
+            ReelsScope.FOLLOWING -> feedService.followedPubkeys.value.toSet()
+            ReelsScope.GLOBAL -> feedService.globalTrustSet()
+        }
         val subId = "live-${System.currentTimeMillis().toString(36)}"
+        // Following asks by author and by `p`, for streams a service publishes
+        // on a follow's behalf (iOS parity); Global asks for any stream.
+        val open = """{"kinds":[${LiveStream.KIND}],"limit":$LIMIT}"""
+        val filters = if (_scope.value == ReelsScope.FOLLOWING && !admitted.isNullOrEmpty()) {
+            val list = admitted.take(500).joinToString(",") { "\"$it\"" }
+            """{"kinds":[${LiveStream.KIND}],"authors":[$list],"limit":$LIMIT},""" +
+                """{"kinds":[${LiveStream.KIND}],"#p":[$list],"limit":$LIMIT}"""
+        } else open
         // Newest announcement per address wins: 30311 is replaceable, so the
         // same stream arrives repeatedly with updated status and viewer counts,
         // and keeping the first copy would pin it to whatever it said first.
@@ -98,6 +125,7 @@ class LiveFeedService @Inject constructor(
                     client.messages.collect { raw ->
                         val stream = parseStream(raw, subId) ?: return@collect
                         if (stream.hostPubkey in blocked) return@collect
+                        if (admitted != null && stream.hosts.none { it in admitted }) return@collect
                         val snapshot = newestLock.withLock {
                             val existing = newest[stream.address]
                             if (existing != null && existing.createdAt >= stream.createdAt) {
@@ -113,7 +141,7 @@ class LiveFeedService @Inject constructor(
                 launch {
                     client.connectionState.collect { state ->
                         if (state == WebSocketClient.ConnectionState.CONNECTED) {
-                            client.send("""["REQ","$subId",{"kinds":[${LiveStream.KIND}],"limit":$LIMIT}]""")
+                            client.send("""["REQ","$subId",$filters]""")
                         }
                     }
                 }

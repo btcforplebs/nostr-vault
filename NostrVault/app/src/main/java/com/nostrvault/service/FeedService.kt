@@ -129,6 +129,33 @@ class FeedService @Inject constructor(
     private val _mediaFeedMode = MutableStateFlow(MediaFeedMode.FOLLOWING)
     val mediaFeedMode: StateFlow<MediaFeedMode> = _mediaFeedMode.asStateFlow()
 
+    /**
+     * Following / Global for Articles and Recipes (iOS parity). Global follows
+     * the app-wide Web of Trust shield like every Global view.
+     */
+    private val _articlesFeedMode = MutableStateFlow(MediaFeedMode.FOLLOWING)
+    val articlesFeedMode: StateFlow<MediaFeedMode> = _articlesFeedMode.asStateFlow()
+    private val _recipesFeedMode = MutableStateFlow(MediaFeedMode.FOLLOWING)
+    val recipesFeedMode: StateFlow<MediaFeedMode> = _recipesFeedMode.asStateFlow()
+
+    /** The long-form scope for the current mode, or null outside Articles/Recipes. */
+    private fun longFormScope(): MediaFeedMode? = when (_feedMode.value) {
+        FeedMode.ARTICLES -> _articlesFeedMode.value
+        FeedMode.RECIPES -> _recipesFeedMode.value
+        else -> null
+    }
+
+    /**
+     * The one rule every Global view follows: your Web of Trust unless the
+     * shield is set to Everyone. Null means everyone. Fails closed like the
+     * Global feed: with no graph yet, nobody passes.
+     */
+    fun globalTrustSet(): Set<String>? {
+        if (configStore.config.value.globalShowsEveryone) return null
+        if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
+        return _wotPubkeys.value
+    }
+
     private val _notes = MutableStateFlow<List<FeedNote>>(emptyList())
     val notes: StateFlow<List<FeedNote>> = _notes.asStateFlow()
 
@@ -509,6 +536,10 @@ class FeedService @Inject constructor(
                 if (_mediaFeedMode.value == MediaFeedMode.GLOBAL) loadWotPubkeys()
                 subscribeToAllRelays()
             }
+            FeedMode.ARTICLES, FeedMode.RECIPES -> {
+                if (longFormScope() == MediaFeedMode.GLOBAL) loadWotPubkeys()
+                subscribeToAllRelays()
+            }
             FeedMode.REELS -> closePrimaryFeedSubscription(previousSubId)
             else -> subscribeToAllRelays()
         }
@@ -532,6 +563,21 @@ class FeedService @Inject constructor(
      * Switch the media sub-feed between Following and Global (iOS parity).
      * Re-subscribes with the new author scope and recomputes the media grid.
      */
+    /** Following / Global for Articles or Recipes; re-subscribes like Media. */
+    fun setLongFormFeedMode(feed: FeedMode, mode: MediaFeedMode) {
+        val flow = when (feed) {
+            FeedMode.ARTICLES -> _articlesFeedMode
+            FeedMode.RECIPES -> _recipesFeedMode
+            else -> return
+        }
+        if (flow.value == mode) return
+        flow.value = mode
+        _pendingNotes.value = emptyList()
+        if (mode == MediaFeedMode.GLOBAL) loadWotPubkeys()
+        subscribeToAllRelays()
+        recomputeFilteredNotes()
+    }
+
     fun setMediaFeedMode(mode: MediaFeedMode) {
         if (mode == _mediaFeedMode.value) return
         _mediaFeedMode.value = mode
@@ -1319,11 +1365,7 @@ class FeedService @Inject constructor(
                 FeedMode.GLOBAL -> {
                     // No author restriction
                 }
-                FeedMode.ARTICLES -> {
-                    // No author restriction either: the kinds list already
-                    // asks for 30023, and long-form is rare enough that
-                    // scoping it to follows usually leaves an empty screen.
-                }
+                FeedMode.ARTICLES -> appendLongFormAuthors(this)
                 FeedMode.MARKETPLACE -> {
                     // Handled entirely by MarketplaceFeedService.
                 }
@@ -1343,6 +1385,7 @@ class FeedService @Inject constructor(
                     // here; RecipeTopics.matches still accepts them locally for
                     // recipes that arrive through another subscription.
                     append(",\"#t\":[${RecipeTopics.BASE.joinToString(",") { "\"$it\"" }}]")
+                    appendLongFormAuthors(this)
                 }
                 FeedMode.MEDIA -> {
                     val authors = when (_mediaFeedMode.value) {
@@ -1590,7 +1633,7 @@ class FeedService @Inject constructor(
             flushScheduled = true
         }
 
-        val interval = if (_feedMode.value == FeedMode.GLOBAL || _mediaFeedMode.value == MediaFeedMode.GLOBAL) {
+        val interval = if (isGlobalLikeMode() || _mediaFeedMode.value == MediaFeedMode.GLOBAL) {
             FLUSH_INTERVAL_GLOBAL_MS
         } else {
             FLUSH_INTERVAL_STANDARD_MS
@@ -1843,6 +1886,7 @@ class FeedService @Inject constructor(
         throttledPubkeys = throttledPubkeys,
         globalLanguages = config.globalFeedLanguages.toSet(),
         globalRequiresTrust = !config.globalShowsEveryone,
+        longFormGlobal = longFormScope() == MediaFeedMode.GLOBAL,
         languageOf = ::languageOf,
         authorOf = ::authorOf,
     )
@@ -1898,7 +1942,25 @@ class FeedService @Inject constructor(
 
     private fun isGlobalLikeMode(): Boolean =
         _feedMode.value == FeedMode.GLOBAL ||
-            (_feedMode.value == FeedMode.MEDIA && _mediaFeedMode.value == MediaFeedMode.GLOBAL)
+            (_feedMode.value == FeedMode.MEDIA && _mediaFeedMode.value == MediaFeedMode.GLOBAL) ||
+            longFormScope() == MediaFeedMode.GLOBAL
+
+    /**
+     * Articles and Recipes ask for follows on Following, and for the trust
+     * graph on Global (capped at 500 like Media); Everyone asks for anyone.
+     */
+    private fun appendLongFormAuthors(sb: StringBuilder) {
+        val authors = when (longFormScope()) {
+            MediaFeedMode.FOLLOWING -> _followedPubkeys.value.take(500)
+            MediaFeedMode.GLOBAL ->
+                if (configStore.config.value.globalShowsEveryone) emptyList()
+                else _wotPubkeys.value.take(500).toList()
+            null -> emptyList()
+        }
+        if (authors.isNotEmpty()) {
+            sb.append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
+        }
+    }
 
     /**
      * Web of Trust / Everyone for Global and Media's Global. Re-filters

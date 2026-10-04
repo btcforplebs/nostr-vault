@@ -236,9 +236,13 @@ class ReelsFeedService @Inject constructor(
         clients.clear()
     }
 
+    /** Who Global may show this page; null = everyone (FeedService.globalTrustSet). */
+    @Volatile private var trust: Set<String>? = null
+
     private fun fetchLocked() {
         disconnectLocked()
         val gen = generation
+        trust = if (_scope.value == ReelsScope.GLOBAL) feedService.globalTrustSet() else null
 
         val authors: List<String>? = if (_scope.value == ReelsScope.FOLLOWING) {
             val follows = feedService.followedPubkeys.value
@@ -250,7 +254,9 @@ class ReelsFeedService @Inject constructor(
             }
             follows
         } else {
-            null
+            // Global follows the app-wide shield: the Web of Trust (asked for
+            // directly, capped at 500 like Media), or everyone.
+            trust?.takeIf { it.isNotEmpty() }?.sorted()?.take(500)
         }
 
         val filters = cursors.filters(authors)
@@ -381,8 +387,9 @@ class ReelsFeedService @Inject constructor(
         if (stream == null || id == null || pubkey == null || createdAt == null) {
             null
         } else {
-            // A blocked author's event still marks how far this relay got.
-            val reel = if (pubkey in blocked) {
+            // A blocked or untrusted author's event still marks how far this
+            // relay got. Untrusted fails closed, like the Global feed.
+            val reel = if (pubkey in blocked || trust?.contains(pubkey) == false) {
                 null
             } else {
                 val tags = event["tags"]?.jsonArray?.map { tag ->

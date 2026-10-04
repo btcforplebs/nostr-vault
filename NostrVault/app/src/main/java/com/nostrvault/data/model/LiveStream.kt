@@ -28,6 +28,12 @@ data class LiveStream(
      * trustworthy source, and a hardcoded list is a fallback, not the answer.
      */
     val chatRelays: List<String> = emptyList(),
+    /**
+     * Who the stream belongs to: the signer, plus any `p` tag marked Host. A
+     * service such as zap.stream signs on the host's behalf, so Following and
+     * the Web of Trust judge the stream by these, not by the signer alone.
+     */
+    val hosts: Set<String> = setOf(hostPubkey),
 ) {
     /** The addressable form: what an naddr for this stream points at. */
     val address: String get() = "$KIND:$hostPubkey:$identifier"
@@ -97,6 +103,9 @@ data class LiveStream(
                     ?.map { it.trim() }
                     ?.filter { it.startsWith("wss://") || it.startsWith("ws://") }
                     ?: emptyList(),
+                hosts = setOf(pubkey) + tags
+                    .filter { it.size >= 4 && it[0] == "p" && it[3].equals("host", ignoreCase = true) }
+                    .map { it[1] },
             )
         }
     }

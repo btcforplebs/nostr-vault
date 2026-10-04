@@ -390,7 +390,40 @@ class FeedViewModel @Inject constructor(
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.wotPubkeys.value.isNotEmpty())
 
-    fun setGlobalShowsEveryone(on: Boolean) = feedService.setGlobalShowsEveryone(on)
+    /**
+     * The shield is one app-wide setting. The note feeds re-filter and reload
+     * inside FeedService; feeds with their own service refetch under it.
+     */
+    fun setGlobalShowsEveryone(on: Boolean) {
+        feedService.setGlobalShowsEveryone(on)
+        when (_feedMode.value) {
+            FeedMode.REELS -> reelsFeedService.refresh()
+            FeedMode.LIVE -> liveFeedService.refresh()
+            FeedMode.MARKETPLACE -> marketplaceFeedService.refresh()
+            else -> Unit
+        }
+    }
+
+    val articlesScope = feedService.articlesFeedMode
+    val recipesScope = feedService.recipesFeedMode
+    val liveScope = liveFeedService.liveScope
+
+    /**
+     * Following or Global for the given feed. Global starts on the Web of
+     * Trust, so no warning here; only the shield's Everyone has one.
+     */
+    fun setScope(mode: FeedMode, global: Boolean) {
+        val reels = if (global) ReelsScope.GLOBAL else ReelsScope.FOLLOWING
+        val media = if (global) MediaFeedMode.GLOBAL else MediaFeedMode.FOLLOWING
+        when (mode) {
+            FeedMode.MEDIA -> feedService.setMediaFeedMode(media)
+            FeedMode.ARTICLES, FeedMode.RECIPES -> feedService.setLongFormFeedMode(mode, media)
+            FeedMode.REELS -> reelsFeedService.setScope(reels)
+            FeedMode.LIVE -> liveFeedService.setScope(reels)
+            FeedMode.MARKETPLACE -> marketplaceFeedService.setScope(reels)
+            else -> Unit
+        }
+    }
     fun setGlobalFeedLanguages(codes: List<String>) = feedService.setGlobalFeedLanguages(codes)
 
     private val _showEngagementStats = MutableStateFlow(false)
@@ -399,11 +432,6 @@ class FeedViewModel @Inject constructor(
     fun toggleAutoLoad() { _autoLoadEnabled.value = !_autoLoadEnabled.value }
     fun toggleShowReposts() { feedService.setShowReposts(!showReposts.value) }
     fun toggleShowReplies() { feedService.setShowReplies(!showReplies.value) }
-    fun toggleMediaFollowing() {
-        feedService.setMediaFeedMode(
-            if (mediaFollowingOnly.value) MediaFeedMode.GLOBAL else MediaFeedMode.FOLLOWING
-        )
-    }
     fun toggleShowEngagementStats() { _showEngagementStats.value = !_showEngagementStats.value }
     fun setPopularFilter(filter: PopularFilter) { feedService.setPopularFilter(filter) }
 
