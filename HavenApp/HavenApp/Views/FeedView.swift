@@ -486,6 +486,13 @@ struct FeedView: View {
         }
     }
 
+    /// Whether the layout button has anything to switch. Expanded/condensed
+    /// and threaded only change timeline rows (`isCompactModeActive`,
+    /// `isThreadedModeActive`); grids, card lists and Reels ignore them, so
+    /// the button there cycled an icon and nothing else. The Mac toolbar
+    /// already left it out for these feeds.
+    private var currentFeedHasLayouts: Bool { currentFeedSupportsThreading }
+
     /// The stored layout for the current feed, migrating anyone who had the
     /// old per-feed compact boolean set.
     private var layoutModeForCurrentFeed: FeedLayoutMode {
@@ -728,8 +735,7 @@ struct FeedView: View {
     @ViewBuilder
     private var feedTrailingToolbarInline: some View {
         HStack(spacing: 4) {
-            // Reels is one video per screen — there is no layout to switch.
-            if feedService.feedMode != .reels {
+            if currentFeedHasLayouts {
                 layoutModeButton
 
                 Divider()
@@ -901,7 +907,7 @@ struct FeedView: View {
         Menu {
             // One entry per layout rather than a cycle — a menu can show where
             // each choice leads, which a single cycling button cannot.
-            if feedService.feedMode != .reels {
+            if currentFeedHasLayouts {
                 ForEach(FeedLayoutMode.allCases, id: \.self) { mode in
                     if mode != .threaded || currentFeedSupportsThreading {
                         Button {
@@ -1422,10 +1428,16 @@ struct FeedView: View {
                         }
                         // The lone layout button fades in as the full row
                         // fades out, centred in the circle the pill folds to.
+                        // Feeds without layouts get the filter menu there
+                        // instead, so the circle is never empty.
                         if isCompactWidth && feedService.feedMode != .reels {
                             ChromeFold(anchor: .trailing, inverted: true) {
-                                layoutModeButton
-                                    .padding(.horizontal, 4)
+                                if currentFeedHasLayouts {
+                                    layoutModeButton
+                                        .padding(.horizontal, 4)
+                                } else {
+                                    feedTrailingToolbarMenu
+                                }
                             }
                         }
                     }
