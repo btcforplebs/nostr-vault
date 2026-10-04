@@ -40,6 +40,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import com.nostrvault.ui.components.ThreadTapAnchor
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -177,6 +182,24 @@ fun FeedScreen(
     // one selection across both condensed layouts, and it survives a card being
     // recycled off-screen and back by a LazyColumn (per-card `remember` would not).
     var expandedNoteId by remember { mutableStateOf<String?>(null) }
+
+    // Threaded mode: keep a tapped line where it was tapped while the line it
+    // closes collapses above it (iOS #218). Line tops are window pixels.
+    val threadLineTops = remember { HashMap<String, Float>() }
+    var threadListTop by remember { mutableFloatStateOf(0f) }
+    var threadTapAnchor by remember { mutableStateOf<ThreadTapRequest?>(null) }
+    LaunchedEffect(threadTapAnchor) {
+        val request = threadTapAnchor ?: return@LaunchedEffect
+        // Follow the line for as long as the cards' animateContentSize runs,
+        // correcting each frame, rather than once after a jump.
+        val until = System.nanoTime() + 700_000_000L
+        while (System.nanoTime() < until) {
+            withFrameNanos { }
+            val top = threadLineTops[request.noteId] ?: continue
+            val delta = ThreadTapAnchor.correction(top, request.target)
+            if (delta != 0f) listState.scrollBy(delta)
+        }
+    }
 
     // Per-thread "show more replies" fold, hoisted for the same reason: a
     // LazyColumn item's own `remember` is dropped when it scrolls out of view.
@@ -631,13 +654,16 @@ fun FeedScreen(
                     },
                 )
             } else {
+                val listTopPaddingPx = with(LocalDensity.current) { padding.calculateTopPadding().toPx() }
                 LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(
                         top = padding.calculateTopPadding(),
                         bottom = padding.calculateBottomPadding() + 88.dp,
                     ),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onGloballyPositioned { threadListTop = it.positionInWindow().y + listTopPaddingPx },
                 ) {
                     if (isThreaded) {
                         items(feedThreads, key = { it.rootId }) { thread ->
@@ -646,7 +672,14 @@ fun FeedScreen(
                                 profileFor = { pubkey -> allProfiles[pubkey] },
                                 profiles = allProfiles,
                                 openNoteId = expandedNoteId,
-                                onOpenNoteChange = { id -> expandedNoteId = id },
+                                onOpenNoteChange = { id ->
+                                    val top = id?.let { threadLineTops[it] }
+                                    if (id != null && top != null) {
+                                        threadTapAnchor = ThreadTapRequest(id, ThreadTapAnchor.target(top, threadListTop))
+                                    }
+                                    expandedNoteId = id
+                                },
+                                onLineTop = { id, top -> threadLineTops[id] = top },
                                 isExpanded = threadFolds[thread.rootId] ?: false,
                                 onExpandedChange = { expanded -> threadFolds[thread.rootId] = expanded },
                                 onProfileClick = onProfileClick,
@@ -1966,3 +1999,6 @@ private val FeedMode.icon: ImageVector
         FeedMode.LIVE -> NostrVaultIcons.Live
         FeedMode.MUSIC -> NostrVaultIcons.Music
     }
+
+/** A tapped thread line and the window y its top should stay at. A new object per tap, so a repeat tap re-runs. */
+private class ThreadTapRequest(val noteId: String, val target: Float)

@@ -12,6 +12,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,6 +52,8 @@ fun FeedThreadCard(
     focusedNoteId: String? = null,
     openNoteId: String? = null,
     onOpenNoteChange: (String?) -> Unit = {},
+    /** Each line's top, in window pixels, as it is laid out (iOS #218). */
+    onLineTop: (noteId: String, top: Float) -> Unit = { _, _ -> },
     isExpanded: Boolean = false,
     onExpandedChange: (Boolean) -> Unit = {},
     onProfileClick: (String) -> Unit,
@@ -110,6 +114,7 @@ fun FeedThreadCard(
                 focusedNoteId = focusedNoteId,
                 openNoteId = openNoteId,
                 onProfileClick = onProfileClick,
+                onLineTop = onLineTop,
                 onTap = tapAction(root),
                 expandedRow = expandedRow,
             )
@@ -138,6 +143,7 @@ fun FeedThreadCard(
                 focusedNoteId = focusedNoteId,
                 openNoteId = openNoteId,
                 onProfileClick = onProfileClick,
+                onLineTop = onLineTop,
                 onTap = tapAction(entry.note),
                 expandedRow = expandedRow,
             )
@@ -194,39 +200,42 @@ private fun ThreadCardLine(
     focusedNoteId: String?,
     openNoteId: String?,
     onProfileClick: (String) -> Unit,
+    onLineTop: (noteId: String, top: Float) -> Unit,
     onTap: () -> Unit,
     expandedRow: @Composable (note: FeedNote, depth: Int) -> Unit,
 ) {
     val note = entry.note
-    if (openNoteId == note.id) {
-        // A line opened in place: the full note, its action bar, and the same
-        // rail and indent the condensed line had, so nothing shifts sideways
-        // under the tap. Tapping it again goes to the thread (wired by the
-        // caller's expandedRow, which reuses onOpenThread as onNoteClick).
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = condensedIndentWidth(entry.depth))
-                .then(
-                    if (entry.depth > 0) Modifier.threadRail(LocalNostrVaultColors.current.primary, LocalOledMode.current)
-                    else Modifier,
-                ),
-        ) {
-            expandedRow(note, entry.depth)
+    Box(Modifier.onGloballyPositioned { onLineTop(note.id, it.positionInWindow().y) }) {
+        if (openNoteId == note.id) {
+            // A line opened in place: the full note, its action bar, and the same
+            // rail and indent the condensed line had, so nothing shifts sideways
+            // under the tap. Tapping it again goes to the thread (wired by the
+            // caller's expandedRow, which reuses onOpenThread as onNoteClick).
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = condensedIndentWidth(entry.depth))
+                    .then(
+                        if (entry.depth > 0) Modifier.threadRail(LocalNostrVaultColors.current.primary, LocalOledMode.current)
+                        else Modifier,
+                    ),
+            ) {
+                expandedRow(note, entry.depth)
+            }
+        } else {
+            CondensedNoteLine(
+                note = note,
+                profile = profileFor(note.pubkey),
+                profiles = profiles,
+                depth = entry.depth,
+                style = CondensedLineStyle.PLAIN,
+                isFocused = note.id == focusedNoteId,
+                replyCount = replyCount,
+                mediaURLs = note.mediaURLs,
+                onProfileClick = onProfileClick,
+                onTap = onTap,
+            )
         }
-    } else {
-        CondensedNoteLine(
-            note = note,
-            profile = profileFor(note.pubkey),
-            profiles = profiles,
-            depth = entry.depth,
-            style = CondensedLineStyle.PLAIN,
-            isFocused = note.id == focusedNoteId,
-            replyCount = replyCount,
-            mediaURLs = note.mediaURLs,
-            onProfileClick = onProfileClick,
-            onTap = onTap,
-        )
     }
 }
 
@@ -269,5 +278,21 @@ private fun ThreadFoldButton(
         Icon(icon, contentDescription = null, tint = themeColor, modifier = Modifier.size(11.dp))
         Spacer(Modifier.width(6.dp))
         Text(text = title, color = themeColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/**
+ * Keeps a tapped thread line where it was tapped (iOS #218). Opening a line
+ * closes the one that was open; when that one sat above, everything below
+ * moved up and the tapped line could open off screen.
+ */
+internal object ThreadTapAnchor {
+    /** Where the line should stay: its top, or the list's top edge if it started above it. */
+    fun target(lineTop: Float, listTop: Float): Float = maxOf(lineTop, listTop)
+
+    /** Pixels to scroll so the line is back at [target]; sub-pixel drift is left alone. */
+    fun correction(lineTop: Float, target: Float): Float {
+        val delta = lineTop - target
+        return if (kotlin.math.abs(delta) < 0.5f) 0f else delta
     }
 }
