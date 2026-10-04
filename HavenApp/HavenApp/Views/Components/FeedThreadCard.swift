@@ -3,11 +3,15 @@ import SwiftUI
 /// One conversation in the feed: a root note plus its replies, drawn as a
 /// single card of condensed lines rather than one card per note.
 ///
-/// A tap means exactly what it means in the feed's other condensed layout:
-/// the first tap opens that line in place into the full note with its action
+/// The first tap opens a line in place into the full note with its action
 /// bar, a second tap on the open note goes to the thread. Replying is one tap
-/// from the timeline, and the gesture is the same one whichever condensed
-/// layout you are in.
+/// from the timeline.
+///
+/// Opening a line leaves every other open line open. Closing the line you
+/// were reading moved everything under it, so on one tap one line shrank,
+/// another grew and the line you tapped slid away, often off screen when the
+/// closed note had a photo. Now a tap grows one line downward and nothing
+/// above it moves.
 ///
 /// Replies past `collapsedReplyLimit` stay folded so a long argument can't take
 /// over the timeline; the fold opens in place instead of pushing a new screen.
@@ -15,12 +19,10 @@ import SwiftUI
 /// thread back to the top — and hides the earlier ones above them.
 struct FeedThreadCard: View {
     let thread: FeedThread<FeedNote>
-    /// Which note is open in place. Feed-wide, and owned by the feed, for two
-    /// reasons: opening a note has to close whatever the condensed layout
-    /// opened — it is one gesture, so it is one selection — and a card
+    /// Which notes are open in place. Owned by the feed because a card
     /// scrolled out of a LazyVStack loses its own `@State`, which would
     /// silently collapse an open note while you were away.
-    @Binding var openNoteId: String?
+    @Binding var openNoteIds: Set<String>
     /// Whether this thread's fold is open. Held by the feed for the same
     /// recycling reason.
     @Binding var isExpanded: Bool
@@ -99,7 +101,7 @@ struct FeedThreadCard: View {
         }
         .threadCard()
         .animation(Motion.panel, value: isExpanded)
-        .animation(Motion.panel, value: openNoteId)
+        .animation(Motion.panel, value: openNoteIds)
         .onAppear {
             // The feed can hold replies whose root it never loaded. Fetch it so
             // the conversation gets its opening line.
@@ -113,7 +115,7 @@ struct FeedThreadCard: View {
 
     @ViewBuilder
     private func line(for entry: FeedThreadEntry<FeedNote>, replyCount: Int) -> some View {
-        if openNoteId == entry.note.id, let rowDataFor {
+        if openNoteIds.contains(entry.note.id), let rowDataFor {
             openRow(for: entry, rowData: rowDataFor(entry.note))
         } else {
             condensedLine(for: entry, replyCount: replyCount)
@@ -141,7 +143,7 @@ struct FeedThreadCard: View {
     private func tapAction(for note: FeedNote) -> (() -> Void)? {
         guard let onOpen else { return nil }
         guard canOpenInPlace else { return { onOpen(note) } }
-        return { openNoteId = note.id }
+        return { openNoteIds.insert(note.id) }
     }
 
     /// A line opened in place: the full note, its action bar, and the same

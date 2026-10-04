@@ -448,6 +448,9 @@ struct FeedView: View {
 
     /// Compact mode state: tracks which note is currently expanded (nil = all collapsed)
     @State private var expandedNoteId: String? = nil
+    /// Lines open in place in the threaded layout. Several at once: opening
+    /// one leaves the others open so nothing moves under the tap.
+    @State private var threadOpenNoteIds: Set<String> = []
     /// Thread cards whose reply fold is open, by thread root id. Held here
     /// rather than in the card because a LazyVStack discards the `@State` of
     /// a card it scrolls off, which would refold a thread behind your back.
@@ -549,6 +552,7 @@ struct FeedView: View {
 
         configService.save()
         expandedNoteId = nil
+        threadOpenNoteIds = []
         if needsRefilter { feedService.recomputeFilteredNotes() }
         rebuildThreadsIfNeeded(immediate: true)
         }
@@ -2422,10 +2426,7 @@ struct FeedView: View {
                             ForEach(feedThreads) { thread in
                                 FeedThreadCard(
                                     thread: thread,
-                                    // One open note across both condensed
-                                    // layouts: the same gesture, so the same
-                                    // selection.
-                                    openNoteId: $expandedNoteId,
+                                    openNoteIds: $threadOpenNoteIds,
                                     isExpanded: Binding(
                                         get: { expandedThreadIds.contains(thread.rootId) },
                                         set: { isOpen in
