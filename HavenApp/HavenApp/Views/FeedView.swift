@@ -415,6 +415,7 @@ struct FeedView: View {
     @State private var showingGlobalRecipeWarning = false
     @State private var isAtTop: Bool = true
     @State private var scrolledNoteID: String?
+    @State private var threadLineTops = ThreadLineTops()
     /// Rows on screen right now, so switching layouts can keep the post you
     /// were reading in front of you. A plain reference: rows scrolling in and
     /// out must not re-render the feed.
@@ -2387,6 +2388,32 @@ struct FeedView: View {
                             feedService: feedService, nostrService: nostrService)
     }
 
+    /// Keeps a thread line where it was tapped. Opening it closed whatever
+    /// was open; if that sat above, the line would slide up, possibly out of
+    /// view. A line whose top was already above the screen is brought down
+    /// to the top edge.
+    ///
+    /// The scroll runs with no animation from the line's own geometry change,
+    /// so it lands in the same frame as the close. An animated scroll a
+    /// runloop later showed as the line jumping and then sliding back.
+    private func holdThreadLine(_ noteId: String, at y: CGFloat, proxy: ScrollViewProxy) {
+        let height = threadLineTops.viewportHeight
+        guard height > 0 else { return }
+        let fraction = min(max(y / height, 0), 1)
+        let anchor = UnitPoint(x: 0.5, y: fraction)
+        threadLineTops.hold = (noteId, y, {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) {
+                proxy.scrollTo(ThreadLineTops.anchorId(for: noteId), anchor: anchor)
+            }
+        })
+        // The open line sat below the tapped one, so nothing above moved.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [threadLineTops] in
+            if threadLineTops.hold?.noteId == noteId { threadLineTops.hold = nil }
+        }
+    }
+
     private var feedList: some View {
         ScrollViewReader { proxy in
             ZStack(alignment: .top) {
@@ -2456,7 +2483,11 @@ struct FeedView: View {
                                     onMedia: { url, urls in
                                         showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
                                     },
-                                    rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId)
+                                    rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId),
+                                    lineTops: threadLineTops,
+                                    onOpenedInPlace: { id, y in
+                                        holdThreadLine(id, at: y, proxy: proxy)
+                                    }
                                 )
                                 .padding(.horizontal, 12)
                                 .onAppear { prefetchAhead(ofThread: thread.rootId) }
@@ -2537,6 +2568,10 @@ struct FeedView: View {
                 // accounts had it, and then animated a scroll to the top on top
                 // of the fade — rows shuffled and slid instead of the feed
                 // simply changing.
+                .coordinateSpace(.named(ThreadLineTops.coordinateSpace))
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                    threadLineTops.viewportHeight = $0
+                }
                 .id(configService.activeAccountHexPubkey)
                 .transition(.opacity)
                 .refreshable {
