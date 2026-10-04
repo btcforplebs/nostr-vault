@@ -1173,6 +1173,15 @@ class NostrService: ObservableObject {
     /// which is cached across launches and would let a device adopt its own
     /// stale copy.
     func fetchNewestDMRelayList(for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> (relays: [String], createdAt: Int64)? {
+        guard let winner = await fetchNewestReplaceable(kind: 10050, for: pubkey, alsoAsk: alsoAsk, timeout: timeout) else { return nil }
+        return (ProfileRepository.parseDMRelayListTags(winner.tags), winner.created_at)
+    }
+
+    /// The newest signed replaceable event of `kind` by `pubkey` across the
+    /// blastr relays, the account's cached outbox relays and `alsoAsk`, or nil
+    /// if none answered within the timeout. Asks fresh: the profile caches can
+    /// hold a list that was replaced long ago.
+    func fetchNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> NostrEvent? {
         var urls = ConfigService.shared.config.activeBlastrRelays
         if urls.isEmpty { urls = ["wss://relay.primal.net", "wss://nos.lol"] }
         for extra in alsoAsk + (outboxRelays[pubkey] ?? []) where !urls.contains(extra) {
@@ -1181,7 +1190,7 @@ class NostrService: ObservableObject {
         let targets = urls.filter { !Self.isLoopbackRelay($0) }.compactMap { URL(string: $0) }
         guard !targets.isEmpty else { return nil }
 
-        return await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<NostrEvent?, Never>) in
             let lock = NSLock()
             var best: NostrEvent?
             var finished = 0
@@ -1199,8 +1208,7 @@ class NostrService: ObservableObject {
                     clients.forEach { $0.disconnect() }
                     subs.removeAll()
                 }
-                guard let winner else { continuation.resume(returning: nil); return }
-                continuation.resume(returning: (ProfileRepository.parseDMRelayListTags(winner.tags), winner.created_at))
+                continuation.resume(returning: winner)
             }
 
             DispatchQueue.main.async {
@@ -1208,7 +1216,7 @@ class NostrService: ObservableObject {
                     let client = WebSocketClient()
                     client.isTemporary = true
                     clients.append(client)
-                    let subId = "dmlist-\(UUID().uuidString.prefix(6))"
+                    let subId = "repl-\(UUID().uuidString.prefix(6))"
                     client.messageSubject
                         .sink { message in
                             guard let data = message.data(using: .utf8),
@@ -1217,7 +1225,7 @@ class NostrService: ObservableObject {
                             if type == "EVENT", let dict = json[safe: 2] as? [String: Any],
                                let raw = try? JSONSerialization.data(withJSONObject: dict),
                                let event = try? JSONDecoder().decode(NostrEvent.self, from: raw),
-                               event.kind == 10050, event.pubkey == pubkey,
+                               event.kind == kind, event.pubkey == pubkey,
                                let str = String(data: raw, encoding: .utf8),
                                NostrEventVerifier.isValid(json: str) {
                                 lock.lock()
@@ -1235,7 +1243,7 @@ class NostrService: ObservableObject {
                     client.$connectionState
                         .sink { state in
                             guard state == .connected else { return }
-                            let req = ["REQ", subId, ["kinds": [10050], "authors": [pubkey], "limit": 1]] as [Any]
+                            let req = ["REQ", subId, ["kinds": [kind], "authors": [pubkey], "limit": 1]] as [Any]
                             if let data = try? JSONSerialization.data(withJSONObject: req),
                                let str = String(data: data, encoding: .utf8) {
                                 client.send(text: str)
