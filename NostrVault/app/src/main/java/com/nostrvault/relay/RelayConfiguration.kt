@@ -324,6 +324,12 @@ data class HavenConfig(
         "wss://nos.lol",
         "wss://relay.btcforplebs.com",
     ),
+    /**
+     * When [dmRelays] last changed, in Unix seconds: the created_at of a
+     * published kind 10050 this device adopted, or the time this device
+     * published its own. null = never set, which any published list beats.
+     */
+    val dmRelaysUpdatedAt: Long? = null,
 
     // Relay URLs
     val inboxRelays: List<String>? = listOf(
@@ -500,6 +506,14 @@ data class HavenConfig(
     /** Always returns the https:// form of macRelayURL (empty string if macRelayURL is empty). */
     val macRelayHttpsURL: String
         get() = macRelayNormalizedBase.let { if (it.isEmpty()) "" else "https://$it" }
+
+    /** The Mac relay's inbox as a DM relay, or "" — see [DMInbox.havenInboxURL]. */
+    val ownHavenDMInboxURL: String
+        get() = DMInbox.havenInboxURL(macRelayURL, macRelayNormalizedBase)
+
+    /** The one DM inbox list: the Haven inbox first, then [dmRelays]. */
+    val dmInboxRelays: List<String>
+        get() = DMInbox.merged(ownHavenDMInboxURL, dmRelays)
 
     // ── Active Relay Lists (with Haven relay prepended) ───────────
 

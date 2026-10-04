@@ -23,6 +23,7 @@ import javax.inject.Inject
 @HiltViewModel
 class HavenRelaySettingsViewModel @Inject constructor(
     private val configStore: ConfigStore,
+    private val nostrService: com.nostrvault.service.NostrService,
 ) : ViewModel() {
 
     private val _urlInput = MutableStateFlow("")
@@ -42,7 +43,20 @@ class HavenRelaySettingsViewModel @Inject constructor(
 
     fun save() {
         viewModelScope.launch {
-            configStore.update { it.copy(macRelayURL = _urlInput.value.trim()) }
+            val before = configStore.config.value
+            val oldInbox = before.ownHavenDMInboxURL
+            configStore.update { cfg ->
+                val updated = cfg.copy(macRelayURL = _urlInput.value.trim())
+                // An adopted DM list may carry the old Haven inbox; drop it so
+                // senders and every device move to the new address.
+                if (oldInbox.isNotEmpty() && oldInbox != updated.ownHavenDMInboxURL) {
+                    updated.copy(dmRelays = updated.dmRelays.filter { !it.trim().trimEnd('/').equals(oldInbox, ignoreCase = true) })
+                } else updated
+            }
+            // The DM inbox list leads with the Haven inbox: publish when it moved.
+            if (configStore.config.value.ownHavenDMInboxURL != oldInbox) {
+                nostrService.publishOwnerDMInboxList()
+            }
             _saved.value = true
         }
     }

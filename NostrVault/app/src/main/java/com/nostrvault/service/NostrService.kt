@@ -12,6 +12,7 @@ import com.nostrvault.data.model.SearchTermMatcher
 import com.nostrvault.data.model.ProfileUpdateSignal
 import com.nostrvault.data.remote.LookupSocketPool
 import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.relay.DMInbox
 import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -1468,7 +1469,99 @@ class NostrService @Inject constructor(
      * ones still running the old build.
      */
     fun republishDMRelayList() {
-        publishDMRelayList(configStore.config.value.dmRelays)
+        scope.launch(Dispatchers.IO) {
+            runCatching { syncOwnerDMInboxList() }
+                .onFailure { Log.w(TAG, "DM inbox sync failed: ${it.message}") }
+        }
+    }
+
+    /**
+     * Brings the owner's DM inbox list (kind 10050) into step across devices:
+     * the newest published list is adopted unless this device published a
+     * newer one, in which case ours is published. Every device used to
+     * republish its own settings at launch, so whichever device opened last
+     * silently replaced the list the others had set. See [DMInbox].
+     */
+    private suspend fun syncOwnerDMInboxList() {
+        val owner = ownerHexPubkey
+        if (owner.isBlank()) return
+        val config = configStore.config.value
+        val newest = fetchNewestDMRelayList(owner, config.dmInboxRelays)
+        val published = newest?.first?.filter { !isLoopbackRelay(it) }
+
+        var action = DMInbox.syncAction(config.dmInboxRelays, config.dmRelaysUpdatedAt, published, newest?.second)
+        if (action == DMInbox.SyncAction.ADOPT && newest != null && published != null) {
+            configStore.updateAsync {
+                it.copy(dmRelays = published.ifEmpty { it.dmRelays }, dmRelaysUpdatedAt = newest.second)
+            }
+            Log.i(TAG, "Adopted published DM inbox list (${published.size} relays)")
+            // This device may still hold more than was published (its own
+            // Haven inbox, or loopback entries dropped).
+            action = DMInbox.syncAction(configStore.config.value.dmInboxRelays, newest.second, newest.first, newest.second)
+        }
+        if (action == DMInbox.SyncAction.PUBLISH) publishOwnerDMInboxList()
+    }
+
+    /**
+     * Publishes this device's DM inbox list for the owner and stamps it as the
+     * newest change. Call when the Haven relay address changes.
+     */
+    fun publishOwnerDMInboxList() {
+        configStore.update { it.copy(dmRelaysUpdatedAt = System.currentTimeMillis() / 1000) }
+        publishDMRelayList(configStore.config.value.dmInboxRelays)
+    }
+
+    /**
+     * The newest signed kind 10050 for [pubkey] across the blastr relays and
+     * [alsoAsk], as (relays, created_at), or null if none answered in time.
+     * Asks fresh rather than trusting the cached [dmRelayLists], which would
+     * let a device adopt its own stale copy.
+     */
+    private suspend fun fetchNewestDMRelayList(pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): Pair<List<String>, Long>? {
+        val targets = (configStore.config.value.activeBlastrRelays + alsoAsk)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !isLoopbackRelay(it) }
+            .distinct()
+        if (targets.isEmpty()) return null
+        val best = java.util.concurrent.atomic.AtomicReference<NostrEvent?>(null)
+        coroutineScope {
+            targets.map { url ->
+                launch(Dispatchers.IO) {
+                    val client = WebSocketClient(url = url, scope = this, autoReconnect = false)
+                    try {
+                        withTimeoutOrNull(timeoutMs) {
+                            val subId = "dmlist-${UUID.randomUUID().toString().take(6)}"
+                            val done = CompletableDeferred<Unit>()
+                            val collector = launch {
+                                client.messages.collect { msg ->
+                                    val arr = runCatching { json.parseToJsonElement(msg).jsonArray }.getOrNull() ?: return@collect
+                                    when (arr.getOrNull(0)?.jsonPrimitive?.contentOrNull) {
+                                        "EVENT" -> {
+                                            val obj = arr.getOrNull(2)?.jsonObject ?: return@collect
+                                            val ev = parseSignedEvent(obj.toString()) ?: return@collect
+                                            if (ev.kind != 10050 || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
+                                            best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
+                                        }
+                                        "EOSE", "CLOSED" -> done.complete(Unit)
+                                    }
+                                }
+                            }
+                            launch {
+                                client.connectionState.first { it == WebSocketClient.ConnectionState.CONNECTED }
+                                client.send("""["REQ","$subId",{"kinds":[10050],"authors":["$pubkey"],"limit":1}]""")
+                            }
+                            client.connect()
+                            done.await()
+                            collector.cancel()
+                        }
+                    } finally {
+                        client.disconnect()
+                    }
+                }
+            }.joinAll()
+        }
+        val winner = best.get() ?: return null
+        return profileRepository.parseDMRelayListTags(winner.tags) to winner.createdAt
     }
 
     fun publishDMRelayList(dmRelays: List<String>) {
