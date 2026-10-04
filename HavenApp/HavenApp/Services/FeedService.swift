@@ -808,6 +808,7 @@ class FeedService: ObservableObject {
         hasAttemptedContactLoad = false
         contactListConfirmed = false
         pendingFollowActions.removeAll()
+        FollowNotificationManager.shared.clearPending()
         lastEventTimestamp = 0
         recomputeFilteredNotes()
     }
@@ -995,6 +996,7 @@ class FeedService: ObservableObject {
         // tap queued under the previous account must not reach this one.
         contactListConfirmed = false
         pendingFollowActions.removeAll()
+        FollowNotificationManager.shared.clearPending()
         isLoadingExtendedNetwork = false
         extendedNetworkComputedAt = nil
         isLoadingFeed = false
@@ -2055,7 +2057,18 @@ class FeedService: ObservableObject {
         let actions = pendingFollowActions.filter { $0.account == account }
         pendingFollowActions.removeAll()
         for action in actions {
-            if action.follow { followUser(action.pubkey) } else { unfollowUser(action.pubkey) }
+            let result = action.follow ? followUser(action.pubkey) : unfollowUser(action.pubkey)
+            // Turn the tap's "Following…" pill into the confirmation. A list
+            // still unavailable re-queues the action and keeps the pill.
+            switch result {
+            case .success, .failure(.alreadyFollowing):
+                FollowNotificationManager.shared.resolvePending(pubkey: action.pubkey,
+                                                                kind: action.follow ? .followed : .unfollowed)
+            case .failure(.contactsNotLoaded), .failure(.listUnavailable):
+                break
+            case .failure:
+                FollowNotificationManager.shared.resolvePending(pubkey: action.pubkey, kind: nil)
+            }
         }
     }
 

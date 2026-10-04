@@ -235,11 +235,16 @@ struct ZapPill: View {
 struct FollowNotification: Identifiable {
     let id = UUID()
     let recipientName: String
-    let kind: Kind
+    var kind: Kind
+    /// Set on a pending pill, so the follow that finally lands can find it.
+    var pubkey: String? = nil
 
     enum Kind: Equatable {
         case followed
         case unfollowed
+        /// Tapped before the follow list had loaded: the tap is queued and
+        /// applied once the list is confirmed. Not an error, so not red.
+        case pending(follow: Bool)
         case failed(String)
     }
 }
@@ -257,12 +262,52 @@ class FollowNotificationManager: ObservableObject {
         withAnimation(Motion.bannerIn) {
             notifications.insert(notification, at: 0)
         }
-        let dismissDelay: TimeInterval = {
-            if case .failed = kind { return 5.0 }
-            return 3.0
-        }()
-        let id = notification.id
-        DispatchQueue.main.asyncAfter(deadline: .now() + dismissDelay) { [weak self] in
+        scheduleDismiss(notification.id, after: dismissDelay(kind))
+    }
+
+    /// A follow or unfollow queued until the follow list loads. The pill
+    /// stays, with a spinner, until `resolvePending` replaces it.
+    func addPending(pubkey: String, recipientName: String, follow: Bool) {
+        if let idx = notifications.firstIndex(where: { $0.pubkey == pubkey }) {
+            notifications[idx].kind = .pending(follow: follow)
+            return
+        }
+        let notification = FollowNotification(recipientName: recipientName, kind: .pending(follow: follow), pubkey: pubkey)
+        withAnimation(Motion.bannerIn) {
+            notifications.insert(notification, at: 0)
+        }
+    }
+
+    /// The queued action was applied: the pending pill becomes the
+    /// confirmation. `nil` drops it without one.
+    func resolvePending(pubkey: String, kind: FollowNotification.Kind?) {
+        guard let idx = notifications.firstIndex(where: { $0.pubkey == pubkey }) else { return }
+        let id = notifications[idx].id
+        guard let kind else {
+            withAnimation(Motion.bannerOut) { notifications.removeAll { $0.id == id } }
+            return
+        }
+        withAnimation(Motion.fade) {
+            notifications[idx].kind = kind
+            notifications[idx].pubkey = nil
+        }
+        scheduleDismiss(id, after: dismissDelay(kind))
+    }
+
+    /// The queue was discarded (account switch): nothing will land.
+    func clearPending() {
+        withAnimation(Motion.bannerOut) {
+            notifications.removeAll { $0.pubkey != nil }
+        }
+    }
+
+    private func dismissDelay(_ kind: FollowNotification.Kind) -> TimeInterval {
+        if case .failed = kind { return 5.0 }
+        return 3.0
+    }
+
+    private func scheduleDismiss(_ id: UUID, after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             withAnimation(Motion.bannerOut) {
                 self?.notifications.removeAll { $0.id == id }
             }
@@ -294,8 +339,14 @@ struct FollowPill: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: iconName)
-                .font(.appSystem(size: 12, weight: .bold))
+            if case .pending = notification.kind {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(.white)
+            } else {
+                Image(systemName: iconName)
+                    .font(.appSystem(size: 12, weight: .bold))
+            }
 
             Text(label)
                 .font(.appSystem(size: 13, weight: .bold))
@@ -317,6 +368,7 @@ struct FollowPill: View {
         switch notification.kind {
         case .followed:   return "person.badge.plus"
         case .unfollowed: return "person.badge.minus"
+        case .pending:    return "clock"
         case .failed:     return "xmark"
         }
     }
@@ -325,6 +377,7 @@ struct FollowPill: View {
         switch notification.kind {
         case .followed:           return "Followed \(notification.recipientName)"
         case .unfollowed:         return "Unfollowed \(notification.recipientName)"
+        case .pending(let follow): return follow ? "Following \(notification.recipientName)…" : "Unfollowing \(notification.recipientName)…"
         case .failed(let reason): return reason
         }
     }
@@ -333,6 +386,7 @@ struct FollowPill: View {
         switch notification.kind {
         case .followed:   return Color(red: 0.2, green: 0.8, blue: 0.6)
         case .unfollowed: return Color(white: 0.35)
+        case .pending:    return Color(white: 0.35)
         case .failed:     return .red.opacity(0.85)
         }
     }

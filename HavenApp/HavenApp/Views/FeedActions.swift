@@ -221,10 +221,9 @@ struct FeedActions {
                 switch feedService.followUser(hexPubkey) {
                 case .success:
                     FollowNotificationManager.shared.add(recipientName: name, kind: .followed)
-                case .failure(.contactsNotLoaded):
-                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Following once your follow list loads…"))
-                case .failure(.listUnavailable):
-                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Couldn't load your follow list. Not changing it."))
+                case .failure(.contactsNotLoaded), .failure(.listUnavailable):
+                    // Queued until the follow list is confirmed; not an error.
+                    FollowNotificationManager.shared.addPending(pubkey: hexPubkey, recipientName: name, follow: true)
                 case .failure(.alreadyFollowing):
                     break
                 case .failure:
@@ -236,10 +235,8 @@ struct FeedActions {
                 switch feedService.unfollowUser(hexPubkey) {
                 case .success:
                     FollowNotificationManager.shared.add(recipientName: name, kind: .unfollowed)
-                case .failure(.contactsNotLoaded):
-                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Unfollowing once your follow list loads…"))
-                case .failure(.listUnavailable):
-                    FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Couldn't load your follow list. Not changing it."))
+                case .failure(.contactsNotLoaded), .failure(.listUnavailable):
+                    FollowNotificationManager.shared.addPending(pubkey: hexPubkey, recipientName: name, follow: false)
                 case .failure(.cannotUnfollowSelf):
                     FollowNotificationManager.shared.add(recipientName: name, kind: .failed("Can't unfollow yourself"))
                 case .failure:
