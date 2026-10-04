@@ -278,6 +278,32 @@ enum RelayConfiguration {
         ]
     }
 
+    /// Relays the app sends an event it just posted to, alongside handing it
+    /// to this device's relay.
+    ///
+    /// The local relay blasts what it stores, but only once, from a background
+    /// goroutine with nothing queued: if iOS suspends the app before that
+    /// finishes, the event never leaves the vault. On 2026-10-04 two replies
+    /// reached the vault and the replied-to author's inbox and nothing else,
+    /// so they never showed on another device's feed. Replaceable events
+    /// (profiles, relay lists) never trigger that blast at all. So every event
+    /// goes out from the app as well; relays drop the duplicate by id.
+    ///
+    /// A kind 10050 also goes to the DM relays it names, where senders look
+    /// for it.
+    static func directBroadcastRelays(kind: Int, tags: [[String]], blastrRelays: [String]) -> [String] {
+        var relays = blastrRelays.isEmpty ? fallbackBroadcastRelays : blastrRelays
+        if kind == 10050 {
+            for tag in tags where tag.count >= 2 && tag[0] == "relay" && !relays.contains(tag[1]) {
+                relays.append(tag[1])
+            }
+        }
+        return relays
+    }
+
+    /// Where events go when no blastr relays are configured.
+    static let fallbackBroadcastRelays = ["wss://relay.primal.net", "wss://nos.lol"]
+
     /// Format an environment dictionary as a .env file string.
     static func formatEnvFile(from envDict: [String: String]) -> String {
         var content = ""

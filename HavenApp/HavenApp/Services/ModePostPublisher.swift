@@ -69,7 +69,7 @@ enum ModePostPublisher {
         guard let event = await nostrService.signEventAsync(kind: kind, content: content, tags: tags) else {
             throw PublishError.signing
         }
-        nostrService.postEvent(event)
+        nostrService.postEvent(event, directBroadcast: false)
         let eventDict: [String: Any] = [
             "id": event.id,
             "pubkey": event.pubkey,

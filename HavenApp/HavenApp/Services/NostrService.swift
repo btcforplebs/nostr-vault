@@ -1319,7 +1319,9 @@ class NostrService: ObservableObject {
     }
 
     /// Posts an event to the local relay and broadcasts to configured relays
-    func postEvent(_ event: NostrEvent) {
+    /// - Parameter directBroadcast: false when the caller broadcasts the event
+    ///   itself (ModePostPublisher does, to report each relay's answer).
+    func postEvent(_ event: NostrEvent, directBroadcast: Bool = true) {
         print("NostrService: postEvent called – id=\(event.id.prefix(8)) kind=\(event.kind) sig=\(event.sig.prefix(8))")
         // Note: the relay-activity red dot is driven solely by inbound events from
         // others (see RelayProcessManager), so self-authored posts never trigger it.
@@ -1445,15 +1447,16 @@ class NostrService: ObservableObject {
             }
         }
 
-        // 3. Profile Broadcast: Send Kind 0 and the Kind 10050 DM relay list to
-        //    blastr relays directly (replaceable events don't trigger the Go
-        //    relay's StoreEvent blast). The 10050 also goes to the DM relays it
-        //    names, where senders look for it.
-        if event.kind == 0 {
-            broadcastRawEvent(eventDict)
-        } else if event.kind == 10050 {
-            let listed = event.tags.compactMap { $0.count >= 2 && $0[0] == "relay" ? $0[1] : nil }
-            broadcastRawEvent(eventDict, extraRelays: listed)
+        // 3. Direct broadcast: every event goes to the blastr relays from here
+        //    too, not only through the local relay. See
+        //    RelayConfiguration.directBroadcastRelays for why.
+        if directBroadcast {
+            let relays = RelayConfiguration.directBroadcastRelays(
+                kind: event.kind,
+                tags: event.tags,
+                blastrRelays: ConfigService.shared.config.activeBlastrRelays
+            )
+            broadcastRawEvent(eventDict, to: relays)
         }
 
     }
