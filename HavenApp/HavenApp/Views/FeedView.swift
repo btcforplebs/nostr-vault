@@ -468,7 +468,7 @@ struct FeedView: View {
     /// timeline feeds follow the legacy global preference.
     private var defaultCompactForCurrentFeed: Bool {
         switch feedService.feedMode {
-        case .following, .articles, .recipes, .live, .reels, .music:
+        case .following, .articles, .recipes, .marketplace, .live, .reels, .music:
             return false
         case .discovery, .global, .popular, .media:
             return configService.config.useFeedCompactMode
@@ -481,7 +481,7 @@ struct FeedView: View {
         switch feedService.feedMode {
         case .following, .discovery, .global, .popular:
             return true
-        case .media, .articles, .recipes, .live, .reels, .music:
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
             return false
         }
     }
@@ -604,7 +604,7 @@ struct FeedView: View {
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
         // compact mode has nothing to condense.
-        case .media, .articles, .recipes, .live, .reels, .music:
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
             return false
         }
     }
