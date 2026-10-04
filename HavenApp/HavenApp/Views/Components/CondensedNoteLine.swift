@@ -187,18 +187,8 @@ struct CondensedNoteLine: View {
 
             Spacer(minLength: 4)
 
-            if replyCount > 0 {
-                HStack(spacing: 3) {
-                    Image(systemName: "text.bubble")
-                        .font(.appSystem(size: 9, weight: .medium))
-                    Text("\(replyCount)")
-                        .font(.appSystem(size: 9, weight: .semibold, design: .monospaced))
-                }
-                .foregroundColor(.secondary.opacity(isOLED ? 0.6 : 0.7))
-            }
-
             // A reply marker is noise inside a thread — the rail already says it.
-            if note.isReply && depth == 0 && replyCount == 0 {
+            if note.isReply && depth == 0 {
                 Image(systemName: "arrowshape.turn.up.left.fill")
                     .font(.appSystem(size: 10))
                     .foregroundColor(Color.havenPurple.opacity(0.7))

@@ -195,22 +195,7 @@ fun CondensedNoteLine(
                         maxLines = 1,
                     )
                     Spacer(Modifier.weight(1f))
-                    if (replyCount > 0) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Icon(
-                                imageVector = NostrVaultIcons.Chat,
-                                contentDescription = null,
-                                tint = SecondaryText.copy(alpha = if (isOled) 0.6f else 0.7f),
-                                modifier = Modifier.size(9.dp),
-                            )
-                            Text(
-                                text = "$replyCount",
-                                color = SecondaryText.copy(alpha = if (isOled) 0.6f else 0.7f),
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                    } else if (note.isReply && depth == 0) {
+                    if (note.isReply && depth == 0) {
                         // A reply marker is noise inside a thread — the rail already says it.
                         Icon(
                             imageVector = NostrVaultIcons.Reply,
