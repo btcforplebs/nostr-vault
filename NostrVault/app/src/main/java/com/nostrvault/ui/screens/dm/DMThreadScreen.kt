@@ -36,7 +36,12 @@ import com.nostrvault.service.BlossomService
 import com.nostrvault.service.DMMessage
 import com.nostrvault.service.DMService
 import com.nostrvault.service.NostrService
+import com.nostrvault.ui.components.FullScreenMediaRouter
+import com.nostrvault.ui.components.MediaSourceKey
+import com.nostrvault.ui.components.MediaZoomSources
 import com.nostrvault.ui.components.NostrMentions
+import com.nostrvault.ui.components.RetryableAsyncImage
+import com.nostrvault.ui.components.mediaZoomSource
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -392,8 +397,14 @@ private fun MessageBubble(
     )
     val otherBubbleColor = if (oled) Color(0xFF14141A) else Color(0xFF292933)
 
+    // A photo sent as its Blossom link shows as the photo; tap opens the viewer (iOS #288).
+    val parts = remember(message.content) { DMAttachment.split(message.content) }
+    val zoomOrigin = remember { MediaZoomSources.newOrigin() }
+    val showText = parts.text.isNotEmpty() || parts.images.isEmpty()
+
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val maxBubbleWidth = maxWidth * 0.75f
+        val photoSize = minOf(240.dp, maxWidth * 0.6f)
         Column(
             horizontalAlignment = if (isFromMe) Alignment.End else Alignment.Start,
             modifier = Modifier.fillMaxWidth(),
@@ -401,29 +412,52 @@ private fun MessageBubble(
             Column(
                 modifier = Modifier
                     .widthIn(max = maxBubbleWidth)
+                    .clip(bubbleShape)
                     .background(
                         brush = if (isFromMe) {
                             Brush.linearGradient(listOf(colors.primary, colors.primaryDark))
                         } else {
                             Brush.linearGradient(listOf(otherBubbleColor, otherBubbleColor))
                         },
-                        shape = bubbleShape,
-                    )
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    ),
             ) {
-                Text(
-                    text = remember(message.content, profiles) {
-                        NostrMentions.toPlainText(message.content, profiles)
-                    },
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    lineHeight = 20.sp,
-                )
+                parts.images.forEachIndexed { index, url ->
+                    RetryableAsyncImage(
+                        model = url,
+                        contentDescription = "Photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(photoSize)
+                            .mediaZoomSource(MediaSourceKey(zoomOrigin, index), crop = true)
+                            .clickable { FullScreenMediaRouter.open(parts.images, index, zoomOrigin) },
+                    )
+                }
+                if (showText) {
+                    Text(
+                        text = remember(parts.text, profiles) {
+                            NostrMentions.toPlainText(parts.text, profiles)
+                        },
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.padding(
+                            start = 14.dp,
+                            end = 14.dp,
+                            top = 10.dp,
+                            bottom = if (message.isNIP04) 4.dp else 10.dp,
+                        ),
+                    )
+                }
                 if (message.isNIP04) {
-                    Spacer(Modifier.height(4.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        modifier = Modifier.padding(
+                            start = 14.dp,
+                            end = 14.dp,
+                            top = if (showText) 0.dp else 8.dp,
+                            bottom = 10.dp,
+                        ),
                     ) {
                         Icon(
                             imageVector = NostrVaultIcons.LockOpen,
