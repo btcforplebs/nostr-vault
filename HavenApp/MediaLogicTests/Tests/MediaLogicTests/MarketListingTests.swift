@@ -77,6 +77,21 @@ final class MarketListingTests: XCTestCase {
         XCTAssertNotNil(listing(kind: 30402, content: "", tags: [["title", "Fine"], image, ["status", "active"]]))
     }
 
+    /// Zero stock is as unbuyable as sold; a missing or null count is no limit.
+    func testOutOfStockListingsAreHidden() {
+        func product(_ quantity: String) -> String {
+            #"{"name":"Mug","images":["https://e.example/m.jpg"],"price":1,"currency":"SATS","quantity":"# + quantity + "}"
+        }
+        XCTAssertNil(listing(kind: 30018, content: product("0"), tags: [["d", "m"]]))
+        XCTAssertNil(listing(kind: 30018, content: product("\"0\""), tags: [["d", "m"]]))
+        XCTAssertNotNil(listing(kind: 30018, content: product("3"), tags: [["d", "m"]]))
+        XCTAssertNotNil(listing(kind: 30018, content: product("null"), tags: [["d", "m"]]))
+        let classified: [[String]] = [["d", "c"], ["title", "Chair"], ["image", "https://e.example/c.jpg"]]
+        XCTAssertNil(listing(kind: 30402, content: "", tags: classified + [["quantity", "0"]]))
+        XCTAssertNotNil(listing(kind: 30402, content: "", tags: classified + [["quantity", "2"]]))
+        XCTAssertNotNil(listing(kind: 30402, content: "", tags: classified))
+    }
+
     func testMissingPriceShowsQuestionMark() throws {
         let l = try XCTUnwrap(listing(kind: 30402, content: "", tags: [["title", "Ask me"], ["image", "https://x.example/a.jpg"]]))
         XCTAssertEqual(l.priceLabel, "? sats")

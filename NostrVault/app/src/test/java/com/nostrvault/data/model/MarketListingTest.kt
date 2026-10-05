@@ -49,6 +49,19 @@ class MarketListingTest {
         assertEquals("Hi! I'm interested in “Christmas Baking”.\nhttps://plebeian.market/products/id1", l.messageToSeller)
     }
 
+    /** Zero stock is as unbuyable as sold; a missing or null count is no limit. */
+    @Test fun `out of stock listings are hidden`() {
+        fun product(q: String) = """{"name":"Mug","images":["https://e.example/m.jpg"],"price":1,"currency":"SATS","quantity":$q}"""
+        assertNull(listing(30018, product("0"), listOf(listOf("d", "m"))))
+        assertNull(listing(30018, product("\"0\""), listOf(listOf("d", "m"))))
+        assertNotNull(listing(30018, product("3"), listOf(listOf("d", "m"))))
+        assertNotNull(listing(30018, product("null"), listOf(listOf("d", "m"))))
+        val classified = listOf(listOf("d", "c"), listOf("title", "Chair"), listOf("image", "https://e.example/c.jpg"))
+        assertNull(listing(30402, "", classified + listOf(listOf("quantity", "0"))))
+        assertNotNull(listing(30402, "", classified + listOf(listOf("quantity", "2"))))
+        assertNotNull(listing(30402, "", classified))
+    }
+
     @Test fun `Conduit JSON classified`() {
         val content = """{"title":"Mug","summary":"Orange mug","price":2,"currency":"USD","images":[{"url":"https://shop.conduit.market/mug.jpg"}]}"""
         val l = listing(30402, content, listOf(listOf("d", "mug")))!!

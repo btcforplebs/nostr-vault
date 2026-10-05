@@ -90,6 +90,8 @@ data class MarketListing(
             var imageStrings = emptyList<String>()
             var price = ""
             var currency = ""
+            // Stock left: NIP-15 JSON `quantity` (null = no limit), or a tag.
+            var quantity: String? = null
 
             val obj = runCatching { json.parseToJsonElement(content) as? JsonObject }.getOrNull()
             if (obj != null) {
@@ -102,6 +104,7 @@ data class MarketListing(
                 } ?: emptyList()
                 price = amountString(obj["price"] ?: obj["starting_bid"]) ?: ""
                 currency = obj.string("currency") ?: ""
+                quantity = (obj["quantity"] as? JsonPrimitive)?.contentOrNull
             } else {
                 summary = content
             }
@@ -125,6 +128,9 @@ data class MarketListing(
 
             if (title.isEmpty() || title == "Untitled Product" || images.isEmpty()) return null
             if (tagValue("status")?.lowercase() == "sold") return null
+            // Out of stock is as unbuyable as sold: 18 of ~950 live listings on
+            // 2026-10-04 said quantity 0. A missing count means no limit.
+            if ((quantity ?: tagValue("quantity"))?.trim()?.toDoubleOrNull()?.let { it <= 0 } == true) return null
             // Conduit and Shopstr hide delisted items this way instead of deleting.
             if (tagValue("visibility")?.lowercase() == "hidden") return null
 
