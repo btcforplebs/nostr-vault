@@ -3962,11 +3962,11 @@ struct FeedNoteRow: View {
             Text("Request deletion of this post? Not all relays honor NIP-09 deletion requests.")
         }
         .sheet(isPresented: $showingReportSheet) {
-            UGCReportingDialog(eventId: note.id, pubkey: note.pubkey, onDismiss: { showingReportSheet = false }) { }
+            UGCReportingDialog(eventId: bodySource.id, pubkey: bodySource.pubkey, onDismiss: { showingReportSheet = false }) { }
         }
         .alert("Block User", isPresented: $showingBlockConfirm) {
             Button("Block", role: .destructive) {
-                actions.blockUser(note.pubkey)
+                actions.blockUser(rowData.displayPubkey)
                 ActionToastManager.shared.show(
                     icon: "hand.raised.fill",
                     message: "Blocked \(rowData.displayProfile?.bestName ?? "user")",
@@ -4043,17 +4043,19 @@ struct FeedNoteRow: View {
 
     /// The ⋯ menu on the note header: the secondary actions that do not
     /// fit the action bar, in the same order as Android's NoteCard menu.
+    /// On a repost every item acts on the original the row shows, not the
+    /// reposter: Android keys its menu on effectiveEventId the same way.
     private var moreMenu: some View {
         Menu {
             ShareLink(
-                item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
+                item: URL(string: "https://mynostrspace.com/thread/\(bodySource.nevent)")!,
                 subject: Text(String(localized: "feed.share.subject")),
                 message: Text(String(localized: "feed.share.message"))
             ) {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
             Button {
-                copyToPasteboard("https://mynostrspace.com/thread/\(note.nevent)")
+                copyToPasteboard("https://mynostrspace.com/thread/\(bodySource.nevent)")
                 ActionToastManager.shared.show(icon: "link", message: "Link copied")
             } label: {
                 Label("Copy Link", systemImage: "link")
