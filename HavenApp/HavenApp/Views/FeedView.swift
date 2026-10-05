@@ -400,6 +400,8 @@ struct FeedView: View {
     @State private var showingProfileKey: IdentifiableString?
     @State private var showingMediaUrl: IdentifiableURL?
     @Namespace private var mediaZoom
+    /// The tapped row grows into the thread view rather than pushing in.
+    @Namespace private var threadZoom
     /// macOS presents the article reader as a sheet; iOS pushes it.
     @State private var showingArticle: ArticleRoute?
     @StateObject private var recipeService = RecipeFeedService.shared
@@ -1135,6 +1137,8 @@ struct FeedView: View {
             }
         }
         .padding(.horizontal, isCompactModeActive && !isExpanded ? 8 : 16)
+        // The thread view zooms open out of this row (iOS 18).
+        .threadZoomSource(id: note.id, in: threadZoom)
     }
 
     var body: some View {
@@ -1161,6 +1165,7 @@ struct FeedView: View {
                     .toolbarBackground(.hidden, for: .navigationBar)
                     .navigationDestination(for: FeedNote.self) { note in
                         NoteDetailView(note: note)
+                            .threadZoomDestination(id: note.id, in: threadZoom)
                     }
                     .navigationDestination(for: ArticleRoute.self) { route in
                         ArticleReaderView(note: route.note)

@@ -61,6 +61,14 @@ struct NoteDetailView: View {
     /// Set once the reader scrolls or picks another note; until then the
     /// opened note is kept at the top as the thread above it loads.
     @State private var didLandOnFocusedNote = false
+    /// Shown from the first frame: the opened note is placed by
+    /// `scrollPosition` before the screen draws. Kept so a late landing
+    /// (history still loading) animates rather than jumps.
+    @State private var isSettled = true
+    private static let settleCap: TimeInterval = 0.6
+    /// Where the opened note sits: a little below the top, so the end of the
+    /// post it answers shows above it as context.
+    private static let landingAnchor = UnitPoint(x: 0.5, y: 0.12)
     /// Height of the scroll view, for the room left under a short thread.
     @State private var viewportHeight: CGFloat = 0
     /// Your Web of Trust plus follows, read once when the view appears.
@@ -199,14 +207,26 @@ struct NoteDetailView: View {
         let target = focusedNoteId.isEmpty ? note.id : focusedNoteId
         // Next runloop turn, once the revealed history has laid out, and once
         // more after images above have had a moment to size themselves.
-        DispatchQueue.main.async {
+        // Hidden until settled, these moves are invisible; once the thread is
+        // showing (a slow history arriving later) it glides instead of jumping.
+        let move = { (animated: Bool) in
             guard !didLandOnFocusedNote else { return }
-            proxy.scrollTo(target, anchor: .top)
+            if animated && isSettled {
+                withAnimation(Motion.scrollJump) { proxy.scrollTo(target, anchor: Self.landingAnchor) }
+            } else {
+                proxy.scrollTo(target, anchor: Self.landingAnchor)
+            }
         }
+        DispatchQueue.main.async { move(true) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            guard !didLandOnFocusedNote else { return }
-            proxy.scrollTo(target, anchor: .top)
+            move(true)
+            settle()
         }
+    }
+
+    private func settle() {
+        guard !isSettled else { return }
+        withAnimation(Motion.fade) { isSettled = true }
     }
 
     private func selectAndScrollToNote(_ targetId: String, proxy: ScrollViewProxy) {
@@ -270,8 +290,9 @@ struct NoteDetailView: View {
                 .scrollTargetLayout()
                 .padding(.top, 16)
                 .padding(.bottom, 90)
+                .opacity(isSettled ? 1 : 0)
             }
-            .scrollPosition(id: $pinnedScrollId, anchor: .top)
+            .scrollPosition(id: $pinnedScrollId, anchor: Self.landingAnchor)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
             // The reader took over: stop putting the opened note back on top.
             .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in didLandOnFocusedNote = true })
@@ -289,6 +310,10 @@ struct NoteDetailView: View {
                 // Parents already cached: they are on screen from the first frame.
                 try? await Task.sleep(nanoseconds: 50_000_000)
                 if !isLoadingParents { landOnFocusedNote(proxy: proxy) }
+                // Nothing above to wait for, or a slow thread: show it anyway.
+                if dynamicParents.isEmpty && !isLoadingParents { settle(); return }
+                try? await Task.sleep(nanoseconds: UInt64(Self.settleCap * 1_000_000_000))
+                settle()
             }
             .onChange(of: focusedNoteId) { _, newId in
                 if !newId.isEmpty {
@@ -2336,5 +2361,38 @@ struct OtherResponseCard: View {
         } else {
             card
         }
+    }
+}
+
+// MARK: - Zoom into a thread (iOS 18)
+
+extension View {
+    /// Marks a feed row as the place its thread view zooms out of.
+    @ViewBuilder
+    func threadZoomSource(id: String, in namespace: Namespace.ID) -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *) {
+            self.matchedTransitionSource(id: id, in: namespace)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// The thread view zooms open from the row it was tapped in; a normal
+    /// push on iOS 17 and the Mac.
+    @ViewBuilder
+    func threadZoomDestination(id: String, in namespace: Namespace.ID) -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *) {
+            self.navigationTransition(.zoom(sourceID: id, in: namespace))
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
     }
 }
