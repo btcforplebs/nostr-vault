@@ -22,6 +22,10 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.outlined.BorderColor
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.automirrored.outlined.Reply
+import com.nostrvault.ui.components.engagementCountLabel
+import com.nostrvault.ui.components.formatCount
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
@@ -35,6 +39,9 @@ import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.ArticleEngagement
+import com.nostrvault.data.model.ArticleEngagementEvent
+import com.nostrvault.data.model.ArticleTallies
+import com.nostrvault.data.model.ArticleTally
 import com.nostrvault.data.model.ArticleHighlight
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.NIP10Thread
@@ -91,6 +98,8 @@ class ArticleReaderViewModel @Inject constructor(
     private companion object {
         /** Highlights already fetched this session, by article id. */
         val highlightCache = ConcurrentHashMap<String, List<ArticleHighlight>>()
+        /** Likes, zaps and comments fetched this session, by article id. */
+        val engagementCache = ConcurrentHashMap<String, List<ArticleEngagementEvent>>()
     }
 
     private val _note = MutableStateFlow<FeedNote?>(null)
@@ -108,6 +117,12 @@ class ArticleReaderViewModel @Inject constructor(
     private val _zapped = MutableStateFlow(false)
     val zapped: StateFlow<Boolean> = _zapped.asStateFlow()
 
+    /** Sats you zapped from this screen, counted before the receipt arrives. */
+    private val _zappedSats = MutableStateFlow(0L)
+    val zappedSats: StateFlow<Long> = _zappedSats.asStateFlow()
+
+    val myPubkey: String get() = configStore.activeAccountHexPubkey.value
+
     private val relayHint: String get() = configStore.config.value.nostrURL ?: ""
 
     /** Same optimistic like as the feed, tagged with the article's `a` coordinate. */
@@ -124,6 +139,7 @@ class ArticleReaderViewModel @Inject constructor(
             zapSendService.zapNote(note.id, note.pubkey, amountSats, addressTag = coordinate).fold(
                 onSuccess = {
                     _zapped.value = true
+                    _zappedSats.update { it + amountSats }
                     _message.emit("Zapped ⚡$amountSats sats")
                 },
                 onFailure = { e -> _message.emit(e.message ?: "Zap failed") },
@@ -223,6 +239,71 @@ class ArticleReaderViewModel @Inject constructor(
         return highlight.takeIf { HavenBridge.verifyEvent(ev.toString()) }
     }
 
+    // ── Likes, zaps and comments from the network ────────────────────
+
+    private val _tally = MutableStateFlow(ArticleTally())
+    val tally: StateFlow<ArticleTally> = _tally.asStateFlow()
+
+    /**
+     * Fetch the article's likes, zaps and comments from the relays highlights
+     * come from, showing each relay's answer as it lands. A reopened article
+     * shows the last result at once while the relays are asked again.
+     */
+    fun loadEngagement(note: FeedNote) {
+        val coordinate = NIP10Thread.coordinate(note.kind, note.pubkey, note.tags)
+        // Each event is checked once, however many snapshots it appears in.
+        val checked = ConcurrentHashMap<String, Optional<ArticleEngagementEvent>>()
+        fun show(events: List<ArticleEngagementEvent>) {
+            val found = ArticleTallies.tally(events, note.id, coordinate)
+            // An earlier, smaller snapshot can finish after a later one.
+            _tally.update { if (found.size >= it.size) found else it }
+            val profiles = nostrService.profiles.value
+            val missing = found.topLevelComments.map { it.pubkey }.distinct().filter { it !in profiles }
+            if (missing.isNotEmpty()) nostrService.fetchMissingProfiles(missing)
+        }
+        fun parsed(raw: List<JsonObject>) = raw.mapNotNull { ev ->
+            val id = (ev["id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+            checked.getOrPut(id) { Optional.ofNullable(parseEngagement(ev)) }.orElse(null)
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            val earlier = engagementCache[note.id].orEmpty()
+            if (earlier.isNotEmpty()) show(earlier)
+            val events = nostrService.queryRawEvents(
+                filters = ArticleTallies.engagementFilters(note.id, coordinate),
+                relayUrls = highlightRelays(note),
+                onProgress = { show(earlier + parsed(it)) },
+            )
+            // Keep what an earlier load found if a relay this time came back short.
+            val merged = (earlier + parsed(events)).associateBy { it.id }.values.toList()
+            engagementCache[note.id] = merged
+            show(merged)
+        }
+    }
+
+    /** A signed like, zap receipt or comment that isn't spam, or null. */
+    private fun parseEngagement(ev: JsonObject): ArticleEngagementEvent? {
+        fun str(key: String) = (ev[key] as? JsonPrimitive)?.contentOrNull
+        val id = str("id") ?: return null
+        val pubkey = str("pubkey") ?: return null
+        val content = str("content") ?: return null
+        val kind = (ev["kind"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: return null
+        val createdAt = (ev["created_at"] as? JsonPrimitive)?.longOrNull ?: return null
+        val tags = (ev["tags"] as? JsonArray)?.map { tag ->
+            (tag as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+        } ?: return null
+        // Spam comments are dropped the same way the thread view drops them.
+        val isComment = kind == ArticleTallies.COMMENT_KIND || kind == ArticleTallies.NOTE_KIND
+        if (isComment && FeedNote.isNoiseOrSpam(content, tags)) return null
+        if (!HavenBridge.verifyEvent(ev.toString())) return null
+        return ArticleEngagementEvent(id, kind, pubkey, content, createdAt, tags)
+    }
+
+    /** Makes [comment] resolvable by id for the note screen; returns that id. */
+    fun prepareOpen(comment: ArticleEngagementEvent): String {
+        feedService.cacheNote(comment.toNote())
+        return comment.id
+    }
+
     /** Makes [highlight] resolvable by id for the compose screen; returns that id. */
     fun prepareComment(highlight: ArticleHighlight): String {
         feedService.cacheNote(highlight.toNote())
@@ -255,6 +336,7 @@ fun ArticleReaderScreen(
     onBack: () -> Unit,
     onProfileClick: (String) -> Unit,
     onComment: (String) -> Unit,
+    onNoteClick: (String) -> Unit,
     viewModel: ArticleReaderViewModel = hiltViewModel(),
 ) {
     val note by viewModel.note.collectAsState()
@@ -272,6 +354,18 @@ fun ArticleReaderScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val highlights by viewModel.highlights.collectAsState()
+    val tally by viewModel.tally.collectAsState()
+    val zappedSats by viewModel.zappedSats.collectAsState()
+    // Back from composing a comment: ask again so it shows.
+    var resumed by remember { mutableStateOf(0) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) resumed++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var shownHighlights by remember { mutableStateOf<List<ArticleHighlight>?>(null) }
     val highlightSheetState = rememberModalBottomSheetState()
     val commentOnHighlight: (ArticleHighlight) -> Unit = { h ->
@@ -297,6 +391,7 @@ fun ArticleReaderScreen(
         val current = note
         if (current != null) {
             LaunchedEffect(current.id) { viewModel.loadHighlights(current) }
+            LaunchedEffect(current.id, resumed) { if (resumed > 0) viewModel.loadEngagement(current) }
         }
         when {
             current != null -> ArticleBody(
@@ -304,9 +399,15 @@ fun ArticleReaderScreen(
                 author = profiles[current.pubkey],
                 onProfileClick = onProfileClick,
                 actions = {
+                    val isLiked = current.id in liked
                     ArticleActionBar(
-                        liked = current.id in liked,
+                        liked = isLiked,
                         zapped = zapped,
+                        // Your own like and zap count as soon as you make them,
+                        // before a relay echoes them back.
+                        likeCount = tally.likers.size + if (isLiked && viewModel.myPubkey !in tally.likers) 1 else 0,
+                        commentCount = tally.commentCount,
+                        zapSats = tally.zapSats + if (tally.zapSats == 0L) zappedSats else 0L,
                         highlighting = highlighting,
                         onLike = { viewModel.like(current) },
                         onComment = { onComment(current.id) },
@@ -329,6 +430,8 @@ fun ArticleReaderScreen(
                 profiles = profiles,
                 onShowHighlights = { shownHighlights = it },
                 onCommentHighlight = commentOnHighlight,
+                tally = tally,
+                onOpenComment = { onNoteClick(viewModel.prepareOpen(it)) },
                 modifier = Modifier
                     .padding(padding)
                     .verticalScroll(rememberScrollState())
@@ -401,6 +504,9 @@ fun ArticleReaderScreen(
 private fun ArticleActionBar(
     liked: Boolean,
     zapped: Boolean,
+    likeCount: Int,
+    commentCount: Int,
+    zapSats: Long,
     highlighting: Boolean,
     onLike: () -> Unit,
     onComment: () -> Unit,
@@ -411,10 +517,12 @@ private fun ArticleActionBar(
     val colors = LocalNostrVaultColors.current
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         ActionPill(if (liked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, "Like",
-            if (liked) Color(0xFFE5484D) else SecondaryText, onLike)
-        ActionPill(Icons.Outlined.ChatBubbleOutline, "Comment", SecondaryText, onComment)
+            if (liked) Color(0xFFE5484D) else SecondaryText, onLike, count = engagementCountLabel(likeCount))
+        ActionPill(Icons.Outlined.ChatBubbleOutline, "Comment", SecondaryText, onComment,
+            count = engagementCountLabel(commentCount))
         ActionPill(if (zapped) Icons.Filled.Bolt else Icons.Outlined.Bolt, "Zap",
-            if (zapped) Color(0xFFF5A623) else SecondaryText, onZap)
+            if (zapped || zapSats > 0) Color(0xFFF5A623) else SecondaryText, onZap,
+            count = zapSats.takeIf { it > 0 }?.let { formatCount(it) })
         ActionPill(Icons.Outlined.BorderColor, "Highlight",
             if (highlighting) colors.primary else SecondaryText, onHighlight)
         ActionPill(Icons.Outlined.Share, "Share", SecondaryText, onShare)
@@ -422,16 +530,22 @@ private fun ArticleActionBar(
 }
 
 @Composable
-private fun ActionPill(icon: ImageVector, label: String, tint: Color, onClick: () -> Unit) {
-    Box(
-        contentAlignment = Alignment.Center,
+private fun ActionPill(icon: ImageVector, label: String, tint: Color, onClick: () -> Unit, count: String? = null) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
         modifier = Modifier
-            .size(width = 44.dp, height = 36.dp)
+            .defaultMinSize(minWidth = 44.dp, minHeight = 36.dp)
             .clip(RoundedCornerShape(50))
             .background(SecondaryText.copy(alpha = 0.1f))
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .padding(horizontal = if (count == null) 0.dp else 12.dp),
     ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(18.dp))
+        Icon(icon, contentDescription = if (count == null) label else "$label, $count", tint = tint,
+            modifier = Modifier.size(18.dp))
+        if (count != null) {
+            Text(count, color = tint, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
     }
 }
 
@@ -487,6 +601,8 @@ private fun ArticleBody(
     profiles: Map<String, FeedProfile>,
     onShowHighlights: (List<ArticleHighlight>) -> Unit,
     onCommentHighlight: (ArticleHighlight) -> Unit,
+    tally: ArticleTally,
+    onOpenComment: (ArticleEngagementEvent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
@@ -624,11 +740,70 @@ private fun ArticleBody(
         HorizontalDivider(color = SecondaryText.copy(alpha = 0.2f))
         Spacer(Modifier.height(12.dp))
         actions()
+        if (tally.commentCount > 0) {
+            Spacer(Modifier.height(24.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Outlined.Forum, contentDescription = null, tint = PrimaryText, modifier = Modifier.size(16.dp))
+                Text("Comments · ${tally.commentCount}", color = PrimaryText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                tally.topLevelComments.forEach { comment ->
+                    ArticleCommentRow(
+                        comment = comment,
+                        author = profiles[comment.pubkey],
+                        replies = tally.replyCounts[comment.id] ?: 0,
+                        onClick = { onOpenComment(comment) },
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(48.dp))
     }
 }
 
 private val HighlightYellow = Color(0xFFFFD60A)
+
+/** One comment under an article: who, when, what. Opens as a note, where its replies are. */
+@Composable
+private fun ArticleCommentRow(comment: ArticleEngagementEvent, author: FeedProfile?, replies: Int, onClick: () -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SecondaryText.copy(alpha = 0.08f))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AvatarImage(url = author?.pictureURL, pubkey = comment.pubkey, size = 24.dp, displayName = author?.bestName)
+            Text(
+                author?.bestName ?: ("npub…" + comment.pubkey.takeLast(6)),
+                color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Text(
+                DateUtils.getRelativeTimeSpanString(
+                    comment.createdAt * 1000, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS,
+                ).toString(),
+                color = SecondaryText, fontSize = 11.sp, maxLines = 1,
+            )
+        }
+        if (comment.content.isNotBlank()) {
+            Text(comment.content.trim(), color = PrimaryText, fontSize = 14.sp, lineHeight = 20.sp)
+        }
+        if (replies > 0) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(Icons.AutoMirrored.Outlined.Reply, contentDescription = null, tint = colors.primary,
+                    modifier = Modifier.size(13.dp))
+                Text(if (replies == 1) "1 reply" else "$replies replies", color = colors.primary,
+                    fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
 
 /** One person's highlight: who, the passage, their comment if any, and a reply button. */
 @Composable

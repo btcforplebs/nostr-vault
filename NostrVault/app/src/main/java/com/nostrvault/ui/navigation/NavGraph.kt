@@ -385,6 +385,9 @@ fun NostrVaultNavHost(
                         onComment = { id ->
                             navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = id))
                         },
+                        onNoteClick = { id ->
+                            navController.navigate(Screen.NoteDetail.createRoute(id))
+                        },
                     )
                 }
 
