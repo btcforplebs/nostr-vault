@@ -3240,6 +3240,8 @@ struct FeedNoteRow: View {
     @State private var zapSheetContext: ZapSheetContext?
     @State private var showingDeleteConfirm = false
     @State private var showingBroadcastSheet = false
+    @State private var showingReportSheet = false
+    @State private var showingBlockConfirm = false
     @State private var showingNoteIdInRow: String?
     @State private var noLightningAddressAlert = false
     @State private var showingUserMenu = false
@@ -3527,6 +3529,8 @@ struct FeedNoteRow: View {
                                 .font(.appSystem(size: 11, weight: .regular, design: .monospaced))
                                 .foregroundColor(.secondary)
                                 .tracking(0.2)
+
+                            moreMenu
                         }
 
                         // Reply indicator - subtle
@@ -3603,6 +3607,8 @@ struct FeedNoteRow: View {
                             .font(.appSystem(size: 11, weight: .regular, design: .monospaced))
                             .foregroundColor(.secondary)
                             .tracking(0.2)
+
+                        moreMenu
                     }
                     .padding(.top, 4)
 
@@ -3842,31 +3848,6 @@ struct FeedNoteRow: View {
                     }
             }
 
-            ShareLink(
-                item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
-                subject: Text(String(localized: "feed.share.subject")),
-                message: Text(String(localized: "feed.share.message"))
-            ) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.appSystem(size: 14, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(Color.secondary.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-
-            Button {
-                showingBroadcastSheet = true
-            } label: {
-                Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.appSystem(size: 14, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(Color.secondary.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-
             Spacer()
         }
         .padding(.top, 4)
@@ -3980,6 +3961,22 @@ struct FeedNoteRow: View {
         } message: {
             Text("Request deletion of this post? Not all relays honor NIP-09 deletion requests.")
         }
+        .sheet(isPresented: $showingReportSheet) {
+            UGCReportingDialog(eventId: note.id, pubkey: note.pubkey, onDismiss: { showingReportSheet = false }) { }
+        }
+        .alert("Block User", isPresented: $showingBlockConfirm) {
+            Button("Block", role: .destructive) {
+                actions.blockUser(note.pubkey)
+                ActionToastManager.shared.show(
+                    icon: "hand.raised.fill",
+                    message: "Blocked \(rowData.displayProfile?.bestName ?? "user")",
+                    color: .red
+                )
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Block this user? Their posts will be hidden from your feed.")
+        }
         .onDisappear { showingUserMenu = false; menuExpanded = false; showingParentUserMenu = false; parentMenuExpanded = false }
     }
 
@@ -4042,6 +4039,76 @@ struct FeedNoteRow: View {
                 dismissMenu(expanded: $parentMenuExpanded, showing: $showingParentUserMenu)
             }
         }
+    }
+
+    /// The ⋯ menu on the note header: the secondary actions that do not
+    /// fit the action bar, in the same order as Android's NoteCard menu.
+    private var moreMenu: some View {
+        Menu {
+            ShareLink(
+                item: URL(string: "https://mynostrspace.com/thread/\(note.nevent)")!,
+                subject: Text(String(localized: "feed.share.subject")),
+                message: Text(String(localized: "feed.share.message"))
+            ) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            Button {
+                copyToPasteboard("https://mynostrspace.com/thread/\(note.nevent)")
+                ActionToastManager.shared.show(icon: "link", message: "Link copied")
+            } label: {
+                Label("Copy Link", systemImage: "link")
+            }
+            if !bodySource.content.isEmpty {
+                Button {
+                    copyToPasteboard(bodySource.content.trimmingCharacters(in: .whitespacesAndNewlines))
+                    ActionToastManager.shared.show(icon: "doc.on.doc", message: "Text copied")
+                } label: {
+                    Label("Copy Text", systemImage: "doc.on.doc")
+                }
+            }
+            Button {
+                showingBroadcastSheet = true
+            } label: {
+                Label("Broadcast", systemImage: "antenna.radiowaves.left.and.right")
+            }
+            Divider()
+            if rowData.isOwnNote {
+                Button(role: .destructive) {
+                    showingDeleteConfirm = true
+                } label: {
+                    Label("Delete Post", systemImage: "trash")
+                }
+            } else {
+                Button(role: .destructive) {
+                    showingReportSheet = true
+                } label: {
+                    Label("Report Post", systemImage: "flag.fill")
+                }
+                Button(role: .destructive) {
+                    showingBlockConfirm = true
+                } label: {
+                    Label("Block User", systemImage: "hand.raised.fill")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.appSystem(size: 14, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 28, height: 20)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("More")
+    }
+
+    private func copyToPasteboard(_ string: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(string, forType: .string)
+        #else
+        UIPasteboard.general.string = string
+        #endif
     }
 
     @ViewBuilder
