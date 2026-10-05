@@ -100,10 +100,6 @@ struct VaultView: View {
     @State var walletGivenNotes: [NostrEvent] = []
     /// Post id -> sats you paid it, from the same wallet history.
     @State var walletGivenAmounts: [String: Int64] = [:]
-    /// Your posts that the wallet received zaps for, and who sent how much.
-    /// Covers zaps whose receipts never reached a relay this tab reads.
-    @State var walletReceivedNotes: [NostrEvent] = []
-    @State var walletReceivedZaps: [String: [(pubkey: String, amount: Int64)]] = [:]
     /// Account + wallet the wallet history was read for; nil until it was.
     @State var walletGivenKey: String?
     @State var walletGivenLoading = false
