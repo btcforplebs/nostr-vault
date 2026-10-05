@@ -40,6 +40,12 @@ import com.nostrvault.data.model.NoteStats
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import com.nostrvault.ui.components.NoteCard
+import com.nostrvault.ui.navigation.HashtagLink
+import com.nostrvault.ui.navigation.LocalOpenHashtag
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -472,6 +478,8 @@ fun SearchScreen(
     val toast by viewModel.toast.collectAsState()
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
+    val openHashtag = LocalOpenHashtag.current
+    val keyboard = LocalSoftwareKeyboardController.current
 
     // Zap feedback, the same way the profile timeline reports it.
     LaunchedEffect(toast) {
@@ -581,6 +589,14 @@ fun SearchScreen(
                         }
                     },
                     singleLine = true,
+                    // "#bitcoin" opens the hashtag's feed instead of a word search.
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    // Anything else is already searching as it is typed.
+                    keyboardActions = KeyboardActions(onSearch = {
+                        keyboard?.hide()
+                        val tag = HashtagLink.fromSearchQuery(query)
+                        if (tag != null && openHashtag != null) openHashtag(tag)
+                    }),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = colors.primary,
                         unfocusedBorderColor = SeparatorColor,
@@ -662,7 +678,10 @@ fun SearchScreen(
                                 trendingHashtags.forEach { tag ->
                                     TrendingHashtagChip(
                                         tag = tag,
-                                        onClick = { viewModel.setQuery("#$tag") },
+                                        // Opens the hashtag's own feed: posts tagged with it, not a word search.
+                                        onClick = {
+                                            if (openHashtag != null) openHashtag(tag) else viewModel.setQuery("#$tag")
+                                        },
                                         colors = colors,
                                     )
                                 }

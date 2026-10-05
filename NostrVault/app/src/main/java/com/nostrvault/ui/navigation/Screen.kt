@@ -22,6 +22,10 @@ sealed class Screen(val route: String) {
     data object NoteDetail : Screen("note/{noteId}") {
         fun createRoute(noteId: String) = "note/$noteId"
     }
+    /** Posts tagged with one hashtag (`#t`), live. [tag] is lowercased, no #. */
+    data object HashtagFeed : Screen("hashtag/{tag}") {
+        fun createRoute(tag: String) = "hashtag/${android.net.Uri.encode(tag)}"
+    }
     data object DMThread : Screen("dm_thread/{pubkey}") {
         fun createRoute(pubkey: String) = "dm_thread/$pubkey"
     }
