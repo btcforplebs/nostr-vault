@@ -373,6 +373,9 @@ fun NostrVaultNavHost(
                         onNavigateToSettings = {
                             navController.navigate(Screen.Settings.route)
                         },
+                        onOpenLightning = {
+                            navController.navigate(Screen.Wallet.route)
+                        },
                         onNavigateToDMThread = { pk ->
                             navController.navigate(Screen.DMThread.createRoute(pk))
                         },

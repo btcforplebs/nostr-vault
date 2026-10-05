@@ -621,6 +621,19 @@ class DMService @Inject constructor(
         }
     }
 
+    /** Drops one message (a failed send's optimistic copy) from a conversation. */
+    private fun removeMessageFromConversation(counterparty: String, messageId: String) {
+        val current = _conversations.value.toMutableList()
+        val index = current.indexOfFirst { it.id == counterparty }
+        if (index < 0) return
+        val conv = current[index]
+        val remaining = conv.messages.filterNot { it.id == messageId }
+        if (remaining.size == conv.messages.size) return
+        if (remaining.isEmpty()) current.removeAt(index) else current[index] = conv.copy(messages = remaining)
+        _conversations.value = current
+        saveCachedConversations()
+    }
+
     private fun addMessageToConversation(counterparty: String, message: DMMessage) {
         val current = _conversations.value.toMutableList()
         val existingIndex = current.indexOfFirst { it.id == counterparty }
@@ -671,6 +684,12 @@ class DMService @Inject constructor(
     /**
      * Send a DM using NIP-17 (default) or NIP-04 (legacy).
      */
+    /**
+     * Sends a DM. Throws when the message could not be built (no key, a
+     * signer that refused, encryption failed) so the screen can show iOS's
+     * "Failed to Send" alert and hand the text back; nothing was published
+     * then. Once publishing starts, relay failures are only logged.
+     */
     suspend fun sendDM(
         content: String,
         recipientHexPubkey: String,
@@ -702,6 +721,7 @@ class DMService @Inject constructor(
 
         // Create gift wraps in background
         withContext(Dispatchers.IO) {
+            var publishing = false
             try {
                 val ownHexPubkey = nostrService.activeHexPubkey
 
@@ -748,6 +768,7 @@ class DMService @Inject constructor(
                 }
 
                 if (switchGeneration != generation) return@withContext
+                publishing = true
 
                 // Pre-mark our own self-copy gift wrap as seen. It is addressed to
                 // us (kind 1059, #p = self) so it echoes back through every DM
@@ -786,8 +807,17 @@ class DMService @Inject constructor(
                 for (relayUrl in recipientRelays) {
                     publishAuthenticated(recipientEvent, relayUrl, ownHexPubkey)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "NIP-17 send failed: ${e.message}")
+                if (!publishing) {
+                    // Nothing went out: take back the optimistic bubble.
+                    withContext(Dispatchers.Main.immediate) {
+                        removeMessageFromConversation(recipientHexPubkey, optimisticId)
+                    }
+                    throw e
+                }
             }
         }
     }
@@ -796,6 +826,7 @@ class DMService @Inject constructor(
         val generation = switchGeneration
 
         withContext(Dispatchers.IO) {
+            var publishing = false
             try {
                 val encrypted = if (isAmberMode()) {
                     amberSignerService.nip04Encrypt(content, recipientHexPubkey)
@@ -813,6 +844,7 @@ class DMService @Inject constructor(
                     ?: throw Exception("Signing failed")
 
                 if (switchGeneration != generation) return@withContext
+                publishing = true
 
                 // Optimistic UI
                 val message = DMMessage(
@@ -849,8 +881,11 @@ class DMService @Inject constructor(
                     if (relayUrl in recipientRelays) continue
                     fireAndForgetPublish(eventJson, relayUrl)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "NIP-04 send failed: ${e.message}")
+                if (!publishing) throw e
             }
         }
     }

@@ -37,6 +37,7 @@ import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -77,6 +78,11 @@ class NewMessageViewModel @Inject constructor(
 
     private val _attachedImage = MutableStateFlow<Uri?>(null)
     val attachedImage: StateFlow<Uri?> = _attachedImage.asStateFlow()
+
+    /** Set when a send fails; the screen shows it in the "Failed to Send" alert. */
+    private val _sendError = MutableStateFlow<String?>(null)
+    val sendError: StateFlow<String?> = _sendError.asStateFlow()
+    fun clearSendError() { _sendError.value = null }
 
     /** Search results: npub decode (single hit) or name/pubkey substring filter (cap 10). */
     val searchResults: StateFlow<List<String>> =
@@ -134,19 +140,29 @@ class NewMessageViewModel @Inject constructor(
 
         viewModelScope.launch {
             _isSending.value = true
-            val imageUrl = image?.let { uploadImage(it) }
-            val content = buildString {
-                append(text)
-                if (imageUrl != null) {
-                    if (text.isNotEmpty()) append("\n")
-                    append(imageUrl)
+            try {
+                // A photo that failed to upload stops the send, as iOS does,
+                // instead of sending the text alone or a blank DM.
+                val imageUrl = image?.let { uploadImage(it) ?: throw DMPhotoUploadException() }
+                val content = buildString {
+                    append(text)
+                    if (imageUrl != null) {
+                        if (text.isNotEmpty()) append("\n")
+                        append(imageUrl)
+                    }
                 }
+                if (content.isNotEmpty()) {
+                    dmService.sendDM(content, recipient)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The text and photo were never cleared, so they stay in the box.
+                _sendError.value = DMSendFailure.message(e)
+                return@launch
+            } finally {
+                _isSending.value = false
             }
-            // If an image was attached but upload failed, abort rather than send a blank DM.
-            if (content.isNotEmpty()) {
-                dmService.sendDM(content, recipient)
-            }
-            _isSending.value = false
             onSent(recipient)
         }
     }
@@ -181,7 +197,10 @@ fun NewMessageScreen(
     val isSending by viewModel.isSending.collectAsState()
     val canSend by viewModel.canSend.collectAsState()
     val attachedImage by viewModel.attachedImage.collectAsState()
+    val sendError by viewModel.sendError.collectAsState()
     val colors = LocalNostrVaultColors.current
+
+    sendError?.let { DMSendFailedDialog(it, onDismiss = viewModel::clearSendError) }
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),

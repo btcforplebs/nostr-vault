@@ -101,6 +101,7 @@ fun AdvancedSettingsScreen(
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
     var showResetDialog by remember { mutableStateOf(false) }
+    var confirmClearCache by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -152,7 +153,7 @@ fun AdvancedSettingsScreen(
             ToggleRow("Disable Media Cache", config.disableMediaCache, viewModel::setDisableMediaCache)
             ToggleRow("Prefetch Profile Pictures", config.prefetchAvatars, viewModel::setPrefetch)
             PickerRow("Cache TTL", CACHE_TTL_OPTIONS, config.cacheTTLDays) { viewModel.setCacheTTL(it) }
-            TextButton(onClick = { viewModel.clearMediaCache() }) {
+            TextButton(onClick = { confirmClearCache = true }) {
                 Text("Clear Media Cache", color = ErrorRed)
             }
 
@@ -196,6 +197,26 @@ fun AdvancedSettingsScreen(
 
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    if (confirmClearCache) {
+        // Same title, message and buttons as the iOS Media & Cache screen.
+        AlertDialog(
+            onDismissRequest = { confirmClearCache = false },
+            title = { Text("Clear Media Cache?") },
+            text = {
+                Text("Removes temporary copies of images and videos. They download again when you view them. Your vault and your Blossom servers are not touched.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClearCache = false
+                    viewModel.clearMediaCache()
+                }) { Text("Clear", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearCache = false }) { Text("Cancel") }
+            },
+        )
     }
 
     if (showResetDialog) {

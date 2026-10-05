@@ -353,6 +353,53 @@ private fun AccountDetail(
     val hasBunker = cfg.bunkerConfig(npub) != null
     var revealed by remember(npub) { mutableStateOf<String?>(null) }
     var confirmRemoveKey by remember(npub) { mutableStateOf(false) }
+    var confirmDisconnectSigner by remember(npub) { mutableStateOf(false) }
+    var confirmRemoveAccount by remember(npub) { mutableStateOf(false) }
+
+    // Same titles, messages and buttons as iOS (SettingsView.swift).
+    if (confirmDisconnectSigner) {
+        AlertDialog(
+            onDismissRequest = { confirmDisconnectSigner = false },
+            title = { Text("Disconnect Remote Signer") },
+            text = {
+                Text(
+                    if (hasLocalKey) {
+                        "This drops the remote signer connection and its stored session. Signing falls back to the local key on this device; reconnecting needs a fresh bunker URI."
+                    } else {
+                        "This drops the remote signer connection and its stored session, and nothing else here can sign for this account afterwards. Reconnecting needs a fresh bunker URI."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDisconnectSigner = false
+                    viewModel.disconnectSigner(npub)
+                }) { Text("Disconnect", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDisconnectSigner = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (confirmRemoveAccount) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveAccount = false },
+            title = { Text("Remove Account") },
+            text = {
+                Text("This removes ${npub.take(12)}… from Nostr Vault, along with any key or signer stored for it. Nothing on the relays changes, but you will need the key again to sign back in.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemoveAccount = false
+                    viewModel.removeAccount(npub)
+                }) { Text("Remove Account", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemoveAccount = false }) { Text("Cancel") }
+            },
+        )
+    }
 
     if (confirmRemoveKey) {
         AlertDialog(
@@ -446,7 +493,7 @@ private fun AccountDetail(
 
         // Remote signer
         if (hasBunker) {
-            TextButton(onClick = { viewModel.disconnectSigner(npub) }) {
+            TextButton(onClick = { confirmDisconnectSigner = true }) {
                 Text("Disconnect Remote Signer", color = ErrorRed)
             }
         }
@@ -462,7 +509,7 @@ private fun AccountDetail(
         }
 
         if (!isOwner) {
-            TextButton(onClick = { viewModel.removeAccount(npub) }) {
+            TextButton(onClick = { confirmRemoveAccount = true }) {
                 Text("Remove Account", color = ErrorRed)
             }
         }

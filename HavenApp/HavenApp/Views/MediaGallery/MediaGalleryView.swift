@@ -23,6 +23,8 @@ struct MediaGalleryView: View {
     /// Scroll target for tapping the Media tab again.
     static let topAnchor = "mediaTop"
     @State var selectedMedia: MediaItem? = nil
+    /// The viewer's Delete menu choice, waiting on its confirmation.
+    @State var pendingViewerDelete: MediaDeleteScope?
     @State var initialLoad = false
     @State var mediaSourceFilter: MediaSourceFilter = .all
     @State var mediaLocationFilter: MediaLocationFilter = .all
