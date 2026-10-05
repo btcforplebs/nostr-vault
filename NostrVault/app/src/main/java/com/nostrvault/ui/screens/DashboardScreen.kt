@@ -118,6 +118,7 @@ class DashboardViewModel @Inject constructor(
     val nostrService: NostrService,
     private val followersSeenStore: com.nostrvault.data.local.FollowersSeenStore,
     private val blossomService: com.nostrvault.service.BlossomService,
+    private val feedService: com.nostrvault.service.FeedService,
 ) : ViewModel() {
 
     /** The shared Blossom mirror run behind "Import Blossom" (iOS MirrorService). */
@@ -324,6 +325,14 @@ class DashboardViewModel @Inject constructor(
 
     init {
         loadStats()
+
+        // A new trust graph or follow changes who counts as outside your
+        // network, without waiting for other events (iOS followCount).
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(feedService.wotPubkeys, feedService.followedPubkeys) { _, _ -> }
+                .drop(1)
+                .collect { scheduleUpdateDisplayData() }
+        }
 
         // Restore disk snapshot immediately — show cached events before the relay is ready
         viewModelScope.launch {
@@ -1268,7 +1277,7 @@ class DashboardViewModel @Inject constructor(
      * my notes, zaps → Zaps on my notes, everything else → Notes / All. Filters
      * are only touched when they differ, since setting one resets its list.
      */
-    fun applyRelayFocusView(request: RelayFocusRequest, zapsOnly: Boolean) {
+    suspend fun applyRelayFocusView(request: RelayFocusRequest, zapsOnly: Boolean) {
         when (NotificationTarget.viewFor(request.type, zapsOnly)) {
             VaultViewMode.LIKES -> {
                 if (_likesFilter.value != VaultLikesFilter.ON_MY_NOTES) setLikesFilter(VaultLikesFilter.ON_MY_NOTES)
@@ -1279,7 +1288,14 @@ class DashboardViewModel @Inject constructor(
                 if (_viewMode.value != VaultViewMode.ZAPS) setViewMode(VaultViewMode.ZAPS)
             }
             VaultViewMode.NOTES -> {
-                if (_contentFilter.value != VaultContentFilter.ALL) setContentFilter(VaultContentFilter.ALL)
+                // A reply from outside your network isn't listed under All.
+                val author = focusEvent(request.eventId)?.pubkey
+                val target = if (author != null && VaultContentFilter.isOutside(
+                        author, nostrService.activeHexPubkey, resolveWhitelistedHexPubkeys(),
+                        feedService.relayTabTrustedPubkeys(),
+                    )
+                ) VaultContentFilter.OUTSIDE else VaultContentFilter.ALL
+                if (_contentFilter.value != target) setContentFilter(target)
                 if (_viewMode.value != VaultViewMode.NOTES) setViewMode(VaultViewMode.NOTES)
             }
             VaultViewMode.FOLLOWERS -> {
@@ -1350,6 +1366,7 @@ class DashboardViewModel @Inject constructor(
         val events = allEventsMutex.withLock { allEvents.toList() }
         val owner = nostrService.activeHexPubkey
         val whitelist = resolveWhitelistedHexPubkeys()
+        val trusted = feedService.relayTabTrustedPubkeys()
         val blocked = configStore.config.value.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }.toSet()
 
@@ -1392,16 +1409,19 @@ class DashboardViewModel @Inject constructor(
 
                     if (event.pubkey in blocked) return@filter false
 
+                    val isMine = event.pubkey == owner
+                    val isTagged = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
+                    val isOutside = isTagged &&
+                        VaultContentFilter.isOutside(event.pubkey, owner, whitelist, trusted)
                     when (currentFilter) {
                         VaultContentFilter.ALL -> {
-                            val isMine = event.pubkey == owner
-                            val isTagged = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
                             val isWhitelisted = whitelist.contains(event.pubkey)
-                            isMine || isTagged || isWhitelisted
+                            (isMine || isTagged || isWhitelisted) && !isOutside
                         }
-                        VaultContentFilter.MINE -> event.pubkey == owner
+                        VaultContentFilter.MINE -> isMine
+                        VaultContentFilter.OUTSIDE -> isOutside
                         VaultContentFilter.TAGGED -> {
-                            val tagged = event.pubkey != owner && event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
+                            val tagged = !isMine && isTagged && !isOutside
                             if (tagged) {
                                 Log.d(TAG, "TAGGED note included: id=${event.id.take(8)}, from=${event.pubkey.take(8)}, kind=${event.kind}")
                             }
@@ -1960,7 +1980,7 @@ private fun IconFilterButton(
 }
 
 /**
- * The trailing pill's filters for [viewMode]. Notes: All · Mine · Mentions.
+ * The trailing pill's filters for [viewMode]. Notes: All · Mine · Mentions · Outside.
  * Likes and Zaps: Received · Given. Followers: New · All.
  */
 @Composable
@@ -1993,6 +2013,9 @@ private fun RelayFilterPill(
                 }
                 filter(NostrVaultIcons.At, VaultContentFilter.TAGGED.displayName, contentFilter == VaultContentFilter.TAGGED) {
                     viewModel.setContentFilter(VaultContentFilter.TAGGED)
+                }
+                filter(NostrVaultIcons.OutsideNetwork, VaultContentFilter.OUTSIDE.displayName, contentFilter == VaultContentFilter.OUTSIDE) {
+                    viewModel.setContentFilter(VaultContentFilter.OUTSIDE)
                 }
             }
             VaultViewMode.LIKES -> {

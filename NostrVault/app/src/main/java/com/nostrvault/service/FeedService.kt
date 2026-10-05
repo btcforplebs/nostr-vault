@@ -154,6 +154,19 @@ class FeedService @Inject constructor(
      * shield is set to Everyone. Null means everyone. Fails closed like the
      * Global feed: with no graph yet, nobody passes.
      */
+    /**
+     * Who counts as inside your network in the Relay tab: the relay's trust
+     * graph plus your current follows. The graph is rebuilt about once a day,
+     * so without the follows someone you just followed stayed "outside".
+     * Empty while the graph isn't loaded, which counts nobody as outside.
+     */
+    fun relayTabTrustedPubkeys(): Set<String> {
+        if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
+        val wot = _wotPubkeys.value
+        if (wot.isEmpty()) return emptySet()
+        return wot + _followedPubkeys.value
+    }
+
     fun globalTrustSet(): Set<String>? {
         if (configStore.config.value.globalShowsEveryone) return null
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
