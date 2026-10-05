@@ -2363,36 +2363,3 @@ struct OtherResponseCard: View {
         }
     }
 }
-
-// MARK: - Zoom into a thread (iOS 18)
-
-extension View {
-    /// Marks a feed row as the place its thread view zooms out of.
-    @ViewBuilder
-    func threadZoomSource(id: String, in namespace: Namespace.ID) -> some View {
-        #if os(iOS)
-        if #available(iOS 18.0, *) {
-            self.matchedTransitionSource(id: id, in: namespace)
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
-    }
-
-    /// The thread view zooms open from the row it was tapped in; a normal
-    /// push on iOS 17 and the Mac.
-    @ViewBuilder
-    func threadZoomDestination(id: String, in namespace: Namespace.ID) -> some View {
-        #if os(iOS)
-        if #available(iOS 18.0, *) {
-            self.navigationTransition(.zoom(sourceID: id, in: namespace))
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
-    }
-}
