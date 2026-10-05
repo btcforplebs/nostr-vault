@@ -1295,13 +1295,13 @@ struct CollapsedNowPlayingButton: View {
 /// Shares the row above the iPhone tab bar between the mini player and the
 /// screen's floating button (Post, Blossom, Relay). Each floating button
 /// reports its width here; the mini player stops short of it, with a gap,
-/// and the button drops level with the mini player. With nothing playing the
-/// button stays exactly where it always was.
+/// and the button always sits level with where the mini player goes, so the
+/// mini player closing never moves it (Logen, 2026-10-05).
 @MainActor
 final class FloatingButtonRow: ObservableObject {
     static let shared = FloatingButtonRow()
     static let buttonHeight: CGFloat = 48
-    /// Where a floating button sits when no music is playing.
+    /// Where a floating button sits before the tab bar has been measured.
     static let defaultBottom: CGFloat = 90
     static let trailingInset: CGFloat = 20
     static let gap: CGFloat = 10
@@ -1310,12 +1310,10 @@ final class FloatingButtonRow: ObservableObject {
     /// width, its trailing inset and the gap. Zero when no button is showing.
     @Published private(set) var reservedWidth: CGFloat = 0
     /// Bottom padding for floating buttons, from the bottom safe area:
-    /// level with the mini player while it's showing.
+    /// level with the mini player's spot, whether or not it's showing.
     @Published private(set) var buttonBottom: CGFloat = defaultBottom
 
     private var widths: [UUID: CGFloat] = [:]
-    private var tabBarOnlyHeight: CGFloat = 0
-    private var miniPlayerShowing = false
 
     func report(_ id: UUID, width: CGFloat?) {
         widths[id] = width
@@ -1323,11 +1321,9 @@ final class FloatingButtonRow: ObservableObject {
         reservedWidth = widest > 0 ? widest + Self.trailingInset + Self.gap : 0
     }
 
-    func update(tabBarOnlyHeight: CGFloat, miniPlayerShowing: Bool) {
-        self.tabBarOnlyHeight = tabBarOnlyHeight
-        self.miniPlayerShowing = miniPlayerShowing
+    func update(tabBarOnlyHeight: CGFloat) {
         // The mini player sits 6pt above the tab bar (the inset's spacing).
-        buttonBottom = miniPlayerShowing && tabBarOnlyHeight > 0
+        buttonBottom = tabBarOnlyHeight > 0
             ? tabBarOnlyHeight + 6
             : Self.defaultBottom
     }

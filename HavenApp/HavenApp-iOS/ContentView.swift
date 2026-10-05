@@ -386,14 +386,13 @@ struct iPhoneTabView: View {
     /// The tab bar alone, without the mini player above it.
     @State private var tabBarOnlyHeight: CGFloat = 0
     @ObservedObject private var buttonRow = FloatingButtonRow.shared
-    @ObservedObject private var musicPlayer = MusicPlayerService.shared
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var activeHex: String { configService.activeAccountHexPubkey }
 
     private func syncButtonRow() {
-        buttonRow.update(tabBarOnlyHeight: tabBarOnlyHeight, miniPlayerShowing: musicPlayer.current != nil)
+        buttonRow.update(tabBarOnlyHeight: tabBarOnlyHeight)
     }
 
     /// iPad in portrait keeps this tab layout (the sidebar would collapse and
@@ -515,7 +514,6 @@ struct iPhoneTabView: View {
                 )
             }
             .onChange(of: tabBarOnlyHeight) { _, _ in syncButtonRow() }
-            .onChange(of: musicPlayer.current?.id) { _, _ in syncButtonRow() }
             .onAppear { syncButtonRow() }
             .background(
                 GeometryReader { geo in
