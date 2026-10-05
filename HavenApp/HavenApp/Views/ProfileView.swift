@@ -1099,9 +1099,11 @@ struct ProfileView: View {
         HStack(spacing: 0) {
             ForEach(visibleSections) { section in
                 Button(action: {
-                    withAnimation(Motion.toggle) {
-                        selectedSection = section
-                    }
+                    // No animation: the old and new sections cross-faded at
+                    // different heights, and the page jumped while they did.
+                    var instant = Transaction()
+                    instant.disablesAnimations = true
+                    withTransaction(instant) { selectedSection = section }
                 }) {
                     VStack(spacing: 6) {
                         // Icons only, no names (Logen): icon and count, or the
