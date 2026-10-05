@@ -64,6 +64,8 @@ fun ProfileScreen(
     /** Opens a DM with a pubkey, its box prefilled (Message seller). */
     onMessageUser: (pubkey: String, draft: String) -> Unit = { pk, _ -> onNavigateToDMThread(pk) },
     onNavigateToSettings: () -> Unit = {},
+    /** Opens the Lightning wallet (own profile's bolt button, as on iOS). */
+    onOpenLightning: () -> Unit = {},
     /** Opens the Sell composer (own profile, Shop tab). */
     onSell: () -> Unit = {},
     /** Opens the composer with text in it (sharing a song from the Music tab). */
@@ -158,7 +160,7 @@ fun ProfileScreen(
             ) {
                 GlassPill {
                     if (isOwnProfile) {
-                        IconButton(onClick = { /* lightning wallet */ }, modifier = Modifier.size(40.dp)) {
+                        IconButton(onClick = onOpenLightning, modifier = Modifier.size(40.dp)) {
                             Icon(NostrVaultIcons.Zap, "Lightning", tint = colors.primary, modifier = Modifier.size(25.dp))
                         }
                     } else {
