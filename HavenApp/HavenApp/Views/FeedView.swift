@@ -4118,7 +4118,7 @@ struct FeedNoteRow: View {
                     fillsFrame: true
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipped()
                 #if os(iOS)
                 .transition(.opacity.animation(Motion.media))
                 #endif

@@ -110,12 +110,7 @@ struct FeedMediaView: View {
             portraitMaxHeight: portraitMaxHeight
         )
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.platformSeparator, lineWidth: 0.5)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .mediaFrame(isThumbnail: isThumbnail)
         .onTapGestureIfSome(onTap)
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
@@ -144,12 +139,7 @@ struct FeedMediaView: View {
         }
         .frame(maxWidth: .infinity)
         .frame(maxHeight: isThumbnail ? .infinity : videoHeightCap)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.platformSeparator, lineWidth: 0.5)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .mediaFrame(isThumbnail: isThumbnail)
         .onTapGestureIfSome(onTap)
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
@@ -171,12 +161,7 @@ struct FeedMediaView: View {
             portraitMaxHeight: portraitMaxHeight
         )
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.platformSeparator, lineWidth: 0.5)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .mediaFrame(isThumbnail: isThumbnail)
         .onTapGestureIfSome(onTap)
         .mediaZoomSource(url, namespace: onTap == nil ? nil : zoomNamespace)
     }
@@ -255,8 +240,11 @@ private struct FeedPhotoView: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.platformTertiaryGroupedBackground)
+            // Grey only behind a thumbnail, or while a photo is loading.
+            if isThumbnail || image == nil {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.platformTertiaryGroupedBackground)
+            }
 
             if let image = image {
                 Image(platformImage: image)
@@ -699,5 +687,21 @@ struct FeedAudioCard: View {
         .padding(10)
         .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.1)))
+    }
+}
+
+private extension View {
+    /// Full-size media in a post runs square to its edges, with no rounded
+    /// frame, border or grey box (Logen: screen room). Grid and one-line
+    /// thumbnails keep their rounded tile.
+    @ViewBuilder
+    func mediaFrame(isThumbnail: Bool) -> some View {
+        if isThumbnail {
+            self.clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.platformSeparator, lineWidth: 0.5))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+        } else {
+            self.clipped().contentShape(Rectangle())
+        }
     }
 }
