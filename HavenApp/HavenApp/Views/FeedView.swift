@@ -338,6 +338,7 @@ private struct RowDataCacheObservers: ViewModifier {
     @ObservedObject var nostrService: NostrService
     let onFiltered: () -> Void
     let onLikes: (Set<String>, Set<String>) -> Void
+    let onMyReactions: ([String: EngagementTracker.MyReaction], [String: EngagementTracker.MyReaction]) -> Void
     let onReposts: (Set<String>, Set<String>) -> Void
     let onZaps: ([String: Int], [String: Int]) -> Void
     let onProfiles: (Set<String>) -> Void
@@ -348,6 +349,7 @@ private struct RowDataCacheObservers: ViewModifier {
         content
             .onChange(of: feedService.filteredNotes) { _, _ in onFiltered() }
             .onChange(of: feedService.likedEventIds) { old, new in onLikes(old, new) }
+            .onChange(of: feedService.myReactions) { old, new in onMyReactions(old, new) }
             .onChange(of: feedService.repostedEventIds) { old, new in onReposts(old, new) }
             .onChange(of: feedService.zappedEventIds) { old, new in onZaps(old, new) }
             .onChange(of: nostrService.profileUpdates) { _, signal in onProfiles(signal.pubkeys) }
@@ -2182,6 +2184,16 @@ struct FeedView: View {
         resolveRows(matching: old.symmetricDifference(new))
     }
 
+    /// myReactions is keyed by `note.id`: a changed emoji leaves likedEventIds
+    /// alone, so it needs its own refresh.
+    private func updateRowDataForMyReactions(old: [String: EngagementTracker.MyReaction],
+                                             new: [String: EngagementTracker.MyReaction]) {
+        var changed = Set<String>()
+        for (id, rx) in new where old[id]?.content != rx.content { changed.insert(id) }
+        for id in old.keys where new[id] == nil { changed.insert(id) }
+        resolveRows(matching: changed)
+    }
+
     /// zappedEventIds is a `[noteID: amount]` dict; collect ids whose amount was
     /// added, removed, or changed.
     private func updateRowDataForZaps(old: [String: Int], new: [String: Int]) {
@@ -2878,6 +2890,7 @@ struct FeedView: View {
                     nostrService: nostrService,
                     onFiltered: { reconcileRowDataCache(); rebuildThreadsIfNeeded() },
                     onLikes: { updateRowDataForLikes(old: $0, new: $1) },
+                    onMyReactions: { updateRowDataForMyReactions(old: $0, new: $1) },
                     onReposts: { updateRowDataForReposts(old: $0, new: $1) },
                     onZaps: { updateRowDataForZaps(old: $0, new: $1) },
                     onProfiles: { refreshRowsForPubkeys($0) },
@@ -3235,6 +3248,9 @@ struct FeedNoteRow: View {
     @Environment(\.openURL) private var inheritedOpenURL
 
     @State private var showingEmojiPicker = false
+    @State private var showingTapbackPopover = false
+    @State private var reactionButtonFrame: CGRect = .zero
+    @GestureState private var holdingReaction = false
     @State private var showLightning = false
     @State private var zapBoltAnchor = ZapFlightAnchor()
     @State private var zapSheetContext: ZapSheetContext?
@@ -3777,32 +3793,36 @@ struct FeedNoteRow: View {
                 .accessibilityLabel("Quote")
 
             if !rowData.zapsOnlyMode {
-                actionButton(
-                    icon: rowData.isLiked ? "heart.fill" : "heart",
-                    color: rowData.isLiked ? .red : .secondary,
-                    action: { toggleLike() }
-                )
-                .accessibilityLabel(rowData.isLiked ? "Unlike" : "Like")
-                .scaleEffect(likePulse ? Motion.pulseScale : 1.0)
-                .animation(Motion.pop, value: likePulse)
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: 0.5)
-                        .onEnded { _ in
-                            #if os(iOS)
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.impactOccurred()
-                            #endif
-                            showingEmojiPicker = true
+                reactionButton
+                    .popover(isPresented: $showingEmojiPicker) {
+                        EmojiPickerView { emoji in
+                            pickReaction(emoji)
                         }
-                )
-                .popover(isPresented: $showingEmojiPicker) {
-                    EmojiPickerView { emoji in
-                        actions.reactToNote(note, emoji)
+                        #if os(iOS)
+                        .presentationDetents([.height(520)])
+                        #endif
                     }
-                    #if os(iOS)
-                    .presentationDetents([.height(520)])
+                    #if os(macOS)
+                    .popover(isPresented: $showingTapbackPopover, arrowEdge: .top) {
+                        ReactionTapbackBar(
+                            options: ReactionTapback.options(defaultContent: ConfigService.shared.config.defaultReactionEmoji),
+                            current: rowData.isLiked ? reactionDisplayEmoji(rowData.myReaction ?? "+") : nil,
+                            highlighted: nil
+                        ) { index in
+                            showingTapbackPopover = false
+                            let options = ReactionTapback.options(defaultContent: ConfigService.shared.config.defaultReactionEmoji)
+                            if index < options.count {
+                                pickReaction(options[index])
+                            } else {
+                                // One popover has to finish closing before the next opens.
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    showingEmojiPicker = true
+                                }
+                            }
+                        }
+                        .padding(6)
+                    }
                     #endif
-                }
             }
 
             if rowData.hasNWC {
@@ -4261,6 +4281,93 @@ struct FeedNoteRow: View {
     /// liking direction pulses — a pulse is confirmation of the tap that just
     /// happened, not a description of the resulting state, so it must not
     /// also fire when a like arrives from backfill or another client.
+    /// The account's reaction as it should read on the button, if any.
+    private var shownReaction: String? {
+        guard rowData.isLiked else { return nil }
+        return reactionDisplayEmoji(rowData.myReaction ?? "+")
+    }
+
+    /// Tap: react with the default, or take the reaction back. Hold: the
+    /// tapback bar (see `ReactionTapback`); sliding onto an emoji and letting
+    /// go sends it.
+    @ViewBuilder
+    private var reactionButton: some View {
+        let shown = shownReaction
+        Group {
+            if let shown, shown != "❤️" {
+                Text(shown)
+                    .font(.system(size: 16))
+            } else {
+                Image(systemName: shown == nil ? "heart" : "heart.fill")
+                    .font(.appSystem(size: 14, weight: .medium))
+                    .foregroundColor(shown == nil ? .secondary : .red)
+            }
+        }
+        .frame(width: 32, height: 32)
+        .background(shown == nil ? Color.secondary.opacity(0.1)
+                    : shown == "❤️" ? Color.red.opacity(0.15) : Color.accentColor.opacity(0.18))
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+        .scaleEffect(likePulse ? Motion.pulseScale : 1.0)
+        .animation(Motion.pop, value: likePulse)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { reactionButtonFrame = $0 }
+        .onTapGesture { toggleLike() }
+        #if os(iOS)
+        .gesture(
+            LongPressGesture(minimumDuration: 0.35)
+                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+                .updating($holdingReaction) { value, holding, _ in
+                    if case .second(true, _) = value { holding = true }
+                }
+                .onChanged { value in
+                    if case .second(true, let drag?) = value {
+                        ReactionTapback.shared.track(drag.location)
+                    }
+                }
+        )
+        .onChange(of: holdingReaction) { _, holding in
+            if holding {
+                openTapback()
+            } else {
+                ReactionTapback.shared.release()
+            }
+        }
+        // Torn down mid-hold, the row can no longer end it.
+        .onDisappear { ReactionTapback.shared.close(for: note.id) }
+        #else
+        .onLongPressGesture(minimumDuration: 0.35) { showingTapbackPopover = true }
+        #endif
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(shown.map { "Your reaction: \($0)" } ?? "React")
+        .accessibilityHint(shown == nil ? "Hold for more reactions" : "Removes your reaction. Hold to change it")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { toggleLike() }
+        .accessibilityAction(named: "More reactions") { showingEmojiPicker = true }
+    }
+
+    #if os(iOS)
+    private func openTapback() {
+        ReactionTapback.shared.begin(
+            noteId: note.id,
+            anchor: reactionButtonFrame,
+            current: shownReaction,
+            defaultContent: ConfigService.shared.config.defaultReactionEmoji,
+            onPick: { pickReaction($0) },
+            onMore: { showingEmojiPicker = true }
+        )
+    }
+    #endif
+
+    /// Sends `emoji` as the reaction; picking the one already sent takes it back.
+    private func pickReaction(_ emoji: String) {
+        if emoji == shownReaction {
+            actions.unlikeNote(note)
+        } else {
+            actions.reactToNote(note, emoji)
+            Motion.firePulse($likePulse)
+        }
+    }
+
     private func toggleLike() {
         if rowData.isLiked {
             actions.unlikeNote(note)
