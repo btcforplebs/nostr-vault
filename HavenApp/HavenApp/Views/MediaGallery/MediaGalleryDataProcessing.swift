@@ -65,7 +65,7 @@ extension MediaGalleryView {
                     // belongs in the media feed, not this tab.
                     return item.pubkey == owner
                 case .mine: return item.pubkey == owner
-                case .tagged:
+                case .tagged, .outside:
                     return false
                 case .whitelist:
                     guard let pk = item.pubkey else { return false }

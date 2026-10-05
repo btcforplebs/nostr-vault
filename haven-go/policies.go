@@ -89,6 +89,10 @@ func MustBeInWotToPost(ctx context.Context, event *nostr.Event) (bool, string) {
 	if wot.GetInstance().Has(ctx, event.PubKey) {
 		return false, ""
 	}
+	// Anyone may reply to the owner's own posts (see classifyInboxEvent).
+	if repliesToOwnerPost(ctx, event) {
+		return false, ""
+	}
 	authenticatedUser := khatru.GetAuthed(ctx)
 	if authenticatedUser == "" {
 		return true, "auth-required: you must be authenticated to post to this relay"

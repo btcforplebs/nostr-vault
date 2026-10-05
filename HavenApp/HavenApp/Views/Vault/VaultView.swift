@@ -143,6 +143,7 @@ struct VaultView: View {
             case .mine: return "My Notes"
             case .tagged: return "Notes I'm Tagged In"
             case .whitelist: return "Whitelisted Notes"
+            case .outside: return "Replies From Outside Your Network"
             }
         case .media:
             return ""
@@ -262,6 +263,7 @@ struct VaultView: View {
             blacklistedNpubs: configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub] ?? (configService.config.activeAccountNpub.isEmpty ? configService.config.blacklistedNpubs : []),
             activeAccountNpub: configService.config.activeAccountNpub,
             wotCount: feedService.wotPubkeys.count,
+            followCount: feedService.followedPubkeys.count,
             onResetAndUpdate: {
                 maxDisplayedItems = 50
                 notesHasLoadedOnce = false
@@ -697,6 +699,7 @@ struct VaultView: View {
             blacklistedNpubs: configService.config.blockedNpubsPerAccount[configService.config.activeAccountNpub.isEmpty ? configService.config.ownerNpub : configService.config.activeAccountNpub] ?? (configService.config.activeAccountNpub.isEmpty ? configService.config.blacklistedNpubs : []),
             activeAccountNpub: configService.config.activeAccountNpub,
             wotCount: feedService.wotPubkeys.count,
+            followCount: feedService.followedPubkeys.count,
             onResetAndUpdate: {
                 maxDisplayedItems = 50
                 notesHasLoadedOnce = false
