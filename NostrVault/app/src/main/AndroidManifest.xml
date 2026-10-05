@@ -144,6 +144,20 @@
         </receiver>
 
 
+        <!-- Widget settings (Quick Actions slots, Feed source/density/avatars,
+             Mosaic layout). Exported because the launcher starts it with
+             APPWIDGET_CONFIGURE; it can only change widget settings. -->
+        <activity
+            android:name=".widget.WidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.NostrVault">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <!-- Home-screen widgets (Glance). Each receiver names the provider XML
              that gives its size; the widget itself draws from the snapshot file
              the app publishes. -->
@@ -195,6 +209,17 @@
                 android:name="backend:com.google.android.datatransport.cct.CctBackendFactory"
                 tools:node="remove" />
         </service>
+        <receiver
+            android:name=".widget.MosaicReceiver"
+            android:exported="true"
+            android:label="@string/widget_mosaic_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_mosaic_info" />
+        </receiver>
     </application>
 
 </manifest>
