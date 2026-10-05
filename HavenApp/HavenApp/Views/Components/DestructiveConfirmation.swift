@@ -185,3 +185,19 @@ extension View {
         modifier(MediaDeleteConfirmation(scope: scope, action: action))
     }
 }
+
+extension View {
+    /// Ask before blocking someone from a menu. One wording for every menu on
+    /// both apps (Android's feed and Relay tab ask the same): "Block User",
+    /// "Block this user? Their posts will be hidden from your feed.", Cancel /
+    /// Block. The avatar quick menu blocks at once and shows a toast instead.
+    func confirmBlockUser(isPresented: Binding<Bool>, action: @escaping () -> Void) -> some View {
+        confirmDestructive(
+            "Block User",
+            isPresented: isPresented,
+            consequence: "Block this user? Their posts will be hidden from your feed.",
+            confirmTitle: "Block",
+            action: action
+        )
+    }
+}

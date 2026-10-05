@@ -13,6 +13,7 @@ struct MediaListItem: View {
     @EnvironmentObject var nostrService: NostrService
     @State private var showingReportDialog = false
     @State private var pendingDelete: MediaDeleteScope?
+    @State private var showingBlockConfirm = false
     @State private var isMirroringToLocal = false
     @State private var isPushingToMirrors = false
     @State private var onPhone = false
@@ -220,9 +221,7 @@ struct MediaListItem: View {
                 Divider()
 
                 Button(action: {
-                    guard let data = Bech32.hexToData(pubkey),
-                          let npub = Bech32.encode(hrp: "npub", data: data) else { return }
-                    configService.blockProfile(npub)
+                    showingBlockConfirm = true
                 }) {
                     Label("Block User", systemImage: "hand.raised.fill")
                 }
@@ -233,6 +232,12 @@ struct MediaListItem: View {
             case .mirrors: onDeleteFromMirrors?(item)
             case .everywhere: onDeleteEverywhere?(item)
             }
+        }
+        .confirmBlockUser(isPresented: $showingBlockConfirm) {
+            guard let pubkey = item.pubkey,
+                  let data = Bech32.hexToData(pubkey),
+                  let npub = Bech32.encode(hrp: "npub", data: data) else { return }
+            configService.blockProfile(npub)
         }
         .sheet(isPresented: $showingReportDialog) {
             UGCReportingDialog(eventId: nil, pubkey: item.pubkey ?? "", onDismiss: { showingReportDialog = false }) {

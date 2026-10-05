@@ -30,6 +30,7 @@ struct NoteRow: View {
     @EnvironmentObject var configService: ConfigService
     @State private var isHovered = false
     @State private var showingReportDialog = false
+    @State private var showingBlockConfirm = false
     @State private var showingReactors = false
     @State private var showingReposters = false
     @State private var showingQuoters = false
@@ -127,11 +128,14 @@ struct NoteRow: View {
                 Divider()
 
                 Button(action: {
-                    blockUser(hexPubkey: event.pubkey)
+                    showingBlockConfirm = true
                 }) {
                     Label("Block User", systemImage: "hand.raised.fill")
                 }
             }
+        }
+        .confirmBlockUser(isPresented: $showingBlockConfirm) {
+            blockUser(hexPubkey: event.pubkey)
         }
         .sheet(isPresented: $showingReportDialog) {
             UGCReportingDialog(eventId: event.id, pubkey: event.pubkey, onDismiss: { showingReportDialog = false }) {
