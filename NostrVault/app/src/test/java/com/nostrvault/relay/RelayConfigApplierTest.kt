@@ -34,7 +34,6 @@ class RelayConfigApplierTest {
             base.copy(activeAccountNpub = "npub1other"),
             base.copy(blockedNpubs = listOf("npub1blocked")),
             base.copy(autoplayVideos = !base.autoplayVideos),
-            base.copy(macRelayURL = "wss://mac.example"),
             base.copy(cacheTTLDays = base.cacheTTLDays + 1),
         )
         for (c in appSide) assertEquals(c.toString(), inputs(base), inputs(c))
@@ -54,6 +53,8 @@ class RelayConfigApplierTest {
             base.copy(importSeedRelays = base.importSeedRelays + "wss://seed.example"),
             base.copy(blastrRelays = base.blastrRelays + "wss://blast.example"),
             base.copy(dmRelays = base.dmRelays + "wss://dm.example"),
+            // The relay copies from the Mac itself (MAC_RELAY_URL), as on iOS.
+            base.copy(macRelayURL = "wss://mac.example"),
         )
         for (c in relayFacing) assertNotEquals(c.toString(), inputs(base), inputs(c))
     }

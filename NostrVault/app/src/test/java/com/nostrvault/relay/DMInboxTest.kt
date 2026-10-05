@@ -52,4 +52,16 @@ class DMInboxTest {
         assertEquals(DMInbox.SyncAction.NONE, s(listOf("wss://b", "wss://a/"), 200, listOf("wss://a", "wss://B"), 200))
         assertEquals(DMInbox.SyncAction.PUBLISH, s(listOf("wss://vault/inbox", "wss://a"), 200, listOf("wss://a"), 200))
     }
+
+    @Test fun dmRelayListAlsoGoesToTheRelaysItNames() {
+        val tags = listOf(listOf("relay", "wss://inbox.example.com/"), listOf("relay", "wss://nos.lol"), listOf("r", "wss://ignored.example.com"))
+        assertEquals(
+            listOf("wss://inbox.example.com"),
+            DMInbox.extraBroadcastRelays(10050, tags, alreadySending = listOf("wss://NOS.lol/")),
+        )
+    }
+
+    @Test fun otherKindsGoNowhereExtra() {
+        assertEquals(emptyList<String>(), DMInbox.extraBroadcastRelays(1, listOf(listOf("relay", "wss://x.example.com")), emptyList()))
+    }
 }

@@ -1414,6 +1414,11 @@ class NostrService @Inject constructor(
 
                     // Also broadcast to Blastr for visibility
                     toBlastr()
+                    // A DM relay list (10050) also goes to the DM relays it
+                    // names, where senders look for it (iOS #224).
+                    DMInbox.extraBroadcastRelays(event.kind, event.tags, configStore.config.value.activeBlastrRelays)
+                        .filter { !isLoopbackRelay(it) }
+                        .forEach { fireAndForgetPublish(eventJson, it) }
                 }
             }
         }

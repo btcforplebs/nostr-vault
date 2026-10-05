@@ -126,6 +126,31 @@ class AccountSettingsViewModel @Inject constructor(
         }
     }
 
+    /** Bumped when a key is removed: [hasLocalKey] reads the credential store, not config. */
+    private val _keysChanged = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val keysChanged: StateFlow<Int> = _keysChanged
+
+    /**
+     * Deletes the private key stored on this device for [npub], as iOS
+     * "Remove Local Key" does. With a remote signer, signing falls back to it;
+     * without one nothing here can sign for the account (browse-only).
+     */
+    fun removeLocalKey(npub: String) {
+        val cfg = config.value
+        val hex = hexFor(npub)
+        if (npub == cfg.ownerNpub) {
+            configStore.update { it.copy(ownerHexKey = null, ownerNcryptsec = null) }
+            credentialStore.deleteKeychainPassword(npub)
+        } else {
+            credentialStore.deleteCredentialHexKey(npub)
+        }
+        if (hex.isNotEmpty()) credentialStore.deleteNsec(hex)
+        if (cfg.signingMode(npub) == "local" && cfg.bunkerConfig(npub) != null) {
+            configStore.setSigningMode(npub, "nip46")
+        }
+        _keysChanged.value++
+    }
+
     fun disconnectSigner(npub: String) {
         // Closes this account's signer session (and detaches it if active),
         // not whichever account's session happens to be active.
@@ -169,6 +194,7 @@ fun AccountSettingsScreen(
     val config by viewModel.config.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val nip46Connected by viewModel.nip46Connected.collectAsState()
+    val keysChanged by viewModel.keysChanged.collectAsState()
     val colors = LocalNostrVaultColors.current
 
     val accounts = config.allAccountNpubs()
@@ -225,7 +251,7 @@ fun AccountSettingsScreen(
                         cfg = config,
                         isOwner = isOwner,
                         isActive = isActive,
-                        hasLocalKey = viewModel.hasLocalKey(npub, config),
+                        hasLocalKey = remember(config, keysChanged) { viewModel.hasLocalKey(npub, config) },
                         viewModel = viewModel,
                     )
                 }
@@ -309,6 +335,33 @@ private fun AccountDetail(
     val colors = LocalNostrVaultColors.current
     val hasBunker = cfg.bunkerConfig(npub) != null
     var revealed by remember(npub) { mutableStateOf<String?>(null) }
+    var confirmRemoveKey by remember(npub) { mutableStateOf(false) }
+
+    if (confirmRemoveKey) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveKey = false },
+            title = { Text("Remove Local Key") },
+            text = {
+                Text(
+                    if (hasBunker) {
+                        "This deletes the private key stored on this device. Signing falls back to the remote signer. If you have no backup of the key elsewhere, it cannot be recovered."
+                    } else {
+                        "This deletes the private key stored on this device, and nothing else here can sign for this account afterwards. If you have no backup of the key elsewhere, it cannot be recovered."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemoveKey = false
+                    revealed = null
+                    viewModel.removeLocalKey(npub)
+                }) { Text("Remove Key", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemoveKey = false }) { Text("Cancel") }
+            },
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -368,6 +421,9 @@ private fun AccountDetail(
                         Icon(NostrVaultIcons.Dismiss, contentDescription = "Hide", tint = SecondaryText, modifier = Modifier.size(16.dp))
                     }
                 }
+            }
+            TextButton(onClick = { confirmRemoveKey = true }) {
+                Text("Remove Local Key", color = ErrorRed)
             }
         }
 

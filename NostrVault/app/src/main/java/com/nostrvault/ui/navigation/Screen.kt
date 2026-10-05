@@ -69,6 +69,7 @@ sealed class Screen(val route: String) {
     data object BlockedSettings : Screen("settings/blocked")
     data object RelayListEditor : Screen("settings/relays")
     data object BlastrSettings : Screen("settings/blastr")
+    data object DMRelaysSettings : Screen("settings/dm_relays")
     data object BlossomSettings : Screen("settings/blossom")
     data object PowSettings : Screen("settings/pow")
     data object AdvancedSettings : Screen("settings/advanced")

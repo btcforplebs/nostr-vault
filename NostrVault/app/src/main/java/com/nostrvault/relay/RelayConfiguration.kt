@@ -148,6 +148,11 @@ object RelayConfiguration {
             // DM Relays
             "DM_RELAYS_FILE" to DM_RELAYS_FILE_NAME,
 
+            // Mac relay: synced like any other relay, plus a one-time
+            // full-history copy whose result lands in mac_sync_status.json
+            // (iOS passes the same; see MacSync).
+            "MAC_RELAY_URL" to MacSync.macRelayURL(config),
+
             // Backup
             "BACKUP_PROVIDER" to config.backupProvider,
             "BACKUP_INTERVAL_HOURS" to config.backupIntervalHours.toString(),
@@ -352,6 +357,8 @@ data class HavenConfig(
 
     // Blossom
     val blossomMirrors: List<String> = emptyList(),
+    /** Download own media from the Blossom mirrors when the Media tab opens (iOS autoMirrorMedia). */
+    val autoMirrorMedia: Boolean = false,
 
     // Paths (set at runtime by app)
     val relayDataDir: String? = null,
@@ -420,6 +427,8 @@ data class HavenConfig(
     // pushServerURL used to point at was deleted in cd604a3 — it only ever
     // spoke APNs and had no clients left.
     val enablePushNotifications: Boolean = false,
+    /** "New Notes in Your Feed": one summary per absence of 2h+ (iOS enableFeedNotifications). */
+    val enableFeedNotifications: Boolean = false,
     val pushNotifyMentions: Boolean = true,
     val pushNotifyReplies: Boolean = true,
     val pushNotifyDMs: Boolean = true,

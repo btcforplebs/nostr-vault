@@ -103,6 +103,8 @@ class MediaGalleryViewModel @Inject constructor(
 
     init {
         loadBlossomMedia()
+        // Auto-Mirror Media: pull own media from the mirrors (iOS triggerAutoMirrorIfEnabled).
+        if (configStore.config.value.autoMirrorMedia) blossomService.runMirror()
     }
 
     fun refresh() {
@@ -545,6 +547,15 @@ fun MediaGalleryScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val mediaCacheService = viewModel.mediaCacheService
+
+    // nostrvault://mediapaste: paste once the tab is on screen. A beat behind,
+    // as iOS does; Android also hides the clipboard until the window has focus.
+    val pasteRequested by com.nostrvault.ui.navigation.PendingMediaPaste.requested.collectAsState()
+    LaunchedEffect(pasteRequested) {
+        if (!pasteRequested) return@LaunchedEffect
+        kotlinx.coroutines.delay(400)
+        if (com.nostrvault.ui.navigation.PendingMediaPaste.consume()) viewModel.pasteFromClipboard(context)
+    }
 
     // Upload choices, as on iOS: Photos and Videos pick several at once from
     // the photo picker, Files opens the document picker (images and videos,

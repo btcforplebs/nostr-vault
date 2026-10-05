@@ -48,6 +48,10 @@ class NotificationSettingsViewModel @Inject constructor(
         configStore.update { it.copy(enablePushNotifications = on) }
     }
 
+    fun setFeedNotifications(on: Boolean) {
+        configStore.update { it.copy(enableFeedNotifications = on) }
+    }
+
     fun setPref(npub: String, transform: (PushPrefs) -> PushPrefs) {
         configStore.update { cfg ->
             cfg.copy(pushPrefsPerAccount = cfg.pushPrefsPerAccount + (npub to transform(cfg.pushPrefsFor(npub))))
@@ -107,7 +111,23 @@ fun NotificationSettingsScreen(
                 )
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
+
+            // One summary when people you follow posted while you were away (iOS).
+            if (enabled) {
+                Surface(shape = RoundedCornerShape(12.dp), color = SecondaryGroupedBg, modifier = Modifier.fillMaxWidth()) {
+                    NotificationToggle(
+                        "New Notes in Your Feed",
+                        SettingsHelp.NOTIFY_FEED_NOTES.text,
+                        config.enableFeedNotifications,
+                        enabled,
+                        viewModel::setFeedNotifications,
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            Spacer(Modifier.height(8.dp))
 
             // Per-account notification preferences
             accounts.forEach { npub ->
