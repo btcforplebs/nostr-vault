@@ -71,6 +71,10 @@ final class MusicPlayerService: ObservableObject {
     private var unshuffledQueue: [PlayerTrack] = []
 
     var current: PlayerTrack? { queue.indices.contains(index) ? queue[index] : nil }
+    /// The player behind a live item. The stream window shows its video
+    /// rather than opening the stream a second time, so popping out and
+    /// back in never stops the sound.
+    var livePlayer: AVPlayer? { current?.isLive == true ? player : nil }
     var hasNext: Bool {
         index + 1 < queue.count || (repeatMode == .all && !queue.isEmpty && current?.isLive != true)
     }
@@ -95,8 +99,18 @@ final class MusicPlayerService: ObservableObject {
             MainActor.assumeIsolated { self?.tick(time) }
         }
         bufferingObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
-            let waiting = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
-            Task { @MainActor in self?.isBuffering = waiting }
+            let status = player.timeControlStatus
+            Task { @MainActor in
+                guard let self else { return }
+                self.isBuffering = status == .waitingToPlayAtSpecifiedRate
+                // The stream window's own controls play and pause this player
+                // too; keep the mini player's button and the lock screen true.
+                let playing = status != .paused
+                if self.current?.isLive == true, playing != self.isPlaying {
+                    self.isPlaying = playing
+                    self.updateNowPlaying()
+                }
+            }
         }
         configureRemoteCommands()
         #if os(iOS)
