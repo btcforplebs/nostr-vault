@@ -458,6 +458,16 @@ class FeedService: ObservableObject {
         }
     }
 
+    /// Who counts as inside your network in the Relay tab: the relay's trust
+    /// graph plus your current follows. The graph is rebuilt about once a day,
+    /// so without the follows someone you just followed stayed "outside".
+    /// Empty while the graph isn't loaded, which counts nobody as outside.
+    func relayTabTrustedPubkeys() -> Set<String> {
+        if wotPubkeys.isEmpty { loadWotPubkeys() }
+        guard !wotPubkeys.isEmpty else { return [] }
+        return wotPubkeys.union(followedPubkeys)
+    }
+
     /// The one rule every feed with a Global button follows (Global, Media,
     /// Articles, diVines, Recipes, Live, Marketplace): Global shows your Web of
     /// Trust until the shield is switched to Everyone. nil means everyone.

@@ -469,7 +469,7 @@ extension VaultView {
             if let author = nostrService.events.first(where: { $0.id == request.eventId })?.pubkey,
                ContentFilter.isOutside(author: author, owner: nostrService.activeHexPubkey,
                                        whitelist: configService.whitelistedHexPubkeys,
-                                       trusted: FeedService.shared.wotPubkeys) {
+                                       trusted: FeedService.shared.relayTabTrustedPubkeys()) {
                 contentFilter = .outside
             } else {
                 contentFilter = .all

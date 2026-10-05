@@ -180,10 +180,7 @@ extension VaultView {
         let owner = nostrService.activeHexPubkey
         let whitelist = configService.whitelistedHexPubkeys
         let blacklist = configService.activeAccountBlockedHexPubkeys
-        // The trust graph the relay admitted by. Empty (not built yet) counts
-        // nobody as outside, so nothing moves out of All until it loads.
-        if FeedService.shared.wotPubkeys.isEmpty { FeedService.shared.loadWotPubkeys() }
-        let trusted = FeedService.shared.wotPubkeys
+        let trusted = FeedService.shared.relayTabTrustedPubkeys()
 
         #if DEBUG
         print("updateDisplayData: events=\(currentEvents.count) filter=\(currentFilter)")

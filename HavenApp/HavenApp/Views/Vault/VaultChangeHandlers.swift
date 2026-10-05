@@ -11,6 +11,9 @@ struct VaultChangeHandlers: ViewModifier {
     let blacklistedNpubs: [String]
     let activeAccountNpub: String
     let wotCount: Int
+    /// A follow added in the app changes who counts as outside your network
+    /// at once, without waiting for the relay's daily graph rebuild.
+    let followCount: Int
     let onResetAndUpdate: () -> Void
     let onUpdate: () -> Void
     let onViewModeChange: (ViewMode) -> Void
@@ -28,5 +31,6 @@ struct VaultChangeHandlers: ViewModifier {
             .onChange(of: blacklistedNpubs) { _, _ in onUpdate() }
             .onChange(of: activeAccountNpub) { _, _ in onResetAndUpdate() }
             .onChange(of: wotCount) { _, _ in onUpdate() }
+            .onChange(of: followCount) { _, _ in onUpdate() }
     }
 }
