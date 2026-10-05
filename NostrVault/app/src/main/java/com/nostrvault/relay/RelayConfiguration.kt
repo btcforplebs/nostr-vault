@@ -427,6 +427,8 @@ data class HavenConfig(
     // pushServerURL used to point at was deleted in cd604a3 — it only ever
     // spoke APNs and had no clients left.
     val enablePushNotifications: Boolean = false,
+    /** "New Notes in Your Feed": one summary per absence of 2h+ (iOS enableFeedNotifications). */
+    val enableFeedNotifications: Boolean = false,
     val pushNotifyMentions: Boolean = true,
     val pushNotifyReplies: Boolean = true,
     val pushNotifyDMs: Boolean = true,
