@@ -477,6 +477,34 @@ extension FeedMode {
     }
 }
 
+extension FeedMode {
+    /// The reader's feed picker: order and hidden feeds, as comma-separated
+    /// raw values (see `FeedMenuOrder`). Following is the home feed and
+    /// can't be hidden.
+    static let menuOrderKey = "feedMenu.order"
+    static let menuHiddenKey = "feedMenu.hidden"
+
+    /// Every feed, in the reader's order, hidden ones included: the editor's list.
+    static func menuOrder(_ orderRaw: String) -> [FeedMode] {
+        FeedMenuOrder.ordered(stored: FeedMenuOrder.decode(orderRaw), defaults: allCases.map(\.rawValue))
+            .compactMap(FeedMode.init(rawValue:))
+    }
+
+    /// The feeds the picker lists, in the reader's order.
+    static func menuModes(order orderRaw: String, hidden hiddenRaw: String) -> [FeedMode] {
+        FeedMenuOrder.visible(stored: FeedMenuOrder.decode(orderRaw), hidden: FeedMenuOrder.decode(hiddenRaw),
+                              defaults: allCases.map(\.rawValue), pinned: FeedMode.following.rawValue)
+            .compactMap(FeedMode.init(rawValue:))
+    }
+
+    /// The same, read straight from settings, for menus built on demand.
+    static var menuModes: [FeedMode] {
+        let defaults = UserDefaults.standard
+        return menuModes(order: defaults.string(forKey: menuOrderKey) ?? "",
+                         hidden: defaults.string(forKey: menuHiddenKey) ?? "")
+    }
+}
+
 /// Per-account, in-memory snapshot of the feed state. Captured before switching
 /// accounts and restored on switch-back so the feed reappears instantly instead
 /// of going through a full cold reload. Engagement state (likes/zaps) is also

@@ -386,14 +386,13 @@ struct iPhoneTabView: View {
     /// The tab bar alone, without the mini player above it.
     @State private var tabBarOnlyHeight: CGFloat = 0
     @ObservedObject private var buttonRow = FloatingButtonRow.shared
-    @ObservedObject private var musicPlayer = MusicPlayerService.shared
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var activeHex: String { configService.activeAccountHexPubkey }
 
     private func syncButtonRow() {
-        buttonRow.update(tabBarOnlyHeight: tabBarOnlyHeight, miniPlayerShowing: musicPlayer.current != nil)
+        buttonRow.update(tabBarOnlyHeight: tabBarOnlyHeight)
     }
 
     /// iPad in portrait keeps this tab layout (the sidebar would collapse and
@@ -515,7 +514,6 @@ struct iPhoneTabView: View {
                 )
             }
             .onChange(of: tabBarOnlyHeight) { _, _ in syncButtonRow() }
-            .onChange(of: musicPlayer.current?.id) { _, _ in syncButtonRow() }
             .onAppear { syncButtonRow() }
             .background(
                 GeometryReader { geo in
@@ -565,7 +563,8 @@ final class FeedHoldPicker: ObservableObject {
 
     /// Closest to the finger first: the list grows upward from the tab, so
     /// Following (the usual feed) sits right above it.
-    static let order: [FeedMode] = FeedMode.allCases.reversed()
+    /// In the reader's feed order (Edit Feeds), hidden feeds left out.
+    static var order: [FeedMode] { FeedMode.menuModes.reversed() }
 
     func mode(at point: CGPoint) -> FeedMode? {
         rowFrames.first { $0.value.insetBy(dx: -12, dy: 0).contains(point) }?.key
@@ -626,7 +625,7 @@ private struct FeedTabHoldItem: View {
         .accessibilityHint("Hold to pick a feed")
         .accessibilityAction { onTap() }
         .accessibilityActions {
-            ForEach(FeedMode.allCases, id: \.self) { mode in
+            ForEach(FeedMode.menuModes, id: \.self) { mode in
                 Button(mode.displayName) {
                     feedService.switchMode(mode)
                     if !selected { onTap() }

@@ -956,6 +956,12 @@ struct FullScreenVideoPlayer: View {
     var mimeType: String? = nil
     /// Called when PiP takes over so the presenting viewer can dismiss itself.
     var onPiPStart: (() -> Void)? = nil
+    /// Someone else's player to show — the mini player's, for a live stream
+    /// popped out of it. Its sound and audio session stay theirs: nothing is
+    /// started, muted or handed back here, and PiP stays off.
+    var sharedPlayer: AVPlayer? = nil
+    /// Play on a shared player, which its owner rejoins the broadcast for.
+    var onSharedResume: (() -> Void)? = nil
 
     @State private var player: AVPlayer?
     @ObservedObject private var failures = VideoPlaybackFailures.shared
@@ -981,7 +987,7 @@ struct FullScreenVideoPlayer: View {
             } else if let player = player {
                 InlinePlayerLayer(player: player, videoGravity: .resizeAspect, onLayerReady: { layer in
                     #if os(iOS)
-                    PiPManager.shared.attach(layer: layer, url: url)
+                    if sharedPlayer == nil { PiPManager.shared.attach(layer: layer, url: url) }
                     #endif
                 })
                 .allowsHitTesting(false)
@@ -994,7 +1000,7 @@ struct FullScreenVideoPlayer: View {
                 VStack {
                     Spacer()
                     VideoControlBar(player: player, onPiP: pipAction, onInteract: scheduleAutoHide,
-                                    onResumeLive: isLive ? { rejoinLive() } : nil)
+                                    onResumeLive: sharedPlayer != nil ? onSharedResume : isLive ? { rejoinLive() } : nil)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 8)
                         .background(alignment: .bottom) {
@@ -1018,6 +1024,11 @@ struct FullScreenVideoPlayer: View {
             if showControls { scheduleAutoHide() }
         }
         .onAppear {
+            if let sharedPlayer {
+                player = sharedPlayer
+                scheduleAutoHide()
+                return
+            }
             #if os(iOS)
             // Opening a new video full-screen takes over from any running PiP
             if PiPManager.shared.isPiPActive && PiPManager.shared.activeURL != url {
@@ -1036,7 +1047,7 @@ struct FullScreenVideoPlayer: View {
         // broadcast. Left alone it sat paused behind the live window, and Play
         // did nothing (Logen, 2026-10-04: after watching video in another app).
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            guard isLive, let player, player.timeControlStatus != .playing,
+            guard isLive, sharedPlayer == nil, let player, player.timeControlStatus != .playing,
                   VideoPlayerCache.shared.activeFullScreenURL == url else { return }
             rejoinLive()
         }
@@ -1044,6 +1055,12 @@ struct FullScreenVideoPlayer: View {
         .onDisappear {
             hideControlsWork?.cancel()
             hideControlsWork = nil
+            if sharedPlayer != nil {
+                // Muted here, the mini player would carry on silent.
+                player?.isMuted = false
+                player = nil
+                return
+            }
             #if os(iOS)
             if PiPManager.shared.isPiPActive && PiPManager.shared.activeURL == url {
                 // PiP owns playback now — leave the player, audio session, and
@@ -1073,7 +1090,7 @@ struct FullScreenVideoPlayer: View {
     /// Non-nil only when PiP can actually start right now.
     private var pipAction: (() -> Void)? {
         #if os(iOS)
-        guard pipManager.isPiPPossible else { return nil }
+        guard sharedPlayer == nil, pipManager.isPiPPossible else { return nil }
         return { PiPManager.shared.start() }
         #else
         return nil
