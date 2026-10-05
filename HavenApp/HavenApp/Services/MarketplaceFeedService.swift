@@ -31,6 +31,10 @@ final class MarketplaceFeedService: ObservableObject {
     private var loadTimeout: Timer?
     private var lastLoadedAt: Date?
     private var lastLoadedScope: RecipeScope?
+    /// The shield setting the cached results were fetched under.
+    private var lastLoadedEveryone: Bool?
+    /// Who Global may show this load; nil = everyone (see globalTrustSet).
+    private var trust: Set<String>?
 
     /// Results older than this are refetched when the feed is opened again.
     private static let staleAfter: TimeInterval = 10 * 60
@@ -68,12 +72,13 @@ final class MarketplaceFeedService: ObservableObject {
     func loadIfNeeded() {
         if isLoading { return }
         if let lastLoadedAt, lastLoadedScope == scope,
+           lastLoadedEveryone == ConfigService.shared.config.globalShowsEveryone,
            Date().timeIntervalSince(lastLoadedAt) < Self.staleAfter, !listings.isEmpty { return }
         refresh()
     }
 
-    /// Switches scope and reloads. The caller is responsible for showing the
-    /// sensitive-content warning before selecting `.global`.
+    /// Switches scope and reloads. Global is filtered by the Web of Trust
+    /// shield, so it needs no warning; Everyone has its own.
     func setScope(_ newScope: RecipeScope) {
         guard newScope != scope else { return }
         scope = newScope
@@ -103,6 +108,9 @@ final class MarketplaceFeedService: ObservableObject {
             }
             filter["authors"] = follows
         }
+        trust = scope == .global ? FeedService.shared.globalTrustSet() : nil
+        lastLoadedEveryone = ConfigService.shared.config.globalShowsEveryone
+        let filters = FeedService.trustScopedFilters(filter, trust: trust)
         let subId = "market-\(UUID().uuidString.prefix(8))"
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
 
@@ -122,7 +130,7 @@ final class MarketplaceFeedService: ObservableObject {
 
             // Same short delay before the REQ as the rest of the feed pipeline.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                let req = ["REQ", subId, filter] as [Any]
+                let req: [Any] = ["REQ", subId] + filters
                 if let data = try? JSONSerialization.data(withJSONObject: req),
                    let text = String(data: data, encoding: .utf8) {
                     client.send(text: text)
@@ -167,7 +175,8 @@ final class MarketplaceFeedService: ObservableObject {
               let createdAt = event["created_at"] as? Int64,
               let kind = event["kind"] as? Int,
               let tags = event["tags"] as? [[String]],
-              !blocked.contains(pubkey)
+              !blocked.contains(pubkey),
+              trust?.contains(pubkey) != false
         else { return }
 
         // Addressable: the newest event at an address wins, including a

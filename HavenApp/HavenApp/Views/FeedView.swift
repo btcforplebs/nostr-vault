@@ -403,19 +403,14 @@ struct FeedView: View {
     @State private var selectedListing: MarketListing?
     @StateObject private var liveService = LiveFeedService.shared
     @StateObject private var reelsService = ReelsFeedService.shared
-    @State private var showingGlobalReelsWarning = false
-    @State private var showingGlobalLiveWarning = false
     @State private var playingStream: LiveStream?
     @State private var selectedGridMediaNoteId: String?
     @State private var isShowingGridMediaViewer = false
     @State private var gridMediaSnapshot: [FeedNote] = []
     @State private var galleryDragOffset: CGSize = .zero
     @State private var isRefreshing = false
-    @State private var showingGlobalMediaWarning = false
-    @State private var showingGlobalArticlesWarning = false
     @State private var showingGlobalEveryoneWarning = false
     /// Same warning, raised before Recipes switches to the global set.
-    @State private var showingGlobalRecipeWarning = false
     @State private var isAtTop: Bool = true
     @State private var scrolledNoteID: String?
     @State private var threadLineTops = ThreadLineTops()
@@ -751,7 +746,10 @@ struct FeedView: View {
                     reelsService.setScope(.following)
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: reelsService.scope == .global, color: .havenPurple) {
-                    showingGlobalReelsWarning = true
+                    reelsService.setScope(.global)
+                }
+                if reelsService.scope == .global {
+                    trustScopeButton
                 }
             } else if feedService.feedMode == .media {
                 IconFilterButton(icon: feedService.mediaFeedMode == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: feedService.mediaFeedMode == .following, color: .havenPurple) {
@@ -759,7 +757,7 @@ struct FeedView: View {
                     feedService.refresh()
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: feedService.mediaFeedMode == .global, color: .havenPurple) {
-                    showingGlobalMediaWarning = true
+                    setMediaGlobal()
                 }
                 if feedService.mediaFeedMode == .global {
                     trustScopeButton
@@ -769,7 +767,10 @@ struct FeedView: View {
                     recipeService.setScope(.following)
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: recipeService.scope == .global, color: .havenPurple) {
-                    showingGlobalRecipeWarning = true
+                    recipeService.setScope(.global)
+                }
+                if recipeService.scope == .global {
+                    trustScopeButton
                 }
             } else if feedService.feedMode == .articles {
                 // Same Following / Global pair as Media. Articles has no
@@ -778,19 +779,22 @@ struct FeedView: View {
                     setArticlesFeedMode(.following)
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: feedService.articlesFeedMode == .global, color: .havenPurple) {
-                    showingGlobalArticlesWarning = true
+                    setArticlesFeedMode(.global)
                 }
                 if feedService.articlesFeedMode == .global {
                     trustScopeButton
                 }
             } else if feedService.feedMode == .marketplace {
-                // Global is the default and holds almost every listing, so
-                // neither direction needs a warning.
+                // Global is the default, and like every Global view it starts
+                // on the Web of Trust; only the shield's Everyone warns.
                 IconFilterButton(icon: marketplaceService.scope == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: marketplaceService.scope == .following, color: .havenPurple) {
                     marketplaceService.setScope(.following)
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: marketplaceService.scope == .global, color: .havenPurple) {
                     marketplaceService.setScope(.global)
+                }
+                if marketplaceService.scope == .global {
+                    trustScopeButton
                 }
             } else if feedService.feedMode == .music {
                 MusicToolbarButtons()
@@ -799,7 +803,10 @@ struct FeedView: View {
                     liveService.setScope(.following)
                 }
                 IconFilterButton(icon: "globe", tooltip: "Global", isSelected: liveService.scope == .global, color: .havenPurple) {
-                    showingGlobalLiveWarning = true
+                    liveService.setScope(.global)
+                }
+                if liveService.scope == .global {
+                    trustScopeButton
                 }
             } else if feedService.feedMode == .popular {
                 IconFilterButton(icon: feedService.popularFilter == .follows ? "person.2.fill" : "person.2", tooltip: "Follows", isSelected: feedService.popularFilter == .follows, color: .havenPurple) {
@@ -849,9 +856,11 @@ struct FeedView: View {
 
     // MARK: - Web of Trust / Everyone
 
-    /// Who Global (and Media and Articles in Global) shows: the shield is your Web of
-    /// Trust, the globe is everyone. One button so the pill keeps its width.
-    /// Leaving the Web of Trust goes through the sensitive-content warning.
+    /// Who every Global view shows (Global, and Media, Articles, diVines,
+    /// Recipes, Live and Marketplace on Global): the shield is your Web of
+    /// Trust, the globe is everyone. One app-wide setting, one button so the
+    /// pill keeps its width. Everyone is the only step behind the
+    /// sensitive-content warning.
     @ViewBuilder
     private var trustScopeButton: some View {
         let everyone = configService.config.globalShowsEveryone
@@ -882,8 +891,15 @@ struct FeedView: View {
         }
     }
 
-    /// Articles' Following / Global. Global goes through the same warning as
-    /// Media's Global (showingGlobalArticlesWarning) before landing here.
+    /// Articles' Following / Global. Global starts on the Web of Trust, so it
+    /// needs no warning; only the shield's Everyone does.
+    /// Media's Global: the Web of Trust by default, like every Global view.
+    private func setMediaGlobal() {
+        guard feedService.mediaFeedMode != .global else { return }
+        feedService.mediaFeedMode = .global
+        feedService.refresh()
+    }
+
     private func setArticlesFeedMode(_ mode: MediaFeedMode) {
         guard feedService.articlesFeedMode != mode else { return }
         feedService.articlesFeedMode = mode
@@ -907,7 +923,15 @@ struct FeedView: View {
         configService.config.globalShowsEveryone = on
         configService.save()
         feedService.recomputeFilteredNotes()
-        feedService.refresh()
+        // The shield is one app-wide setting; feeds with their own service
+        // refetch under it, the note feeds re-filter and reload.
+        switch feedService.feedMode {
+        case .reels: reelsService.refresh()
+        case .recipes: recipeService.refresh()
+        case .live: liveService.refresh()
+        case .marketplace: marketplaceService.refresh()
+        default: feedService.refresh()
+        }
     }
 
     @ViewBuilder
@@ -933,8 +957,12 @@ struct FeedView: View {
                 Button { reelsService.setScope(.following) } label: {
                     Label("Following", systemImage: reelsService.scope == .following ? "checkmark" : "person.2")
                 }
-                Button { showingGlobalReelsWarning = true } label: {
+                Button { reelsService.setScope(.global) } label: {
                     Label("Global", systemImage: reelsService.scope == .following ? "globe" : "checkmark")
+                }
+                if reelsService.scope == .global {
+                    Divider()
+                    trustScopeMenuItems
                 }
             } else if feedService.feedMode == .media {
                 Button {
@@ -943,7 +971,7 @@ struct FeedView: View {
                 } label: {
                     Label("Following", systemImage: feedService.mediaFeedMode == .following ? "checkmark" : "person.2")
                 }
-                Button { showingGlobalMediaWarning = true } label: {
+                Button { setMediaGlobal() } label: {
                     Label("Global", systemImage: feedService.mediaFeedMode == .following ? "globe" : "checkmark")
                 }
                 if feedService.mediaFeedMode == .global {
@@ -954,14 +982,18 @@ struct FeedView: View {
                 Button { recipeService.setScope(.following) } label: {
                     Label("Following", systemImage: recipeService.scope == .following ? "checkmark" : "person.2")
                 }
-                Button { showingGlobalRecipeWarning = true } label: {
+                Button { recipeService.setScope(.global) } label: {
                     Label("Global", systemImage: recipeService.scope == .following ? "globe" : "checkmark")
+                }
+                if recipeService.scope == .global {
+                    Divider()
+                    trustScopeMenuItems
                 }
             } else if feedService.feedMode == .articles {
                 Button { setArticlesFeedMode(.following) } label: {
                     Label("Following", systemImage: feedService.articlesFeedMode == .following ? "checkmark" : "person.2")
                 }
-                Button { showingGlobalArticlesWarning = true } label: {
+                Button { setArticlesFeedMode(.global) } label: {
                     Label("Global", systemImage: feedService.articlesFeedMode == .following ? "globe" : "checkmark")
                 }
                 if feedService.articlesFeedMode == .global {
@@ -975,14 +1007,22 @@ struct FeedView: View {
                 Button { marketplaceService.setScope(.global) } label: {
                     Label("Global", systemImage: marketplaceService.scope == .global ? "checkmark" : "globe")
                 }
+                if marketplaceService.scope == .global {
+                    Divider()
+                    trustScopeMenuItems
+                }
             } else if feedService.feedMode == .music {
                 MusicToolbarMenuItems()
             } else if feedService.feedMode == .live {
                 Button { liveService.setScope(.following) } label: {
                     Label("Following", systemImage: liveService.scope == .following ? "checkmark" : "person.2")
                 }
-                Button { showingGlobalLiveWarning = true } label: {
+                Button { liveService.setScope(.global) } label: {
                     Label("Global", systemImage: liveService.scope == .following ? "globe" : "checkmark")
+                }
+                if liveService.scope == .global {
+                    Divider()
+                    trustScopeMenuItems
                 }
             } else if feedService.feedMode == .popular {
                 Button {
@@ -1181,13 +1221,17 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help("Videos from people you follow")
 
-                Button(action: { showingGlobalReelsWarning = true }) {
+                Button(action: { reelsService.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
                         .foregroundColor(reelsService.scope == .global ? Color.havenPurple : .secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Videos from everyone")
+                .help("Global videos: your Web of Trust, or everyone with the shield off")
+
+                if reelsService.scope == .global {
+                    trustScopeButton
+                }
             } else if feedService.feedMode == .media {
                 Button(action: {
                     feedService.mediaFeedMode = .following
@@ -1201,7 +1245,7 @@ struct FeedView: View {
                 .help(String(localized: "feed.help.followingMedia"))
 
                 Button(action: {
-                    showingGlobalMediaWarning = true
+                    setMediaGlobal()
                 }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
@@ -1222,13 +1266,13 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help("Articles from people you follow")
 
-                Button(action: { showingGlobalArticlesWarning = true }) {
+                Button(action: { setArticlesFeedMode(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
                         .foregroundColor(feedService.articlesFeedMode == .global ? Color.havenPurple : .secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Articles from everyone")
+                .help("Global articles: your Web of Trust, or everyone with the shield off")
 
                 if feedService.articlesFeedMode == .global {
                     trustScopeButton
@@ -1242,13 +1286,17 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help("Recipes from people you follow")
 
-                Button(action: { showingGlobalRecipeWarning = true }) {
+                Button(action: { recipeService.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
                         .foregroundColor(recipeService.scope == .global ? Color.havenPurple : .secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Recipes from everyone")
+                .help("Global recipes: your Web of Trust, or everyone with the shield off")
+
+                if recipeService.scope == .global {
+                    trustScopeButton
+                }
             } else if feedService.feedMode == .marketplace {
                 Button(action: { marketplaceService.setScope(.following) }) {
                     Image(systemName: marketplaceService.scope == .following ? "person.2.fill" : "person.2")
@@ -1264,7 +1312,11 @@ struct FeedView: View {
                         .foregroundColor(marketplaceService.scope == .global ? Color.havenPurple : .secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Listings from everyone")
+                .help("Global listings: your Web of Trust, or everyone with the shield off")
+
+                if marketplaceService.scope == .global {
+                    trustScopeButton
+                }
             } else if feedService.feedMode == .music {
                 MusicToolbarButtons()
             } else if feedService.feedMode == .live {
@@ -1276,13 +1328,17 @@ struct FeedView: View {
                 .buttonStyle(.plain)
                 .help("Streams from people you follow")
 
-                Button(action: { showingGlobalLiveWarning = true }) {
+                Button(action: { liveService.setScope(.global) }) {
                     Image(systemName: "globe")
                         .font(.appSystem(size: 15, weight: .semibold))
                         .foregroundColor(liveService.scope == .global ? Color.havenPurple : .secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Streams from everyone")
+                .help("Global streams: your Web of Trust, or everyone with the shield off")
+
+                if liveService.scope == .global {
+                    trustScopeButton
+                }
             } else if feedService.feedMode == .popular {
                 // My Follows filter
                 Button(action: {
@@ -1603,31 +1659,6 @@ struct FeedView: View {
         } message: {
             Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
         }
-        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalMediaWarning) {
-            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
-                feedService.mediaFeedMode = .global
-                feedService.refresh()
-            }
-            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "feed.alert.sensitiveContent.message"))
-        }
-        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalArticlesWarning) {
-            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
-                setArticlesFeedMode(.global)
-            }
-            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "feed.alert.sensitiveContent.message"))
-        }
-        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalLiveWarning) {
-            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
-                liveService.setScope(.global)
-            }
-            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "feed.alert.sensitiveContent.message"))
-        }
         .sheet(item: $selectedListing) { listing in
             MarketplaceListingSheet(listing: listing, onOpenProfile: { showingProfileKey = IdentifiableString(id: $0) })
                 .environmentObject(nostrService)
@@ -1638,22 +1669,6 @@ struct FeedView: View {
             })
             .environmentObject(nostrService)
             .environmentObject(configService)
-        }
-        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalReelsWarning) {
-            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
-                reelsService.setScope(.global)
-            }
-            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "feed.alert.sensitiveContent.message"))
-        }
-        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingGlobalRecipeWarning) {
-            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
-                recipeService.setScope(.global)
-            }
-            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "feed.alert.sensitiveContent.message"))
         }
     }
 
@@ -2374,7 +2389,7 @@ struct FeedView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
             if recipeService.followSetIsEmpty {
-                Button("Show everyone's recipes") { showingGlobalRecipeWarning = true }
+                Button("Show Global recipes") { recipeService.setScope(.global) }
                     .buttonStyle(.borderless)
                     .foregroundColor(.havenPurple)
                     .padding(.top, 4)
@@ -2456,7 +2471,7 @@ struct FeedView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
             if marketplaceService.scope == .following {
-                Button("Show every listing") { marketplaceService.setScope(.global) }
+                Button("Show Global listings") { marketplaceService.setScope(.global) }
                     .buttonStyle(.borderless)
                     .foregroundColor(.havenPurple)
                     .padding(.top, 4)
@@ -2479,7 +2494,7 @@ struct FeedView: View {
             onReply: { composeContext = ComposeContext(replyTo: feedService.replyTarget(for: $0), quoteTo: nil) },
             onOpenNote: { openNoteDetail($0) },
             onLike: { feedActionsValue.likeNote($0) },
-            onShowGlobal: { showingGlobalReelsWarning = true },
+            onShowGlobal: { reelsService.setScope(.global) },
             onPost: { modeComposer = .divine },
             isCovered: composeContext != nil || modeComposer != nil || showingProfileKey != nil || showingNoteId != nil
                 || showingMediaUrl != nil || showingRelayStatus
@@ -2532,7 +2547,7 @@ struct FeedView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
             if liveService.followSetIsEmpty {
-                Button("Show everyone's streams") { showingGlobalLiveWarning = true }
+                Button("Show Global streams") { liveService.setScope(.global) }
                     .buttonStyle(.borderless)
                     .foregroundColor(.havenPurple)
                     .padding(.top, 4)

@@ -164,7 +164,7 @@ struct ReelsFeedView: View {
             .controlSize(.large)
             .padding(.top, 8)
             if service.followSetIsEmpty || (service.scope == .following && !service.loadFailed) {
-                Button("Show everyone's videos") { onShowGlobal() }
+                Button("Show Global videos") { onShowGlobal() }
                     .buttonStyle(.borderless)
                     .foregroundColor(.havenPurpleLight)
                     .padding(.top, 4)

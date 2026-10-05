@@ -17,8 +17,8 @@ final class LiveFeedService: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var loadFailed = false
     @Published private(set) var followSetIsEmpty = false
-    /// Following by default. Live video is unmoderated third-party content, so
-    /// the global set is opt-in behind the sensitive-content warning.
+    /// Following by default. Global is filtered by the Web of Trust shield;
+    /// Everyone (unfiltered) is behind the sensitive-content warning.
     @Published private(set) var scope: RecipeScope = .following
 
     private var clients: [WebSocketClient] = []
@@ -68,6 +68,11 @@ final class LiveFeedService: ObservableObject {
                 ["kinds": [30311], "#p": followed, "limit": 300],
             ]
             follows = Set(followed)
+        } else if let trust = FeedService.shared.globalTrustSet() {
+            // Global on the Web of Trust: same host check as Following, against
+            // the trust graph. Streams are rare enough that the open REQ above
+            // already covers them; no author-restricted second filter.
+            follows = trust
         }
 
         let relayURLs = Self.relayURLs

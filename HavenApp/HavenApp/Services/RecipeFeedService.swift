@@ -9,7 +9,7 @@ import Combine
 /// relay syncs — this feed therefore talks to external relays directly and
 /// keeps its results in memory only. Nothing is written to the owner's relay.
 /// Who a recipe feed draws from. Mirrors the Media tab's Following/Global
-/// split, including the sensitive-content warning before going global.
+/// split; Global follows the app-wide Web of Trust shield.
 enum RecipeScope: String {
     case following
     case global
@@ -26,8 +26,8 @@ final class RecipeFeedService: ObservableObject {
     @Published private(set) var loadFailed = false
     /// Selected category chip, or nil for "All".
     @Published var selectedCategory: String?
-    /// Following by default: global recipes are written by strangers and are
-    /// not moderated, so the wider set is opt-in behind a warning.
+    /// Following by default. Global is filtered by the Web of Trust shield;
+    /// Everyone (unfiltered) is behind the sensitive-content warning.
     @Published private(set) var scope: RecipeScope = .following
     /// True when Following is selected and the owner follows nobody who has
     /// posted a recipe — distinct from "the relays returned nothing".
@@ -46,6 +46,10 @@ final class RecipeFeedService: ObservableObject {
     /// The scope the cached results belong to, so switching scope always
     /// refetches rather than re-showing the other set.
     private var lastLoadedScope: RecipeScope?
+    /// The shield setting the cached results were fetched under.
+    private var lastLoadedEveryone: Bool?
+    /// Who Global may show this load; nil = everyone (see globalTrustSet).
+    private var trust: Set<String>?
 
     /// Results older than this are refetched when the feed is opened again.
     private static let staleAfter: TimeInterval = 10 * 60
@@ -102,12 +106,13 @@ final class RecipeFeedService: ObservableObject {
     func loadIfNeeded() {
         if isLoading { return }
         if let lastLoadedAt, lastLoadedScope == scope,
+           lastLoadedEveryone == ConfigService.shared.config.globalShowsEveryone,
            Date().timeIntervalSince(lastLoadedAt) < Self.staleAfter, !recipes.isEmpty { return }
         refresh()
     }
 
-    /// Switches scope and reloads. The caller is responsible for showing the
-    /// sensitive-content warning before selecting `.global`.
+    /// Switches scope and reloads. Global is filtered by the Web of Trust
+    /// shield, so it needs no warning; Everyone has its own.
     func setScope(_ newScope: RecipeScope) {
         guard newScope != scope else { return }
         scope = newScope
@@ -145,6 +150,9 @@ final class RecipeFeedService: ObservableObject {
             }
             filter["authors"] = follows
         }
+        trust = scope == .global ? FeedService.shared.globalTrustSet() : nil
+        lastLoadedEveryone = ConfigService.shared.config.globalShowsEveryone
+        let filters = FeedService.trustScopedFilters(filter, trust: trust)
         let subId = "recipes-\(UUID().uuidString.prefix(8))"
         let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
 
@@ -165,7 +173,7 @@ final class RecipeFeedService: ObservableObject {
             // The socket is not open the instant connect() returns; the rest of
             // the feed pipeline uses the same short delay before its REQ.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                let req = ["REQ", subId, filter] as [Any]
+                let req: [Any] = ["REQ", subId] + filters
                 if let data = try? JSONSerialization.data(withJSONObject: req),
                    let text = String(data: data, encoding: .utf8) {
                     client.send(text: text)
@@ -220,6 +228,7 @@ final class RecipeFeedService: ObservableObject {
               let tags = event["tags"] as? [[String]],
               kind == 30023,
               !blocked.contains(pubkey),
+              trust?.contains(pubkey) != false,
               collected[id] == nil
         else { return }
 
