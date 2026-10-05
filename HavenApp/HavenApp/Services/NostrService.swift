@@ -1321,7 +1321,11 @@ class NostrService: ObservableObject {
     /// Posts an event to the local relay and broadcasts to configured relays
     /// - Parameter directBroadcast: false when the caller broadcasts the event
     ///   itself (ModePostPublisher does, to report each relay's answer).
-    func postEvent(_ event: NostrEvent, directBroadcast: Bool = true) {
+    /// `onBroadcastOutcome`, when given, is called once on the main thread:
+    /// `.accepted` as soon as one broadcast relay takes the event, `.refused`
+    /// if none has after a few quiet retries. Without it, nothing changes.
+    func postEvent(_ event: NostrEvent, directBroadcast: Bool = true,
+                   onBroadcastOutcome: ((BroadcastTally.Outcome) -> Void)? = nil) {
         print("NostrService: postEvent called – id=\(event.id.prefix(8)) kind=\(event.kind) sig=\(event.sig.prefix(8))")
         // Note: the relay-activity red dot is driven solely by inbound events from
         // others (see RelayProcessManager), so self-authored posts never trigger it.
@@ -1456,9 +1460,42 @@ class NostrService: ObservableObject {
                 tags: event.tags,
                 blastrRelays: ConfigService.shared.config.activeBlastrRelays
             )
-            broadcastRawEvent(eventDict, to: relays)
+            if let onBroadcastOutcome {
+                broadcastConfirmed(eventDict, to: relays, attemptsLeft: 3, completion: onBroadcastOutcome)
+            } else {
+                broadcastRawEvent(eventDict, to: relays)
+            }
+        } else {
+            onBroadcastOutcome?(.refused)
         }
 
+    }
+
+    /// Sends to `relays` and reports a single outcome. When every relay
+    /// refuses or times out it tries again, a little later each time, before
+    /// giving up: a slow relay shouldn't read as a failed post.
+    private func broadcastConfirmed(_ eventDict: [String: Any], to relays: [String], attemptsLeft: Int,
+                                    completion: @escaping (BroadcastTally.Outcome) -> Void) {
+        var tally = BroadcastTally(relayCount: relays.count)
+        if tally.outcome != nil {
+            completion(.refused)
+            return
+        }
+        broadcastRawEvent(eventDict, to: relays) { [weak self] relay, success, message in
+            switch tally.record(relay: relay, success: success, message: message) {
+            case .accepted?:
+                completion(.accepted)
+            case .refused? where attemptsLeft > 1:
+                let delay: TimeInterval = attemptsLeft > 2 ? 3 : 8
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    self?.broadcastConfirmed(eventDict, to: relays, attemptsLeft: attemptsLeft - 1, completion: completion)
+                }
+            case .refused?:
+                completion(.refused)
+            case nil:
+                break
+            }
+        }
     }
 
     /// Broadcasts a raw signed event dict (including sig) to configured Blastr relays.

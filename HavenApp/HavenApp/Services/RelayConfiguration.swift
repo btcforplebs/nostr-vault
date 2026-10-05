@@ -320,3 +320,37 @@ enum RelayConfiguration {
         return content
     }
 }
+
+/// Turns the per-relay `OK` replies for one broadcast into a single answer:
+/// accepted as soon as one relay takes the event, refused only once every
+/// relay has answered without taking it (a refusal, a timeout, or no
+/// connection). Used to show "Posted" only when the post really landed.
+struct BroadcastTally {
+    enum Outcome: Equatable { case accepted, refused }
+
+    let relayCount: Int
+    private var answered: Set<String> = []
+    private(set) var outcome: Outcome?
+
+    init(relayCount: Int) {
+        self.relayCount = relayCount
+        if relayCount == 0 { outcome = .refused }
+    }
+
+    /// Records one relay's answer and returns the outcome the first time it
+    /// is decided, `nil` otherwise. Later answers never change it.
+    mutating func record(relay: String, success: Bool, message: String) -> Outcome? {
+        guard outcome == nil, answered.insert(relay).inserted else { return nil }
+        // NIP-01: a relay that already holds the event may say so with
+        // ok=false. The event is there, which is what the user cares about.
+        if success || message.lowercased().hasPrefix("duplicate:") {
+            outcome = .accepted
+            return .accepted
+        }
+        if answered.count >= relayCount {
+            outcome = .refused
+            return .refused
+        }
+        return nil
+    }
+}
