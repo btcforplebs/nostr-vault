@@ -39,6 +39,7 @@ class NostrVaultApp : Application(), ImageLoaderFactory {
         super.onCreate()
         ProfileRepository.init(this)
         com.nostrvault.service.music.MusicPlayer.init(this)
+        com.nostrvault.ui.screens.music.MusicFeedState.init(this)
         Motion.install(this)
         createNotificationChannels()
         profilePicturePrefetcher.start(applicationScope)

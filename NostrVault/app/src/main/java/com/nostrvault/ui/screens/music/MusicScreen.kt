@@ -36,6 +36,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Whatshot
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.nostrvault.data.music.WavlakeAlbum
 import com.nostrvault.data.music.WavlakeArtist
@@ -56,9 +59,7 @@ import com.nostrvault.service.music.PlayerTrack
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryText
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * What a song can lead to outside the music screen: a post sharing it, or
@@ -68,6 +69,8 @@ data class MusicActions(
     val onShare: (String) -> Unit,
     val onOpenProfile: (String) -> Unit,
     val npubToHex: (String) -> String?,
+    /** Who you follow, for the toolbar's "Artists you follow". */
+    val followedPubkeys: () -> Set<String> = { emptySet() },
 )
 
 private fun formatTime(sec: Long): String = "%d:%02d".format(sec / 60, sec % 60)
@@ -80,34 +83,68 @@ private fun formatTime(sec: Long): String = "%d:%02d".format(sec / 60, sec % 60)
  */
 @Composable
 fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
-    val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
+    /** The songs for the toolbar's current choice. */
     var trending by remember { mutableStateOf<List<WavlakeTrack>>(emptyList()) }
+    /** Following: the artists found, shown above their songs. */
+    var followedArtists by remember { mutableStateOf<List<WavlakeArtist>>(emptyList()) }
+    val musicScope by MusicFeedState.scope.collectAsState()
+    val window by MusicFeedState.trendingWindow.collectAsState()
+    val recentArtists by MusicFeedState.recentArtists.collectAsState()
+    val picks by MusicFeedState.picks.collectAsState()
     var results by remember { mutableStateOf<List<WavlakeSearchResult>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val current by MusicPlayer.current.collectAsState()
     val playing by MusicPlayer.isPlaying.collectAsState()
     val path by MusicFeedState.path.collectAsState()
-    val page = path.lastOrNull()
+    // An artist picked in the toolbar shows as a page under the search field.
+    val scopeArtist = (musicScope as? MusicScope.Artist)?.artist
+    val pageIsScope = path.isEmpty() && scopeArtist != null && query.isBlank()
+    val page = path.lastOrNull() ?: if (pageIsScope) MusicPage.Artist(scopeArtist!!) else null
     val listState = rememberLazyListState()
 
     DisposableEffect(Unit) {
         MusicFeedState.isVisible = true
         onDispose { MusicFeedState.isVisible = false }
     }
-    BackHandler(enabled = page != null) { MusicFeedState.goBack() }
+    BackHandler(enabled = page != null) {
+        if (pageIsScope) MusicFeedState.setScope(MusicScope.Trending) else MusicFeedState.goBack()
+    }
+    // A toolbar pick replaces whatever search was showing.
+    LaunchedEffect(picks) { if (picks > 0) query = "" }
     // Opening or leaving a page starts it at its top.
     LaunchedEffect(page) { listState.scrollToItem(0) }
 
-    suspend fun loadTrending() {
+    var loadAttempt by remember { mutableStateOf(0) }
+    // Loads whatever the toolbar picked: trending for the window, or the
+    // Wavlake artists you follow. An artist page loads itself.
+    LaunchedEffect(musicScope, window, loadAttempt) {
+        trending = emptyList(); followedArtists = emptyList()
         loading = true; error = null
-        trending = runCatching { WavlakeApi.trending() }.getOrElse { error = "Couldn't reach Wavlake. Tap to try again."; emptyList() }
-        if (trending.isEmpty() && error == null) error = "Nothing trending right now."
+        when (musicScope) {
+            MusicScope.Trending -> {
+                trending = runCatching { WavlakeApi.trending(window.days) }
+                    .getOrElse { error = "Couldn't reach Wavlake. Tap to try again."; emptyList() }
+                if (trending.isEmpty() && error == null) error = "Nothing trending right now."
+            }
+            MusicScope.Following -> {
+                val follows = actions.followedPubkeys()
+                if (follows.isEmpty()) {
+                    error = "Follow people on Nostr, and the Wavlake artists among them show up here."
+                } else {
+                    val (artists, songs) = MusicFeedState.followedArtists(follows, actions.npubToHex)
+                    followedArtists = artists; trending = songs
+                    if (artists.isEmpty()) {
+                        error = "None of the Wavlake artists checked are people you follow. " +
+                            "Artists show up here once they link their Nostr key on Wavlake."
+                    }
+                }
+            }
+            is MusicScope.Artist -> Unit
+        }
         loading = false
     }
-
-    LaunchedEffect(Unit) { if (trending.isEmpty()) loadTrending() }
 
     // Search once typing pauses, so each keystroke isn't a request.
     LaunchedEffect(query) {
@@ -157,9 +194,10 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                 } ?: page.artist
                 val songs = artistPage?.tracks.orEmpty()
                 val albums = artistPage?.albums.orEmpty()
+                if (pageIsScope) item(key = "search") { MusicSearchField(query) { query = it } }
                 item(key = "page-head") {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        MusicBackButton()
+                        MusicBackButton(onBack = if (pageIsScope) ({ MusicFeedState.setScope(MusicScope.Trending) }) else MusicFeedState::goBack)
                         Artwork(shown.artUrl, 148.dp, CircleShape)
                         Spacer(Modifier.height(8.dp))
                         Text(shown.name, color = PrimaryText, fontSize = 26.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
@@ -255,29 +293,39 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                 }
             }
             null -> {
-                item(key = "search") {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        placeholder = { Text("Search songs, albums, artists") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                        trailingIcon = {
-                            if (query.isNotEmpty()) IconButton(onClick = { query = "" }) {
-                                Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                item(key = "search") { MusicSearchField(query) { query = it } }
+                if (query.isBlank()) {
+                    val windowWord = window.title.lowercase()
+                    if (musicScope == MusicScope.Trending) {
+                        if (recentArtists.isNotEmpty()) item(key = "your-artists") {
+                            ArtistRow("Your artists", recentArtists)
+                        }
+                        val topArtists = MusicTrendingRows.artists(trending)
+                        if (topArtists.isNotEmpty()) item(key = "top-artists") {
+                            ArtistRow("Top artists $windowWord", topArtists)
+                        }
+                        val topAlbums = MusicTrendingRows.albums(trending)
+                        if (topAlbums.isNotEmpty()) item(key = "top-albums") {
+                            Column {
+                                MusicSectionTitle("Top albums $windowWord")
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    items(topAlbums, key = { it.id }) { album ->
+                                        CollectionTile(album.title, album.artist ?: "Album", album.artUrl, RoundedCornerShape(10.dp), 130.dp) {
+                                            MusicFeedState.open(MusicPage.Album(album))
+                                        }
+                                    }
+                                }
                             }
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                item(key = "header") {
-                    Text(
-                        text = if (query.isNotBlank()) "Songs" else "Trending on Wavlake",
-                        color = PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
+                        }
+                        item(key = "header") { MusicSectionTitle("Trending songs $windowWord") }
+                    } else {
+                        if (followedArtists.isNotEmpty()) item(key = "followed-artists") {
+                            ArtistRow("Artists you follow", followedArtists)
+                        }
+                        if (trending.isNotEmpty()) item(key = "header") { MusicSectionTitle("Their songs") }
+                    }
+                } else {
+                    item(key = "header") { MusicSectionTitle("Songs") }
                 }
                 if (collections.isNotEmpty()) {
                     item(key = "collections") {
@@ -317,7 +365,7 @@ fun MusicScreen(actions: MusicActions, contentPadding: PaddingValues) {
                         error != null -> Text(
                             text = error!!, color = SecondaryText, fontSize = 14.sp,
                             modifier = Modifier.fillMaxWidth().padding(24.dp)
-                                .clickable(enabled = query.isBlank()) { scope.launch { loadTrending() } },
+                                .clickable(enabled = query.isBlank()) { loadAttempt++ },
                         )
                     }
                 }
@@ -351,6 +399,112 @@ private fun openAlbumArtist(id: String, name: String, tracks: List<WavlakeTrack>
 }
 
 @Composable
+private fun MusicSearchField(query: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onChange,
+        placeholder = { Text("Search songs, albums, artists") },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) IconButton(onClick = { onChange("") }) {
+                Icon(Icons.Filled.Close, contentDescription = "Clear search")
+            }
+        },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** Round artist pictures in a sideways row; tap one for their page. */
+@Composable
+private fun ArtistRow(title: String, artists: List<WavlakeArtist>) {
+    Column {
+        MusicSectionTitle(title)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(artists, key = { it.id }) { artist ->
+                CollectionTile(artist.name, "Artist", artist.artUrl, CircleShape, 96.dp) {
+                    MusicFeedState.open(MusicPage.Artist(artist))
+                }
+            }
+        }
+    }
+}
+
+// ── Toolbar ─────────────────────────────────────────────────────
+
+/**
+ * The Music feed's toolbar controls: Trending (this week or month), an
+ * artist picker of the artists you've played or opened, and Wavlake
+ * artists you follow on Nostr. iOS: MusicToolbarButtons.
+ */
+@Composable
+fun MusicToolbarButtons() {
+    val musicScope by MusicFeedState.scope.collectAsState()
+    val window by MusicFeedState.trendingWindow.collectAsState()
+    val recent by MusicFeedState.recentArtists.collectAsState()
+    val accent = LocalNostrVaultColors.current.primary
+    var trendingMenu by remember { mutableStateOf(false) }
+    var artistMenu by remember { mutableStateOf(false) }
+    val isTrending = musicScope == MusicScope.Trending
+    val artist = (musicScope as? MusicScope.Artist)?.artist
+    val isFollowing = musicScope == MusicScope.Following
+
+    Box {
+        IconButton(onClick = { trendingMenu = true }, modifier = Modifier.size(40.dp)) {
+            Icon(
+                if (isTrending) Icons.Filled.Whatshot else Icons.Outlined.Whatshot, contentDescription = "Trending",
+                tint = if (isTrending) accent else SecondaryText, modifier = Modifier.size(20.dp),
+            )
+        }
+        DropdownMenu(expanded = trendingMenu, onDismissRequest = { trendingMenu = false }) {
+            TrendingWindow.entries.forEach { w ->
+                DropdownMenuItem(
+                    text = { Text("Trending ${w.title.lowercase()}") },
+                    leadingIcon = { Icon(if (isTrending && window == w) Icons.Filled.Check else Icons.Outlined.Whatshot, null) },
+                    onClick = { trendingMenu = false; MusicFeedState.showTrending(w) },
+                )
+            }
+        }
+    }
+    Box {
+        IconButton(onClick = { artistMenu = true }, modifier = Modifier.size(40.dp)) {
+            Icon(
+                if (artist != null) Icons.Filled.AccountCircle else Icons.Outlined.AccountCircle,
+                contentDescription = artist?.let { "Artist: ${it.name}" } ?: "Artists",
+                tint = if (artist != null) accent else SecondaryText, modifier = Modifier.size(20.dp),
+            )
+        }
+        DropdownMenu(expanded = artistMenu, onDismissRequest = { artistMenu = false }) {
+            if (recent.isEmpty()) {
+                DropdownMenuItem(text = { Text("Artists you play or open show up here") }, onClick = {}, enabled = false)
+            } else {
+                recent.forEach { a ->
+                    DropdownMenuItem(
+                        text = { Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        leadingIcon = { Icon(if (artist?.id == a.id) Icons.Filled.Check else Icons.Outlined.AccountCircle, null) },
+                        onClick = { artistMenu = false; MusicFeedState.show(a) },
+                    )
+                }
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Clear artists", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = { artistMenu = false; MusicFeedState.clearRecentArtists() },
+                )
+            }
+        }
+    }
+    IconButton(onClick = { MusicFeedState.setScope(MusicScope.Following) }, modifier = Modifier.size(40.dp)) {
+        Icon(
+            if (isFollowing) Icons.Filled.People else Icons.Outlined.People, contentDescription = "Artists you follow",
+            tint = if (isFollowing) accent else SecondaryText, modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+@Composable
 private fun MusicSpinner() {
     Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(color = LocalNostrVaultColors.current.primary)
@@ -358,9 +512,9 @@ private fun MusicSpinner() {
 }
 
 @Composable
-private fun MusicBackButton() {
+private fun MusicBackButton(onBack: () -> Unit = MusicFeedState::goBack) {
     Box(Modifier.fillMaxWidth()) {
-        TextButton(onClick = MusicFeedState::goBack) {
+        TextButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(4.dp))
             Text("Back")

@@ -72,3 +72,32 @@ class MusicFeedStateTest {
         assertEquals("1 hr 5 min", MusicCount.minutes(3900))
     }
 }
+
+class MusicFeedRowsTest {
+    private fun t(id: String, artistId: String?, albumId: String?) = WavlakeTrack(
+        id = id, title = id, artist = "Artist $artistId", artistId = artistId,
+        albumId = albumId, albumTitle = albumId?.let { "Album $it" }, mediaUrl = "https://x/$id.mp3",
+    )
+
+    @Test fun trendingRowsKeepFirstPlaceOnce() {
+        val tracks = listOf(t("1", "a", "x"), t("2", "b", "y"), t("3", "a", "x"), t("4", null, null), t("5", "c", "z"))
+        assertEquals(listOf("a", "b", "c"), MusicTrendingRows.artists(tracks).map { it.id })
+        assertEquals(listOf("x", "y", "z"), MusicTrendingRows.albums(tracks).map { it.id })
+        val many = (1..40).map { t("$it", "a$it", "al$it") }
+        assertEquals(MusicTrendingRows.ROW_LIMIT, MusicTrendingRows.artists(many).size)
+    }
+
+    @Test fun recentArtistsNewestFirstKeepKnownArtAndKey() {
+        val a = WavlakeArtist("a", "A", artUrl = "https://x/a.jpg", npub = "npub1a")
+        val b = WavlakeArtist("b", "B")
+        var list = MusicRecentArtists.add(emptyList(), a, 3)
+        list = MusicRecentArtists.add(list, b, 3)
+        list = MusicRecentArtists.add(list, WavlakeArtist("a", "A"), 3)
+        assertEquals(listOf("a", "b"), list.map { it.id })
+        assertEquals("https://x/a.jpg", list[0].artUrl)
+        assertEquals("npub1a", list[0].npub)
+        list = MusicRecentArtists.add(list, WavlakeArtist("c", "C"), 3)
+        list = MusicRecentArtists.add(list, WavlakeArtist("d", "D"), 3)
+        assertEquals(listOf("d", "c", "a"), list.map { it.id })
+    }
+}

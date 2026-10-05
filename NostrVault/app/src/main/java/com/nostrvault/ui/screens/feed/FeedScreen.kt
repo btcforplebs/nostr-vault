@@ -615,6 +615,7 @@ fun FeedScreen(
                         onShare = onComposeText,
                         onOpenProfile = onProfileClick,
                         npubToHex = viewModel::npubToHex,
+                        followedPubkeys = { viewModel.followedPubkeys.value.toSet() },
                     ),
                     contentPadding = padding,
                 )
@@ -1698,7 +1699,7 @@ private fun FeedTopBar(
             // feeds get only Following / Global and the shield: reposts,
             // replies and auto-load are all about kind-1 traffic.
             Box(Modifier.chromeFold(leadingGap = 4.dp).blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
-                FeedMode.MUSIC -> Unit
+                FeedMode.MUSIC -> com.nostrvault.ui.screens.music.MusicToolbarButtons()
                 // One rule for every feed with the choice: Following, Global
                 // (your Web of Trust, no warning), and the shield for Everyone.
                 FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS -> {
