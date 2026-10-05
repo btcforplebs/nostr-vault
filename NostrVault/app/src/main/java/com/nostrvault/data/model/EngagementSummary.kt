@@ -32,6 +32,35 @@ object EngagementSummary {
             .sortedByDescending { it.count }
     }
 
+    /** How many emoji pills a thread note's row draws before a "+N" (iOS ThreadNoteEngagementRow). */
+    const val THREAD_ROW_EMOJI_GROUPS = 3
+
+    /**
+     * What one note's row in the thread shows under the card when thread
+     * stats are on: emoji groups, zaps and the sats they add up to, and how
+     * many people reposted (each once). iOS: ThreadedReplyNode's
+     * groupedReactionsForReply / zapTotalForReply / repostCountForReply.
+     */
+    data class ThreadRow(
+        val emojiGroups: List<EmojiGroup>,
+        val zapCount: Int,
+        val zapSats: Long,
+        val reposts: Int,
+    ) {
+        val isEmpty: Boolean get() = emojiGroups.isEmpty() && zapCount == 0 && reposts == 0
+    }
+
+    /** [details] as a thread row; reactions are dropped in Zaps Only mode. */
+    fun threadRow(details: EngagementDetails, zapsOnly: Boolean): ThreadRow = ThreadRow(
+        emojiGroups = if (zapsOnly) emptyList() else groupReactions(details.reactions),
+        zapCount = details.zaps.size,
+        zapSats = details.zaps.sumOf { it.amountSats },
+        reposts = details.reposts.map { it.pubkey }.distinct().size,
+    )
+
+    /** "2,100": a sats total on its own, grouped like [zapText]. */
+    fun satsText(totalSats: Long): String = NumberFormat.getIntegerInstance().format(totalSats)
+
     /** "3 · 2,100": how many zaps, and the sats they add up to. */
     fun zapText(zapCount: Int, totalSats: Long): String =
         "$zapCount · ${NumberFormat.getIntegerInstance().format(totalSats)}"

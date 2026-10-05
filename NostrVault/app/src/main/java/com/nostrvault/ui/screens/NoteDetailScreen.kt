@@ -442,6 +442,20 @@ class NoteDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * The people in one thread note's engagement, for its sheet. The thread
+     * batch fetch does not load them (the focused note's own fetch does), so
+     * this runs once when a sheet opens rather than for every row.
+     */
+    fun fetchEngagementProfiles(details: EngagementDetails) {
+        val pubkeys = buildList {
+            details.reactions.mapTo(this) { it.pubkey }
+            details.zaps.mapTo(this) { it.zapperPubkey }
+            details.reposts.mapTo(this) { it.pubkey }
+        }.distinct()
+        if (pubkeys.isNotEmpty()) nostrService.fetchMissingProfiles(pubkeys)
+    }
+
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
     fun statsFor(noteId: String): NoteStats? = noteStats.value[noteId]
     fun isLiked(noteId: String): Boolean = likedEventIds.value.contains(noteId)
@@ -530,9 +544,10 @@ fun NoteDetailScreen(
     }
 
     // Engagement sheet states
-    var showReactorsSheet by remember { mutableStateOf(false) }
-    var showZappersSheet by remember { mutableStateOf(false) }
-    var showRepostersSheet by remember { mutableStateOf(false) }
+    // Which list is open and whose: a null note id is the focused note
+    // (its own engagement fetch), any other id a note elsewhere in the thread
+    // (the thread-wide batch).
+    var engagementSheet by remember { mutableStateOf<EngagementSheetTarget?>(null) }
 
     // Emoji picker / zap / broadcast targets — any note in the thread, not
     // just the hero (parents and replies have the same action bar).
@@ -914,6 +929,14 @@ fun NoteDetailScreen(
                             onDelete = { deleteTarget = parent },
                             onLongPressLike = { emojiTargetNote = parent },
                         )
+                        if (expandedEngagement && parent.id != focusedNoteId) {
+                            perNoteEngagement[parent.id]?.let { details ->
+                                ThreadNoteEngagementRow(
+                                    details = details,
+                                    onClick = { kind -> engagementSheet = EngagementSheetTarget(kind, parent.id) },
+                                )
+                            }
+                        }
                         // Thread connector line
                         ThreadConnectorLine(color = colors.primary)
                     }
@@ -950,9 +973,9 @@ fun NoteDetailScreen(
                         onBlock = { blockTarget = focusedNote },
                         onDelete = { deleteTarget = focusedNote },
                         onReport = { reportTarget = focusedNote },
-                        onReactionsClick = { showReactorsSheet = true },
-                        onRepostsClick = { showRepostersSheet = true },
-                        onZapsClick = { showZappersSheet = true },
+                        onReactionsClick = { engagementSheet = EngagementSheetTarget(EngagementSheetKind.REACTIONS, null) },
+                        onRepostsClick = { engagementSheet = EngagementSheetTarget(EngagementSheetKind.REPOSTS, null) },
+                        onZapsClick = { engagementSheet = EngagementSheetTarget(EngagementSheetKind.ZAPS, null) },
                         onZap = { zapTargetNote = focusedNote },
                         onShare = { shareNote(context, focusedNote!!) },
                         onBroadcast = { broadcastTargetNote = focusedNote },
@@ -1037,6 +1060,7 @@ fun NoteDetailScreen(
                             }
                         },
                         onLongPressLikeNote = { emojiTargetNote = it },
+                        onEngagementClick = { kind, id -> engagementSheet = EngagementSheetTarget(kind, id) },
                     )
                 }
 
@@ -1108,29 +1132,32 @@ fun NoteDetailScreen(
     }
 
     // ── Bottom sheets ────────────────────────────────────────────
-    if (showReactorsSheet) {
-        ReactorsSheet(
-            reactions = engagementDetails?.reactions ?: emptyList(),
-            profiles = profiles,
-            onProfileClick = onProfileClick,
-            onDismiss = { showReactorsSheet = false },
-        )
-    }
-    if (showZappersSheet) {
-        ZappersSheet(
-            zaps = engagementDetails?.zaps ?: emptyList(),
-            profiles = profiles,
-            onProfileClick = onProfileClick,
-            onDismiss = { showZappersSheet = false },
-        )
-    }
-    if (showRepostersSheet) {
-        RepostersSheet(
-            reposts = engagementDetails?.reposts ?: emptyList(),
-            profiles = profiles,
-            onProfileClick = onProfileClick,
-            onDismiss = { showRepostersSheet = false },
-        )
+    engagementSheet?.let { target ->
+        val details = if (target.noteId == null) engagementDetails else perNoteEngagement[target.noteId]
+        if (target.noteId != null) {
+            LaunchedEffect(target) { details?.let(viewModel::fetchEngagementProfiles) }
+        }
+        val dismiss = { engagementSheet = null }
+        when (target.kind) {
+            EngagementSheetKind.REACTIONS -> ReactorsSheet(
+                reactions = details?.reactions ?: emptyList(),
+                profiles = profiles,
+                onProfileClick = onProfileClick,
+                onDismiss = dismiss,
+            )
+            EngagementSheetKind.ZAPS -> ZappersSheet(
+                zaps = details?.zaps ?: emptyList(),
+                profiles = profiles,
+                onProfileClick = onProfileClick,
+                onDismiss = dismiss,
+            )
+            EngagementSheetKind.REPOSTS -> RepostersSheet(
+                reposts = details?.reposts ?: emptyList(),
+                profiles = profiles,
+                onProfileClick = onProfileClick,
+                onDismiss = dismiss,
+            )
+        }
     }
     emojiTargetNote?.let { target ->
         val emojiSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1298,6 +1325,8 @@ private fun ThreadedReplyNode(
     onBroadcastNote: (FeedNote) -> Unit,
     onModerateNote: (FeedNote, Moderation) -> Unit,
     onLongPressLikeNote: (FeedNote) -> Unit,
+    /** A pill in a note's engagement row: open that list for that note. */
+    onEngagementClick: (EngagementSheetKind, String) -> Unit,
 ) {
     // Keyed on the pool too: late-arriving replies (refocus fetch,
     // pull-to-refresh) must recompute each node's children.
@@ -1339,41 +1368,16 @@ private fun ThreadedReplyNode(
             onLongPressLike = { onLongPressLikeNote(reply) },
         )
 
-        // Per-note engagement row when thread stats are expanded
-        if (expandedEngagement) {
-            val noteEngagement = perNoteEngagement[reply.id]
-            if (noteEngagement != null) {
-                val reactionCount = if (LocalZapsOnlyMode.current) 0 else noteEngagement.reactions.size
-                val zapCount = noteEngagement.zaps.size
-                val repostCount = noteEngagement.reposts.size
-                if (reactionCount > 0 || zapCount > 0 || repostCount > 0) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.padding(start = 50.dp, top = 2.dp, bottom = 4.dp),
-                    ) {
-                        if (reactionCount > 0) {
-                            Text(
-                                text = "❤️ $reactionCount",
-                                color = SecondaryText,
-                                fontSize = 12.sp,
-                            )
-                        }
-                        if (zapCount > 0) {
-                            Text(
-                                text = "⚡ $zapCount",
-                                color = SecondaryText,
-                                fontSize = 12.sp,
-                            )
-                        }
-                        if (repostCount > 0) {
-                            Text(
-                                text = "🔁 $repostCount",
-                                color = SecondaryText,
-                                fontSize = 12.sp,
-                            )
-                        }
-                    }
-                }
+        // Per-note engagement when thread stats are on: emoji pills, zap
+        // sats and reposts, each opening its list (iOS ThreadNoteEngagementRow).
+        // The focused one is left out, as on iOS: the hero card shows it.
+        // Data is the thread's one batch fetch, nothing per row.
+        if (expandedEngagement && !isFocusedReply) {
+            perNoteEngagement[reply.id]?.let { details ->
+                ThreadNoteEngagementRow(
+                    details = details,
+                    onClick = { kind -> onEngagementClick(kind, reply.id) },
+                )
             }
         }
 
@@ -1442,6 +1446,7 @@ private fun ThreadedReplyNode(
                             onBroadcastNote = onBroadcastNote,
                             onModerateNote = onModerateNote,
                             onLongPressLikeNote = onLongPressLikeNote,
+                            onEngagementClick = onEngagementClick,
                         )
                     }
                 }
@@ -1785,23 +1790,104 @@ private fun HeroNoteCard(
     }
 }
 
-/** One compact, tappable pill in the hero note's engagement row. */
+/**
+ * One tappable pill in an engagement row: the hero note's, or with [compact]
+ * the smaller one under each note in the thread (iOS ThreadNoteEngagementRow:
+ * 6x3 padding, 6pt corners, white at 0.04).
+ */
 @Composable
 private fun EngagementPill(
     description: String,
     onClick: () -> Unit,
+    compact: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))
+            .clip(RoundedCornerShape(if (compact) 6.dp else 8.dp))
+            .background(androidx.compose.ui.graphics.Color.White.copy(alpha = if (compact) 0.04f else 0.05f))
             .clickable(onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = description }
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+            .padding(horizontal = if (compact) 6.dp else 8.dp, vertical = if (compact) 3.dp else 5.dp),
         content = content,
     )
+}
+
+/** Which engagement list a pill opens. */
+private enum class EngagementSheetKind { REACTIONS, ZAPS, REPOSTS }
+
+/** An open engagement sheet: which list, and for which note (null: the focused one). */
+private data class EngagementSheetTarget(val kind: EngagementSheetKind, val noteId: String?)
+
+/**
+ * Under a parent or reply in the thread when thread stats are on: a hairline,
+ * then emoji pills (three, then "+N"), zap sats and reposts, each pill opening
+ * its list. iOS ThreadNoteEngagementRow. Draws nothing for a note with none.
+ */
+@Composable
+private fun ThreadNoteEngagementRow(
+    details: EngagementDetails,
+    onClick: (EngagementSheetKind) -> Unit,
+) {
+    val zapsOnly = LocalZapsOnlyMode.current
+    val row = remember(details, zapsOnly) { EngagementSummary.threadRow(details, zapsOnly) }
+    if (row.isEmpty) return
+    Column(modifier = Modifier.padding(horizontal = 12.dp)) {
+        HorizontalDivider(
+            color = SecondaryText.copy(alpha = 0.1f),
+            thickness = 0.5.dp,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+        ) {
+            if (row.emojiGroups.isNotEmpty()) {
+                val shown = row.emojiGroups.take(EngagementSummary.THREAD_ROW_EMOJI_GROUPS)
+                EngagementPill(
+                    description = row.emojiGroups.joinToString(prefix = "Reactions: ") { "${it.emoji} ${it.count}" },
+                    onClick = { onClick(EngagementSheetKind.REACTIONS) },
+                    compact = true,
+                ) {
+                    shown.forEachIndexed { index, group ->
+                        if (index > 0) Spacer(Modifier.width(3.dp))
+                        Text(group.emoji, fontSize = 11.sp)
+                        Spacer(Modifier.width(1.dp))
+                        Text("${group.count}", color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    }
+                    if (row.emojiGroups.size > shown.size) {
+                        Spacer(Modifier.width(3.dp))
+                        Text("+${row.emojiGroups.size - shown.size}", color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
+            if (row.zapCount > 0) {
+                val sats = EngagementSummary.satsText(row.zapSats)
+                EngagementPill(
+                    description = "Zaps: ${row.zapCount}, $sats sats",
+                    onClick = { onClick(EngagementSheetKind.ZAPS) },
+                    compact = true,
+                ) {
+                    Icon(NostrVaultIcons.Zap, contentDescription = null, tint = ZapOrange, modifier = Modifier.size(9.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text(sats, color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                }
+            }
+            if (row.reposts > 0) {
+                EngagementPill(
+                    description = "Reposts: ${row.reposts}",
+                    onClick = { onClick(EngagementSheetKind.REPOSTS) },
+                    compact = true,
+                ) {
+                    Icon(NostrVaultIcons.Repost, contentDescription = null, tint = RepostGreen, modifier = Modifier.size(9.dp))
+                    Spacer(Modifier.width(2.dp))
+                    Text("${row.reposts}", color = SecondaryText, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+    }
 }
 
 /** One "below the fold" response: who, what kind, and the text. */
