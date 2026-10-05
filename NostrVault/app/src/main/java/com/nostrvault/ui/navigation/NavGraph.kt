@@ -733,7 +733,7 @@ fun NostrVaultNavHost(
             val condensedActionIcon = when (currentRoute) {
                 Screen.MediaGallery.route -> NostrVaultIcons.Blossom
                 Screen.Dashboard.route -> NostrVaultIcons.Relay
-                else -> NostrVaultIcons.Create
+                else -> NostrVaultIcons.Compose
             }
             val condensedActionTint = if (currentRoute == Screen.Dashboard.route) relayColor else colors.primary
             val onCondensedAction: () -> Unit = when (currentRoute) {

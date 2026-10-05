@@ -654,7 +654,7 @@ fun SearchScreen(
                             .height(48.dp)
                             .padding(horizontal = 18.dp),
                     ) {
-                        Icon(NostrVaultIcons.Create, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Icon(NostrVaultIcons.Compose, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                         Text("Post", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                 }

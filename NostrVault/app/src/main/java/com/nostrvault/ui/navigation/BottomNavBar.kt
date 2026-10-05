@@ -99,11 +99,11 @@ data class BottomNavItem(
 )
 
 val bottomNavItems = listOf(
-    BottomNavItem(Screen.Feed, "Feed", NostrVaultIcons.Feed),
+    BottomNavItem(Screen.Feed, "Feed", NostrVaultIcons.TabFeed),
     BottomNavItem(Screen.Search, "Search", NostrVaultIcons.Search),
     BottomNavItem(Screen.Profile, "Profile", NostrVaultIcons.Profile), // center
-    BottomNavItem(Screen.MediaGallery, "Media", NostrVaultIcons.Media),
-    BottomNavItem(Screen.Dashboard, "Relay", NostrVaultIcons.Relay),
+    BottomNavItem(Screen.MediaGallery, "Media", NostrVaultIcons.TabMedia),
+    BottomNavItem(Screen.Dashboard, "Relay", NostrVaultIcons.TabRelay),
 )
 
 @Composable
@@ -120,7 +120,7 @@ fun BottomNavBar(
     onNavigate: (Screen) -> Unit,
     onReselect: (Screen) -> Unit = {},
     onAccountSwitcher: () -> Unit,
-    condensedActionIcon: ImageVector = NostrVaultIcons.Create,
+    condensedActionIcon: ImageVector = NostrVaultIcons.Compose,
     condensedActionTint: Color? = null,
     onCondensedAction: () -> Unit = {},
     onExpand: () -> Unit = {},
@@ -449,8 +449,10 @@ private fun NavTab(
                 imageVector = icon,
                 contentDescription = label,
                 tint = if (selected) selectedColor else Color.White,
+                // iOS: a 20pt symbol in a 24pt frame. A Material icon keeps
+                // a 2dp margin inside its box, so 24dp draws the same glyph.
                 modifier = Modifier
-                    .size(31.dp)
+                    .size(24.dp)
                     .scale(scale),
             )
             if (showBadge) {
@@ -514,7 +516,7 @@ private fun ProfileTab(
             Box(
                 modifier = Modifier
                     .zapFlightOrigin()
-                    .size(31.dp)
+                    .size(24.dp)
                     .scale(scale)
                     .border(
                         width = if (selected) 1.5.dp else 0.dp,
@@ -529,7 +531,7 @@ private fun ProfileTab(
                 AvatarImage(
                     url = activeAvatarUrl,
                     pubkey = activeAccountPubkey,
-                    size = 25.dp,
+                    size = 22.dp,
                     displayName = activeDisplayName,
                 )
             }

@@ -98,10 +98,11 @@ val WarningYellow = Color(0xFFFFCC00)
 val ErrorRed = Color(0xFFFF3B30)
 val InfoBlue = Color(0xFF007AFF)
 
-// Engagement action colors
-val LikeRed = Color(0xFFFF3B30)
-val RepostGreen = Color(0xFF34C759)
-val ZapOrange = Color(0xFFFF9500)
+// Engagement action colors: iOS's system red / green / orange in dark mode,
+// which is all the app has (the light-mode values read dull on black).
+val LikeRed = Color(0xFFFF453A)
+val RepostGreen = Color(0xFF30D158)
+val ZapOrange = Color(0xFFFF9F0A)
 
 // Wizard accent (setup flow)
 val WizardOrange = Color(0xFFF59E0B)

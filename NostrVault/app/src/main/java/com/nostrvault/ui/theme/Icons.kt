@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.OfflineBolt
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.Outbox
 import androidx.compose.material.icons.filled.Person
@@ -96,6 +97,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.OfflineBolt
 import androidx.compose.material.icons.outlined.People
@@ -104,7 +107,12 @@ import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.RemoveModerator
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.unit.dp
 
 /**
  * SF Symbol -> Material Icon mapping.
@@ -150,6 +158,12 @@ object NostrVaultIcons {
     val Dismiss: ImageVector = Icons.Filled.Close          // xmark
     val Alert: ImageVector = Icons.Filled.Warning          // exclamationmark.triangle.fill
     val Create: ImageVector = Icons.Filled.Add             // plus
+    /** Write a post: the Post button, the folded bar's compose action. */
+    val Compose: ImageVector by lazy { squareAndPencil() } // square.and.pencil
+    /** The note action bar's Reply (the "replying to" line keeps [Reply]). */
+    val ReplyAction: ImageVector = Icons.Outlined.ChatBubbleOutline // message
+    /** The note action bar's Zap before you've zapped; [Zap] after. */
+    val ZapOutline: ImageVector = Icons.Outlined.Bolt      // bolt
     val ArrowUp: ImageVector = Icons.Filled.ArrowUpward    // arrow.up
     val Incoming: ImageVector = Icons.Filled.SouthWest     // arrow.down.left
     val Outgoing: ImageVector = Icons.Filled.NorthEast     // arrow.up.right
@@ -192,6 +206,12 @@ object NostrVaultIcons {
 
     // Navigation (additional)
     val Relay: ImageVector = Icons.Filled.CellTower          // antenna.radiowaves.left.and.right
+
+    // Tab bar (iOS BottomTabBar)
+    val TabFeed: ImageVector = Icons.Filled.People           // person.2.wave.2
+    val TabMedia: ImageVector = Icons.Filled.PhotoLibrary    // photo.on.rectangle
+    @Suppress("DEPRECATION")
+    val TabRelay: ImageVector = Icons.Filled.Feed            // doc.text.image
     val ChevronDown: ImageVector = Icons.Filled.KeyboardArrowDown // chevron.down
     val MarkAllRead: ImageVector = Icons.Filled.DoneAll      // checkmark.circle
     val Browse: ImageVector = Icons.Filled.Explore           // magnifyingglass.circle
@@ -242,3 +262,41 @@ object NostrVaultIcons {
     val VolumeOff: ImageVector = Icons.AutoMirrored.Filled.VolumeOff // speaker.slash.fill
     val PictureInPicture: ImageVector = Icons.Filled.PictureInPictureAlt // pip.enter
 }
+
+/**
+ * SF Symbols' square.and.pencil, which Material lacks: a rounded square
+ * open at its top-right corner, with a pencil running into it.
+ */
+private fun squareAndPencil(): ImageVector = ImageVector.Builder(
+    name = "SquareAndPencil",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).apply {
+    // The square, broken where the pencil enters.
+    path(
+        stroke = SolidColor(androidx.compose.ui.graphics.Color.Black),
+        strokeLineWidth = 1.8f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round,
+    ) {
+        moveTo(12f, 4f)
+        horizontalLineTo(6.5f)
+        arcToRelative(2.5f, 2.5f, 0f, false, false, -2.5f, 2.5f)
+        verticalLineTo(17.5f)
+        arcToRelative(2.5f, 2.5f, 0f, false, false, 2.5f, 2.5f)
+        horizontalLineTo(17.5f)
+        arcToRelative(2.5f, 2.5f, 0f, false, false, 2.5f, -2.5f)
+        verticalLineTo(12f)
+    }
+    // The pencil: body and point.
+    path(fill = SolidColor(androidx.compose.ui.graphics.Color.Black)) {
+        moveTo(18.6f, 2.6f)
+        lineTo(21.4f, 5.4f)
+        lineTo(12.6f, 14.2f)
+        lineTo(9.2f, 14.8f)
+        lineTo(9.8f, 11.4f)
+        close()
+    }
+}.build()

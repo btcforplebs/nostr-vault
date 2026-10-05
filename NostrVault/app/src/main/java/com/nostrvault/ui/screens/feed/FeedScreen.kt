@@ -586,7 +586,7 @@ fun FeedScreen(
                                 com.nostrvault.ui.screens.ModeComposerKind.ARTICLE -> NostrVaultIcons.Articles
                                 com.nostrvault.ui.screens.ModeComposerKind.RECIPE -> NostrVaultIcons.Recipes
                                 com.nostrvault.ui.screens.ModeComposerKind.LISTING -> NostrVaultIcons.Marketplace
-                                else -> NostrVaultIcons.Create
+                                else -> NostrVaultIcons.Compose
                             },
                             contentDescription = "Compose",
                             tint = Color.White,
@@ -743,7 +743,8 @@ fun FeedScreen(
                                 onFetchMissingNote = viewModel::fetchMissingNote,
                                 rootUnavailable = thread.rootId in unavailableNoteIds,
                                 lineAnchor = threadLineAnchor,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                // iOS: 12pt sides in threaded mode, 12pt between rows.
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 expandedRow = { note, _ ->
                                     FeedFullNoteRow(
                                         note = note,
@@ -813,7 +814,8 @@ fun FeedScreen(
                                     expandedNoteId = id
                                 },
                                 onProfileClick = onProfileClick,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                                // iOS: 8pt sides for a compact row, 12pt between rows.
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                             )
                         } else {
                             FeedFullNoteRow(
@@ -833,7 +835,8 @@ fun FeedScreen(
                                 onBlock = { id -> blockNoteId = id },
                                 onDelete = { id -> deleteNoteId = id },
                                 onLongPressLike = { id -> emojiPickerNoteId = id },
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                // iOS: 16pt sides, 12pt between rows.
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             )
                         }
                     }

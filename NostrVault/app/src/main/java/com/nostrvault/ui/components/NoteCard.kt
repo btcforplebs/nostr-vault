@@ -794,7 +794,7 @@ internal fun EngagementBar(
         // Reply
         if (onReply != null) {
             EngagementButton(
-                icon = NostrVaultIcons.Reply,
+                icon = NostrVaultIcons.ReplyAction,
                 isActive = false,
                 activeColor = SecondaryText,
                 contentDescription = "Reply",
@@ -843,7 +843,7 @@ internal fun EngagementBar(
         // Zap
         if (onZap != null) Box(Modifier.zapFlightTarget(noteId)) {
             EngagementButton(
-                icon = NostrVaultIcons.Zap,
+                icon = if (isZapped) NostrVaultIcons.Zap else NostrVaultIcons.ZapOutline,
                 isActive = isZapped,
                 activeColor = ZapOrange,
                 contentDescription = if (isZapped) "Zapped" else "Zap",
