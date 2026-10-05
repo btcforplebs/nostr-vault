@@ -1720,14 +1720,17 @@ private fun FeedTopBar(
                             modifier = Modifier.size(18.dp),
                         )
                     }
-                    // Show replies
-                    IconButton(onClick = onToggleReplies, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            imageVector = NostrVaultIcons.Chat,
-                            contentDescription = "Replies",
-                            tint = if (showReplies) colors.primary else SecondaryText,
-                            modifier = Modifier.size(18.dp),
-                        )
+                    // Show replies. Not on Global, where iOS has no Replies
+                    // button either (#230): Global is the top-level firehose.
+                    if (feedMode != FeedMode.GLOBAL) {
+                        IconButton(onClick = onToggleReplies, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                imageVector = NostrVaultIcons.Chat,
+                                contentDescription = "Replies",
+                                tint = if (showReplies) colors.primary else SecondaryText,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
                 FeedMode.MEDIA -> {
