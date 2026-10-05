@@ -108,6 +108,14 @@ struct ProfileView: View {
     @State private var totalMediaCount: Int? = nil
 
     @State private var selectedSection: ProfileSection = .notes
+
+    /// Height of the profile's scroll view. A section is at least this tall,
+
+    /// so picking one with a single item keeps the tabs where they were and
+
+    /// leaves blank space below, instead of the page snapping back down.
+
+    @State private var viewportHeight: CGFloat = 0
     @StateObject private var shop = SellerListingsLoader()
     /// This person's articles, diVines and music, each a tab when they have any.
     @StateObject private var extras = ProfileExtrasLoader()
@@ -305,11 +313,13 @@ struct ProfileView: View {
                 sectionContent
                     .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
                     .tabBarBottomPadding()
+                    .frame(minHeight: viewportHeight, alignment: .top)
             }
             .frame(maxWidth: 720)
             .frame(maxWidth: .infinity)
         }
         .scrollDirectionTracking(feedService: feedService)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
         .if(isOwnProfile) { view in
             view.refreshable {
                 await refreshProfile()
