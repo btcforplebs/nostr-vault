@@ -3177,6 +3177,23 @@ struct AppearanceSettingsView: View {
             #endif
 
             Section {
+                Toggle(isOn: $configService.config.showNewPostsPill) {
+                    Label {
+                        Text("New Posts Pill").settingInfo(.displayNewPostsPill)
+                    } icon: {
+                        Image(systemName: "arrow.up.circle.fill")
+                    }
+                }
+                .onChange(of: configService.config.showNewPostsPill) { _, _ in
+                    configService.save()
+                }
+            } header: {
+                Text("Feed")
+            } footer: {
+                Text("Off, new posts wait until you pull down to refresh.")
+            }
+
+            Section {
                 Toggle(isOn: $configService.config.zapsOnlyMode) {
                     Label {
                         Text("Zaps Only").settingInfo(.displayZapsOnly)
