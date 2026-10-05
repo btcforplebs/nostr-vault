@@ -60,6 +60,7 @@ extension VaultView {
                 IconFilterButton(icon: "square.stack", tooltip: "All", isSelected: contentFilter == .all, color: .havenPurple, label: labelled ? "All" : nil) { contentFilter = .all }
                 IconFilterButton(icon: "person.fill", tooltip: "Mine", isSelected: contentFilter == .mine, color: .havenPurple, label: labelled ? "Mine" : nil) { contentFilter = .mine }
                 IconFilterButton(icon: "at", tooltip: "Mentions", isSelected: contentFilter == .tagged, color: .havenPurple, label: labelled ? "Mentions" : nil) { contentFilter = .tagged }
+                IconFilterButton(icon: "person.crop.circle.badge.questionmark", tooltip: "Replies from outside your network", isSelected: contentFilter == .outside, color: .havenPurple, label: labelled ? "Outside" : nil) { contentFilter = .outside }
             } else if viewMode == .likes {
                 IconFilterButton(icon: "tray.and.arrow.down.fill", tooltip: "Received", isSelected: likesFilter == .onMyNotes, color: .havenPurple, label: labelled ? "Received" : nil) { likesFilter = .onMyNotes }
                 IconFilterButton(icon: "tray.and.arrow.up.fill", tooltip: "Given", isSelected: likesFilter == .myLikes, color: .havenPurple, label: labelled ? "Given" : nil) { likesFilter = .myLikes }
@@ -240,6 +241,9 @@ extension VaultView {
             }
             FilterButton(title: "Whitelisted", color: Color.havenVerified.opacity(0.7), isSelected: contentFilter == .whitelist) {
                 contentFilter = .whitelist
+            }
+            FilterButton(title: "Outside Network", color: .orange, isSelected: contentFilter == .outside) {
+                contentFilter = .outside
             }
         }
         .padding(4)

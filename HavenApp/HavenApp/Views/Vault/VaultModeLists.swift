@@ -465,7 +465,15 @@ extension VaultView {
             zapsFilter = .onMyNotes
         default:
             viewMode = .notes
-            contentFilter = .all
+            // A reply from outside your network isn't listed under All.
+            if let author = nostrService.events.first(where: { $0.id == request.eventId })?.pubkey,
+               ContentFilter.isOutside(author: author, owner: nostrService.activeHexPubkey,
+                                       whitelist: configService.whitelistedHexPubkeys,
+                                       trusted: FeedService.shared.wotPubkeys) {
+                contentFilter = .outside
+            } else {
+                contentFilter = .all
+            }
         }
 
         focusTask?.cancel()

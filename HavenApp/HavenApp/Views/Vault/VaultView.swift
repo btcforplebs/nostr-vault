@@ -143,6 +143,7 @@ struct VaultView: View {
             case .mine: return "My Notes"
             case .tagged: return "Notes I'm Tagged In"
             case .whitelist: return "Whitelisted Notes"
+            case .outside: return "Replies From Outside Your Network"
             }
         case .media:
             return ""

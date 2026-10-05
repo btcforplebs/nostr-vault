@@ -23,6 +23,17 @@ enum ContentFilter {
     case mine
     case tagged
     case whitelist
+    /// Replies to your posts from people outside your Web of Trust. The relay
+    /// lets these in (anyone may reply to you); they're kept out of All and
+    /// Mentions and listed here instead.
+    case outside
+
+    /// Whether a note tagging you comes from outside your network. The one
+    /// definition shared by the Notes filter and a notification tap's routing.
+    /// An empty graph (not built yet) counts nobody as outside.
+    static func isOutside(author: String, owner: String, whitelist: Set<String>, trusted: Set<String>) -> Bool {
+        author != owner && !whitelist.contains(author) && !trusted.isEmpty && !trusted.contains(author)
+    }
 }
 
 /// Likes and Zaps each have two views: what came in on your notes, and what you

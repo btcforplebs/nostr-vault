@@ -180,6 +180,10 @@ extension VaultView {
         let owner = nostrService.activeHexPubkey
         let whitelist = configService.whitelistedHexPubkeys
         let blacklist = configService.activeAccountBlockedHexPubkeys
+        // The trust graph the relay admitted by. Empty (not built yet) counts
+        // nobody as outside, so nothing moves out of All until it loads.
+        if FeedService.shared.wotPubkeys.isEmpty { FeedService.shared.loadWotPubkeys() }
+        let trusted = FeedService.shared.wotPubkeys
 
         #if DEBUG
         print("updateDisplayData: events=\(currentEvents.count) filter=\(currentFilter)")
@@ -386,16 +390,19 @@ extension VaultView {
 
                     if blacklist.contains(event.pubkey) { return false }
 
+                    let isMine = event.pubkey == owner
+                    let isTagged = event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner }
+                    let isWhitelisted = whitelist.contains(event.pubkey)
+                    let isOutside = isTagged && ContentFilter.isOutside(
+                        author: event.pubkey, owner: owner, whitelist: whitelist, trusted: trusted)
                     switch currentFilter {
                     case .all:
-                        let isMine = event.pubkey == owner
-                        let isTagged = event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner }
-                        let isWhitelisted = whitelist.contains(event.pubkey)
-                        return isMine || isTagged || isWhitelisted
-                    case .mine: return event.pubkey == owner
-                    case .tagged: return event.pubkey != owner && event.tags.contains { $0.count >= 2 && $0[0] == "p" && $0[1] == owner }
+                        return (isMine || isTagged || isWhitelisted) && !isOutside
+                    case .mine: return isMine
+                    case .tagged: return !isMine && isTagged && !isOutside
                     case .whitelist:
-                        return whitelist.contains(event.pubkey) && event.pubkey != owner
+                        return isWhitelisted && !isMine
+                    case .outside: return isOutside
                     }
                 }
 
