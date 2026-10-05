@@ -380,6 +380,14 @@ class FeedService @Inject constructor(
     // completes, so disconnect() alone leaves these coroutines (and the client)
     // pinned in memory forever.
     private val feedClientJobs = ConcurrentHashMap<String, MutableList<Job>>()
+
+    /**
+     * Each feed relay's own socket state, keyed by [FeedRelayHealth.key]. The
+     * feed dashboard rows and the feed dot read this; [connectionStatus] alone
+     * only says whether the feed has notes (iOS #281).
+     */
+    private val _relayStates = MutableStateFlow<Map<String, WebSocketClient.ConnectionState>>(emptyMap())
+    val relayStates: StateFlow<Map<String, WebSocketClient.ConnectionState>> = _relayStates.asStateFlow()
     // Relays whose auxiliary subscriptions (reactions/zaps) have been sent for the
     // current connection. Cleared on disconnect/teardown so reconnects re-send.
     private val auxSubsSent = ConcurrentHashMap.newKeySet<String>()
@@ -1334,6 +1342,7 @@ class FeedService @Inject constructor(
     private fun teardownFeedClient(relayUrl: String) {
         feedClientJobs.remove(relayUrl)?.forEach { it.cancel() }
         feedClients.remove(relayUrl)?.disconnect()
+        _relayStates.update { it - FeedRelayHealth.key(relayUrl) }
         auxSubsSent.remove(relayUrl)
         feedConnectFailures.remove(relayUrl)
     }
@@ -1344,6 +1353,7 @@ class FeedService @Inject constructor(
         feedClientJobs.clear()
         feedClients.values.forEach { it.disconnect() }
         feedClients.clear()
+        _relayStates.value = emptyMap()
         auxSubsSent.clear()
     }
 
@@ -1392,6 +1402,9 @@ class FeedService @Inject constructor(
             // after CONNECTED is a drop, which the client redials on its own.
             var dialing = false
             client.connectionState.collect { state ->
+                if (feedClients[relayUrl] === client) {
+                    _relayStates.update { it + (FeedRelayHealth.key(relayUrl) to state) }
+                }
                 when (state) {
                     WebSocketClient.ConnectionState.CONNECTED -> {
                         dialing = false

@@ -1033,6 +1033,7 @@ fun FeedScreen(
             showReplies = showReplies,
             autoLoadNewNotes = autoLoad,
             feedRelays = feedConfig.activeFeedRelays,
+            relayStates = viewModel.relayStates.collectAsState().value,
             onToggleReposts = { viewModel.toggleShowReposts() },
             onToggleReplies = { viewModel.toggleShowReplies() },
             onToggleAutoLoad = { viewModel.toggleAutoLoad() },
@@ -1632,9 +1633,10 @@ private fun FeedTopBar(
     val colors = LocalNostrVaultColors.current
     var feedModeExpanded by remember { mutableStateOf(false) }
 
-    // Resolve connection dot color
+    // Resolve connection dot color (FeedRelayHealth.dotColor)
     val dotColor = when (connectionColor) {
         "green" -> SuccessGreen
+        "yellow" -> WarningYellow
         "orange" -> ZapOrange
         "red" -> ErrorRed
         else -> SecondaryText
