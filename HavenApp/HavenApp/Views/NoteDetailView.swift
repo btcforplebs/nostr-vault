@@ -441,7 +441,9 @@ struct NoteDetailView: View {
         if condensedReplies {
             // The conversation above, one line per note, oldest at the top.
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(dynamicParents) { parent in
+                // Notes above it by someone you blocked are left out, as in
+                // the full history.
+                ForEach(dynamicParents.filter { !configService.activeAccountBlockedHexPubkeys.contains($0.pubkey) }) { parent in
                     condensedLine(for: parent, depth: 0, proxy: proxy)
                 }
             }
