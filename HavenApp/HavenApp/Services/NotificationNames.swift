@@ -43,4 +43,9 @@ extension Notification.Name {
     /// Mosaic widget's wand is tapped, so one tap gets the same result as
     /// Media tab -> + -> Magic Paste.
     static let havenMagicPaste = Notification.Name("com.haven.magicPaste")
+
+    /// A `nostr:` link opened from outside the app. `object` is the hex pubkey
+    /// (`havenOpenProfile`), or the hex event id / `naddr1…` (`havenOpenNote`).
+    static let havenOpenProfile = Notification.Name("com.haven.openProfile")
+    static let havenOpenNote = Notification.Name("com.haven.openNote")
 }

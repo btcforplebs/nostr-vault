@@ -186,6 +186,7 @@
 		6299766B577696BB8E498D3B /* PlatformCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EADF0099992A209CBBEFFB2 /* PlatformCompat.swift */; };
 		639693F76606BDA634926A35 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3192A668A74BAFF6F4B60FC /* AppDelegate.swift */; };
 		64353876FABFAB7F823B12FA /* ZapFlightView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073E928415EAF56E0DB8924 /* ZapFlightView.swift */; };
+		65249F435122FA25EF77975E /* NostrURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D905B09C965B0356FE1B3469 /* NostrURI.swift */; };
 		6599E6B809A7C89D83B5765A /* AudioPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7170B65E0299D14E11CEE3D8 /* AudioPlayerView.swift */; };
 		66FB9EEC08A2208BCEAC19AD /* FeedProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB04FF5ECC6BE85A9D783C18 /* FeedProfile.swift */; };
 		67938D55AFB00C021B910C99 /* DMInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D917784217297C478102785 /* DMInboxView.swift */; };
@@ -346,6 +347,7 @@
 		BE4A78A11408E800B11048E0 /* NoteTagging.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE87DC6C17138B7274AF82BA /* NoteTagging.swift */; };
 		BE62A6B14BFD12B691DE6D3F /* LiveChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BE879845BEF9A356B7CB5EB /* LiveChatService.swift */; };
 		BF1F6EADB3CD222E4B0C6072 /* MediaGalleryToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC26E9FB9DE4AFA3840A2CB /* MediaGalleryToolbar.swift */; };
+		BF2C23440F6684625655CFD4 /* NostrURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D905B09C965B0356FE1B3469 /* NostrURI.swift */; };
 		C20F11831AE268F08F8E13BE /* MarketplaceFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D53D58F77A62E4B853B420 /* MarketplaceFeedViews.swift */; };
 		C244EE2E8FA58AC58748CA0C /* LocalRelaySearchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A847D1496121BC4956AAF6 /* LocalRelaySearchPlan.swift */; };
 		C2E2BF0D5F5E31C7BFB2D179 /* ProfileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14E3BC6EB9439A763E73FE2 /* ProfileRepository.swift */; };
@@ -704,6 +706,7 @@
 		D5EBFDB16A8828F3C12C4343 /* HavenApp-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "HavenApp-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D5F431BCE8C47C98A4642716 /* FeedGlanceWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedGlanceWidget.swift; sourceTree = "<group>"; };
 		D5F84F499115E83DCA24A989 /* Chime.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = Chime.mp3; sourceTree = "<group>"; };
+		D905B09C965B0356FE1B3469 /* NostrURI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrURI.swift; sourceTree = "<group>"; };
 		DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven_ios.a; path = build/ios/libhaven_ios.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		DE2003F8C6D98618A746D1E7 /* SwiftNIP46Handshake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftNIP46Handshake.swift; sourceTree = "<group>"; };
 		DEF0159EC6004E767A239389 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
@@ -1049,6 +1052,7 @@
 				FE2060B412DD17816F0495D8 /* MediaItem.swift */,
 				DFA1340FD03E8DB6CA418503 /* NIP10Thread.swift */,
 				C3D0631CF48FD1659E6F1005 /* NostrEvent.swift */,
+				D905B09C965B0356FE1B3469 /* NostrURI.swift */,
 				CE87DC6C17138B7274AF82BA /* NoteTagging.swift */,
 				6D4E22D61B152894312A2DB6 /* NotificationPolicy.swift */,
 				7F9B00BF5E1FFC589465ED7F /* NotificationSound.swift */,
@@ -1524,6 +1528,7 @@
 				CDCA7BD2C08A31E082391BD4 /* NostrEvent.swift in Sources */,
 				7003613F2ACF40FAC274A6D1 /* NostrService.swift in Sources */,
 				7E713E790AA063B9750B6F5A /* NostrServiceTypes.swift in Sources */,
+				65249F435122FA25EF77975E /* NostrURI.swift in Sources */,
 				26E85D97A185783B78EC5405 /* NoteDetailView.swift in Sources */,
 				4627F52B057D4E506D1065CA /* NoteTagging.swift in Sources */,
 				90C3C712CB8B0009CB8C3047 /* NotificationNames.swift in Sources */,
@@ -1758,6 +1763,7 @@
 				14ABF30BD7FF762D64D8EE9A /* NostrEvent.swift in Sources */,
 				AE37789FA8A675627D6EB342 /* NostrService.swift in Sources */,
 				747DF87018401A59730B69AE /* NostrServiceTypes.swift in Sources */,
+				BF2C23440F6684625655CFD4 /* NostrURI.swift in Sources */,
 				7D819C17829EEEDB078DA4AB /* NoteDetailView.swift in Sources */,
 				BE4A78A11408E800B11048E0 /* NoteTagging.swift in Sources */,
 				8B334441FF49DC33B053C484 /* NotificationNames.swift in Sources */,

@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var showingDMInbox = false
     @State private var dmInboxConversation: String?
     @State private var pendingMentionNoteId: IdentifiableString?
+    @State private var pendingProfilePubkey: IdentifiableString?
     @State private var isLandscapeLayout = UIScreen.main.bounds.width >= UIScreen.main.bounds.height
 
     init() {
@@ -116,6 +117,17 @@ struct ContentView: View {
                 pendingMentionNoteId = IdentifiableString(id: eventId)
             }
         }
+        // A `nostr:` link from another app opens over the current tab.
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenNote)) { notification in
+            if let id = notification.object as? String {
+                pendingMentionNoteId = IdentifiableString(id: id)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenProfile)) { notification in
+            if let pubkey = notification.object as? String {
+                pendingProfilePubkey = IdentifiableString(id: pubkey)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenWallet)) { _ in
             selectedTab = 2 // Profile tab
         }
@@ -137,6 +149,11 @@ struct ContentView: View {
         }
         .sheet(item: $pendingMentionNoteId) { noteId in
             NoteDetailViewWrapper(noteId: noteId.id, onDismiss: { pendingMentionNoteId = nil })
+                .environmentObject(NostrService.shared)
+                .environmentObject(ConfigService.shared)
+        }
+        .sheet(item: $pendingProfilePubkey) { pubkey in
+            ProfileView(pubkey: pubkey.id, onDismiss: { pendingProfilePubkey = nil })
                 .environmentObject(NostrService.shared)
                 .environmentObject(ConfigService.shared)
         }
