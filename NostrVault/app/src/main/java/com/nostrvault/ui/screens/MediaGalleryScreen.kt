@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -310,63 +311,141 @@ class MediaGalleryViewModel @Inject constructor(
         return json.decodeFromString<List<BlobDescriptor>>(body)
     }
 
-    fun uploadMedia(uri: Uri, contentResolver: android.content.ContentResolver) {
+    /**
+     * Uploads every picked file in turn (iOS photo picker and file importer
+     * both allow several), then reloads once.
+     */
+    fun uploadMedia(uris: List<Uri>, contentResolver: android.content.ContentResolver) {
+        if (_isUploading.value || uris.isEmpty()) return
+        viewModelScope.launch {
+            _isUploading.value = true
+            try {
+                var anySaved = false
+                for (uri in uris) {
+                    if (uploadOne(uri, contentResolver)) anySaved = true
+                }
+                if (anySaved) refresh()
+            } finally {
+                _isUploading.value = false
+            }
+        }
+    }
+
+    /**
+     * Port of iOS `handlePasteFromClipboard`: an image on the clipboard is
+     * uploaded like a picked file; an http(s) link is downloaded into the
+     * vault; anything else says why nothing happened.
+     */
+    fun pasteFromClipboard(context: android.content.Context) {
+        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as? android.content.ClipboardManager
+        val item = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+        val uri = item?.uri
+        if (uri != null) {
+            uploadMedia(listOf(uri), context.contentResolver)
+            return
+        }
+        val text = item?.text?.toString()?.trim()
+        if (text.isNullOrEmpty()) {
+            notificationManager.showError("Clipboard is empty or contains unsupported content", ErrorStyle.WARNING)
+            return
+        }
+        val url = pastedMediaUrl(text)
+        if (url == null) {
+            notificationManager.showError("Clipboard does not contain a valid URL or image", ErrorStyle.WARNING)
+            return
+        }
         if (_isUploading.value) return
         viewModelScope.launch {
             _isUploading.value = true
-            val filename = uri.lastPathSegment ?: "media"
+            val filename = url.substringBefore('?').substringBefore('#')
+                .substringAfterLast('/').ifEmpty { "pasted-media" }
             val uploadId = notificationManager.addUpload(filename)
-            // Stream the picked media to a temp file instead of readBytes() — a
-            // large video pulled fully into a ByteArray OOM-kills low-RAM devices
-            // before the upload even starts. The File-based upload path streams
-            // from disk (file.asRequestBody) end to end.
-            var tempFile: File? = null
             try {
-                tempFile = withContext(Dispatchers.IO) {
-                    val f = File.createTempFile("upload_", null, mediaCacheService.cacheDirectory)
-                    val copied = contentResolver.openInputStream(uri)?.use { input ->
-                        f.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
-                        true
-                    } ?: false
-                    if (copied) f else { f.delete(); null }
-                } ?: run {
-                    notificationManager.markUploadFailed(uploadId, "Could not read file")
-                    return@launch
-                }
-
-                val contentType = contentResolver.getType(uri) ?: "application/octet-stream"
-                val sha256 = withContext(Dispatchers.IO) {
-                    blossomService.computeSHA256(tempFile!!)
-                }
-
-                notificationManager.updateUploadProgress(uploadId, 0.3f)
-
-                val resultUrl = withContext(Dispatchers.IO) {
-                    // Vault save: local storage counts as success even if mirrors are down.
-                    blossomService.uploadAndMirror(tempFile!!, sha256, contentType, allowLocalFallback = true)
-                }
-
-                notificationManager.updateUploadProgress(uploadId, 1.0f)
-
-                if (resultUrl != null || blossomService.localBlossomURL() != null) {
+                if (blossomService.mirrorUrlToLocal(url) != null) {
                     notificationManager.markUploadSuccess(uploadId)
                     refresh()
                 } else {
-                    notificationManager.markUploadFailed(uploadId, "Upload failed")
+                    notificationManager.markUploadFailed(uploadId, "Failed to paste media")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Upload failed", e)
-                notificationManager.markUploadFailed(uploadId, e.message ?: "Upload failed")
             } finally {
-                tempFile?.let { withContext(NonCancellable + Dispatchers.IO) { it.delete() } }
                 _isUploading.value = false
             }
+        }
+    }
+
+    /** True when the file reached the vault. Progress and failure go to the upload notification. */
+    private suspend fun uploadOne(uri: Uri, contentResolver: android.content.ContentResolver): Boolean {
+        val filename = uri.lastPathSegment ?: "media"
+        val uploadId = notificationManager.addUpload(filename)
+        // Stream the picked media to a temp file instead of readBytes() — a
+        // large video pulled fully into a ByteArray OOM-kills low-RAM devices
+        // before the upload even starts. The File-based upload path streams
+        // from disk (file.asRequestBody) end to end.
+        var tempFile: File? = null
+        try {
+            tempFile = withContext(Dispatchers.IO) {
+                val f = File.createTempFile("upload_", null, mediaCacheService.cacheDirectory)
+                val copied = contentResolver.openInputStream(uri)?.use { input ->
+                    f.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+                    true
+                } ?: false
+                if (copied) f else { f.delete(); null }
+            } ?: run {
+                notificationManager.markUploadFailed(uploadId, "Could not read file")
+                return false
+            }
+
+            val contentType = contentResolver.getType(uri) ?: "application/octet-stream"
+            val sha256 = withContext(Dispatchers.IO) {
+                blossomService.computeSHA256(tempFile!!)
+            }
+
+            notificationManager.updateUploadProgress(uploadId, 0.3f)
+
+            val resultUrl = withContext(Dispatchers.IO) {
+                // Vault save: local storage counts as success even if mirrors are down.
+                blossomService.uploadAndMirror(tempFile!!, sha256, contentType, allowLocalFallback = true)
+            }
+
+            notificationManager.updateUploadProgress(uploadId, 1.0f)
+
+            return if (resultUrl != null || blossomService.localBlossomURL() != null) {
+                notificationManager.markUploadSuccess(uploadId)
+                true
+            } else {
+                notificationManager.markUploadFailed(uploadId, "Upload failed")
+                false
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Upload failed", e)
+            notificationManager.markUploadFailed(uploadId, e.message ?: "Upload failed")
+            return false
+        } finally {
+            tempFile?.let { withContext(NonCancellable + Dispatchers.IO) { it.delete() } }
         }
     }
 
     companion object {
         private const val TAG = "MediaGalleryVM"
     }
+}
+
+/**
+ * The http(s) link a pasted string names, or null. Port of the URL check in
+ * iOS `handlePasteFromClipboard`: anything without an http(s) scheme and a
+ * host is not something to download.
+ */
+internal fun pastedMediaUrl(text: String): String? {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() }) return null
+    val uri = runCatching { java.net.URI(trimmed) }.getOrNull() ?: return null
+    val scheme = uri.scheme?.lowercase()
+    if (scheme != "http" && scheme != "https") return null
+    if (uri.host.isNullOrEmpty()) return null
+    return trimmed
 }
 
 /** Lightweight bridge so MediaViewerScreen can access the gallery's current filtered media list. */
@@ -459,10 +538,19 @@ fun MediaGalleryScreen(
     val clipboardManager = LocalClipboardManager.current
     val mediaCacheService = viewModel.mediaCacheService
 
+    // Upload choices, as on iOS: Photos and Videos pick several at once from
+    // the photo picker, Files opens the document picker (images and videos,
+    // several at once), Paste takes an image or link from the clipboard.
+    var showUploadMenu by remember { mutableStateOf(false) }
     val mediaPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri: Uri? ->
-        uri?.let { viewModel.uploadMedia(it, context.contentResolver) }
+        contract = ActivityResultContracts.PickMultipleVisualMedia(),
+    ) { uris: List<Uri> ->
+        viewModel.uploadMedia(uris, context.contentResolver)
+    }
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris: List<Uri> ->
+        viewModel.uploadMedia(uris, context.contentResolver)
     }
 
     // A blob carries no note reference; the sha256 is the only join.
@@ -520,21 +608,66 @@ fun MediaGalleryScreen(
                                 modifier = Modifier.size(25.dp),
                             )
                         }
-                        IconButton(
-                            onClick = {
-                                mediaPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                        Box {
+                            IconButton(
+                                onClick = { showUploadMenu = true },
+                                enabled = !isUploading,
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(
+                                    imageVector = NostrVaultIcons.Create,
+                                    contentDescription = "Upload",
+                                    tint = colors.primary,
+                                    modifier = Modifier.size(25.dp),
                                 )
-                            },
-                            enabled = !isUploading,
-                            modifier = Modifier.size(40.dp),
-                        ) {
-                            Icon(
-                                imageVector = NostrVaultIcons.Create,
-                                contentDescription = "Upload",
-                                tint = colors.primary,
-                                modifier = Modifier.size(25.dp),
-                            )
+                            }
+                            DropdownMenu(
+                                expanded = showUploadMenu,
+                                onDismissRequest = { showUploadMenu = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Photos") },
+                                    leadingIcon = { Icon(NostrVaultIcons.Media, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                    onClick = {
+                                        showUploadMenu = false
+                                        mediaPickerLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                        )
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Videos") },
+                                    leadingIcon = { Icon(NostrVaultIcons.Video, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                    onClick = {
+                                        showUploadMenu = false
+                                        mediaPickerLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
+                                        )
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Files") },
+                                    leadingIcon = { Icon(NostrVaultIcons.Document, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                                    onClick = {
+                                        showUploadMenu = false
+                                        filePickerLauncher.launch(arrayOf("image/*", "video/*"))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Paste") },
+                                    leadingIcon = {
+                                        Icon(
+                                            androidx.compose.material.icons.Icons.Filled.ContentPaste,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    },
+                                    onClick = {
+                                        showUploadMenu = false
+                                        viewModel.pasteFromClipboard(context)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
