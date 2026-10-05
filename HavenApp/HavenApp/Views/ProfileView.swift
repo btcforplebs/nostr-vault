@@ -109,6 +109,10 @@ struct ProfileView: View {
 
     @State private var selectedSection: ProfileSection = .notes
     @StateObject private var shop = SellerListingsLoader()
+    /// This person's articles, diVines and music, each a tab when they have any.
+    @StateObject private var extras = ProfileExtrasLoader()
+    @State private var showingArticle: ArticleRoute?
+    @State private var musicSheet: MusicSheet?
     @State private var showingSell = false
     @State private var selectedListing: MarketListing?
 
@@ -116,9 +120,27 @@ struct ProfileView: View {
         case notes = "Notes"
         case media = "Media"
         case replies = "Replies"
+        case articles = "Articles"
+        case divines = "diVines"
+        case music = "Music"
         case tagged = "Tagged"
         case shop = "Shop"
         var id: String { rawValue }
+
+        /// The feed types' own icons, so a tab reads the same as the feed it
+        /// matches. Tabs show the icon, and the name too where there's room.
+        var symbol: String {
+            switch self {
+            case .notes: return "text.bubble"
+            case .media: return FeedMode.media.symbolName
+            case .replies: return "arrowshape.turn.up.left"
+            case .articles: return FeedMode.articles.symbolName
+            case .divines: return FeedMode.reels.symbolName
+            case .music: return FeedMode.music.symbolName
+            case .tagged: return "at"
+            case .shop: return FeedMode.marketplace.symbolName
+            }
+        }
     }
 
     private var isOwnProfile: Bool {
@@ -196,7 +218,7 @@ struct ProfileView: View {
         case .media: return mediaNotes
         case .replies: return replyNotes
         case .tagged: return taggedFilteredNotes
-        case .shop: return []
+        case .shop, .articles, .divines, .music: return []
         }
     }
 
@@ -299,6 +321,7 @@ struct ProfileView: View {
             fetchAuthorNotes()
             fetchLocalRelayCounts()
             shop.load(pubkey: pubkey)
+            extras.load(pubkey: pubkey, relays: extrasRelays)
             #if os(macOS)
             installKeyMonitor()
             #endif
@@ -314,6 +337,19 @@ struct ProfileView: View {
                 .environmentObject(nostrService)
                 .environmentObject(configService)
         }
+        .sheet(item: $showingArticle) { route in
+            // In a stack so a comment under the article can open as a note.
+            NavigationStack {
+                ArticleReaderView(note: route.note)
+            }
+            .environmentObject(nostrService)
+            .environmentObject(configService)
+            #if os(macOS)
+            .frame(minWidth: 520, minHeight: 480)
+            #endif
+        }
+        .modifier(MusicSheetHost(sheet: $musicSheet))
+        .environmentObject(RelayProcessManager.shared)
         .sheet(item: $selectedListing) { listing in
             MarketplaceListingSheet(listing: listing)
                 .environmentObject(nostrService)
@@ -1056,19 +1092,14 @@ struct ProfileView: View {
                         selectedSection = section
                     }
                 }) {
-                    // Five tabs with counts overran an iPhone's width and ran
-                    // into each other, so the Shop row sets tighter.
-                    let tight = visibleSections.count > 4
                     VStack(spacing: 6) {
-                        HStack(spacing: tight ? 3 : 5) {
-                            Text(section.rawValue.uppercased())
-                                .font(.appSystem(size: tight ? 10 : 11, weight: .heavy))
-                                .tracking(tight ? 0.2 : 0.6)
-                            Text(countLabel(for: section))
-                                .font(.appSystem(size: tight ? 10 : 11, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.secondary)
+                        // Icon, name and count where they fit; icon and count
+                        // on a narrow tab; the icon alone at the narrowest.
+                        ViewThatFits(in: .horizontal) {
+                            tabLabel(section, showsName: true, showsCount: true)
+                            tabLabel(section, showsName: false, showsCount: true)
+                            tabLabel(section, showsName: false, showsCount: false)
                         }
-                        .lineLimit(1)
                         .foregroundColor(selectedSection == section ? .havenPurple : .secondary)
 
                         Rectangle()
@@ -1080,20 +1111,58 @@ struct ProfileView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(Text(section.rawValue))
+                .accessibilityValue(Text(countLabel(for: section)))
+                #if os(macOS)
+                .help(section.rawValue)
+                #endif
             }
         }
         .padding(.horizontal, 16)
     }
 
+    private func tabLabel(_ section: ProfileSection, showsName: Bool, showsCount: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: section.symbol)
+                .font(.appSystem(size: 14, weight: .semibold))
+            if showsName {
+                Text(section.rawValue.uppercased())
+                    .font(.appSystem(size: 10, weight: .heavy))
+                    .tracking(0.2)
+            }
+            let count = countLabel(for: section)
+            if showsCount, !count.isEmpty {
+                Text(count)
+                    .font(.appSystem(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .frame(height: 20)
+    }
+
     /// Shop only shows when this person has listings, or on your own profile
     /// where it holds the Sell button, so most profiles keep four tabs.
     private var visibleSections: [ProfileSection] {
-        ProfileSection.allCases.filter { $0 != .shop || isOwnProfile || !shop.listings.isEmpty }
+        ProfileSection.allCases.filter { section in
+            switch section {
+            case .shop: return isOwnProfile || !shop.listings.isEmpty
+            // Only when this person has some, so most profiles keep four tabs.
+            case .articles: return !extras.articles.isEmpty
+            case .divines: return !extras.reels.isEmpty
+            case .music: return !extras.tracks.isEmpty
+            default: return true
+            }
+        }
     }
 
     private func count(for section: ProfileSection) -> Int {
         switch section {
         case .shop: return shop.listings.count
+        case .articles: return extras.articles.count
+        case .divines: return extras.reels.count
+        case .music: return extras.tracks.count
         case .notes: return sectionCount.notes
         case .media: return sectionCount.media
         case .replies: return sectionCount.replies
@@ -1110,11 +1179,76 @@ struct ProfileView: View {
 
     @ViewBuilder
     private var sectionContent: some View {
-        if selectedSection == .shop {
-            shopSection
-        } else {
-            noteSectionContent
+        switch selectedSection {
+        case .shop: shopSection
+        case .articles: articlesSection
+        case .divines: divinesSection
+        case .music: musicSection
+        default: noteSectionContent
         }
+    }
+
+    // MARK: - Articles, diVines, music
+
+    /// Where this person's articles and diVines are likely to be: the relays
+    /// the profile reads, their outbox, and diVine's own relay.
+    private var extrasRelays: [URL] {
+        var strings: [String] = []
+        if RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting {
+            strings.append(configService.config.nostrURL)
+        }
+        let feedRelays = configService.config.activeFeedRelays
+        strings += (feedRelays.isEmpty ? ["wss://relay.primal.net", "wss://relay.nos.social"] : feedRelays).prefix(3)
+        strings += (nostrService.outboxRelays[pubkey] ?? []).prefix(3)
+        strings.append(ReelsFeedService.divineRelay)
+        var seen = Set<String>()
+        return strings.filter { seen.insert($0).inserted }.compactMap { URL(string: $0) }
+    }
+
+    private var articlesSection: some View {
+        LazyVStack(spacing: 12) {
+            ForEach(extras.articles) { article in
+                ArticleCardView(note: article, profile: profile)
+                    .contentShape(Rectangle())
+                    .onTapGesture { showingArticle = ArticleRoute(note: article) }
+            }
+        }
+        .padding(16)
+    }
+
+    private var divinesSection: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 4)], spacing: 4) {
+            ForEach(extras.reels) { reel in
+                ZStack(alignment: .bottomLeading) {
+                    Color.black
+                    if let poster = reel.posterURL {
+                        RetryableAsyncImage(url: poster, contentMode: .fill, targetSize: CGSize(width: 300, height: 530))
+                    } else {
+                        VideoThumbnailView(url: reel.videoURL, mimeType: reel.mimeType)
+                    }
+                    Image(systemName: "play.fill")
+                        .font(.appSystem(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                        .shadow(radius: 3)
+                        .padding(6)
+                }
+                .aspectRatio(9.0 / 16.0, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    let urls = extras.reels.map(\.videoURL)
+                    showingMediaUrl = IdentifiableURL(url: reel.videoURL, allURLs: urls)
+                }
+                .accessibilityLabel(Text(reel.title ?? "diVine"))
+                .accessibilityAddTraits(.isButton)
+            }
+        }
+        .padding(16)
+    }
+
+    private var musicSection: some View {
+        MusicTrackList(tracks: extras.tracks, sheet: $musicSheet)
+            .padding(16)
     }
 
     @ViewBuilder
@@ -1504,8 +1638,7 @@ struct ProfileView: View {
         case .notes: return "text.bubble"
         case .media: return "photo"
         case .replies: return "arrowshape.turn.up.left"
-        case .tagged: return "at"
-        case .shop: return "bag"
+        default: return selectedSection.symbol
         }
     }
 
@@ -2453,5 +2586,59 @@ private struct KeyboardModifier: ViewModifier {
         #else
         content
         #endif
+    }
+}
+
+// MARK: - Articles, diVines and music by one person
+
+/// Loads one person's articles (kind 30023) and diVines (kind 34236) from the
+/// relays the profile already reads, plus diVine's own relay, and their music
+/// from Wavlake. Wavlake can only be matched to a key through an artist's own
+/// page, so music is found among the artists in recent rankings and the ones
+/// you've played: a musician nobody has played lately has no Music tab yet.
+@MainActor
+final class ProfileExtrasLoader: ObservableObject {
+    @Published private(set) var articles: [FeedNote] = []
+    @Published private(set) var reels: [Reel] = []
+    @Published private(set) var tracks: [WavlakeTrack] = []
+    private var loadedPubkey: String?
+
+    func load(pubkey: String, relays: [URL]) {
+        guard loadedPubkey != pubkey else { return }
+        loadedPubkey = pubkey
+        articles = []; reels = []; tracks = []
+        Task { await loadEvents(pubkey: pubkey, relays: relays) }
+        Task { await loadMusic(pubkey: pubkey) }
+    }
+
+    private func loadEvents(pubkey: String, relays: [URL]) async {
+        let filters: [[String: Any]] = [
+            ["kinds": [30023], "authors": [pubkey], "limit": 100],
+            ["kinds": ReelsFeedService.videoKinds, "authors": [pubkey], "limit": 100],
+        ]
+        let events = await ZapHistoryService.query(filters: filters, relays: relays, timeout: 8)
+        guard loadedPubkey == pubkey else { return }
+        let notes: [FeedNote] = events.compactMap { event in
+            guard let id = event["id"] as? String, (event["pubkey"] as? String) == pubkey,
+                  let kind = event["kind"] as? Int, let tags = event["tags"] as? [[String]],
+                  let created = (event["created_at"] as? NSNumber)?.doubleValue else { return nil }
+            return FeedNote(id: id, pubkey: pubkey, content: event["content"] as? String ?? "",
+                            createdAt: Date(timeIntervalSince1970: created), tags: tags, kind: kind)
+        }
+        // Addressable: keep the newest version of each, newest first.
+        articles = FeedFilterEngine.dedupeAddressable(notes.filter { $0.kind == 30023 })
+        var seenVideos = Set<URL>()
+        reels = FeedFilterEngine.dedupeAddressable(notes.filter { ReelsFeedService.videoKinds.contains($0.kind) })
+            .compactMap { Reel(note: $0, createdAt: Int64($0.createdAt.timeIntervalSince1970)) }
+            .filter { seenVideos.insert($0.videoURL).inserted }
+            .sorted(by: Reel.newestFirst)
+    }
+
+    private func loadMusic(pubkey: String) async {
+        let (artists, _) = await MusicFeedState.shared.followedArtists(follows: [pubkey])
+        guard loadedPubkey == pubkey, let artist = artists.first,
+              let page = await MusicFeedState.shared.artistPage(artist.id) else { return }
+        guard loadedPubkey == pubkey else { return }
+        tracks = page.tracks
     }
 }
