@@ -70,6 +70,7 @@ import com.nostrvault.ui.navigation.NotificationTarget
 import com.nostrvault.ui.navigation.RelayFocus
 import com.nostrvault.ui.navigation.RelayFocusRequest
 import com.nostrvault.ui.navigation.Screen
+import com.nostrvault.ui.navigation.TabReselect
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.*
@@ -2222,6 +2223,11 @@ fun DashboardScreen(
         firstVisibleItemIndex = { listState.firstVisibleItemIndex },
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
     )
+
+    // Tapping the Relay tab again goes to the top of the list (iOS #275).
+    LaunchedEffect(Unit) {
+        TabReselect.of(Screen.Dashboard).collect { listState.animateScrollToItem(0) }
+    }
 
     // Condensed-bar relay antenna opens the dashboard stats sheet (iOS parity).
     LaunchedEffect(Unit) {

@@ -753,6 +753,7 @@ fun NostrVaultNavHost(
                     onReselect = { screen ->
                         when (screen) {
                             Screen.Feed -> feedService.requestScrollToTop()
+                            Screen.Dashboard, Screen.MediaGallery -> TabReselect.request(screen)
                             else -> {
                                 // Other tabs: pop back to root if deep, otherwise no-op for now
                                 navController.popBackStack(screen.route, inclusive = false)
