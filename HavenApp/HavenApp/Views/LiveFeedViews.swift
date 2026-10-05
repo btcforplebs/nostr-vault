@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// One tile in the Live grid: thumbnail, a LIVE pill, and the viewer count when
 /// the host publishes one.
@@ -195,6 +196,19 @@ struct LiveStreamPlayerView: View {
     @State private var zapFailure: String?
     @State private var noLightningAddress = false
     @FocusState private var composerFocused: Bool
+    /// The mini player's player, when this is the stream it has minimized —
+    /// read once, as the window opens. The window shows that player's video
+    /// instead of opening the stream again: a second player meant the sound
+    /// stopped, reconnected and skipped on every pop-out and swipe away
+    /// (Logen, 2026-10-05).
+    @State private var miniPlayer: AVPlayer?
+
+    init(stream: LiveStream, onBlocked: ((String) -> Void)? = nil) {
+        self.stream = stream
+        self.onBlocked = onBlocked
+        let mini = MusicPlayerService.shared
+        _miniPlayer = State(initialValue: mini.liveStream?.address == stream.address ? mini.livePlayer : nil)
+    }
 
     private var profile: FeedProfile? { nostrService.profiles[stream.hostPubkey] }
     private var hostName: String {
@@ -207,7 +221,9 @@ struct LiveStreamPlayerView: View {
                 // The player with picture-in-picture: starting PiP closes this
                 // sheet, and the stream keeps playing in its floating window
                 // while you browse the rest of the app.
-                FullScreenVideoPlayer(url: url, onPiPStart: { dismiss() })
+                FullScreenVideoPlayer(url: url, onPiPStart: { dismiss() },
+                                      sharedPlayer: miniPlayer,
+                                      onSharedResume: { MusicPlayerService.shared.resume() })
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
                     .overlay(alignment: .topLeading) {
                         // Minimize: the stream's sound carries on in the mini
@@ -256,7 +272,8 @@ struct LiveStreamPlayerView: View {
         }
         .onDisappear {
             chat.disconnect()
-            releaseVideo()
+            // A shared player is the mini player's, which carries on.
+            if miniPlayer == nil { releaseVideo() }
         }
         .sheet(isPresented: $showingReportDialog) {
             // Reporting also blocks, which is what the existing dialog does
@@ -290,7 +307,11 @@ struct LiveStreamPlayerView: View {
             #endif
         }
         // The video has its own sound; don't play the mini player over it.
-        .onAppear { MusicPlayerService.shared.pause() }
+        // Sharing the mini player's, the sound is the video's and plays on.
+        .onAppear {
+            let mini = MusicPlayerService.shared
+            if miniPlayer == nil { mini.pause() } else if !mini.isPlaying { mini.resume() }
+        }
         .alert("Block this host?", isPresented: $showingBlockConfirm) {
             Button("Block", role: .destructive) {
                 blockHost()
@@ -461,6 +482,8 @@ struct LiveStreamPlayerView: View {
     }
 
     private func listenInBackground() {
+        // Already the mini player's stream: it plays on as it is.
+        if miniPlayer != nil { dismiss(); return }
         MusicPlayerService.shared.playLive(stream: stream, item: PlayerTrack(
             id: "live:\(stream.address)",
             title: stream.title ?? "Live stream",
