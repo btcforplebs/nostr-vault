@@ -7,6 +7,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import com.nostrvault.ui.components.blockedWhen
+import com.nostrvault.ui.components.chromeFab
+import com.nostrvault.ui.components.rememberChromeFolded
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -463,6 +470,7 @@ fun SearchScreen(
     onProfileClick: (String) -> Unit,
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
+    onCompose: () -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val query by viewModel.query.collectAsState()
@@ -618,6 +626,37 @@ fun SearchScreen(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+        },
+        floatingActionButton = {
+            // The same gradient "Post" capsule as the feed, folding with the bars.
+            val folded by rememberChromeFolded()
+            Box(Modifier.chromeFab().blockedWhen(folded)) {
+                Surface(
+                    onClick = onCompose,
+                    shape = RoundedCornerShape(50),
+                    color = Color.Transparent,
+                    modifier = Modifier
+                        .padding(bottom = 88.dp)
+                        .shadow(
+                            elevation = 8.dp,
+                            shape = RoundedCornerShape(50),
+                            ambientColor = colors.primary.copy(alpha = 0.35f),
+                            spotColor = colors.primary.copy(alpha = 0.35f),
+                        ),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .background(Brush.linearGradient(listOf(colors.primary, colors.primaryLight)), RoundedCornerShape(50))
+                            .height(48.dp)
+                            .padding(horizontal = 18.dp),
+                    ) {
+                        Icon(NostrVaultIcons.Create, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Text("Post", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         },
     ) { padding ->

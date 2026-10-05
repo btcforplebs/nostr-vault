@@ -296,6 +296,9 @@ fun NostrVaultNavHost(
                         onQuote = { noteId ->
                             navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
                         },
+                        onCompose = {
+                            navController.navigate(Screen.ComposeNote.createRoute())
+                        },
                     )
                 }
 
