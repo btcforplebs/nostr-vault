@@ -97,6 +97,13 @@ import javax.inject.Inject
 private val RELAY_TAB_NOTE_KINDS = setOf(1, 6, 30023, NIP10Thread.COMMENT_KIND, 9802)
 
 /**
+ * True when the Notes list holds back loaded notes behind its display cap, so
+ * load-more only needs to raise the cap; false means everything loaded is
+ * listed and older notes have to come from the relay.
+ */
+internal fun relayNotesHiddenBelowCap(filteredCount: Int, cap: Int): Boolean = filteredCount > cap
+
+/**
  * Relay tab screen matching iOS VaultView:
  * - Notes / Likes / Zaps mode switcher in the leading toolbar pill
  * - Context-sensitive filters in the trailing toolbar pill
@@ -299,6 +306,8 @@ class DashboardViewModel @Inject constructor(
     private var updateJob: Job? = null
     private var updateGeneration = 0
     private var maxDisplayedItems = 50
+    /** Notes that passed the Notes filter on the last rebuild, before the cap. */
+    @Volatile private var notesFilteredCount = 0
 
     // Bounded settle for the Zaps view: guarantees the spinner gives up within
     // ~6s and shows the empty state instead of "loading zaps" forever when the
@@ -1090,8 +1099,17 @@ class DashboardViewModel @Inject constructor(
         val currentNotes = _displayNotes.value
         if (currentNotes.isEmpty()) return
 
-        // For notes mode, try loading more from relay
+        // For notes mode, show more of what is loaded, and pull older notes
+        // from the relay once everything loaded is listed. Without raising the
+        // cap the list stopped at 50: older notes loaded underneath but never
+        // showed (iOS #273).
         if (_viewMode.value == VaultViewMode.NOTES) {
+            val hiddenBelowCap = relayNotesHiddenBelowCap(notesFilteredCount, maxDisplayedItems)
+            maxDisplayedItems += 50
+            if (hiddenBelowCap) {
+                scheduleUpdateDisplayData()
+                return
+            }
             val oldest = currentNotes.lastOrNull()?.createdAt ?: return
             val config = configStore.config.value
             if (config.nostrURL == null) {
@@ -1392,6 +1410,7 @@ class DashboardViewModel @Inject constructor(
                 }.sortedByDescending { it.createdAt }
 
                 Log.d(TAG, "NOTES mode: filter=${currentFilter.displayName}, total=${filtered.size} notes, maxDisplayedItems=$maxDisplayedItems")
+                notesFilteredCount = filtered.size
 
                 // Convert to FeedNote for display
                 val displaySlice = filtered.take(maxDisplayedItems).map { event ->
