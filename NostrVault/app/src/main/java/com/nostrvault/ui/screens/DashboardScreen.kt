@@ -70,6 +70,7 @@ import com.nostrvault.ui.navigation.NotificationTarget
 import com.nostrvault.ui.navigation.RelayFocus
 import com.nostrvault.ui.navigation.RelayFocusRequest
 import com.nostrvault.ui.navigation.Screen
+import com.nostrvault.ui.navigation.TabReselect
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.*
@@ -97,6 +98,13 @@ import javax.inject.Inject
 private val RELAY_TAB_NOTE_KINDS = setOf(1, 6, 30023, NIP10Thread.COMMENT_KIND, 9802)
 
 /**
+ * True when the Notes list holds back loaded notes behind its display cap, so
+ * load-more only needs to raise the cap; false means everything loaded is
+ * listed and older notes have to come from the relay.
+ */
+internal fun relayNotesHiddenBelowCap(filteredCount: Int, cap: Int): Boolean = filteredCount > cap
+
+/**
  * Relay tab screen matching iOS VaultView:
  * - Notes / Likes / Zaps mode switcher in the leading toolbar pill
  * - Context-sensitive filters in the trailing toolbar pill
@@ -110,6 +118,7 @@ class DashboardViewModel @Inject constructor(
     val nostrService: NostrService,
     private val followersSeenStore: com.nostrvault.data.local.FollowersSeenStore,
     private val blossomService: com.nostrvault.service.BlossomService,
+    private val feedService: com.nostrvault.service.FeedService,
 ) : ViewModel() {
 
     /** The shared Blossom mirror run behind "Import Blossom" (iOS MirrorService). */
@@ -299,6 +308,8 @@ class DashboardViewModel @Inject constructor(
     private var updateJob: Job? = null
     private var updateGeneration = 0
     private var maxDisplayedItems = 50
+    /** Notes that passed the Notes filter on the last rebuild, before the cap. */
+    @Volatile private var notesFilteredCount = 0
 
     // Bounded settle for the Zaps view: guarantees the spinner gives up within
     // ~6s and shows the empty state instead of "loading zaps" forever when the
@@ -314,6 +325,14 @@ class DashboardViewModel @Inject constructor(
 
     init {
         loadStats()
+
+        // A new trust graph or follow changes who counts as outside your
+        // network, without waiting for other events (iOS followCount).
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(feedService.wotPubkeys, feedService.followedPubkeys) { _, _ -> }
+                .drop(1)
+                .collect { scheduleUpdateDisplayData() }
+        }
 
         // Restore disk snapshot immediately — show cached events before the relay is ready
         viewModelScope.launch {
@@ -1090,8 +1109,17 @@ class DashboardViewModel @Inject constructor(
         val currentNotes = _displayNotes.value
         if (currentNotes.isEmpty()) return
 
-        // For notes mode, try loading more from relay
+        // For notes mode, show more of what is loaded, and pull older notes
+        // from the relay once everything loaded is listed. Without raising the
+        // cap the list stopped at 50: older notes loaded underneath but never
+        // showed (iOS #273).
         if (_viewMode.value == VaultViewMode.NOTES) {
+            val hiddenBelowCap = relayNotesHiddenBelowCap(notesFilteredCount, maxDisplayedItems)
+            maxDisplayedItems += 50
+            if (hiddenBelowCap) {
+                scheduleUpdateDisplayData()
+                return
+            }
             val oldest = currentNotes.lastOrNull()?.createdAt ?: return
             val config = configStore.config.value
             if (config.nostrURL == null) {
@@ -1249,7 +1277,7 @@ class DashboardViewModel @Inject constructor(
      * my notes, zaps → Zaps on my notes, everything else → Notes / All. Filters
      * are only touched when they differ, since setting one resets its list.
      */
-    fun applyRelayFocusView(request: RelayFocusRequest, zapsOnly: Boolean) {
+    suspend fun applyRelayFocusView(request: RelayFocusRequest, zapsOnly: Boolean) {
         when (NotificationTarget.viewFor(request.type, zapsOnly)) {
             VaultViewMode.LIKES -> {
                 if (_likesFilter.value != VaultLikesFilter.ON_MY_NOTES) setLikesFilter(VaultLikesFilter.ON_MY_NOTES)
@@ -1260,7 +1288,14 @@ class DashboardViewModel @Inject constructor(
                 if (_viewMode.value != VaultViewMode.ZAPS) setViewMode(VaultViewMode.ZAPS)
             }
             VaultViewMode.NOTES -> {
-                if (_contentFilter.value != VaultContentFilter.ALL) setContentFilter(VaultContentFilter.ALL)
+                // A reply from outside your network isn't listed under All.
+                val author = focusEvent(request.eventId)?.pubkey
+                val target = if (author != null && VaultContentFilter.isOutside(
+                        author, nostrService.activeHexPubkey, resolveWhitelistedHexPubkeys(),
+                        feedService.relayTabTrustedPubkeys(),
+                    )
+                ) VaultContentFilter.OUTSIDE else VaultContentFilter.ALL
+                if (_contentFilter.value != target) setContentFilter(target)
                 if (_viewMode.value != VaultViewMode.NOTES) setViewMode(VaultViewMode.NOTES)
             }
             VaultViewMode.FOLLOWERS -> {
@@ -1331,6 +1366,7 @@ class DashboardViewModel @Inject constructor(
         val events = allEventsMutex.withLock { allEvents.toList() }
         val owner = nostrService.activeHexPubkey
         val whitelist = resolveWhitelistedHexPubkeys()
+        val trusted = feedService.relayTabTrustedPubkeys()
         val blocked = configStore.config.value.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }.toSet()
 
@@ -1373,16 +1409,19 @@ class DashboardViewModel @Inject constructor(
 
                     if (event.pubkey in blocked) return@filter false
 
+                    val isMine = event.pubkey == owner
+                    val isTagged = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
+                    val isOutside = isTagged &&
+                        VaultContentFilter.isOutside(event.pubkey, owner, whitelist, trusted)
                     when (currentFilter) {
                         VaultContentFilter.ALL -> {
-                            val isMine = event.pubkey == owner
-                            val isTagged = event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
                             val isWhitelisted = whitelist.contains(event.pubkey)
-                            isMine || isTagged || isWhitelisted
+                            (isMine || isTagged || isWhitelisted) && !isOutside
                         }
-                        VaultContentFilter.MINE -> event.pubkey == owner
+                        VaultContentFilter.MINE -> isMine
+                        VaultContentFilter.OUTSIDE -> isOutside
                         VaultContentFilter.TAGGED -> {
-                            val tagged = event.pubkey != owner && event.tags.any { it.size >= 2 && it[0] == "p" && it[1] == owner }
+                            val tagged = !isMine && isTagged && !isOutside
                             if (tagged) {
                                 Log.d(TAG, "TAGGED note included: id=${event.id.take(8)}, from=${event.pubkey.take(8)}, kind=${event.kind}")
                             }
@@ -1392,6 +1431,7 @@ class DashboardViewModel @Inject constructor(
                 }.sortedByDescending { it.createdAt }
 
                 Log.d(TAG, "NOTES mode: filter=${currentFilter.displayName}, total=${filtered.size} notes, maxDisplayedItems=$maxDisplayedItems")
+                notesFilteredCount = filtered.size
 
                 // Convert to FeedNote for display
                 val displaySlice = filtered.take(maxDisplayedItems).map { event ->
@@ -1940,7 +1980,7 @@ private fun IconFilterButton(
 }
 
 /**
- * The trailing pill's filters for [viewMode]. Notes: All · Mine · Mentions.
+ * The trailing pill's filters for [viewMode]. Notes: All · Mine · Mentions · Outside.
  * Likes and Zaps: Received · Given. Followers: New · All.
  */
 @Composable
@@ -1973,6 +2013,9 @@ private fun RelayFilterPill(
                 }
                 filter(NostrVaultIcons.At, VaultContentFilter.TAGGED.displayName, contentFilter == VaultContentFilter.TAGGED) {
                     viewModel.setContentFilter(VaultContentFilter.TAGGED)
+                }
+                filter(NostrVaultIcons.OutsideNetwork, VaultContentFilter.OUTSIDE.displayName, contentFilter == VaultContentFilter.OUTSIDE) {
+                    viewModel.setContentFilter(VaultContentFilter.OUTSIDE)
                 }
             }
             VaultViewMode.LIKES -> {
@@ -2203,6 +2246,11 @@ fun DashboardScreen(
         firstVisibleItemIndex = { listState.firstVisibleItemIndex },
         firstVisibleItemScrollOffset = { listState.firstVisibleItemScrollOffset },
     )
+
+    // Tapping the Relay tab again goes to the top of the list (iOS #275).
+    LaunchedEffect(Unit) {
+        TabReselect.of(Screen.Dashboard).collect { listState.animateScrollToItem(0) }
+    }
 
     // Condensed-bar relay antenna opens the dashboard stats sheet (iOS parity).
     LaunchedEffect(Unit) {
@@ -2491,6 +2539,7 @@ fun DashboardScreen(
                 showReplies = feedService.showReplies.collectAsState().value,
                 autoLoadNewNotes = currentConfig.autoLoadNewPosts,
                 feedRelays = currentConfig.activeFeedRelays,
+                relayStates = feedService.relayStates.collectAsState().value,
                 onToggleReposts = { feedService.setShowReposts(it) },
                 onToggleReplies = { feedService.setShowReplies(it) },
                 onToggleAutoLoad = { on -> viewModel.configStore.update { it.copy(autoLoadNewPosts = on) } },
@@ -3043,6 +3092,7 @@ private fun DashboardSheetContent(
     showReplies: Boolean,
     autoLoadNewNotes: Boolean,
     feedRelays: List<String>,
+    relayStates: Map<String, com.nostrvault.data.remote.WebSocketClient.ConnectionState>,
     onToggleReposts: (Boolean) -> Unit,
     onToggleReplies: (Boolean) -> Unit,
     onToggleAutoLoad: (Boolean) -> Unit,
@@ -3104,6 +3154,7 @@ private fun DashboardSheetContent(
                     showReplies = showReplies,
                     autoLoadNewNotes = autoLoadNewNotes,
                     feedRelays = feedRelays,
+                    relayStates = relayStates,
                     onToggleReposts = onToggleReposts,
                     onToggleReplies = onToggleReplies,
                     onToggleAutoLoad = onToggleAutoLoad,

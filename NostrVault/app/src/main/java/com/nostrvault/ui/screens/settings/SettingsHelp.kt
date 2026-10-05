@@ -98,6 +98,11 @@ enum class SettingsHelp(val key: String, val title: String, val text: String) {
         "Tab Bar Animation",
         "Keeps the bottom tab bar full size instead of shrinking as you scroll.",
     ),
+    DISPLAY_NEW_POSTS_PILL(
+        "display.newPostsPill",
+        "New Posts Pill",
+        "Shows a pill with the number of new posts waiting above your feed. Turned off, pull down to refresh to load them.",
+    ),
     DISPLAY_ZAPS_ONLY(
         "display.zapsOnly",
         "Zaps Only",

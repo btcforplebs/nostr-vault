@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.data.remote.WebSocketClient
+import com.nostrvault.service.FeedRelayHealth
 import com.nostrvault.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -18,6 +20,8 @@ fun FeedConfigSheet(
     showReplies: Boolean,
     autoLoadNewNotes: Boolean,
     feedRelays: List<String>,
+    /** Each feed relay's socket state; a relay missing here is one the feed is not using. */
+    relayStates: Map<String, WebSocketClient.ConnectionState>,
     onToggleReposts: (Boolean) -> Unit,
     onToggleReplies: (Boolean) -> Unit,
     onToggleAutoLoad: (Boolean) -> Unit,
@@ -121,6 +125,16 @@ fun FeedConfigSheet(
                         )
                     } else {
                         feedRelays.forEachIndexed { index, relay ->
+                            // That relay's own socket, not the feed's overall
+                            // status, which is "Live" as soon as any notes load.
+                            val state = relayStates[FeedRelayHealth.key(relay)]
+                            val stateColor = when (state) {
+                                WebSocketClient.ConnectionState.CONNECTED -> SuccessGreen
+                                WebSocketClient.ConnectionState.CONNECTING,
+                                WebSocketClient.ConnectionState.RECONNECTING -> WarningYellow
+                                WebSocketClient.ConnectionState.DISCONNECTED -> ErrorRed
+                                null -> TertiaryText
+                            }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
@@ -130,7 +144,7 @@ fun FeedConfigSheet(
                                 Icon(
                                     imageVector = NostrVaultIcons.Relay,
                                     contentDescription = null,
-                                    tint = SuccessGreen,
+                                    tint = stateColor,
                                     modifier = Modifier.size(14.dp),
                                 )
                                 Spacer(Modifier.width(8.dp))
@@ -142,6 +156,13 @@ fun FeedConfigSheet(
                                     color = PrimaryText,
                                     fontSize = 13.sp,
                                     modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    text = FeedRelayHealth.label(state),
+                                    color = stateColor.copy(alpha = 0.8f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                 )
                             }
                             if (index < feedRelays.size - 1) {

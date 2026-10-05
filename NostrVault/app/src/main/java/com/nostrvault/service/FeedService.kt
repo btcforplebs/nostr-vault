@@ -154,6 +154,19 @@ class FeedService @Inject constructor(
      * shield is set to Everyone. Null means everyone. Fails closed like the
      * Global feed: with no graph yet, nobody passes.
      */
+    /**
+     * Who counts as inside your network in the Relay tab: the relay's trust
+     * graph plus your current follows. The graph is rebuilt about once a day,
+     * so without the follows someone you just followed stayed "outside".
+     * Empty while the graph isn't loaded, which counts nobody as outside.
+     */
+    fun relayTabTrustedPubkeys(): Set<String> {
+        if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
+        val wot = _wotPubkeys.value
+        if (wot.isEmpty()) return emptySet()
+        return wot + _followedPubkeys.value
+    }
+
     fun globalTrustSet(): Set<String>? {
         if (configStore.config.value.globalShowsEveryone) return null
         if (_wotPubkeys.value.isEmpty()) loadWotPubkeys()
@@ -380,6 +393,14 @@ class FeedService @Inject constructor(
     // completes, so disconnect() alone leaves these coroutines (and the client)
     // pinned in memory forever.
     private val feedClientJobs = ConcurrentHashMap<String, MutableList<Job>>()
+
+    /**
+     * Each feed relay's own socket state, keyed by [FeedRelayHealth.key]. The
+     * feed dashboard rows and the feed dot read this; [connectionStatus] alone
+     * only says whether the feed has notes (iOS #281).
+     */
+    private val _relayStates = MutableStateFlow<Map<String, WebSocketClient.ConnectionState>>(emptyMap())
+    val relayStates: StateFlow<Map<String, WebSocketClient.ConnectionState>> = _relayStates.asStateFlow()
     // Relays whose auxiliary subscriptions (reactions/zaps) have been sent for the
     // current connection. Cleared on disconnect/teardown so reconnects re-send.
     private val auxSubsSent = ConcurrentHashMap.newKeySet<String>()
@@ -1334,6 +1355,7 @@ class FeedService @Inject constructor(
     private fun teardownFeedClient(relayUrl: String) {
         feedClientJobs.remove(relayUrl)?.forEach { it.cancel() }
         feedClients.remove(relayUrl)?.disconnect()
+        _relayStates.update { it - FeedRelayHealth.key(relayUrl) }
         auxSubsSent.remove(relayUrl)
         feedConnectFailures.remove(relayUrl)
     }
@@ -1344,6 +1366,7 @@ class FeedService @Inject constructor(
         feedClientJobs.clear()
         feedClients.values.forEach { it.disconnect() }
         feedClients.clear()
+        _relayStates.value = emptyMap()
         auxSubsSent.clear()
     }
 
@@ -1392,6 +1415,9 @@ class FeedService @Inject constructor(
             // after CONNECTED is a drop, which the client redials on its own.
             var dialing = false
             client.connectionState.collect { state ->
+                if (feedClients[relayUrl] === client) {
+                    _relayStates.update { it + (FeedRelayHealth.key(relayUrl) to state) }
+                }
                 when (state) {
                     WebSocketClient.ConnectionState.CONNECTED -> {
                         dialing = false

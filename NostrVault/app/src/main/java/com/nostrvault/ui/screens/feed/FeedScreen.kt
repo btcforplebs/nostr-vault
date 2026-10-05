@@ -169,6 +169,7 @@ fun FeedScreen(
     val isThreaded by viewModel.threadedModeEnabled.collectAsState()
     val feedThreads by viewModel.feedThreads.collectAsState()
     val autoLoad by viewModel.autoLoadEnabled.collectAsState()
+    val showNewPostsPill by viewModel.showNewPostsPill.collectAsState()
     val showReposts by viewModel.showReposts.collectAsState()
     val showReplies by viewModel.showReplies.collectAsState()
     val mediaFollowingOnly by viewModel.mediaFollowingOnly.collectAsState()
@@ -470,7 +471,7 @@ fun FeedScreen(
     }
 
     // Posts are waiting and either auto-load is off or the user has scrolled
-    // away from the top.
+    // away from the top. Never with the pill switched off in Appearance.
     // Reels, Live, Marketplace and Music are not views of the note list; the
     // note subscription keeps filling `pending` underneath them, so a pill
     // there would offer posts that cannot show (same fix as iPhone #237).
@@ -483,7 +484,7 @@ fun FeedScreen(
         FeedMode.REELS -> reelsScope == ReelsScope.GLOBAL
         else -> false
     }
-    val showNewPosts = pendingCount > 0 && (!autoLoad || !isAtTop) &&
+    val showNewPosts = showNewPostsPill && pendingCount > 0 && (!autoLoad || !isAtTop) &&
         feedMode !in setOf(FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC)
     val loadNewPosts: () -> Unit = {
         viewModel.applyPendingNotes()
@@ -1032,6 +1033,7 @@ fun FeedScreen(
             showReplies = showReplies,
             autoLoadNewNotes = autoLoad,
             feedRelays = feedConfig.activeFeedRelays,
+            relayStates = viewModel.relayStates.collectAsState().value,
             onToggleReposts = { viewModel.toggleShowReposts() },
             onToggleReplies = { viewModel.toggleShowReplies() },
             onToggleAutoLoad = { viewModel.toggleAutoLoad() },
@@ -1631,9 +1633,10 @@ private fun FeedTopBar(
     val colors = LocalNostrVaultColors.current
     var feedModeExpanded by remember { mutableStateOf(false) }
 
-    // Resolve connection dot color
+    // Resolve connection dot color (FeedRelayHealth.dotColor)
     val dotColor = when (connectionColor) {
         "green" -> SuccessGreen
+        "yellow" -> WarningYellow
         "orange" -> ZapOrange
         "red" -> ErrorRed
         else -> SecondaryText

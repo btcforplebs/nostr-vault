@@ -71,6 +71,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PersonOff
+import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
@@ -209,6 +210,7 @@ object NostrVaultIcons {
     val TagIcon: ImageVector = Icons.Filled.Tag                  // number/hashtag
     val LinkIcon: ImageVector = Icons.Filled.Link                // link
     val At: ImageVector = Icons.Filled.AlternateEmail            // at (tagged filter)
+    val OutsideNetwork: ImageVector = Icons.Filled.PersonSearch  // person.crop.circle.badge.questionmark
     val Received: ImageVector = Icons.Filled.MoveToInbox         // tray.and.arrow.down.fill
     val Given: ImageVector = Icons.Filled.Outbox                 // tray.and.arrow.up.fill
 
