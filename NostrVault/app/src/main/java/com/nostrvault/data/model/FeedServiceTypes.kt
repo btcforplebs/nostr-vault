@@ -138,10 +138,35 @@ data class FeedNote(
      * and lowercases the whole content — garbage the GC then collected while
      * the user scrolled. A delegated property has no backing field, so it is
      * not serialized into the snapshot.
+     *
+     * A bare repost is never noise: the empty-content rule threw it away, but
+     * it is valid NIP-18 and its row fetches the note it points at. 2 of the 9
+     * notes missing from two hours of a Following feed on 2026-10-04 were
+     * these (iOS #227).
      */
     val isNoise: Boolean by lazy(LazyThreadSafetyMode.PUBLICATION) {
-        Companion.isNoiseOrSpam(content, tags)
+        !isBareRepost && Companion.isNoiseOrSpam(content, tags)
     }
+
+    /** A kind 6 repost that only points at the original: empty content plus an `e` tag. */
+    val isBareRepost: Boolean
+        get() = kind == 6 && content.isEmpty() && repostedEventId != null
+
+    /**
+     * This bare repost drawn the way an embedded one is: [original]'s author,
+     * text, tags and media, credited to the reposter, keeping this repost's id
+     * and time so it stays put in the feed.
+     */
+    fun withRepostedOriginal(original: FeedNote): FeedNote = copy(
+        pubkey = original.pubkey,
+        content = original.content,
+        tags = original.tags,
+        repostedBy = pubkey,
+        mediaURLs = original.mediaURLs,
+        linkURLs = original.linkURLs,
+        quotedEventIds = original.quotedEventIds,
+        originalCreatedAtSecs = original.createdAt.time / 1000,
+    )
 
     /**
      * Thread root id, read by [NIP10Thread.rootEventId]: a NIP-22 comment's
