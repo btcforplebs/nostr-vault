@@ -3260,6 +3260,7 @@ struct FeedNoteRow: View {
                 reactions: rowData.zapsOnlyMode ? 0 : rowData.stats.reactions,
                 reposts: rowData.stats.reposts
             ),
+            showsTranslate: note.kind != 30023,
             onProfile: { onProfile?($0) },
             onTap: { onTapRow?() }
         )
@@ -3679,6 +3680,7 @@ struct FeedNoteRow: View {
                     .lineSpacing(2)
                     .lineLimit(nil)
                     .textSelection(.enabled)
+                NoteTranslateButton(noteID: bodySource.id, content: bodySource.content, kind: bodySource.kind)
             }
             .padding(.top, 4)
 
