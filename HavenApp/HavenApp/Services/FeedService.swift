@@ -783,6 +783,12 @@ class FeedService: ObservableObject {
             .map { $0.activeAccountNpub }
             .removeDuplicates()
             .dropFirst()
+            // @Published emits from willSet: read synchronously, `config`
+            // still names the previous account, so the switch either no-oped
+            // or loaded the account before last, and that account's likes
+            // were shown (and saved) under the new one. One hop to main reads
+            // the new value, as DMService and NostrService already do.
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 self.handleAccountSwitch()
@@ -3222,7 +3228,9 @@ class FeedService: ObservableObject {
         // Reactions from followed users
         let reactionsFilter: [String: Any] = [
             "kinds": [7],
-            "authors": followedPubkeys,
+            // Plus the account's own reactions, which are what mark a note
+            // as liked by you; the saved set is only a cache of them.
+            "authors": followedPubkeys + [NostrService.shared.activeHexPubkey].filter { !$0.isEmpty && !followedPubkeys.contains($0) },
             "since": since,
             "limit": 150
         ]
@@ -3300,7 +3308,9 @@ class FeedService: ObservableObject {
 
         let reactionsFilter: [String: Any] = [
             "kinds": [7],
-            "authors": followedPubkeys,
+            // Plus the account's own reactions, which are what mark a note
+            // as liked by you; the saved set is only a cache of them.
+            "authors": followedPubkeys + [NostrService.shared.activeHexPubkey].filter { !$0.isEmpty && !followedPubkeys.contains($0) },
             "since": since,
             "limit": 150,
             "until": until
