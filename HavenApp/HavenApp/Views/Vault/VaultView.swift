@@ -444,7 +444,34 @@ struct VaultView: View {
             ZStack {
                 Color.platformWindowBackground.ignoresSafeArea()
 
-                if geometry.size.width > 680 {
+                // The dashboard shows at any width. The menu bar's signal button opens
+                // it, and the popped-out window is often wider than 680, where it was
+                // never drawn: the click only switched tabs.
+                if showingRelayDashboard {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text("Relay Dashboard")
+                                .font(.appSystem(size: 16, weight: .bold))
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Button("Done") {
+                                showingRelayDashboard = false
+                            }
+                            .keyboardShortcut(.defaultAction)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 14)
+                        .background(Color.platformConsoleHeaderBackground)
+
+                        Divider()
+
+                        DashboardView()
+                            .environmentObject(relayManager)
+                            .environmentObject(configService)
+                            .environmentObject(nostrService)
+                            .environmentObject(StatsService.shared)
+                    }
+                } else if geometry.size.width > 680 {
                     VStack(spacing: 0) {
                         desktopHeaderView
 
@@ -472,33 +499,7 @@ struct VaultView: View {
                     }
                     .clipped()
                 } else {
-                    if showingRelayDashboard {
-                        VStack(spacing: 0) {
-                            HStack {
-                                Text("Relay Dashboard")
-                                    .font(.appSystem(size: 16, weight: .bold))
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Button("Done") {
-                                    showingRelayDashboard = false
-                                }
-                                .keyboardShortcut(.defaultAction)
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 14)
-                            .background(Color.platformConsoleHeaderBackground)
-
-                            Divider()
-
-                            DashboardView()
-                                .environmentObject(relayManager)
-                                .environmentObject(configService)
-                                .environmentObject(nostrService)
-                                .environmentObject(StatsService.shared)
-                        }
-                    } else {
-                        compactViewContent(isNarrow: geometry.size.width < 500)
-                    }
+                    compactViewContent(isNarrow: geometry.size.width < 500)
                 }
             }
         }

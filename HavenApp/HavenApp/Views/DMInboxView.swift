@@ -221,6 +221,7 @@ struct MacComposeView: View {
                 Spacer()
                 Button(String(localized: "dm.compose.cancel")) { dismiss() }
                     .foregroundColor(.havenPurple)
+                    .keyboardShortcut(.cancelAction)
             }
             .padding()
 
@@ -266,6 +267,7 @@ struct MacComposeView: View {
                                         }
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 6)
+                                        .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                 }

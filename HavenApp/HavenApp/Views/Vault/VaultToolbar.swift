@@ -187,9 +187,14 @@ extension VaultView {
                     }
                     .font(.appSystem(size: 13, weight: .semibold))
                     .foregroundColor(.havenPurple)
+                    .contentShape(Rectangle())
                 }
                 #if os(macOS)
-                .menuStyle(.borderlessButton)
+                // .borderlessButton flattens the label's modifiers on macOS and adds a
+                // second chevron beside the drawn one.
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
                 #endif
                 .fixedSize()
                 .accessibilityLabel("Search scope: \(searchScope.label)")

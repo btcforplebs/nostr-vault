@@ -228,10 +228,10 @@ extension MediaGalleryView {
         let blossom = blossomService
 
         for url in urls {
-            // Start accessing security scoped resource if required
-            guard url.startAccessingSecurityScopedResource() else {
-                continue
-            }
+            // Only a sandboxed build hands out security-scoped URLs. Elsewhere
+            // this can return false for a perfectly readable file, which used to
+            // skip the upload without a word.
+            let scoped = url.startAccessingSecurityScopedResource()
 
             let filename = url.lastPathComponent
 
@@ -243,7 +243,7 @@ extension MediaGalleryView {
 
                 Task {
                     defer {
-                        url.stopAccessingSecurityScopedResource()
+                        if scoped { url.stopAccessingSecurityScopedResource() }
                     }
 
                     // Copy the file to a temp location so we can read it safely without sandbox errors during async operation
