@@ -23,7 +23,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -448,6 +450,8 @@ internal fun pastedMediaUrl(text: String): String? {
     return trimmed
 }
 
+private const val MEDIA_GALLERY_PREFS = "media_gallery"
+
 /** Lightweight bridge so MediaViewerScreen can access the gallery's current filtered media list. */
 object MediaGalleryBridge {
     var currentItems: List<BlossomMediaItem> = emptyList()
@@ -565,8 +569,15 @@ fun MediaGalleryScreen(
     val blossomMirrors by viewModel.blossomMirrors.collectAsState()
     val busySha by viewModel.busySha.collectAsState()
 
-    val filteredItems = remember(mediaItems, activeFilter) {
-        mediaItems.filter { activeFilter.matches(it) }
+    // Sort choice survives relaunches, like iOS's @AppStorage(MediaSortOption.storageKey).
+    val sortPrefs = remember { context.getSharedPreferences(MEDIA_GALLERY_PREFS, android.content.Context.MODE_PRIVATE) }
+    var sortOption by remember {
+        mutableStateOf(MediaSortOption.fromKey(sortPrefs.getString(MediaSortOption.STORAGE_KEY, null)))
+    }
+    var showSortMenu by remember { mutableStateOf(false) }
+
+    val filteredItems = remember(mediaItems, activeFilter, sortOption) {
+        sortOption.sorted(mediaItems.filter { activeFilter.matches(it) })
     }
 
     GlassScaffold(
@@ -582,16 +593,60 @@ fun MediaGalleryScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
-                    // Leading: media type filter icons
+                    // Leading: media type filter icons. No "Other" chip, as on
+                    // iOS: the row now also holds the sort menu, and All still
+                    // includes those files.
                     MediaTypeFilterPill(
                         active = activeFilter,
                         onSelect = { activeFilter = it },
+                        filters = MediaTypeFilter.entries - MediaTypeFilter.OTHER,
                     )
 
                     Spacer(Modifier.weight(1f))
 
-                    // Layout toggle + upload
+                    // Sort + layout toggle + upload
                     GlassPill {
+                        Box {
+                            IconButton(
+                                onClick = { showSortMenu = true },
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Filled.SwapVert,
+                                    contentDescription = "Sort by: ${sortOption.label}",
+                                    tint = SecondaryText,
+                                    modifier = Modifier.size(25.dp),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false },
+                            ) {
+                                for (option in MediaSortOption.entries) {
+                                    DropdownMenuItem(
+                                        text = { Text(option.label) },
+                                        // A checkmark on the active row: one choice of many.
+                                        leadingIcon = {
+                                            if (option == sortOption) {
+                                                Icon(
+                                                    androidx.compose.material.icons.Icons.Filled.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = colors.primary,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                            } else {
+                                                Spacer(Modifier.size(20.dp))
+                                            }
+                                        },
+                                        onClick = {
+                                            showSortMenu = false
+                                            sortOption = option
+                                            sortPrefs.edit().putString(MediaSortOption.STORAGE_KEY, option.key).apply()
+                                        },
+                                    )
+                                }
+                            }
+                        }
                         IconButton(
                             onClick = {
                                 layoutMode = if (layoutMode == MediaLayoutMode.GRID)
