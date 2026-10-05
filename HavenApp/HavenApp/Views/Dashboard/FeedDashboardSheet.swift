@@ -208,9 +208,7 @@ struct FeedDashboardSheet: View {
     // MARK: - Feed Relays
 
     private var feedRelaysSection: some View {
-        let isLive = feedService.connectionStatus == "Live"
-
-        return VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("FEED RELAYS")
                     .font(.appSystem(size: 10, weight: .bold, design: .monospaced))
@@ -230,17 +228,17 @@ struct FeedDashboardSheet: View {
                 // Local relay row
                 FeedRelayRow(
                     url: "Nostr Vault (Local)",
-                    isConnected: relayManager.isRunning,
-                    isBooting: relayManager.isBooting,
+                    state: relayManager.isBooting ? .connecting : (relayManager.isRunning ? .connected : .disconnected),
                     isLocal: true
                 )
 
                 // External relays
+                // Each row is that relay's own socket, not the feed's
+                // overall status (which is "Live" as soon as any notes load).
                 ForEach(configService.config.feedRelays, id: \.self) { relay in
                     FeedRelayRow(
                         url: relay,
-                        isConnected: isLive,
-                        isBooting: false,
+                        state: feedService.relayState(for: relay),
                         isLocal: false
                     )
                 }
@@ -383,14 +381,32 @@ private struct FilterToggleRow: View {
 
 private struct FeedRelayRow: View {
     let url: String
-    let isConnected: Bool
-    let isBooting: Bool
+    /// nil: the feed is not using this relay right now.
+    let state: WebSocketClient.ConnectionState?
     let isLocal: Bool
+
+    private var label: String {
+        switch state {
+        case .connected: return "Connected"
+        case .connecting: return isLocal ? "Booting" : "Connecting"
+        case .error, .disconnected: return "Offline"
+        case nil: return "Idle"
+        }
+    }
+
+    private var color: Color {
+        switch state {
+        case .connected: return .green
+        case .connecting: return .yellow
+        case .error, .disconnected: return .red
+        case nil: return .gray
+        }
+    }
 
     var body: some View {
         HStack(spacing: 10) {
             Circle()
-                .fill(isBooting ? Color.yellow : (isConnected ? Color.green : Color.red.opacity(0.7)))
+                .fill(state == .connected || state == .connecting ? color : color.opacity(0.7))
                 .frame(width: 6, height: 6)
 
             if isLocal {
@@ -407,9 +423,9 @@ private struct FeedRelayRow: View {
 
             Spacer()
 
-            Text(isBooting ? "Booting" : (isConnected ? "Connected" : "Offline"))
+            Text(label)
                 .font(.appSystem(size: 9, weight: .medium, design: .monospaced))
-                .foregroundColor(isBooting ? .yellow : (isConnected ? .green.opacity(0.7) : .red.opacity(0.5)))
+                .foregroundColor(state == .connecting ? color : color.opacity(state == .connected ? 0.7 : 0.5))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

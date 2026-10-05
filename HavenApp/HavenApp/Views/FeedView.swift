@@ -4589,6 +4589,8 @@ struct FeedPickerMenu: View, Equatable {
     static func == (lhs: FeedPickerMenu, rhs: FeedPickerMenu) -> Bool {
         lhs.mode == rhs.mode
             && lhs.connectionStatus == rhs.connectionStatus
+            // The dot also follows relay health while the status stays "Live".
+            && lhs.dotColor == rhs.dotColor
             && lhs.isCompactWidth == rhs.isCompactWidth
     }
 

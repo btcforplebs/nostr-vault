@@ -91,17 +91,28 @@ class FeedService: ObservableObject {
     @Published var isLoadingFeed    = false
     @Published var connectionStatus = "Disconnected"
 
-    /// Three-state connection indicator color
+    /// The dot on the feed button. Once the feed shows notes it reports the
+    /// feed relays themselves — green all up, yellow some down, red none up —
+    /// because `connectionStatus` only says whether notes arrived, and can sit
+    /// on "Loading feed…" for good while one relay hangs mid-connect.
     var connectionDotColor: Color {
         switch connectionStatus {
-        case "Live":
-            return Color(red: 0.2, green: 0.8, blue: 0.6) // Green
         case "Disconnected", "No contacts found":
             // Grey, not red: the app starts out "Disconnected", and a red
             // dot on launch reads as a notification.
             return Color(white: 0.6) // Grey
         default:
-            return Color(red: 1, green: 0.6, blue: 0.1) // Orange (loading/connecting)
+            guard connectionStatus == "Live" || !filteredNotes.isEmpty else {
+                return Color(red: 1, green: 0.6, blue: 0.1) // Orange (loading/connecting)
+            }
+            let health = feedRelayHealth
+            if health.total > 0 && health.connected == 0 {
+                return Color(red: 0.95, green: 0.3, blue: 0.3) // Red
+            }
+            if health.connected < health.total {
+                return Color(red: 0.95, green: 0.85, blue: 0.2) // Yellow
+            }
+            return Color(red: 0.2, green: 0.8, blue: 0.6) // Green
         }
     }
     @Published var newNoteCount: Int = 0
@@ -279,6 +290,41 @@ class FeedService: ObservableObject {
 
     // One client per relay URL
     private var feedClients: [String: WebSocketClient] = [:]
+
+    /// Each feed relay's own socket state, keyed by `relayStateKey(_:)`. The
+    /// dashboard rows and the dot read this; `connectionStatus` alone only
+    /// says whether the feed has notes. Watched outside `cancellables`, which
+    /// mode and account switches clear while the sockets stay open.
+    @Published private(set) var relayStates: [String: WebSocketClient.ConnectionState] = [:]
+    private var relayStateSinks: [String: AnyCancellable] = [:]
+
+    static func relayStateKey(_ url: String) -> String {
+        var key = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        while key.hasSuffix("/") { key.removeLast() }
+        return key
+    }
+
+    /// The socket state of one configured relay, or nil when the feed is not
+    /// using it right now (paused, or a feed served by another service).
+    func relayState(for url: String) -> WebSocketClient.ConnectionState? {
+        relayStates[Self.relayStateKey(url)]
+    }
+
+    /// Configured feed relays the feed is connected to, out of those it uses.
+    var feedRelayHealth: (connected: Int, total: Int) {
+        let states = ConfigService.shared.config.feedRelays.compactMap { relayState(for: $0) }
+        return (states.filter { $0 == .connected }.count, states.count)
+    }
+
+    private func watchRelayState(_ client: WebSocketClient, key: String) {
+        let stateKey = Self.relayStateKey(key)
+        relayStateSinks[key] = client.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak client] state in
+                guard let self, let client, self.feedClients[key] === client else { return }
+                self.relayStates[stateKey] = state
+            }
+    }
     /// Relay keys whose messageSubject/connectionState sinks are currently live.
     /// A warm account switch calls cancellables.removeAll() but deliberately keeps
     /// feed clients connected (to avoid a full relay reconnect) — that call also
@@ -1632,6 +1678,8 @@ class FeedService: ObservableObject {
     private func disconnectFeedClients() {
         feedClients.values.forEach { $0.disconnect() }
         feedClients.removeAll()
+        relayStateSinks.removeAll()
+        relayStates.removeAll()
         // No live subscriptions remain — drop the author-set bookkeeping so a
         // later reconcile doesn't think a relay is still subscribed.
         subscribedAuthorsByRelay.removeAll()
@@ -2952,6 +3000,10 @@ class FeedService: ObservableObject {
         for key in feedClients.keys where !allKeys.contains(key) {
             feedClients[key]?.disconnect()
             feedClients.removeValue(forKey: key)
+            if !key.hasPrefix("page-") {
+                relayStateSinks.removeValue(forKey: key)
+                relayStates.removeValue(forKey: Self.relayStateKey(key))
+            }
         }
 
         let totalRelays = allURLs.count
@@ -3034,6 +3086,7 @@ class FeedService: ObservableObject {
 
         let c = WebSocketClient()
         feedClients[key] = c
+        watchRelayState(c, key: key)
 
         let isLocalRelay = url.host == "127.0.0.1" || url.host == "localhost"
 
