@@ -54,6 +54,7 @@ class LocalNotificationService @Inject constructor(
     private val nostrService: Lazy<NostrService>,
     private val imageLoader: Lazy<ImageLoader>,
     private val dmService: Lazy<DMService>,
+    private val feedService: Lazy<FeedService>,
 ) {
     companion object {
         private const val TAG = "LocalNotif"
@@ -74,6 +75,22 @@ class LocalNotificationService @Inject constructor(
         private const val DM_OPEN_TIMEOUT_IN_THREAD_MS = 15_000L
 
         private fun isDm(type: String) = type == "dm" || type == "giftwrap"
+
+        /**
+         * Only people in your Web of Trust (or follows) notify. [trusted] empty
+         * means the graph has not loaded, and then nobody is held back. Gift
+         * wraps carry a throwaway author and the catch-up summary carries none,
+         * so they are not judged here. A zap marker's author is the lightning
+         * service that signed the receipt, not the zapper; the relay already
+         * admitted the receipt by the zapper's own standing (haven-go
+         * zapimport.go inboxTrustKey), so it is not judged again. iOS:
+         * NotificationPolicy.authorMayNotify.
+         */
+        fun authorMayNotify(author: String, type: String, trusted: Set<String>, own: Set<String>): Boolean {
+            if (author.isEmpty() || type == "giftwrap" || type == "summary" || type == "zap") return true
+            if (trusted.isEmpty() || author in own) return true
+            return author in trusted
+        }
 
         /**
          * Whether a marker may be shown while phone notifications are switched
@@ -212,6 +229,13 @@ class LocalNotificationService @Inject constructor(
             return
         }
 
+        // Nothing from outside your Web of Trust: those were the spam alerts.
+        val own = setOf(recipientHex, nostrService.get().activeHexPubkey)
+        if (!authorMayNotify(author, type, trustedAuthors(), own)) {
+            Log.i(TAG, "skip: '$type' author ${author.take(8)} outside Web of Trust")
+            return
+        }
+
         if (isDm(type)) {
             announceDm(id, type, author, recipientHex, npub)
             return
@@ -264,6 +288,21 @@ class LocalNotificationService @Inject constructor(
                 post(id, title, body, routeType, routeAuthor, npub, profile?.pictureURL)
             }
         }
+    }
+
+    /**
+     * The Relay tab's trusted set: the Web of Trust graph the feeds use plus
+     * your follows. Empty until the graph has loaded (a load is started then).
+     * iOS: FeedService.relayTabTrustedPubkeys.
+     */
+    private fun trustedAuthors(): Set<String> {
+        val feed = feedService.get()
+        val wot = feed.wotPubkeys.value
+        if (wot.isEmpty()) {
+            feed.loadWotPubkeys()
+            return emptySet()
+        }
+        return wot + feed.followedPubkeys.value
     }
 
     /** Returns true if this id is newly seen (and records it); false if a duplicate. */
