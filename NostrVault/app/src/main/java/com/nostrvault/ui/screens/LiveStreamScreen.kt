@@ -1,6 +1,9 @@
 package com.nostrvault.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -14,6 +17,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +38,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import coil.compose.AsyncImage
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
 import com.nostrvault.service.FeedService
@@ -42,6 +51,7 @@ import com.nostrvault.service.music.PlayerTrack
 import com.nostrvault.service.music.rejoinLiveEdge
 import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.components.claimSound
+import com.nostrvault.ui.screens.dm.DMAttachment
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,6 +89,8 @@ fun LiveStreamScreen(
     var showReportStream by remember { mutableStateOf(false) }
     var showBlockConfirm by remember { mutableStateOf(false) }
     var reportingMessage by remember { mutableStateOf<LiveChatService.ChatEntry?>(null) }
+    var showBlossomPicker by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
     // Chat is joined for exactly as long as this screen is up.
     DisposableEffect(stream?.address) {
@@ -274,7 +286,15 @@ fun LiveStreamScreen(
                 messages = messages,
                 profiles = chatProfiles,
                 onReport = { reportingMessage = it },
-                modifier = Modifier.weight(1f),
+                // Touching the chat, to tap or drag it, puts the keyboard away.
+                modifier = Modifier
+                    .weight(1f)
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            focusManager.clearFocus()
+                        }
+                    },
             )
 
             Row(
@@ -287,6 +307,19 @@ fun LiveStreamScreen(
                     // no room is kept for it.
                     .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             ) {
+                // Media from your relay's Blossom store, sent as its link.
+                IconButton(
+                    onClick = {
+                        focusManager.clearFocus()
+                        showBlossomPicker = true
+                    },
+                ) {
+                    Icon(
+                        imageVector = NostrVaultIcons.Media,
+                        contentDescription = "Add media from your relay",
+                        tint = colors.primary,
+                    )
+                }
                 OutlinedTextField(
                     value = chatInput,
                     onValueChange = { chatInput = it },
@@ -348,6 +381,19 @@ fun LiveStreamScreen(
                 dismissButton = {
                     TextButton(onClick = { showBlockConfirm = false }) { Text("Cancel") }
                 },
+            )
+        }
+
+        if (showBlossomPicker) {
+            BlossomMediaPickerSheet(
+                onDismiss = { showBlossomPicker = false },
+                onSelect = { item ->
+                    // The link goes after anything already typed, ready to send.
+                    val typed = chatInput.trim()
+                    chatInput = if (typed.isEmpty()) item.displayUrl else "$typed ${item.displayUrl}"
+                    showBlossomPicker = false
+                },
+                loadItems = viewModel::loadBlossomMedia,
             )
         }
 
@@ -417,16 +463,34 @@ private fun LiveChat(
                         )
                         Spacer(Modifier.width(6.dp))
                     }
-                    Text(
-                        text = buildString {
-                            append(name)
-                            append("  ")
-                            append(entry.content)
-                        },
-                        color = if (entry.zapSats != null) colors.primary else PrimaryText,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
-                    )
+                    // Image links come out of the text and show as pictures
+                    // under it, whoever sent them.
+                    val parts = remember(entry.content) { DMAttachment.split(entry.content) }
+                    Column {
+                        Text(
+                            text = buildString {
+                                append(name)
+                                if (parts.text.isNotEmpty()) {
+                                    append("  ")
+                                    append(parts.text)
+                                }
+                            },
+                            color = if (entry.zapSats != null) colors.primary else PrimaryText,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                        )
+                        parts.images.forEach { url ->
+                            AsyncImage(
+                                model = url,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .padding(top = 6.dp)
+                                    .size(180.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                            )
+                        }
+                    }
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     DropdownMenuItem(
@@ -482,9 +546,13 @@ class LiveStreamViewModel @Inject constructor(
     private val zapSendService: ZapSendService,
     private val nostrService: NostrService,
     private val feedService: FeedService,
+    private val blossomPickerMedia: BlossomPickerMedia,
 ) : ViewModel() {
 
     val messages: StateFlow<List<LiveChatService.ChatEntry>> = liveChatService.messages
+
+    /** Media for the chat's Blossom picker, the same list the composer shows. */
+    suspend fun loadBlossomMedia(): List<BlossomMediaItem> = blossomPickerMedia.load()
     val profiles: StateFlow<Map<String, FeedProfile>> = nostrService.profiles
 
     private val _status = MutableStateFlow<String?>(null)
