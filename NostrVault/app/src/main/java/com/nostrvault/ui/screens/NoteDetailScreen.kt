@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -54,7 +55,6 @@ import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
 
@@ -1488,48 +1488,105 @@ private fun HeroNoteCard(
     onShare: () -> Unit,
     onBroadcast: () -> Unit,
 ) {
-    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getDefault()) }
     var showMoreMenu by remember { mutableStateOf(false) }
     val heroContext = LocalContext.current
     val heroClipboard = LocalClipboardManager.current
+    val cardShape = RoundedCornerShape(12.dp)
 
+    // iOS mainNoteLayout: the same card as a focused feed row — 14pt padding,
+    // a 2pt accent border and an accent-tinted glow (opacity 0.35, radius 8),
+    // 16pt in from the screen edges. The glow is the accent, not a grey
+    // elevation shadow, and the surface is opaque so it does not show through.
     Surface(
-        color = SecondaryGroupedBg.copy(alpha = 0.85f),
-        shape = RoundedCornerShape(12.dp),
+        color = SecondaryGroupedBg,
+        shape = cardShape,
         border = androidx.compose.foundation.BorderStroke(2.dp, themeColor),
-        shadowElevation = 4.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .shadow(
+                elevation = 8.dp,
+                shape = cardShape,
+                ambientColor = themeColor.copy(alpha = 0.35f),
+                spotColor = themeColor.copy(alpha = 0.35f),
+            ),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Author header with more menu
+        Column(
+            modifier = Modifier
+                .background(themeColor.copy(alpha = HERO_TINT_ALPHA))
+                .padding(14.dp),
+        ) {
+            // Author header, iOS `.wide` row: 40pt avatar, name with the
+            // NIP-05 seal, relative time on the right, "reply to" under it.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { onProfileClick(note.pubkey) },
+                AvatarImage(
+                    url = profile?.pictureURL,
+                    pubkey = note.pubkey,
+                    size = 40.dp,
+                    displayName = profile?.bestName,
+                    modifier = Modifier.clickable { onProfileClick(note.pubkey) },
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.weight(1f),
                 ) {
-                    AvatarImage(
-                        url = profile?.pictureURL,
-                        pubkey = note.pubkey,
-                        size = 48.dp,
-                        displayName = profile?.bestName,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = profile?.bestName ?: note.pubkey.take(8) + "...",
                             color = PrimaryText,
-                            fontSize = 16.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .clickable { onProfileClick(note.pubkey) },
                         )
-                        profile?.nip05?.let {
-                            Text(text = it, color = SecondaryText, fontSize = 13.sp)
+                        if (!profile?.nip05.isNullOrBlank()) {
+                            Spacer(Modifier.width(6.dp))
+                            Icon(
+                                imageVector = NostrVaultIcons.Verified,
+                                contentDescription = "Verified",
+                                tint = androidx.compose.ui.graphics.Color(0xFF33CC99),
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                        if (note.isFromNostrVault) {
+                            Spacer(Modifier.width(6.dp))
+                            NostrVaultBadge(size = 12.dp)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = formatTimestamp(note.postedAt.time / 1000),
+                            color = SecondaryText,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 0.2.sp,
+                        )
+                    }
+                    val replyToPubkey = note.replyToPubkey
+                    if (note.isReply && replyToPubkey != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = NostrVaultIcons.Reply,
+                                contentDescription = null,
+                                tint = themeColor.copy(alpha = 0.6f),
+                                modifier = Modifier.size(10.dp),
+                            )
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                text = "reply to ${profiles[replyToPubkey]?.bestName ?: replyToPubkey.take(8) + "..."}",
+                                color = SecondaryText.copy(alpha = 0.7f),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 0.1.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
@@ -1539,7 +1596,7 @@ private fun HeroNoteCard(
                 // note is the only place that offers them.
                 Box {
                     IconButton(onClick = { showMoreMenu = true }) {
-                        Icon(NostrVaultIcons.More, "More", tint = SecondaryText)
+                        Icon(NostrVaultIcons.More, "More", tint = SecondaryText, modifier = Modifier.size(18.dp))
                     }
                     NoteActionsMenu(
                         expanded = showMoreMenu,
@@ -1575,7 +1632,7 @@ private fun HeroNoteCard(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
 
             // Content
             if (note.content.isNotBlank()) {
@@ -1634,14 +1691,8 @@ private fun HeroNoteCard(
                 Spacer(Modifier.height(12.dp))
             }
 
-            // Full timestamp
-            Text(
-                text = dateFormat.format(note.createdAt),
-                color = TertiaryText,
-                fontSize = 13.sp,
-            )
-
-            Spacer(Modifier.height(12.dp))
+            // The time is in the header, relative, as on iOS — the card no
+            // longer repeats it as a full date under the body.
             HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
 
             // Engagement row — only shown when at least one count is non-zero.
@@ -1794,6 +1845,13 @@ private fun OtherResponseCard(note: FeedNote, profile: FeedProfile?, onClick: ()
         }
     }
 }
+
+/**
+ * The focused card's accent wash. iOS lays havenPurple at 0.015 over an opaque
+ * card; 0.04 is what the focused [NoteCard] uses on Android, so the hero and a
+ * focused reply read as the same card.
+ */
+private const val HERO_TINT_ALPHA = 0.04f
 
 /** Where the opened note lands in the thread view, as a share of its height from the top (iOS #306). */
 private const val THREAD_LANDING_ANCHOR = 0.12f
