@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -494,6 +496,7 @@ fun NoteDetailScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val density = LocalDensity.current
 
     // The currently focused note (hero). Starts as the original note,
     // tapping a parent or reply refocuses the thread around it.
@@ -637,24 +640,54 @@ fun NoteDetailScreen(
         if (focusedNoteId != noteId) viewModel.fetchRepliesForFocus(target)
     }
 
-    // Auto-scroll to hero note when focus changes or the parent chain is
-    // revealed. This replaces both the initial scroll and tap-to-focus scroll.
-    LaunchedEffect(focusedNoteId, isLoadingParents) {
-        if (!isLoadingParents && note != null) {
-            // Allow layout to settle after recomposition
-            kotlinx.coroutines.delay(250)
-            val heroIndex = if (condensedReplies) {
-                if (shownParents.isEmpty()) 0 else 1
-            } else {
-                shownParents.size
-            }
-            if (heroIndex in 0 until listState.layoutInfo.totalItemsCount) {
-                listState.animateScrollToItem(heroIndex, scrollOffset = -100)
-            }
+    // The hero's place in the list: after the loading row while the notes
+    // above it load, then after the parent cards, or after the one card of
+    // condensed lines.
+    val heroIndex = when {
+        isLoadingParents -> if (note?.parentEventId != null) 1 else 0
+        condensedReplies -> if (shownParents.isEmpty()) 0 else 1
+        else -> shownParents.size
+    }
+    val currentHeroIndex by rememberUpdatedState(heroIndex)
+    val viewportHeight by remember { derivedStateOf { listState.layoutInfo.viewportSize.height } }
+
+    // Set once the reader scrolls or picks another note; until then the
+    // opened note is kept at the top as the thread above it loads.
+    var readerTookOver by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect {
+            if (it is DragInteraction.Start) readerTookOver = true
+        }
+    }
+
+    // Puts the note you opened at the top, with the posts it answers
+    // scrollable above. Runs again whenever the content above it changes
+    // (history arriving, the layout switching, the screen size settling),
+    // until the reader scrolls: a single jump was undone by whatever loaded
+    // next, and the opened reply ended up down the screen. iOS #282.
+    LaunchedEffect(isLoadingParents, heroIndex, viewportHeight, note != null) {
+        if (readerTookOver || isLoadingParents || note == null || heroIndex == 0) return@LaunchedEffect
+        // Next frame, once the revealed history has laid out, and once more
+        // after images above have had a moment to size themselves.
+        withFrameNanos { }
+        if (!readerTookOver && heroIndex < listState.layoutInfo.totalItemsCount) listState.scrollToItem(heroIndex)
+        kotlinx.coroutines.delay(400)
+        if (!readerTookOver && heroIndex < listState.layoutInfo.totalItemsCount) listState.scrollToItem(heroIndex)
+    }
+
+    // A note picked in the thread becomes the hero and scrolls to the top.
+    LaunchedEffect(focusedNoteId) {
+        if (!readerTookOver) return@LaunchedEffect // the opened note: the landing above handles it
+        // Allow layout to settle after recomposition
+        kotlinx.coroutines.delay(250)
+        val index = currentHeroIndex
+        if (index in 0 until listState.layoutInfo.totalItemsCount) {
+            listState.animateScrollToItem(index)
         }
     }
 
     fun scrollToNote(targetId: String) {
+        readerTookOver = true
         focusedNoteId = targetId
         // LaunchedEffect(focusedNoteId) handles the actual scroll after recomposition
     }
@@ -1043,8 +1076,18 @@ fun NoteDetailScreen(
                     }
                 }
 
-                // Bottom spacer
-                item { Spacer(Modifier.height(32.dp)) }
+                // Bottom spacer, and room under a short thread so the opened
+                // note can scroll to the top with the posts it answers above
+                // it. Without it a reply with few replies of its own stayed at
+                // the bottom of the screen: there was nothing below to scroll into.
+                item(key = "bottom_room") {
+                    val room = if (shownParents.isNotEmpty()) {
+                        with(density) { viewportHeight.toDp() - 200.dp }.coerceAtLeast(32.dp)
+                    } else {
+                        32.dp
+                    }
+                    Spacer(Modifier.height(room))
+                }
             }
             }
         }
