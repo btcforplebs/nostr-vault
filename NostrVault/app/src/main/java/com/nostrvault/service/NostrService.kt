@@ -1366,8 +1366,11 @@ class NostrService @Inject constructor(
 
     /**
      * Publish an event to local relay + smart broadcast to target relays.
+     * With [onBroadcastOutcome], the Blastr broadcast waits for relay `OK`s and
+     * reports once: accepted when one relay takes it, refused when none does
+     * after the retries (see [broadcastConfirmed]). Called on the main thread.
      */
-    fun postEvent(event: NostrEvent) {
+    fun postEvent(event: NostrEvent, onBroadcastOutcome: ((BroadcastTally.Outcome) -> Unit)? = null) {
         val eventJson = serializeEvent(event)
 
         // 1. Post to local relay
@@ -1381,9 +1384,19 @@ class NostrService @Inject constructor(
         }
 
         // 2. Smart broadcast based on event kind and target
+        val toBlastr: () -> Unit = if (onBroadcastOutcome == null) {
+            { broadcastRawEvent(eventJson) }
+        } else {
+            {
+                scope.launch {
+                    val outcome = broadcastConfirmed(event, configStore.config.value.activeBlastrRelays)
+                    withContext(Dispatchers.Main) { onBroadcastOutcome(outcome) }
+                }
+            }
+        }
         scope.launch(Dispatchers.IO) {
             when (event.kind) {
-                0 -> broadcastRawEvent(eventJson) // Profile → Blastr
+                0 -> toBlastr() // Profile → Blastr
                 else -> {
                     // Extract target pubkey from p-tag and send to their inbox relays
                     val targetPubkey = event.tags
@@ -1400,10 +1413,49 @@ class NostrService @Inject constructor(
                     }
 
                     // Also broadcast to Blastr for visibility
-                    broadcastRawEvent(eventJson)
+                    toBlastr()
                 }
             }
         }
+    }
+
+    /**
+     * Sends [event] to [relays] and reports a single outcome. When every relay
+     * refuses or times out it tries again, a little later each time, before
+     * giving up: a slow relay shouldn't read as a failed post.
+     */
+    private suspend fun broadcastConfirmed(event: NostrEvent, relays: List<String>): BroadcastTally.Outcome {
+        val targets = relays.filter { isValidRelayUrl(it) }
+        for (attempt in 0 until 3) {
+            if (attempt > 0) delay(if (attempt == 1) 3_000L else 8_000L)
+            if (broadcastOnceConfirmed(event, targets) == BroadcastTally.Outcome.ACCEPTED) {
+                return BroadcastTally.Outcome.ACCEPTED
+            }
+        }
+        return BroadcastTally.Outcome.REFUSED
+    }
+
+    /**
+     * One pass over [relays]. Returns as soon as the outcome is decided; the
+     * sends to slower relays keep going in [scope] so they still get the post.
+     */
+    private suspend fun broadcastOnceConfirmed(event: NostrEvent, relays: List<String>): BroadcastTally.Outcome {
+        val tally = BroadcastTally(relays.size)
+        tally.outcome?.let { return it }
+        val decided = CompletableDeferred<BroadcastTally.Outcome>()
+        for (relayUrl in relays) {
+            scope.launch(Dispatchers.IO) {
+                val (ok, message) = try {
+                    publishAwaitingOk(event, relayUrl, timeoutMs = 10_000)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    false to "connection failed"
+                }
+                tally.record(relayUrl, ok, message)?.let { decided.complete(it) }
+            }
+        }
+        return decided.await()
     }
 
     /**
@@ -2155,13 +2207,21 @@ class NostrService @Inject constructor(
      * Responses to [rootId] that aren't thread rows (spec "below the fold"):
      * quotes of any kind (#q) plus highlights (9802) and voice replies (1244).
      * The caller decides which of these are quotes rather than replies.
+     *
+     * [rootCoordinate] is the root's address when it is addressable: an
+     * article's highlights name it by its `a` coordinate, not by this
+     * version's id, so `#e` alone never finds them (iOS #189).
      */
-    fun fetchOtherResponses(rootId: String, onResult: (List<FeedNote>) -> Unit) {
+    fun fetchOtherResponses(rootId: String, rootCoordinate: String? = null, onResult: (List<FeedNote>) -> Unit) {
+        val filters = mutableListOf(
+            """{"#q":["$rootId"],"limit":50}""",
+            """{"kinds":[9802,1244],"#e":["$rootId"],"limit":50}""",
+        )
+        if (rootCoordinate != null) {
+            filters.add("""{"kinds":[9802,1244],"#a":[${JsonPrimitive(rootCoordinate)}],"limit":50}""")
+        }
         queryDetailRelays(
-            listOf(
-                """{"#q":["$rootId"],"limit":50}""",
-                """{"kinds":[9802,1244],"#e":["$rootId"],"limit":50}""",
-            ),
+            filters,
             onRawEvent = null,
             onEose = onResult,
             acceptKinds = null,

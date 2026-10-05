@@ -771,6 +771,12 @@ fun NostrVaultNavHost(
                 ),
         )
 
+        // The live player, over everything above (tab bar and mini player
+        // included) rather than on a nav route: it needs the LiveStream object
+        // it was opened with, and a route argument would mean re-resolving a
+        // replaceable event that may already be gone.
+        com.nostrvault.ui.components.LiveStreamHost()
+
         // Pending post countdown banner
         PendingPostBanner(
             pendingPostManager = pendingPostManager,

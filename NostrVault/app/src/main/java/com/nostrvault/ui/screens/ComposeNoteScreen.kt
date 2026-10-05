@@ -929,8 +929,8 @@ class ComposeNoteViewModel @Inject constructor(
                         content = finalContent,
                         replyTo = replyNote,
                         quoteTo = quoteNote,
-                    ) { evt ->
-                        nostrService.postEvent(evt)
+                    ) { evt, onOutcome ->
+                        nostrService.postEvent(evt, onBroadcastOutcome = onOutcome)
                     }
                     // Delete draft on successful publish
                     autoSaveJob?.cancel()
