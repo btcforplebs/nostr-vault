@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -365,6 +366,7 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
     val shuffled by MusicPlayer.isShuffled.collectAsState()
     val repeat by MusicPlayer.repeatMode.collectAsState()
     var scrub by remember { mutableStateOf<Float?>(null) }
+    var showingQueue by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     val t = track
     LaunchedEffect(t) { if (t == null) onDismiss() }
@@ -375,7 +377,11 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
         ) {
-            Artwork(t.artworkUrl, 280.dp, RoundedCornerShape(18.dp))
+            // Up Next takes the artwork's place, so the controls stay put.
+            Box(Modifier.height(280.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (showingQueue && !t.isLive) UpNextList(shuffled = shuffled, repeat = repeat)
+                else Artwork(t.artworkUrl, 280.dp, RoundedCornerShape(18.dp))
+            }
             Spacer(Modifier.height(20.dp))
             if (t.isLive) LiveBadge()
             Text(t.title, color = PrimaryText, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -442,10 +448,61 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
                     AssistChip(onClick = { onDismiss(); actions.onOpenProfile(host) }, label = { Text("Host") },
                         leadingIcon = { Icon(Icons.Filled.Person, null) })
                 }
+                if (!t.isLive) MusicModeButton(
+                    icon = Icons.AutoMirrored.Filled.QueueMusic, isOn = showingQueue, label = "Up Next",
+                    value = if (showingQueue) "Showing" else "Hidden", onClick = { showingQueue = !showingQueue },
+                )
             }
             t.pageUrl?.let { page ->
                 TextButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page))) }) {
                     Text(if (t.isLive) "Open stream" else "Open on Wavlake", color = SecondaryText)
+                }
+            }
+        }
+    }
+}
+
+/** The songs after this one, in play order; tap one to play it now. iOS: NowPlayingView.upNext. */
+@Composable
+private fun UpNextList(shuffled: Boolean, repeat: MusicRepeatMode) {
+    val queue by MusicPlayer.queueState.collectAsState()
+    val index by MusicPlayer.index.collectAsState()
+    val upcoming = queue.drop(index + 1)
+    val accent = LocalNostrVaultColors.current.primary
+    Column(Modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            Text("Up Next", color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (shuffled) {
+                Icon(Icons.Filled.Shuffle, contentDescription = null, tint = accent, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Shuffled", color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        if (upcoming.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    if (repeat == MusicRepeatMode.ALL) "The queue starts over after this song." else "Nothing after this song.",
+                    color = SecondaryText, fontSize = 14.sp,
+                )
+            }
+        } else {
+            LazyColumn(Modifier.fillMaxSize()) {
+                itemsIndexed(upcoming) { offset, item ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClickLabel = "Play this song now") { MusicPlayer.jump(index + 1 + offset) }
+                            .padding(vertical = 4.dp),
+                    ) {
+                        Artwork(item.artworkUrl, 40.dp, RoundedCornerShape(6.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(item.title, color = PrimaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(item.artist, color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        item.durationSec?.takeIf { it > 0 }?.let { Text(formatTime(it.toLong()), color = SecondaryText, fontSize = 12.sp) }
+                    }
                 }
             }
         }

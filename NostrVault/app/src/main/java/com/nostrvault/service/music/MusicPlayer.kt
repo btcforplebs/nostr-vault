@@ -79,6 +79,12 @@ object MusicPlayer {
     /** The queue's order before shuffle, while shuffle is on. */
     private var unshuffledQueue: List<PlayerTrack> = emptyList()
 
+    /** The queue in play order, and where the player is in it, for Up Next. */
+    private val _queueState = MutableStateFlow<List<PlayerTrack>>(emptyList())
+    val queueState: StateFlow<List<PlayerTrack>> = _queueState.asStateFlow()
+    private val _index = MutableStateFlow(0)
+    val index: StateFlow<Int> = _index.asStateFlow()
+
     /** Kept across queues; a live stream ignores it. */
     private val _repeatMode = MutableStateFlow(MusicRepeatMode.OFF)
     val repeatMode: StateFlow<MusicRepeatMode> = _repeatMode.asStateFlow()
@@ -153,6 +159,8 @@ object MusicPlayer {
         val c = controller ?: return
         val idx = c.currentMediaItemIndex
         _current.value = if (c.mediaItemCount > 0) queue.getOrNull(idx) else null
+        _queueState.value = queue
+        _index.value = idx
         _isPlaying.value = c.isPlaying
         _isBuffering.value = c.playbackState == Player.STATE_BUFFERING
         _hasNext.value = c.hasNextMediaItem() && queue.getOrNull(idx)?.isLive != true
@@ -237,6 +245,14 @@ object MusicPlayer {
         if (after.isNotEmpty()) c.addMediaItems(after.map(::item))
         if (before.isNotEmpty()) c.addMediaItems(0, before.map(::item))
         sync()
+    }
+
+    /** Plays the queue's song at [position], from Up Next. */
+    fun jump(position: Int) = withController { c ->
+        if (position !in 0 until c.mediaItemCount || position == c.currentMediaItemIndex) return@withController
+        c.seekToDefaultPosition(position)
+        if (c.playbackState == Player.STATE_IDLE) c.prepare()
+        c.play()
     }
 
     /** Off → repeat all → repeat one → off. */
