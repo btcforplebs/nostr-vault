@@ -251,6 +251,31 @@ object FeedThreadGrouping {
         return entries
     }
 
+    /**
+     * The replies under one note, as condensed lines in reading order: each
+     * reply followed by its own replies, oldest first at every level. Depth
+     * starts at 1 for a direct reply and is capped at [MAX_DEPTH]. A note seen
+     * twice (a reply cycle, or a duplicate in the pool) is drawn once. The
+     * thread view's condensed mode. iOS: `FeedThreadGrouping.replyTree`.
+     */
+    fun replyTree(parentId: String, pool: List<FeedNote>): List<FeedThreadEntry> {
+        val children = HashMap<String, MutableList<FeedNote>>()
+        for (note in pool) {
+            note.parentEventId?.let { children.getOrPut(it) { mutableListOf() }.add(note) }
+        }
+        val out = mutableListOf<FeedThreadEntry>()
+        val seen = mutableSetOf(parentId)
+        fun visit(id: String, depth: Int) {
+            for (child in children[id].orEmpty().sortedBy { it.createdAt }) {
+                if (!seen.add(child.id)) continue
+                out.add(FeedThreadEntry(note = child, depth = minOf(depth, MAX_DEPTH)))
+                visit(child.id, depth + 1)
+            }
+        }
+        visit(parentId, 1)
+        return out
+    }
+
     /** The `root`-marked e-tag from NIP-10, when the author wrote one. */
     private fun taggedRootId(note: FeedNote): String? =
         note.tags.firstOrNull { it.size >= 4 && it[0] == "e" && it[3] == "root" }?.get(1)

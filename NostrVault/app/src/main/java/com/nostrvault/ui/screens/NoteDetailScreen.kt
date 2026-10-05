@@ -429,6 +429,10 @@ class NoteDetailViewModel @Inject constructor(
     fun childRepliesFor(parentId: String): List<FeedNote> =
         _allReplies.value.filter { it.parentEventId == parentId }
 
+    /** A note this thread or the feed has loaded: what a bare repost line carries. */
+    fun findNote(id: String): FeedNote? =
+        feedService.findNote(id) ?: _allReplies.value.firstOrNull { it.id == id }
+
     // ── Quoted note resolution (embedded nostr:note1/nevent1 previews) ──
 
     val quotedNotesCache: StateFlow<Map<String, FeedNote>> = feedService.quotedNotes
@@ -478,6 +482,14 @@ fun NoteDetailScreen(
     // The currently focused note (hero). Starts as the original note,
     // tapping a parent or reply refocuses the thread around it.
     var focusedNoteId by remember { mutableStateOf(noteId) }
+
+    // Replies and the conversation above drawn as condensed lines, the same
+    // lines the threaded feed uses. The note you are reading always stays full
+    // size with its action bar, so replying is still one tap: that is what the
+    // old compact mode got wrong (iOS #56). Remembered across threads.
+    // iOS: @AppStorage("thread.condensedReplies").
+    val threadPrefs = remember { context.getSharedPreferences(THREAD_PREFS, android.content.Context.MODE_PRIVATE) }
+    var condensedReplies by remember { mutableStateOf(threadPrefs.getBoolean(KEY_CONDENSED_REPLIES, false)) }
 
     // Fetch any embedded quoted notes (nostr:note1.../nevent1...) referenced by
     // the focal note, its ancestors, or replies, plus their authors' profiles.
@@ -575,7 +587,11 @@ fun NoteDetailScreen(
         if (!isLoadingParents && note != null) {
             // Allow layout to settle after recomposition
             kotlinx.coroutines.delay(250)
-            val heroIndex = dynamicParents.size
+            val heroIndex = if (condensedReplies) {
+                if (dynamicParents.isEmpty()) 0 else 1
+            } else {
+                dynamicParents.size
+            }
             if (heroIndex in 0 until listState.layoutInfo.totalItemsCount) {
                 listState.animateScrollToItem(heroIndex, scrollOffset = -100)
             }
@@ -663,8 +679,23 @@ fun NoteDetailScreen(
 
                 Spacer(Modifier.weight(1f))
 
-                // Trailing pill: compact toggle + stats + reply + broadcast
+                // Trailing pill: condensed toggle + stats + reply + broadcast
                 GlassPill {
+                    // Condensed / full replies
+                    IconButton(
+                        onClick = {
+                            condensedReplies = !condensedReplies
+                            threadPrefs.edit().putBoolean(KEY_CONDENSED_REPLIES, condensedReplies).apply()
+                        },
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        Icon(
+                            if (condensedReplies) NostrVaultIcons.ThreadedView else NostrVaultIcons.ExpandedView,
+                            if (condensedReplies) "Condensed replies" else "Full replies",
+                            tint = if (condensedReplies) colors.primary else SecondaryText,
+                            modifier = Modifier.size(25.dp),
+                        )
+                    }
                     // Thread stats toggle
                     IconButton(
                         onClick = viewModel::toggleExpandedEngagement,
@@ -727,6 +758,25 @@ fun NoteDetailScreen(
                     if (note?.parentEventId != null) {
                         item(key = "parents_loading") {
                             InlineLoadingRow(text = "Loading thread…", color = colors.primary)
+                        }
+                    }
+                } else if (condensedReplies) {
+                    // The conversation above, one line per note, oldest at the top.
+                    if (dynamicParents.isNotEmpty()) {
+                        item(key = "parents_condensed") {
+                            CondensedThreadCard {
+                                for (parent in dynamicParents) {
+                                    ThreadCondensedLine(
+                                        note = parent,
+                                        depth = 0,
+                                        replyCount = 0,
+                                        viewModel = viewModel,
+                                        profiles = profiles,
+                                        onProfileClick = onProfileClick,
+                                        onTap = { scrollToNote(parent.id) },
+                                    )
+                                }
+                            }
                         }
                     }
                 } else {
@@ -836,7 +886,29 @@ fun NoteDetailScreen(
                 }
 
                 // ── Threaded replies ────────────────────────────
-                items(directReplies, key = { it.id }) { reply ->
+                // Condensed: one card of lines, nested under what they answer;
+                // tap a line and it becomes the note you are reading, full size.
+                if (condensedReplies) {
+                    val heroId = focusedNote?.effectiveEventId ?: noteId
+                    val tree = FeedThreadGrouping.replyTree(heroId, allReplies)
+                    if (tree.isNotEmpty()) {
+                        item(key = "replies_condensed") {
+                            CondensedThreadCard {
+                                for (entry in tree) {
+                                    ThreadCondensedLine(
+                                        note = entry.note,
+                                        depth = entry.depth,
+                                        replyCount = allReplies.count { it.parentEventId == entry.note.id },
+                                        viewModel = viewModel,
+                                        profiles = profiles,
+                                        onProfileClick = onProfileClick,
+                                        onTap = { scrollToNote(entry.note.id) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else items(directReplies, key = { it.id }) { reply ->
                     ThreadedReplyNode(
                         reply = reply,
                         depth = 1,
@@ -986,8 +1058,8 @@ private fun ThreadConnectorLine(color: androidx.compose.ui.graphics.Color) {
 
 // ── Threaded reply node (recursive) ─────────────────────────────
 // Matches iOS ThreadedReplyNode: recursive tree rendering with depth-based
-// collapsing, focus highlight, and thread connector lines. The thread view is
-// always expanded now — density is decided once, in the feed.
+// collapsing, focus highlight, and thread connector lines. This is the full
+// mode; the condensed toggle swaps the replies for ThreadCondensedLine rows.
 
 /**
  * What a reply's overflow menu asked for. One parameter through the recursive
@@ -997,6 +1069,68 @@ private fun ThreadConnectorLine(color: androidx.compose.ui.graphics.Color) {
 internal enum class Moderation { REPORT, BLOCK, DELETE }
 
 private const val COLLAPSE_DEPTH = 3
+
+private const val THREAD_PREFS = "thread_view"
+private const val KEY_CONDENSED_REPLIES = "condensedReplies"
+
+/**
+ * The thread view's condensed mode: one card of lines, drawn the way the
+ * threaded feed draws a conversation ([FeedThreadCard]). iOS: `.threadCard()`.
+ */
+@Composable
+private fun CondensedThreadCard(content: @Composable ColumnScope.() -> Unit) {
+    val isOled = LocalOledMode.current
+    val themeColor = LocalNostrVaultColors.current.primary
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .background(SecondaryGroupedBg, RoundedCornerShape(12.dp))
+            .border(
+                width = if (isOled) 1.dp else 0.5.dp,
+                color = themeColor.copy(alpha = if (isOled) 0.30f else 0.15f),
+                shape = RoundedCornerShape(12.dp),
+            )
+            .padding(vertical = 8.dp, horizontal = 6.dp),
+        content = content,
+    )
+}
+
+/**
+ * One condensed line, as the threaded feed draws it: a bare repost shows the
+ * note it carries, credited to its author. iOS: `NoteDetailView.condensedLine`.
+ */
+@Composable
+private fun ThreadCondensedLine(
+    note: FeedNote,
+    depth: Int,
+    replyCount: Int,
+    viewModel: NoteDetailViewModel,
+    profiles: Map<String, FeedProfile>,
+    onProfileClick: (String) -> Unit,
+    onTap: () -> Unit,
+) {
+    val original = note.repostedEventId?.takeIf { note.isBareRepost }
+        ?.let(viewModel::findNote)?.takeIf { it.kind != 6 }
+    val shown = original?.let { note.withRepostedOriginal(it) } ?: note
+    val stats = viewModel.statsFor(note.id)
+    CondensedNoteLine(
+        note = shown,
+        profile = viewModel.profileFor(shown.pubkey),
+        profiles = profiles,
+        depth = depth,
+        style = CondensedLineStyle.PLAIN,
+        replyCount = replyCount,
+        mediaURLs = shown.mediaURLs,
+        engagement = CondensedEngagement(
+            reactions = if (LocalZapsOnlyMode.current) 0 else stats?.reactions ?: 0,
+            reposts = stats?.reposts ?: 0,
+        ),
+        onProfileClick = onProfileClick,
+        onTap = onTap,
+    )
+}
 
 @Composable
 private fun ThreadedReplyNode(
