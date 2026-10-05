@@ -27,6 +27,16 @@ data class ArticleMeta(
     companion object {
         const val KIND = 30023
 
+        /**
+         * Reading time in minutes, rounded up, at 200 words per minute; null
+         * for an empty body. iOS: LongFormMetadata.readingTimeMinutes.
+         */
+        fun readingTimeMinutes(body: String): Int? {
+            val words = body.split(Regex("\\s+")).count { it.isNotEmpty() }
+            if (words == 0) return null
+            return maxOf(1, (words + 199) / 200)
+        }
+
         fun from(note: FeedNote): ArticleMeta {
             fun tag(name: String): String? = note.tags
                 .firstOrNull { it.size >= 2 && it[0] == name }

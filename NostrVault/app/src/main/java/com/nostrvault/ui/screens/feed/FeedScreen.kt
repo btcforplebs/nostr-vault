@@ -9,6 +9,8 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.indication
@@ -33,6 +35,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,6 +74,7 @@ import com.nostrvault.data.model.LiveStream
 import com.nostrvault.data.model.toNote
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
+import com.nostrvault.data.model.RecipeTopics
 import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.ui.screens.LiveStreamScreen
 import com.nostrvault.ui.components.CustomZapSheet
@@ -1055,11 +1059,39 @@ private fun ArticleList(
     }
 
     val colors = LocalNostrVaultColors.current
+    // Recipes: category chips from the zapcooking-<category> tags in the
+    // loaded results, not a fixed list. iOS: RecipeCategoryBar.
+    val isRecipes = mode == FeedMode.RECIPES
+    val categories = remember(notes, isRecipes) { if (isRecipes) RecipeTopics.topCategories(notes) else emptyList() }
+    var category by rememberSaveable(mode) { mutableStateOf<String?>(null) }
+    // A category can vanish when the results change under the chip; check
+    // every category present, not just the capped chip list.
+    LaunchedEffect(notes, category) {
+        val c = category ?: return@LaunchedEffect
+        if (notes.none { c in RecipeTopics.categoriesOf(it.tags) }) category = null
+    }
+    val shown = remember(notes, category) { RecipeTopics.filter(notes, category) }
     LazyColumn(
         contentPadding = contentPadding,
         modifier = Modifier.fillMaxSize(),
     ) {
-        items(notes, key = { it.id }) { note ->
+        if (categories.isNotEmpty()) item(key = "recipe-categories") {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                RecipeCategoryChip("All", category == null) { category = null }
+                categories.forEach { name ->
+                    RecipeCategoryChip(name.replaceFirstChar { it.titlecase() }, category == name) {
+                        category = if (category == name) null else name
+                    }
+                }
+            }
+        }
+        items(shown, key = { it.id }) { note ->
             val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
             Column(
                 modifier = Modifier
@@ -1105,6 +1137,7 @@ private fun ArticleList(
                         append(profiles[note.pubkey]?.bestName ?: note.pubkey.take(8))
                         append(" · ")
                         append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(meta.publishedAt))
+                        if (!isRecipes) ArticleMeta.readingTimeMinutes(note.content)?.let { append(" · $it min read") }
                     },
                     color = TertiaryText,
                     fontSize = 12.sp,
@@ -1113,6 +1146,22 @@ private fun ArticleList(
             HorizontalDivider(color = colors.primary.copy(alpha = 0.10f))
         }
     }
+}
+
+@Composable
+private fun RecipeCategoryChip(title: String, isOn: Boolean, onClick: () -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    Text(
+        text = title,
+        color = if (isOn) Color.White else colors.primary,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (isOn) colors.primary else colors.primary.copy(alpha = 0.14f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
 
 /**
