@@ -1523,6 +1523,10 @@ struct ZappersListView: View {
                             }
                         }
                     }
+                    // The whole row, not just the avatar and text: a .plain
+                    // button on the Mac only takes clicks where it draws.
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, 4)

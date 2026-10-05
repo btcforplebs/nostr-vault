@@ -346,8 +346,18 @@ struct LiveStreamPlayerView: View {
                     Image(systemName: "ellipsis.circle")
                         .font(.appSystem(size: 16))
                         .foregroundColor(.havenPurple)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
+                #if os(macOS)
+                // .borderlessButton flattens the label's tint on the Mac.
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .help("More")
+                #else
                 .menuStyle(.borderlessButton)
+                #endif
                 .fixedSize()
             }
         }
