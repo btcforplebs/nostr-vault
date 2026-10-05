@@ -1161,6 +1161,14 @@ struct MiniPlayerBar: View {
                 // Round, so it sits inside the capsule's end instead of
                 // poking its corners out of the curve.
                 MusicArtwork(url: track.artworkURL, size: 40)
+                    // A live stream shows its own picture, moving, over the
+                    // stream's image (which stays as the fallback while it loads).
+                    .overlay {
+                        if let live = player.livePlayer {
+                            InlinePlayerLayer(player: live, videoGravity: .resizeAspectFill)
+                                .allowsHitTesting(false)
+                        }
+                    }
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 1) {
                     Text(track.title).font(.appSystem(size: 14, weight: .semibold)).lineLimit(1)
