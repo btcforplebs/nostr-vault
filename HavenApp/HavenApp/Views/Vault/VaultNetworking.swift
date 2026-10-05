@@ -121,6 +121,7 @@ extension VaultView {
 
     /// Fetch a larger set of zap receipts from the relay when entering zaps mode.
     func fetchMoreZapReceipts() {
+        fetchGivenZapsFromWallet()
         let generation = nostrService.eventsResetGeneration
         guard zapReceiptsFetchGeneration != generation else { return }
         zapReceiptsFetchGeneration = generation
@@ -151,6 +152,53 @@ extension VaultView {
         ] : configService.config.activeFeedRelays
         let externalURLs = externalStrs.compactMap { URL(string: $0) }
         nostrService.fetchZapReceipts(from: externalURLs, limit: 500, tagFilter: ["#P": [owner]])
+    }
+
+    /// "Given" from the wallet: the zaps the connected NWC wallet paid, matched
+    /// to their posts the same way the wallet's own history is. Read once per
+    /// account and wallet; a pull-to-refresh of the Relay tab does not redo it.
+    func fetchGivenZapsFromWallet() {
+        let owner = nostrService.activeHexPubkey
+        let nwcURI = configService.config.nwcURI
+        guard !owner.isEmpty, !nwcURI.isEmpty, !walletGivenLoading else { return }
+        let key = owner + "|" + nwcURI
+        guard walletGivenKey != key else { return }
+        walletGivenKey = key
+        walletGivenLoading = true
+        walletGivenNotes = []
+        walletGivenAmounts = [:]
+
+        Task {
+            defer {
+                walletGivenLoading = false
+                scheduleUpdateDisplayData()
+            }
+            var sent: [WalletTransaction] = []
+            let pageSize = 50
+            for page in 0..<4 {  // the 200 most recent payments
+                guard let txs = try? await NWCService.listTransactions(limit: pageSize, offset: page * pageSize) else {
+                    // Unsupported or unreachable: try again on the next visit.
+                    if page == 0 { walletGivenKey = nil }
+                    break
+                }
+                sent += txs.filter { $0.direction == .outgoing && $0.state == .settled }
+                if txs.count < pageSize { break }
+            }
+            guard walletGivenKey == key, !sent.isEmpty else { return }
+
+            let found = await ZapHistoryService.lookup(for: sent, me: owner)
+            guard walletGivenKey == key else { return }
+            var notes: [NostrEvent] = []
+            var amounts: [String: Int64] = [:]
+            for tx in sent.sorted(by: { $0.createdAt > $1.createdAt }) {
+                guard let postId = found.details[tx.id]?.postId,
+                      let event = found.postEvents[postId] else { continue }
+                if amounts[postId] == nil { notes.append(event) }
+                amounts[postId, default: 0] += Int64(tx.amountSats)
+            }
+            walletGivenNotes = notes
+            walletGivenAmounts = amounts
+        }
     }
 
     /// Fetch notes referenced by zap receipts that aren't already in the events array.

@@ -14,6 +14,7 @@ enum ZapHistoryService {
     struct Result {
         var details: [String: ZapDetail] = [:]   // transaction id -> zap
         var posts: [String: FeedNote] = [:]      // post id -> post
+        var postEvents: [String: NostrEvent] = [:] // post id -> signed event
     }
 
     static func lookup(for transactions: [WalletTransaction], me: String) async -> Result {
@@ -68,6 +69,11 @@ enum ZapHistoryService {
                     id: id, pubkey: pubkey, content: e["content"] as? String ?? "",
                     createdAt: Date(timeIntervalSince1970: createdAt),
                     tags: e["tags"] as? [[String]] ?? [], kind: kind
+                )
+                result.postEvents[id] = NostrEvent(
+                    id: id, pubkey: pubkey, created_at: Int64(createdAt), kind: kind,
+                    tags: e["tags"] as? [[String]] ?? [], content: e["content"] as? String ?? "",
+                    sig: e["sig"] as? String ?? ""
                 )
             }
         }

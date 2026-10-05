@@ -94,6 +94,15 @@ struct VaultView: View {
     /// Cache of parsed zap receipt data keyed by receipt event ID.
     /// Avoids re-parsing JSON description tags on every updateDisplayData cycle.
     @State var zapReceiptCache: [String: ParsedZapReceipt] = [:]
+    /// Posts you zapped, read from the wallet's payment history (NWC), newest
+    /// payment first. Most zap receipts never tag the sender, so relays alone
+    /// leave "Given" empty; the wallet knows every zap it paid.
+    @State var walletGivenNotes: [NostrEvent] = []
+    /// Post id -> sats you paid it, from the same wallet history.
+    @State var walletGivenAmounts: [String: Int64] = [:]
+    /// Account + wallet the wallet history was read for; nil until it was.
+    @State var walletGivenKey: String?
+    @State var walletGivenLoading = false
 
     @AppStorage("viewerNoteLayoutMode") var noteLayoutMode: NoteLayoutMode = .expanded
 
