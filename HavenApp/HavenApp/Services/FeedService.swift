@@ -268,6 +268,15 @@ class FeedService: ObservableObject {
     /// Used to sort the Popular feed by engagement rank.
     private(set) var popularNoteScores: [String: Double] = [:]
 
+    /// Replies to the Popular posts, fetched only for Threaded View. Kept out
+    /// of `notes`: Popular lists top-level posts (the filter drops replies),
+    /// so without these a threaded Popular card had nothing under it.
+    @Published private(set) var popularThreadReplies: [FeedNote] = []
+    private var popularRepliesRequested: Set<String> = []
+    /// Bumped on every reset, so a fetch that outlives its Popular list
+    /// can't add replies to the next one.
+    private var popularRepliesGeneration = 0
+
     // One client per relay URL
     private var feedClients: [String: WebSocketClient] = [:]
     /// Relay keys whose messageSubject/connectionState sinks are currently live.
@@ -797,6 +806,7 @@ class FeedService: ObservableObject {
         unavailableNoteIds.removeAll()
         noteStats.removeAll()
         popularNoteScores.removeAll()
+        resetPopularThreadReplies()
         isLoadingPopular = false
         likedEventIds.removeAll()
         zappedEventIds.removeAll()
@@ -1210,6 +1220,7 @@ class FeedService: ObservableObject {
         connectionStatus = "Discovering popular notes..."
         notes.removeAll()
         popularNoteScores.removeAll()
+        resetPopularThreadReplies()
         recomputeFilteredNotes()
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -1279,6 +1290,57 @@ class FeedService: ObservableObject {
     }
 
 
+    private func resetPopularThreadReplies() {
+        popularRepliesGeneration += 1
+        popularRepliesRequested.removeAll()
+        if !popularThreadReplies.isEmpty { popularThreadReplies = [] }
+    }
+
+    /// Fetches replies to these Popular posts (once per post per list) from
+    /// the local relay and the feed relays. Only signature-checked events are
+    /// kept, and only real replies into one of these threads: a note that
+    /// merely tags a post would open a stray thread of its own.
+    func loadPopularThreadReplies(rootIds: [String]) {
+        guard feedMode == .popular else { return }
+        let wanted = rootIds.filter { !popularRepliesRequested.contains($0) }
+        guard !wanted.isEmpty else { return }
+        popularRepliesRequested.formUnion(wanted)
+        let generation = popularRepliesGeneration
+        let config = ConfigService.shared.config
+        let feedRelays = config.activeFeedRelays.isEmpty ? RelayConfiguration.fallbackBroadcastRelays : config.activeFeedRelays
+        let relays = ([config.nostrURL] + feedRelays).compactMap { URL(string: $0) }
+        let roots = Set(wanted)
+        Task { @MainActor [weak self] in
+            // Relays cap filter size; ask in chunks.
+            for chunk in stride(from: 0, to: wanted.count, by: 50).map({ Array(wanted[$0..<min($0 + 50, wanted.count)]) }) {
+                let events = await ZapHistoryService.query(
+                    filters: [["kinds": [1], "#e": chunk, "limit": 500]], relays: relays, timeout: 6)
+                guard let self, self.popularRepliesGeneration == generation else { return }
+                let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+                var seen = Set(self.popularThreadReplies.map(\.id))
+                let replies: [FeedNote] = events.compactMap { ev in
+                    guard let id = ev["id"] as? String, let pubkey = ev["pubkey"] as? String,
+                          let content = ev["content"] as? String, let createdAt = ev["created_at"] as? Int64,
+                          let kind = ev["kind"] as? Int, let tags = ev["tags"] as? [[String]],
+                          !blocked.contains(pubkey), !FeedNote.isNoiseOrSpam(content: content, tags: tags)
+                    else { return nil }
+                    let inThread = NIP10Thread.rootEventId(kind: kind, tags: tags).map(roots.contains)
+                        ?? NIP10Thread.parentEventId(kind: kind, tags: tags).map(roots.contains)
+                        ?? false
+                    guard inThread, seen.insert(id).inserted else { return nil }
+                    return FeedNote(id: id, pubkey: pubkey, content: content,
+                                    createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
+                                    tags: tags, kind: kind)
+                }
+                if !replies.isEmpty { self.popularThreadReplies.append(contentsOf: replies) }
+                if !replies.isEmpty {
+                    let missing = Set(replies.map(\.pubkey)).filter { NostrService.shared.profiles[$0] == nil }
+                    if !missing.isEmpty { NostrService.shared.fetchMissingProfiles(for: Array(missing)) }
+                }
+            }
+        }
+    }
+
     func switchMode(_ mode: FeedMode) {
         guard mode != feedMode else { return }
         if feedMode == .recipes && mode != .recipes {
@@ -1296,6 +1358,7 @@ class FeedService: ObservableObject {
         shouldScrollToTopOnLoad = true
         feedMode = mode
         notes.removeAll()
+        resetPopularThreadReplies()
         parentNotesCache.removeAll()
         parentNotesCacheTrimAt = 500
         processingQueue.async { [bgAccumulator] in bgAccumulator.resetParentFetchClaims() }
