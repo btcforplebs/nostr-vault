@@ -12,14 +12,19 @@ enum EngagementTracker {
     struct InteractionState: Codable {
         let likedEventIds: Set<String>
         let zappedEventIds: [String: Int]
+        /// The account key this was saved for. Missing in files written before
+        /// it existed, which may hold another account's likes.
+        let account: String?
 
-        init(likedEventIds: Set<String>, zappedEventIds: [String: Int]) {
+        init(likedEventIds: Set<String>, zappedEventIds: [String: Int], account: String? = nil) {
             self.likedEventIds = likedEventIds
             self.zappedEventIds = zappedEventIds
+            self.account = account
         }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
+            account = try container.decodeIfPresent(String.self, forKey: .account)
             likedEventIds = try container.decode(Set<String>.self, forKey: .likedEventIds)
             // Migrate from old Set<String> format if needed
             if let dict = try? container.decode([String: Int].self, forKey: .zappedEventIds) {
@@ -41,10 +46,6 @@ enum EngagementTracker {
         return havenDir.appendingPathComponent("interaction_state_\(safeKey).json")
     }
 
-    /// Returns the legacy (pre-per-account) interaction state file URL.
-    static func legacyInteractionStateURL() -> URL {
-        return havenSupportDir().appendingPathComponent("interaction_state.json")
-    }
 
     private static func havenSupportDir() -> URL {
         guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
@@ -58,22 +59,25 @@ enum EngagementTracker {
     // MARK: - Load / Save
 
     /// Loads interaction state from disk for the given account key.
-    /// Falls back to the legacy global file when no per-account file exists.
+    ///
+    /// Only a file stamped with this account is trusted. Unstamped files
+    /// (written before the stamp, and the old shared file) can hold another
+    /// account's likes: a late account switch used to save one account's set
+    /// under the next. They start empty instead, and the account's own
+    /// reactions rebuild its likes as the feed loads.
     static func loadInteractionState(forKey key: String) -> (likedEventIds: Set<String>, zappedEventIds: [String: Int]) {
         let url = interactionStateURL(forKey: key)
         if let data = try? Data(contentsOf: url),
-           let state = try? JSONDecoder().decode(InteractionState.self, from: data) {
+           let state = try? JSONDecoder().decode(InteractionState.self, from: data),
+           accepts(state, forKey: key) {
             return (state.likedEventIds, state.zappedEventIds)
         }
-
-        // Migration: read the old shared file
-        let legacy = legacyInteractionStateURL()
-        if let data = try? Data(contentsOf: legacy),
-           let state = try? JSONDecoder().decode(InteractionState.self, from: data) {
-            return (state.likedEventIds, state.zappedEventIds)
-        }
-
         return ([], [:])
+    }
+
+    /// Whether a saved state belongs to the account `key`.
+    static func accepts(_ state: InteractionState, forKey key: String) -> Bool {
+        state.account == key
     }
 
     /// Persists interaction state to disk. Runs the encode + write on a
@@ -83,7 +87,7 @@ enum EngagementTracker {
         zappedEventIds: [String: Int],
         forKey key: String
     ) {
-        let state = InteractionState(likedEventIds: likedEventIds, zappedEventIds: zappedEventIds)
+        let state = InteractionState(likedEventIds: likedEventIds, zappedEventIds: zappedEventIds, account: key)
         let url = interactionStateURL(forKey: key)
         DispatchQueue.global(qos: .utility).async {
             if let data = try? JSONEncoder().encode(state) {
