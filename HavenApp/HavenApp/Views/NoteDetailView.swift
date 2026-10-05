@@ -61,9 +61,10 @@ struct NoteDetailView: View {
     /// Set once the reader scrolls or picks another note; until then the
     /// opened note is kept at the top as the thread above it loads.
     @State private var didLandOnFocusedNote = false
-    /// The thread fades in once the opened note is in place, so the reader
-    /// never sees it jump there. Capped at `settleCap` for a slow thread.
-    @State private var isSettled = false
+    /// Shown from the first frame: the opened note is placed by
+    /// `scrollPosition` before the screen draws. Kept so a late landing
+    /// (history still loading) animates rather than jumps.
+    @State private var isSettled = true
     private static let settleCap: TimeInterval = 0.6
     /// Where the opened note sits: a little below the top, so the end of the
     /// post it answers shows above it as context.
@@ -2360,5 +2361,38 @@ struct OtherResponseCard: View {
         } else {
             card
         }
+    }
+}
+
+// MARK: - Zoom into a thread (iOS 18)
+
+extension View {
+    /// Marks a feed row as the place its thread view zooms out of.
+    @ViewBuilder
+    func threadZoomSource(id: String, in namespace: Namespace.ID) -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *) {
+            self.matchedTransitionSource(id: id, in: namespace)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// The thread view zooms open from the row it was tapped in; a normal
+    /// push on iOS 17 and the Mac.
+    @ViewBuilder
+    func threadZoomDestination(id: String, in namespace: Namespace.ID) -> some View {
+        #if os(iOS)
+        if #available(iOS 18.0, *) {
+            self.navigationTransition(.zoom(sourceID: id, in: namespace))
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
     }
 }
