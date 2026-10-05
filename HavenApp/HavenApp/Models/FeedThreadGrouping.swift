@@ -251,4 +251,26 @@ enum FeedThreadGrouping {
     private static func taggedRootId<Note: ThreadGroupable>(of note: Note) -> String? {
         note.tags.first { $0.count >= 4 && $0[0] == "e" && $0[3] == "root" }?[1]
     }
+
+    /// The replies under one note, as condensed lines in reading order: each
+    /// reply followed by its own replies, oldest first at every level. Depth
+    /// starts at 1 for a direct reply and is capped at `maxDepth`. A note
+    /// seen twice (a reply cycle, or a duplicate in the pool) is drawn once.
+    static func replyTree<Note: ThreadGroupable>(under parentId: String, in pool: [Note]) -> [FeedThreadEntry<Note>] {
+        var children: [String: [Note]] = [:]
+        for note in pool {
+            if let parent = note.parentEventId { children[parent, default: []].append(note) }
+        }
+        var out: [FeedThreadEntry<Note>] = []
+        var seen: Set<String> = [parentId]
+        func visit(_ id: String, depth: Int) {
+            for child in (children[id] ?? []).sorted(by: { $0.createdAt < $1.createdAt }) {
+                guard seen.insert(child.id).inserted else { continue }
+                out.append(FeedThreadEntry(note: child, depth: min(depth, maxDepth)))
+                visit(child.id, depth: depth + 1)
+            }
+        }
+        visit(parentId, depth: 1)
+        return out
+    }
 }
