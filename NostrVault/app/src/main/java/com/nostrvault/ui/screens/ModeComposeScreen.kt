@@ -60,6 +60,7 @@ import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -73,7 +74,9 @@ import javax.inject.Inject
 enum class ModeComposerKind(val route: String, val buttonTitle: String) {
     DIVINE("divine", "diVine"),
     ARTICLE("article", "Write"),
-    RECIPE("recipe", "Recipe");
+    RECIPE("recipe", "Recipe"),
+    /** A NIP-99 listing for the Marketplace; see MarketplaceSellScreen. */
+    LISTING("listing", "Sell");
 
     companion object {
         fun fromRoute(route: String?): ModeComposerKind = entries.firstOrNull { it.route == route } ?: ARTICLE
@@ -103,6 +106,7 @@ class ModeComposeViewModel @Inject constructor(
     private val nostrService: NostrService,
     private val blossomService: BlossomService,
     private val reelsFeedService: ReelsFeedService,
+    private val marketplaceFeedService: com.nostrvault.service.MarketplaceFeedService,
     private val notificationManager: NotificationManager,
     @ApplicationContext private val context: Context,
     savedStateHandle: SavedStateHandle,
@@ -354,6 +358,96 @@ class ModeComposeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Uploads the photos, then publishes a 30402 listing to the owner's relays
+     * and the marketplace relays, which are where the grid, Shopstr and
+     * Plebeian look. Port of MarketplaceSellView.publish on iPhone.
+     */
+    fun publishListing(draft: com.nostrvault.data.model.ListingDraft, photos: List<Uri>, onDone: () -> Unit) {
+        viewModelScope.launch {
+            _busy.value = true
+            _error.value = null
+            try {
+                val urls = mutableListOf<String>()
+                photos.forEachIndexed { index, uri ->
+                    val label = if (photos.size == 1) "photo" else "photo ${index + 1} of ${photos.size}"
+                    val file = withContext(Dispatchers.IO) { listingJpeg(uri) }
+                    urls += withContext(Dispatchers.IO) { upload(file, "image/jpeg", label) }.first
+                    file.delete()
+                }
+                _status.value = "Publishing…"
+                val final = draft.copy(imageUrls = urls)
+                val event = nostrService.signEventAsync(
+                    kind = com.nostrvault.data.model.ListingDraft.KIND,
+                    content = final.content(),
+                    tags = final.tags(System.currentTimeMillis() / 1000),
+                ) ?: throw IllegalStateException("Couldn't sign the listing. Check your key or remote signer in Settings.")
+                nostrService.postEvent(event)
+                val results = kotlinx.coroutines.coroutineScope {
+                    com.nostrvault.service.MarketplaceFeedService.RELAYS.map { relay ->
+                        async { nostrService.publishAwaitingOk(event, relay).first }
+                    }.map { it.await() }
+                }
+                if (results.none { it }) {
+                    notificationManager.showError(
+                        "Listed on your relays, but no marketplace relay took it, so Shopstr and Plebeian may not show it yet.",
+                        ErrorStyle.WARNING,
+                    )
+                }
+                marketplaceFeedService.refresh()
+                onDone()
+            } catch (e: Exception) {
+                Log.e(TAG, "publishListing failed", e)
+                _error.value = e.message ?: "Couldn't list it."
+            }
+            _status.value = null
+            _busy.value = false
+        }
+    }
+
+    /**
+     * A picked photo re-encoded as a JPEG at most 2048px on its long side.
+     * Decoding and re-encoding drops EXIF, so the phone's GPS position never
+     * goes out with the listing.
+     */
+    private fun listingJpeg(uri: Uri): File {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)!!.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 2048) sample *= 2
+        val decoded = context.contentResolver.openInputStream(uri)!!.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+        } ?: throw IllegalStateException("Couldn't read one of those photos.")
+        val rotated = rotateForExif(uri, decoded)
+        val scale = 2048f / maxOf(rotated.width, rotated.height)
+        val sized = if (scale < 1f) {
+            Bitmap.createScaledBitmap(rotated, (rotated.width * scale).toInt(), (rotated.height * scale).toInt(), true)
+        } else rotated
+        return File.createTempFile("listing_", ".jpg", context.cacheDir).also { f ->
+            f.outputStream().use { sized.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+        }
+    }
+
+    /** Applies the EXIF orientation before it is stripped, so photos stay upright. */
+    private fun rotateForExif(uri: Uri, bitmap: Bitmap): Bitmap {
+        val orientation = runCatching {
+            context.contentResolver.openInputStream(uri)!!.use {
+                android.media.ExifInterface(it).getAttributeInt(
+                    android.media.ExifInterface.TAG_ORIENTATION,
+                    android.media.ExifInterface.ORIENTATION_NORMAL,
+                )
+            }
+        }.getOrDefault(android.media.ExifInterface.ORIENTATION_NORMAL)
+        val degrees = when (orientation) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> return bitmap
+        }
+        val matrix = android.graphics.Matrix().apply { postRotate(degrees) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
     override fun onCleared() {
         _clip.value?.file?.delete()
     }
@@ -395,11 +489,16 @@ fun ModeComposeScreen(
     BackHandler(enabled = busy) {}
 
     val kind = viewModel.kind
+    if (kind == ModeComposerKind.LISTING) {
+        MarketplaceSellScreen(onDone = onDone, viewModel = viewModel)
+        return
+    }
     val canPost = when (kind) {
         ModeComposerKind.DIVINE -> clip != null
         ModeComposerKind.ARTICLE -> title.isNotBlank() && body.isNotBlank()
         ModeComposerKind.RECIPE -> title.isNotBlank() &&
             LongFormDraft.lines(ingredients).isNotEmpty() && LongFormDraft.lines(directions).isNotEmpty()
+        ModeComposerKind.LISTING -> false
     }
 
     fun submit() {
@@ -412,6 +511,7 @@ fun ModeComposeScreen(
                     title = title, summary = summary, body = body,
                     recipe = LongFormDraft.Recipe(prepTime, cookTime, servings, ingredients, directions, categories),
                 ), onDone)
+            ModeComposerKind.LISTING -> Unit
         }
     }
 
@@ -424,6 +524,7 @@ fun ModeComposeScreen(
                             ModeComposerKind.DIVINE -> "New diVine"
                             ModeComposerKind.ARTICLE -> "New article"
                             ModeComposerKind.RECIPE -> "New recipe"
+                            ModeComposerKind.LISTING -> "Sell something"
                         }
                     )
                 },

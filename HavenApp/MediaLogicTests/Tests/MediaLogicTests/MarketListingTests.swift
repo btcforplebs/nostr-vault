@@ -96,4 +96,43 @@ final class MarketListingTests: XCTestCase {
         XCTAssertEqual(MarketCategory.classify(topics: ["coffee-beans"], text: ""), .foodAndDrink)
         XCTAssertEqual(MarketCategory.classify(topics: ["misc"], text: ""), .other)
     }
+
+    // MARK: - MarketListingBook
+
+    private func tags(_ status: String, d: String = "mug") -> [[String]] {
+        [["d", d], ["title", "Mug"], ["image", "https://x.example/m.jpg"], ["price", "10", "USD"], ["status", status]]
+    }
+
+    func testSoldRepublishHidesTheOlderActiveListing() {
+        var book = MarketListingBook()
+        XCTAssertTrue(book.insert(id: "a", pubkey: "pk", kind: 30402, content: "", createdAt: 100, tags: tags("active")))
+        XCTAssertEqual(book.listings.map(\.id), ["a"])
+        XCTAssertTrue(book.insert(id: "b", pubkey: "pk", kind: 30402, content: "", createdAt: 200, tags: tags("sold")))
+        XCTAssertTrue(book.listings.isEmpty)
+    }
+
+    func testOlderActiveArrivingAfterSoldStaysHidden() {
+        // Relays answer in any order: the sold version can land first.
+        var book = MarketListingBook()
+        XCTAssertFalse(book.insert(id: "b", pubkey: "pk", kind: 30402, content: "", createdAt: 200, tags: tags("sold")))
+        XCTAssertFalse(book.insert(id: "a", pubkey: "pk", kind: 30402, content: "", createdAt: 100, tags: tags("active")))
+        XCTAssertTrue(book.listings.isEmpty)
+    }
+
+    func testRelistingAfterSoldShowsAgain() {
+        var book = MarketListingBook()
+        book.insert(id: "b", pubkey: "pk", kind: 30402, content: "", createdAt: 200, tags: tags("sold"))
+        XCTAssertTrue(book.insert(id: "c", pubkey: "pk", kind: 30402, content: "", createdAt: 300, tags: tags("active")))
+        XCTAssertEqual(book.listings.map(\.id), ["c"])
+    }
+
+    func testAddressesAreIndependentAndOrderedNewestFirst() {
+        var book = MarketListingBook()
+        book.insert(id: "a", pubkey: "pk", kind: 30402, content: "", createdAt: 100, tags: tags("active", d: "one"))
+        book.insert(id: "b", pubkey: "pk", kind: 30402, content: "", createdAt: 200, tags: tags("active", d: "two"))
+        book.insert(id: "c", pubkey: "pk", kind: 30402, content: "", createdAt: 300, tags: tags("sold", d: "one"))
+        XCTAssertEqual(book.listings.map(\.id), ["b"])
+        // A duplicate of an event already seen changes nothing.
+        XCTAssertFalse(book.insert(id: "b", pubkey: "pk", kind: 30402, content: "", createdAt: 200, tags: tags("active", d: "two")))
+    }
 }

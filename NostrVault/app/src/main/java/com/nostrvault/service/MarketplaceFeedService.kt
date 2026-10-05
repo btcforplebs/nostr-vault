@@ -4,6 +4,7 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.MarketCategory
 import com.nostrvault.data.model.MarketListing
+import com.nostrvault.data.model.MarketListingBook
 import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.data.remote.WebSocketClient
 import kotlinx.coroutines.CoroutineScope
@@ -133,11 +134,11 @@ class MarketplaceFeedService @Inject constructor(
             .toSet()
         val subId = "market-${System.currentTimeMillis().toString(36)}"
         val kinds = MarketListing.KINDS.joinToString(",")
-        // Addressable: an edited listing arrives again under the same address,
-        // so keep the newest. Same mutex-and-snapshot pattern as LiveFeedService,
-        // for the same ConcurrentModificationException.
-        val newest = mutableMapOf<String, MarketListing>()
-        val newestLock = Mutex()
+        // Addressable: the newest event at an address wins, including a
+        // re-publish marking the item sold. Same mutex-and-snapshot pattern as
+        // LiveFeedService, for the same ConcurrentModificationException.
+        val book = MarketListingBook()
+        val bookLock = Mutex()
 
         job = scope.launch {
             for (url in RELAYS) {
@@ -145,17 +146,10 @@ class MarketplaceFeedService @Inject constructor(
                 clients.add(client)
                 launch {
                     client.messages.collect { raw ->
-                        val listing = parseListing(raw, subId) ?: return@collect
-                        if (listing.pubkey in blocked) return@collect
-                        val address = "${listing.kind}:${listing.pubkey}:${listing.dTag ?: listing.id}"
-                        val snapshot = newestLock.withLock {
-                            val existing = newest[address]
-                            if (existing != null && existing.createdAt >= listing.createdAt) {
-                                null
-                            } else {
-                                newest[address] = listing
-                                newest.values.toList()
-                            }
+                        val e = parseListingEvent(json, raw, subId) ?: return@collect
+                        if (e.pubkey in blocked) return@collect
+                        val snapshot = bookLock.withLock {
+                            if (book.insert(e.id, e.pubkey, e.kind, e.content, e.createdAt, e.tags)) book.listings else null
                         }
                         snapshot?.let { publish(it) }
                     }
@@ -189,30 +183,40 @@ class MarketplaceFeedService @Inject constructor(
         val selected = _selectedCategory.value
         if (selected != null && sorted.none { it.category == selected }) _selectedCategory.value = null
     }
+}
 
-    /** @return the listing in this relay message, or null if it is not one. */
-    private fun parseListing(raw: String, expectedSubId: String): MarketListing? = try {
-        val array = json.parseToJsonElement(raw) as? JsonArray
-        if (array == null || array.size < 3 ||
-            array[0].jsonPrimitive.content != "EVENT" ||
-            array[1].jsonPrimitive.content != expectedSubId
-        ) {
-            null
-        } else {
-            val event = array[2].jsonObject
-            MarketListing.parse(
-                id = event["id"]?.jsonPrimitive?.content.orEmpty(),
-                pubkey = event["pubkey"]?.jsonPrimitive?.content.orEmpty(),
-                kind = event["kind"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
-                content = event["content"]?.jsonPrimitive?.content.orEmpty(),
-                createdAt = event["created_at"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-                tags = event["tags"]?.jsonArray?.map { tag ->
-                    tag.jsonArray.map { it.jsonPrimitive.content }
-                } ?: emptyList(),
-            )
-        }
-    } catch (e: Exception) {
-        Log.w(TAG, "unparseable relay message: ${e.message}")
+/** One listing-kind event off the wire, before [MarketListingBook] judges it. */
+internal data class RelayListingEvent(
+    val id: String,
+    val pubkey: String,
+    val kind: Int,
+    val content: String,
+    val createdAt: Long,
+    val tags: List<List<String>>,
+)
+
+/** @return the event in this relay message for [expectedSubId], or null. */
+internal fun parseListingEvent(json: Json, raw: String, expectedSubId: String): RelayListingEvent? = try {
+    val array = json.parseToJsonElement(raw) as? JsonArray
+    if (array == null || array.size < 3 ||
+        array[0].jsonPrimitive.content != "EVENT" ||
+        array[1].jsonPrimitive.content != expectedSubId
+    ) {
         null
+    } else {
+        val event = array[2].jsonObject
+        RelayListingEvent(
+            id = event["id"]?.jsonPrimitive?.content.orEmpty(),
+            pubkey = event["pubkey"]?.jsonPrimitive?.content.orEmpty(),
+            kind = event["kind"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
+            content = event["content"]?.jsonPrimitive?.content.orEmpty(),
+            createdAt = event["created_at"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+            tags = event["tags"]?.jsonArray?.map { tag ->
+                tag.jsonArray.map { it.jsonPrimitive.content }
+            } ?: emptyList(),
+        )
     }
+} catch (e: Exception) {
+    Log.w("MarketplaceFeedService", "unparseable relay message: ${e.message}")
+    null
 }

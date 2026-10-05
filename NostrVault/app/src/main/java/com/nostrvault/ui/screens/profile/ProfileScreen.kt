@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +55,8 @@ fun ProfileScreen(
     onNavigateToDMs: () -> Unit = {},
     onNavigateToDMThread: (String) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    /** Opens the Sell composer (own profile, Shop tab). */
+    onSell: () -> Unit = {},
     onBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
@@ -81,6 +84,12 @@ fun ProfileScreen(
     val quotedNotes by viewModel.quotedNotesCache.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
     val toast by viewModel.toast.collectAsState()
+    val shopListings by viewModel.shopListings.collectAsState()
+    val shopLoading by viewModel.shopLoading.collectAsState()
+    var openListing by remember { mutableStateOf<com.nostrvault.data.model.MarketListing?>(null) }
+    // Coming back from the Sell composer: show the listing just posted.
+    var sellLaunched by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { if (sellLaunched) { sellLaunched = false; viewModel.reloadShop() } }
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -235,12 +244,64 @@ fun ProfileScreen(
                 ProfileSectionTabs(
                     selected = selectedSection,
                     counts = counts,
+                    shopCount = shopListings.size,
+                    // Shop only shows when this person sells something, or on
+                    // your own profile where it holds the Sell button.
+                    showShop = isOwnProfile || shopListings.isNotEmpty(),
                     onSelect = viewModel::setSection,
                 )
             }
 
             // ── Section content ──────────────────────────────────────
-            if (isLoading && filteredNotes.isEmpty()) {
+            if (selectedSection == ProfileSection.SHOP) {
+                if (isOwnProfile) {
+                    item {
+                        Button(
+                            onClick = { sellLaunched = true; onSell() },
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        ) {
+                            Icon(NostrVaultIcons.Marketplace, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Sell something", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                if (shopListings.isEmpty()) {
+                    item {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().padding(40.dp)) {
+                            Text(
+                                text = when {
+                                    shopLoading -> "Loading…"
+                                    isOwnProfile -> "You haven't listed anything yet"
+                                    else -> "Nothing for sale"
+                                },
+                                color = SecondaryText,
+                                fontSize = 15.sp,
+                            )
+                        }
+                    }
+                } else {
+                    items(shopListings.chunked(2), key = { row -> "shop-" + row.first().id }) { row ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            row.forEach { listing ->
+                                Box(Modifier.weight(1f)) {
+                                    com.nostrvault.ui.screens.feed.ListingCard(listing, profile, onClick = { openListing = listing })
+                                }
+                            }
+                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            } else if (isLoading && filteredNotes.isEmpty()) {
                 item { CenteredSpinner(colors.primary) }
             } else if (filteredNotes.isEmpty()) {
                 item {
@@ -310,7 +371,7 @@ fun ProfileScreen(
 
             // ── Infinite-scroll sentinel ─────────────────────────────
             val hasMore = if (selectedSection == ProfileSection.TAGGED) hasMoreTagged else hasMoreNotes
-            if (!isLoading && filteredNotes.isNotEmpty() && hasMore) {
+            if (selectedSection != ProfileSection.SHOP && !isLoading && filteredNotes.isNotEmpty() && hasMore) {
                 item(key = "load-more-${selectedSection.name}-${filteredNotes.size}") {
                     LaunchedEffect(Unit) { viewModel.loadOlder() }
                     if (isLoadingOlder) {
@@ -321,6 +382,16 @@ fun ProfileScreen(
                 }
             }
         }
+    }
+
+    openListing?.let { listing ->
+        com.nostrvault.ui.screens.feed.MarketListingSheet(
+            listing = listing,
+            seller = profile,
+            onOpenSeller = null,
+            onEventInfo = null,
+            onDismiss = { openListing = null },
+        )
     }
 
     // Full-screen media viewer overlay.
@@ -600,6 +671,8 @@ private fun IdentityRow(
 private fun ProfileSectionTabs(
     selected: ProfileSection,
     counts: ProfileCounts,
+    shopCount: Int,
+    showShop: Boolean,
     onSelect: (ProfileSection) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -608,11 +681,15 @@ private fun ProfileSectionTabs(
         ProfileSection.MEDIA -> counts.media
         ProfileSection.REPLIES -> counts.replies
         ProfileSection.TAGGED -> counts.tagged
+        ProfileSection.SHOP -> shopCount
     }
+    val sections = ProfileSection.entries.filter { it != ProfileSection.SHOP || showShop }
+    // Five tabs with counts crowd a phone's width; set them tighter, as iPhone does.
+    val tight = sections.size > 4
     Row(modifier = Modifier
         .fillMaxWidth()
         .padding(horizontal = 16.dp)) {
-        ProfileSection.entries.forEach { section ->
+        sections.forEach { section ->
             val isSelected = section == selected
             val c = countFor(section)
             Column(
@@ -624,21 +701,23 @@ private fun ProfileSectionTabs(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (tight) 3.dp else 5.dp),
                 ) {
                     Text(
                         text = section.displayName.uppercase(),
-                        fontSize = 11.sp,
+                        fontSize = if (tight) 10.sp else 11.sp,
                         fontWeight = FontWeight.Black,
-                        letterSpacing = 0.6.sp,
+                        letterSpacing = if (tight) 0.2.sp else 0.6.sp,
+                        maxLines = 1,
                         color = if (isSelected) colors.primary else SecondaryText,
                     )
                     if (c > 0) {
                         Text(
                             text = shortInt(c),
-                            fontSize = 11.sp,
+                            fontSize = if (tight) 10.sp else 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
                             color = SecondaryText,
                         )
                     }
