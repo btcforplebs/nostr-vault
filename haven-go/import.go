@@ -1004,7 +1004,9 @@ func emitInboxNotify(ev *nostr.Event, recipient string) {
 	default:
 		return // follow lists and anything else: no notification
 	}
-	log.Printf("🔔NOTIFY|type=%s|kind=%d|author=%s|id=%s|recipient=%s|preview=%s", typ, ev.Kind, ev.PubKey, ev.ID, recipient, preview)
+	// A zap receipt is signed by the lightning service; name the zapper, who
+	// signed the embedded zap request, so the alert reads "<zapper> zapped you".
+	log.Printf("🔔NOTIFY|type=%s|kind=%d|author=%s|id=%s|recipient=%s|preview=%s", typ, ev.Kind, inboxTrustKey(ev), ev.ID, recipient, preview)
 }
 
 // sanitizeNotifyPreview collapses newlines and trims a content string to a short
