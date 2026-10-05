@@ -54,6 +54,7 @@ import com.nostrvault.ui.screens.settings.AdvancedSettingsScreen
 import com.nostrvault.ui.screens.settings.AppearanceSettingsScreen
 import com.nostrvault.ui.screens.settings.BackupSettingsScreen
 import com.nostrvault.ui.screens.settings.BlastrSettingsScreen
+import com.nostrvault.ui.screens.settings.DMRelaysSettingsScreen
 import com.nostrvault.ui.screens.settings.BlockedSettingsScreen
 import com.nostrvault.ui.screens.settings.BlossomSettingsScreen
 import com.nostrvault.ui.screens.settings.FollowingBackupScreen
@@ -550,6 +551,12 @@ fun NostrVaultNavHost(
 
             composable(Screen.BlastrSettings.route) {
                 BlastrSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Screen.DMRelaysSettings.route) {
+                DMRelaysSettingsScreen(
                     onBack = { navController.popBackStack() },
                 )
             }

@@ -31,6 +31,21 @@ object DMInbox {
     }
 
     /**
+     * Relays a just-posted event also goes to beyond the blastr relays: a
+     * kind 10050 goes to the DM relays it names, where senders look for it.
+     * Entries already in [alreadySending] (compared normalized) are left out.
+     * Mirrors iOS RelayConfiguration.directBroadcastRelays (nostr-vault #224).
+     */
+    fun extraBroadcastRelays(kind: Int, tags: List<List<String>>, alreadySending: List<String>): List<String> {
+        if (kind != 10050) return emptyList()
+        val seen = alreadySending.map { normalizedRelayURL(it).lowercase() }.toHashSet()
+        return tags
+            .filter { it.size >= 2 && it[0] == "relay" }
+            .map { normalizedRelayURL(it[1]) }
+            .filter { it.isNotEmpty() && seen.add(it.lowercase()) }
+    }
+
+    /**
      * The Mac relay's inbox as a DM relay, or "" when there is none. Only a
      * public address counts: the list it joins is published for other
      * people, and a plain ws:// or home-network address is unreachable to them.
