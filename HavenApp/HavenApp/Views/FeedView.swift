@@ -3252,6 +3252,11 @@ struct FeedNoteRow: View {
         if note.kind == 6 && note.content.isEmpty, let original = rowData.resolvedOriginal {
             return original.content
         }
+        // A bare repost still waiting on its original said nothing at all.
+        if repostedNoteIsUnavailable {
+            return String(localized: "feed.note.repostUnavailable", defaultValue: "The reposted note is unavailable")
+        }
+        if isWaitingForRepostedNote { return String(localized: "feed.note.loadingRepost") }
         // An article's three compact lines are worth far more spent on its
         // title than on the first three lines of markdown.
         if note.kind == 30023 { return note.longFormDisplayTitle }

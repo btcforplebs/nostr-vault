@@ -144,18 +144,35 @@ struct FeedThreadCard: View {
 
     private func condensedLine(for entry: FeedThreadEntry<FeedNote>, replyCount: Int) -> some View {
         let note = entry.note
+        // A bare kind-6 repost carries no text: show the note it reposted,
+        // credited to its author, as the condensed feed row does.
+        let isBareRepost = note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil
+        let original = isBareRepost ? rowDataFor?(note).resolvedOriginal : nil
+        let shown = original ?? note
         return CondensedNoteLine(
             note: note,
-            profile: profileFor(note.pubkey),
+            profile: profileFor(shown.pubkey),
+            displayPubkey: original?.pubkey,
             depth: entry.depth,
             style: .plain,
             isFocused: note.id == focusedNoteId,
             replyCount: replyCount,
-            contentOverride: note.kind == 30023 ? note.longFormDisplayTitle : nil,
-            mediaURLs: note.mediaURLs,
+            contentOverride: contentOverride(for: note, original: original),
+            postedAt: original.map { $0.originalCreatedAt ?? $0.createdAt },
+            mediaURLs: shown.mediaURLs,
             onProfile: onProfile,
             onTap: tapAction(for: note)
         )
+    }
+
+    private func contentOverride(for note: FeedNote, original: FeedNote?) -> String? {
+        if let original { return original.kind == 30023 ? original.longFormDisplayTitle : original.content }
+        if note.kind == 6 && note.content.isEmpty, let refId = note.repostedEventId {
+            return FeedService.shared.unavailableNoteIds.contains(refId)
+                ? String(localized: "feed.note.repostUnavailable", defaultValue: "The reposted note is unavailable")
+                : String(localized: "feed.note.loadingRepost")
+        }
+        return note.kind == 30023 ? note.longFormDisplayTitle : nil
     }
 
     /// The first tap opens a line in place; with no row data to expand into,
