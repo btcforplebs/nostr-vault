@@ -362,6 +362,9 @@ fun NostrVaultNavHost(
                         onSell = {
                             navController.navigate(Screen.ModeCompose.createRoute(com.nostrvault.ui.screens.ModeComposerKind.LISTING.route))
                         },
+                        onComposeText = { text ->
+                            navController.navigate(Screen.ComposeNote.createRoute(text = text))
+                        },
                         onNavigateToSettings = {
                             navController.navigate(Screen.Settings.route)
                         },
