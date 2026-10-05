@@ -360,6 +360,7 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
     val hasNext by MusicPlayer.hasNext.collectAsState()
     val position by MusicPlayer.positionMs.collectAsState()
     val duration by MusicPlayer.durationMs.collectAsState()
+    val liveStream by MusicPlayer.liveStream.collectAsState()
     var scrub by remember { mutableStateOf<Float?>(null) }
     val ctx = LocalContext.current
     val t = track
@@ -414,6 +415,11 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
                         AssistChip(onClick = { onDismiss(); actions.onOpenProfile(hex) }, label = { Text("Artist") },
                             leadingIcon = { Icon(Icons.Filled.Person, null) })
                     }
+                }
+                // The video back: the player takes the sound, so this pauses.
+                liveStream?.let { stream ->
+                    AssistChip(onClick = { onDismiss(); com.nostrvault.ui.components.LiveStreamRouter.open(stream) }, label = { Text("Watch") },
+                        leadingIcon = { Icon(Icons.Filled.OndemandVideo, null) })
                 }
                 t.hostPubkey?.let { host ->
                     AssistChip(onClick = { onDismiss(); actions.onOpenProfile(host) }, label = { Text("Host") },
