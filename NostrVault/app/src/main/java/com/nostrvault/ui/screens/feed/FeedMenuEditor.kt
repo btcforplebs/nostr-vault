@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,9 +59,13 @@ import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.SecondaryText
 import com.nostrvault.ui.theme.SeparatorColor
 import com.nostrvault.ui.theme.WindowBackground
+import kotlinx.coroutines.launch
 
-// iOS list rows: 44pt, hairline separators inset to the text.
-private val RowHeight = 44.dp
+// iOS list rows are 44pt; these are 48dp, Android's touch minimum, with
+// iOS's icon and text sizes. Stacked full-width rows can't draw at 44 and
+// still each own 48 without overlapping their neighbours' targets.
+// Hairline separators inset to the text, as iOS.
+private val RowHeight = 48.dp
 private val SeparatorInset = 16.dp + 20.dp + 12.dp + 24.dp + 12.dp
 
 /**
@@ -96,9 +101,11 @@ fun FeedMenuEditor(
     }
 
     // A sheet, as on iOS (FeedView .sheet), not a full-screen page.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = sheetState,
         containerColor = WindowBackground,
         contentColor = PrimaryText,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
@@ -113,7 +120,12 @@ fun FeedMenuEditor(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.align(Alignment.Center),
                 )
-                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd)) {
+                // Slide down first, as a swipe or a tap outside does; leaving
+                // the composition at once would cut the sheet off mid-screen.
+                TextButton(
+                    onClick = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } },
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                ) {
                     Text("Done", color = colors.primary, fontWeight = FontWeight.SemiBold)
                 }
             }
