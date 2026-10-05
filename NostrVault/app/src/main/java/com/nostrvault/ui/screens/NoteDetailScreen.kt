@@ -222,7 +222,7 @@ class NoteDetailViewModel @Inject constructor(
         } else if (rootId == foundNote.id) {
             NIP10Thread.coordinate(foundNote.kind, foundNote.pubkey, foundNote.tags)
         } else null
-        nostrService.fetchOtherResponses(rootId) { found ->
+        nostrService.fetchOtherResponses(rootId, rootCoordinate) { found ->
             _otherResponses.value = found
                 .filter { isOtherResponse(it, rootId) && !FeedNote.isNoiseOrSpam(it.content, it.tags) }
                 .sortedByDescending { it.createdAt }

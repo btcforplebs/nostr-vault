@@ -2207,13 +2207,21 @@ class NostrService @Inject constructor(
      * Responses to [rootId] that aren't thread rows (spec "below the fold"):
      * quotes of any kind (#q) plus highlights (9802) and voice replies (1244).
      * The caller decides which of these are quotes rather than replies.
+     *
+     * [rootCoordinate] is the root's address when it is addressable: an
+     * article's highlights name it by its `a` coordinate, not by this
+     * version's id, so `#e` alone never finds them (iOS #189).
      */
-    fun fetchOtherResponses(rootId: String, onResult: (List<FeedNote>) -> Unit) {
+    fun fetchOtherResponses(rootId: String, rootCoordinate: String? = null, onResult: (List<FeedNote>) -> Unit) {
+        val filters = mutableListOf(
+            """{"#q":["$rootId"],"limit":50}""",
+            """{"kinds":[9802,1244],"#e":["$rootId"],"limit":50}""",
+        )
+        if (rootCoordinate != null) {
+            filters.add("""{"kinds":[9802,1244],"#a":[${JsonPrimitive(rootCoordinate)}],"limit":50}""")
+        }
         queryDetailRelays(
-            listOf(
-                """{"#q":["$rootId"],"limit":50}""",
-                """{"kinds":[9802,1244],"#e":["$rootId"],"limit":50}""",
-            ),
+            filters,
             onRawEvent = null,
             onEose = onResult,
             acceptKinds = null,
