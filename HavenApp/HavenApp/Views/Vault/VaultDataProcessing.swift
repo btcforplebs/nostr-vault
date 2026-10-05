@@ -191,6 +191,8 @@ extension VaultView {
         let walletGiven = walletGivenNotes
         let walletGivenSats = walletGivenAmounts
         let locallyZapped = FeedService.shared.zappedEventIds
+        let walletReceived = walletReceivedNotes
+        let walletReceivedMap = walletReceivedZaps
         let currentMaxDisplayed = maxDisplayedItems
         let gen = updateGeneration
 
@@ -232,6 +234,7 @@ extension VaultView {
                     switch currentLikesFilter {
                     case .onMyNotes:
                         targetNoteIds = Set(currentEvents.filter { $0.pubkey == owner && noteKinds.contains($0.kind) }.map { $0.id })
+                            .union(walletReceived.map(\.id))
                     case .myLikes:
                         targetNoteIds = [] // handled above
                     }
@@ -373,9 +376,25 @@ extension VaultView {
                         if excludeSelf && item.parsed.senderPubkey == owner { continue }
                         zMap[targetId, default: []].append((pubkey: item.parsed.senderPubkey, amount: item.parsed.amountSats))
                     }
+                    // The wallet's received zaps, minus any a receipt already
+                    // counted (same sender, same amount).
+                    if currentZapsFilter == .onMyNotes {
+                        for (noteId, walletZaps) in walletReceivedMap {
+                            var fromReceipts = zMap[noteId] ?? []
+                            for zap in walletZaps {
+                                if let i = fromReceipts.firstIndex(where: { $0.pubkey == zap.pubkey && $0.amount == zap.amount }) {
+                                    fromReceipts.remove(at: i)
+                                } else {
+                                    zMap[noteId, default: []].append(zap)
+                                }
+                            }
+                        }
+                    }
 
                     let zappedNoteIds = Set(zMap.keys)
                     var filtered = currentEvents.filter { noteKinds.contains($0.kind) && zappedNoteIds.contains($0.id) }
+                    var shown = Set(filtered.map(\.id))
+                    filtered += walletReceived.filter { zappedNoteIds.contains($0.id) && shown.insert($0.id).inserted }
                     let zapTotals = { (noteId: String) -> Int64 in
                         zMap[noteId]?.reduce(0) { $0 + $1.amount } ?? 0
                     }

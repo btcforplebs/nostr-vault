@@ -156,10 +156,14 @@ extension VaultView {
             .filter { seen.insert($0.lowercased()).inserted }
             .compactMap { URL(string: $0) }
         nostrService.fetchZapReceipts(from: externalURLs, limit: 500, tagFilter: ["#P": [owner]])
+        // Received receipts land on whatever relays the sender's client
+        // listed, rarely only yours: ask the same relays for `p` = you.
+        nostrService.fetchZapReceipts(from: externalURLs, limit: 500, tagFilter: ["#p": [owner]])
     }
 
-    /// "Given" from the wallet: the zaps the connected NWC wallet paid, matched
-    /// to their posts the same way the wallet's own history is. Read once per
+    /// Zaps from the wallet: the ones the connected NWC wallet paid ("Given")
+    /// and received ("Received"), matched to their posts the same way the
+    /// wallet's own history is. Read once per
     /// account and wallet; a pull-to-refresh of the Relay tab does not redo it.
     func fetchGivenZapsFromWallet() {
         let owner = nostrService.activeHexPubkey
@@ -171,13 +175,15 @@ extension VaultView {
         walletGivenLoading = true
         walletGivenNotes = []
         walletGivenAmounts = [:]
+        walletReceivedNotes = []
+        walletReceivedZaps = [:]
 
         Task {
             defer {
                 walletGivenLoading = false
                 scheduleUpdateDisplayData()
             }
-            var sent: [WalletTransaction] = []
+            var zaps: [WalletTransaction] = []
             let pageSize = 50
             for page in 0..<4 {  // the 200 most recent payments
                 guard let txs = try? await NWCService.listTransactions(limit: pageSize, offset: page * pageSize) else {
@@ -185,23 +191,34 @@ extension VaultView {
                     if page == 0 { walletGivenKey = nil }
                     break
                 }
-                sent += txs.filter { $0.direction == .outgoing && $0.state == .settled }
+                zaps += txs.filter { $0.state == .settled }
                 if txs.count < pageSize { break }
             }
-            guard walletGivenKey == key, !sent.isEmpty else { return }
+            guard walletGivenKey == key, !zaps.isEmpty else { return }
 
-            let found = await ZapHistoryService.lookup(for: sent, me: owner)
+            let found = await ZapHistoryService.lookup(for: zaps, me: owner)
             guard walletGivenKey == key else { return }
             var notes: [NostrEvent] = []
             var amounts: [String: Int64] = [:]
-            for tx in sent.sorted(by: { $0.createdAt > $1.createdAt }) {
-                guard let postId = found.details[tx.id]?.postId,
+            var receivedNotes: [NostrEvent] = []
+            var received: [String: [(pubkey: String, amount: Int64)]] = [:]
+            for tx in zaps.sorted(by: { $0.createdAt > $1.createdAt }) {
+                guard let detail = found.details[tx.id], let postId = detail.postId,
                       let event = found.postEvents[postId] else { continue }
-                if amounts[postId] == nil { notes.append(event) }
-                amounts[postId, default: 0] += Int64(tx.amountSats)
+                switch tx.direction {
+                case .outgoing:
+                    if amounts[postId] == nil { notes.append(event) }
+                    amounts[postId, default: 0] += Int64(tx.amountSats)
+                case .incoming:
+                    guard event.pubkey == owner, !detail.isAnonymous else { continue }
+                    if received[postId] == nil { receivedNotes.append(event) }
+                    received[postId, default: []].append((pubkey: detail.senderPubkey, amount: Int64(tx.amountSats)))
+                }
             }
             walletGivenNotes = notes
             walletGivenAmounts = amounts
+            walletReceivedNotes = receivedNotes
+            walletReceivedZaps = received
         }
     }
 
