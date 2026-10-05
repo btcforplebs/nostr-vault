@@ -755,7 +755,8 @@ fun SearchScreen(
                     }
                 }
 
-                // Profiles section
+                // Profiles section. Every match, the way the iPhone lists them;
+                // the Users chip is how to see only people.
                 if (showUsers) {
                     item {
                         Text(
@@ -766,7 +767,7 @@ fun SearchScreen(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
                     }
-                    items(results.profiles.take(10), key = { it.pubkey }) { profile ->
+                    items(results.profiles, key = { it.pubkey }) { profile ->
                         SearchProfileRow(
                             profile = profile,
                             profiles = profiles,
