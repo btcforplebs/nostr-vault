@@ -557,7 +557,7 @@ struct MenuBarView: View {
                                     selectedTab = .feed
                                 }
                                 .contextMenu {
-                                    ForEach(FeedMode.allCases, id: \.self) { mode in
+                                    ForEach(FeedMode.menuModes, id: \.self) { mode in
                                         Button(action: {
                                             selectedTab = .feed
                                             feedService.switchMode(mode)
