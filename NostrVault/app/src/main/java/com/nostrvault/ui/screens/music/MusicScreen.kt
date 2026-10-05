@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,6 +41,7 @@ import com.nostrvault.data.music.WavlakeLink
 import com.nostrvault.data.music.WavlakeSearchResult
 import com.nostrvault.data.music.WavlakeTrack
 import com.nostrvault.service.music.MusicPlayer
+import com.nostrvault.service.music.MusicRepeatMode
 import com.nostrvault.service.music.PlayerTrack
 import com.nostrvault.ui.theme.LocalNostrVaultColors
 import com.nostrvault.ui.theme.PrimaryText
@@ -360,6 +362,8 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
     val hasNext by MusicPlayer.hasNext.collectAsState()
     val position by MusicPlayer.positionMs.collectAsState()
     val duration by MusicPlayer.durationMs.collectAsState()
+    val shuffled by MusicPlayer.isShuffled.collectAsState()
+    val repeat by MusicPlayer.repeatMode.collectAsState()
     var scrub by remember { mutableStateOf<Float?>(null) }
     val ctx = LocalContext.current
     val t = track
@@ -390,7 +394,16 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
                     Text(formatTime(duration / 1000), color = SecondaryText, fontSize = 12.sp)
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+            // Shuffle and repeat flank the usual three; live has only play/pause.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (t.isLive) Arrangement.Center else Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (!t.isLive) MusicModeButton(
+                    icon = Icons.Filled.Shuffle, isOn = shuffled, label = "Shuffle",
+                    value = if (shuffled) "On" else "Off", onClick = MusicPlayer::toggleShuffle,
+                )
                 if (!t.isLive) IconButton(onClick = MusicPlayer::previous, modifier = Modifier.size(56.dp)) {
                     Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", tint = PrimaryText, modifier = Modifier.size(34.dp))
                 }
@@ -404,6 +417,16 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
                 if (!t.isLive) IconButton(onClick = MusicPlayer::next, enabled = hasNext, modifier = Modifier.size(56.dp)) {
                     Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = if (hasNext) PrimaryText else SecondaryText, modifier = Modifier.size(34.dp))
                 }
+                if (!t.isLive) MusicModeButton(
+                    icon = if (repeat == MusicRepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                    isOn = repeat != MusicRepeatMode.OFF, label = "Repeat",
+                    value = when (repeat) {
+                        MusicRepeatMode.OFF -> "Off"
+                        MusicRepeatMode.ALL -> "All"
+                        MusicRepeatMode.ONE -> "This song"
+                    },
+                    onClick = MusicPlayer::cycleRepeat,
+                )
             }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -426,6 +449,28 @@ fun NowPlayingSheet(actions: MusicActions, onDismiss: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** Shuffle or repeat: accent on a soft accent disc when on. */
+@Composable
+private fun MusicModeButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isOn: Boolean,
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+) {
+    val accent = LocalNostrVaultColors.current.primary
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(accent.copy(alpha = if (isOn) 0.18f else 0f))
+            .semantics { stateDescription = value },
+    ) {
+        Icon(icon, contentDescription = label, tint = if (isOn) accent else SecondaryText, modifier = Modifier.size(22.dp))
     }
 }
 
