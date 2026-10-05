@@ -16,6 +16,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
@@ -95,6 +96,18 @@ class ProfileViewModel @Inject constructor(
     private val _isBlocked = MutableStateFlow(false)
     val isBlocked: StateFlow<Boolean> = _isBlocked.asStateFlow()
 
+    /**
+     * Slowed down: at most a few of this person's posts show in the feed.
+     * Local-only, per account; the list lives in Settings → Blocked.
+     */
+    val isThrottled: StateFlow<Boolean> = combine(configStore.config, _pubkey) { cfg, pk ->
+        nostrService.hexToNpub(pk)?.let { it in cfg.throttledForActiveAccount() } == true
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** Pull-to-refresh on your own profile. */
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     /** null until known → UI shows "∞" for other users (mirrors iOS). */
     private val _followersCount = MutableStateFlow<Int?>(null)
     val followersCount: StateFlow<Int?> = _followersCount.asStateFlow()
@@ -164,20 +177,46 @@ class ProfileViewModel @Inject constructor(
 
     fun setPubkey(pubkey: String) {
         if (_pubkey.value != pubkey && pubkey.isNotEmpty()) {
-            stream?.close(); stream = null
             _pubkey.value = pubkey
-            // Reset per-profile state
-            seenNoteIds.clear(); seenTaggedIds.clear(); followerPubkeys.clear()
-            _profileNotes.value = emptyList()
-            _taggedNotes.value = emptyList()
-            _followersCount.value = null
-            _followingCount.value = null
-            _followsMe.value = false
-            _hasMoreNotes.value = true
-            _hasMoreTagged.value = true
+            resetLoadedState()
             _selectedSection.value = ProfileSection.NOTES
             loadProfile()
             shop.load(pubkey)
+        }
+    }
+
+    /** Drops the stream and everything it loaded, for a fresh load. */
+    private fun resetLoadedState() {
+        stream?.close(); stream = null
+        seenNoteIds.clear(); seenTaggedIds.clear(); followerPubkeys.clear()
+        _profileNotes.value = emptyList()
+        _taggedNotes.value = emptyList()
+        _followersCount.value = null
+        _followingCount.value = null
+        _followsMe.value = false
+        _hasMoreNotes.value = true
+        _hasMoreTagged.value = true
+        _isLoadingOlder.value = false
+    }
+
+    /**
+     * Pull-to-refresh: reloads the profile from scratch on a new stream —
+     * metadata, notes, tagged notes and counts — keeping the open tab.
+     * iOS: ProfileView.refreshProfile().
+     */
+    fun refresh() {
+        val pk = _pubkey.value
+        if (pk.isEmpty() || _isRefreshing.value) return
+        _isRefreshing.value = true
+        _isLoading.value = true
+        resetLoadedState()
+        loadProfile()
+        shop.load(pk, force = true)
+        viewModelScope.launch {
+            // Done once the first page is in (the spinner the load drives
+            // drops on EOSE), or after a few seconds regardless.
+            withTimeoutOrNull(8_000) { _isLoading.first { !it } }
+            _isRefreshing.value = false
         }
     }
 
@@ -313,6 +352,13 @@ class ProfileViewModel @Inject constructor(
         if (pk.isEmpty()) return
         if (_isBlocked.value) feedService.unblockUser(pk) else feedService.blockUser(pk)
         _isBlocked.value = !_isBlocked.value
+    }
+
+    /** Slow Down (5 posts visible, as on iOS) or Speed Up. */
+    fun toggleThrottle() {
+        val npub = nostrService.hexToNpub(_pubkey.value) ?: return
+        val throttled = npub in configStore.config.value.throttledForActiveAccount()
+        if (throttled) configStore.unthrottleProfile(npub) else configStore.throttleProfile(npub, 5)
     }
 
     /** True when a NWC wallet is configured and the profile has a lightning address. */
