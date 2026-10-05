@@ -8,6 +8,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -763,6 +764,30 @@ class ComposeNoteViewModel @Inject constructor(
         }
     }
 
+    /** Closing now should ask "Save this note as a draft?" (iOS handleCancelTapped). */
+    fun shouldAskToSaveDraft(): Boolean = composeNeedsDraftPrompt(_content.value)
+
+    /** "Save Draft": write the draft now rather than waiting on the debounce. */
+    fun saveDraftNow() {
+        autoSaveJob?.cancel()
+        val text = _content.value
+        if (text.isBlank()) return
+        draftService.saveDraft(
+            Draft(
+                id = draftId,
+                content = convertMentionsToNostr(text),
+                replyToId = replyToNoteId,
+                quoteId = quoteCitedId(),
+            )
+        )
+    }
+
+    /** "Discard": drop the pending autosave and any draft this session wrote or resumed. */
+    fun discardDraft() {
+        autoSaveJob?.cancel()
+        draftService.deleteDraft(draftId)
+    }
+
     private fun scheduleDraftSave() {
         autoSaveJob?.cancel()
         autoSaveJob = viewModelScope.launch {
@@ -1234,6 +1259,15 @@ class ComposeNoteViewModel @Inject constructor(
     }
 }
 
+/**
+ * Whether closing the composer with [content] asks to keep it as a draft: more
+ * than a stray word, the same bar iOS ComposeView.handleCancelTapped uses.
+ */
+internal fun composeNeedsDraftPrompt(content: String): Boolean {
+    val trimmed = content.trim()
+    return trimmed.isNotEmpty() && (trimmed.contains(' ') || trimmed.length > 10)
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ComposeNoteScreen(
@@ -1258,6 +1292,13 @@ fun ComposeNoteScreen(
     val accounts by viewModel.accounts.collectAsState()
     val activeAccount by viewModel.activeAccount.collectAsState()
     var showAccountSwitcher by remember { mutableStateOf(false) }
+    // "Save this note as a draft?" — the X and the back gesture both ask once
+    // there is something worth keeping (iOS ComposeView).
+    var showDraftPrompt by remember { mutableStateOf(false) }
+    val requestClose: () -> Unit = {
+        if (viewModel.shouldAskToSaveDraft()) showDraftPrompt = true else onBack()
+    }
+    BackHandler(enabled = !isPublishing, onBack = requestClose)
     // The attachment whose ALT text is being written; null = sheet closed.
     var altEditorTarget by remember { mutableStateOf<Attachment?>(null) }
     val colors = LocalNostrVaultColors.current
@@ -1276,6 +1317,30 @@ fun ComposeNoteScreen(
     val attachmentLimitReached = attachments.size >= MAX_ATTACHMENTS
 
     // Image picker launcher
+    if (showDraftPrompt) {
+        AlertDialog(
+            onDismissRequest = { showDraftPrompt = false },
+            title = { Text("Save this note as a draft?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDraftPrompt = false
+                    viewModel.saveDraftNow()
+                    onBack()
+                }) { Text("Save Draft") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        showDraftPrompt = false
+                        viewModel.discardDraft()
+                        onBack()
+                    }) { Text("Discard", color = ErrorRed) }
+                    TextButton(onClick = { showDraftPrompt = false }) { Text("Keep Editing") }
+                }
+            },
+        )
+    }
+
     var showGifPicker by remember { mutableStateOf(false) }
     if (showGifPicker) {
         com.nostrvault.ui.components.GifPickerSheet(
@@ -1319,7 +1384,7 @@ fun ComposeNoteScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = requestClose) {
                         Icon(NostrVaultIcons.Dismiss, contentDescription = "Cancel")
                     }
                 },

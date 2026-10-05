@@ -755,6 +755,18 @@ fun NostrVaultNavHost(
                     condensedActionTint = condensedActionTint,
                     onCondensedAction = onCondensedAction,
                     onExpand = { ScrollChrome.expand(scope) },
+                    onPickFeedMode = { mode ->
+                        // The feed applies it (its ViewModel owns the mode),
+                        // now or as soon as it is back on screen.
+                        FeedTabPicker.request.value = mode
+                        if (currentRoute != Screen.Feed.route) {
+                            navController.navigate(Screen.Feed.route) {
+                                popUpTo(Screen.Feed.route) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    },
                 )
             }
         }
@@ -798,6 +810,22 @@ fun NostrVaultNavHost(
             notificationManager = notificationManager,
             modifier = Modifier.align(Alignment.TopCenter),
         )
+
+        // Hold-the-Feed-tab list: over everything, the bar included.
+        if (showBottomBar) {
+            FeedTabPickerOverlay(
+                onPick = { mode ->
+                    FeedTabPicker.request.value = mode
+                    if (currentRoute != Screen.Feed.route) {
+                        navController.navigate(Screen.Feed.route) {
+                            popUpTo(Screen.Feed.route) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                },
+            )
+        }
 
         // Zap flights cross the whole window, so they're drawn above it all.
         ZapFlightStage()
