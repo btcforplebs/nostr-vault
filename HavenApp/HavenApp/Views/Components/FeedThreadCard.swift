@@ -218,7 +218,9 @@ struct FeedThreadCard: View {
                 // The rail already says what this answers, and the card owns
                 // the chrome — a second card inside it reads as a mistake.
                 showParent: false,
-                layoutMode: .wide,
+                // Same layout as an expanded post in the feed, so tapping to
+                // expand looks the same in every view.
+                layoutMode: .sideBySide,
                 isFocused: note.id == focusedNoteId,
                 suppressCardStyling: true,
                 // Match the condensed line's own avatar size at this depth so

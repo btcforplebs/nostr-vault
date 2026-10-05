@@ -62,6 +62,9 @@ struct FeedMediaView: View {
     /// Plays a GIF thumbnail instead of showing its first frame. For a single
     /// thumbnail beside a line of text; grids stay still.
     var animatesThumbnail: Bool = false
+    /// Fills the frame it is given edge to edge, cropping if it must (a
+    /// carousel page), instead of fitting with empty space around it.
+    var fillsFrame: Bool = false
 
     @ObservedObject private var configService = ConfigService.shared
     @Environment(\.mediaZoomNamespace) private var zoomNamespace
@@ -163,6 +166,7 @@ struct FeedMediaView: View {
         FeedPhotoView(
             url: url,
             isThumbnail: isThumbnail,
+            fillsFrame: fillsFrame,
             landscapeMaxHeight: maxHeight,
             portraitMaxHeight: portraitMaxHeight
         )
@@ -241,6 +245,7 @@ struct FeedMediaView: View {
 private struct FeedPhotoView: View {
     let url: URL
     let isThumbnail: Bool
+    var fillsFrame: Bool = false
     var landscapeMaxHeight: CGFloat = 400
     var portraitMaxHeight: CGFloat = 600
 
@@ -256,15 +261,16 @@ private struct FeedPhotoView: View {
             if let image = image {
                 Image(platformImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: isThumbnail ? .fill : .fit)
+                    .aspectRatio(contentMode: isThumbnail || fillsFrame ? .fill : .fit)
                     .transition(.opacity.animation(Motion.media))
             } else {
                 MediaLoadingPlaceholder(url: url, isLoading: isLoading)
                     .transition(MediaLoadingPlaceholder.removal)
             }
         }
-        .aspectRatio(isThumbnail ? nil : displayAspectRatio, contentMode: .fit)
-        .frame(maxHeight: heightCap)
+        .aspectRatio(isThumbnail || fillsFrame ? nil : displayAspectRatio, contentMode: .fit)
+        .frame(maxHeight: fillsFrame ? .infinity : heightCap)
+        .clipped()
         .onAppear {
             MediaCacheService.shared.setDownloadPriority(.normal, for: url)
             loadImage()
