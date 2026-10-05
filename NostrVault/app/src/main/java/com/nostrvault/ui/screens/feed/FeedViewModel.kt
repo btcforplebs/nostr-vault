@@ -368,6 +368,11 @@ class FeedViewModel @Inject constructor(
         .map { it.autoLoadNewPosts }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.autoLoadNewPosts)
 
+    /** Appearance's "New Posts Pill"; off, pull-to-refresh takes in waiting posts. */
+    val showNewPostsPill: StateFlow<Boolean> = configStore.config
+        .map { it.showNewPostsPill }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.showNewPostsPill)
+
     val showReposts: StateFlow<Boolean> = feedService.showReposts
 
     val showReplies: StateFlow<Boolean> = feedService.showReplies
@@ -483,6 +488,9 @@ class FeedViewModel @Inject constructor(
             reelsFeedService.refresh()
             return
         }
+        // Refreshing takes in the posts waiting behind the New Posts pill, the
+        // only way to reach them with the pill switched off (iOS #276).
+        feedService.applyPendingNotes()
         viewModelScope.launch {
             _isRefreshing.value = true
             feedService.refresh()
