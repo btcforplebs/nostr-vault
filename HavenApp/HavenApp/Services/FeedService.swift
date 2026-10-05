@@ -3765,6 +3765,12 @@ class FeedService: ObservableObject {
         let batch = noteBuffer
         noteBuffer.removeAll(keepingCapacity: true)
 
+        // A post that arrives through the feed itself can be the parent (or
+        // repost original, or quote) another row is waiting on. Only fetched
+        // parents used to signal, so those rows kept their loading skeleton
+        // until something unrelated rebuilt them, though the note was here.
+        for note in batch { noteReferencedNoteArrived(note.id) }
+
         // Prefetch media content types for the batch — moves HTTP HEAD detection
         // out of the rendering path so FeedMediaView has cached types when it renders.
         // Cap at 50 URLs per flush to avoid excessive HTTP HEAD requests in the background.
