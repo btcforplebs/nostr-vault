@@ -390,7 +390,7 @@ class ModeComposeViewModel @Inject constructor(
                 }
                 if (results.none { it }) {
                     notificationManager.showError(
-                        "Listed on your relays, but no marketplace relay took it, so Shopstr and Plebeian may not show it yet.",
+                        "Listed on your relays, but no marketplace relay took it, so Plebeian Market may not show it yet.",
                         ErrorStyle.WARNING,
                     )
                 }

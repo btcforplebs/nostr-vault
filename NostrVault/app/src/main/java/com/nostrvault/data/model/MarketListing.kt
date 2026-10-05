@@ -55,6 +55,10 @@ data class MarketListing(
     val plebeianUrl: String
         get() = "https://plebeian.market/${if (isAuction) "auction" else "products"}/$id"
 
+    /** The opening line of Message seller: which listing, and its Plebeian link. */
+    val messageToSeller: String
+        get() = "Hi! I'm interested in ${if (title.isEmpty()) "your listing" else "“$title”"}.\n$plebeianUrl"
+
     companion object {
         const val PRODUCT_KIND = 30018
         const val AUCTION_KIND = 30020

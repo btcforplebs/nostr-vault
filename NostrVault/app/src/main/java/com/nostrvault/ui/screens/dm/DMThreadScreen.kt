@@ -170,8 +170,15 @@ fun DMThreadScreen(
     counterpartyPubkey: String,
     onProfileClick: (String) -> Unit,
     onBack: () -> Unit,
+    /** Typed into the message box on open, for the owner to edit or send. */
+    initialMessage: String? = null,
     viewModel: DMThreadViewModel = hiltViewModel(),
 ) {
+    LaunchedEffect(initialMessage) {
+        if (initialMessage != null && viewModel.messageText.value.isEmpty()) {
+            viewModel.setMessageText(initialMessage)
+        }
+    }
     val messages by viewModel.messages.collectAsState()
     val counterpartyProfile by viewModel.counterpartyProfile.collectAsState()
     val profiles by viewModel.profiles.collectAsState()

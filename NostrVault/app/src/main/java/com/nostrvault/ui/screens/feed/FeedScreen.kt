@@ -110,6 +110,8 @@ fun FeedScreen(
     onNoteClick: (String) -> Unit,
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
+    /** Opens a DM with a pubkey, its box prefilled (Message seller). */
+    onMessageUser: (pubkey: String, draft: String) -> Unit = { _, _ -> },
     onCompose: () -> Unit,
     /** Opens the diVine, article or recipe composer. */
     onComposeMode: (com.nostrvault.ui.screens.ModeComposerKind) -> Unit = {},
@@ -952,6 +954,7 @@ fun FeedScreen(
             listing = listing,
             seller = allProfiles[listing.pubkey],
             onOpenSeller = { pubkey -> openListing = null; onProfileClick(pubkey) },
+            onMessageSeller = { openListing = null; onMessageUser(it.pubkey, it.messageToSeller) },
             onEventInfo = { openListing = null; listingInfoNote = it.toNote() },
             onDismiss = { openListing = null },
         )

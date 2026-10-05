@@ -2,6 +2,9 @@ import SwiftUI
 
 struct DMThreadView: View {
     let counterpartyPubkey: String
+    /// Typed into the message box on open, for the owner to edit or send —
+    /// "Message seller" starts with the listing it is about.
+    var initialMessage: String? = nil
 
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
@@ -185,6 +188,7 @@ struct DMThreadView: View {
                 }
             }
             .onAppear {
+                if messageInput.isEmpty, let initialMessage { messageInput = initialMessage }
                 dmService.markRead(conversationWith: counterpartyPubkey)
                 dmService.visibleConversation = counterpartyPubkey
             }
