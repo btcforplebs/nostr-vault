@@ -694,6 +694,9 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
     var showFull by remember { mutableStateOf(false) }
     val t = track ?: return
     val minimizedStream = liveStream?.takeIf { t.isLive }
+    // While the stream's own window is up it has the picture (and covers this).
+    val windowOpen by com.nostrvault.ui.components.LiveStreamRouter.playing.collectAsState()
+    val livePlayer = minimizedStream?.takeIf { windowOpen == null }?.let { MusicPlayer.livePlayer(it.address) }
 
     Box(
         modifier = modifier
@@ -712,7 +715,13 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
             },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(start = 6.dp)) {
-            Artwork(t.artworkUrl, 40.dp, CircleShape)
+            Box(Modifier.size(40.dp).clip(CircleShape)) {
+                Artwork(t.artworkUrl, 40.dp, CircleShape)
+                // A live stream shows its own picture, moving, over the
+                // stream's image (which stays as the fallback until a frame
+                // lands). iOS #305.
+                livePlayer?.let { LiveArtworkVideo(it, Modifier.matchParentSize()) }
+            }
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(t.title, color = PrimaryText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -747,6 +756,51 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
         }
     }
     if (showFull) NowPlayingSheet(actions = actions, onDismiss = { showFull = false })
+}
+
+/**
+ * [player]'s video, cropped to fill, in a TextureView (a SurfaceView would
+ * ignore the round clip). Hidden until a frame is drawn, and the surface is
+ * handed back on the way out so the stream window can take the picture.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+private fun LiveArtworkVideo(player: androidx.media3.common.Player, modifier: Modifier = Modifier) {
+    var hasFrame by remember(player) { mutableStateOf(false) }
+    var aspect by remember(player) {
+        mutableFloatStateOf(player.videoSize.let { if (it.height > 0) it.width * it.pixelWidthHeightRatio / it.height else 0f })
+    }
+    DisposableEffect(player) {
+        val listener = object : androidx.media3.common.Player.Listener {
+            override fun onRenderedFirstFrame() { hasFrame = true }
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                if (videoSize.height > 0) aspect = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+    androidx.compose.ui.viewinterop.AndroidView(
+        factory = { ctx ->
+            androidx.media3.ui.AspectRatioFrameLayout(ctx).apply {
+                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                val texture = android.view.TextureView(ctx)
+                addView(
+                    texture,
+                    android.widget.FrameLayout.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+                player.setVideoTextureView(texture)
+            }
+        },
+        update = { frame -> if (aspect > 0f) frame.setAspectRatio(aspect) },
+        onRelease = { frame ->
+            (frame.getChildAt(0) as? android.view.TextureView)?.let(player::clearVideoTextureView)
+        },
+        modifier = modifier.alpha(if (hasFrame) 1f else 0f),
+    )
 }
 
 @Composable
