@@ -254,6 +254,17 @@ fun NoteCard(
                 },
             ),
         )
+        // iOS lets you select the note's text in place. Here a long-press on
+        // the body would fight the row's tap-to-open and the list's scroll,
+        // so the text is copied whole from the menu instead.
+        if (repostPlaceholder == null && note.content.isNotBlank()) {
+            add(
+                NoteAction(NostrVaultIcons.Copy, "Copy text") {
+                    menuClipboard.setText(AnnotatedString(NostrMentions.toPlainText(note.content, profiles).trim()))
+                    Toast.makeText(menuContext, "Text copied", Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
         onBroadcast?.let { broadcast ->
             add(NoteAction(NostrVaultIcons.Relay, "Broadcast", onClick = { broadcast(note.effectiveEventId) }))
         }
