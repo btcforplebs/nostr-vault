@@ -511,6 +511,11 @@ class FeedViewModel @Inject constructor(
         }
     }
 
+    /** Feed videos play inline, muted, while on screen (Settings > Advanced > Autoplay Videos). */
+    val autoplayVideos: StateFlow<Boolean> = configStore.config
+        .map { it.autoplayVideos }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.autoplayVideos)
+
     /** The bolt only shows with a wallet to pay from (iOS rowData.hasNWC). */
     val hasWallet: StateFlow<Boolean> = configStore.config
         .map { !it.nwcURI.isNullOrBlank() }

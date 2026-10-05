@@ -218,6 +218,8 @@ fun NoteCard(
     zapDimmed: Boolean = false,
     /** Asks relays for the parent again after "Could not load original note". */
     onRetryParent: ((String) -> Unit)? = null,
+    /** Videos play inline, muted and looping, while most on screen (Settings > Autoplay Videos). */
+    autoplayVideos: Boolean = false,
     /** With it, an avatar tap opens Follow / Slow down / Block, and the name opens the profile. */
     avatarMenu: AvatarMenuActions? = null,
     modifier: Modifier = Modifier,
@@ -593,6 +595,7 @@ fun NoteCard(
                 MediaPreviewRow(
                     urls = note.mediaURLs,
                     tags = note.tags,
+                    autoplayVideos = autoplayVideos,
                     modifier = Modifier.padding(start = 50.dp),
                 )
             }
@@ -990,17 +993,19 @@ fun MediaPreviewRow(
     urls: List<String>,
     /** The note's tags, read for NIP-92 `imeta dim` so the box is right first time. */
     tags: List<List<String>> = emptyList(),
+    /** Play videos inline (muted, looping, one at a time) instead of a poster. */
+    autoplayVideos: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     // Audio plays from its own card on the app-wide player; the rest open
     // the viewer. iOS: FeedAudioCard.
     val (audio, visual) = remember(urls) { urls.partition(::isAudioUrl) }
     if (audio.isEmpty()) {
-        VisualMediaPreview(visual, tags, modifier)
+        VisualMediaPreview(visual, tags, autoplayVideos, modifier)
         return
     }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (visual.isNotEmpty()) VisualMediaPreview(visual, tags)
+        if (visual.isNotEmpty()) VisualMediaPreview(visual, tags, autoplayVideos)
         audio.forEach { com.nostrvault.ui.screens.music.AudioFileCard(it) }
     }
 }
@@ -1009,6 +1014,7 @@ fun MediaPreviewRow(
 private fun VisualMediaPreview(
     urls: List<String>,
     tags: List<List<String>>,
+    autoplay: Boolean,
     modifier: Modifier = Modifier,
 ) {
     // One id per row, so the viewer can find the photo it opened from.
@@ -1019,6 +1025,7 @@ private fun VisualMediaPreview(
             tags = tags,
             sourceKey = MediaSourceKey(origin, 0),
             onMediaClick = { FullScreenMediaRouter.open(urls, 0, origin) },
+            autoplay = autoplay,
             modifier = modifier,
         )
     } else {
@@ -1027,6 +1034,7 @@ private fun VisualMediaPreview(
             tags = tags,
             origin = origin,
             onMediaClick = { index -> FullScreenMediaRouter.open(urls, index, origin) },
+            autoplay = autoplay,
             modifier = modifier,
         )
     }
@@ -1525,6 +1533,7 @@ private fun SingleMediaPreview(
     tags: List<List<String>>,
     sourceKey: MediaSourceKey,
     onMediaClick: (String) -> Unit,
+    autoplay: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1584,7 +1593,9 @@ private fun SingleMediaPreview(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
-            if (isVideo) {
+            if (isVideo && autoplay) {
+                InlineFeedVideo(key = sourceKey, url = url, modifier = Modifier.matchParentSize())
+            } else if (isVideo) {
                 Icon(
                     imageVector = NostrVaultIcons.PlayCircle,
                     contentDescription = "Video",
@@ -1651,6 +1662,7 @@ private fun MediaCarousel(
     tags: List<List<String>>,
     origin: Long,
     onMediaClick: (Int) -> Unit,
+    autoplay: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1721,7 +1733,14 @@ private fun MediaCarousel(
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
-                if (isVideoUrl(url)) {
+                if (isVideoUrl(url) && autoplay && page == pagerState.currentPage) {
+                    // Only the page in view is a candidate; the others keep a poster.
+                    InlineFeedVideo(
+                        key = MediaSourceKey(origin, page),
+                        url = url,
+                        modifier = Modifier.matchParentSize(),
+                    )
+                } else if (isVideoUrl(url)) {
                     Icon(
                         imageVector = NostrVaultIcons.PlayCircle,
                         contentDescription = "Video",

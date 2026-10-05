@@ -1476,6 +1476,7 @@ private fun FeedFullNoteRowContent(
     // amount, long-press picks one; faint, and an explanation on tap, when
     // the author has no lightning address.
     val hasWallet by viewModel.hasWallet.collectAsState()
+    val autoplayVideos by viewModel.autoplayVideos.collectAsState()
     val authorProfile = cardProfiles[note.pubkey]
     val hasLightning = !authorProfile?.lud16.isNullOrBlank() || !authorProfile?.lud06.isNullOrBlank()
 
@@ -1517,6 +1518,7 @@ private fun FeedFullNoteRowContent(
         onDelete = { onDelete(note.id) },
         onLongPressLike = onLongPressLike,
         onRetryParent = viewModel::retryMissingNote,
+        autoplayVideos = autoplayVideos,
         avatarMenu = remember(viewModel) {
             AvatarMenuActions(
                 isOwn = viewModel::isOwnNote,
