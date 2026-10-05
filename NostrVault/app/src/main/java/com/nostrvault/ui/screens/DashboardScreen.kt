@@ -109,7 +109,13 @@ class DashboardViewModel @Inject constructor(
     val configStore: ConfigStore,
     val nostrService: NostrService,
     private val followersSeenStore: com.nostrvault.data.local.FollowersSeenStore,
+    private val blossomService: com.nostrvault.service.BlossomService,
 ) : ViewModel() {
+
+    /** The shared Blossom mirror run behind "Import Blossom" (iOS MirrorService). */
+    val blossomMirrorRun = blossomService.mirrorRun
+
+    fun importBlossom() { blossomService.runMirror() }
 
     companion object {
         private const val TAG = "DashboardVM"
@@ -2442,7 +2448,9 @@ fun DashboardScreen(
                 importCompleted = viewModel.importCompleted.collectAsState().value,
                 isExportingJsonl = viewModel.isExportingJsonl.collectAsState().value,
                 isExportingMedia = viewModel.isExportingMedia.collectAsState().value,
+                isImportingBlossom = viewModel.blossomMirrorRun.collectAsState().value.running,
                 onImportNotes = { viewModel.importNotes(context) },
+                onImportBlossom = viewModel::importBlossom,
                 onExportJsonl = { viewModel.exportJsonl(context) },
                 onExportMedia = { viewModel.exportMedia(context) },
                 onDismissImport = viewModel::dismissImport,
@@ -2980,7 +2988,9 @@ private fun DashboardSheetContent(
     importCompleted: Boolean,
     isExportingJsonl: Boolean,
     isExportingMedia: Boolean,
+    isImportingBlossom: Boolean,
     onImportNotes: () -> Unit,
+    onImportBlossom: () -> Unit,
     onExportJsonl: () -> Unit,
     onExportMedia: () -> Unit,
     onDismissImport: () -> Unit,
@@ -3204,7 +3214,9 @@ private fun DashboardSheetContent(
                 importCompleted = importCompleted,
                 isExportingJsonl = isExportingJsonl,
                 isExportingMedia = isExportingMedia,
+                isImportingBlossom = isImportingBlossom,
                 onImportNotes = onImportNotes,
+                onImportBlossom = onImportBlossom,
                 onExportJsonl = onExportJsonl,
                 onExportMedia = onExportMedia,
                 onDismissImport = onDismissImport,

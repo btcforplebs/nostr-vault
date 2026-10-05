@@ -352,6 +352,8 @@ data class HavenConfig(
 
     // Blossom
     val blossomMirrors: List<String> = emptyList(),
+    /** Download own media from the Blossom mirrors when the Media tab opens (iOS autoMirrorMedia). */
+    val autoMirrorMedia: Boolean = false,
 
     // Paths (set at runtime by app)
     val relayDataDir: String? = null,

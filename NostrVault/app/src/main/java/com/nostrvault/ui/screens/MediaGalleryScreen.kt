@@ -99,6 +99,8 @@ class MediaGalleryViewModel @Inject constructor(
 
     init {
         loadBlossomMedia()
+        // Auto-Mirror Media: pull own media from the mirrors (iOS triggerAutoMirrorIfEnabled).
+        if (configStore.config.value.autoMirrorMedia) blossomService.runMirror()
     }
 
     fun refresh() {

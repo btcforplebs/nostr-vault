@@ -5,6 +5,9 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.remote.BlossomClient
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
@@ -61,6 +64,49 @@ class BlossomService @Inject constructor(
         .readTimeout(60, TimeUnit.SECONDS)
         .applyLocalhostTrust()
         .build()
+
+    /**
+     * One mirror-from-servers run shared by Settings, the dashboard and the
+     * Media tab's auto-mirror, like iOS MirrorService: a second start while
+     * one runs is ignored.
+     */
+    data class MirrorRun(
+        val running: Boolean = false,
+        /** 0..1 once the blob count is known, else null. */
+        val progress: Float? = null,
+        val status: String = "",
+        /** "Mirrored N files" / "All media already mirrored" after a run. */
+        val lastResult: String = "",
+    )
+
+    private val _mirrorRun = MutableStateFlow(MirrorRun())
+    val mirrorRun: StateFlow<MirrorRun> = _mirrorRun.asStateFlow()
+
+    /** Starts a mirror-from-servers run; false if one is already running. */
+    fun runMirror(): Boolean {
+        synchronized(_mirrorRun) {
+            if (_mirrorRun.value.running) return false
+            _mirrorRun.value = MirrorRun(running = true, status = "Starting...")
+        }
+        scope.launch {
+            val result = try {
+                if (configStore.config.value.activeBlossomMirrors.isEmpty()) {
+                    "No mirrors configured"
+                } else {
+                    val count = mirrorAllFromExternal(
+                        onProgress = { pct -> _mirrorRun.value = _mirrorRun.value.copy(progress = pct) },
+                        onLogMessage = { msg -> _mirrorRun.value = _mirrorRun.value.copy(status = msg) },
+                    )
+                    if (count > 0) "Mirrored $count files" else "All media already mirrored"
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Mirror run failed: ${e.message}")
+                "Mirror failed: ${e.message}"
+            }
+            _mirrorRun.value = MirrorRun(lastResult = result)
+        }
+        return true
+    }
 
     private val remoteClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -630,11 +676,12 @@ class BlossomService @Inject constructor(
 
     /**
      * Mirror all blobs from external to local.
+     * @return how many blobs were saved to the local relay.
      */
     suspend fun mirrorAllFromExternal(
         onProgress: ((Float) -> Unit)? = null,
         onLogMessage: ((String) -> Unit)? = null,
-    ) = withContext(Dispatchers.IO) {
+    ): Int = withContext(Dispatchers.IO) {
         val mirrors = configStore.config.value.activeBlossomMirrors
         val ownerPubkey = nostrService.ownerHexPubkey
 
@@ -671,28 +718,31 @@ class BlossomService @Inject constructor(
         // Filter to hashes not in local Blossom
         val missing = allHashes.filter { !mediaCacheService.isInLocalBlossom(it) }
         onLogMessage?.invoke("Found ${missing.size} blobs to mirror")
-        if (missing.isEmpty()) return@withContext
+        if (missing.isEmpty()) return@withContext 0
         if (batchAuth.isEmpty()) {
             onLogMessage?.invoke("Mirror aborted: could not sign auth event (signer unavailable)")
-            return@withContext
+            return@withContext 0
         }
 
-        var completed = 0
-        for (hash in missing) {
-            mirrorSemaphore.acquire()
-            launch {
-                try {
-                    val data = downloadFromMirrors(hash)
-                    if (data != null) {
-                        saveToLocalRelay(data, hash, "application/octet-stream", batchAuth)
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val saved = java.util.concurrent.atomic.AtomicInteger(0)
+        coroutineScope {
+            for (hash in missing) {
+                mirrorSemaphore.acquire()
+                launch {
+                    try {
+                        val data = downloadFromMirrors(hash)
+                        if (data != null && saveToLocalRelay(data, hash, "application/octet-stream", batchAuth)) {
+                            saved.incrementAndGet()
+                        }
+                    } finally {
+                        mirrorSemaphore.release()
+                        onProgress?.invoke(completed.incrementAndGet().toFloat() / missing.size)
                     }
-                } finally {
-                    mirrorSemaphore.release()
-                    completed++
-                    onProgress?.invoke(completed.toFloat() / missing.size)
                 }
             }
         }
+        saved.get()
     }
 
     // ══════════════════════════════════════════════════════════════════
