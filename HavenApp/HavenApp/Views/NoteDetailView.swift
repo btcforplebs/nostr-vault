@@ -56,6 +56,11 @@ struct NoteDetailView: View {
     /// thread above it appeared. Only the first arrival scrolls; after that
     /// the reader is in charge.
     @State private var didLandOnFocusedNote = false
+    /// Your Web of Trust plus follows, read once when the view appears.
+    /// Empty while the graph isn't loaded, which counts nobody as outside.
+    @State private var trustedPubkeys: Set<String> = []
+    /// Replies from outside your network are folded until asked for.
+    @State private var showsOutsideReplies = false
 
     private var threadRootId: String {
         NIP10Thread.rootEventId(kind: note.kind, tags: note.tags) ?? note.id
@@ -104,7 +109,7 @@ struct NoteDetailView: View {
     /// feedService.notes alone drops any branch that passes through a parent —
     /// e.g. focus a grandparent and the parent (plus the reply you came from)
     /// silently disappears.
-    private var threadPool: [FeedNote] {
+    private var allThreadNotes: [FeedNote] {
         var seen = Set<String>()
         var pool: [FeedNote] = []
         for n in feedService.notes where seen.insert(n.id).inserted { pool.append(n) }
@@ -114,10 +119,67 @@ struct NoteDetailView: View {
         return pool
     }
 
+    /// The opened note and the notes above it: always shown, whoever wrote them.
+    private var contextNoteIds: Set<String> {
+        Set([note.id, focusedNote.id] + dynamicParents.map(\.id))
+    }
+
+    /// The thread pool the views draw from: the opened note, the notes above
+    /// it, and the replies under it that pass `threadReplies`.
+    private var threadPool: [FeedNote] {
+        let all = allThreadNotes
+        let context = contextNoteIds
+        return all.filter { context.contains($0.id) } + threadReplies(in: all).visible
+    }
+
+    /// Replies under the opened note, at any depth. `feedService.notes` holds
+    /// every note in memory, Global's firehose included, and none of it was
+    /// filtered here, so blocked people and spam showed up as replies. Replies
+    /// now go through the feed's block rule and spam check, and replies from
+    /// outside your network stay folded until asked for.
+    private func threadReplies(in all: [FeedNote]) -> (visible: [FeedNote], outside: Int) {
+        let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let blocked = configService.activeAccountBlockedHexPubkeys
+        let insiders = threadInsiders
+        let replies = ThreadReplyVisibility.descendants(of: replyTargetId, in: all, id: \.id, parentId: \.parentEventId)
+            .filter { n in
+                !FeedFilterEngine.involvesBlocked(n, blocked: blocked, authorOf: { byId[$0]?.pubkey })
+                    && !FeedNote.isNoiseOrSpam(content: n.content, tags: n.tags)
+            }
+        if showsOutsideReplies { return (replies, 0) }
+        var visible: [FeedNote] = []
+        var outside = 0
+        for n in replies {
+            if ThreadReplyVisibility.isOutside(n.pubkey, trusted: trustedPubkeys, insiders: insiders) {
+                outside += 1
+            } else {
+                visible.append(n)
+            }
+        }
+        return (visible, outside)
+    }
+
+    /// People whose replies are never folded: you, and everyone who wrote
+    /// the opened note or the notes above it.
+    private var threadInsiders: Set<String> {
+        var people = Set([nostrService.activeHexPubkey, note.pubkey, focusedNote.pubkey])
+        people.formUnion(dynamicParents.map(\.pubkey))
+        return people
+    }
+
+    private var replyTargetId: String {
+        (focusedNote.kind == 6 && focusedNote.repostedEventId != nil) ? focusedNote.repostedEventId! : focusedNote.id
+    }
+
     private var dynamicReplies: [FeedNote] {
-        let targetId = (focusedNote.kind == 6 && focusedNote.repostedEventId != nil) ? focusedNote.repostedEventId! : focusedNote.id
+        let targetId = replyTargetId
         return threadPool.filter { $0.parentEventId == targetId }
             .sorted(by: { $0.createdAt < $1.createdAt })
+    }
+
+    /// Replies under the opened note that are folded as outside your network.
+    private var outsideReplyCount: Int {
+        threadReplies(in: allThreadNotes).outside
     }
 
     private func landOnFocusedNote(proxy: ScrollViewProxy) {
@@ -280,6 +342,7 @@ struct NoteDetailView: View {
             .environmentObject(configService)
         }
         .onAppear {
+            trustedPubkeys = feedService.relayTabTrustedPubkeys()
             expandedEngagement = configService.config.noteDetailExpandedEngagement
             if expandedEngagement {
                 fetchAllThreadEngagement()
@@ -422,7 +485,8 @@ struct NoteDetailView: View {
 
     private func threadHistory(proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(dynamicParents) { parent in
+            // Notes above it by someone you blocked are left out.
+            ForEach(dynamicParents.filter { !configService.activeAccountBlockedHexPubkeys.contains($0.pubkey) }) { parent in
                 let parentProfile = nostrService.profiles[parent.pubkey]
 
                 Group {
@@ -530,7 +594,7 @@ struct NoteDetailView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
                 .transition(.opacity)
-            } else if currentReplies.isEmpty {
+            } else if currentReplies.isEmpty && outsideReplyCount == 0 {
                 Text("No replies yet")
                     .font(.appSystem(size: 13, weight: .regular, design: .monospaced))
                     .foregroundColor(.secondary)
@@ -548,6 +612,28 @@ struct NoteDetailView: View {
 
                 repliesList(currentReplies, pool: pool, proxy: proxy)
             }
+            outsideRepliesButton
+        }
+    }
+
+    @ViewBuilder
+    private var outsideRepliesButton: some View {
+        let count = outsideReplyCount
+        if !isLoadingReplies && count > 0 {
+            Button {
+                withAnimation(Motion.fade) { showsOutsideReplies = true }
+            } label: {
+                Label(count == 1 ? "Show 1 reply from outside your network"
+                                 : "Show \(count) replies from outside your network",
+                      systemImage: "person.crop.circle.badge.questionmark")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
         }
     }
 

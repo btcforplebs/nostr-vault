@@ -252,3 +252,33 @@ enum FeedThreadGrouping {
         note.tags.first { $0.count >= 4 && $0[0] == "e" && $0[3] == "root" }?[1]
     }
 }
+
+// MARK: - Thread view reply visibility
+
+/// Which replies a thread view folds as "outside your network".
+enum ThreadReplyVisibility {
+    /// Outside: not in your trusted set (Web of Trust plus follows) and not
+    /// one of the thread's insiders (you, and the authors of the opened note
+    /// and the notes above it). An empty trusted set means the graph has not
+    /// loaded, and then nobody counts as outside.
+    static func isOutside(_ pubkey: String, trusted: Set<String>, insiders: Set<String>) -> Bool {
+        !trusted.isEmpty && !trusted.contains(pubkey) && !insiders.contains(pubkey)
+    }
+
+    /// Every note under `rootId`, at any depth, among `notes`.
+    static func descendants<T>(of rootId: String, in notes: [T],
+                               id: (T) -> String, parentId: (T) -> String?) -> [T] {
+        var children: [String: [T]] = [:]
+        for n in notes { if let p = parentId(n) { children[p, default: []].append(n) } }
+        var result: [T] = []
+        var queue = [rootId]
+        var seen: Set<String> = [rootId]
+        while let next = queue.popLast() {
+            for child in children[next] ?? [] where seen.insert(id(child)).inserted {
+                result.append(child)
+                queue.append(id(child))
+            }
+        }
+        return result
+    }
+}
