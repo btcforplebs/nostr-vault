@@ -4,6 +4,7 @@ import android.util.Log
 import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.relay.HavenBridge
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -356,6 +357,105 @@ object NIP46Service {
                 false
             }
         }
+
+    // ── Sign in with a signer app (nostrconnect://) ──────────────────────
+
+    /**
+     * One pairing attempt in the client-initiated flow: we show a
+     * nostrconnect:// URI carrying our pubkey and a fresh secret, and the
+     * signer app answers with that secret. Kept for the whole attempt so
+     * "Open signer again" re-sends the SAME request (iOS `NostrConnectRequest`).
+     */
+    data class NostrConnectRequest(
+        val uri: String,
+        val clientSecretKey: String,
+        val clientPubkey: String,
+        val secret: String,
+        val relays: List<String>,
+        /** Unix seconds; the answer is read from here on (a little before shown). */
+        val startedAt: Long,
+    )
+
+    /**
+     * relay.powr.build is the relay Clave's push proxy watches and it keeps
+     * kind 24133, so an answer sent while this app was in the background can
+     * be read back; damus keeps them too. Same pair as iOS.
+     */
+    val nostrConnectRelays = listOf("wss://relay.powr.build", "wss://relay.damus.io")
+
+    private const val NOSTR_CONNECT_PERMS = "sign_event,nip04_encrypt,nip04_decrypt,nip44_encrypt,nip44_decrypt"
+
+    /** The nostrconnect:// URI for [clientPubkey] and [secret] (NIP-46 client-initiated). */
+    fun nostrConnectUri(clientPubkey: String, secret: String, relays: List<String>): String {
+        val params = relays.map { "relay" to it } + listOf(
+            "secret" to secret,
+            "perms" to NOSTR_CONNECT_PERMS,
+            "name" to "Nostr Vault",
+            "url" to "https://nostrvault.app",
+            "image" to "https://nostrvault.app/assets/haven_icon.png",
+        )
+        return "nostrconnect://$clientPubkey?" + params.joinToString("&") { (k, v) -> "$k=${queryEncode(v)}" }
+    }
+
+    /**
+     * The bunker:// form of a finished nostrconnect pairing: how every later
+     * reconnect reaches the signer. No secret — the pairing is already made,
+     * and the signer answers a paired app's connect with "ack".
+     */
+    fun bunkerUri(signerPubkey: String, relays: List<String>): String =
+        "bunker://$signerPubkey" +
+            if (relays.isEmpty()) "" else "?" + relays.joinToString("&") { "relay=${queryEncode(it)}" }
+
+    /** Percent-encodes a query value, keeping `:` and `/` readable as iOS does; space is %20, never `+`. */
+    private fun queryEncode(value: String): String =
+        java.net.URLEncoder.encode(value, "UTF-8")
+            .replace("+", "%20")
+            .replace("%3A", ":")
+            .replace("%2F", "/")
+
+    /** A fresh pairing request: a new client key and a random 16-byte secret. */
+    fun makeNostrConnectRequest(nowSeconds: Long = System.currentTimeMillis() / 1000): NostrConnectRequest? {
+        val parts = HavenBridge.generateKeyPair()?.split(":")
+        if (parts == null || parts.size != 2) return null
+        val (clientSK, clientPK) = parts
+        val bytes = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+        val secret = bytes.joinToString("") { "%02x".format(it) }
+        return NostrConnectRequest(
+            uri = nostrConnectUri(clientPK, secret, nostrConnectRelays),
+            clientSecretKey = clientSK,
+            clientPubkey = clientPK,
+            secret = secret,
+            relays = nostrConnectRelays,
+            startedAt = nowSeconds - 5,
+        )
+    }
+
+    /**
+     * Waits for the signer's answer to [request] in 15 s rounds, so the
+     * caller's coroutine can be cancelled between them. The Go side accepts
+     * only a signed kind 24133 to our key whose result is our secret ("ack"
+     * is refused: anyone can publish one). Returns the signer's pubkey, or
+     * null on timeout.
+     */
+    suspend fun awaitNostrConnect(request: NostrConnectRequest, timeoutMs: Long = 300_000): String? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        val relaysJson = org.json.JSONArray(request.relays).toString()
+        while (System.currentTimeMillis() < deadline) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val pubkey = withContext(Dispatchers.IO) {
+                try {
+                    HavenBridge.nip46AwaitNostrConnect(
+                        request.clientSecretKey, relaysJson, request.secret, request.startedAt, 15,
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "NIP-46 nostrconnect wait failed: ${e.message}")
+                    null
+                }
+            }
+            if (!pubkey.isNullOrEmpty()) return pubkey
+        }
+        return null
+    }
 
     /** Get pending auth URL (consumed on read). */
     fun getPendingAuthUrl(): String? =

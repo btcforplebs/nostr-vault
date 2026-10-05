@@ -60,10 +60,12 @@ import com.nostrvault.relay.AccountBunkerConfig
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.NIP49Service
 import com.nostrvault.service.NostrService
+import com.nostrvault.ui.components.NostrConnectPairing
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -574,28 +576,11 @@ class SetupWizardViewModel @Inject constructor(
                                 _isLoading.value = false
                                 return@launch
                             }
-                            val signerPubkey = NIP46Service.connect(keypair[0], uri)
-                            if (signerPubkey == null) {
+                            if (!connectRemoteSignerOwner(uri, keypair[0], keypair[1])) {
                                 _error.value = "Could not reach that signer. Check the string and that the signer is online."
                                 _isLoading.value = false
                                 return@launch
                             }
-                            val npub = HavenBridge.hexToNpub(signerPubkey) ?: signerPubkey
-                            configStore.setBunkerConfig(
-                                npub,
-                                AccountBunkerConfig(
-                                    bunkerURI = uri,
-                                    signerPubkey = signerPubkey,
-                                    clientSecretKey = keypair[0],
-                                    clientPubkey = keypair[1],
-                                ),
-                            )
-                            configStore.update { it.copy(
-                                ownerNpub = npub,
-                                signingMode = "nip46",
-                                setupMode = "full",
-                            ) }
-                            configStore.setActiveAccount(signerPubkey)
                         }
                     }
                     _step.value = stepAfter(WizardStep.ACCOUNT)
@@ -606,6 +591,52 @@ class SetupWizardViewModel @Inject constructor(
             _isLoading.value = false
         }
     }
+
+    /**
+     * Connects a remote signer and makes its account the owner. False when the
+     * signer could not be reached.
+     */
+    private suspend fun connectRemoteSignerOwner(uri: String, clientSec: String, clientPub: String): Boolean {
+        val signerPubkey = NIP46Service.connect(clientSec, uri) ?: return false
+        val npub = HavenBridge.hexToNpub(signerPubkey) ?: signerPubkey
+        configStore.setBunkerConfig(
+            npub,
+            AccountBunkerConfig(
+                bunkerURI = uri,
+                signerPubkey = signerPubkey,
+                clientSecretKey = clientSec,
+                clientPubkey = clientPub,
+            ),
+        )
+        configStore.update { it.copy(
+            ownerNpub = npub,
+            signingMode = "nip46",
+            setupMode = "full",
+        ) }
+        configStore.setActiveAccount(signerPubkey)
+        return true
+    }
+
+    /**
+     * Finishes a nostrconnect:// pairing on the account step: stored as a
+     * secret-less bunker link with the pairing's own client key, connected,
+     * then on to the next step. Returns an error to show, or null.
+     */
+    suspend fun pairNostrConnect(request: NIP46Service.NostrConnectRequest, signerPubkey: String): String? =
+        viewModelScope.async {
+            _error.value = null
+            val ok = connectRemoteSignerOwner(
+                NIP46Service.bunkerUri(signerPubkey, request.relays),
+                request.clientSecretKey,
+                request.clientPubkey,
+            )
+            if (ok) {
+                _step.value = stepAfter(WizardStep.ACCOUNT)
+                null
+            } else {
+                "Could not connect to the signer. Try again."
+            }
+        }.await()
 
     // ── NIP-05 Resolution ─────────────────────────────────────────
 
@@ -1674,8 +1705,13 @@ private fun AccountStep(viewModel: SetupWizardViewModel) {
 
             AnimatedVisibility(visible = mode == AccountMode.REMOTE_SIGNER) {
                 Column {
+                    NostrConnectPairing(
+                        accent = WizardAccent,
+                        onPaired = { request, signerPubkey -> viewModel.pairNostrConnect(request, signerPubkey) },
+                    )
+                    Spacer(Modifier.height(16.dp))
                     Text(
-                        text = "Paste or scan the bunker:// string your signer gives you. Your key stays with the signer -- Nostr Vault never sees it.",
+                        text = "Or paste or scan the bunker:// string your signer gives you. Your key stays with the signer -- Nostr Vault never sees it.",
                         color = SecondaryText,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,

@@ -241,6 +241,20 @@ object HavenBridge {
     /** Ping the remote signer. Returns 0 on success, 1 on failure. */
     external fun nip46Ping(): Int
 
+    /**
+     * Waits up to [waitSeconds] for a signer's answer to our nostrconnect://
+     * request on [relaysJson] (a JSON array), reading from [since] (unix
+     * seconds). The answer must carry [secret]; returns the signer's hex
+     * pubkey, or null when none came.
+     */
+    external fun nip46AwaitNostrConnect(
+        clientSecretKey: String,
+        relaysJson: String,
+        secret: String,
+        since: Long,
+        waitSeconds: Int,
+    ): String?
+
     /** Get pending auth URL from the NIP-46 session (consumed on read). */
     external fun nip46GetPendingAuthUrl(): String?
 
