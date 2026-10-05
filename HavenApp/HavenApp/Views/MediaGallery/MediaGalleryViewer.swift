@@ -164,10 +164,17 @@ extension MediaGalleryView {
                         } label: {
                             Image(systemName: "trash")
                                 .font(.appSystem(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
                                 .padding(10)
                                 .background(Color.white.opacity(0.1))
                                 .cornerRadius(8)
+                                .contentShape(Rectangle())
                         }
+                        #if os(macOS)
+                        // Without .button, macOS drops the tile its neighbours have.
+                        .menuStyle(.button)
+                        .menuIndicator(.hidden)
+                        #endif
                         .buttonStyle(.plain)
 
                         SourceIndicatorView(

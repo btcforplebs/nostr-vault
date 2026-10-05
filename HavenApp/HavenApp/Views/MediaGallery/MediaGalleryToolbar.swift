@@ -143,6 +143,11 @@ extension MediaGalleryView {
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
         }
+        #if os(macOS)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        #endif
         .help("Sort by")
     }
 
@@ -178,7 +183,9 @@ extension MediaGalleryView {
                         isSelected: mediaTypeFilter.contains(typeFilter)
                     ) {
                         if mediaTypeFilter.contains(typeFilter) {
-                            mediaTypeFilter.remove(typeFilter)
+                            // Keep one on, as iOS does: with none the gallery is
+                            // just "No media found".
+                            if mediaTypeFilter.count > 1 { mediaTypeFilter.remove(typeFilter) }
                         } else {
                             mediaTypeFilter.insert(typeFilter)
                         }
@@ -232,8 +239,15 @@ extension MediaGalleryView {
             )
             .cornerRadius(12)
             .shadow(color: Color.havenPurple.opacity(0.3), radius: 4, x: 0, y: 2)
+            .contentShape(RoundedRectangle(cornerRadius: 12))
         }
-        .menuStyle(.automatic)
+        #if os(macOS)
+        // The default and .automatic menu styles drop the label's colour, frame
+        // and background on macOS and add a chevron; .button + .plain keep them.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        #endif
     }
 
     // MARK: - Filter Functions

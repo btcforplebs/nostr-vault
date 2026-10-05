@@ -143,8 +143,11 @@ struct WalletLightningTab: View {
                         Image(systemName: "arrow.clockwise")
                             .font(.appSystem(size: 12, weight: .semibold))
                             .foregroundColor(.secondary)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .help("Refresh")
                 }
             }
 
@@ -201,8 +204,11 @@ struct WalletLightningTab: View {
                 Image(systemName: copiedLnAddress ? "checkmark" : "doc.on.doc")
                     .font(.appSystem(size: 12, weight: .semibold))
                     .foregroundColor(copiedLnAddress ? .green : .secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help("Copy")
         }
         .padding(12)
         .background(Color.platformControlBackground.opacity(0.6))
@@ -734,8 +740,11 @@ struct WalletLightningTab: View {
                         Image(systemName: "arrow.clockwise")
                             .font(.appSystem(size: 12, weight: .semibold))
                             .foregroundColor(.secondary)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .help("Refresh")
                 }
             }
 

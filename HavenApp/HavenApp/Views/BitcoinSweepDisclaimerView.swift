@@ -96,6 +96,8 @@ struct BitcoinSweepDisclaimerView: View {
                         .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
+                // A macOS sheet can't be swiped away; Esc closes it from here.
+                .keyboardShortcut(.cancelAction)
 
                 Button(action: { currentStep = 1 }) {
                     Text("I understand, continue")
@@ -341,12 +343,20 @@ struct BitcoinSweepDisclaimerView: View {
     private func loadBalance() {
         Task {
             let npub = configService.config.ownerNpub.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Each early return clears the loading state, or Proceed stays
+            // disabled on "Loading Balance..." for good.
             guard !npub.isEmpty,
                   let decoded = Bech32.decode(npub),
-                  decoded.hrp == "npub" else { return }
+                  decoded.hrp == "npub" else {
+                await MainActor.run { isLoadingBalance = false }
+                return
+            }
 
             let hexPubKey = decoded.hexString
-            guard let cAddr = hexPubKey.withCString({ DeriveTaprootAddressC(UnsafeMutablePointer(mutating: $0)) }) else { return }
+            guard let cAddr = hexPubKey.withCString({ DeriveTaprootAddressC(UnsafeMutablePointer(mutating: $0)) }) else {
+                await MainActor.run { isLoadingBalance = false }
+                return
+            }
             let address = String(cString: cAddr)
 
             fetchBitcoinBalance(address: address)

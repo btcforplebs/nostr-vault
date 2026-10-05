@@ -997,14 +997,20 @@ struct ProfileView: View {
         )
     }
 
+    /// `trailing` (the zap pill) sits beside the copy button, not in its label,
+    /// so a click on the pill can only ever zap, never also copy the address.
     private func identityRow(label: String, value: String, icon: String, tint: Color, copied: Bool, trailing: AnyView, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            identityRowContent(label: label, value: value, icon: icon, tint: tint, copied: copied, trailing: trailing)
+        HStack(spacing: 12) {
+            Button(action: action) {
+                identityRowContent(label: label, value: value, icon: icon, tint: tint, copied: copied, trailing: AnyView(EmptyView()), trailingPadding: 0)
+            }
+            .buttonStyle(.plain)
+            trailing
         }
-        .buttonStyle(.plain)
+        .padding(.trailing, 16)
     }
 
-    private func identityRowContent(label: String, value: String, icon: String, tint: Color, copied: Bool, trailing: AnyView) -> some View {
+    private func identityRowContent(label: String, value: String, icon: String, tint: Color, copied: Bool, trailing: AnyView, trailingPadding: CGFloat = 16) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.appSystem(size: 13, weight: .semibold))
@@ -1032,8 +1038,12 @@ struct ProfileView: View {
 
             trailing
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 16)
+        .padding(.trailing, trailingPadding)
         .padding(.vertical, 10)
+        // A plain button on macOS only takes clicks on drawn pixels; without
+        // this the Spacer gap and the padding ignored clicks.
+        .contentShape(Rectangle())
     }
 
     // MARK: - Section tab bar
@@ -2215,6 +2225,7 @@ struct ProfileEditView: View {
         HStack {
             Button("Cancel") { performDismiss() }
                 .foregroundColor(.secondary)
+                .keyboardShortcut(.cancelAction)
 
             Spacer()
 

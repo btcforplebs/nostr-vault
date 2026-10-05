@@ -257,6 +257,10 @@ extension VaultView {
                             NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, reactors: rowReactors, latestReactionDate: rowReactionDate)
                                 .relayFocusOutline(focusedEventId == event.id)
                                 .padding(.horizontal, 16)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    self.openNote(event.id)
+                                }
                                 .onAppear {
                                     if event.id == displayLikedNotes.last?.id {
                                         loadMoreItems()
@@ -355,6 +359,10 @@ extension VaultView {
                             NoteRow(event: event, truncate: true, layoutMode: rowLayoutMode, zappers: rowZappers)
                                 .relayFocusOutline(focusedEventId == event.id)
                                 .padding(.horizontal, 16)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    self.openNote(event.id)
+                                }
                                 .onAppear {
                                     if event.id == displayZappedNotes.last?.id {
                                         loadMoreItems()
