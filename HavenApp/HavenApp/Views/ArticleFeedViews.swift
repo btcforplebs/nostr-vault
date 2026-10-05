@@ -214,6 +214,8 @@ struct ArticleReaderView: View {
     /// Replying to a highlight from inside the highlights sheet, which needs
     /// its own compose sheet: a second sheet can't stack on the reader's.
     @State private var highlightCommentContext: ComposeContext?
+    /// Likes, zaps and comments from the network.
+    @State private var tally = ArticleTally()
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
 
     private var metadata: LongFormMetadata { note.longFormMetadata }
@@ -284,6 +286,8 @@ struct ArticleReaderView: View {
 
                 Divider()
                 actionBar
+
+                commentsSection
             }
             .padding(20)
             // The iPhone's tab bar floats over the reader; without this the
@@ -309,6 +313,15 @@ struct ArticleReaderView: View {
             #endif
         }
         .task(id: note.id) { await loadHighlights() }
+        .task(id: note.id) { await loadEngagement() }
+        // A comment opens as a note with its replies. Declared here as well as
+        // by the feeds, because the iPad note column's stack has no route for
+        // a FeedNote when it holds an article.
+        .navigationDestination(for: FeedNote.self) { NoteDetailView(note: $0) }
+        .onChange(of: composeContext == nil) { _, closed in
+            // Pick up the comment just posted.
+            if closed { Task { await loadEngagement() } }
+        }
         .sheet(item: $shownHighlights) { group in
             NavigationStack {
                 ScrollView {
@@ -360,11 +373,12 @@ struct ArticleReaderView: View {
 
     private var actionBar: some View {
         HStack(spacing: 10) {
-            actionButton(liked ? "heart.fill" : "heart", tint: liked ? .red : .secondary, label: "Like") { like() }
-            actionButton("bubble.left", tint: .secondary, label: "Comment") {
+            actionButton(liked ? "heart.fill" : "heart", tint: liked ? .red : .secondary, label: "Like", count: likeCount) { like() }
+            actionButton("bubble.left", tint: .secondary, label: "Comment", count: tally.commentCount) {
                 composeContext = ComposeContext(replyTo: note, quoteTo: nil)
             }
-            actionButton(zapped ? "bolt.fill" : "bolt", tint: zapped ? .orange : .secondary, label: "Zap") {
+            actionButton(zapped ? "bolt.fill" : "bolt", tint: zapped ? .orange : .secondary, label: "Zap",
+                         count: zapSats, countText: zapSats > 0 ? Self.compact(zapSats) : nil) {
                 if lightningAddress != nil {
                     zapSheetContext = ZapSheetContext(defaultAmount: ConfigService.shared.config.defaultZapAmount / 1000)
                 } else {
@@ -382,19 +396,48 @@ struct ArticleReaderView: View {
         }
     }
 
-    private func actionButton(_ symbol: String, tint: Color, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
-        Button(action: action) { actionIcon(symbol, tint: tint) }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(label))
+    private func actionButton(_ symbol: String, tint: Color, label: LocalizedStringKey, count: Int = 0,
+                              countText: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            actionIcon(symbol, tint: tint, countText: countText ?? (count > 0 ? Self.compact(count) : nil))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(count > 0 ? Text(verbatim: "\(count)") : Text(verbatim: ""))
     }
 
-    private func actionIcon(_ symbol: String, tint: Color) -> some View {
-        Image(systemName: symbol)
-            .font(.appSystem(size: 15, weight: .medium))
-            .foregroundColor(tint)
-            .frame(width: 38, height: 34)
-            .background(Color.secondary.opacity(0.1))
-            .clipShape(Capsule())
+    private func actionIcon(_ symbol: String, tint: Color, countText: String? = nil) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.appSystem(size: 15, weight: .medium))
+            if let countText {
+                Text(countText)
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .monospacedDigit()
+            }
+        }
+        .foregroundColor(tint)
+        .padding(.horizontal, countText == nil ? 0 : 12)
+        .frame(minWidth: 38, minHeight: 34)
+        .background(Color.secondary.opacity(0.1))
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+    }
+
+    /// 1234 -> "1.2K", the way the feed shows counts.
+    private static func compact(_ value: Int) -> String {
+        value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)))
+    }
+
+    /// Your own like counts as soon as you tap, before a relay echoes it.
+    private var likeCount: Int {
+        let me = ConfigService.shared.activeAccountHexPubkey
+        return tally.likers.count + (liked && !tally.likers.contains(me) ? 1 : 0)
+    }
+
+    /// Your own zap counts as soon as it is paid, before the receipt arrives.
+    private var zapSats: Int {
+        tally.zapSats + (tally.zapSats == 0 ? (feedService.zappedEventIds[note.id] ?? 0) : 0)
     }
 
     private var lightningAddress: String? {
@@ -524,6 +567,77 @@ struct ArticleReaderView: View {
         }
     }
 
+    // MARK: Likes, zaps and comments from the network
+
+    @ViewBuilder
+    private var commentsSection: some View {
+        if tally.commentCount > 0 {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Comments · \(tally.commentCount)", systemImage: "bubble.left.and.bubble.right")
+                    .font(.appSystem(size: 15, weight: .semibold))
+                ForEach(tally.topLevelComments.compactMap(Self.commentNote)) { comment in
+                    ArticleCommentRow(note: comment,
+                                      profile: nostrService.profiles[comment.pubkey],
+                                      replies: tally.replyCounts[comment.id] ?? 0)
+                }
+            }
+        }
+    }
+
+    private static func commentNote(_ event: [String: Any]) -> FeedNote? {
+        guard let id = event["id"] as? String, let pubkey = event["pubkey"] as? String,
+              let content = event["content"] as? String, let tags = event["tags"] as? [[String]],
+              let kind = event["kind"] as? Int,
+              let createdAt = (event["created_at"] as? NSNumber)?.doubleValue else { return nil }
+        return FeedNote(id: id, pubkey: pubkey, content: content,
+                        createdAt: Date(timeIntervalSince1970: createdAt), tags: tags, kind: kind)
+    }
+
+    /// Fetched this session, so reopening an article shows its counts at once
+    /// while the relays are asked again.
+    @MainActor private static var engagementCache: [String: [[String: Any]]] = [:]
+
+    private func loadEngagement() async {
+        let articleId = note.id
+        if let cached = Self.engagementCache[articleId] { await showEngagement(cached) }
+        let events = await ZapHistoryService.query(
+            filters: ArticleEngagement.engagementFilters(id: articleId, coordinate: coordinate),
+            relays: highlightRelays,
+            onProgress: { partial in Task { await showEngagement(partial) } })
+        // Keep what an earlier load found if a relay this time came back short.
+        var byId: [String: [String: Any]] = [:]
+        for event in (Self.engagementCache[articleId] ?? []) + events {
+            if let id = event["id"] as? String { byId[id] = event }
+        }
+        Self.engagementCache[articleId] = Array(byId.values)
+        await showEngagement(Array(byId.values))
+    }
+
+    private func showEngagement(_ events: [[String: Any]]) async {
+        let articleId = note.id
+        let coordinate = coordinate
+        let found = await Task.detached(priority: .userInitiated) { () -> ArticleTally in
+            // Spam comments are dropped the same way the thread view drops them.
+            let clean = events.filter { event in
+                guard let kind = event["kind"] as? Int,
+                      kind == ArticleEngagement.commentKind || kind == ArticleEngagement.noteKind,
+                      let text = event["content"] as? String,
+                      let tags = event["tags"] as? [[String]] else { return true }
+                return !FeedNote.isNoiseOrSpam(content: text, tags: tags)
+            }
+            return ArticleEngagement.tally(clean, articleId: articleId, coordinate: coordinate)
+        }.value
+        await MainActor.run {
+            // An earlier, smaller snapshot can finish after a later one.
+            guard found.likers.count + found.zaps + found.commentCount
+                    >= tally.likers.count + tally.zaps + tally.commentCount else { return }
+            tally = found
+            let commenters = found.topLevelComments.compactMap { $0["pubkey"] as? String }
+            let missing = Set(commenters).filter { nostrService.profiles[$0] == nil }
+            if !missing.isEmpty { nostrService.fetchMissingProfiles(for: Array(missing)) }
+        }
+    }
+
     private func publishHighlight(passage: String, context: String, comment: String) {
         let relay = ConfigService.shared.config.nostrURL
         let tags = ArticleEngagement.highlightTags(id: note.id, kind: note.kind, pubkey: note.pubkey, tags: note.tags,
@@ -551,6 +665,47 @@ extension ArticleHighlight {
 struct HighlightGroup: Identifiable {
     let id = UUID()
     let highlights: [ArticleHighlight]
+}
+
+/// One comment under an article: who, when, what. Opens as a note, where its
+/// replies are.
+struct ArticleCommentRow: View {
+    let note: FeedNote
+    let profile: FeedProfile?
+    let replies: Int
+
+    var body: some View {
+        NoteNavigationLink(note: note) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    AvatarView(url: profile?.pictureURL, pubkey: note.pubkey, size: 24)
+                    Text(profile?.bestName ?? "npub…" + String(note.pubkey.suffix(6)))
+                        .font(.appSystem(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    Text(note.createdAt, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
+                        .font(.appSystem(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                let text = NostrContentFormatter.format(note.content, mediaURLs: note.mediaURLs)
+                if !text.characters.isEmpty {
+                    Text(text)
+                        .font(.appSystem(size: 14))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if replies > 0 {
+                    Label(replies == 1 ? "1 reply" : "\(replies) replies", systemImage: "arrowshape.turn.up.left")
+                        .font(.appSystem(size: 12, weight: .medium))
+                        .foregroundColor(.havenPurple)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.08)))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
 }
 
 /// One person's highlight: who, the passage, and their comment if any.
