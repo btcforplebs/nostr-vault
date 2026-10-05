@@ -14,6 +14,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.ui.navigation.LocalOpenHashtag
 import com.nostrvault.ui.theme.*
 
 /**
@@ -22,7 +23,7 @@ import com.nostrvault.ui.theme.*
  * - `nostr:npub1...` / `nostr:nprofile1...` → @displayName (clickable)
  * - `nostr:note1...` / `nostr:nevent1...` → stripped (rendered as QuotedNoteCard elsewhere)
  * - Bare URLs → clickable links in theme color
- * - `#hashtag` → theme-colored text
+ * - `#hashtag` → theme-colored, opens that hashtag's feed ([LocalOpenHashtag])
  * - Media URLs → stripped (rendered as MediaPreviewRow elsewhere)
  * - [linkURLs] → stripped too, for callers that draw a LinkPreviewCard per
  *   link (#170 parity). A caller that draws no card must not pass them, or
@@ -43,6 +44,7 @@ fun NostrContentText(
 ) {
     val colors = LocalNostrVaultColors.current
     val uriHandler = LocalUriHandler.current
+    val openHashtag = LocalOpenHashtag.current
 
     // Parse structure ONCE per content. The regex passes + bech32 decode
     // (resolvePubkey) are the expensive part and depend only on the text, so
@@ -79,9 +81,11 @@ fun NostrContentText(
                     }
 
                     is ContentSegment.Hashtag -> {
+                        pushStringAnnotation("hashtag", segment.tag)
                         withStyle(SpanStyle(color = colors.primary)) {
                             append(segment.text)
                         }
+                        pop()
                     }
 
                     // Quoted note references and media URLs are stripped from text
@@ -110,6 +114,12 @@ fun NostrContentText(
                 try { uriHandler.openUri(it.item) } catch (_: Exception) {}
                 return@ClickableText
             }
+            if (openHashtag != null) {
+                annotated.getStringAnnotations("hashtag", offset, offset).firstOrNull()?.let {
+                    openHashtag(it.item)
+                    return@ClickableText
+                }
+            }
             // No annotation matched — plain text was tapped; propagate to parent
             onPlainTextClick?.invoke()
         },
@@ -123,7 +133,8 @@ internal sealed class ContentSegment {
     data class PlainText(val text: String) : ContentSegment()
     data class Mention(val pubkey: String) : ContentSegment()
     data class Url(val url: String, val displayUrl: String) : ContentSegment()
-    data class Hashtag(val text: String) : ContentSegment()
+    /** [text] as written ("#Bitcoin"); [tag] is what its feed asks for ("bitcoin"). */
+    data class Hashtag(val text: String, val tag: String) : ContentSegment()
     data class QuoteRef(val identifier: String) : ContentSegment()
     data class MediaUrl(val url: String) : ContentSegment()
 }
@@ -136,8 +147,14 @@ private val URL_REGEX = Regex(
     RegexOption.IGNORE_CASE,
 )
 
+/**
+ * A #hashtag: letters/digits/underscore after a # that starts a word, with at
+ * least one letter, so URL fragments (`page#top`), HTML entities, markdown
+ * labels and issue numbers ("#123") stay plain. Same pattern as iOS
+ * `NostrContentFormatter.hashtagRegex`.
+ */
 private val HASHTAG_REGEX = Regex(
-    """(?<=\s|^)#(\w{1,50})(?=\s|$)""",
+    """(?<![\p{L}\p{N}_/#&\]\[])#([\p{L}\p{N}_]*\p{L}[\p{L}\p{N}_]*)""",
 )
 
 /** [strippedURLs] are dropped from the text: media, and links drawn as cards. */
@@ -187,7 +204,7 @@ internal fun parseContentSegments(
     // Hashtags
     for (m in HASHTAG_REGEX.findAll(content)) {
         if (matches.any { it.range.first <= m.range.last && it.range.last >= m.range.first }) continue
-        matches.add(Match(m.range, ContentSegment.Hashtag(m.value)))
+        matches.add(Match(m.range, ContentSegment.Hashtag(m.value, m.groupValues[1].lowercase())))
     }
 
     // Sort by position and build segment list

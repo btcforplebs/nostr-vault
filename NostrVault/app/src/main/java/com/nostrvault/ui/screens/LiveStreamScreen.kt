@@ -1,11 +1,14 @@
 package com.nostrvault.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,11 +32,15 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
+import com.nostrvault.service.FeedService
 import com.nostrvault.service.LiveChatService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.service.music.LiveRejoinListener
+import com.nostrvault.service.music.MusicPlayer
+import com.nostrvault.service.music.PlayerTrack
 import com.nostrvault.service.music.rejoinLiveEdge
+import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.components.claimSound
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -68,6 +75,10 @@ fun LiveStreamScreen(
     val sending by viewModel.sending.collectAsState()
     var chatInput by remember { mutableStateOf("") }
     var showZapSheet by remember { mutableStateOf(false) }
+    var showHostMenu by remember { mutableStateOf(false) }
+    var showReportStream by remember { mutableStateOf(false) }
+    var showBlockConfirm by remember { mutableStateOf(false) }
+    var reportingMessage by remember { mutableStateOf<LiveChatService.ChatEntry?>(null) }
 
     // Chat is joined for exactly as long as this screen is up.
     DisposableEffect(stream?.address) {
@@ -149,18 +160,57 @@ fun LiveStreamScreen(
         }
 
         Column(modifier = Modifier.padding(padding)) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        this.player = player
-                        useController = true
+            Box {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            this.player = player
+                            useController = true
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .background(Color.Black),
+                )
+                // Minimize: the stream's sound carries on in the mini player and
+                // the notification while you browse; Watch in the full player
+                // brings the video back. iOS: listenInBackground.
+                IconButton(
+                    onClick = {
+                        MusicPlayer.playLive(
+                            stream,
+                            PlayerTrack(
+                                id = "live:${stream.address}",
+                                title = stream.title ?: "Live stream",
+                                artist = hostName ?: ("npub…" + stream.hostPubkey.takeLast(6)),
+                                artworkUrl = stream.imageUrl
+                                    ?: stream.previewImageUrls.firstOrNull()
+                                    ?: chatProfiles[stream.hostPubkey]?.pictureURL,
+                                audioUrl = stream.streamingUrl ?: return@IconButton,
+                                durationSec = null,
+                                isLive = true,
+                                hostPubkey = stream.hostPubkey,
+                            ),
+                        )
+                        onBack()
+                    },
+                    modifier = Modifier.padding(6.dp),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                    ) {
+                        Icon(
+                            NostrVaultIcons.ChevronDown,
+                            contentDescription = "Minimize, keep listening while you browse",
+                            tint = Color.White,
+                        )
                     }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .background(Color.Black),
-            )
+                }
+            }
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -182,6 +232,31 @@ fun LiveStreamScreen(
                             fontSize = 13.sp,
                         )
                     }
+                    // The report and block affordances any surface showing
+                    // third-party video needs. iOS: LiveStreamPlayerView header.
+                    Box {
+                        IconButton(onClick = { showHostMenu = true }) {
+                            Icon(NostrVaultIcons.More, contentDescription = "Stream options", tint = colors.primary)
+                        }
+                        DropdownMenu(expanded = showHostMenu, onDismissRequest = { showHostMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Report stream") },
+                                leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null) },
+                                onClick = {
+                                    showHostMenu = false
+                                    showReportStream = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Block host", color = ErrorRed) },
+                                leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed) },
+                                onClick = {
+                                    showHostMenu = false
+                                    showBlockConfirm = true
+                                },
+                            )
+                        }
+                    }
                     Button(
                         onClick = { showZapSheet = true },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
@@ -198,6 +273,7 @@ fun LiveStreamScreen(
             LiveChat(
                 messages = messages,
                 profiles = chatProfiles,
+                onReport = { reportingMessage = it },
                 modifier = Modifier.weight(1f),
             )
 
@@ -207,10 +283,9 @@ fun LiveStreamScreen(
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .imePadding()
-                    // The player is an overlay inside the feed screen, which
-                    // draws its own floating tab bar underneath everything
-                    // here — without this the message box sits behind it.
-                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 80.dp),
+                    // LiveStreamHost draws this above the floating tab bar, so
+                    // no room is kept for it.
+                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             ) {
                 OutlinedTextField(
                     value = chatInput,
@@ -237,6 +312,45 @@ fun LiveStreamScreen(
             }
         }
 
+        // Reporting also blocks, as the report dialog does everywhere else in
+        // the app — so the stream closes.
+        if (showReportStream) {
+            UGCReportDialog(
+                onReport = { reason, description ->
+                    showReportStream = false
+                    viewModel.reportHost(stream, reason, description)
+                    onBack()
+                },
+                onDismiss = { showReportStream = false },
+            )
+        }
+        reportingMessage?.let { entry ->
+            UGCReportDialog(
+                onReport = { reason, description ->
+                    reportingMessage = null
+                    viewModel.reportMessage(entry, reason, description)
+                },
+                onDismiss = { reportingMessage = null },
+            )
+        }
+        if (showBlockConfirm) {
+            AlertDialog(
+                onDismissRequest = { showBlockConfirm = false },
+                title = { Text("Block this host?") },
+                text = { Text("Their streams and posts stop appearing for you.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showBlockConfirm = false
+                        viewModel.blockHost(stream)
+                        onBack()
+                    }) { Text("Block", color = ErrorRed) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBlockConfirm = false }) { Text("Cancel") }
+                },
+            )
+        }
+
         if (showZapSheet) {
             ZapAmountSheet(
                 onPick = { sats ->
@@ -253,10 +367,13 @@ fun LiveStreamScreen(
  * audience experiences them — a 5,000 sat zap is a louder message, not a
  * separate feature.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LiveChat(
     messages: List<LiveChatService.ChatEntry>,
     profiles: Map<String, FeedProfile>,
+    /** Long-press a line to report it. */
+    onReport: (LiveChatService.ChatEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -277,32 +394,50 @@ private fun LiveChat(
     LazyColumn(state = listState, modifier = modifier.fillMaxWidth()) {
         items(messages, key = { it.id }) { entry ->
             val name = profiles[entry.pubkey]?.bestName ?: entry.pubkey.take(8)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 5.dp),
-            ) {
-                if (entry.zapSats != null) {
+            var showMenu by remember { mutableStateOf(false) }
+            Box {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = { showMenu = true },
+                            onLongClickLabel = "Message options",
+                        )
+                        .padding(horizontal = 16.dp, vertical = 5.dp),
+                ) {
+                    if (entry.zapSats != null) {
+                        Text(
+                            // A zap whose amount the receipt did not carry still
+                            // happened — show the bolt, not a zero.
+                            text = if (entry.zapSats > 0) "⚡ ${entry.zapSats}" else "⚡",
+                            color = colors.primary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Text(
-                        // A zap whose amount the receipt did not carry still
-                        // happened — show the bolt, not a zero.
-                        text = if (entry.zapSats > 0) "⚡ ${entry.zapSats}" else "⚡",
-                        color = colors.primary,
+                        text = buildString {
+                            append(name)
+                            append("  ")
+                            append(entry.content)
+                        },
+                        color = if (entry.zapSats != null) colors.primary else PrimaryText,
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
+                        lineHeight = 18.sp,
                     )
-                    Spacer(Modifier.width(6.dp))
                 }
-                Text(
-                    text = buildString {
-                        append(name)
-                        append("  ")
-                        append(entry.content)
-                    },
-                    color = if (entry.zapSats != null) colors.primary else PrimaryText,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                )
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Report message") },
+                        leadingIcon = { Icon(NostrVaultIcons.Alert, contentDescription = null) },
+                        onClick = {
+                            showMenu = false
+                            onReport(entry)
+                        },
+                    )
+                }
             }
         }
     }
@@ -346,6 +481,7 @@ class LiveStreamViewModel @Inject constructor(
     private val liveChatService: LiveChatService,
     private val zapSendService: ZapSendService,
     private val nostrService: NostrService,
+    private val feedService: FeedService,
 ) : ViewModel() {
 
     val messages: StateFlow<List<LiveChatService.ChatEntry>> = liveChatService.messages
@@ -357,7 +493,12 @@ class LiveStreamViewModel @Inject constructor(
     private val _sending = MutableStateFlow(false)
     val sending: StateFlow<Boolean> = _sending.asStateFlow()
 
-    fun join(stream: LiveStream) = liveChatService.join(stream)
+    fun join(stream: LiveStream) {
+        // One view model serves every stream opened (LiveStreamHost sits
+        // outside the nav graph), so the last stream's "Zapped" must not carry over.
+        _status.value = null
+        liveChatService.join(stream)
+    }
 
     fun leave() = liveChatService.leave()
 
@@ -392,4 +533,30 @@ class LiveStreamViewModel @Inject constructor(
     }
 
     fun clearStatus() { _status.value = null }
+
+    /**
+     * NIP-56 report of the stream's host (the stream event has no id to hand),
+     * then a block, as reporting does everywhere else in the app.
+     */
+    fun reportHost(stream: LiveStream, reason: String, description: String) {
+        viewModelScope.launch {
+            nostrService.reportUser(stream.hostPubkey, reason, description.ifBlank { null })
+            feedService.blockUser(stream.hostPubkey)
+        }
+    }
+
+    fun blockHost(stream: LiveStream) {
+        viewModelScope.launch { feedService.blockUser(stream.hostPubkey) }
+    }
+
+    /**
+     * Reports the event that carries the text — the receipt, for a zap line,
+     * which is attributed to the payer — and blocks its author.
+     */
+    fun reportMessage(entry: LiveChatService.ChatEntry, reason: String, description: String) {
+        viewModelScope.launch {
+            nostrService.reportEvent(entry.id, entry.pubkey, reason, description.ifBlank { null })
+            feedService.blockUser(entry.pubkey)
+        }
+    }
 }

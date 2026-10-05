@@ -397,6 +397,16 @@ class DashboardViewModel @Inject constructor(
                 .drop(1) // Skip initial emission
                 .collect { resetForAccountSwitch() }
         }
+
+        // Blocking someone (this tab's Block User, the feed, Settings) drops
+        // their notes here on the next pass, as iOS's vault does.
+        viewModelScope.launch {
+            configStore.config
+                .map { it.blockedForActiveAccount() }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { scheduleUpdateDisplayData() }
+        }
     }
 
     /** Clears all per-account event state and reconnects fresh. See init{}'s observer. */
@@ -1321,6 +1331,8 @@ class DashboardViewModel @Inject constructor(
         val events = allEventsMutex.withLock { allEvents.toList() }
         val owner = nostrService.activeHexPubkey
         val whitelist = resolveWhitelistedHexPubkeys()
+        val blocked = configStore.config.value.blockedForActiveAccount()
+            .mapNotNull { nostrService.npubToHex(it) }.toSet()
 
         // Partition once instead of re-scanning the full list per kind.
         // allEvents can hold one event twice (history pages query outbox and
@@ -1358,6 +1370,8 @@ class DashboardViewModel @Inject constructor(
                         }
                         return@filter false
                     }
+
+                    if (event.pubkey in blocked) return@filter false
 
                     when (currentFilter) {
                         VaultContentFilter.ALL -> {
@@ -1740,6 +1754,11 @@ class DashboardViewModel @Inject constructor(
     fun profileFor(pubkey: String): FeedProfile? = profiles.value[pubkey]
 
     fun currentUserPubkey(): String = nostrService.activeHexPubkey
+
+    /** NIP-56 report of a Relay-tab note. The caller also blocks the author, as iOS's UGCReportingDialog does. */
+    fun reportNote(noteId: String, pubkey: String, reason: String, description: String) {
+        nostrService.reportEvent(noteId, pubkey, reason, description.ifBlank { null })
+    }
 
     fun isWhitelisted(pubkey: String): Boolean =
         resolveWhitelistedHexPubkeys().contains(pubkey)
@@ -2307,6 +2326,14 @@ fun DashboardScreen(
             quotedIds.mapNotNull { id -> feedService.quotedNoteFor(id)?.let { id to it } }.toMap()
         }
 
+        // Long-press Report Post / Block User on a row (iOS NoteRow). Reporting
+        // also blocks the author, matching the feed, NoteDetail, and iOS.
+        val blockAuthor: (String) -> Unit = { pubkey -> feedService.blockUser(pubkey) }
+        val reportNote: (FeedNote, String, String) -> Unit = { note, reason, description ->
+            viewModel.reportNote(note.id, note.pubkey, reason, description)
+            feedService.blockUser(note.pubkey)
+        }
+
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = viewModel::loadLocalRelayNotes,
@@ -2331,6 +2358,8 @@ fun DashboardScreen(
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
                     focusedEventId = focusedEventId,
+                    onReportNote = reportNote,
+                    onBlockAuthor = blockAuthor,
                 )
                 VaultViewMode.LIKES -> LikesContent(
                     notes = displayLikedNotes,
@@ -2347,6 +2376,8 @@ fun DashboardScreen(
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
                     focusedEventId = focusedEventId,
+                    onReportNote = reportNote,
+                    onBlockAuthor = blockAuthor,
                 )
                 VaultViewMode.ZAPS -> ZapsContent(
                     notes = displayZappedNotes,
@@ -2363,6 +2394,8 @@ fun DashboardScreen(
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
                     focusedEventId = focusedEventId,
+                    onReportNote = reportNote,
+                    onBlockAuthor = blockAuthor,
                 )
                 VaultViewMode.FOLLOWERS -> FollowersContent(
                     snapshot = followerSnapshot,
@@ -2503,6 +2536,8 @@ private fun NotesContent(
     onProfileClick: (String) -> Unit,
     /** The row a tapped notification landed on, outlined briefly. */
     focusedEventId: String? = null,
+    onReportNote: (FeedNote, String, String) -> Unit,
+    onBlockAuthor: (String) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
     val latestReactionDates by viewModel.latestReactionDates.collectAsState()
@@ -2567,6 +2602,8 @@ private fun NotesContent(
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
+                    onReport = { reason, description -> onReportNote(note, reason, description) },
+                    onBlock = { onBlockAuthor(note.pubkey) },
                     modifier = Modifier
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                         .relayFocusOutline(note.id == focusedEventId),
@@ -2613,6 +2650,8 @@ private fun LikesContent(
     onProfileClick: (String) -> Unit,
     /** The row a tapped notification landed on, outlined briefly. */
     focusedEventId: String? = null,
+    onReportNote: (FeedNote, String, String) -> Unit,
+    onBlockAuthor: (String) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
     val latestReactionDates by viewModel.latestReactionDates.collectAsState()
@@ -2698,6 +2737,8 @@ private fun LikesContent(
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
+                    onReport = { reason, description -> onReportNote(note, reason, description) },
+                    onBlock = { onBlockAuthor(note.pubkey) },
                     modifier = Modifier
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                         .relayFocusOutline(note.id == focusedEventId),
@@ -2728,6 +2769,8 @@ private fun ZapsContent(
     onProfileClick: (String) -> Unit,
     /** The row a tapped notification landed on, outlined briefly. */
     focusedEventId: String? = null,
+    onReportNote: (FeedNote, String, String) -> Unit,
+    onBlockAuthor: (String) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
 
@@ -2814,6 +2857,8 @@ private fun ZapsContent(
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
+                    onReport = { reason, description -> onReportNote(note, reason, description) },
+                    onBlock = { onBlockAuthor(note.pubkey) },
                     modifier = Modifier
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                         .relayFocusOutline(note.id == focusedEventId),
