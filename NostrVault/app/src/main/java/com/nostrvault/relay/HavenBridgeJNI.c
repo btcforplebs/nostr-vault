@@ -90,6 +90,7 @@ extern char* NIP46GetPendingAuthURLC(void);
 extern char* NIP46ActivateC(const char* signerPubkey);
 extern void NIP46DropC(const char* signerPubkey);
 extern char* NIP46SignEventWithC(const char* signerPubkey, const char* eventJSON);
+extern char* NIP46AwaitNostrConnectC(const char* clientSK, const char* relaysJSON, const char* secret, long long since, int waitSeconds);
 extern char* ComputePopularNotesC(void);
 extern char* GetFollowersC(const char* owner);
 extern char* GetImportLogC(void);
@@ -442,6 +443,22 @@ Java_com_nostrvault_relay_HavenBridge_nip46NIP04Decrypt(JNIEnv *env, jobject thi
 JNIEXPORT jint JNICALL
 Java_com_nostrvault_relay_HavenBridge_nip46Ping(JNIEnv *env, jobject thiz) {
     return NIP46PingC();
+}
+
+/* nostrconnect:// pairing: waits up to waitSeconds for the signer's answer
+ * carrying our secret; returns the signer's hex pubkey or null. */
+JNIEXPORT jstring JNICALL
+Java_com_nostrvault_relay_HavenBridge_nip46AwaitNostrConnect(JNIEnv *env, jobject thiz,
+        jstring clientSecretKey, jstring relaysJson, jstring secret, jlong since, jint waitSeconds) {
+    const char *cSk = GET_CSTR(env, clientSecretKey);
+    const char *cRelays = GET_CSTR(env, relaysJson);
+    const char *cSecret = GET_CSTR(env, secret);
+    char *result = NIP46AwaitNostrConnectC((char*)cSk, (char*)cRelays, (char*)cSecret,
+            (long long)since, (int)waitSeconds);
+    REL_CSTR(env, clientSecretKey, cSk);
+    REL_CSTR(env, relaysJson, cRelays);
+    REL_CSTR(env, secret, cSecret);
+    return goStringToJstring(env, result);
 }
 
 JNIEXPORT jstring JNICALL
