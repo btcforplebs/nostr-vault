@@ -3197,7 +3197,10 @@ struct FeedNoteRow: View {
     var onMedia: ((URL, [URL]) -> Void)? = nil
     var showParent: Bool = true
     var isReplyToNext: Bool = false
-    var layoutMode: NoteLayoutMode = .sideBySide
+    /// `.wide` everywhere (Logen): avatar and name on one line, text and
+    /// media full width under it, so an expanded post looks the same in the
+    /// feed, threaded cards and the thread view, and gets the most room.
+    var layoutMode: NoteLayoutMode = .wide
     var isFocused: Bool = false
     var suppressCardStyling: Bool = false
     /// Lets a caller shrink the avatar without touching anything else about
