@@ -45,6 +45,7 @@ import com.nostrvault.ui.components.mediaZoomSource
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -100,6 +101,11 @@ class DMThreadViewModel @Inject constructor(
     private val _attachedImage = MutableStateFlow<Uri?>(null)
     val attachedImage = _attachedImage.asStateFlow()
 
+    /** Set when a send fails; the screen shows it in the "Failed to Send" alert. */
+    private val _sendError = MutableStateFlow<String?>(null)
+    val sendError = _sendError.asStateFlow()
+    fun clearSendError() { _sendError.value = null }
+
     /** Called while the thread is on screen, so its notifications stay quiet. */
     fun setVisible(visible: Boolean) {
         if (visible) {
@@ -138,18 +144,30 @@ class DMThreadViewModel @Inject constructor(
             _isSending.value = true
             _messageText.value = ""
             _attachedImage.value = null
-            val imageUrl = image?.let { uploadImage(it) }
-            val content = buildString {
-                append(text)
-                if (imageUrl != null) {
-                    if (text.isNotEmpty()) append("\n")
-                    append(imageUrl)
+            try {
+                // The photo goes up first: a message naming a URL no server
+                // holds would reach them as a dead link (as iOS).
+                val imageUrl = image?.let { uploadImage(it) ?: throw DMPhotoUploadException() }
+                val content = buildString {
+                    append(text)
+                    if (imageUrl != null) {
+                        if (text.isNotEmpty()) append("\n")
+                        append(imageUrl)
+                    }
                 }
+                if (content.isNotEmpty()) {
+                    dmService.sendMessage(counterpartyPubkey, content, _useNIP04.value)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Hand the message back unless something new was typed meanwhile.
+                if (_messageText.value.isEmpty()) _messageText.value = text
+                if (_attachedImage.value == null) _attachedImage.value = image
+                _sendError.value = DMSendFailure.message(e)
+            } finally {
+                _isSending.value = false
             }
-            if (content.isNotEmpty()) {
-                dmService.sendMessage(counterpartyPubkey, content, _useNIP04.value)
-            }
-            _isSending.value = false
         }
     }
 
@@ -192,12 +210,15 @@ fun DMThreadScreen(
     val useNIP04 by viewModel.useNIP04.collectAsState()
     val hasNIP04Messages by viewModel.hasNIP04Messages.collectAsState()
     val attachedImage by viewModel.attachedImage.collectAsState()
+    val sendError by viewModel.sendError.collectAsState()
     val listState = rememberLazyListState()
     val colors = LocalNostrVaultColors.current
 
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri -> uri?.let { viewModel.setAttachedImage(it) } }
+
+    sendError?.let { DMSendFailedDialog(it, onDismiss = viewModel::clearSendError) }
 
     DisposableEffect(viewModel) {
         viewModel.setVisible(true)
