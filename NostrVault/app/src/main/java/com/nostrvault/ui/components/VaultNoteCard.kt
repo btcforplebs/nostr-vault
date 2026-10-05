@@ -9,7 +9,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,6 +28,8 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.ReactionDetail
+import com.nostrvault.data.model.RepostDetail
 import com.nostrvault.ui.theme.*
 import java.util.Date
 
@@ -51,12 +56,16 @@ fun VaultNoteCard(
     /** Where a quoted long-form post opens; the note screen shows Markdown source. */
     onArticleClick: ((String) -> Unit)? = null,
     onProfileClick: (String) -> Unit,
+    /** Null opens the card's own Reactions / Reposts / Quoted By sheet (iOS NoteRow owns these). */
     onReactorsClick: (() -> Unit)? = null,
     onRepostersClick: (() -> Unit)? = null,
     onQuotersClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isCompact = layoutMode == VaultNoteLayoutMode.COMPACT
+    var showReactors by remember { mutableStateOf(false) }
+    var showReposters by remember { mutableStateOf(false) }
+    var showQuoters by remember { mutableStateOf(false) }
     val colors = LocalNostrVaultColors.current
     // Zaps Only mode strips reactions from the inline engagement bar entirely.
     val effectiveReactors = if (LocalZapsOnlyMode.current) emptyList() else reactors
@@ -104,11 +113,42 @@ fun VaultNoteCard(
                 zappers = zappers,
                 noteType = noteType,
                 onProfileClick = onProfileClick,
-                onReactorsClick = onReactorsClick,
-                onRepostersClick = onRepostersClick,
-                onQuotersClick = onQuotersClick,
+                onReactorsClick = onReactorsClick ?: { showReactors = true },
+                onRepostersClick = onRepostersClick ?: { showReposters = true },
+                onQuotersClick = onQuotersClick ?: { showQuoters = true },
             )
         }
+    }
+
+    // The engagement bar's counts open who reacted / reposted / quoted, as on
+    // iOS (VaultNoteRow's ReactorsListView, RepostersListView, QuotersListView).
+    // Tapping a person closes the sheet and opens their profile.
+    if (showReactors) {
+        ReactorsSheet(
+            reactions = effectiveReactors.distinctBy { it.first }
+                .map { (pubkey, emoji) -> ReactionDetail(id = pubkey, pubkey = pubkey, emoji = emoji) },
+            profiles = profiles,
+            onProfileClick = { showReactors = false; onProfileClick(it) },
+            onDismiss = { showReactors = false },
+        )
+    }
+    if (showReposters) {
+        RepostersSheet(
+            reposts = reposterPubkeys.distinct().map { RepostDetail(id = it, pubkey = it) },
+            profiles = profiles,
+            onProfileClick = { showReposters = false; onProfileClick(it) },
+            onDismiss = { showReposters = false },
+        )
+    }
+    if (showQuoters) {
+        RepostersSheet(
+            reposts = quoterPubkeys.distinct().map { RepostDetail(id = it, pubkey = it) },
+            profiles = profiles,
+            onProfileClick = { showQuoters = false; onProfileClick(it) },
+            onDismiss = { showQuoters = false },
+            title = "Quoted By",
+            emptyText = "No quotes yet",
+        )
     }
 }
 
