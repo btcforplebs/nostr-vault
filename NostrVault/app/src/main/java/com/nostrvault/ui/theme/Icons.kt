@@ -24,6 +24,10 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Construction
@@ -166,6 +170,10 @@ object NostrVaultIcons {
     val Quote: ImageVector = Icons.Filled.FormatQuote         // quote.closing (quotation marks)
     val Refresh: ImageVector = Icons.Filled.Refresh        // arrow.clockwise
     val Check: ImageVector = Icons.Filled.Check            // checkmark
+    val CheckCircle: ImageVector = Icons.Filled.CheckCircle // checkmark.circle.fill
+    val CircleOutline: ImageVector = Icons.Outlined.Circle  // circle
+    val DragHandle: ImageVector = Icons.Filled.DragHandle  // line.3.horizontal
+    val EditFeeds: ImageVector = Icons.Filled.Tune         // slider.horizontal.3
     val Info: ImageVector = Icons.Filled.Info              // info.circle
     @Suppress("DEPRECATION")
     val Send: ImageVector = Icons.Filled.Send              // paperplane.fill

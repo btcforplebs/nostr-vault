@@ -660,19 +660,33 @@ fun NoteDetailScreen(
         }
     }
 
-    // Puts the note you opened at the top, with the posts it answers
-    // scrollable above. Runs again whenever the content above it changes
-    // (history arriving, the layout switching, the screen size settling),
-    // until the reader scrolls: a single jump was undone by whatever loaded
-    // next, and the opened reply ended up down the screen. iOS #282.
+    // Puts the note you opened a little below the top (12% down, so the end
+    // of the post it answers shows above it), with the rest of the posts it
+    // answers scrollable above. Runs again whenever the content above it
+    // changes (history arriving, the layout switching, the screen size
+    // settling), until the reader scrolls: a single jump was undone by
+    // whatever loaded next, and the opened reply ended up down the screen.
+    // iOS #282, #306. The first landing is instant, before the thread has
+    // been seen; a later one (history arriving late) glides instead of jumping.
+    var hasLanded by remember { mutableStateOf(false) }
     LaunchedEffect(isLoadingParents, heroIndex, viewportHeight, note != null) {
         if (readerTookOver || isLoadingParents || note == null || heroIndex == 0) return@LaunchedEffect
+        suspend fun land() {
+            if (readerTookOver || heroIndex >= listState.layoutInfo.totalItemsCount) return
+            val offset = -(viewportHeight * THREAD_LANDING_ANCHOR).toInt()
+            // A negative scroll offset puts the item that far below the top.
+            val there = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == heroIndex }?.offset == -offset
+            if (there) return
+            if (hasLanded) listState.animateScrollToItem(heroIndex, offset)
+            else listState.scrollToItem(heroIndex, offset)
+            hasLanded = true
+        }
         // Next frame, once the revealed history has laid out, and once more
         // after images above have had a moment to size themselves.
         withFrameNanos { }
-        if (!readerTookOver && heroIndex < listState.layoutInfo.totalItemsCount) listState.scrollToItem(heroIndex)
+        land()
         kotlinx.coroutines.delay(400)
-        if (!readerTookOver && heroIndex < listState.layoutInfo.totalItemsCount) listState.scrollToItem(heroIndex)
+        land()
     }
 
     // A note picked in the thread becomes the hero and scrolls to the top.
@@ -1780,3 +1794,6 @@ private fun OtherResponseCard(note: FeedNote, profile: FeedProfile?, onClick: ()
         }
     }
 }
+
+/** Where the opened note lands in the thread view, as a share of its height from the top (iOS #306). */
+private const val THREAD_LANDING_ANCHOR = 0.12f

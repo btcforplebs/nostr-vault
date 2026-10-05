@@ -57,6 +57,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.stateDescription
+import com.nostrvault.data.model.FeedMenuSettings
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.glassPillBackground
@@ -425,7 +426,7 @@ private fun NavTab(
                 onClick(label = null) { currentOnClick(); true }
                 stateDescription = FeedTabPicker.shownMode?.displayName ?: ""
                 // One action per feed, as iOS's accessibilityActions.
-                customActions = FeedMode.entries.map { mode ->
+                customActions = FeedMenuSettings.menuModes().map { mode ->
                     CustomAccessibilityAction(mode.displayName) { currentPick?.invoke(mode); true }
                 }
             }

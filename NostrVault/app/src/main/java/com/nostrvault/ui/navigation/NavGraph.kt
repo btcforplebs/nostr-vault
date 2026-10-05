@@ -1,5 +1,7 @@
 package com.nostrvault.ui.navigation
 
+import androidx.compose.ui.graphics.TransformOrigin
+import com.nostrvault.ui.components.ThreadZoomOrigin
 import com.nostrvault.ui.components.ZapFlightStage
 import com.nostrvault.ui.components.ScrollChrome
 import com.nostrvault.ui.components.rememberScrollChromeConnection
@@ -400,6 +402,22 @@ fun NostrVaultNavHost(
                 composable(
                     route = Screen.NoteDetail.route,
                     arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
+                    // Zooms open out of the tapped post and closes back into
+                    // it (iOS #306); from the middle when no post was tapped.
+                    enterTransition = {
+                        val origin = ThreadZoomOrigin.take(targetState.id) ?: TransformOrigin.Center
+                        fadeIn(pushMotion()) + scaleIn(initialScale = 0.80f, transformOrigin = origin, animationSpec = pushMotion())
+                    },
+                    // Coming back to a thread is the host's return, not the
+                    // open-zoom: composable() would otherwise reuse enterTransition.
+                    popEnterTransition = {
+                        if (isTabSwitch()) fadeIn(tabMotion()) + scaleIn(initialScale = 0.92f, animationSpec = tabMotion())
+                        else fadeIn(pushMotion()) + scaleIn(initialScale = 1.10f, animationSpec = pushMotion())
+                    },
+                    popExitTransition = {
+                        val origin = ThreadZoomOrigin.closing(initialState.id) ?: TransformOrigin.Center
+                        fadeOut(pushMotion()) + scaleOut(targetScale = 0.80f, transformOrigin = origin, animationSpec = pushMotion())
+                    },
                 ) { entry ->
                     val noteId = entry.arguments?.getString("noteId") ?: return@composable
                     NoteDetailScreen(
@@ -805,8 +823,11 @@ fun NostrVaultNavHost(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(
-                    bottom = if (showBottomBar) 84.dp else 16.dp,
-                    end = if (chromeFolds) 132.dp else 0.dp,
+                    bottom = if (showBottomBar) FloatingButtonRow.rowBottom else 16.dp,
+                    // Stops short of the screen's floating button, which
+                    // sits level with it (FloatingButtonRow); the bar's own
+                    // 12dp side inset already counts toward the gap.
+                    end = (FloatingButtonRow.reservedWidth - 12.dp).coerceAtLeast(0.dp),
                 ),
         )
 

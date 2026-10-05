@@ -24,11 +24,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.scale
@@ -284,6 +288,10 @@ fun NoteCard(
         }
     }
     val connectorColor = colors.primary.copy(alpha = 0.3f)
+    // A holder, not state, and the bounds are worked out only on tap: no
+    // per-frame work while the feed scrolls.
+    val cardCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val zoomView = LocalView.current
 
     // Thread connector lines drawn behind the card
     val drawConnectors = parentIsNext || hasReplyBelow
@@ -336,7 +344,14 @@ fun NoteCard(
         modifier = modifier
             .fillMaxWidth()
             .then(connectorModifier)
-            .clickable { onNoteClick(note.id) },
+            .onGloballyPositioned { cardCoords[0] = it }
+            .clickable {
+                // The thread view zooms open out of this card (iOS #306).
+                cardCoords[0]?.takeIf { it.isAttached }?.boundsInWindow()?.let { b ->
+                    ThreadZoomOrigin.mark(b.center.x, b.center.y, zoomView.width, zoomView.height)
+                }
+                onNoteClick(note.id)
+            },
     ) {
         // Subtle tint overlay matching iOS havenPurple.opacity(0.015) on focused notes
         Box(
@@ -526,10 +541,12 @@ fun NoteCard(
 
             Spacer(Modifier.height(8.dp))
 
-            // Content text (rich: clickable mentions, links, hashtags)
+            // Content text (rich: clickable mentions, links, hashtags). Text,
+            // quotes, links and media run the card's full width under the
+            // avatar row, in every view (iOS #286, Logen: the most room).
             val isArticle = note.kind == ArticleMeta.KIND
             if (repostPlaceholder != null) {
-                RepostPlaceholderLine(repostPlaceholder, modifier = Modifier.padding(start = 50.dp))
+                RepostPlaceholderLine(repostPlaceholder)
             } else if (isArticle) {
                 // Long-form rides in the notes feed with kinds 1 and 6; its title
                 // is a tag and its body Markdown, so the text path drew the whole
@@ -537,7 +554,6 @@ fun NoteCard(
                 ArticleInlineBody(
                     note = note,
                     onClick = { (onArticleClick ?: onNoteClick)(note.id) },
-                    modifier = Modifier.padding(start = 50.dp),
                 )
             } else if (note.content.isNotBlank()) {
                 val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
@@ -551,7 +567,6 @@ fun NoteCard(
                     fontSize = 17.sp,
                     lineHeight = 24.sp,
                     onTranslationClick = { onNoteClick(note.id) },
-                    modifier = Modifier.padding(start = 50.dp),
                 ) {
                     NostrContentText(
                         content = note.content,
@@ -578,13 +593,11 @@ fun NoteCard(
                             profiles = profiles,
                             onClick = onNoteClick,
                             onArticleClick = onArticleClick,
-                            modifier = Modifier.padding(start = 50.dp),
                         )
                     } else {
                         QuotedNotePlaceholder(
                             identifier = qid,
                             onClick = onNoteClick,
-                            modifier = Modifier.padding(start = 50.dp),
                         )
                     }
                     Spacer(Modifier.height(4.dp))
@@ -598,7 +611,6 @@ fun NoteCard(
                 Spacer(Modifier.height(8.dp))
                 LinkPreviewCard(
                     url = link,
-                    modifier = Modifier.padding(start = 50.dp),
                 )
             }
 
@@ -609,7 +621,6 @@ fun NoteCard(
                     urls = note.mediaURLs,
                     tags = note.tags,
                     autoplayVideos = autoplayVideos,
-                    modifier = Modifier.padding(start = 50.dp),
                 )
             }
 
@@ -1581,24 +1592,28 @@ private fun SingleMediaPreview(
     // pixel.
     val ratio = hintedRatio ?: decodedRatio
 
+    val loaded = painter.state is AsyncImagePainter.State.Success
+
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val cap = if (ratio != null && ratio < 1f) 600.dp else 400.dp
         val displayHeight = if (ratio != null) minOf(maxWidth / ratio, cap) else 200.dp
+        // Square to its edges, with no rounded frame, and grey only while
+        // the photo loads (iOS #286, Logen: screen room).
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(displayHeight)
                 .mediaZoomSource(sourceKey)
-                .clip(RoundedCornerShape(8.dp))
-                .background(TertiaryGroupedBg)
+                .clipToBounds()
+                .then(if (loaded) Modifier else Modifier.background(TertiaryGroupedBg))
                 .clickable { onMediaClick(url) },
         ) {
             BlurHashPreview(
                 url = url,
                 tags = tags,
                 ratio = ratio,
-                loaded = painter.state is AsyncImagePainter.State.Success,
+                loaded = loaded,
             )
             Image(
                 painter = painter,
@@ -1692,13 +1707,14 @@ private fun MediaCarousel(
     }
 
     // A pager has one height for every page, so the ratio comes from the first
-    // image — the one you see before you swipe. Pages are drawn Fit inside it,
-    // which letterboxes the others rather than cropping them.
+    // image — the one you see before you swipe — and the first page fits it
+    // exactly. Every page fills the frame edge to edge, cropping a page whose
+    // shape differs, rather than sitting letterboxed in a grey box (iOS #286,
+    // Logen 2026-10-05).
     //
-    // This used to be a hard `aspectRatio(4f / 3f)` with `ContentScale.Crop`, so
-    // a portrait photo displayed whole when posted alone and was centre-cropped
-    // into a landscape box the moment a second image joined it. Faces and text
-    // went off the edges of the same file that rendered fine on its own.
+    // This used to be a hard `aspectRatio(4f / 3f)`, which cropped even the
+    // first photo: a portrait one displayed whole when posted alone lost its
+    // top and bottom the moment a second image joined it.
     val firstRatio = remember(urls, tags) { knownAspectRatio(tags, urls.first()) }
     val pagerRatio = (firstRatio ?: (4f / 3f)).coerceIn(2f / 3f, 16f / 9f)
 
@@ -1708,18 +1724,18 @@ private fun MediaCarousel(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(pagerRatio)
-                .clip(RoundedCornerShape(8.dp)),
+                .clipToBounds(),
         ) { page ->
             val url = urls[page]
+            var loaded by remember(url) { mutableStateOf(false) }
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxSize()
                     .mediaZoomSource(MediaSourceKey(origin, page))
-                    .background(TertiaryGroupedBg)
+                    .then(if (loaded) Modifier else Modifier.background(TertiaryGroupedBg))
                     .clickable { onMediaClick(page) },
             ) {
-                var loaded by remember(url) { mutableStateOf(false) }
                 BlurHashPreview(
                     url = url,
                     tags = tags,
@@ -1733,7 +1749,7 @@ private fun MediaCarousel(
                         .crossfade(100)
                         .build(),
                     contentDescription = null,
-                    contentScale = ContentScale.Fit,
+                    contentScale = ContentScale.Crop,
                     onSuccess = { result ->
                         loaded = true
                         val d = result.result.drawable

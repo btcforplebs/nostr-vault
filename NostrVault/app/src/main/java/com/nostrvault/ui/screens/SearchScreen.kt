@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens
 
+import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.ui.components.ZapFlight
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -637,7 +638,7 @@ fun SearchScreen(
                     shape = RoundedCornerShape(50),
                     color = Color.Transparent,
                     modifier = Modifier
-                        .padding(bottom = 88.dp)
+                        .floatingRowButton()
                         .shadow(
                             elevation = 8.dp,
                             shape = RoundedCornerShape(50),

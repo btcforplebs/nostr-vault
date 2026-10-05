@@ -2483,6 +2483,14 @@ class FeedService @Inject constructor(
         return map
     }
 
+    /**
+     * Builds the note index for the current list, so the next lookup on Main
+     * does not. The feed calls it off Main when its list changes.
+     */
+    fun warmNoteIndex() {
+        noteIndex()
+    }
+
     fun findNote(id: String): FeedNote? {
         return noteIndex()[id]
             ?: _parentNotesCache.value[id]
@@ -2668,8 +2676,15 @@ class FeedService @Inject constructor(
     }
 
     fun fetchMissingNotesBatch(ids: List<String>) {
+        // A post that arrived through the feed itself can be the parent (or
+        // repost original, or quote) a row is waiting on. Rows read parents
+        // from the cache only, so they kept their skeleton until a relay
+        // answered for a note the phone already had (iOS #302). Checked
+        // before the in-flight filter: the feed often delivers it mid-lookup.
+        val inFeed = adoptFeedNotes(ids)
         val now = System.currentTimeMillis()
         val wanted = ids.filter { id ->
+            if (id in inFeed) return@filter false
             if (_parentNotesCache.value.containsKey(id) || id in noteFetchInFlight) return@filter false
             val since = unavailableSince[id] ?: return@filter true
             now - since >= UNAVAILABLE_RETRY_MS
@@ -2701,6 +2716,25 @@ class FeedService @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Copies the notes among [ids] that are already in the feed into the
+     * parent cache and clears any "unavailable" mark on them. Matches on the
+     * note's own id only: a repost is indexed under its original's id too,
+     * and a row must not show the repost as the parent. Returns the ids found.
+     */
+    private fun adoptFeedNotes(ids: List<String>): Set<String> {
+        val index = noteIndex()
+        val notes = _notes.value
+        val found = ids.mapNotNull { id -> feedNoteWithOwnId(index, notes, id) }
+            .filter { !_parentNotesCache.value.containsKey(it.id) }
+        if (found.isEmpty()) return emptySet()
+        _parentNotesCache.update { cache -> cache + found.associateBy { it.id } }
+        val foundIds = found.mapTo(HashSet()) { it.id }
+        foundIds.forEach { unavailableSince.remove(it) }
+        if (_unavailableNoteIds.value.any { it in foundIds }) _unavailableNoteIds.update { it - foundIds }
+        return foundIds
     }
 
     /**
@@ -3730,3 +3764,14 @@ data class DiskFeedSnapshot(
 )
 
 // AccumulatorBatch replaced by BackgroundAccumulator.Snapshot in FeedServiceTypes.kt
+
+/**
+ * The note in the feed whose own id is [id], or null. [index] is the feed's
+ * lookup by id and by effectiveEventId; a repost is filed under its original's
+ * id too, and a newer repost claims that key before the original, so a miss
+ * there falls back to [notes] (iOS #302 matches on the note's own id).
+ */
+internal fun feedNoteWithOwnId(index: Map<String, FeedNote>, notes: List<FeedNote>, id: String): FeedNote? {
+    val hit = index[id] ?: return null
+    return if (hit.id == id) hit else notes.firstOrNull { it.id == id }
+}

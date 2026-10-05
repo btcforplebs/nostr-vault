@@ -650,6 +650,9 @@ class FeedViewModel @Inject constructor(
         feedService.fetchMissingNote(parentEventId)
     }
 
+    /** Off Main: the parent lookup that follows reads this index. */
+    fun warmNoteIndex() = feedService.warmNoteIndex()
+
     fun fetchMissingParentNotes(parentEventIds: List<String>) {
         feedService.fetchMissingNotesBatch(parentEventIds)
     }
