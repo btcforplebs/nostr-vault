@@ -22,9 +22,25 @@ import androidx.compose.ui.unit.dp
  * 2026-10-05).
  */
 object FloatingButtonRow {
-    /** The mini player's bottom edge above the screen's bottom while the tab bar shows. */
-    val miniPlayerBottom: Dp = 84.dp
     val miniPlayerHeight: Dp = 52.dp
+    /** The clear space the bottom bar keeps above its pill (its vertical padding). */
+    private val barTopPadding: Dp = 12.dp
+    /** The row sits this far above the bar's pill (iOS: the inset's 6pt spacing). */
+    private val aboveBar: Dp = 6.dp
+    /** Before the bar has been measured. */
+    private val fallbackBottom: Dp = 84.dp
+
+    /**
+     * The row's bottom edge above the screen's bottom: just over the bottom
+     * bar's pill, from the bar's measured height (system navigation inset
+     * included), as iOS takes it from the measured tab bar. A fixed number
+     * here sat the buttons on the bar on the Moto (Logen, 2026-10-05).
+     */
+    val rowBottom: Dp
+        get() = FloatingNavBarInset.height.value
+            .takeIf { it > 0.dp }
+            ?.let { it - barTopPadding + aboveBar }
+            ?: fallbackBottom
     /** Where a Scaffold puts a FAB above its bottom insets (Material3 FabSpacing). */
     private val scaffoldFabSpacing: Dp = 16.dp
     private val scaffoldFabEndInset: Dp = 16.dp
@@ -58,7 +74,8 @@ object FloatingButtonRow {
         return this
             .layout { measurable, constraints ->
                 val placeable = measurable.measure(constraints)
-                val centre = (miniPlayerBottom + miniPlayerHeight / 2).roundToPx()
+                // Read here, in layout, so a re-measured bar re-places the button.
+                val centre = (rowBottom + miniPlayerHeight / 2).roundToPx()
                 val lift = (centre - placeable.height / 2 - scaffoldFabSpacing.roundToPx() - bottomInset)
                     .coerceAtLeast(0)
                 layout(placeable.width, placeable.height + lift) { placeable.place(0, 0) }

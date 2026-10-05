@@ -817,7 +817,7 @@ fun NostrVaultNavHost(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(
-                    bottom = if (showBottomBar) FloatingButtonRow.miniPlayerBottom else 16.dp,
+                    bottom = if (showBottomBar) FloatingButtonRow.rowBottom else 16.dp,
                     // Stops short of the screen's floating button, which
                     // sits level with it (FloatingButtonRow); the bar's own
                     // 12dp side inset already counts toward the gap.
