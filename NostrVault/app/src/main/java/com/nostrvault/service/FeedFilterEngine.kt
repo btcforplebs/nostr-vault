@@ -93,9 +93,16 @@ object FeedFilterEngine {
         throttledPubkeys: Map<String, Int> = emptyMap(),
         globalLanguages: Set<String> = emptySet(),
         globalRequiresTrust: Boolean = true,
+        /** Articles/Recipes on Global (trust rule) rather than Following. */
+        longFormGlobal: Boolean = false,
         languageOf: (FeedNote) -> String? = { null },
         authorOf: (String) -> String? = { null },
     ): List<FeedNote> {
+        // Articles and Recipes: Following keeps to follows; Global follows
+        // the same Web of Trust / Everyone rule as Global, failing closed.
+        fun longFormAdmits(pubkey: String): Boolean =
+            if (longFormGlobal) !globalRequiresTrust || pubkey in wotPubkeys
+            else pubkey in followedPubkeys
         var filtered = notes.filter { note ->
             // Always exclude blocked people, wherever the row would show them
             if (involvesBlocked(note, blocked, authorOf)) return@filter false
@@ -137,12 +144,9 @@ object FeedFilterEngine {
                     }
                 }
                 FeedMode.MEDIA -> note.mediaURLs.isNotEmpty()
-                // Long-form only, from anyone the relay has. Scoping this to
-                // follows would usually show an empty screen: articles are rare
-                // enough that the interesting ones come from outside the follow
-                // set, and they are already in the vault either way.
-                FeedMode.ARTICLES -> note.kind == LONG_FORM_KIND
-                FeedMode.RECIPES -> note.kind == LONG_FORM_KIND && RecipeTopics.matches(note.tags)
+                FeedMode.ARTICLES -> note.kind == LONG_FORM_KIND && longFormAdmits(note.pubkey)
+                FeedMode.RECIPES -> note.kind == LONG_FORM_KIND && RecipeTopics.matches(note.tags) &&
+                    longFormAdmits(note.pubkey)
                 // Live streams are not notes; LiveFeedService supplies them.
                 FeedMode.LIVE -> false
                 // Listings are not notes; MarketplaceFeedService supplies them.
