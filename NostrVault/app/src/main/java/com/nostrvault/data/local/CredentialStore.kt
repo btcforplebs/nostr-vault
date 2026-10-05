@@ -79,6 +79,9 @@ object CredentialStore {
     fun getNsec(hexPubkey: String): String? =
         get(nsecKey(hexPubkey))
 
+    fun deleteNsec(hexPubkey: String): Boolean =
+        delete(nsecKey(hexPubkey))
+
     // ---- Keychain password (NIP-49 passphrase, keyed by npub) ----
 
     private fun keychainKey(npub: String): String = "keychain-$npub"
@@ -89,6 +92,9 @@ object CredentialStore {
     fun getKeychainPassword(npub: String): String? =
         get(keychainKey(npub))
 
+    fun deleteKeychainPassword(npub: String): Boolean =
+        delete(keychainKey(npub))
+
     // ---- Whitelisted account hex keys ----
 
     private fun credHexKey(npub: String): String = "cred-hex-$npub"
@@ -98,6 +104,9 @@ object CredentialStore {
 
     fun getCredentialHexKey(npub: String): String? =
         get(credHexKey(npub))
+
+    fun deleteCredentialHexKey(npub: String): Boolean =
+        delete(credHexKey(npub))
 
     // ---- Private helpers ----
 
