@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
@@ -97,6 +99,10 @@ fun VideoPlayer(
             exoPlayer.release()
         }
     }
+
+    // With sound, the video takes it over and the mini player pauses; muted,
+    // it leaves a playing song alone.
+    LaunchedEffect(isMuted) { exoPlayer.claimSound(!isMuted) }
 
     // Poll progress ~4 times per second while playing (skip updates during seek)
     LaunchedEffect(isPlaying, isSeeking) {
@@ -333,6 +339,22 @@ internal fun buildLoopingExoPlayer(
         this.playWhenReady = playWhenReady
         prepare()
     }
+
+/**
+ * Whether this player takes the app's sound. Claiming it requests audio
+ * focus, which pauses the mini player (MusicPlaybackService handles focus) and
+ * pauses this video when another app takes the sound. A muted video claims
+ * nothing, so silent videos starting or scrolling away never stop a song.
+ * iOS: AudioSessionManager.pauseAppAudio.
+ */
+internal fun ExoPlayer.claimSound(claim: Boolean) {
+    setAudioAttributes(VideoAudioAttributes, /* handleAudioFocus = */ claim)
+}
+
+private val VideoAudioAttributes: AudioAttributes = AudioAttributes.Builder()
+    .setUsage(C.USAGE_MEDIA)
+    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+    .build()
 
 /**
  * The bare video picture for [player]: no controller, a spinner while it

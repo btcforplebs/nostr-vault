@@ -108,7 +108,7 @@ fun CompactNoteCard(
                     )
 
                     Text(
-                        text = " · ${formatTimestamp(note.createdAt.time / 1000)}",
+                        text = " · ${formatTimestamp(note.postedAt.time / 1000)}",
                         color = TertiaryText,
                         fontSize = 12.sp,
                         maxLines = 1,

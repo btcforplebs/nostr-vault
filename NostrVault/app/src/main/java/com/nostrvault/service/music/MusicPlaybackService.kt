@@ -31,6 +31,10 @@ class MusicPlaybackService : MediaSessionService() {
             // Keep the CPU and Wi-Fi awake while streaming with the screen off.
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+        // A live stream rejoins the broadcast on Play, from the app, the
+        // notification or the lock screen alike, and an item that fell behind
+        // the live window is reloaded at the live edge.
+        player.addListener(LiveRejoinListener(player))
         session = MediaSession.Builder(this, player).build()
     }
 

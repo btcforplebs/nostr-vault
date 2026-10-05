@@ -81,6 +81,7 @@ import com.nostrvault.ui.components.NostrMentions
 import com.nostrvault.ui.components.ThinSeekBar
 import com.nostrvault.ui.components.VideoSurface
 import com.nostrvault.ui.components.buildLoopingExoPlayer
+import com.nostrvault.ui.components.claimSound
 import com.nostrvault.ui.components.formatTimestamp
 import com.nostrvault.ui.components.shareNote
 import com.nostrvault.ui.navigation.FloatingNavBarInset
@@ -327,6 +328,8 @@ private fun ReelPage(
     val shouldPlay = isCurrent && canPlay && !userPaused
     LaunchedEffect(player, isCurrent, shouldPlay, isMuted) {
         val p = player ?: return@LaunchedEffect
+        // Only the current reel with sound on takes the sound from the mini player.
+        p.claimSound(shouldPlay && !isMuted)
         if (shouldPlay) {
             p.volume = if (isMuted) 0f else 1f
             p.play()
