@@ -42,6 +42,7 @@ import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.*
+import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
@@ -146,8 +147,27 @@ class NoteDetailViewModel @Inject constructor(
     private val _perNoteEngagement = MutableStateFlow<Map<String, EngagementDetails>>(emptyMap())
     val perNoteEngagement: StateFlow<Map<String, EngagementDetails>> = _perNoteEngagement.asStateFlow()
 
+    /** The active account's blocked people (hex), kept current so blocking from here hides them at once. */
+    val blockedPubkeys: StateFlow<Set<String>> = configStore.config
+        .map { feedService.blockedHexForActiveAccount() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, feedService.blockedHexForActiveAccount())
+
+    /**
+     * Your Web of Trust plus follows, taken once the graph has loaded. Empty
+     * until then, which folds nobody. iOS: `feedService.relayTabTrustedPubkeys()`.
+     */
+    private val _trustedPubkeys = MutableStateFlow<Set<String>>(emptySet())
+    val trustedPubkeys: StateFlow<Set<String>> = _trustedPubkeys.asStateFlow()
+
+    val activeHexPubkey: String get() = nostrService.activeHexPubkey
+
     init {
         loadNoteThread()
+        viewModelScope.launch {
+            if (feedService.wotPubkeys.value.isEmpty()) feedService.loadWotPubkeys()
+            val wot = feedService.wotPubkeys.first { it.isNotEmpty() }
+            _trustedPubkeys.value = wot + feedService.followedPubkeys.value
+        }
         // Optimistic reply insertion: when the user publishes a reply from
         // ComposeNoteScreen it is emitted here immediately, before relay
         // confirmation, so it appears inline without waiting for a round-trip.
@@ -425,10 +445,6 @@ class NoteDetailViewModel @Inject constructor(
     fun isLiked(noteId: String): Boolean = likedEventIds.value.contains(noteId)
     fun isReposted(noteId: String): Boolean = repostedEventIds.value.contains(noteId)
 
-    /** Get direct child replies for a given note ID. */
-    fun childRepliesFor(parentId: String): List<FeedNote> =
-        _allReplies.value.filter { it.parentEventId == parentId }
-
     /** A note this thread or the feed has loaded: what a bare repost line carries. */
     fun findNote(id: String): FeedNote? =
         feedService.findNote(id) ?: _allReplies.value.firstOrNull { it.id == id }
@@ -538,6 +554,11 @@ fun NoteDetailScreen(
         }
     }
 
+    val blockedPubkeys by viewModel.blockedPubkeys.collectAsState()
+    val trustedPubkeys by viewModel.trustedPubkeys.collectAsState()
+    // Replies from outside your network are folded until asked for.
+    var showsOutsideReplies by remember { mutableStateOf(false) }
+
     // Derive focused note, parents, and direct replies from focusedNoteId
     val focusedNote = remember(focusedNoteId, note, allReplies) {
         if (focusedNoteId == noteId) note
@@ -565,11 +586,46 @@ fun NoteDetailScreen(
         }
     }
 
-    val directReplies = remember(focusedNoteId, allReplies, note) {
-        // Effective id redirects kind-6 reposts to the reposted event, whose
-        // replies are what actually exist on relays.
-        val heroId = focusedNote?.effectiveEventId ?: noteId
-        allReplies.filter { it.parentEventId == heroId }.sortedBy { it.createdAt }
+    // Notes above it by someone you blocked are left out.
+    val shownParents = remember(dynamicParents, blockedPubkeys) {
+        dynamicParents.filter { it.pubkey !in blockedPubkeys }
+    }
+
+    // Effective id redirects kind-6 reposts to the reposted event, whose
+    // replies are what actually exist on relays.
+    val replyTargetId = focusedNote?.effectiveEventId ?: noteId
+
+    // Replies under the opened note, at any depth, through the feed's block
+    // rule and spam check; replies from outside your network stay folded.
+    // You and the authors of the opened note and the notes above it are never
+    // folded. iOS: NoteDetailView.threadReplies (#278).
+    val threadReplies = remember(
+        replyTargetId, allReplies, parentNotes, note, dynamicParents, blockedPubkeys, trustedPubkeys, showsOutsideReplies,
+    ) {
+        val byId = (parentNotes + listOfNotNull(note) + allReplies).associateBy { it.id }
+        val insiders = buildSet {
+            add(viewModel.activeHexPubkey)
+            note?.let { add(it.pubkey) }
+            focusedNote?.let { add(it.pubkey) }
+            dynamicParents.forEach { add(it.pubkey) }
+        }
+        ThreadReplyVisibility.replies(
+            targetId = replyTargetId,
+            pool = allReplies,
+            hidden = { n ->
+                n.isNoise || FeedFilterEngine.involvesBlocked(n, blockedPubkeys) { id ->
+                    byId[id]?.pubkey ?: viewModel.findNote(id)?.pubkey
+                }
+            },
+            trusted = trustedPubkeys,
+            insiders = insiders,
+            showOutside = showsOutsideReplies,
+        )
+    }
+    val visibleReplies = threadReplies.visible
+
+    val directReplies = remember(replyTargetId, visibleReplies) {
+        visibleReplies.filter { it.parentEventId == replyTargetId }.sortedBy { it.createdAt }
     }
 
     // Re-fetch engagement when focus changes; when refocusing inside the
@@ -588,9 +644,9 @@ fun NoteDetailScreen(
             // Allow layout to settle after recomposition
             kotlinx.coroutines.delay(250)
             val heroIndex = if (condensedReplies) {
-                if (dynamicParents.isEmpty()) 0 else 1
+                if (shownParents.isEmpty()) 0 else 1
             } else {
-                dynamicParents.size
+                shownParents.size
             }
             if (heroIndex in 0 until listState.layoutInfo.totalItemsCount) {
                 listState.animateScrollToItem(heroIndex, scrollOffset = -100)
@@ -762,10 +818,10 @@ fun NoteDetailScreen(
                     }
                 } else if (condensedReplies) {
                     // The conversation above, one line per note, oldest at the top.
-                    if (dynamicParents.isNotEmpty()) {
+                    if (shownParents.isNotEmpty()) {
                         item(key = "parents_condensed") {
                             CondensedThreadCard {
-                                for (parent in dynamicParents) {
+                                for (parent in shownParents) {
                                     ThreadCondensedLine(
                                         note = parent,
                                         depth = 0,
@@ -780,7 +836,7 @@ fun NoteDetailScreen(
                         }
                     }
                 } else {
-                    items(dynamicParents, key = { "parent_${it.id}" }) { parent ->
+                    items(shownParents, key = { "parent_${it.id}" }) { parent ->
                         val quotedNotesMap = remember(parent.id, parent.quotedEventIds, quotedNotesCache) {
                             parent.quotedEventIds.mapNotNull { qid ->
                                 viewModel.quotedNoteFor(qid)?.let { qid to it }
@@ -862,7 +918,7 @@ fun NoteDetailScreen(
                         InlineLoadingRow(text = "Loading replies…", color = colors.primary)
                     }
                 } else if (directReplies.isEmpty()) {
-                    item(key = "replies_empty") {
+                    if (threadReplies.outside == 0) item(key = "replies_empty") {
                         Text(
                             text = "No replies yet",
                             color = SecondaryText,
@@ -889,8 +945,7 @@ fun NoteDetailScreen(
                 // Condensed: one card of lines, nested under what they answer;
                 // tap a line and it becomes the note you are reading, full size.
                 if (condensedReplies) {
-                    val heroId = focusedNote?.effectiveEventId ?: noteId
-                    val tree = FeedThreadGrouping.replyTree(heroId, allReplies)
+                    val tree = FeedThreadGrouping.replyTree(replyTargetId, visibleReplies)
                     if (tree.isNotEmpty()) {
                         item(key = "replies_condensed") {
                             CondensedThreadCard {
@@ -898,7 +953,7 @@ fun NoteDetailScreen(
                                     ThreadCondensedLine(
                                         note = entry.note,
                                         depth = entry.depth,
-                                        replyCount = allReplies.count { it.parentEventId == entry.note.id },
+                                        replyCount = visibleReplies.count { it.parentEventId == entry.note.id },
                                         viewModel = viewModel,
                                         profiles = profiles,
                                         onProfileClick = onProfileClick,
@@ -911,6 +966,7 @@ fun NoteDetailScreen(
                 } else items(directReplies, key = { it.id }) { reply ->
                     ThreadedReplyNode(
                         reply = reply,
+                        pool = visibleReplies,
                         depth = 1,
                         focusedNoteId = focusedNoteId,
                         themeColor = colors.primary,
@@ -935,6 +991,36 @@ fun NoteDetailScreen(
                         },
                         onLongPressLikeNote = { emojiTargetNote = it },
                     )
+                }
+
+                // Replies from outside your network, folded until asked for.
+                if (!isLoadingReplies && threadReplies.outside > 0) {
+                    item(key = "outside_replies") {
+                        val count = threadReplies.outside
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showsOutsideReplies = true }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        ) {
+                            Icon(
+                                NostrVaultIcons.PeopleOutline,
+                                contentDescription = null,
+                                tint = SecondaryText,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (count == 1) "Show 1 reply from outside your network"
+                                else "Show $count replies from outside your network",
+                                color = SecondaryText,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
                 }
 
                 // ── Quotes & highlights (below the fold) ─────────
@@ -1135,6 +1221,8 @@ private fun ThreadCondensedLine(
 @Composable
 private fun ThreadedReplyNode(
     reply: FeedNote,
+    /** The replies the thread shows (blocked, spam and folded ones already out). */
+    pool: List<FeedNote>,
     depth: Int,
     focusedNoteId: String,
     themeColor: androidx.compose.ui.graphics.Color,
@@ -1154,10 +1242,9 @@ private fun ThreadedReplyNode(
     onModerateNote: (FeedNote, Moderation) -> Unit,
     onLongPressLikeNote: (FeedNote) -> Unit,
 ) {
-    // Keyed on the reply list too: late-arriving replies (refocus fetch,
+    // Keyed on the pool too: late-arriving replies (refocus fetch,
     // pull-to-refresh) must recompute each node's children.
-    val allRepliesState by viewModel.allReplies.collectAsState()
-    val childReplies = remember(reply.id, allRepliesState) { viewModel.childRepliesFor(reply.id) }
+    val childReplies = remember(reply.id, pool) { pool.filter { it.parentEventId == reply.id } }
     val isFocusedReply = reply.id == focusedNoteId
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val quotedNotesMap = remember(reply.id, reply.quotedEventIds, quotedNotesCache) {
@@ -1280,6 +1367,7 @@ private fun ThreadedReplyNode(
                     for (child in childReplies) {
                         ThreadedReplyNode(
                             reply = child,
+                            pool = pool,
                             depth = depth + 1,
                             focusedNoteId = focusedNoteId,
                             themeColor = themeColor,
