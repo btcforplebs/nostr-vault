@@ -907,7 +907,6 @@ fun NoteDetailScreen(
                         NoteCard(
                             note = parent,
                             profile = viewModel.profileFor(parent.pubkey),
-                            stats = viewModel.statsFor(parent.id),
                             profiles = profiles,
                             quotedNotes = quotedNotesMap,
                             isLiked = viewModel.isLiked(parent.id),
@@ -1350,7 +1349,6 @@ private fun ThreadedReplyNode(
         NoteCard(
             note = reply,
             profile = viewModel.profileFor(reply.pubkey),
-            stats = viewModel.statsFor(reply.id),
             profiles = profiles,
             quotedNotes = quotedNotesMap,
             isLiked = viewModel.isLiked(reply.id),
@@ -1773,13 +1771,8 @@ private fun HeroNoteCard(
             // was a hand-duplicated seven-button row under a comment claiming it
             // was identical, which is how it kept Share and Broadcast inline
             // while every other note on this screen had moved them to the menu.
-            //
-            // `stats = null`: the numbers are already in the `EngagementStat`
-            // row above, and the focused note is the worst place to show them
-            // twice.
             EngagementBar(
                 noteId = note.effectiveEventId,
-                stats = null,
                 isLiked = isLiked,
                 isZapped = false,
                 isReposted = isReposted,

@@ -1508,12 +1508,11 @@ private fun FeedFullNoteRowContent(
     }
     // Subscribed here, not read with `viewModel.isLiked(...)`: a plain
     // StateFlow `.value` read is invisible to Compose, so the row skipped
-    // recomposition and a tapped heart, a zap, new counts or a late-arriving
+    // recomposition and a tapped heart, a zap or a late-arriving
     // parent never showed until the row scrolled off and back. derivedStateOf
     // narrows each to this note, so another note's like does not redraw it.
     val likedState = viewModel.likedEventIds.collectAsState()
     val zappedState = viewModel.zappedEventIds.collectAsState()
-    val statsState = viewModel.noteStats.collectAsState()
     val parentsState = viewModel.parentNotesCache.collectAsState()
     val parentNextState = viewModel.parentIsNextNote.collectAsState()
     val quotedState = viewModel.quotedNotesCache.collectAsState()
@@ -1523,7 +1522,6 @@ private fun FeedFullNoteRowContent(
     // repost is looked up by the note it reposts.
     val isLiked by remember(note.id) { derivedStateOf { note.effectiveEventId in likedState.value } }
     val isZapped by remember(note.id) { derivedStateOf { note.effectiveEventId in zappedState.value } }
-    val stats by remember(note.id) { derivedStateOf { statsState.value[note.effectiveEventId] } }
     val parentEventId = note.parentEventId
     val parentNote by remember(note.id) { derivedStateOf { parentEventId?.let { parentsState.value[it] } } }
     val isParentNext by remember(note.id) {
@@ -1562,7 +1560,6 @@ private fun FeedFullNoteRowContent(
     NoteCard(
         note = note,
         profile = cardProfiles[note.pubkey],
-        stats = stats,
         profiles = cardProfiles,
         quotedNotes = quotedNotesMap,
         isLiked = isLiked,

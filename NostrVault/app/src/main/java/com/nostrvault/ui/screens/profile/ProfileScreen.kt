@@ -448,7 +448,6 @@ fun ProfileScreen(
                         note = note,
                         profile = if (selectedSection == ProfileSection.TAGGED)
                             allProfiles[note.pubkey] else profile,
-                        stats = viewModel.statsFor(note.id),
                         profiles = allProfiles,
                         quotedNotes = quotedNotes,
                         isLiked = viewModel.isLiked(note.id),

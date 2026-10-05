@@ -487,7 +487,6 @@ fun SearchScreen(
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val likedIds by viewModel.likedEventIds.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
-    val noteStats by viewModel.noteStats.collectAsState()
     val toast by viewModel.toast.collectAsState()
     val colors = LocalNostrVaultColors.current
 
@@ -860,12 +859,6 @@ fun SearchScreen(
                         NoteCard(
                             note = note,
                             profile = viewModel.profileFor(note.pubkey),
-                            // Keyed on `effectiveEventId`, the id the action row
-                            // acts on and the id `FeedService` files the like,
-                            // the repost and the optimistic count under. For a
-                            // kind-6 repost `note.id` is the wrapper, which is
-                            // not what anybody liked.
-                            stats = noteStats[note.effectiveEventId],
                             profiles = profiles,
                             quotedNotes = quotedNotesMap,
                             isLiked = note.effectiveEventId in likedIds,
