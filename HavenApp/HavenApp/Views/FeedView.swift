@@ -4090,6 +4090,17 @@ struct FeedNoteRow: View {
 
     // MARK: - Media Grid Helper
 
+    /// The first item's shape: its `imeta` `dim`, else the decoded image,
+    /// else 4:3. Kept from going taller than square, where the 400pt cap
+    /// takes over anyway.
+    private func carouselAspectRatio(_ url: URL) -> CGFloat {
+        if let hinted = MediaHints.shared.hint(for: url)?.aspectRatio { return max(hinted, 1) }
+        if let image = MediaCacheService.shared.cachedImage(for: url), image.size.height > 0 {
+            return max(image.size.width / image.size.height, 1)
+        }
+        return 4.0 / 3.0
+    }
+
     /// Renders media URLs using FeedMediaView in a swipeable carousel.
     @ViewBuilder
     private func feedMediaCarousel(urls: [URL]) -> some View {
@@ -4119,9 +4130,10 @@ struct FeedNoteRow: View {
                 .transition(.opacity.animation(Motion.media))
                 #endif
             }
-            .frame(height: 400)
-            // Add a subtle border or background if desired to distinguish bounds
-            // But FeedMediaView already has clipShape and overlay
+            // Shaped like the first item, not a fixed 400pt square-ish box:
+            // a landscape photo sat letterboxed in a tall empty frame.
+            .aspectRatio(carouselAspectRatio(urls[0]), contentMode: .fit)
+            .frame(maxWidth: .infinity, maxHeight: 400)
         }
     }
 
