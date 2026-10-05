@@ -1183,18 +1183,27 @@ class NostrService: ObservableObject {
     /// if none answered within the timeout. Asks fresh: the profile caches can
     /// hold a list that was replaced long ago.
     func fetchNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> NostrEvent? {
+        await lookupNewestReplaceable(kind: kind, for: pubkey, alsoAsk: alsoAsk, timeout: timeout).event
+    }
+
+    /// `fetchNewestReplaceable`, also saying whether "none" was confirmed:
+    /// every relay asked answered EOSE for this request without the event.
+    func lookupNewestReplaceable(kind: Int, for pubkey: String, alsoAsk: [String], timeout: TimeInterval = 6) async -> ReplaceableLookup<NostrEvent> {
         var urls = ConfigService.shared.config.activeBlastrRelays
         if urls.isEmpty { urls = ["wss://relay.primal.net", "wss://nos.lol"] }
         for extra in alsoAsk + (outboxRelays[pubkey] ?? []) where !urls.contains(extra) {
             urls.append(extra)
         }
         let targets = urls.filter { !Self.isLoopbackRelay($0) }.compactMap { URL(string: $0) }
-        guard !targets.isEmpty else { return nil }
+        guard !targets.isEmpty else { return ReplaceableLookup(event: nil, asked: 0, answered: 0) }
 
-        return await withCheckedContinuation { (continuation: CheckedContinuation<NostrEvent?, Never>) in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<ReplaceableLookup<NostrEvent>, Never>) in
             let lock = NSLock()
             var best: NostrEvent?
-            var finished = 0
+            // Relays done (EOSE or CLOSED), each counted once; only an EOSE
+            // for the request sent there counts as an answer.
+            var finished = Set<Int>()
+            var answered = Set<Int>()
             var resumed = false
             var clients: [WebSocketClient] = []
             var subs = Set<AnyCancellable>()
@@ -1203,17 +1212,17 @@ class NostrService: ObservableObject {
                 lock.lock()
                 guard !resumed else { lock.unlock(); return }
                 resumed = true
-                let winner = best
+                let result = ReplaceableLookup(event: best, asked: targets.count, answered: answered.count)
                 lock.unlock()
                 DispatchQueue.main.async {
                     clients.forEach { $0.disconnect() }
                     subs.removeAll()
                 }
-                continuation.resume(returning: winner)
+                continuation.resume(returning: result)
             }
 
             DispatchQueue.main.async {
-                for url in targets {
+                for (index, url) in targets.enumerated() {
                     let client = WebSocketClient()
                     client.isTemporary = true
                     clients.append(client)
@@ -1234,8 +1243,11 @@ class NostrService: ObservableObject {
                                 lock.unlock()
                             } else if type == "EOSE" || type == "CLOSED" {
                                 lock.lock()
-                                finished += 1
-                                let all = finished >= targets.count
+                                if type == "EOSE", json[safe: 1] as? String == subId, !finished.contains(index) {
+                                    answered.insert(index)
+                                }
+                                finished.insert(index)
+                                let all = finished.count >= targets.count
                                 lock.unlock()
                                 if all { finish() }
                             }

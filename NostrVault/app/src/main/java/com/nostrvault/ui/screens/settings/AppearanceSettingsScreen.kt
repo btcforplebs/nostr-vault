@@ -108,6 +108,14 @@ class AppearanceViewModel @Inject constructor(
         configStore.update { it.copy(autoLoadNewPosts = on) }
     }
 
+    val showNewPostsPill = configStore.config
+        .map { it.showNewPostsPill }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.showNewPostsPill)
+
+    fun setShowNewPostsPill(on: Boolean) {
+        configStore.update { it.copy(showNewPostsPill = on) }
+    }
+
     init {
         val config = configStore.config.value
         _compactLines.value = config.compactLineLimit.coerceIn(FeedLineLimits.RANGE)
@@ -178,6 +186,7 @@ fun AppearanceSettingsScreen(
     val autoLoadNewPosts by viewModel.autoLoadNewPosts.collectAsState()
     val showTranslateButton by viewModel.showTranslateButton.collectAsState()
     val translateTarget by viewModel.translateTarget.collectAsState()
+    val showNewPostsPill by viewModel.showNewPostsPill.collectAsState()
 
     Scaffold(
         topBar = {
@@ -305,6 +314,36 @@ fun AppearanceSettingsScreen(
                 targets = viewModel.translateTargets,
                 onTargetChange = viewModel::setTranslateTarget,
             )
+
+            Spacer(Modifier.height(32.dp))
+
+            // New Posts pill (iOS Appearance > Feed > "New Posts Pill").
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "New Posts Pill",
+                        color = PrimaryText,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = SettingsHelp.DISPLAY_NEW_POSTS_PILL.text,
+                        color = SecondaryText,
+                        fontSize = 13.sp,
+                    )
+                }
+                Switch(
+                    checked = showNewPostsPill,
+                    onCheckedChange = viewModel::setShowNewPostsPill,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = PrimaryText,
+                        checkedTrackColor = LocalNostrVaultColors.current.primary,
+                    ),
+                )
+            }
 
             Spacer(Modifier.height(32.dp))
 

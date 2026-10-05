@@ -2292,6 +2292,8 @@ struct ProfileEditView: View {
 
     @State private var isSaving = false
     @State private var errorMessage: String?
+    /// What the form showed when opened, by kind-0 key: a save applies only fields changed from it.
+    @State private var initialFields: [String: String] = [:]
 
     var body: some View {
         platformContainer {
@@ -2515,29 +2517,48 @@ struct ProfileEditView: View {
         nip05 = existing.nip05 ?? ""
         lud16 = existing.lud16 ?? ""
         website = existing.website ?? ""
+        initialFields = formFields()
+    }
+
+    private func formFields() -> [String: String] {
+        [
+            ProfileMetadataMerge.displayName: displayName,
+            ProfileMetadataMerge.name: name,
+            ProfileMetadataMerge.about: about,
+            ProfileMetadataMerge.picture: pictureURL,
+            ProfileMetadataMerge.nip05: nip05,
+            ProfileMetadataMerge.lud16: lud16,
+            ProfileMetadataMerge.website: website,
+        ]
     }
 
     private func save() {
         errorMessage = nil
         isSaving = true
-
-        var content: [String: String] = [:]
-        if !name.trimmingCharacters(in: .whitespaces).isEmpty { content["name"] = name.trimmingCharacters(in: .whitespaces) }
-        if !displayName.trimmingCharacters(in: .whitespaces).isEmpty { content["display_name"] = displayName.trimmingCharacters(in: .whitespaces) }
-        if !about.trimmingCharacters(in: .whitespaces).isEmpty { content["about"] = about.trimmingCharacters(in: .whitespaces) }
-        if !pictureURL.trimmingCharacters(in: .whitespaces).isEmpty { content["picture"] = pictureURL.trimmingCharacters(in: .whitespaces) }
-        if !nip05.trimmingCharacters(in: .whitespaces).isEmpty { content["nip05"] = nip05.trimmingCharacters(in: .whitespaces) }
-        if !lud16.trimmingCharacters(in: .whitespaces).isEmpty { content["lud16"] = lud16.trimmingCharacters(in: .whitespaces) }
-        if !website.trimmingCharacters(in: .whitespaces).isEmpty { content["website"] = website.trimmingCharacters(in: .whitespaces) }
-
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: content, options: [.sortedKeys]),
-              let jsonStr = String(data: jsonData, encoding: .utf8) else {
-            errorMessage = "Could not encode profile."
-            isSaving = false
-            return
-        }
+        let edited = formFields()
+        let initial = initialFields
 
         Task {
+            // A kind 0 replaces the whole profile. Start from the newest one on
+            // the relays so banner, lud06 and every key this form doesn't show
+            // survive; if it can't be fetched, publishing would wipe them, so
+            // don't (same rule as the follow list).
+            let pubkey = nostrService.activeHexPubkey
+            let alsoAsk = (nostrService.outboxRelays[pubkey] ?? []) + (nostrService.relayLists[pubkey] ?? [])
+            let lookup = await nostrService.lookupNewestReplaceable(kind: 0, for: pubkey, alsoAsk: alsoAsk)
+            guard lookup.event != nil || lookup.confirmedNone else {
+                errorMessage = "Couldn't load your current profile from the relays. Nothing was changed; try again."
+                isSaving = false
+                return
+            }
+            let merged = ProfileMetadataMerge.merge(base: ProfileMetadataMerge.parseContent(lookup.event?.content),
+                                                    initial: initial, edited: edited)
+            guard let jsonStr = ProfileMetadataMerge.encode(merged) else {
+                errorMessage = "Could not encode profile."
+                isSaving = false
+                return
+            }
+
             guard let signed = await nostrService.signEventAsync(kind: 0, content: jsonStr, tags: []) else {
                 errorMessage = "Could not sign event. Check that your key is available."
                 isSaving = false
@@ -2547,13 +2568,14 @@ struct ProfileEditView: View {
             nostrService.postEvent(signed)
 
             var updated = existing
-            updated.name = content["name"]
-            updated.displayName = content["display_name"]
-            updated.about = content["about"]
-            updated.pictureURL = (content["picture"]).flatMap { URL(string: $0) }
-            updated.nip05 = content["nip05"]
-            updated.lud16 = content["lud16"]
-            updated.website = content["website"]
+            updated.name = merged[ProfileMetadataMerge.name] as? String
+            updated.displayName = merged[ProfileMetadataMerge.displayName] as? String
+            updated.about = merged[ProfileMetadataMerge.about] as? String
+            updated.pictureURL = (merged[ProfileMetadataMerge.picture] as? String).flatMap { URL(string: $0) }
+            updated.nip05 = merged[ProfileMetadataMerge.nip05] as? String
+            updated.lud16 = merged[ProfileMetadataMerge.lud16] as? String
+            updated.lud06 = merged["lud06"] as? String
+            updated.website = merged[ProfileMetadataMerge.website] as? String
 
             onSave(updated)
 

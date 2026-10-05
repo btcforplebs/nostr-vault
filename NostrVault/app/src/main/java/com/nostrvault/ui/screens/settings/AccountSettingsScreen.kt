@@ -41,9 +41,11 @@ import com.nostrvault.relay.HavenConfig
 import com.nostrvault.service.NIP46Service
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.components.AvatarImage
+import com.nostrvault.ui.components.NostrConnectPairing
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -101,29 +103,44 @@ class AccountSettingsViewModel @Inject constructor(
     /** Connect a NIP-46 remote signer. Returns the account npub or null. */
     fun connectSigner(bunkerUri: String, onResult: (String?) -> Unit) {
         viewModelScope.launch {
-            val uri = bunkerUri.trim()
             val keypair = HavenBridge.generateKeyPair()
             val parts = keypair?.split(":")
             if (parts == null || parts.size != 2) { onResult(null); return@launch }
-            val clientSec = parts[0]
-            val clientPub = parts[1]
-            val signerPubkey = NIP46Service.connect(clientSec, uri)
-            if (signerPubkey == null) { onResult(null); return@launch }
-            val npub = HavenBridge.encodeNpub(signerPubkey) ?: run { onResult(null); return@launch }
-            configStore.setBunkerConfig(
-                npub,
-                AccountBunkerConfig(
-                    bunkerURI = uri,
-                    signerPubkey = signerPubkey,
-                    clientSecretKey = clientSec,
-                    clientPubkey = clientPub,
-                ),
-            )
-            configStore.addAccount(npub)
-            configStore.setSigningMode(npub, "nip46")
-            ensureProfiles(listOf(npub))
-            onResult(npub)
+            onResult(addSignerAccount(bunkerUri.trim(), parts[0], parts[1]))
         }
+    }
+
+    /**
+     * Finishes a nostrconnect:// pairing: stored like a pasted bunker link
+     * (secret-less, with the pairing's own client key), then connected.
+     * Returns the account npub or null. Runs in the view model's scope so
+     * leaving the screen mid-connect doesn't cut the save in half.
+     */
+    suspend fun pairNostrConnect(request: NIP46Service.NostrConnectRequest, signerPubkey: String): String? =
+        viewModelScope.async {
+            addSignerAccount(
+                NIP46Service.bunkerUri(signerPubkey, request.relays),
+                request.clientSecretKey,
+                request.clientPubkey,
+            )
+        }.await()
+
+    private suspend fun addSignerAccount(uri: String, clientSec: String, clientPub: String): String? {
+        val signerPubkey = NIP46Service.connect(clientSec, uri) ?: return null
+        val npub = HavenBridge.encodeNpub(signerPubkey) ?: return null
+        configStore.setBunkerConfig(
+            npub,
+            AccountBunkerConfig(
+                bunkerURI = uri,
+                signerPubkey = signerPubkey,
+                clientSecretKey = clientSec,
+                clientPubkey = clientPub,
+            ),
+        )
+        configStore.addAccount(npub)
+        configStore.setSigningMode(npub, "nip46")
+        ensureProfiles(listOf(npub))
+        return npub
     }
 
     /** Bumped when a key is removed: [hasLocalKey] reads the credential store, not config. */
@@ -517,6 +534,20 @@ private fun AddAccountSection(viewModel: AccountSettingsViewModel) {
 
     Spacer(Modifier.height(12.dp))
     Text("Connect Remote Signer (NIP-46)", color = SecondaryText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    Spacer(Modifier.height(8.dp))
+    NostrConnectPairing(
+        accent = colors.primary,
+        onPaired = { request, signerPubkey ->
+            if (viewModel.pairNostrConnect(request, signerPubkey) == null) {
+                "Could not connect signer"
+            } else {
+                expanded = false
+                null
+            }
+        },
+    )
+    Spacer(Modifier.height(12.dp))
+    Text("Or paste a bunker link from any signer app.", color = SecondaryText, fontSize = 12.sp)
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = bunkerInput,

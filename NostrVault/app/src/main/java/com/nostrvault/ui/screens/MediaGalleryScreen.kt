@@ -541,6 +541,12 @@ fun MediaGalleryScreen(
             if (isGrid) gridState.firstVisibleItemScrollOffset else listState.firstVisibleItemScrollOffset
         },
     )
+    // Tapping the Media tab again goes to the top of the grid or list (iOS #275).
+    LaunchedEffect(isGrid) {
+        com.nostrvault.ui.navigation.TabReselect.of(com.nostrvault.ui.navigation.Screen.MediaGallery).collect {
+            if (isGrid) gridState.animateScrollToItem(0) else listState.animateScrollToItem(0)
+        }
+    }
     var contextMenuTarget by remember { mutableStateOf<Int?>(null) }
     var pendingDelete by remember { mutableStateOf<Pair<BlossomMediaItem, DeleteScope>?>(null) }
     val colors = LocalNostrVaultColors.current

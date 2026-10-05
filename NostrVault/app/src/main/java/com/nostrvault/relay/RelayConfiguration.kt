@@ -407,6 +407,12 @@ data class HavenConfig(
      * HavenConfig.autoLoadNewPosts.
      */
     val autoLoadNewPosts: Boolean = false,
+    /**
+     * The floating "New Posts" pill over the feed. Off, waiting posts load on
+     * pull-to-refresh (or by themselves at the top with Auto-Load). On by
+     * default. Mirrors iOS HavenConfig.showNewPostsPill.
+     */
+    val showNewPostsPill: Boolean = true,
     /** ISO 639-1 codes the Global feed is narrowed to. Empty shows every language. Mirrors iOS. */
     val globalFeedLanguages: List<String> = emptyList(),
     /** Global (and Media's Global) shows everyone, not only your Web of Trust. Off by default. Mirrors iOS. */
