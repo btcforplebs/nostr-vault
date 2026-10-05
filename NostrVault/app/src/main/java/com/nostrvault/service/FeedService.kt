@@ -71,6 +71,10 @@ class FeedService @Inject constructor(
         private const val NOTE_FETCH_TIMEOUT_MS = 8_000L
         private const val NOTE_FETCH_BATCH_DELAY_MS = 300L
         private const val UNAVAILABLE_RETRY_MS = 60_000L
+        /** Quiet time after a batch of follows' relay lists before re-planning. */
+        private const val OUTBOX_RELAY_LIST_SETTLE_MS = 5_000L
+        /** Failed connects in a row before a feed relay counts as down. */
+        private const val FEED_RELAY_DOWN_AFTER = 3
 
         /**
          * Asked on the second pass, for referenced notes neither your relays
@@ -212,6 +216,18 @@ class FeedService @Inject constructor(
                     contactListConfirmed = false
                     pendingFollowActions.clear()
                     forceReload()
+                }
+        }
+        // Follows' relay lists arrive in batches after the feed is up; once
+        // they settle, ask the new outbox relays (see reconcileOutboxRelays).
+        scope.launch {
+            nostrService.outboxRelays
+                .map { it.size }
+                .distinctUntilChanged()
+                .drop(1)
+                .collectLatest {
+                    delay(OUTBOX_RELAY_LIST_SETTLE_MS)
+                    reconcileOutboxRelays()
                 }
         }
         // Blocking someone (from a menu, Settings, or a mute list synced from
@@ -360,6 +376,20 @@ class FeedService @Inject constructor(
     // Relays whose auxiliary subscriptions (reactions/zaps) have been sent for the
     // current connection. Cleared on disconnect/teardown so reconnects re-send.
     private val auxSubsSent = ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Follows the feed relays don't reach, asked on their own write relays:
+     * extra relay URL → the follows to ask it for. See [FeedOutboxPlan].
+     */
+    @Volatile private var outboxPlan: Map<String, List<String>> = emptyMap()
+
+    /**
+     * Feed relays that failed to connect three times running and have not
+     * connected since. Kept across load rounds, so the plan stops counting a
+     * dead feed relay as reaching anyone (iOS `downRelayKeys`).
+     */
+    private val downRelayUrls = ConcurrentHashMap.newKeySet<String>()
+    private val feedConnectFailures = ConcurrentHashMap<String, Int>()
 
     // Background accumulator
     private val accumulator = BackgroundAccumulator()
@@ -1142,27 +1172,7 @@ class FeedService @Inject constructor(
             return
         }
 
-        val config = configStore.config.value
-        val relayUrls = buildList {
-            config.nostrURL?.let { add(it) }
-            config.localInboxURL?.let { add(it) }
-            // Local feed cache: follows' recent notes kept in sync by the
-            // embedded relay (negentropy against the feed relays). Serves the
-            // feed window from disk instantly on cold start and pagination.
-            config.localRelayURL("feed")?.let { add(it) }
-            config.inboxRelays?.let { addAll(it) }
-            // Follows publish to feed/blastr relays, not just the local + inbox
-            // set. Mirror iOS (externalRelayURLs) and the fetchReplies fix so
-            // follows who post elsewhere actually appear in the feed.
-            addAll(config.activeFeedRelays)
-            addAll(config.activeBlastrRelays)
-            if (config.activeFeedRelays.isEmpty() &&
-                config.activeBlastrRelays.isEmpty() &&
-                config.inboxRelays.isNullOrEmpty()) {
-                add("wss://relay.primal.net")
-                add("wss://nos.lol")
-            }
-        }.distinct()
+        val relayUrls = feedRelayUrlsWithOutbox()
 
         // Disconnect stale clients that are no longer in the relay set,
         // and skip URLs that already have a live connection.
@@ -1218,11 +1228,107 @@ class FeedService @Inject constructor(
         }
     }
 
+    /** The relays every feed subscription asks, before the follows' own (outbox) relays. */
+    private fun baseFeedRelayUrls(): List<String> {
+        val config = configStore.config.value
+        return buildList {
+            config.nostrURL?.let { add(it) }
+            config.localInboxURL?.let { add(it) }
+            // Local feed cache: follows' recent notes kept in sync by the
+            // embedded relay (negentropy against the feed relays). Serves the
+            // feed window from disk instantly on cold start and pagination.
+            config.localRelayURL("feed")?.let { add(it) }
+            config.inboxRelays?.let { addAll(it) }
+            // Follows publish to feed/blastr relays, not just the local + inbox
+            // set. Mirror iOS (externalRelayURLs) and the fetchReplies fix so
+            // follows who post elsewhere actually appear in the feed.
+            addAll(config.activeFeedRelays)
+            addAll(config.activeBlastrRelays)
+            if (config.activeFeedRelays.isEmpty() &&
+                config.activeBlastrRelays.isEmpty() &&
+                config.inboxRelays.isNullOrEmpty()) {
+                add("wss://relay.primal.net")
+                add("wss://nos.lol")
+            }
+        }.distinct()
+    }
+
+    /** Modes whose primary REQ is the follow set (iOS isFollowSetMode, plus Media's Following). */
+    private fun isFollowSetMode(): Boolean = when (_feedMode.value) {
+        FeedMode.FOLLOWING -> true
+        FeedMode.ARTICLES -> _articlesFeedMode.value == MediaFeedMode.FOLLOWING
+        FeedMode.MEDIA -> _mediaFeedMode.value == MediaFeedMode.FOLLOWING
+        else -> false
+    }
+
+    /**
+     * Recomputes [outboxPlan] from the follow set and the NIP-65 lists known so
+     * far, and asks for the lists still missing; the plan grows as they arrive
+     * (see the outboxRelays collector in init).
+     */
+    private fun refreshOutboxPlan(feedRelays: List<String>) {
+        val follows = _followedPubkeys.value
+        if (!isFollowSetMode() || follows.isEmpty()) {
+            outboxPlan = emptyMap()
+            return
+        }
+        requestRelayListsForAuthors(follows)
+        outboxPlan = FeedOutboxPlan.plan(
+            follows = follows,
+            writeRelays = nostrService.outboxRelays.value,
+            feedRelays = feedRelays,
+            unreachableRelays = downRelayUrls.toList(),
+        )
+    }
+
+    /** Every relay the feed subscribes to: [baseFeedRelayUrls], then the follows' own relays. */
+    private fun feedRelayUrlsWithOutbox(): List<String> {
+        val base = baseFeedRelayUrls()
+        refreshOutboxPlan(base)
+        return (base + outboxPlan.keys.sorted()).distinct()
+    }
+
+    /**
+     * The follows to ask a relay for: an outbox relay only for the follows it
+     * was picked for, every other relay for all of them.
+     */
+    private fun followAuthors(relayUrl: String): List<String> =
+        outboxPlan[relayUrl] ?: _followedPubkeys.value
+
+    /**
+     * Brings the follows' own relays in line with a fresh plan: drops the ones
+     * it no longer picks (their follows were taken by another, or the relay
+     * died) and connects the new ones. With [resend], connected ones whose
+     * follows changed get their REQ again. Does nothing while the feed has no
+     * connections (paused, or not loaded yet).
+     */
+    private fun reconcileOutboxRelays(resend: Boolean = true) {
+        if (feedClients.isEmpty()) return
+        val before = outboxPlan
+        val base = baseFeedRelayUrls()
+        refreshOutboxPlan(base)
+        val plan = outboxPlan
+        for (relayUrl in before.keys) {
+            if (relayUrl !in plan && relayUrl !in base) teardownFeedClient(relayUrl)
+        }
+        for ((relayUrl, authors) in plan) {
+            val client = feedClients[relayUrl]
+            if (client == null) {
+                connectFeedRelay(relayUrl)
+            } else if (resend && before[relayUrl] != authors &&
+                client.connectionState.value == WebSocketClient.ConnectionState.CONNECTED
+            ) {
+                sendPrimaryFeedSubscription(relayUrl, primaryFeedSubId())
+            }
+        }
+    }
+
     /** Cancel a feed client's collectors and disconnect it. */
     private fun teardownFeedClient(relayUrl: String) {
         feedClientJobs.remove(relayUrl)?.forEach { it.cancel() }
         feedClients.remove(relayUrl)?.disconnect()
         auxSubsSent.remove(relayUrl)
+        feedConnectFailures.remove(relayUrl)
     }
 
     /** Cancel and disconnect every feed client. */
@@ -1275,21 +1381,39 @@ class FeedService @Inject constructor(
         }
 
         val stateJob = scope.launch {
+            // A DISCONNECTED straight after a dial is a failed connect; one
+            // after CONNECTED is a drop, which the client redials on its own.
+            var dialing = false
             client.connectionState.collect { state ->
                 when (state) {
                     WebSocketClient.ConnectionState.CONNECTED -> {
+                        dialing = false
+                        feedConnectFailures.remove(relayUrl)
+                        downRelayUrls.remove(relayUrl)
                         sendPrimaryFeedSubscription(relayUrl, subId)
                         // Mentions go out with the primary feed — they double as
                         // notifications, so they must not wait for feed EOSE.
-                        sendMentionSubscription(relayUrl)
+                        // Not on a follow's own relay: it is asked only for them.
+                        if (relayUrl !in outboxPlan) sendMentionSubscription(relayUrl)
                         updateFeedConnectionStatus()
                     }
                     WebSocketClient.ConnectionState.DISCONNECTED -> {
                         // New connection gets a fresh auxiliary-subscription pass
                         auxSubsSent.remove(relayUrl)
                         updateFeedConnectionStatus()
+                        if (dialing) {
+                            dialing = false
+                            val failures = (feedConnectFailures[relayUrl] ?: 0) + 1
+                            feedConnectFailures[relayUrl] = failures
+                            // The follows this relay was reaching get asked
+                            // somewhere else.
+                            if (failures >= FEED_RELAY_DOWN_AFTER && downRelayUrls.add(relayUrl)) {
+                                reconcileOutboxRelays()
+                            }
+                        }
                     }
-                    else -> {}
+                    WebSocketClient.ConnectionState.CONNECTING,
+                    WebSocketClient.ConnectionState.RECONNECTING -> dialing = true
                 }
             }
         }
@@ -1320,6 +1444,8 @@ class FeedService @Inject constructor(
             FeedMode.REELS -> return
             FeedMode.MUSIC -> return
         }
+        // A changed follow set changes which follows' own relays are needed.
+        reconcileOutboxRelays(resend = false)
         for ((relayUrl, client) in feedClients) {
             if (client.connectionState.value == WebSocketClient.ConnectionState.CONNECTED) {
                 sendPrimaryFeedSubscription(relayUrl, "feed-$label")
@@ -1351,7 +1477,7 @@ class FeedService @Inject constructor(
                 FeedMode.FOLLOWING -> {
                     // Send the full follow list (iOS does not cap); capping at
                     // 500 silently hid notes from any follows beyond that.
-                    val authors = _followedPubkeys.value
+                    val authors = followAuthors(relayUrl)
                     if (authors.isNotEmpty()) {
                         append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
                     }
@@ -1365,7 +1491,7 @@ class FeedService @Inject constructor(
                 FeedMode.GLOBAL -> {
                     // No author restriction
                 }
-                FeedMode.ARTICLES -> appendLongFormAuthors(this)
+                FeedMode.ARTICLES -> appendLongFormAuthors(this, relayUrl)
                 FeedMode.MARKETPLACE -> {
                     // Handled entirely by MarketplaceFeedService.
                 }
@@ -1385,11 +1511,11 @@ class FeedService @Inject constructor(
                     // here; RecipeTopics.matches still accepts them locally for
                     // recipes that arrive through another subscription.
                     append(",\"#t\":[${RecipeTopics.BASE.joinToString(",") { "\"$it\"" }}]")
-                    appendLongFormAuthors(this)
+                    appendLongFormAuthors(this, relayUrl)
                 }
                 FeedMode.MEDIA -> {
                     val authors = when (_mediaFeedMode.value) {
-                        MediaFeedMode.FOLLOWING -> _followedPubkeys.value.take(500)
+                        MediaFeedMode.FOLLOWING -> followAuthors(relayUrl).take(500)
                         // "Everyone" lifts the Web of Trust scope, like Global notes.
                         MediaFeedMode.GLOBAL ->
                             if (configStore.config.value.globalShowsEveryone) emptyList()
@@ -1584,7 +1710,8 @@ class FeedService @Inject constructor(
         // Auxiliary subscriptions fire once per connection, on the PRIMARY feed's
         // EOSE only. A prefix match here would also fire on the auxiliary subs'
         // own EOSEs and loop forever (REQ → EOSE → REQ ...) against every relay.
-        if (subId == primaryFeedSubId() && auxSubsSent.add(relayUrl)) {
+        // Not on a follow's own relay either: it is asked only for them.
+        if (subId == primaryFeedSubId() && relayUrl !in outboxPlan && auxSubsSent.add(relayUrl)) {
             sendAuxiliarySubscriptions(relayUrl)
         }
 
@@ -1949,9 +2076,9 @@ class FeedService @Inject constructor(
      * Articles and Recipes ask for follows on Following, and for the trust
      * graph on Global (capped at 500 like Media); Everyone asks for anyone.
      */
-    private fun appendLongFormAuthors(sb: StringBuilder) {
+    private fun appendLongFormAuthors(sb: StringBuilder, relayUrl: String) {
         val authors = when (longFormScope()) {
-            MediaFeedMode.FOLLOWING -> _followedPubkeys.value.take(500)
+            MediaFeedMode.FOLLOWING -> followAuthors(relayUrl).take(500)
             MediaFeedMode.GLOBAL ->
                 if (configStore.config.value.globalShowsEveryone) emptyList()
                 else _wotPubkeys.value.take(500).toList()
@@ -2415,6 +2542,32 @@ class FeedService @Inject constructor(
                     client.send("[\"REQ\",\"$subId\",$filter]")
                 }
 
+                // The follows' own relays, each asked only for the follows it
+                // was picked for, on the socket it already has: its live feed
+                // socket, else the pooled lookup socket, which also leaves a
+                // relay that refused it alone for a while. No socket per page.
+                for ((relayUrl, authors) in outboxPlan) {
+                    if (authors.isEmpty() || relayUrl in relayUrls) continue
+                    val filter = buildString {
+                        append("{\"kinds\":[${primaryFeedKinds()}]")
+                        append(",\"authors\":[${authors.joinToString(",") { "\"$it\"" }}]")
+                        append(",\"until\":${oldest.time / 1000 - 1}")
+                        append(",\"limit\":100}")
+                    }
+                    val feedClient = feedClients[relayUrl]
+                        ?.takeIf { it.connectionState.value == WebSocketClient.ConnectionState.CONNECTED }
+                    collectors.add(scope.launch(Dispatchers.IO) {
+                        if (feedClient != null) {
+                            // Its own collector already hands every message to the accumulator.
+                            askOnFeedClient(feedClient, subId, listOf(filter)) {}
+                        } else {
+                            lookupPool.query(relayUrl, subId, listOf(filter), NOTE_FETCH_TIMEOUT_MS) { msg ->
+                                processAccumulatorMessage(msg, relayUrl)
+                            }
+                        }
+                    })
+                }
+
                 delay(NOTE_FETCH_TIMEOUT_MS)
             } finally {
                 collectors.forEach { it.cancel() }
@@ -2603,7 +2756,20 @@ class FeedService @Inject constructor(
         val authors = ids.mapNotNull { referenceHints(it).second }
             .filter { it !in known && relayListRequested.add(it) }
             .distinct()
-        if (authors.isNotEmpty()) nostrService.fetchMissingProfiles(authors, force = true)
+        if (authors.isNotEmpty()) {
+            nostrService.fetchMissingProfiles(authors, force = true)
+            // The profile fetch asks for kind 0 only; the write relays the
+            // hint pass reads come from kind 10002.
+            nostrService.fetchRelayLists(authors)
+        }
+    }
+
+    /** Asks once per author for the NIP-65 lists of [authors] not known yet (iOS requestRelayLists). */
+    private fun requestRelayListsForAuthors(authors: Collection<String>) {
+        val known = nostrService.outboxRelays.value
+        if (relayListRequested.size > 5000) relayListRequested.clear()
+        val needed = authors.filter { it !in known && relayListRequested.add(it) }
+        if (needed.isNotEmpty()) nostrService.fetchRelayLists(needed)
     }
 
     private fun normalizeRelay(url: String) = url.trim().trimEnd('/').lowercase()

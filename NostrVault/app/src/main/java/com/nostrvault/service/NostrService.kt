@@ -113,6 +113,9 @@ class NostrService @Inject constructor(
         // its kind 0, and the most authors one REQ carries.
         private const val METADATA_PENDING_WINDOW_MS = 60_000L
         private const val METADATA_MAX_AUTHORS = 500
+        // Authors per kind-10002 REQ in fetchRelayLists, and how long each waits.
+        private const val RELAY_LIST_CHUNK = 200
+        private const val RELAY_LIST_TIMEOUT_MS = 8_000L
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -1101,6 +1104,35 @@ class NostrService @Inject constructor(
             scope.launch(Dispatchers.IO) {
                 lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), TEMP_CLIENT_DISCONNECT_MS) { msg ->
                     launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Fetch NIP-65 relay lists (kind 10002) for many pubkeys at once, on the
+     * pooled lookup sockets. The metadata pool asks for kind 0 only, so a
+     * forced [fetchMissingProfiles] never brings these in. Asks the user's own
+     * relay and the profile relays (purplepag.es and user.kindpag.es index
+     * relay lists).
+     */
+    fun fetchRelayLists(pubkeys: List<String>) {
+        if (pubkeys.isEmpty()) return
+        val relays = (configStore.config.value.activeBlastrRelays.take(1) + PROFILE_RELAYS)
+            .distinct()
+            .filter { isValidRelayUrl(it) }
+        for (chunk in pubkeys.distinct().chunked(RELAY_LIST_CHUNK)) {
+            val filter = buildFilterJson(buildMap<String, Any> {
+                put("kinds", listOf(10002))
+                put("authors", chunk)
+                put("limit", chunk.size)
+            })
+            for (relayUrl in relays) {
+                val subId = "relays-${UUID.randomUUID().toString().take(8)}"
+                scope.launch(Dispatchers.IO) {
+                    lookupPool.query(relayUrl, subId, listOf(filter), RELAY_LIST_TIMEOUT_MS) { msg ->
+                        launch(Dispatchers.Default) { processRelayMessage(msg, relayUrl) }
+                    }
                 }
             }
         }
