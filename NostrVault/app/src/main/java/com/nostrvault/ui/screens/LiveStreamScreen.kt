@@ -18,9 +18,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.nostrvault.data.model.FeedProfile
@@ -29,6 +33,8 @@ import com.nostrvault.service.LiveChatService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.service.music.LiveRejoinListener
+import com.nostrvault.service.music.rejoinLiveEdge
+import com.nostrvault.ui.components.claimSound
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,11 +84,41 @@ fun LiveStreamScreen(
             // Play after a pause rejoins the broadcast; left paused, the item
             // falls behind the live window and resuming it only fails.
             addListener(LiveRejoinListener(this))
+            // The stream takes the sound: a playing song pauses.
+            claimSound(true)
         }
     }
     // A player left running behind a closed screen keeps the socket and the
     // audio session; releasing on dispose is not optional.
     DisposableEffect(player) { onDispose { player?.release() } }
+
+    // Another app took the sound (its own video, say): coming back to the app
+    // carries on with the broadcast where it is now. Paused by the owner, the
+    // stream stays paused.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(player, lifecycleOwner) {
+        val p = player ?: return@DisposableEffect onDispose {}
+        var pausedByOtherApp = false
+        val listener = object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                pausedByOtherApp = !playWhenReady &&
+                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
+            }
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START && pausedByOtherApp) {
+                pausedByOtherApp = false
+                p.rejoinLiveEdge()
+                p.play()
+            }
+        }
+        p.addListener(listener)
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            p.removeListener(listener)
+        }
+    }
 
     Scaffold(
         containerColor = WindowBackground,

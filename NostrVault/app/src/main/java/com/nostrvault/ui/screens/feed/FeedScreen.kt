@@ -83,6 +83,7 @@ import com.nostrvault.ui.components.CompactNoteCard
 import com.nostrvault.ui.components.FeedThreadCard
 import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
+import com.nostrvault.ui.components.LiveStreamThumbnail
 import com.nostrvault.ui.components.NoteCard
 import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.components.threadLink
@@ -1114,11 +1115,10 @@ private fun LiveGrid(
                     .clickable { onStreamClick(stream) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
-                stream.imageUrl?.let { url ->
-                    AsyncImage(
-                        model = url,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
+                // The live frame, else the cover; refetched while on screen.
+                if (stream.previewImageUrls.isNotEmpty()) {
+                    LiveStreamThumbnail(
+                        urls = stream.previewImageUrls,
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)

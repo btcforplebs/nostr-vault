@@ -98,6 +98,28 @@ class LiveStreamTest {
         assertFalse(s.isOnAirAt(1_700_000_100L))
     }
 
+    @Test fun `the first playable streaming tag wins, whatever its position`() {
+        // zap.stream publishes HLS and moq:// side by side; order is not part
+        // of the format.
+        val hls = "https://api-uk.zap.stream/537a/hls/live.m3u8"
+        val moq = "moq://api-uk.zap.stream:1443/"
+        assertEquals(hls, stream("d" to "x", "streaming" to moq, "streaming" to hls)!!.streamingUrl)
+        assertEquals(hls, stream("d" to "x", "streaming" to hls, "streaming" to moq)!!.streamingUrl)
+        assertNull(stream("d" to "x", "streaming" to moq, "streaming" to "rtmp://e/live.m3u8")!!.streamingUrl)
+    }
+
+    @Test fun `the live frame leads the cover for the tile`() {
+        val thumb = "https://api-uk.zap.stream/537a/thumb.webp?n=1791135949"
+        val cover = "https://blossom.nogood.studio/6d5b"
+        assertEquals(listOf(thumb, cover), stream("d" to "x", "image" to cover, "thumb" to thumb)!!.previewImageUrls)
+        assertEquals(listOf(cover), stream("d" to "x", "image" to cover)!!.previewImageUrls)
+        assertEquals(listOf(cover), stream("d" to "x", "thumb" to cover, "image" to cover)!!.previewImageUrls)
+        assertEquals(
+            emptyList<String>(),
+            stream("d" to "x", "image" to " ", "thumb" to "data:image/png;base64,AA")!!.previewImageUrls,
+        )
+    }
+
     @Test fun `a stream with no relays tag falls back rather than failing`() {
         assertEquals(emptyList<String>(), stream("d" to "x")!!.chatRelays)
     }

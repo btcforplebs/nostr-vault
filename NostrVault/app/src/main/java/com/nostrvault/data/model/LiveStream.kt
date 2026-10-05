@@ -13,6 +13,7 @@ data class LiveStream(
     val createdAt: Long,
     val title: String?,
     val summary: String?,
+    /** NIP-53 `image`: the host's cover art. */
     val imageUrl: String?,
     val streamingUrl: String?,
     val status: String?,
@@ -34,6 +35,13 @@ data class LiveStream(
      * the Web of Trust judge the stream by these, not by the signer alone.
      */
     val hosts: Set<String> = setOf(hostPubkey),
+    /**
+     * What the tile tries to draw, best first: `thumb`, a frame of the
+     * broadcast itself (zap.stream and its forks, refreshed every republish),
+     * then `image`, the cover art. iOS measured 2026-10-04: 3 of 9 live
+     * streams carried `thumb`, and every one also had an `image`.
+     */
+    val previewImageUrls: List<String> = listOfNotNull(imageUrl),
 ) {
     /** The addressable form: what an naddr for this stream points at. */
     val address: String get() = "$KIND:$hostPubkey:$identifier"
@@ -80,12 +88,25 @@ data class LiveStream(
             // Only an HTTP(S) HLS playlist is a live stream the player can
             // open. Real events also carry rtmp, ftp, `zapcast:` URLs and plain
             // web pages (a youtube.com/live link) — a tile for one of those is
-            // a tile that can only disappoint.
-            val streaming = value("streaming")?.takeIf { raw ->
-                val scheme = raw.substringBefore(':').lowercase()
-                val path = raw.substringBefore('?').substringBefore('#').lowercase()
-                (scheme == "http" || scheme == "https") && path.endsWith(".m3u8")
-            }
+            // a tile that can only disappoint. zap.stream publishes two
+            // `streaming` tags, HLS and `moq://`, in no fixed order, so the
+            // first playable one wins, not simply the first.
+            val streaming = tags
+                .filter { it.size >= 2 && it[0] == "streaming" }
+                .map { it[1].trim() }
+                .firstOrNull { raw ->
+                    val scheme = raw.substringBefore(':').lowercase()
+                    val path = raw.substringBefore('?').substringBefore('#').lowercase()
+                    (scheme == "http" || scheme == "https") && path.endsWith(".m3u8")
+                }
+
+            val previews = listOf("thumb", "image")
+                .mapNotNull { value(it) }
+                .filter { raw ->
+                    val scheme = raw.substringBefore(':').lowercase()
+                    scheme == "http" || scheme == "https"
+                }
+                .distinct()
 
             return LiveStream(
                 hostPubkey = pubkey,
@@ -106,6 +127,7 @@ data class LiveStream(
                 hosts = setOf(pubkey) + tags
                     .filter { it.size >= 4 && it[0] == "p" && it[3].equals("host", ignoreCase = true) }
                     .map { it[1] },
+                previewImageUrls = previews,
             )
         }
     }
