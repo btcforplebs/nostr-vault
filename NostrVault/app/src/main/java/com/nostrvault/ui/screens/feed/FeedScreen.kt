@@ -243,6 +243,7 @@ fun FeedScreen(
 
     // Zap sheet state
     var zapNoteId by remember { mutableStateOf<String?>(null) }
+    var showNoLightningAddress by remember { mutableStateOf(false) }
     val zapSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Zap result feedback
@@ -720,7 +721,9 @@ fun FeedScreen(
                                         onProfileClick = onProfileClick,
                                         onReply = onReply ?: { _ -> onCompose() },
                                         onQuote = onQuote ?: {},
-                                        onZap = { id -> zapNoteId = id },
+                                        onZap = viewModel::quickZap,
+                                        onLongPressZap = { id -> zapNoteId = id },
+                                        onNoLightningAddress = { showNoLightningAddress = true },
                                         onBroadcast = { id -> broadcastNoteId = id },
                                         onReport = { id -> reportNoteId = id },
                                         onBlock = { id -> blockNoteId = id },
@@ -789,7 +792,9 @@ fun FeedScreen(
                                 onProfileClick = onProfileClick,
                                 onReply = onReply ?: { _ -> onCompose() },
                                 onQuote = onQuote ?: {},
-                                onZap = { id -> zapNoteId = id },
+                                onZap = viewModel::quickZap,
+                                onLongPressZap = { id -> zapNoteId = id },
+                                onNoLightningAddress = { showNoLightningAddress = true },
                                 onBroadcast = { id -> broadcastNoteId = id },
                                 onReport = { id -> reportNoteId = id },
                                 onBlock = { id -> blockNoteId = id },
@@ -862,7 +867,18 @@ fun FeedScreen(
 
 
 
-    // Custom zap sheet
+    if (showNoLightningAddress) {
+        AlertDialog(
+            onDismissRequest = { showNoLightningAddress = false },
+            title = { Text("No Lightning Address") },
+            text = { Text("This user hasn't configured a lightning address, so they can't receive zaps.") },
+            confirmButton = {
+                TextButton(onClick = { showNoLightningAddress = false }) { Text("OK") }
+            },
+        )
+    }
+
+    // Custom zap sheet (long-press on the bolt)
     if (zapNoteId != null) {
         CustomZapSheet(
             sheetState = zapSheetState,
@@ -1313,6 +1329,8 @@ private fun FeedFullNoteRow(
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
     onZap: (String) -> Unit,
+    onLongPressZap: (String) -> Unit,
+    onNoLightningAddress: () -> Unit,
     onBroadcast: (String) -> Unit,
     onReport: (String) -> Unit,
     onBlock: (String) -> Unit,
@@ -1335,6 +1353,8 @@ private fun FeedFullNoteRow(
             onReply = onReply,
             onQuote = onQuote,
             onZap = onZap,
+            onLongPressZap = onLongPressZap,
+            onNoLightningAddress = onNoLightningAddress,
             onBroadcast = onBroadcast,
             onReport = onReport,
             onBlock = onBlock,
@@ -1389,6 +1409,8 @@ private fun FeedFullNoteRowContent(
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
     onZap: (String) -> Unit,
+    onLongPressZap: (String) -> Unit,
+    onNoLightningAddress: () -> Unit,
     onBroadcast: (String) -> Unit,
     onReport: (String) -> Unit,
     onBlock: (String) -> Unit,
@@ -1449,6 +1471,12 @@ private fun FeedFullNoteRowContent(
     val cardProfiles by remember(cardPubkeys) {
         derivedStateOf { cardPubkeys.resolveAgainst(allProfiles) }
     }
+    // Zap bolt (iOS FeedView): only with a wallet; tap zaps the default
+    // amount, long-press picks one; faint, and an explanation on tap, when
+    // the author has no lightning address.
+    val hasWallet by viewModel.hasWallet.collectAsState()
+    val authorProfile = cardProfiles[note.pubkey]
+    val hasLightning = !authorProfile?.lud16.isNullOrBlank() || !authorProfile?.lud06.isNullOrBlank()
 
     NoteCard(
         note = note,
@@ -1470,7 +1498,11 @@ private fun FeedFullNoteRowContent(
         onProfileClick = onProfileClick,
         onLike = viewModel::likeNote,
         onRepost = viewModel::repostNote,
-        onZap = onZap,
+        onZap = if (hasWallet) {
+            { id -> if (hasLightning) onZap(id) else onNoLightningAddress() }
+        } else null,
+        onLongPressZap = if (hasWallet && hasLightning) onLongPressZap else null,
+        zapDimmed = !hasLightning,
         onReply = onReply,
         onQuote = onQuote,
         onBroadcast = onBroadcast,

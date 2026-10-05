@@ -125,6 +125,10 @@ fun NoteCard(
     onBlock: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onLongPressLike: ((String) -> Unit)? = null,
+    /** Long-press on the bolt: pick an amount. Tap ([onZap]) zaps the default at once. */
+    onLongPressZap: ((String) -> Unit)? = null,
+    /** The author has no lightning address: the bolt draws faint (iOS). */
+    zapDimmed: Boolean = false,
     /** Asks relays for the parent again after "Could not load original note". */
     onRetryParent: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -482,6 +486,8 @@ fun NoteCard(
                 onLike = onLike,
                 onZap = onZap,
                 onLongPressLike = onLongPressLike,
+                onLongPressZap = onLongPressZap,
+                zapDimmed = zapDimmed,
             )
         }
         } // Box (focused tint overlay)
@@ -542,6 +548,8 @@ internal fun EngagementBar(
     onLike: ((String) -> Unit)?,
     onZap: ((String) -> Unit)?,
     onLongPressLike: ((String) -> Unit)? = null,
+    onLongPressZap: ((String) -> Unit)? = null,
+    zapDimmed: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     // No spacing here: each button carries its own 4dp a side inside its tap
@@ -610,6 +618,8 @@ internal fun EngagementBar(
                 contentDescription = if (isZapped) "Zapped" else "Zap",
                 count = zapCountLabel(stats?.zapCount ?: 0, stats?.zapAmountSats ?: 0L),
                 onClick = { onZap.invoke(noteId) },
+                onLongClick = onLongPressZap?.let { longPress -> { longPress(noteId) } },
+                dimmed = zapDimmed && !isZapped,
             )
         }
 
@@ -629,8 +639,10 @@ internal fun EngagementButton(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     count: String? = null,
+    /** Drawn faint and without the tap pulse: the tap explains why it can't act. */
+    dimmed: Boolean = false,
 ) {
-    val tint = if (isActive) activeColor else SecondaryText
+    val tint = if (isActive) activeColor else if (dimmed) SecondaryText.copy(alpha = 0.35f) else SecondaryText
     val background = if (isActive) {
         activeColor.copy(alpha = 0.18f)
     } else {
@@ -668,7 +680,7 @@ internal fun EngagementButton(
     // publishing anything, so there is no signed event for the bounce to be
     // confirming.
     val tapAndPulse = {
-        if (!Motion.isReduced) pulsing = true
+        if (!Motion.isReduced && !dimmed) pulsing = true
         onClick()
     }
 

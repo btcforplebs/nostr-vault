@@ -511,6 +511,14 @@ class FeedViewModel @Inject constructor(
         }
     }
 
+    /** The bolt only shows with a wallet to pay from (iOS rowData.hasNWC). */
+    val hasWallet: StateFlow<Boolean> = configStore.config
+        .map { !it.nwcURI.isNullOrBlank() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), !configStore.config.value.nwcURI.isNullOrBlank())
+
+    /** One tap on the bolt: the default amount from Wallet settings, no sheet. */
+    fun quickZap(noteId: String) = zapNote(noteId, configStore.config.value.defaultZapAmount)
+
     fun zapNote(noteId: String, amount: Int = 21) {
         viewModelScope.launch {
             val note = feedService.findNote(noteId)
