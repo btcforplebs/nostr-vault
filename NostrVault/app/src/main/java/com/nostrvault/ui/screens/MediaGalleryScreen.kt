@@ -516,6 +516,8 @@ fun MediaGalleryScreen(
     onBlossomClick: () -> Unit,
     feedService: FeedService,
     viewModel: MediaGalleryViewModel = hiltViewModel(),
+    /** The viewer's save and delete actions, reused by the long-press menu. */
+    mediaActions: MediaViewerViewModel = hiltViewModel(),
 ) {
     val mediaItems by viewModel.mediaItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -538,6 +540,7 @@ fun MediaGalleryScreen(
         },
     )
     var contextMenuTarget by remember { mutableStateOf<Int?>(null) }
+    var pendingDelete by remember { mutableStateOf<Pair<BlossomMediaItem, DeleteScope>?>(null) }
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -843,6 +846,8 @@ fun MediaGalleryScreen(
                                 onDismissMenu = { contextMenuTarget = null },
                                 mediaCacheService = mediaCacheService,
                                 clipboardManager = clipboardManager,
+                                onSaveToPhotos = { mediaActions.saveToGallery(item) },
+                                onDelete = { scope -> pendingDelete = item to scope },
                             )
                         }
                     }
@@ -895,12 +900,28 @@ fun MediaGalleryScreen(
                                 onDismissMenu = { contextMenuTarget = null },
                                 mediaCacheService = mediaCacheService,
                                 clipboardManager = clipboardManager,
+                                onSaveToPhotos = { mediaActions.saveToGallery(item) },
+                                onDelete = { scope -> pendingDelete = item to scope },
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    pendingDelete?.let { (item, scope) ->
+        DeleteBlobConfirmDialog(
+            scope = scope,
+            onConfirm = {
+                pendingDelete = null
+                when (scope) {
+                    DeleteScope.MIRRORS -> mediaActions.deleteFromMirrors(item) { viewModel.refresh() }
+                    DeleteScope.EVERYWHERE -> mediaActions.deleteEverywhere(item) { viewModel.refresh() }
+                }
+            },
+            onDismiss = { pendingDelete = null },
+        )
     }
 }
 
@@ -935,6 +956,8 @@ private fun MediaGridCell(
     onDismissMenu: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    onSaveToPhotos: () -> Unit,
+    onDelete: (DeleteScope) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -1005,6 +1028,8 @@ private fun MediaGridCell(
             onDismiss = onDismissMenu,
             mediaCacheService = mediaCacheService,
             clipboardManager = clipboardManager,
+            onSaveToPhotos = onSaveToPhotos,
+            onDelete = onDelete,
         )
     }
 }
@@ -1024,6 +1049,8 @@ private fun MediaListRow(
     onDismissMenu: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    onSaveToPhotos: () -> Unit,
+    onDelete: (DeleteScope) -> Unit,
 ) {
     val context = LocalContext.current
     val colors = LocalNostrVaultColors.current
@@ -1136,6 +1163,8 @@ private fun MediaListRow(
             onDismiss = onDismissMenu,
             mediaCacheService = mediaCacheService,
             clipboardManager = clipboardManager,
+            onSaveToPhotos = onSaveToPhotos,
+            onDelete = onDelete,
         )
     }
 }
@@ -1151,6 +1180,8 @@ private fun MediaItemContextMenu(
     onDismiss: () -> Unit,
     mediaCacheService: MediaCacheService,
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
+    onSaveToPhotos: () -> Unit,
+    onDelete: (DeleteScope) -> Unit,
 ) {
     val is404 = remember(item.displayUrl) { mediaCacheService.isKnown404(item.displayUrl) }
 
@@ -1183,6 +1214,18 @@ private fun MediaItemContextMenu(
                 onDismiss()
             },
         )
+        if (item.isImage || item.isVideo) {
+            DropdownMenuItem(
+                text = { Text("Save to Photos") },
+                leadingIcon = {
+                    Icon(NostrVaultIcons.Import, contentDescription = null, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    onSaveToPhotos()
+                },
+            )
+        }
         DropdownMenuItem(
             text = { Text(if (is404) "Remove from 404" else "Mark as 404") },
             leadingIcon = {
@@ -1223,6 +1266,28 @@ private fun MediaItemContextMenu(
                 },
             )
         }
+        // Each asks for confirmation first, as in the viewer.
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text("Delete from mirrors", color = ErrorRed) },
+            leadingIcon = {
+                Icon(NostrVaultIcons.Cloud, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+            },
+            onClick = {
+                onDismiss()
+                onDelete(DeleteScope.MIRRORS)
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Delete everywhere", color = ErrorRed) },
+            leadingIcon = {
+                Icon(NostrVaultIcons.Delete, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+            },
+            onClick = {
+                onDismiss()
+                onDelete(DeleteScope.EVERYWHERE)
+            },
+        )
     }
 }
 
