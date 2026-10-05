@@ -125,6 +125,8 @@ fun NoteCard(
     onBlock: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onLongPressLike: ((String) -> Unit)? = null,
+    /** Asks relays for the parent again after "Could not load original note". */
+    onRetryParent: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -253,7 +255,22 @@ fun NoteCard(
                         profiles = profiles,
                     )
                 } else {
-                    ParentNoteSkeleton(connectorColor = connectorColor)
+                    // Skeleton for 12 s, then a failure line with Retry (iOS
+                    // parentFetchFailed) rather than a skeleton that never ends.
+                    val parentId = note.parentEventId
+                    var parentAttempt by remember(parentId) { mutableIntStateOf(0) }
+                    if (rememberPlaceholderTimedOut(parentId, parentAttempt)) {
+                        ParentNoteFailed(
+                            onRetry = onRetryParent?.let { retry ->
+                                {
+                                    parentAttempt++
+                                    retry(parentId)
+                                }
+                            },
+                        )
+                    } else {
+                        ParentNoteSkeleton(connectorColor = connectorColor)
+                    }
                 }
                 // Connector stub bridging parent preview to current note's avatar
                 Box(
@@ -1638,6 +1655,41 @@ private fun ParentNotePreview(
                         .heightIn(max = 150.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(TertiaryGroupedBg),
+                )
+            }
+        }
+    }
+}
+
+/** The parent never arrived — likely on no relay we asked. iOS FeedView parentFetchFailed. */
+@Composable
+private fun ParentNoteFailed(onRetry: (() -> Unit)?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+    ) {
+        Icon(
+            imageVector = NostrVaultIcons.Alert,
+            contentDescription = null,
+            tint = SecondaryText,
+            modifier = Modifier.size(12.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = "Could not load original note",
+            color = SecondaryText,
+            fontSize = 13.sp,
+            modifier = Modifier.weight(1f),
+        )
+        if (onRetry != null) {
+            TextButton(onClick = onRetry) {
+                Text(
+                    text = "Retry",
+                    color = LocalNostrVaultColors.current.primary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
         }

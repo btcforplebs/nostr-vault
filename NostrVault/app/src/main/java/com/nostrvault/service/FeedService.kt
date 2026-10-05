@@ -2614,6 +2614,16 @@ class FeedService @Inject constructor(
      */
     fun fetchMissingNote(id: String) = fetchMissingNotesBatch(listOf(id))
 
+    /**
+     * A user's Retry: forget that [id] was given up on, so the lookup runs now
+     * instead of waiting out [UNAVAILABLE_RETRY_MS]. iOS retryMissingNote.
+     */
+    fun retryMissingNote(id: String) {
+        unavailableSince.remove(id)
+        if (id in _unavailableNoteIds.value) _unavailableNoteIds.update { it - id }
+        fetchMissingNote(id)
+    }
+
     fun fetchMissingNotesBatch(ids: List<String>) {
         val now = System.currentTimeMillis()
         val wanted = ids.filter { id ->

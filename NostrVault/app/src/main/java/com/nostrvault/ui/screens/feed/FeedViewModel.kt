@@ -358,6 +358,9 @@ class FeedViewModel @Inject constructor(
 
     fun fetchMissingNote(id: String) = feedService.fetchMissingNote(id)
 
+    /** Retry from "Could not load original note": asks again even if just given up on. */
+    fun retryMissingNote(id: String) = feedService.retryMissingNote(id)
+
     // ── Feed filter toggles (per-mode) ─────────────────────────
 
     /** Persisted, and the same value as Settings' "Auto-Load New Posts". */

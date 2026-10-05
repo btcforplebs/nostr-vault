@@ -1483,6 +1483,7 @@ private fun FeedFullNoteRowContent(
         onBlock = { onBlock(note.id) },
         onDelete = { onDelete(note.id) },
         onLongPressLike = onLongPressLike,
+        onRetryParent = viewModel::retryMissingNote,
         modifier = modifier,
     )
 }
