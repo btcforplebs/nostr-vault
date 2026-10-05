@@ -1608,7 +1608,10 @@ struct FeedView: View {
         }
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
         .sheet(item: $showingArticle) { route in
-            ArticleReaderView(note: route.note)
+            // In a stack so a comment under the article can open as a note.
+            NavigationStack {
+                ArticleReaderView(note: route.note)
+            }
                 .environmentObject(nostrService)
                 // A Mac sheet sizes to its content; on iPhone a 520pt minimum
                 // is wider than the screen, so the reader drew off both edges.
