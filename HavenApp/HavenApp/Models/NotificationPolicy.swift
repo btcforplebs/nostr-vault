@@ -75,9 +75,11 @@ enum NotificationPolicy {
     /// Only people in your Web of Trust (or follows) notify. `trusted` empty
     /// means the graph has not loaded, and then nobody is held back. Gift
     /// wraps (`giftwrap`) carry a throwaway author and the catch-up summary
-    /// carries none, so they are not judged here.
+    /// carries none, so they are not judged here. A zap receipt's author is
+    /// the lightning service that signed it, not the zapper; the relay has
+    /// already judged the zapper (haven-go inboxTrustKey), so zaps pass too.
     static func authorMayNotify(_ author: String, type: String, trusted: Set<String>, own: Set<String>) -> Bool {
-        if author.isEmpty || type == "giftwrap" || type == "summary" { return true }
+        if author.isEmpty || type == "giftwrap" || type == "summary" || type == "zap" { return true }
         if trusted.isEmpty || own.contains(author) { return true }
         return trusted.contains(author)
     }

@@ -155,5 +155,7 @@ final class NotificationAuthorTrustTests: XCTestCase {
         XCTAssertTrue(NotificationPolicy.authorMayNotify("stranger", type: "reply", trusted: [], own: []))
         XCTAssertTrue(NotificationPolicy.authorMayNotify("me", type: "zap", trusted: trusted, own: ["me"]))
         XCTAssertTrue(NotificationPolicy.authorMayNotify("throwaway", type: "giftwrap", trusted: trusted, own: []))
+        // The receipt is signed by the lightning service, never in anyone's WoT.
+        XCTAssertTrue(NotificationPolicy.authorMayNotify("lnurl-service", type: "zap", trusted: trusted, own: []))
     }
 }
