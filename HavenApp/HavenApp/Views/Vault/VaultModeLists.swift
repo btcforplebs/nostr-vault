@@ -285,9 +285,11 @@ extension VaultView {
         // ~always true here while the feed/relay fetches), or the Zaps view spins
         // forever when there are no zaps yet. Show the spinner only until the
         // initial settle completes (bounded ~6s, see updateZapsSettleState).
+        // The wallet's history can outlast that settle (one NWC call can take
+        // 15s), so "Given" keeps spinning while it is still being read.
         let showLoading = displayZappedNotes.isEmpty
-            && !zapsHasLoadedOnce
-            && !zapsInitialSettled
+            && ((!zapsHasLoadedOnce && !zapsInitialSettled)
+                || (zapsFilter == .myZaps && walletGivenLoading))
         return Group {
             if showLoading {
                 VStack(spacing: 32) {
@@ -336,7 +338,7 @@ extension VaultView {
                     ForEach(displayZappedNotes) { event in
                         // Same unification as the Likes filter — zaps belong in the
                         // card's engagement bar under the post, not in a row above it.
-                        let rowZappers = zapsFilter != .myZaps ? zapMap[event.id] : nil
+                        let rowZappers = zapMap[event.id]
                         VStack(alignment: .leading, spacing: 0) {
                             #if os(iOS)
                             NoteNavigationLink(note: FeedNote(

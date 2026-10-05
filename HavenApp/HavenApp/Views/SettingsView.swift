@@ -3110,6 +3110,11 @@ struct AppearanceSettingsView: View {
     @EnvironmentObject var configService: ConfigService
     @State private var showEmojiPicker = false
 
+    private var deviceLanguageName: String {
+        let code = NoteTranslation.targetCode(setting: "")
+        return Locale.current.localizedString(forLanguageCode: code)?.capitalized(with: .current) ?? code
+    }
+
     var body: some View {
         Form {
             // Accent Theme picker removed — the app ships a single appearance
@@ -3175,6 +3180,31 @@ struct AppearanceSettingsView: View {
                 Text("Tab Bar")
             }
             #endif
+
+            Section {
+                Toggle(isOn: $configService.config.showTranslateButton) {
+                    Label("Translate Button on Posts", systemImage: "translate")
+                }
+                .onChange(of: configService.config.showTranslateButton) { _, _ in
+                    configService.save()
+                }
+                Picker(selection: $configService.config.translateTargetLanguage) {
+                    Text("Device Language (\(deviceLanguageName))").tag("")
+                    ForEach(FeedLanguage.pickerList) { language in
+                        Text(language.displayName).tag(language.code)
+                    }
+                } label: {
+                    Label("Translate To", systemImage: "globe")
+                }
+                .disabled(!configService.config.showTranslateButton)
+                .onChange(of: configService.config.translateTargetLanguage) { _, _ in
+                    configService.save()
+                }
+            } header: {
+                Text("Translation")
+            } footer: {
+                Text("Posts in other languages get a Translate button. Translation runs on this device with Apple's translator, and nothing is sent anywhere. The first time, your device downloads the language.")
+            }
 
             Section {
                 Toggle(isOn: $configService.config.showNewPostsPill) {

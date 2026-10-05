@@ -392,6 +392,10 @@ struct FeedView: View {
     /// The diVine, article or recipe composer, when the post button opens one.
     @State private var modeComposer: ModeComposer?
     @State private var showingRelayStatus = false
+    @State private var showingFeedMenuEditor = false
+    @AppStorage(FeedMode.menuOrderKey) private var feedMenuOrder = ""
+    @AppStorage(FeedMode.menuHiddenKey) private var feedMenuHidden = ""
+    private var menuModes: [FeedMode] { FeedMode.menuModes(order: feedMenuOrder, hidden: feedMenuHidden) }
     @State private var showingNoteId: String?
     @State private var showingProfileKey: IdentifiableString?
     @State private var showingMediaUrl: IdentifiableURL?
@@ -642,7 +646,9 @@ struct FeedView: View {
             connectionStatus: feedService.connectionStatus,
             dotColor: feedService.connectionDotColor,
             isCompactWidth: isCompactWidth,
+            modes: menuModes,
             onSelect: { feedService.switchMode($0) },
+            onEdit: { showingFeedMenuEditor = true },
             onDashboard: { showingRelayStatus = true }
         )
         .equatable()
@@ -1190,7 +1196,7 @@ struct FeedView: View {
 
             // Feed mode picker
             Menu {
-                ForEach(FeedMode.allCases, id: \.self) { mode in
+                ForEach(menuModes, id: \.self) { mode in
                     Button(action: { feedService.switchMode(mode) }) {
                         let displayName = mode == .discovery ? "Discover" : mode.rawValue
                         if feedService.feedMode == mode {
@@ -1200,6 +1206,8 @@ struct FeedView: View {
                         }
                     }
                 }
+                Divider()
+                Button("Edit Feeds…") { showingFeedMenuEditor = true }
             } label: {
                 HStack(spacing: 4) {
                     let displayName = feedService.feedMode == .discovery ? "Discover" : feedService.feedMode.rawValue
@@ -1589,6 +1597,12 @@ struct FeedView: View {
             pendingManager.editRequest = nil
         }
         #endif
+        .sheet(isPresented: $showingFeedMenuEditor) {
+            FeedMenuEditor(onDismiss: { showingFeedMenuEditor = false })
+                #if os(macOS)
+                .frame(minWidth: 360, minHeight: 520)
+                #endif
+        }
         .sheet(isPresented: $showingRelayStatus) {
             FeedDashboardSheet(onDismiss: { showingRelayStatus = false })
                 .environmentObject(relayManager)
@@ -3197,7 +3211,10 @@ struct FeedNoteRow: View {
     var onMedia: ((URL, [URL]) -> Void)? = nil
     var showParent: Bool = true
     var isReplyToNext: Bool = false
-    var layoutMode: NoteLayoutMode = .sideBySide
+    /// `.wide` everywhere (Logen): avatar and name on one line, text and
+    /// media full width under it, so an expanded post looks the same in the
+    /// feed, threaded cards and the thread view, and gets the most room.
+    var layoutMode: NoteLayoutMode = .wide
     var isFocused: Bool = false
     var suppressCardStyling: Bool = false
     /// Lets a caller shrink the avatar without touching anything else about
@@ -3257,6 +3274,7 @@ struct FeedNoteRow: View {
                 reactions: rowData.zapsOnlyMode ? 0 : rowData.stats.reactions,
                 reposts: rowData.stats.reposts
             ),
+            showsTranslate: note.kind != 30023,
             onProfile: { onProfile?($0) },
             onTap: { onTapRow?() }
         )
@@ -3676,6 +3694,7 @@ struct FeedNoteRow: View {
                     .lineSpacing(2)
                     .lineLimit(nil)
                     .textSelection(.enabled)
+                NoteTranslateButton(noteID: bodySource.id, content: bodySource.content, kind: bodySource.kind)
             }
             .padding(.top, 4)
 
@@ -4111,17 +4130,18 @@ struct FeedNoteRow: View {
                     url: url,
                     onTap: { onMedia?(url, urls) },
                     maxHeight: 400,
-                    isThumbnail: false
+                    isThumbnail: false,
+                    fillsFrame: true
                 )
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
                 #if os(iOS)
                 .transition(.opacity.animation(Motion.media))
                 #endif
             }
+            // Every page fills the whole carousel (fillsFrame) rather than
+            // sitting letterboxed in it.
             .frame(height: 400)
-            // Add a subtle border or background if desired to distinguish bounds
-            // But FeedMediaView already has clipShape and overlay
         }
     }
 
@@ -4583,11 +4603,15 @@ struct FeedPickerMenu: View, Equatable {
     let connectionStatus: String
     let dotColor: Color
     let isCompactWidth: Bool
+    /// The feeds to list, in the reader's order.
+    let modes: [FeedMode]
     let onSelect: (FeedMode) -> Void
+    let onEdit: () -> Void
     let onDashboard: () -> Void
 
     static func == (lhs: FeedPickerMenu, rhs: FeedPickerMenu) -> Bool {
         lhs.mode == rhs.mode
+            && lhs.modes == rhs.modes
             && lhs.connectionStatus == rhs.connectionStatus
             // The dot also follows relay health while the status stays "Live".
             && lhs.dotColor == rhs.dotColor
@@ -4600,7 +4624,7 @@ struct FeedPickerMenu: View, Equatable {
                 get: { mode },
                 set: { onSelect($0) }
             )) {
-                ForEach(FeedMode.allCases, id: \.self) { mode in
+                ForEach(modes, id: \.self) { mode in
                     Label(mode.displayName, systemImage: mode.symbolName)
                         .tag(mode)
                 }
@@ -4613,6 +4637,11 @@ struct FeedPickerMenu: View, Equatable {
 
             Button(action: onDashboard) {
                 Label("Dashboard", systemImage: "antenna.radiowaves.left.and.right")
+            }
+
+            // Last, at the bottom of the list it edits.
+            Button(action: onEdit) {
+                Label("Edit Feeds", systemImage: "slider.horizontal.3")
             }
         } label: {
             HStack(spacing: 0) {
@@ -4660,3 +4689,93 @@ struct FeedPickerMenu: View, Equatable {
     }
 }
 #endif
+
+// MARK: - Feed picker editor
+
+/// Show, hide and reorder the feeds in the feed picker. Following is the
+/// home feed, so it is always shown. Hiding the feed you're on takes you
+/// back to Following.
+struct FeedMenuEditor: View {
+    let onDismiss: () -> Void
+    @AppStorage(FeedMode.menuOrderKey) private var orderRaw = ""
+    @AppStorage(FeedMode.menuHiddenKey) private var hiddenRaw = ""
+    @State private var order: [FeedMode] = []
+    @State private var hidden: Set<FeedMode> = []
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(order, id: \.self) { mode in
+                        row(mode)
+                    }
+                    .onMove { from, to in
+                        order.move(fromOffsets: from, toOffset: to)
+                        save()
+                    }
+                } footer: {
+                    Text("Tap a feed to show or hide it. Drag to change the order. Following is always shown.")
+                }
+                Section {
+                    Button("Reset to Default") {
+                        order = FeedMode.allCases
+                        hidden = []
+                        save()
+                    }
+                    .disabled(order == FeedMode.allCases && hidden.isEmpty)
+                }
+            }
+            #if os(iOS)
+            // Always reorderable: the drag handles are the point of this screen.
+            .environment(\.editMode, .constant(.active))
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .navigationTitle("Edit Feeds")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: onDismiss)
+                }
+            }
+        }
+        .onAppear {
+            order = FeedMode.menuOrder(orderRaw)
+            hidden = Set(FeedMenuOrder.decode(hiddenRaw).compactMap(FeedMode.init(rawValue:)))
+        }
+    }
+
+    private func row(_ mode: FeedMode) -> some View {
+        let isPinned = mode == .following
+        let isShown = isPinned || !hidden.contains(mode)
+        return Button {
+            guard !isPinned else { return }
+            if isShown { hidden.insert(mode) } else { hidden.remove(mode) }
+            save()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isShown ? "checkmark.circle.fill" : "circle")
+                    .font(.appSystem(size: 20))
+                    .foregroundColor(isShown ? (isPinned ? .secondary : .havenPurple) : .secondary)
+                Image(systemName: mode.symbolName)
+                    .font(.appSystem(size: 16, weight: .semibold))
+                    .foregroundColor(isShown ? .havenPurple : .secondary)
+                    .frame(width: 24)
+                Text(mode.displayName)
+                    .foregroundColor(isShown ? .primary : .secondary)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(mode.displayName))
+        .accessibilityValue(Text(isShown ? "Shown" : "Hidden"))
+        .accessibilityHint(isPinned ? Text("Always shown") : Text("Shows or hides this feed"))
+    }
+
+    private func save() {
+        orderRaw = order == FeedMode.allCases ? "" : FeedMenuOrder.encode(order.map(\.rawValue))
+        hiddenRaw = FeedMenuOrder.encode(order.filter { hidden.contains($0) }.map(\.rawValue))
+        // Hiding the feed you're on would leave the picker without it.
+        let feedService = FeedService.shared
+        if hidden.contains(feedService.feedMode) { feedService.switchMode(.following) }
+    }
+}

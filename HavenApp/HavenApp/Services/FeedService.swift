@@ -223,6 +223,18 @@ class FeedService: ObservableObject {
     /// Every write to `rawEventCache` must go through here: a writer that
     /// bypasses `rawEventCacheOrder` lets the dict outgrow the order array,
     /// and eviction's removeFirst then traps (the recurring post-time crash).
+    /// Keeps a copy of a post you liked on your own relay. Your relay's root
+    /// only stores your events and its inbox only events that tag you, so a
+    /// liked post lived nowhere local: Relay > Likes > Given then had to find
+    /// it on outside relays, which on 2026-10-05 returned 47 of 293. The /feed
+    /// store takes any note; it keeps the feed window (7 days, plus a day).
+    func keepLikedNoteLocally(id: String) {
+        guard let json = rawEventCache[id], let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              dict["id"] as? String == id else { return }
+        NostrService.shared.broadcastRawEvent(dict, to: [ConfigService.shared.config.nostrURL + "/feed"])
+    }
+
     func cacheRawEvent(id: String, json: String) {
         if rawEventCache[id] == nil {
             rawEventCacheOrder.append(id)
@@ -3752,6 +3764,12 @@ class FeedService: ObservableObject {
 
         let batch = noteBuffer
         noteBuffer.removeAll(keepingCapacity: true)
+
+        // A post that arrives through the feed itself can be the parent (or
+        // repost original, or quote) another row is waiting on. Only fetched
+        // parents used to signal, so those rows kept their loading skeleton
+        // until something unrelated rebuilt them, though the note was here.
+        for note in batch { noteReferencedNoteArrived(note.id) }
 
         // Prefetch media content types for the batch — moves HTTP HEAD detection
         // out of the rendering path so FeedMediaView has cached types when it renders.

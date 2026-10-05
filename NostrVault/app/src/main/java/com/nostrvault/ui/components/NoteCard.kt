@@ -540,17 +540,30 @@ fun NoteCard(
                     modifier = Modifier.padding(start = 50.dp),
                 )
             } else if (note.content.isNotBlank()) {
-                NostrContentText(
+                val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
+                val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
+                TranslatableNoteText(
+                    noteKey = note.effectiveEventId,
                     content = note.content,
                     profiles = profiles,
-                    mediaURLs = note.mediaURLs.toSet(),
-                    linkURLs = note.cardLinkURLs.toSet(),
+                    mediaURLs = mediaSet,
+                    linkURLs = linkSet,
                     fontSize = 17.sp,
                     lineHeight = 24.sp,
-                    onProfileClick = onProfileClick,
-                    onPlainTextClick = { onNoteClick(note.id) },
+                    onTranslationClick = { onNoteClick(note.id) },
                     modifier = Modifier.padding(start = 50.dp),
-                )
+                ) {
+                    NostrContentText(
+                        content = note.content,
+                        profiles = profiles,
+                        mediaURLs = mediaSet,
+                        linkURLs = linkSet,
+                        fontSize = 17.sp,
+                        lineHeight = 24.sp,
+                        onProfileClick = onProfileClick,
+                        onPlainTextClick = { onNoteClick(note.id) },
+                    )
+                }
             }
 
             // Quoted notes

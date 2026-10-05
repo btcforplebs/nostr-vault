@@ -20,7 +20,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.service.FeedLanguage
 import com.nostrvault.service.FeedService
+import com.nostrvault.service.NoteTranslationPolicy
+import com.nostrvault.service.NoteTranslator
+import com.nostrvault.ui.components.deviceLanguageTags
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +36,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Appearance settings: text size, reaction emoji, zaps-only, tab bar animation.
+ * Appearance settings: text size, reaction emoji, zaps-only, tab bar animation,
+ * and the Translate button on posts.
  * The theme-colour picker and OLED toggle were removed — the app has one
  * appearance: OLED black with the orange accent.
  */
@@ -41,7 +46,38 @@ import javax.inject.Inject
 class AppearanceViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val feedService: FeedService,
+    private val noteTranslator: NoteTranslator,
 ) : ViewModel() {
+
+    /** The Translate button under notes in another language. */
+    val showTranslateButton = configStore.config
+        .map { it.showTranslateButton }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.showTranslateButton)
+
+    /** The language notes translate into, with an unset choice resolved to the device's. */
+    val translateTarget = configStore.config
+        .map { resolveTarget(it.translateTargetLanguage) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            resolveTarget(configStore.config.value.translateTargetLanguage),
+        )
+
+    /** "Translate to" choices: device languages first, only what ML Kit can translate into. */
+    val translateTargets: List<String> by lazy {
+        NoteTranslationPolicy.pickerList(deviceLanguageTags(), noteTranslator.supportedLanguages)
+    }
+
+    private fun resolveTarget(saved: String): String =
+        NoteTranslationPolicy.target(saved, deviceLanguageTags(), noteTranslator.supportedLanguages)
+
+    fun setShowTranslateButton(on: Boolean) {
+        configStore.update { it.copy(showTranslateButton = on) }
+    }
+
+    fun setTranslateTarget(code: String) {
+        configStore.update { it.copy(translateTargetLanguage = code) }
+    }
 
 
     private val _textScale = MutableStateFlow(1.0f)
@@ -148,6 +184,8 @@ fun AppearanceSettingsScreen(
     val compactLines by viewModel.compactLines.collectAsState()
     val threadedLines by viewModel.threadedLines.collectAsState()
     val autoLoadNewPosts by viewModel.autoLoadNewPosts.collectAsState()
+    val showTranslateButton by viewModel.showTranslateButton.collectAsState()
+    val translateTarget by viewModel.translateTarget.collectAsState()
     val showNewPostsPill by viewModel.showNewPostsPill.collectAsState()
 
     Scaffold(
@@ -265,6 +303,17 @@ fun AppearanceSettingsScreen(
                     ),
                 )
             }
+
+            Spacer(Modifier.height(32.dp))
+
+            // Translation: the on-device "Translate" button under posts.
+            TranslationSection(
+                enabled = showTranslateButton,
+                onEnabledChange = viewModel::setShowTranslateButton,
+                target = translateTarget,
+                targets = viewModel.translateTargets,
+                onTargetChange = viewModel::setTranslateTarget,
+            )
 
             Spacer(Modifier.height(32.dp))
 
@@ -452,5 +501,90 @@ private fun LineCountButton(symbol: String, label: String, enabled: Boolean, onC
             .clickable(enabled = enabled, onClickLabel = label, onClick = onClick),
     ) {
         Text(symbol, color = if (enabled) PrimaryText else TertiaryText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * Appearance > Translation: the "Translate" button under posts in another
+ * language, and the language they translate into. Translation runs on the
+ * phone (ML Kit); only the language model is downloaded, once per language.
+ */
+@Composable
+private fun TranslationSection(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    target: String,
+    targets: List<String>,
+    onTargetChange: (String) -> Unit,
+) {
+    Text(
+        text = "Translation",
+        color = PrimaryText,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = "Show Translate on posts", color = PrimaryText, fontSize = 15.sp)
+            Text(
+                text = "Posts in another language get a Translate button. Translation happens on your phone; " +
+                    "the first time for a language, its model is downloaded from Google.",
+                color = SecondaryText,
+                fontSize = 13.sp,
+            )
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = PrimaryText,
+                checkedTrackColor = LocalNostrVaultColors.current.primary,
+            ),
+        )
+    }
+
+    if (enabled) {
+        var expanded by remember { mutableStateOf(false) }
+        Box {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = "Choose language") { expanded = true }
+                    .padding(vertical = 12.dp),
+            ) {
+                Text("Translate to", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Text(
+                    text = FeedLanguage(target).displayName(),
+                    color = LocalNostrVaultColors.current.primary,
+                    fontSize = 15.sp,
+                )
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.heightIn(max = 420.dp),
+            ) {
+                targets.forEach { code ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = FeedLanguage(code).displayName(),
+                                color = if (code == target) LocalNostrVaultColors.current.primary else PrimaryText,
+                                fontWeight = if (code == target) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        },
+                        onClick = {
+                            onTargetChange(code)
+                            expanded = false
+                        },
+                    )
+                }
+            }
+        }
     }
 }
