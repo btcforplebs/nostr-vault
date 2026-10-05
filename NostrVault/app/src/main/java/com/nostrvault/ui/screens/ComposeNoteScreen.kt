@@ -18,10 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1837,9 +1835,18 @@ internal fun BlossomMediaPickerSheet(
     var blossomMedia by remember { mutableStateOf<List<BlossomMediaItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var activeFilter by remember { mutableStateOf(MediaTypeFilter.ALL) }
-    val shownMedia = remember(blossomMedia, activeFilter) {
-        blossomMedia.filter { activeFilter.matches(it) }
+    // The Media tab's sort, so the headings match what that tab shows (iOS
+    // reads the same MediaSortOption setting).
+    val sortOption = remember {
+        MediaSortOption.fromKey(
+            context.getSharedPreferences(MEDIA_GALLERY_PREFS, Context.MODE_PRIVATE)
+                .getString(MediaSortOption.STORAGE_KEY, null),
+        )
     }
+    val shownMedia = remember(blossomMedia, activeFilter) {
+        sortOption.sorted(blossomMedia.filter { activeFilter.matches(it) })
+    }
+    val sections = remember(shownMedia) { MediaDateGrouping.sections(shownMedia, sortOption) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -1863,20 +1870,21 @@ internal fun BlossomMediaPickerSheet(
         onDismissRequest = onDismiss,
         containerColor = WindowBackground
     ) {
+        // The grid runs 8 from the edges; the title and filter keep 16.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(vertical = 16.dp)
         ) {
             Text(
                 text = "Pick from Blossom",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = PrimaryText,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
             )
             // The Media tab's filter; the composer attaches photos and videos only.
-            Box(modifier = Modifier.padding(bottom = 12.dp)) {
+            Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
                 MediaTypeFilterPill(
                     active = activeFilter,
                     onSelect = { activeFilter = it },
@@ -1912,42 +1920,57 @@ internal fun BlossomMediaPickerSheet(
                     )
                 }
             } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                // The Media tab's date headings, pinned while their run
+                // scrolls, with iOS's 6 between cells, 8 between rows and 8 at
+                // the edges. A grid has no pinned headers in this Compose
+                // version, so rows of three go in a list.
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp),
                     modifier = Modifier.heightIn(max = 400.dp)
                 ) {
-                    items(shownMedia, key = { it.sha256 }) { item ->
-                        Box(
-                            modifier = Modifier
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .combinedClickable(
-                                    onClick = { onSelect(item) },
-                                    onLongClick = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        clipboard.setPrimaryClip(ClipData.newPlainText("Blossom URL", item.displayUrl))
-                                        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                        ) {
-                            AsyncImage(
-                                model = item.localFile ?: item.displayUrl,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
+                    for (section in sections) {
+                        if (section.title.isNotEmpty()) {
+                            stickyHeader(key = "header:${section.title}") { MediaSectionHeader(section.title) }
+                        }
+                        items(section.items.chunked(3), key = { row -> row.first().sha256 }) { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                row.forEach { item ->
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .combinedClickable(
+                                                onClick = { onSelect(item) },
+                                                onLongClick = {
+                                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                    clipboard.setPrimaryClip(ClipData.newPlainText("Blossom URL", item.displayUrl))
+                                                    Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                                                }
+                                            )
+                                    ) {
+                                        AsyncImage(
+                                            model = item.localFile ?: item.displayUrl,
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
 
-                            if (item.isVideo) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "Video",
-                                    tint = Color.White,
-                                    modifier = Modifier
-                                        .align(Alignment.Center)
-                                        .size(32.dp)
-                                )
+                                        if (item.isVideo) {
+                                            Icon(
+                                                imageVector = Icons.Default.PlayArrow,
+                                                contentDescription = "Video",
+                                                tint = Color.White,
+                                                modifier = Modifier
+                                                    .align(Alignment.Center)
+                                                    .size(32.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                // A short last row keeps its cells the same size.
+                                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                             }
                         }
                     }

@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,6 +50,7 @@ import com.nostrvault.service.music.LiveRejoinListener
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.service.music.PlayerTrack
 import com.nostrvault.service.music.rejoinLiveEdge
+import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.components.claimSound
 import com.nostrvault.ui.screens.dm.DMAttachment
@@ -433,17 +435,26 @@ private fun LiveChat(
 
     if (messages.isEmpty()) {
         Box(contentAlignment = Alignment.Center, modifier = modifier.fillMaxWidth()) {
-            Text("No chat yet", color = TertiaryText, fontSize = 13.sp)
+            Text("No messages yet. Say hello.", color = SecondaryText, fontSize = 13.sp)
         }
         return
     }
 
-    LazyColumn(state = listState, modifier = modifier.fillMaxWidth()) {
+    // iOS: 8 between rows, 10 above and below the list.
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(vertical = 6.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) {
         items(messages, key = { it.id }) { entry ->
             val name = profiles[entry.pubkey]?.bestName ?: entry.pubkey.take(8)
             var showMenu by remember { mutableStateOf(false) }
             Box {
+                // iOS LiveChatRowView: a 26 avatar, then the name and time over
+                // the text, with a zap shown as an orange capsule on a tinted row.
+                val isZap = entry.zapSats != null
                 Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .combinedClickable(
@@ -451,42 +462,74 @@ private fun LiveChat(
                             onLongClick = { showMenu = true },
                             onLongClickLabel = "Message options",
                         )
-                        .padding(horizontal = 16.dp, vertical = 5.dp),
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .then(
+                            if (isZap) {
+                                Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(ZapOrange.copy(alpha = 0.12f))
+                                    .padding(8.dp)
+                            } else Modifier,
+                        ),
                 ) {
-                    if (entry.zapSats != null) {
-                        Text(
-                            // A zap whose amount the receipt did not carry still
-                            // happened — show the bolt, not a zero.
-                            text = if (entry.zapSats > 0) "⚡ ${entry.zapSats}" else "⚡",
-                            color = colors.primary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Spacer(Modifier.width(6.dp))
-                    }
+                    AvatarImage(
+                        url = profiles[entry.pubkey]?.pictureURL,
+                        pubkey = entry.pubkey,
+                        size = 26.dp,
+                        displayName = name,
+                    )
                     // Image links come out of the text and show as pictures
                     // under it, whoever sent them.
                     val parts = remember(entry.content) { DMAttachment.split(entry.content) }
-                    Column {
-                        Text(
-                            text = buildString {
-                                append(name)
-                                if (parts.text.isNotEmpty()) {
-                                    append("  ")
-                                    append(parts.text)
-                                }
-                            },
-                            color = if (entry.zapSats != null) colors.primary else PrimaryText,
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp,
-                        )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (entry.zapSats != null) {
+                                Text(
+                                    // A zap whose amount the receipt did not carry still
+                                    // happened — show the bolt, not a zero.
+                                    text = if (entry.zapSats > 0) "⚡ ${entry.zapSats}" else "⚡",
+                                    color = Color.Black,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .background(ZapOrange.copy(alpha = 0.9f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                            Text(
+                                text = name,
+                                color = PrimaryText,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            Text(
+                                text = remember(entry.createdAt) { chatTime(entry.createdAt) },
+                                color = SecondaryText,
+                                fontSize = 10.sp,
+                            )
+                        }
+                        if (parts.text.isNotEmpty()) {
+                            Text(
+                                text = parts.text,
+                                color = PrimaryText,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                            )
+                        }
                         parts.images.forEach { url ->
                             AsyncImage(
                                 model = url,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .padding(top = 6.dp)
+                                    .padding(top = 4.dp)
                                     .size(180.dp)
                                     .clip(RoundedCornerShape(10.dp)),
                             )
@@ -507,6 +550,10 @@ private fun LiveChat(
         }
     }
 }
+
+/** A chat line's time, short style in the phone's locale (iOS `timeStyle = .short`). */
+private fun chatTime(createdAtSecs: Long): String =
+    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(createdAtSecs * 1000))
 
 /** Fixed amounts, because typing a number mid-stream is not what anyone wants. */
 @Composable

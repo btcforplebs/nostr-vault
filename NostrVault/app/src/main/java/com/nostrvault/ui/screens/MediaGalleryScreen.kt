@@ -453,7 +453,7 @@ internal fun pastedMediaUrl(text: String): String? {
     return trimmed
 }
 
-private const val MEDIA_GALLERY_PREFS = "media_gallery"
+internal const val MEDIA_GALLERY_PREFS = "media_gallery"
 
 /** Lightweight bridge so MediaViewerScreen can access the gallery's current filtered media list. */
 object MediaGalleryBridge {
@@ -944,7 +944,7 @@ fun MediaGalleryScreen(
 
 /** Heading over one dated run of media (iOS `mediaSectionHeader`). */
 @Composable
-private fun MediaSectionHeader(title: String) {
+internal fun MediaSectionHeader(title: String) {
     Text(
         text = title,
         color = PrimaryText,
