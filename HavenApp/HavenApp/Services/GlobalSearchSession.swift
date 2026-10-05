@@ -73,6 +73,8 @@ final class GlobalSearchSession {
         var cachedProfiles: [String: FeedProfile] = [:]
         var own: Set<String> = []
         var follows: Set<String> = []
+        /// The rest of the Web of Trust, ranked after follows.
+        var wot: Set<String> = []
     }
 
     /// No source is waited on longer than this. search.nos.today alone can take
@@ -557,13 +559,13 @@ final class GlobalSearchSession {
 
     private func publishNow() {
         guard !isCancelled else { return }
-        let own = request.own, follows = request.follows
+        let own = request.own, follows = request.follows, wot = request.wot
         let notes = GlobalSearchRanking.rankNotes(Array(merge.notes.values),
-                                                  own: own, follows: follows,
+                                                  own: own, follows: follows, wot: wot,
                                                   pubkey: { $0.pubkey },
                                                   createdAt: { $0.createdAt },
                                                   id: { $0.id })
-        let profileOrder = GlobalSearchRanking.rankProfiles(merge.profileOrder, own: own, follows: follows)
+        let profileOrder = GlobalSearchRanking.rankProfiles(merge.profileOrder, own: own, follows: follows, wot: wot)
         var snapshot = GlobalSearchSnapshot()
         snapshot.notes = Array(notes.prefix(Self.maxNotes))
         snapshot.profiles = profileOrder.compactMap { merge.profiles[$0] }

@@ -434,6 +434,7 @@ class NostrService: ObservableObject {
         request.cachedProfiles = profiles
         request.own = Set([activeHexPubkey, ownerHexPubkey].filter { !$0.isEmpty })
         request.follows = Set(follows)
+        request.wot = FeedService.shared.webOfTrustForRanking
 
         let session = GlobalSearchSession(request: request) { [weak self] snapshot in
             guard let self = self else { return }

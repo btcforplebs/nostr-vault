@@ -481,6 +481,7 @@ struct ComposeView: View {
     private func filterMentionResults(query: String) {
         let followed = FeedService.shared.followedPubkeys
         let followedSet = Set(followed)
+        let wotSet = FeedService.shared.webOfTrustForRanking
         let selfPubkey = nostrService.activeHexPubkey
 
         // Thread participants when replying — valid mention targets even if unfollowed.
@@ -507,7 +508,8 @@ struct ComposeView: View {
         }
 
         // Search the entire profile cache (feed authors, search results, etc.),
-        // not just follows, ranking thread participants and follows first.
+        // not just follows, ranking thread participants, follows, then the rest
+        // of the Web of Trust first.
         let lower = query.lowercased()
         let matches = nostrService.profiles.values.filter { profile in
             profile.pubkey != selfPubkey && (
@@ -517,9 +519,10 @@ struct ComposeView: View {
             )
         }
         let ranked = matches.sorted { a, b in
-            func rank(_ p: FeedProfile) -> (Int, Int, Int) {
+            func rank(_ p: FeedProfile) -> (Int, Int, Int, Int) {
                 (threadSet.contains(p.pubkey) ? 0 : 1,
                  followedSet.contains(p.pubkey) ? 0 : 1,
+                 wotSet.contains(p.pubkey) ? 0 : 1,
                  p.bestName.lowercased().hasPrefix(lower) ? 0 : 1)
             }
             let ra = rank(a), rb = rank(b)

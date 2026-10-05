@@ -327,6 +327,7 @@ class SearchViewModel @Inject constructor(
             query = query,
             includeGlobal = _searchScope.value == SearchScope.GLOBAL,
             follows = feedService.followedPubkeys.value.toSet(),
+            wot = feedService.webOfTrustForRanking(),
         )
         if (started == null) {
             _results.value = GlobalSearchResults()
