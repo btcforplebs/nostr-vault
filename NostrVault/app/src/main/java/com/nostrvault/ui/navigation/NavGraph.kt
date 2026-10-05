@@ -53,6 +53,10 @@ import com.nostrvault.ui.screens.profile.ProfileEditScreen
 import com.nostrvault.ui.screens.profile.ProfileScreen
 import com.nostrvault.ui.screens.settings.AccountSettingsScreen
 import com.nostrvault.ui.screens.settings.AdvancedSettingsScreen
+import com.nostrvault.ui.screens.settings.ExternalRelaySettingsScreen
+import com.nostrvault.ui.screens.settings.FeedSettingsScreen
+import com.nostrvault.ui.screens.settings.MediaSettingsScreen
+import com.nostrvault.ui.screens.settings.RelayAccessSettingsScreen
 import com.nostrvault.ui.screens.settings.AppearanceSettingsScreen
 import com.nostrvault.ui.screens.settings.BackupSettingsScreen
 import com.nostrvault.ui.screens.settings.BlastrSettingsScreen
@@ -598,6 +602,25 @@ fun NostrVaultNavHost(
                     AdvancedSettingsScreen(
                         onBack = { navController.popBackStack() },
                     )
+                }
+
+                composable(Screen.FeedSettings.route) {
+                    FeedSettingsScreen(
+                        onNavigate = { screen -> navController.navigate(screen.route) },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Screen.MediaSettings.route) {
+                    MediaSettingsScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable(Screen.RelayAccessSettings.route) {
+                    RelayAccessSettingsScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable(Screen.ExternalRelaySettings.route) {
+                    ExternalRelaySettingsScreen(onBack = { navController.popBackStack() })
                 }
 
                 composable(Screen.ImportSettings.route) {

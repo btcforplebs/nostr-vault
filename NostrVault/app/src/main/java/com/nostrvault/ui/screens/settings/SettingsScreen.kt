@@ -17,7 +17,14 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.relay.HavenConfig
 import com.nostrvault.ui.navigation.Screen
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.StateFlow
+import javax.inject.Inject
 import com.nostrvault.ui.theme.*
 
 /** App version string shown in the About section (mirrors iOS appVersion). */
@@ -30,6 +37,15 @@ private const val DEVELOPER_NPUB =
 /** Privacy policy URL (matches iOS SettingsView). */
 private const val PRIVACY_POLICY_URL = "https://nostrvault.app/privacy.html"
 
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    private val configStore: ConfigStore,
+) : ViewModel() {
+    val config: StateFlow<HavenConfig> = configStore.config
+
+    fun setAutoStartRelay(v: Boolean) = configStore.update { it.copy(autoStartRelay = v) }
+}
+
 /**
  * Main settings screen with grouped navigation items.
  * Port of SettingsView.swift iOS list layout (sections, order and labels mirror iOS).
@@ -39,7 +55,10 @@ private const val PRIVACY_POLICY_URL = "https://nostrvault.app/privacy.html"
 fun SettingsScreen(
     onNavigate: (Screen) -> Unit,
     onBack: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel(),
 ) {
+    val config by viewModel.config.collectAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -63,12 +82,14 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            // ── PROFILE ───────────────────────────────────────────
-            item { SettingsSectionHeader("Profile") }
+            // Groups, order and names follow iOS `SettingsView.groups`.
+
+            // ── ACCOUNT ───────────────────────────────────────────
+            item { SettingsSectionHeader("Account") }
             item {
                 SettingsItem(
                     icon = NostrVaultIcons.Accounts,
-                    title = "Accounts",
+                    title = "Accounts & Keys",
                     subtitle = "Manage keypairs and switch accounts",
                     onClick = { onNavigate(Screen.AccountSettings) },
                 )
@@ -81,28 +102,63 @@ fun SettingsScreen(
                     onClick = { onNavigate(Screen.BlockedSettings) },
                 )
             }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.Following,
+                    title = "Following Backup",
+                    subtitle = "Snapshots of your following list",
+                    onClick = { onNavigate(Screen.FollowingBackup) },
+                )
+            }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.Wallet,
+                    title = "Wallet",
+                    subtitle = "NWC and Bitcoin",
+                    onClick = { onNavigate(Screen.Wallet) },
+                )
+            }
 
-            // ── APPEARANCE ────────────────────────────────────────
-            item { SettingsSectionHeader("Appearance") }
+            // ── FEED & DISPLAY ────────────────────────────────────
+            item { SettingsSectionHeader("Feed & Display") }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.Feed,
+                    title = "Feed",
+                    subtitle = "Reposts, replies, feed and search relays",
+                    onClick = { onNavigate(Screen.FeedSettings) },
+                )
+            }
             item {
                 SettingsItem(
                     icon = NostrVaultIcons.Appearance,
-                    title = "Theme & Display",
+                    title = "Appearance",
                     subtitle = "Text size, feed text, translation",
                     onClick = { onNavigate(Screen.AppearanceSettings) },
                 )
             }
-
-            // ── RELAY CONFIGURATION ───────────────────────────────
-            item { SettingsSectionHeader("Relay Configuration") }
             item {
                 SettingsItem(
-                    icon = NostrVaultIcons.Feed,
-                    title = "Feed Relays",
-                    subtitle = "Configure external relay sources",
-                    onClick = { onNavigate(Screen.RelayListEditor) },
+                    icon = NostrVaultIcons.Media,
+                    title = "Media & Cache",
+                    subtitle = "Autoplay, prefetch, how long media is kept",
+                    onClick = { onNavigate(Screen.MediaSettings) },
                 )
             }
+
+            // ── NOTIFICATIONS ─────────────────────────────────────
+            item { SettingsSectionHeader("Notifications") }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.Notifications,
+                    title = "Notifications",
+                    subtitle = "Mentions, replies, DMs, zaps and more",
+                    onClick = { onNavigate(Screen.NotificationSettings) },
+                )
+            }
+
+            // ── SHARING ───────────────────────────────────────────
+            item { SettingsSectionHeader("Sharing") }
             item {
                 SettingsItem(
                     icon = NostrVaultIcons.DMs,
@@ -114,78 +170,74 @@ fun SettingsScreen(
             item {
                 SettingsItem(
                     icon = NostrVaultIcons.Blastr,
-                    title = "Blastr",
-                    subtitle = "Broadcast notes to public relays",
+                    title = "Broadcast",
+                    subtitle = "Send your notes to public relays",
                     onClick = { onNavigate(Screen.BlastrSettings) },
                 )
             }
             item {
                 SettingsItem(
-                    icon = NostrVaultIcons.Media,
-                    title = "Blossom",
-                    subtitle = "Media upload and mirror configuration",
+                    icon = NostrVaultIcons.Blossom,
+                    title = "Media Servers",
+                    subtitle = "Blossom servers for uploads and mirrors",
                     onClick = { onNavigate(Screen.BlossomSettings) },
+                )
+            }
+
+            // ── YOUR VAULT RELAY ──────────────────────────────────
+            item { SettingsSectionHeader("Your Vault Relay") }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.Domain,
+                    title = "Sync with Mac",
+                    subtitle = "Sync notes from your Mac or cloud relay",
+                    onClick = { onNavigate(Screen.HavenRelaySettings) },
+                )
+            }
+            item {
+                SettingsItem(
+                    icon = NostrVaultIcons.TrustShield,
+                    title = "Who Can Reach You",
+                    subtitle = "Web of trust and rate limits",
+                    onClick = { onNavigate(Screen.RelayAccessSettings) },
                 )
             }
             item {
                 SettingsItem(
                     icon = NostrVaultIcons.Import,
-                    title = "Import",
+                    title = "Import Notes",
                     subtitle = "Fetch notes from seed relays",
                     onClick = { onNavigate(Screen.ImportSettings) },
                 )
             }
             item {
                 SettingsItem(
-                    icon = NostrVaultIcons.Search,
-                    title = "Search Relays",
-                    subtitle = "NIP-50 relays used by Global search",
-                    onClick = { onNavigate(Screen.SearchRelaySettings) },
-                )
-            }
-            item {
-                SettingsItem(
                     icon = NostrVaultIcons.Backup,
-                    title = "Backup",
+                    title = "Backup & Restore",
                     subtitle = "Export and import notes and media",
                     onClick = { onNavigate(Screen.BackupSettings) },
                 )
             }
             item {
+                // Android only: use another app's relay instead of this one.
                 SettingsItem(
-                    icon = NostrVaultIcons.Accounts,
-                    title = "Following Backup",
-                    subtitle = "Snapshots of your following list",
-                    onClick = { onNavigate(Screen.FollowingBackup) },
+                    icon = NostrVaultIcons.Relay,
+                    title = "External Relay",
+                    subtitle = "Use another app's relay instead",
+                    onClick = { onNavigate(Screen.ExternalRelaySettings) },
                 )
             }
             item {
-                SettingsItem(
-                    icon = NostrVaultIcons.Domain,
-                    title = "Haven Relay",
-                    subtitle = "Sync notes from your Mac or cloud relay",
-                    onClick = { onNavigate(Screen.HavenRelaySettings) },
+                // One switch, so it lives here rather than behind a page of
+                // its own (iOS does the same on iPhone).
+                StartRelayAutomaticallyRow(
+                    checked = config.autoStartRelay,
+                    onChange = viewModel::setAutoStartRelay,
                 )
             }
 
-            // ── SYSTEM ────────────────────────────────────────────
-            item { SettingsSectionHeader("System") }
-            item {
-                SettingsItem(
-                    icon = NostrVaultIcons.Notifications,
-                    title = "Push Notifications",
-                    subtitle = "Mentions, replies, DMs, zaps and more",
-                    onClick = { onNavigate(Screen.NotificationSettings) },
-                )
-            }
-            item {
-                SettingsItem(
-                    icon = NostrVaultIcons.Wallet,
-                    title = "Wallet",
-                    subtitle = "NWC and Bitcoin",
-                    onClick = { onNavigate(Screen.Wallet) },
-                )
-            }
+            // ── ADVANCED ──────────────────────────────────────────
+            item { SettingsSectionHeader("Advanced") }
             item {
                 SettingsItem(
                     icon = NostrVaultIcons.PoW,
@@ -196,16 +248,16 @@ fun SettingsScreen(
             }
             item {
                 SettingsItem(
-                    icon = NostrVaultIcons.Settings,
-                    title = "Advanced",
-                    subtitle = "Limits, media, web of trust, reset",
+                    icon = NostrVaultIcons.Storage,
+                    title = "Database & Reset",
+                    subtitle = "Storage engine and factory reset",
                     onClick = { onNavigate(Screen.AdvancedSettings) },
                 )
             }
             item {
                 SettingsItem(
                     icon = NostrVaultIcons.Logs,
-                    title = "Relay Logs",
+                    title = "Logs",
                     subtitle = "View relay process output",
                     onClick = { onNavigate(Screen.LogViewer) },
                 )
@@ -316,6 +368,40 @@ fun SettingsItem(
             contentDescription = null,
             tint = TertiaryText,
             modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+/** The inline "Start Relay Automatically" switch, styled as a list row. */
+@Composable
+private fun StartRelayAutomaticallyRow(checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+    ) {
+        Icon(
+            imageVector = NostrVaultIcons.Refresh,
+            contentDescription = null,
+            tint = LocalNostrVaultColors.current.primary,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.width(14.dp))
+        Text(
+            text = "Start Relay Automatically",
+            color = PrimaryText,
+            fontSize = 16.sp,
+        )
+        InfoButton(SettingsHelp.RELAY_AUTO_START)
+        Spacer(Modifier.weight(1f))
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = PrimaryText,
+                checkedTrackColor = LocalNostrVaultColors.current.primary,
+            ),
         )
     }
 }
