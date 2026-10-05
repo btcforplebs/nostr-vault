@@ -40,8 +40,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -81,6 +84,7 @@ import com.nostrvault.ui.components.BroadcastSheet
 import com.nostrvault.ui.components.EmojiPickerSheet
 import com.nostrvault.ui.components.CompactNoteCard
 import com.nostrvault.ui.components.FeedThreadCard
+import com.nostrvault.ui.components.ThreadLineAnchor
 import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
 import com.nostrvault.ui.components.LiveStreamThumbnail
@@ -188,6 +192,9 @@ fun FeedScreen(
     // one selection across both condensed layouts, and it survives a card being
     // recycled off-screen and back by a LazyColumn (per-card `remember` would not).
     var expandedNoteId by remember { mutableStateOf<String?>(null) }
+    // Holds a tapped thread line where it was when the open line above closes.
+    val threadLineAnchor = remember(listState) { ThreadLineAnchor(scope, listState) }
+    val density = LocalDensity.current
 
     // Per-thread "show more replies" fold, hoisted for the same reason: a
     // LazyColumn item's own `remember` is dropped when it scrolls out of view.
@@ -675,7 +682,12 @@ fun FeedScreen(
                         top = padding.calculateTopPadding(),
                         bottom = padding.calculateBottomPadding() + 88.dp,
                     ),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onGloballyPositioned {
+                            threadLineAnchor.viewportTop = it.positionInRoot().y +
+                                with(density) { padding.calculateTopPadding().toPx() }
+                        },
                 ) {
                     if (isThreaded) {
                         items(feedThreads, key = { it.rootId }) { thread ->
@@ -691,6 +703,7 @@ fun FeedScreen(
                                 onOpenThread = { note -> onNoteClick(note.id) },
                                 onFetchMissingNote = viewModel::fetchMissingNote,
                                 rootUnavailable = thread.rootId in unavailableNoteIds,
+                                lineAnchor = threadLineAnchor,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 expandedRow = { note, _ ->
                                     FeedFullNoteRow(
