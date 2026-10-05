@@ -16,6 +16,9 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.HourglassBottom
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -75,6 +78,89 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
+ * What tapping an avatar offers in the feed: Follow/Unfollow, Slow down
+ * (three posts a day) and Block, the iOS FeedView avatar toolbar. Without it
+ * an avatar tap opens the profile, as on screens that pass none.
+ */
+@Stable
+class AvatarMenuActions(
+    /** Your own avatar opens your profile instead; there is no one to follow or block. */
+    val isOwn: (String) -> Boolean,
+    val isFollowed: (String) -> Boolean,
+    val onFollow: (String) -> Unit,
+    val onUnfollow: (String) -> Unit,
+    val onSlowDown: (String) -> Unit,
+    val onBlock: (String) -> Unit,
+)
+
+/** Posts a day a slowed-down account keeps, as iOS throttleUser(pubkey, 3). */
+internal const val SLOW_DOWN_POSTS_PER_DAY = 3
+
+/**
+ * [content] (an avatar) that opens the [menu] for [pubkey] when tapped, or
+ * the profile when there is no menu or the avatar is your own.
+ */
+@Composable
+private fun AvatarWithMenu(
+    pubkey: String,
+    displayName: String,
+    menu: AvatarMenuActions?,
+    onProfileClick: (String) -> Unit,
+    content: @Composable (Modifier) -> Unit,
+) {
+    if (menu == null || menu.isOwn(pubkey)) {
+        content(Modifier.clickable { onProfileClick(pubkey) })
+        return
+    }
+    var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    Box {
+        content(Modifier.clickable(onClickLabel = "Actions for $displayName") { expanded = true })
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            val followed = menu.isFollowed(pubkey)
+            DropdownMenuItem(
+                text = { Text(if (followed) "Unfollow" else "Follow", color = PrimaryText) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (followed) Icons.Filled.PersonRemove else NostrVaultIcons.PersonAdd,
+                        contentDescription = null,
+                        tint = if (followed) Color(0xFFFFCC00) else SuccessGreen,
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    if (followed) menu.onUnfollow(pubkey) else menu.onFollow(pubkey)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Slow down", color = PrimaryText) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.HourglassBottom,
+                        contentDescription = null,
+                        tint = ZapOrange,
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    menu.onSlowDown(pubkey)
+                    Toast.makeText(context, "Slowed down $displayName", Toast.LENGTH_SHORT).show()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Block", color = ErrorRed) },
+                leadingIcon = { Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed) },
+                onClick = {
+                    expanded = false
+                    menu.onBlock(pubkey)
+                    Toast.makeText(context, "Blocked $displayName", Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
+    }
+}
+
+/**
  * Reusable note card used across Feed, Profile, Search, and NoteDetail screens.
  * Renders author header, content, media thumbnails, and engagement actions.
  */
@@ -131,6 +217,8 @@ fun NoteCard(
     zapDimmed: Boolean = false,
     /** Asks relays for the parent again after "Could not load original note". */
     onRetryParent: ((String) -> Unit)? = null,
+    /** With it, an avatar tap opens Follow / Slow down / Block, and the name opens the profile. */
+    avatarMenu: AvatarMenuActions? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -257,6 +345,8 @@ fun NoteCard(
                         connectorColor = connectorColor,
                         onClick = { onNoteClick(parentNote.id) },
                         profiles = profiles,
+                        avatarMenu = avatarMenu,
+                        onProfileClick = onProfileClick,
                     )
                 } else {
                     // Skeleton for 12 s, then a failure line with Retry (iOS
@@ -314,27 +404,42 @@ fun NoteCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                // Avatar
-                AvatarImage(
-                    url = profile?.pictureURL,
+                // Avatar: the quick menu in the feed, the profile elsewhere
+                val authorName = profile?.bestName ?: note.pubkey.take(8) + "..."
+                AvatarWithMenu(
                     pubkey = note.pubkey,
-                    size = 40.dp,
-                    displayName = profile?.bestName,
-                    modifier = Modifier.clickable { onProfileClick(note.pubkey) },
-                )
+                    displayName = authorName,
+                    menu = avatarMenu,
+                    onProfileClick = onProfileClick,
+                ) { avatarModifier ->
+                    AvatarImage(
+                        url = profile?.pictureURL,
+                        pubkey = note.pubkey,
+                        size = 40.dp,
+                        displayName = profile?.bestName,
+                        modifier = avatarModifier,
+                    )
+                }
 
                 Spacer(Modifier.width(10.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = profile?.bestName ?: note.pubkey.take(8) + "...",
+                            text = authorName,
                             color = PrimaryText,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
+                            // The avatar has the menu, so the name is the way
+                            // to the profile (iOS: name tap opens the profile).
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .then(
+                                    if (avatarMenu != null) Modifier.clickable { onProfileClick(note.pubkey) }
+                                    else Modifier,
+                                ),
                         )
 
                         // NIP-05 verification badge
@@ -1568,6 +1673,8 @@ private fun ParentNotePreview(
     connectorColor: Color,
     onClick: () -> Unit,
     profiles: Map<String, FeedProfile> = emptyMap(),
+    avatarMenu: AvatarMenuActions? = null,
+    onProfileClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1583,12 +1690,31 @@ private fun ParentNotePreview(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxHeight(),
         ) {
-            AvatarImage(
-                url = parentProfile?.pictureURL,
-                pubkey = parentNote.pubkey,
-                size = 40.dp,
-                displayName = parentProfile?.bestName,
-            )
+            // Tapping it opens the same quick menu as the note's own avatar;
+            // without a menu it stays part of the preview's tap (iOS).
+            if (avatarMenu != null) {
+                AvatarWithMenu(
+                    pubkey = parentNote.pubkey,
+                    displayName = parentProfile?.bestName ?: parentNote.pubkey.take(8) + "...",
+                    menu = avatarMenu,
+                    onProfileClick = onProfileClick,
+                ) { avatarModifier ->
+                    AvatarImage(
+                        url = parentProfile?.pictureURL,
+                        pubkey = parentNote.pubkey,
+                        size = 40.dp,
+                        displayName = parentProfile?.bestName,
+                        modifier = avatarModifier,
+                    )
+                }
+            } else {
+                AvatarImage(
+                    url = parentProfile?.pictureURL,
+                    pubkey = parentNote.pubkey,
+                    size = 40.dp,
+                    displayName = parentProfile?.bestName,
+                )
+            }
             // Connector line extending down to current note
             Box(
                 modifier = Modifier

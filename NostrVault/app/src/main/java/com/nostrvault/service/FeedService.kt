@@ -2334,6 +2334,16 @@ class FeedService @Inject constructor(
         recomputeFilteredNotes()
     }
 
+    /**
+     * Slow an author down to [maxPosts] a day — the avatar menu's Slow down,
+     * the same per-account limit as Settings > Blocked — and re-filter now.
+     */
+    fun throttleUser(hexPubkey: String, maxPosts: Int) {
+        val npub = nostrService.hexToNpub(hexPubkey) ?: return
+        configStore.throttleProfile(npub, maxPosts)
+        recomputeFilteredNotes()
+    }
+
     fun unblockUser(hexPubkey: String) {
         val npub = nostrService.hexToNpub(hexPubkey) ?: return
         if (npub !in configStore.config.value.blockedForActiveAccount()) return

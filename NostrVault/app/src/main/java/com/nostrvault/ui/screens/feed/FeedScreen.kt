@@ -73,6 +73,7 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.ui.screens.LiveStreamScreen
+import com.nostrvault.ui.components.AvatarMenuActions
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.FullScreenMediaRouter
 import com.nostrvault.ui.components.MediaSourceKey
@@ -1516,6 +1517,16 @@ private fun FeedFullNoteRowContent(
         onDelete = { onDelete(note.id) },
         onLongPressLike = onLongPressLike,
         onRetryParent = viewModel::retryMissingNote,
+        avatarMenu = remember(viewModel) {
+            AvatarMenuActions(
+                isOwn = viewModel::isOwnNote,
+                isFollowed = viewModel::isFollowing,
+                onFollow = viewModel::followUser,
+                onUnfollow = viewModel::unfollowUser,
+                onSlowDown = viewModel::slowDownUser,
+                onBlock = viewModel::blockUser,
+            )
+        },
         modifier = modifier,
     )
 }

@@ -561,6 +561,13 @@ class FeedViewModel @Inject constructor(
         viewModelScope.launch { feedService.blockUser(pubkey) }
     }
 
+    // Avatar quick menu (iOS FeedView avatar toolbar).
+    fun isFollowing(pubkey: String): Boolean = feedService.isFollowing(pubkey)
+    fun followUser(pubkey: String) { viewModelScope.launch { feedService.followUser(pubkey) } }
+    fun unfollowUser(pubkey: String) { viewModelScope.launch { feedService.unfollowUser(pubkey) } }
+    fun slowDownUser(pubkey: String) =
+        feedService.throttleUser(pubkey, com.nostrvault.ui.components.SLOW_DOWN_POSTS_PER_DAY)
+
     /** NIP-56 report. Also blocks the author, matching NoteDetail and iOS. */
     fun reportNote(noteId: String, pubkey: String, reason: String, description: String = "") {
         viewModelScope.launch {
