@@ -121,8 +121,8 @@ class MediaViewerViewModel @Inject constructor(
         }
     }
 
-    /** Delete the blob from all external mirrors; the local copy is kept. */
-    fun deleteFromMirrors(item: BlossomMediaItem) {
+    /** Delete the blob from all external mirrors; the local copy is kept. [onDone] runs after. */
+    fun deleteFromMirrors(item: BlossomMediaItem, onDone: () -> Unit = {}) {
         if (item.sha256.isEmpty()) {
             notificationManager.showError("No hash for this item")
             return
@@ -133,6 +133,7 @@ class MediaViewerViewModel @Inject constructor(
                 if (count > 0) "Deleted from $count mirror(s)" else "Not found on mirrors",
             )
             checkMirrors(item.sha256)
+            onDone()
         }
     }
 
@@ -496,42 +497,56 @@ fun MediaViewerScreen(
                 pendingDelete = null
                 return@let
             }
-            val title: String
-            val body: String
-            val confirmLabel: String
-            when (scope) {
-                DeleteScope.MIRRORS -> {
-                    title = "Delete from mirrors?"
-                    body = "Removes this blob from all external Blossom mirrors. Your local copy is kept."
-                    confirmLabel = "Delete from mirrors"
-                }
-                DeleteScope.EVERYWHERE -> {
-                    title = "Delete everywhere?"
-                    body = "Permanently removes this blob from your local Blossom store and all external mirrors. This cannot be undone."
-                    confirmLabel = "Delete everywhere"
-                }
-            }
-            AlertDialog(
-                onDismissRequest = { pendingDelete = null },
-                title = { Text(title) },
-                text = { Text(body) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        when (scope) {
-                            DeleteScope.MIRRORS -> viewModel.deleteFromMirrors(currentItem)
-                            DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem) { onBack() }
-                        }
-                        pendingDelete = null
-                    }) {
-                        Text(confirmLabel, color = Color(0xFFE53935))
+            DeleteBlobConfirmDialog(
+                scope = scope,
+                onConfirm = {
+                    when (scope) {
+                        DeleteScope.MIRRORS -> viewModel.deleteFromMirrors(currentItem)
+                        DeleteScope.EVERYWHERE -> viewModel.deleteEverywhere(currentItem) { onBack() }
                     }
+                    pendingDelete = null
                 },
-                dismissButton = {
-                    TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
-                },
+                onDismiss = { pendingDelete = null },
             )
         }
     }
+}
+
+/** Confirmation for a destructive blob delete; shared by the viewer and the Media tab's long-press menu. */
+@Composable
+internal fun DeleteBlobConfirmDialog(
+    scope: DeleteScope,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val title: String
+    val body: String
+    val confirmLabel: String
+    when (scope) {
+        DeleteScope.MIRRORS -> {
+            title = "Delete from mirrors?"
+            body = "Removes this blob from all external Blossom mirrors. Your local copy is kept."
+            confirmLabel = "Delete from mirrors"
+        }
+        DeleteScope.EVERYWHERE -> {
+            title = "Delete everywhere?"
+            body = "Permanently removes this blob from your local Blossom store and all external mirrors. This cannot be undone."
+            confirmLabel = "Delete everywhere"
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(body) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(confirmLabel, color = Color(0xFFE53935))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
