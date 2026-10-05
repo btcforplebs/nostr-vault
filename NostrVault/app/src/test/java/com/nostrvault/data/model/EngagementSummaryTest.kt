@@ -55,4 +55,50 @@ class EngagementSummaryTest {
             Locale.setDefault(previous)
         }
     }
+
+    @Test
+    fun `thread row groups reactions, totals zaps and counts each reposter once`() {
+        val row = EngagementSummary.threadRow(
+            EngagementDetails(
+                reactions = listOf(reaction("a", "🔥"), reaction("b", "+"), reaction("c", "🔥")),
+                zaps = listOf(ZapDetail("z1", "a", 21, ""), ZapDetail("z2", "b", 1_000, "")),
+                reposts = listOf(RepostDetail("r1", "a"), RepostDetail("r2", "a"), RepostDetail("r3", "b")),
+            ),
+            zapsOnly = false,
+        )
+        assertEquals(
+            listOf(EngagementSummary.EmojiGroup("🔥", 2), EngagementSummary.EmojiGroup("❤️", 1)),
+            row.emojiGroups,
+        )
+        assertEquals(2, row.zapCount)
+        assertEquals(1_021L, row.zapSats)
+        assertEquals(2, row.reposts)
+        assertEquals(false, row.isEmpty)
+    }
+
+    @Test
+    fun `thread row drops reactions in zaps only mode`() {
+        val reactionsOnly = EngagementDetails(reactions = listOf(reaction("a", "🔥")))
+        val row = EngagementSummary.threadRow(reactionsOnly, zapsOnly = true)
+        assertEquals(emptyList<EngagementSummary.EmojiGroup>(), row.emojiGroups)
+        assertEquals(true, row.isEmpty)
+        assertEquals(false, EngagementSummary.threadRow(reactionsOnly, zapsOnly = false).isEmpty)
+    }
+
+    @Test
+    fun `an empty note has an empty thread row`() {
+        assertEquals(true, EngagementSummary.threadRow(EngagementDetails(), zapsOnly = false).isEmpty)
+    }
+
+    @Test
+    fun `sats text is the grouped total alone`() {
+        val previous = Locale.getDefault()
+        Locale.setDefault(Locale.US)
+        try {
+            assertEquals("2,100", EngagementSummary.satsText(2_100))
+            assertEquals("0", EngagementSummary.satsText(0))
+        } finally {
+            Locale.setDefault(previous)
+        }
+    }
 }
