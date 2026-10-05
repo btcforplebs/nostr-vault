@@ -180,6 +180,9 @@ struct CondensedNoteLine: View {
                     .font(.appSystem(size: 9))
                     .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
             }
+            if note.isFromNostrVault {
+                NostrVaultBadge(size: 9)
+            }
 
             Text("· \(CondensedNoteLine.relativeTime(shownDate))")
                 .font(.appSystem(size: 11))
@@ -435,5 +438,50 @@ extension View {
     /// Wrap a run of `CondensedNoteLine`s as a single conversation card.
     func threadCard() -> some View {
         modifier(ThreadCardBackground())
+    }
+}
+
+// MARK: - Nostr Vault badge
+
+extension FeedNote {
+    /// Sent from Nostr Vault on any platform: the `client` tag every
+    /// Nostr Vault note carries ("Nostr Vault on iOS", "… on Android", …).
+    var isFromNostrVault: Bool {
+        tags.contains { $0.count > 1 && $0[0] == "client" && $0[1].hasPrefix("Nostr Vault") }
+    }
+}
+
+/// A tiny vault doorway, the app icon's shape, beside the author's name on
+/// posts sent from Nostr Vault. Drawn rather than the icon image: the icon
+/// is dark and turns into a blob at name size.
+struct NostrVaultBadge: View {
+    var size: CGFloat = 11
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            VaultDoorway()
+                .stroke(Color.havenPurple, lineWidth: max(1, size * 0.12))
+            Circle()
+                .fill(Color.havenPurple)
+                .frame(width: size * 0.26, height: size * 0.26)
+                .padding(.bottom, size * 0.2)
+        }
+        .frame(width: size * 0.78, height: size)
+        .accessibilityLabel("Sent from Nostr Vault")
+    }
+}
+
+/// An arch: straight sides, a half-circle top, closed along the base.
+private struct VaultDoorway: Shape {
+    func path(in rect: CGRect) -> Path {
+        let r = rect.width / 2
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        p.addArc(center: CGPoint(x: rect.midX, y: rect.minY + r), radius: r,
+                 startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.closeSubpath()
+        return p
     }
 }

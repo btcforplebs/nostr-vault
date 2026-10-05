@@ -188,6 +188,10 @@ fun CondensedNoteLine(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
+                    if (note.isFromNostrVault) {
+                        Spacer(Modifier.width(3.dp))
+                        NostrVaultBadge(size = 9.dp)
+                    }
                     Text(
                         text = " · ${formatTimestamp(note.postedAt.time / 1000)}",
                         color = TertiaryText,
@@ -359,3 +363,36 @@ private fun CondensedMediaThumbnail(mediaURLs: List<String>, isRoot: Boolean) {
 
 private fun shortKey(key: String): String =
     if (key.length < 12) key else "npub…" + key.takeLast(6)
+
+/** Sent from Nostr Vault on any platform: the `client` tag every Nostr Vault note carries. */
+val FeedNote.isFromNostrVault: Boolean
+    get() = tags.any { it.size > 1 && it[0] == "client" && it[1].startsWith("Nostr Vault") }
+
+/**
+ * A tiny vault doorway, the app icon's shape, beside the author's name on
+ * posts sent from Nostr Vault. Drawn rather than the icon image: the icon is
+ * dark and turns into a blob at name size. iOS: NostrVaultBadge.
+ */
+@Composable
+fun NostrVaultBadge(size: androidx.compose.ui.unit.Dp = 11.dp) {
+    val color = LocalNostrVaultColors.current.primary
+    androidx.compose.foundation.Canvas(
+        Modifier.size(width = size * 0.78f, height = size)
+            .semantics { contentDescription = "Sent from Nostr Vault" },
+    ) {
+        val stroke = maxOf(1.dp.toPx(), this.size.height * 0.12f)
+        val inset = stroke / 2
+        val w = this.size.width - stroke
+        val r = w / 2
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(inset, this@Canvas.size.height - inset)
+            lineTo(inset, inset + r)
+            arcTo(androidx.compose.ui.geometry.Rect(inset, inset, inset + w, inset + w), 180f, 180f, false)
+            lineTo(inset + w, this@Canvas.size.height - inset)
+            close()
+        }
+        drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
+        drawCircle(color, radius = this.size.height * 0.13f,
+            center = androidx.compose.ui.geometry.Offset(this.size.width / 2, this.size.height * 0.67f))
+    }
+}

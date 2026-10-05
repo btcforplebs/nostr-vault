@@ -321,6 +321,10 @@ fun NoteCard(
                                 modifier = Modifier.size(14.dp),
                             )
                         }
+                        if (note.isFromNostrVault) {
+                            Spacer(Modifier.width(4.dp))
+                            NostrVaultBadge(size = 12.dp)
+                        }
 
                         Spacer(Modifier.weight(1f))
 
@@ -1583,6 +1587,10 @@ private fun ParentNotePreview(
                             tint = Color(0xFF33CC99),
                             modifier = Modifier.size(12.dp),
                         )
+                    }
+                    if (parentNote.isFromNostrVault) {
+                        Spacer(Modifier.width(4.dp))
+                        NostrVaultBadge(size = 10.dp)
                     }
                 }
 

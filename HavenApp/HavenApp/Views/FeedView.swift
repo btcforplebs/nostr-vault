@@ -3320,6 +3320,10 @@ struct FeedNoteRow: View {
                                         .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
                                 }
 
+                                if parent.isFromNostrVault {
+                                    NostrVaultBadge()
+                                }
+
                                 Spacer()
 
                                 Text(relativeTime(parent.createdAt))
@@ -3459,6 +3463,10 @@ struct FeedNoteRow: View {
                                     .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
                             }
 
+                            if bodySource.isFromNostrVault {
+                                NostrVaultBadge()
+                            }
+
                             Spacer()
 
                             Text(relativeTime(postedAt))
@@ -3529,6 +3537,10 @@ struct FeedNoteRow: View {
                             Image(systemName: "checkmark.seal.fill")
                                 .font(.appCaption2)
                                 .foregroundColor(Color(red: 0.2, green: 0.8, blue: 0.6))
+                        }
+
+                        if bodySource.isFromNostrVault {
+                            NostrVaultBadge()
                         }
 
                         Spacer()
