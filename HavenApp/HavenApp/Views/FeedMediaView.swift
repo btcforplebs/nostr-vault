@@ -272,8 +272,14 @@ private struct FeedPhotoView: View {
     /// The decoded image's ratio, or the note's `imeta` `dim` until it lands,
     /// so the row is already the right height when the pixels arrive.
     private var displayAspectRatio: CGFloat? {
-        aspectRatio ?? MediaHints.shared.hint(for: url)?.aspectRatio
+        aspectRatio ?? Self.knownRatios[url] ?? MediaHints.shared.hint(for: url)?.aspectRatio
     }
+
+    /// Ratios of photos already decoded this session. A row that scrolls off
+    /// and back comes back as a new view; without this it opened at the
+    /// placeholder height and snapped to the photo's shape again, moving
+    /// everything below it.
+    @MainActor private static var knownRatios: [URL: CGFloat] = [:]
 
     private var heightCap: CGFloat {
         if isThumbnail { return .infinity }
@@ -287,7 +293,7 @@ private struct FeedPhotoView: View {
         // Fast path: check in-memory decoded image cache (no disk I/O)
         if let cached = MediaCacheService.shared.cachedImage(for: url) {
             self.image = cached
-            self.aspectRatio = ratioFor(cached)
+            self.aspectRatio = ratioFor(cached); Self.knownRatios[url] = self.aspectRatio
             return
         }
 
@@ -305,14 +311,14 @@ private struct FeedPhotoView: View {
                         // mid-scroll. The image's own `.transition` still
                         // fades the pixels in.
                         self.image = downsampled
-                        self.aspectRatio = ratioFor(downsampled)
+                        self.aspectRatio = ratioFor(downsampled); Self.knownRatios[url] = self.aspectRatio
                         self.isLoading = false
                     }
                 } else if let img = PlatformImage(data: data) {
                     MediaCacheService.shared.cacheImage(img, for: url)
                     await MainActor.run {
                         self.image = img
-                        self.aspectRatio = ratioFor(img)
+                        self.aspectRatio = ratioFor(img); Self.knownRatios[url] = self.aspectRatio
                         self.isLoading = false
                     }
                 } else {
