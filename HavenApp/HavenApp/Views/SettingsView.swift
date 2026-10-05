@@ -347,6 +347,8 @@ struct SettingsView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(selectedTab == item ? Color.havenPurple.opacity(0.3) : Color.clear, lineWidth: 1)
                     )
+                    // A clear fill does not hit-test; this makes the whole row clickable.
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
             }
@@ -4007,6 +4009,8 @@ struct AppIconPicker: View {
                     }
                 }
                 .padding(.vertical, 4)
+                // The whole row, not just the icon and name.
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
