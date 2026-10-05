@@ -678,7 +678,9 @@ fun MusicTrackRow(
 /**
  * Sits above the bottom bar on every tab while a song or live stream is
  * loaded: artwork, title, play/pause, next and ✕, with a thin progress line.
- * Tap it for the full player. iOS: MiniPlayerBar.
+ * Tap it for the full player, or, for a minimized live stream, to pop the
+ * stream's own window back out (video, chat and all). iOS: MiniPlayerBar,
+ * PlayerSheet.
  */
 @Composable
 fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
@@ -688,8 +690,10 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
     val hasNext by MusicPlayer.hasNext.collectAsState()
     val position by MusicPlayer.positionMs.collectAsState()
     val duration by MusicPlayer.durationMs.collectAsState()
+    val liveStream by MusicPlayer.liveStream.collectAsState()
     var showFull by remember { mutableStateOf(false) }
     val t = track ?: return
+    val minimizedStream = liveStream?.takeIf { t.isLive }
 
     Box(
         modifier = modifier
@@ -699,7 +703,13 @@ fun MiniPlayerBar(actions: MusicActions, modifier: Modifier = Modifier) {
             .clip(RoundedCornerShape(26.dp))
             .background(Color(0xFF1E1E22).copy(alpha = 0.96f))
             .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(26.dp))
-            .clickable(onClickLabel = "Open the player") { showFull = true },
+            .clickable(onClickLabel = if (minimizedStream != null) "Open the live stream" else "Open the player") {
+                if (minimizedStream != null) {
+                    com.nostrvault.ui.components.LiveStreamRouter.open(minimizedStream)
+                } else {
+                    showFull = true
+                }
+            },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(start = 6.dp)) {
             Artwork(t.artworkUrl, 40.dp, CircleShape)
