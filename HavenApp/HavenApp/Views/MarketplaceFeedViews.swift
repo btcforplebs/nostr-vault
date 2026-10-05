@@ -181,8 +181,9 @@ private struct MarketplaceAuctionBadge: View {
 
 /// A listing opened from the grid: photos, price, what and where, the
 /// seller, the description, and where to buy it. Nostr Vault doesn't run a
-/// checkout, so buying hands off to Plebeian or Shopstr like the web
-/// marketplace does.
+/// checkout, so buying hands off to Plebeian Market, or the buyer messages
+/// the seller. Shopstr was linked too until 2026-10-04, when Logen reported
+/// it dead.
 struct MarketplaceListingSheet: View {
     let listing: MarketListing
     var onOpenProfile: ((String) -> Void)? = nil
@@ -191,6 +192,7 @@ struct MarketplaceListingSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var showingEventInfo = false
+    @State private var showingMessage = false
     @State private var photoIndex = 0
 
     private var profile: FeedProfile? { nostrService.profiles[listing.pubkey] }
@@ -234,6 +236,11 @@ struct MarketplaceListingSheet: View {
                     }
                     .accessibilityLabel("Event Info")
                 }
+            }
+            .sheet(isPresented: $showingMessage) {
+                DMThreadView(counterpartyPubkey: listing.pubkey, initialMessage: messageToSeller)
+                    .environmentObject(nostrService)
+                    .environmentObject(ConfigService.shared)
             }
             .sheet(isPresented: $showingEventInfo) {
                 EventBroadcastSheet(note: listing.note)
@@ -381,9 +388,9 @@ struct MarketplaceListingSheet: View {
                 }
                 .buttonStyle(.plain)
             }
-            if let url = listing.shopstrURL {
-                Button { openURL(url) } label: {
-                    Label("View on Shopstr", systemImage: "arrow.up.right.square")
+            if listing.pubkey != nostrService.activeHexPubkey {
+                Button { showingMessage = true } label: {
+                    Label("Message seller", systemImage: "message")
                         .font(.appSystem(size: 15, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
@@ -398,5 +405,14 @@ struct MarketplaceListingSheet: View {
             }
         }
         .padding(.top, 4)
+    }
+
+    /// The opening line of a message to the seller: which listing, and its
+    /// Plebeian link so the seller can see exactly what is being asked about.
+    private var messageToSeller: String {
+        let title = listing.title.isEmpty ? "your listing" : "“\(listing.title)”"
+        var text = "Hi! I'm interested in \(title)."
+        if let url = listing.plebeianURL { text += "\n\(url.absoluteString)" }
+        return text
     }
 }

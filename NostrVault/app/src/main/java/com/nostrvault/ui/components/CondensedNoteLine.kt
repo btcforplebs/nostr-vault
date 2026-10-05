@@ -370,24 +370,41 @@ val FeedNote.isFromNostrVault: Boolean
  */
 @Composable
 fun NostrVaultBadge(size: androidx.compose.ui.unit.Dp = 11.dp) {
-    val color = LocalNostrVaultColors.current.primary
+    val colors = LocalNostrVaultColors.current
+    val color = colors.primary
     androidx.compose.foundation.Canvas(
         Modifier.size(width = size * 0.78f, height = size)
             .semantics { contentDescription = "Sent from Nostr Vault" },
     ) {
-        val stroke = maxOf(1.dp.toPx(), this.size.height * 0.12f)
+        val h = this.size.height
+        val stroke = maxOf(1.dp.toPx(), h * 0.12f)
         val inset = stroke / 2
         val w = this.size.width - stroke
         val r = w / 2
+        val center = androidx.compose.ui.geometry.Offset(this.size.width / 2, h / 2)
+        // Soft glow behind it (iOS: two shadows). Canvas doesn't clip, so it spills past the box.
+        drawCircle(
+            androidx.compose.ui.graphics.Brush.radialGradient(
+                listOf(color.copy(alpha = 0.45f), color.copy(alpha = 0f)), center = center, radius = h * 0.95f,
+            ),
+            radius = h * 0.95f, center = center,
+        )
         val path = androidx.compose.ui.graphics.Path().apply {
-            moveTo(inset, this@Canvas.size.height - inset)
+            moveTo(inset, h - inset)
             lineTo(inset, inset + r)
             arcTo(androidx.compose.ui.geometry.Rect(inset, inset, inset + w, inset + w), 180f, 180f, false)
-            lineTo(inset + w, this@Canvas.size.height - inset)
+            lineTo(inset + w, h - inset)
             close()
         }
-        drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
-        drawCircle(color, radius = this.size.height * 0.13f,
-            center = androidx.compose.ui.geometry.Offset(this.size.width / 2, this.size.height * 0.67f))
+        // Lit from the keyhole, like the icon's doorway.
+        val keyhole = androidx.compose.ui.geometry.Offset(this.size.width / 2, h * 0.67f)
+        drawPath(path, androidx.compose.ui.graphics.Brush.radialGradient(
+            listOf(color.copy(alpha = 0.55f), color.copy(alpha = 0f)), center = keyhole, radius = h * 0.6f,
+        ))
+        // Lighter along the top edge for a little depth.
+        drawPath(path, androidx.compose.ui.graphics.Brush.verticalGradient(listOf(colors.primaryLight, color)),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke))
+        drawCircle(color.copy(alpha = 0.5f), radius = h * 0.2f, center = keyhole)
+        drawCircle(colors.primaryLight, radius = h * 0.13f, center = keyhole)
     }
 }

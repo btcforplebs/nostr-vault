@@ -228,10 +228,4 @@ extension MarketListing {
         tlv.append(Bech32.encodeTLV(type: 3, data: kindBytes))
         return Bech32.encode(hrp: "naddr", data: tlv)
     }
-
-    /// Shopstr's page for the listing, as MyNostrSpace links it.
-    var shopstrURL: URL? {
-        guard let naddr else { return nil }
-        return URL(string: "https://shopstr.store/listing/\(naddr)")
-    }
 }

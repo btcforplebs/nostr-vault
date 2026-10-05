@@ -89,7 +89,8 @@ enum FeedThreadGrouping {
     ///     thread is then rooted at the highest ancestor that did load.
     ///   - keepFeedOrder: keep threads in the order their roots first appear
     ///     in `notes` instead of by latest activity. Popular is ranked by
-    ///     score, and a fresh reply must not reshuffle the ranking.
+    ///     score and Global by time, and a reply fetched after the posts
+    ///     must not reshuffle either list.
     /// - Returns: threads ordered by `latestActivity`, newest first, unless
     ///   `keepFeedOrder` is set.
     static func build<Note: ThreadGroupable>(

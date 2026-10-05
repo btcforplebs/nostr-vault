@@ -823,8 +823,8 @@ struct FeedView: View {
             } else {
                 if feedService.feedMode == .global {
                     // One button for who Global shows, so the pill keeps its
-                    // width: the shield is your Web of Trust, the globe is
-                    // everyone (behind a warning).
+                    // width: the shield is your Web of Trust, the crossed-out
+                    // shield is everyone (behind a warning).
                     trustScopeButton
                     LanguageFilterMenu(selected: configService.config.globalFeedLanguages, color: .havenPurple) { codes in
                         configService.config.globalFeedLanguages = codes
@@ -858,22 +858,23 @@ struct FeedView: View {
 
     /// Who every Global view shows (Global, and Media, Articles, diVines,
     /// Recipes, Live and Marketplace on Global): the shield is your Web of
-    /// Trust, the globe is everyone. One app-wide setting, one button so the
-    /// pill keeps its width. Everyone is the only step behind the
+    /// Trust, the crossed-out shield is everyone. Not a globe: Global's own
+    /// button already is one, so Everyone read as a second Global. One
+    /// app-wide setting, one button so the pill keeps its width. Everyone is the only step behind the
     /// sensitive-content warning.
     @ViewBuilder
     private var trustScopeButton: some View {
         let everyone = configService.config.globalShowsEveryone
         #if os(macOS)
         Button(action: toggleTrustScope) {
-            Image(systemName: everyone ? "globe" : "checkmark.shield.fill")
+            Image(systemName: everyone ? "shield.slash.fill" : "checkmark.shield.fill")
                 .font(.appSystem(size: 15, weight: .semibold))
                 .foregroundColor(everyone ? Color.orange : Color.havenPurple)
         }
         .buttonStyle(.plain)
         .help(everyone ? "Everyone: unfiltered posts. Click for your Web of Trust" : "Web of Trust: people you follow and the people they follow. Click for everyone")
         #else
-        IconFilterButton(icon: everyone ? "globe" : "checkmark.shield.fill", tooltip: everyone ? "Everyone" : "Web of Trust", isSelected: true, color: everyone ? .orange : .havenPurple, action: toggleTrustScope)
+        IconFilterButton(icon: everyone ? "shield.slash.fill" : "checkmark.shield.fill", tooltip: everyone ? "Everyone" : "Web of Trust", isSelected: true, color: everyone ? .orange : .havenPurple, action: toggleTrustScope)
         #endif
     }
 
@@ -887,7 +888,7 @@ struct FeedView: View {
         Button {
             if !configService.config.globalShowsEveryone { showingGlobalEveryoneWarning = true }
         } label: {
-            Label("Everyone", systemImage: configService.config.globalShowsEveryone ? "checkmark" : "globe")
+            Label("Everyone", systemImage: configService.config.globalShowsEveryone ? "checkmark" : "shield.slash")
         }
     }
 
@@ -2015,14 +2016,15 @@ struct FeedView: View {
         threadRebuildWork?.cancel()
         let work = DispatchWorkItem { [self] in
             let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
-            // Popular holds only top-level posts, so its replies are fetched
-            // separately for this view, and its score order is kept.
-            let isPopular = feedService.feedMode == .popular
-            if isPopular {
-                feedService.loadPopularThreadReplies(rootIds: feedService.filteredNotes.map(\.id))
+            // Popular and Global hold only top-level posts, so their replies
+            // are fetched separately for this view, and the feed's own order
+            // is kept: a reply landing later doesn't reshuffle the posts.
+            let fetchesReplies = feedService.feedMode == .popular || feedService.feedMode == .global
+            if fetchesReplies {
+                feedService.loadFeedThreadReplies(rootIds: feedService.filteredNotes.map(\.id))
             }
-            let notes = isPopular ? feedService.filteredNotes + feedService.popularThreadReplies : feedService.filteredNotes
-            feedThreads = FeedThreadGrouping.build(notes: notes, keepFeedOrder: isPopular) { id in
+            let notes = fetchesReplies ? feedService.filteredNotes + feedService.feedThreadReplies : feedService.filteredNotes
+            feedThreads = FeedThreadGrouping.build(notes: notes, keepFeedOrder: fetchesReplies) { id in
                 // Ancestors the timeline never showed still live in the feed
                 // service's caches; pulling them in keeps a conversation whole.
                 // A blocked author's post is never pulled in as context.
@@ -2862,7 +2864,7 @@ struct FeedView: View {
                 .onChange(of: feedService.feedMode) { _, _ in
                     rebuildThreadsIfNeeded(immediate: true)
                 }
-                .onChange(of: feedService.popularThreadReplies.count) { _, _ in
+                .onChange(of: feedService.feedThreadReplies.count) { _, _ in
                     rebuildThreadsIfNeeded()
                 }
 
@@ -3252,6 +3254,11 @@ struct FeedNoteRow: View {
         if note.kind == 6 && note.content.isEmpty, let original = rowData.resolvedOriginal {
             return original.content
         }
+        // A bare repost still waiting on its original said nothing at all.
+        if repostedNoteIsUnavailable {
+            return String(localized: "feed.note.repostUnavailable", defaultValue: "The reposted note is unavailable")
+        }
+        if isWaitingForRepostedNote { return String(localized: "feed.note.loadingRepost") }
         // An article's three compact lines are worth far more spent on its
         // title than on the first three lines of markdown.
         if note.kind == 30023 { return note.longFormDisplayTitle }

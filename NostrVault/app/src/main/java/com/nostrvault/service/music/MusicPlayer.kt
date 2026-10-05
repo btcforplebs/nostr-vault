@@ -99,6 +99,34 @@ object MusicPlayer {
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = sync()
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            pausedByInterruption = !playWhenReady &&
+                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS &&
+                !appInForeground &&
+                _current.value?.isLive == true
+        }
+    }
+
+    /**
+     * Set when another app took the sound from a playing live stream while
+     * this app was in the background, so coming back carries on with it
+     * ([setAppInForeground]). The app's own videos take the sound only while
+     * it is in front, and the mini player stays paused for those, as it does
+     * for songs and for anything the owner paused.
+     */
+    private var pausedByInterruption = false
+    private var appInForeground = false
+
+    /** Called from MainActivity's onStart/onStop. */
+    fun setAppInForeground(foreground: Boolean) {
+        appInForeground = foreground
+        if (!foreground || !pausedByInterruption) return
+        pausedByInterruption = false
+        val c = controller ?: return
+        if (_current.value?.isLive != true || c.playWhenReady) return
+        if (c.playbackState == Player.STATE_IDLE) c.prepare()
+        c.play()
     }
 
     private val ticker = object : Runnable {
@@ -157,7 +185,16 @@ object MusicPlayer {
         }
     }
 
-    fun togglePlayPause() = withController { c -> if (c.isPlaying) c.pause() else c.play() }
+    fun togglePlayPause() = withController { c ->
+        if (c.isPlaying) {
+            c.pause()
+        } else {
+            // A failed item is loaded again; a live one then rejoins the
+            // broadcast where it is now (LiveRejoinListener in the service).
+            if (c.playbackState == Player.STATE_IDLE) c.prepare()
+            c.play()
+        }
+    }
     fun pause() = withController { it.pause() }
     fun next() = withController { if (it.hasNextMediaItem()) it.seekToNextMediaItem() }
 

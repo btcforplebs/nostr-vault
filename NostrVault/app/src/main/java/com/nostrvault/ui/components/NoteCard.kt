@@ -95,6 +95,11 @@ fun NoteCard(
     parentNote: FeedNote? = null,
     repostedByProfile: FeedProfile? = null,
     replyToProfile: FeedProfile? = null,
+    /**
+     * Shown in place of the body while a bare repost waits for its original,
+     * or once no relay had it. Null shows the body.
+     */
+    repostPlaceholder: RepostPlaceholder? = null,
     onNoteClick: (String) -> Unit,
     /**
      * Where a quoted long-form post opens. Null falls back to [onNoteClick],
@@ -382,7 +387,9 @@ fun NoteCard(
             Spacer(Modifier.height(8.dp))
 
             // Content text (rich: clickable mentions, links, hashtags)
-            if (note.content.isNotBlank()) {
+            if (repostPlaceholder != null) {
+                RepostPlaceholderLine(repostPlaceholder, modifier = Modifier.padding(start = 50.dp))
+            } else if (note.content.isNotBlank()) {
                 NostrContentText(
                     content = note.content,
                     profiles = profiles,

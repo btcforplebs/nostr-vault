@@ -456,14 +456,27 @@ struct NostrVaultBadge: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
+            // Lit from the keyhole, like the icon's doorway.
             VaultDoorway()
-                .stroke(Color.havenPurple, lineWidth: max(1, size * 0.12))
+                .fill(RadialGradient(
+                    colors: [Color.havenPurple.opacity(0.55), Color.havenPurple.opacity(0)],
+                    center: UnitPoint(x: 0.5, y: 0.72), startRadius: 0, endRadius: size * 0.6
+                ))
+            // Lighter along the top edge for a little depth.
+            VaultDoorway()
+                .stroke(LinearGradient(colors: [Color.havenPurpleLight, Color.havenPurple],
+                                       startPoint: .top, endPoint: .bottom),
+                        lineWidth: max(1, size * 0.12))
             Circle()
-                .fill(Color.havenPurple)
+                .fill(Color.havenPurpleLight)
                 .frame(width: size * 0.26, height: size * 0.26)
+                .shadow(color: Color.havenPurple, radius: size * 0.2)
                 .padding(.bottom, size * 0.2)
         }
         .frame(width: size * 0.78, height: size)
+        // Soft glow: a tight bright ring plus a wider haze.
+        .shadow(color: Color.havenPurple.opacity(0.9), radius: size * 0.12)
+        .shadow(color: Color.havenPurple.opacity(0.6), radius: size * 0.35)
         .accessibilityLabel("Sent from Nostr Vault")
     }
 }

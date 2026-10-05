@@ -239,7 +239,8 @@ private fun sellerName(pubkey: String, profile: FeedProfile?): String =
 
 /**
  * One listing: swipeable photos, price, category and location, seller, the
- * description, then Buy/Bid on Plebeian, View on Shopstr, and Event Info.
+ * description, then Buy/Bid on Plebeian, Message seller, and Event Info.
+ * Shopstr was linked too until 2026-10-04, when Logen reported it dead.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -248,6 +249,8 @@ internal fun MarketListingSheet(
     seller: FeedProfile?,
     /** Null hides the tap on the seller row (an embed has nowhere to go). */
     onOpenSeller: ((String) -> Unit)?,
+    /** Null hides Message seller (an embed has nowhere to go, or it's yours). */
+    onMessageSeller: ((MarketListing) -> Unit)? = null,
     /** Null hides the Event Info button. */
     onEventInfo: ((MarketListing) -> Unit)?,
     onDismiss: () -> Unit,
@@ -255,11 +258,6 @@ internal fun MarketListingSheet(
     val colors = LocalNostrVaultColors.current
     val uriHandler = LocalUriHandler.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val shopstrUrl = remember(listing.id) {
-        listing.dTag
-            ?.let { HavenBridge.encodeNaddr(it, listing.pubkey, listing.kind) }
-            ?.let { "https://shopstr.store/listing/$it" }
-    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Color(0xFF0B0B0B)) {
         Column(
@@ -355,10 +353,10 @@ internal fun MarketListingSheet(
             ) {
                 Text(if (listing.isAuction) "Bid on Plebeian" else "Buy on Plebeian", fontWeight = FontWeight.SemiBold)
             }
-            if (shopstrUrl != null) {
+            if (onMessageSeller != null) {
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = { uriHandler.openUri(shopstrUrl) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("View on Shopstr", color = PrimaryText)
+                OutlinedButton(onClick = { onMessageSeller(listing) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Message seller", color = PrimaryText)
                 }
             }
             if (onEventInfo != null) {

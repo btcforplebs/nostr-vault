@@ -40,8 +40,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -80,9 +83,12 @@ import com.nostrvault.ui.components.isVideoUrl
 import com.nostrvault.ui.components.BroadcastSheet
 import com.nostrvault.ui.components.EmojiPickerSheet
 import com.nostrvault.ui.components.CompactNoteCard
+import com.nostrvault.ui.components.RepostPlaceholder
 import com.nostrvault.ui.components.FeedThreadCard
+import com.nostrvault.ui.components.ThreadLineAnchor
 import com.nostrvault.ui.components.GlassPill
 import com.nostrvault.ui.components.GlassScaffold
+import com.nostrvault.ui.components.LiveStreamThumbnail
 import com.nostrvault.ui.components.NoteCard
 import com.nostrvault.ui.components.UGCReportDialog
 import com.nostrvault.ui.components.threadLink
@@ -110,6 +116,8 @@ fun FeedScreen(
     onNoteClick: (String) -> Unit,
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
+    /** Opens a DM with a pubkey, its box prefilled (Message seller). */
+    onMessageUser: (pubkey: String, draft: String) -> Unit = { _, _ -> },
     onCompose: () -> Unit,
     /** Opens the diVine, article or recipe composer. */
     onComposeMode: (com.nostrvault.ui.screens.ModeComposerKind) -> Unit = {},
@@ -187,6 +195,9 @@ fun FeedScreen(
     // one selection across both condensed layouts, and it survives a card being
     // recycled off-screen and back by a LazyColumn (per-card `remember` would not).
     var expandedNoteId by remember { mutableStateOf<String?>(null) }
+    // Holds a tapped thread line where it was when the open line above closes.
+    val threadLineAnchor = remember(listState) { ThreadLineAnchor(scope, listState) }
+    val density = LocalDensity.current
 
     // Per-thread "show more replies" fold, hoisted for the same reason: a
     // LazyColumn item's own `remember` is dropped when it scrolls out of view.
@@ -203,8 +214,10 @@ fun FeedScreen(
     // only the fetch call comes back to it.
     LaunchedEffect(notes) {
         val missingIds = withContext(Dispatchers.Default) {
-            notes.mapNotNull { note ->
-                note.parentEventId?.takeIf { viewModel.parentNoteFor(it) == null }
+            notes.flatMap { note ->
+                // A bare repost's row shows the note it points at.
+                listOfNotNull(note.parentEventId, note.repostedEventId?.takeIf { note.isBareRepost })
+                    .filter { viewModel.parentNoteFor(it) == null }
             }.distinct()
         }
         if (missingIds.isNotEmpty()) {
@@ -674,7 +687,12 @@ fun FeedScreen(
                         top = padding.calculateTopPadding(),
                         bottom = padding.calculateBottomPadding() + 88.dp,
                     ),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onGloballyPositioned {
+                            threadLineAnchor.viewportTop = it.positionInRoot().y +
+                                with(density) { padding.calculateTopPadding().toPx() }
+                        },
                 ) {
                     if (isThreaded) {
                         items(feedThreads, key = { it.rootId }) { thread ->
@@ -690,6 +708,7 @@ fun FeedScreen(
                                 onOpenThread = { note -> onNoteClick(note.id) },
                                 onFetchMissingNote = viewModel::fetchMissingNote,
                                 rootUnavailable = thread.rootId in unavailableNoteIds,
+                                lineAnchor = threadLineAnchor,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 expandedRow = { note, _ ->
                                     FeedFullNoteRow(
@@ -736,18 +755,23 @@ fun FeedScreen(
 
                         // Remove expensive Crossfade animation for better scroll performance
                         if (showCompact) {
+                            val (shownNote, repostPlaceholder) = rememberBareRepostDisplay(note, viewModel)
+                            val shownPubkeys = remember(headPubkeys, shownNote.pubkey, shownNote.content) {
+                                (headPubkeys + shownNote.pubkey + NostrMentions.mentionedPubkeys(shownNote.content)).distinct()
+                            }
                             // derivedStateOf, not a plain read: the computation re-runs on
                             // every metadata batch, but this row only recomposes when one of
                             // *its* profiles actually changed. Reading allProfiles directly
                             // here would rebuild every visible card per batch instead.
-                            val cardProfiles by remember(headPubkeys) {
-                                derivedStateOf { headPubkeys.resolveAgainst(allProfiles) }
+                            val cardProfiles by remember(shownPubkeys) {
+                                derivedStateOf { shownPubkeys.resolveAgainst(allProfiles) }
                             }
                             CompactNoteCard(
-                                note = note,
-                                profile = cardProfiles[note.pubkey],
+                                note = shownNote,
+                                profile = cardProfiles[shownNote.pubkey],
                                 profiles = cardProfiles,
-                                repostedByProfile = note.repostedBy?.let { cardProfiles[it] },
+                                repostedByProfile = shownNote.repostedBy?.let { cardProfiles[it] },
+                                repostPlaceholder = repostPlaceholder,
                                 onNoteClick = { id ->
                                     // Expand inline first instead of navigating
                                     expandedNoteId = id
@@ -952,6 +976,7 @@ fun FeedScreen(
             listing = listing,
             seller = allProfiles[listing.pubkey],
             onOpenSeller = { pubkey -> openListing = null; onProfileClick(pubkey) },
+            onMessageSeller = { openListing = null; onMessageUser(it.pubkey, it.messageToSeller) },
             onEventInfo = { openListing = null; listingInfoNote = it.toNote() },
             onDismiss = { openListing = null },
         )
@@ -1114,11 +1139,10 @@ private fun LiveGrid(
                     .clickable { onStreamClick(stream) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
-                stream.imageUrl?.let { url ->
-                    AsyncImage(
-                        model = url,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
+                // The live frame, else the cover; refetched while on screen.
+                if (stream.previewImageUrls.isNotEmpty()) {
+                    LiveStreamThumbnail(
+                        urls = stream.previewImageUrls,
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
@@ -1296,6 +1320,82 @@ private fun FeedFullNoteRow(
     onLongPressLike: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // A bare repost is drawn as the note it points at, once that arrives.
+    val (shownNote, repostPlaceholder) = rememberBareRepostDisplay(note, viewModel)
+    // The row remembers per note id; the original landing has to start it over.
+    key(shownNote.pubkey, shownNote.content) {
+        FeedFullNoteRowContent(
+            note = shownNote,
+            repostPlaceholder = repostPlaceholder,
+            viewModel = viewModel,
+            allProfiles = allProfiles,
+            onNoteClick = onNoteClick,
+            onArticleClick = onArticleClick,
+            onProfileClick = onProfileClick,
+            onReply = onReply,
+            onQuote = onQuote,
+            onZap = onZap,
+            onBroadcast = onBroadcast,
+            onReport = onReport,
+            onBlock = onBlock,
+            onDelete = onDelete,
+            onLongPressLike = onLongPressLike,
+            modifier = modifier,
+        )
+    }
+}
+
+/**
+ * A bare repost (empty content plus an `e` tag, NIP-18) as its row shows it:
+ * the original credited to the reposter once it has been fetched, and until
+ * then the repost with a loading line, or an unavailable one when no relay had
+ * the original. Any other note comes back as it is.
+ */
+@Composable
+private fun rememberBareRepostDisplay(note: FeedNote, viewModel: FeedViewModel): Pair<FeedNote, RepostPlaceholder?> {
+    val refId = note.repostedEventId?.takeIf { note.isBareRepost }
+    val parentsState = viewModel.parentNotesCache.collectAsState()
+    val unavailableState = viewModel.unavailableNoteIds.collectAsState()
+    val original by remember(note.id) {
+        derivedStateOf { refId?.let { parentsState.value[it] }?.takeIf { it.kind != 6 } }
+    }
+    val unavailable by remember(note.id) { derivedStateOf { refId != null && refId in unavailableState.value } }
+    if (refId == null) return note to null
+    val shown = original?.let { note.withRepostedOriginal(it) }
+        // Credited the way an embedded repost is, to the author its `p` tag names.
+        ?: note.copy(
+            pubkey = note.tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: note.pubkey,
+            repostedBy = note.pubkey,
+        )
+    // The feed fetches profiles for the authors of the notes it receives, and
+    // here that is the reposter; the row is credited to the original's author.
+    LaunchedEffect(shown.pubkey) { viewModel.fetchMissingProfiles(listOf(shown.pubkey)) }
+    return when {
+        original != null -> shown to null
+        unavailable -> shown to RepostPlaceholder.UNAVAILABLE
+        else -> shown to RepostPlaceholder.LOADING
+    }
+}
+
+@Composable
+private fun FeedFullNoteRowContent(
+    note: FeedNote,
+    repostPlaceholder: RepostPlaceholder?,
+    viewModel: FeedViewModel,
+    allProfiles: Map<String, FeedProfile>,
+    onNoteClick: (String) -> Unit,
+    onArticleClick: (String) -> Unit,
+    onProfileClick: (String) -> Unit,
+    onReply: (String) -> Unit,
+    onQuote: (String) -> Unit,
+    onZap: (String) -> Unit,
+    onBroadcast: (String) -> Unit,
+    onReport: (String) -> Unit,
+    onBlock: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onLongPressLike: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val headPubkeys = remember(note.id) {
         buildList {
             add(note.pubkey)
@@ -1361,6 +1461,7 @@ private fun FeedFullNoteRow(
         isReposted = isReposted,
         repostedByProfile = note.repostedBy?.let { cardProfiles[it] },
         replyToProfile = note.replyToPubkey?.let { cardProfiles[it] },
+        repostPlaceholder = repostPlaceholder,
         parentNote = parentNote,
         parentIsNext = isParentNext,
         showReplyContext = true,
@@ -1683,7 +1784,8 @@ private fun FeedTopBar(
 
 /**
  * Who Global (and Media's Global) shows: the shield is your Web of Trust, the
- * globe (in orange) is everyone. One button, so the pill keeps its width.
+ * crossed-out shield (in orange) is everyone: not a globe, which is Global's
+ * own button. One button, so the pill keeps its width.
  */
 @Composable
 private fun TrustScopeButton(everyone: Boolean, onClick: () -> Unit) {
@@ -1697,7 +1799,7 @@ private fun TrustScopeButton(everyone: Boolean, onClick: () -> Unit) {
             },
     ) {
         Icon(
-            imageVector = if (everyone) NostrVaultIcons.Globe else NostrVaultIcons.TrustShield,
+            imageVector = if (everyone) NostrVaultIcons.TrustOff else NostrVaultIcons.TrustShield,
             contentDescription = if (everyone) {
                 "Everyone: unfiltered posts. Tap for your Web of Trust"
             } else {

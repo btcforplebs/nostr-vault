@@ -34,6 +34,8 @@ fun CompactNoteCard(
     profile: FeedProfile?,
     profiles: Map<String, FeedProfile> = emptyMap(),
     repostedByProfile: FeedProfile? = null,
+    /** A bare repost still waiting for its original, or without one. See [NoteCard]. */
+    repostPlaceholder: RepostPlaceholder? = null,
     onNoteClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -108,7 +110,7 @@ fun CompactNoteCard(
                     )
 
                     Text(
-                        text = " · ${formatTimestamp(note.createdAt.time / 1000)}",
+                        text = " · ${formatTimestamp(note.postedAt.time / 1000)}",
                         color = TertiaryText,
                         fontSize = 12.sp,
                         maxLines = 1,
@@ -118,7 +120,10 @@ fun CompactNoteCard(
                 // Body text (plain, as many lines as Compact View is set to). Memoize the regex-based mention
                 // stripping so it doesn't re-run on every recomposition (e.g. each
                 // throttled profile-map update) while scrolling the compact feed.
-                if (note.content.isNotBlank()) {
+                if (repostPlaceholder != null) {
+                    Spacer(Modifier.height(2.dp))
+                    RepostPlaceholderLine(repostPlaceholder)
+                } else if (note.content.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
                     val plainText = remember(note.id, note.content, profiles) {
                         NostrMentions.toPlainText(note.content, profiles, note.mediaURLs.toSet()).replace("\n", " ").trim()

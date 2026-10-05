@@ -7,6 +7,7 @@ import android.util.Log
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.MediaUploadOutcomeMessage
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.ui.notification.NotificationManager
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -177,13 +178,20 @@ class MediaPostQueue @Inject constructor(
 
         val assembled = post.assembled() ?: return false
 
-        // The account may have been switched while the media uploaded.
-        if (configStore.config.value.activeOrOwnerNpub() != post.accountNpub) {
-            log("waiting post ${id.take(8)}: account changed during upload — holding it")
+        // The account may have been switched while the media uploaded, and the
+        // signer follows the active one: lock the post's account for the sign.
+        val lock = nostrService.lockPostingAccount()
+        if (lock.npub != post.accountNpub) {
+            log("waiting post ${id.take(8)}: account changed during upload — holding it until that account is active")
             return false
         }
         val kind = post.kind ?: 1
-        val event = nostrService.signEventAsync(kind = kind, content = assembled.content, tags = assembled.tags)
+        val event = try {
+            nostrService.signEventAsync(kind = kind, content = assembled.content, tags = assembled.tags, lockedTo = lock)
+        } catch (e: PostingAccount.AccountChangedException) {
+            log("waiting post ${id.take(8)}: account changed while signing — not sent, holding it", Log.ERROR)
+            return false
+        }
         if (event == null) {
             log("waiting post ${id.take(8)}: media is hosted but signing failed — will retry", Log.ERROR)
             return false

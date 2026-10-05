@@ -221,9 +221,12 @@ class ConfigStore @Inject constructor(
         val currentActive = cfg.activeAccountNpub?.trim().orEmpty()
         if (newValue == currentActive) return
 
+        // The previous account's signer session stays connected in the
+        // background (switching back is then instant); only stop treating it
+        // as the active signer.
         val prevNpub = cfg.activeOrOwnerNpub()
         if (cfg.bunkerConfig(prevNpub) != null && NIP46Service.isConnected.value) {
-            NIP46Service.disconnect()
+            NIP46Service.detachForAccountSwitch()
         }
 
         setSwitchingAccount(true)
@@ -252,24 +255,33 @@ class ConfigStore @Inject constructor(
         else cfg.copy(accountNpubs = cfg.accountNpubs + npub)
     }
 
-    fun removeAccount(npub: String) = update { cfg ->
-        cfg.copy(
-            accountNpubs = cfg.accountNpubs.filter { it != npub },
-            accountBunkerConfigs = cfg.accountBunkerConfigs - npub,
-            accountSigningModes = cfg.accountSigningModes - npub,
-            publishRelayListPerAccount = cfg.publishRelayListPerAccount - npub,
-            activeAccountNpub = if (cfg.activeAccountNpub == npub) null else cfg.activeAccountNpub,
-        )
+    fun removeAccount(npub: String) {
+        NIP46Service.sessionToClose(_config.value.accountBunkerConfigs[npub], null)?.let(NIP46Service::dropSession)
+        update { cfg ->
+            cfg.copy(
+                accountNpubs = cfg.accountNpubs.filter { it != npub },
+                accountBunkerConfigs = cfg.accountBunkerConfigs - npub,
+                accountSigningModes = cfg.accountSigningModes - npub,
+                publishRelayListPerAccount = cfg.publishRelayListPerAccount - npub,
+                activeAccountNpub = if (cfg.activeAccountNpub == npub) null else cfg.activeAccountNpub,
+            )
+        }
     }
 
     fun setSigningMode(npub: String, mode: String) =
         update { it.copy(accountSigningModes = it.accountSigningModes + (npub to mode)) }
 
-    fun setBunkerConfig(npub: String, bunker: AccountBunkerConfig) =
+    fun setBunkerConfig(npub: String, bunker: AccountBunkerConfig) {
+        // Paired again with another signer: close the old live session, or it
+        // lingers (and, if it was the active one, keeps answering).
+        NIP46Service.sessionToClose(_config.value.accountBunkerConfigs[npub], bunker)?.let(NIP46Service::dropSession)
         update { it.copy(accountBunkerConfigs = it.accountBunkerConfigs + (npub to bunker)) }
+    }
 
-    fun removeBunkerConfig(npub: String) =
+    fun removeBunkerConfig(npub: String) {
+        NIP46Service.sessionToClose(_config.value.accountBunkerConfigs[npub], null)?.let(NIP46Service::dropSession)
         update { it.copy(accountBunkerConfigs = it.accountBunkerConfigs - npub) }
+    }
 
     fun setPublishRelayList(npub: String, enabled: Boolean) =
         update { it.copy(publishRelayListPerAccount = it.publishRelayListPerAccount + (npub to enabled)) }

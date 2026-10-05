@@ -177,7 +177,7 @@ internal fun MarketplaceSellScreen(onDone: () -> Unit, viewModel: ModeComposeVie
             SellField(description, { description = it }, "Description", minLines = 5)
             Text(
                 "Condition, size, shipping, and how buyers should pay or reach you. " +
-                    "Buyers see this here, on Shopstr and on Plebeian.",
+                    "Buyers see this here and on Plebeian Market, and can message you from the listing.",
                 color = SecondaryText,
                 fontSize = 12.sp,
             )

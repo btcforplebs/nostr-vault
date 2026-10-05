@@ -127,7 +127,8 @@ class AccountSettingsViewModel @Inject constructor(
     }
 
     fun disconnectSigner(npub: String) {
-        NIP46Service.disconnect()
+        // Closes this account's signer session (and detaches it if active),
+        // not whichever account's session happens to be active.
         configStore.removeBunkerConfig(npub)
         configStore.setSigningMode(npub, "local")
     }
