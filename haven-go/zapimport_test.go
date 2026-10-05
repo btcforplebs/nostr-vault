@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/nbd-wtf/go-nostr"
@@ -77,5 +81,26 @@ func TestGivenZapIsKeptForTheSender(t *testing.T) {
 	forged.Tags = append(forged.Tags, nostr.Tag{"P", owner})
 	if got := givenZapSender(forged); got != "" {
 		t.Fatalf("forged P tag accepted as owner's zap")
+	}
+}
+
+func TestZapNotifyNamesTheZapper(t *testing.T) {
+	senderSK, serviceSK, ownerSK := nostr.GeneratePrivateKey(), nostr.GeneratePrivateKey(), nostr.GeneratePrivateKey()
+	sender, _ := nostr.GetPublicKey(senderSK)
+	service, _ := nostr.GetPublicKey(serviceSK)
+	owner, _ := nostr.GetPublicKey(ownerSK)
+	ev := zapPair(t, senderSK, serviceSK, owner, false)
+
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	emitInboxNotify(ev, owner)
+
+	line := buf.String()
+	if !strings.Contains(line, "type=zap") || !strings.Contains(line, "|author="+sender+"|") {
+		t.Fatalf("notify line = %q, want type=zap with the zapper %s as author", line, sender)
+	}
+	if strings.Contains(line, service) {
+		t.Fatalf("notify line names the lightning service %s: %q", service, line)
 	}
 }
