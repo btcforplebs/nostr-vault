@@ -1231,7 +1231,7 @@ struct MiniPlayerBar: View {
                 Button { showingFull = true } label: { Label("Open player", systemImage: "music.note") }
                 MusicNowPlayingPageActions(track: track)
             }
-            .sheet(isPresented: $showingFull) { NowPlayingView() }
+            .sheet(isPresented: $showingFull) { PlayerSheet() }
         }
     }
 }
@@ -1285,7 +1285,7 @@ struct CollapsedNowPlayingButton: View {
                 Button { showingFull = true } label: { Label("Open player", systemImage: "music.note") }
                 MusicNowPlayingPageActions(track: track)
             }
-            .sheet(isPresented: $showingFull) { NowPlayingView() }
+            .sheet(isPresented: $showingFull) { PlayerSheet() }
         }
     }
 }
@@ -1378,6 +1378,23 @@ struct MiniPlayerInset: ViewModifier {
 /// artist and album as links into the Music feed, scrubber, shuffle /
 /// previous / play / next / repeat, and AirPlay, Up Next and more along
 /// the bottom.
+/// What opening the mini player shows: a minimized live stream pops back
+/// out into its full window (video, chat and all) and keeps playing; a song
+/// opens the music player.
+struct PlayerSheet: View {
+    @ObservedObject private var player = MusicPlayerService.shared
+
+    var body: some View {
+        if player.current?.isLive == true, let stream = player.liveStream {
+            LiveStreamPlayerView(stream: stream)
+                .environmentObject(NostrService.shared)
+                .environmentObject(ConfigService.shared)
+        } else {
+            NowPlayingView()
+        }
+    }
+}
+
 struct NowPlayingView: View {
     @ObservedObject private var player = MusicPlayerService.shared
     @Environment(\.dismiss) private var dismiss
