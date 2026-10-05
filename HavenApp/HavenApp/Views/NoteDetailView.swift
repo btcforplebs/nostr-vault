@@ -58,10 +58,11 @@ struct NoteDetailView: View {
     /// the scrollable area upward instead of shoving the note (and
     /// everything below it) down mid-read.
     @State private var pinnedScrollId: String?
-    /// Whether the view has brought the note you tapped into view once the
-    /// thread above it appeared. Only the first arrival scrolls; after that
-    /// the reader is in charge.
+    /// Set once the reader scrolls or picks another note; until then the
+    /// opened note is kept at the top as the thread above it loads.
     @State private var didLandOnFocusedNote = false
+    /// Height of the scroll view, for the room left under a short thread.
+    @State private var viewportHeight: CGFloat = 0
 
     private var threadRootId: String {
         NIP10Thread.rootEventId(kind: note.kind, tags: note.tags) ?? note.id
@@ -126,17 +127,28 @@ struct NoteDetailView: View {
             .sorted(by: { $0.createdAt < $1.createdAt })
     }
 
+    /// Puts the note you opened at the top, with the posts it answers
+    /// scrollable above. Runs again whenever the content above it changes
+    /// (history arriving, images in it loading, the screen size settling),
+    /// until the reader scrolls: a single jump was undone by whatever loaded
+    /// next, and the opened reply ended up down the screen.
     private func landOnFocusedNote(proxy: ScrollViewProxy) {
         guard !didLandOnFocusedNote, !dynamicParents.isEmpty else { return }
-        didLandOnFocusedNote = true
         let target = focusedNoteId.isEmpty ? note.id : focusedNoteId
-        // Next runloop turn, once the revealed history has laid out.
+        // Next runloop turn, once the revealed history has laid out, and once
+        // more after images above have had a moment to size themselves.
         DispatchQueue.main.async {
+            guard !didLandOnFocusedNote else { return }
+            proxy.scrollTo(target, anchor: .top)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            guard !didLandOnFocusedNote else { return }
             proxy.scrollTo(target, anchor: .top)
         }
     }
 
     private func selectAndScrollToNote(_ targetId: String, proxy: ScrollViewProxy) {
+        didLandOnFocusedNote = true
         withAnimation(Motion.scrollJump) {
             focusedNoteId = targetId
             pinnedScrollId = targetId
@@ -181,12 +193,28 @@ struct NoteDetailView: View {
 
                     otherResponsesSection
 
-
+                    // Room under a short thread, so the opened note can scroll
+                    // to the top with the posts it answers above it. Without
+                    // it a reply with few replies of its own stayed at the
+                    // bottom of the screen: there was nothing below to scroll into.
+                    if !dynamicParents.isEmpty {
+                        Color.clear.frame(height: max(0, viewportHeight - 200))
+                    }
                 }
+                // Makes the opened note (a direct child with its id) a scroll
+                // target, so `scrollPosition` below can hold it at the top.
+                // Without this the pin was ignored, and the posts loading in
+                // above pushed the opened reply down out of view.
+                .scrollTargetLayout()
                 .padding(.top, 16)
                 .padding(.bottom, 90)
             }
             .scrollPosition(id: $pinnedScrollId, anchor: .top)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
+            // The reader took over: stop putting the opened note back on top.
+            .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in didLandOnFocusedNote = true })
+            .onChange(of: dynamicParents.count) { _, _ in landOnFocusedNote(proxy: proxy) }
+            .onChange(of: viewportHeight) { _, _ in landOnFocusedNote(proxy: proxy) }
             // Opening a reply loads the conversation above it, which pushed the
             // reply below the fold: the pin above does not hold, because the
             // parents are not direct scroll targets. Once they are shown, put
