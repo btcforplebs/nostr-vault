@@ -115,9 +115,20 @@ extension VaultView {
         })
         let existingIds = Set(nostrService.events.map { $0.id })
         let missingIds = Array(likedNoteIds.subtracting(existingIds).subtracting(requestedMissingIds))
+        print("LIKESDIAG fetch: owner=\(owner.prefix(8)) events=\(nostrService.events.count) myLikes=\(myLikes.count) newest=\(myLikes.map(\.created_at).max() ?? 0) liked=\(likedNoteIds.count) have=\(likedNoteIds.intersection(existingIds).count) asked=\(requestedMissingIds.count) missing=\(missingIds.count)")
 
         guard !missingIds.isEmpty else { return }
         for id in missingIds { requestedMissingIds.insert(id) }
+
+        // You mostly like posts from the feed, which already holds them signed
+        // and whole: take those now instead of waiting on relays, which on
+        // 2026-10-05 returned 7 of the last 20 liked posts from primal.
+        let feedCache = FeedService.shared.rawEventCache
+        for id in missingIds {
+            guard let json = feedCache[id], let data = json.data(using: .utf8),
+                  let event = try? JSONDecoder().decode(NostrEvent.self, from: data), event.id == id else { continue }
+            nostrService.injectEvent(event)
+        }
 
         #if DEBUG
         print("VaultView: Fetching \(missingIds.count) missing liked notes")
@@ -141,6 +152,7 @@ extension VaultView {
         strings += authorRelays.prefix(6)
         let urls = strings.compactMap { URL(string: $0) }
 
+        print("LIKESDIAG asking \(missingIds.count) from \(urls.map(\.absoluteString))")
         nostrService.fetchNotesByIds(missingIds, from: urls)
     }
 
