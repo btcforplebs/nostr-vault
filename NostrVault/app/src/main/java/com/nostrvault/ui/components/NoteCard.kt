@@ -57,6 +57,7 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import android.widget.Toast
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.NoteStats
@@ -513,8 +514,18 @@ fun NoteCard(
             Spacer(Modifier.height(8.dp))
 
             // Content text (rich: clickable mentions, links, hashtags)
+            val isArticle = note.kind == ArticleMeta.KIND
             if (repostPlaceholder != null) {
                 RepostPlaceholderLine(repostPlaceholder, modifier = Modifier.padding(start = 50.dp))
+            } else if (isArticle) {
+                // Long-form rides in the notes feed with kinds 1 and 6; its title
+                // is a tag and its body Markdown, so the text path drew the whole
+                // article raw and untitled. iOS ArticleInlineBody.
+                ArticleInlineBody(
+                    note = note,
+                    onClick = { (onArticleClick ?: onNoteClick)(note.id) },
+                    modifier = Modifier.padding(start = 50.dp),
+                )
             } else if (note.content.isNotBlank()) {
                 NostrContentText(
                     content = note.content,
@@ -556,7 +567,8 @@ fun NoteCard(
 
             // One card per link. The URLs are out of the text above, so a
             // card is the only place each link still shows — quotes or not.
-            for (link in note.cardLinkURLs) {
+            // Not for an article: its links and images belong to the reader.
+            if (!isArticle) for (link in note.cardLinkURLs) {
                 Spacer(Modifier.height(8.dp))
                 LinkPreviewCard(
                     url = link,
@@ -565,7 +577,7 @@ fun NoteCard(
             }
 
             // Media thumbnails
-            if (note.mediaURLs.isNotEmpty()) {
+            if (!isArticle && note.mediaURLs.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 MediaPreviewRow(
                     urls = note.mediaURLs,
@@ -596,6 +608,82 @@ fun NoteCard(
             )
         }
         } // Box (focused tint overlay)
+    }
+}
+
+/**
+ * A kind-30023 article inside a feed row: cover, title, "Article · N min
+ * read", and the summary (or the top of the body, Markdown stripped). Tapping
+ * opens the reader. The row above already draws the author and the time, so
+ * this is not the Articles feed's own card. iOS ArticleInlineBody.
+ */
+@Composable
+private fun ArticleInlineBody(
+    note: FeedNote,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
+    val preview = remember(note.id) { ArticleMeta.previewText(meta.summary, note.content) }
+    val minutes = remember(note.id) { ArticleMeta.readingTimeMinutes(note.content) }
+    val accent = LocalNostrVaultColors.current.primary
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClickLabel = "Read article", onClick = onClick),
+    ) {
+        meta.imageUrl?.let { url ->
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(url)
+                    .size(800)
+                    .crossfade(100)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(TertiaryGroupedBg),
+            )
+        }
+        Text(
+            text = meta.title,
+            color = PrimaryText,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 23.sp,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = NostrVaultIcons.Articles,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(11.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = if (minutes != null) "Article · $minutes min read" else "Article",
+                color = accent,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        preview?.let {
+            Text(
+                text = it,
+                color = SecondaryText,
+                fontSize = 15.sp,
+                lineHeight = 20.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
