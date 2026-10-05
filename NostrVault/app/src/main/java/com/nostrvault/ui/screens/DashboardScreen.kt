@@ -2829,7 +2829,7 @@ private fun NotesContent(
                     onReport = { reason, description -> onReportNote(note, reason, description) },
                     onBlock = { onBlockAuthor(note.pubkey) },
                     modifier = Modifier
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                         .relayFocusOutline(note.id == focusedEventId),
                 )
             }
@@ -2964,7 +2964,7 @@ private fun LikesContent(
                     onReport = { reason, description -> onReportNote(note, reason, description) },
                     onBlock = { onBlockAuthor(note.pubkey) },
                     modifier = Modifier
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                         .relayFocusOutline(note.id == focusedEventId),
                 )
             }
@@ -3087,7 +3087,7 @@ private fun ZapsContent(
                     onReport = { reason, description -> onReportNote(note, reason, description) },
                     onBlock = { onBlockAuthor(note.pubkey) },
                     modifier = Modifier
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                         .relayFocusOutline(note.id == focusedEventId),
                 )
             }
