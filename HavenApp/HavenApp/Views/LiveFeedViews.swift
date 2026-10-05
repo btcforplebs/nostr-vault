@@ -196,6 +196,9 @@ struct LiveStreamPlayerView: View {
     @State private var zapFailure: String?
     @State private var noLightningAddress = false
     @FocusState private var composerFocused: Bool
+    @State private var showingBlossomPicker = false
+    @State private var blossomMedia: [MediaItem] = []
+    @State private var isLoadingBlossomMedia = false
     /// The mini player's player, when this is the stream it has minimized —
     /// read once, as the window opens. The window shows that player's video
     /// instead of opening the stream again: a second player meant the sound
@@ -294,6 +297,18 @@ struct LiveStreamPlayerView: View {
                 reportingMessage = nil
             }
             .environmentObject(nostrService)
+            .environmentObject(configService)
+        }
+        .sheet(isPresented: $showingBlossomPicker) {
+            BlossomMediaPickerSheet(
+                blossomMedia: $blossomMedia,
+                isLoading: $isLoadingBlossomMedia,
+                onSelect: { item in
+                    insertMedia(item)
+                    showingBlossomPicker = false
+                },
+                onAppearLoad: { loadBlossomMedia() }
+            )
             .environmentObject(configService)
         }
         .sheet(item: $zapSheet) { context in
@@ -418,6 +433,9 @@ struct LiveStreamPlayerView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
             }
+            // Drag the chat down, or tap it, to put the keyboard away.
+            .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
             .onChange(of: chat.messages.count) { _, _ in
                 withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo(Self.chatBottomAnchor, anchor: .bottom)
@@ -433,6 +451,18 @@ struct LiveStreamPlayerView: View {
 
     private var composer: some View {
         HStack(spacing: 10) {
+            // Media from your relay's Blossom store, sent as its link.
+            Button {
+                composerFocused = false
+                showingBlossomPicker = true
+            } label: {
+                Image(systemName: "photo.on.rectangle")
+                    .font(.appSystem(size: 17, weight: .semibold))
+                    .foregroundColor(.havenPurple)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add media from your relay")
+
             TextField("Say something…", text: $draft)
                 .textFieldStyle(.plain)
                 .font(.appSystem(size: 14))
@@ -478,6 +508,29 @@ struct LiveStreamPlayerView: View {
         Task {
             let sent = await chat.send(text, stream: stream)
             if !sent { draft = text }
+        }
+    }
+
+    /// The picked file's link goes into the message, on its own line after
+    /// anything already typed, ready to send.
+    private func insertMedia(_ item: MediaItem) {
+        let link = item.shareURL(with: configService).absoluteString
+        let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = typed.isEmpty ? link : typed + " " + link
+    }
+
+    private func loadBlossomMedia() {
+        guard !isLoadingBlossomMedia else { return }
+        let relay = RelayProcessManager.shared
+        guard relay.isRunning && !relay.isBooting else {
+            blossomMedia = []
+            return
+        }
+        isLoadingBlossomMedia = true
+        Task {
+            blossomMedia = await ComposeView.relayBlossomMedia(
+                relayManager: relay, configService: configService, nostrService: nostrService)
+            isLoadingBlossomMedia = false
         }
     }
 
@@ -590,11 +643,17 @@ struct LiveChatRowView: View {
                         .foregroundColor(.secondary)
                 }
 
-                if !message.text.isEmpty {
-                    Text(message.text)
+                let parts = Self.split(message.text)
+                if !parts.text.isEmpty {
+                    Text(parts.text)
                         .font(.appSystem(size: 13))
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                ForEach(parts.images, id: \.self) { url in
+                    RetryableAsyncImage(url: url, contentMode: .fill, targetSize: CGSize(width: 400, height: 400))
+                        .frame(width: 180, height: 180)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
             }
         }
@@ -611,6 +670,23 @@ struct LiveChatRowView: View {
         formatter.dateStyle = .none
         return formatter
     }()
+
+    /// Image links come out of the text and show as pictures under it.
+    static func split(_ text: String) -> (text: String, images: [URL]) {
+        var images: [URL] = []
+        var kept: [Substring] = []
+        for word in text.split(separator: " ", omittingEmptySubsequences: false) {
+            let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("https://") || trimmed.hasPrefix("http://"),
+               let url = URL(string: trimmed),
+               SupportedMediaFormats.imageExtensions.contains(url.pathExtension.lowercased()) {
+                if !images.contains(url) { images.append(url) }
+            } else {
+                kept.append(word)
+            }
+        }
+        return (kept.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines), images)
+    }
 }
 
 // MARK: - In a note
