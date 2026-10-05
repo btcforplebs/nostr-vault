@@ -127,7 +127,7 @@ extension VaultView {
                 try? await Task.sleep(nanoseconds: step)
                 if Task.isCancelled { zapsSettleTask = nil; return }
                 elapsed += step
-                if nostrService.isFetching || relayManager.isBooting {
+                if nostrService.isFetching || relayManager.isBooting || walletGivenLoading {
                     quiet = 0
                 } else {
                     quiet += step
@@ -188,6 +188,8 @@ extension VaultView {
         let currentMode = viewMode
         let currentLikesFilter = likesFilter
         let currentZapsFilter = zapsFilter
+        let walletGiven = walletGivenNotes
+        let walletGivenSats = walletGivenAmounts
         let currentMaxDisplayed = maxDisplayedItems
         let gen = updateGeneration
 
@@ -327,9 +329,18 @@ extension VaultView {
                         guard item.parsed.senderPubkey == owner, item.parsed.requestIsSigned else { return nil }
                         return item.parsed.targetNoteId
                     })
-                    let filtered = currentEvents.filter { noteKinds.contains($0.kind) && myZappedNoteIds.contains($0.id) }
+                    // The wallet's history first (newest payment first), then
+                    // anything only a receipt on the relays knows about.
+                    var seen = Set(walletGiven.map(\.id))
+                    var filtered = walletGiven
+                    filtered += currentEvents.filter {
+                        noteKinds.contains($0.kind) && myZappedNoteIds.contains($0.id) && seen.insert($0.id).inserted
+                    }
+                    var givenMap: [String: [(pubkey: String, amount: Int64)]] = [:]
+                    for (id, sats) in walletGivenSats { givenMap[id] = [(pubkey: owner, amount: sats)] }
 
                     let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
+                    let finalGivenMap = givenMap
 
                     guard await MainActor.run(body: { gen == self.updateGeneration }) else { return }
                     await MainActor.run {
@@ -337,7 +348,7 @@ extension VaultView {
                         if self.displayZappedNotes.map({ $0.id }) != newDisplay.map({ $0.id }) {
                             self.displayZappedNotes = newDisplay
                         }
-                        if !self.zapMap.isEmpty { self.zapMap = [:] }
+                        self.zapMap = finalGivenMap
                         if !newDisplay.isEmpty { self.zapsHasLoadedOnce = true }
                     }
                 } else {
