@@ -33,6 +33,7 @@ import com.nostrvault.service.MediaPostQueue
 import com.nostrvault.service.MediaUploadManager
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.PendingPostManager
+import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.components.FullScreenMediaHost
 import com.nostrvault.ui.components.InAppBannerHost
 import com.nostrvault.ui.components.VideoPiPBridge
@@ -322,6 +323,7 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         localNotificationService.appInForeground = false
+        MusicPlayer.setAppInForeground(false)
         // Entering PiP pauses but does not stop the activity, so this only runs on a
         // real background transition: snapshot the feed and disconnect WebSockets.
         // The Go relay keeps running via the foreground service.
@@ -333,6 +335,8 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         localNotificationService.appInForeground = true
+        // A live stream another app's sound paused while we were away carries on.
+        MusicPlayer.setAppInForeground(true)
         // Back in the foreground: a sleeping Mac vault may be awake now.
         mediaPostQueue.retryAll("foreground")
         // Restore the snapshot for instant UI, then reconnect in the background.

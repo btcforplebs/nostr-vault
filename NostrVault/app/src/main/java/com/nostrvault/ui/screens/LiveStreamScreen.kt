@@ -28,6 +28,7 @@ import com.nostrvault.data.model.LiveStream
 import com.nostrvault.service.LiveChatService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
+import com.nostrvault.service.music.LiveRejoinListener
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,6 +75,9 @@ fun LiveStreamScreen(
             setMediaItem(MediaItem.fromUri(url))
             prepare()
             playWhenReady = true
+            // Play after a pause rejoins the broadcast; left paused, the item
+            // falls behind the live window and resuming it only fails.
+            addListener(LiveRejoinListener(this))
         }
     }
     // A player left running behind a closed screen keeps the socket and the
