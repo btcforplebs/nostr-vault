@@ -15,11 +15,11 @@ struct CondensedEngagement: Equatable {
 
 /// The single condensed representation of a note.
 ///
-/// Condensed is a property of the feed and nothing else: the feed's condensed
-/// and threaded layouts both draw through here, and the thread view is always
-/// expanded so a reply is one tap from wherever you landed. Keeping density on
-/// one axis is what stops the two surfaces from disagreeing about how dense
-/// "condensed" is.
+/// The feed's condensed and threaded layouts both draw through here, and so
+/// does the thread view's condensed mode, so the surfaces cannot disagree
+/// about how dense "condensed" is. In the thread view only the conversation
+/// around the note goes condensed: the note you are reading stays full size
+/// with its action bar, so a reply is one tap from wherever you landed.
 struct CondensedNoteLine: View {
     enum Style {
         /// Standalone row in the feed: its own bordered card.

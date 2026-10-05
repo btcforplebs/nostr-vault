@@ -205,4 +205,28 @@ final class FeedThreadGroupingTests: XCTestCase {
         XCTAssertEqual(ids(threads[0]), ["root", "r"])
         XCTAssertEqual(depths(threads[0]), [0, 1])
     }
+
+    // MARK: - replyTree (the thread view's condensed replies)
+
+    func testReplyTreeIsDepthFirstOldestFirst() {
+        let pool = [
+            TestNote("b", at: 20, parent: "focus"),
+            TestNote("a", at: 10, parent: "focus"),
+            TestNote("a2", at: 40, parent: "a"),
+            TestNote("a1", at: 30, parent: "a"),
+            TestNote("other", at: 5, parent: "elsewhere"),
+        ]
+        let tree = FeedThreadGrouping.replyTree(under: "focus", in: pool)
+        XCTAssertEqual(tree.map(\.note.id), ["a", "a1", "a2", "b"])
+        XCTAssertEqual(tree.map(\.depth), [1, 2, 2, 1])
+    }
+
+    func testReplyTreeCapsDepthAndSurvivesCycles() {
+        var pool = [TestNote("r1", at: 1, parent: "focus")]
+        for i in 2...7 { pool.append(TestNote("r\(i)", at: Double(i), parent: "r\(i - 1)")) }
+        pool.append(TestNote("focus", at: 0, parent: "r7"))  // a cycle back to the top
+        let tree = FeedThreadGrouping.replyTree(under: "focus", in: pool)
+        XCTAssertEqual(tree.count, 7)
+        XCTAssertEqual(tree.map(\.depth).max(), FeedThreadGrouping.maxDepth)
+    }
 }
