@@ -87,9 +87,14 @@ enum FeedThreadGrouping {
     ///   - resolveNote: looks up a note that is referenced but not in `notes`
     ///     (an ancestor the feed never showed). Returning nil is fine — the
     ///     thread is then rooted at the highest ancestor that did load.
-    /// - Returns: threads ordered by `latestActivity`, newest first.
+    ///   - keepFeedOrder: keep threads in the order their roots first appear
+    ///     in `notes` instead of by latest activity. Popular is ranked by
+    ///     score, and a fresh reply must not reshuffle the ranking.
+    /// - Returns: threads ordered by `latestActivity`, newest first, unless
+    ///   `keepFeedOrder` is set.
     static func build<Note: ThreadGroupable>(
         notes: [Note],
+        keepFeedOrder: Bool = false,
         resolveNote: (String) -> Note? = { _ in nil }
     ) -> [FeedThread<Note>] {
         guard !notes.isEmpty else { return [] }
@@ -188,6 +193,7 @@ enum FeedThreadGrouping {
             )
         }
 
+        if keepFeedOrder { return threads }
         return threads.sorted { lhs, rhs in
             if lhs.latestActivity == rhs.latestActivity {
                 return (order.firstIndex(of: lhs.rootId) ?? 0) < (order.firstIndex(of: rhs.rootId) ?? 0)

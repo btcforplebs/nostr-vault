@@ -32,6 +32,24 @@ final class FeedThreadGroupingTests: XCTestCase {
         thread.entries.map(\.depth)
     }
 
+    /// Popular: ranked roots come first, their replies are appended after
+    /// them. A fresh reply on a low-ranked post must not lift it above the
+    /// top-ranked one.
+    func testKeepFeedOrderKeepsTheRankingDespiteNewerReplies() {
+        let notes = [
+            TestNote("top", at: 100),
+            TestNote("second", at: 200),
+            TestNote("reply", at: 900, parent: "second", root: "second", author: "bob"),
+        ]
+
+        let ranked = FeedThreadGrouping.build(notes: notes, keepFeedOrder: true)
+        XCTAssertEqual(ranked.map(\.rootId), ["top", "second"])
+        XCTAssertEqual(ranked[1].replies.map(\.id), ["reply"])
+
+        // Without it, the reply's activity reorders them.
+        XCTAssertEqual(FeedThreadGrouping.build(notes: notes).map(\.rootId), ["second", "top"])
+    }
+
     func testStandaloneNotesEachBecomeTheirOwnThread() {
         let notes = [TestNote("b", at: 200), TestNote("a", at: 100)]
         let threads = FeedThreadGrouping.build(notes: notes)

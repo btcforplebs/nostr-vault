@@ -2015,7 +2015,14 @@ struct FeedView: View {
         threadRebuildWork?.cancel()
         let work = DispatchWorkItem { [self] in
             let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
-            feedThreads = FeedThreadGrouping.build(notes: feedService.filteredNotes) { id in
+            // Popular holds only top-level posts, so its replies are fetched
+            // separately for this view, and its score order is kept.
+            let isPopular = feedService.feedMode == .popular
+            if isPopular {
+                feedService.loadPopularThreadReplies(rootIds: feedService.filteredNotes.map(\.id))
+            }
+            let notes = isPopular ? feedService.filteredNotes + feedService.popularThreadReplies : feedService.filteredNotes
+            feedThreads = FeedThreadGrouping.build(notes: notes, keepFeedOrder: isPopular) { id in
                 // Ancestors the timeline never showed still live in the feed
                 // service's caches; pulling them in keeps a conversation whole.
                 // A blocked author's post is never pulled in as context.
@@ -2854,6 +2861,9 @@ struct FeedView: View {
                 // filteredNotes change, which a cached feed may not produce.
                 .onChange(of: feedService.feedMode) { _, _ in
                     rebuildThreadsIfNeeded(immediate: true)
+                }
+                .onChange(of: feedService.popularThreadReplies.count) { _, _ in
+                    rebuildThreadsIfNeeded()
                 }
 
                 // Floating "New Posts" indicator — shown when auto-load is off,
