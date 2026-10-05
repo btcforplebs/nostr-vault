@@ -23,6 +23,37 @@ class ZapService: ObservableObject {
         }
     }
     
+    /// Where a zap's receipt should be published. Your own relay is listed
+    /// only when it is public: a provider cannot reach a loopback or LAN
+    /// address, so listing it there only wasted a slot.
+    static func receiptRelays(me: String, recipient: String) -> [String] {
+        let config = ConfigService.shared.config
+        let lists = NostrService.shared.relayLists
+        var candidates = [config.nostrURL]
+        candidates += config.activeFeedRelays.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : config.activeFeedRelays
+        candidates += lists[me] ?? []
+        candidates += (lists[recipient] ?? []).prefix(3)
+        var seen = Set<String>()
+        return Array(candidates
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { isPublicRelay($0) && seen.insert($0.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))).inserted }
+            .prefix(10))
+    }
+
+    static func isPublicRelay(_ url: String) -> Bool {
+        guard let host = URL(string: url)?.host?.lowercased(), !host.isEmpty else { return false }
+        if host == "localhost" || host.hasSuffix(".local") || host == "::1" { return false }
+        let octets = host.split(separator: ".").compactMap { Int($0) }
+        if octets.count == 4 {
+            switch (octets[0], octets[1]) {
+            case (127, _), (10, _), (192, 168), (169, 254), (0, _): return false
+            case (172, 16...31), (100, 64...127): return false
+            default: return true
+            }
+        }
+        return true
+    }
+
     /// Executes a full Zap flow: LNURL -> Zap Request -> Invoice -> NWC Payment
     /// - Parameter addressTag: `a` address (`kind:pubkey:d`) of an addressable event the
     ///   zap belongs to. A live stream is the case that needs it: clients count
@@ -60,12 +91,10 @@ class ZapService: ObservableObject {
             }
             
             // 2. Build Zap Request (Kind 9734)
-            // Include external relays so the provider can publish the receipt where it's queryable
-            var relayList = [ConfigService.shared.config.nostrURL]
-            let externalRelays = ConfigService.shared.config.activeFeedRelays.isEmpty
-                ? ["wss://relay.primal.net", "wss://nos.lol"]
-                : ConfigService.shared.config.activeFeedRelays
-            relayList.append(contentsOf: externalRelays)
+            // The provider publishes the receipt to these relays, so they must
+            // be ones it can reach and that get read: the relays Given and the
+            // feed query, your published inbox, and the recipient's inbox.
+            let relayList = Self.receiptRelays(me: NostrService.shared.activeHexPubkey, recipient: notePubkey)
 
             var tags: [[String]] = [
                 ["p", notePubkey],

@@ -190,6 +190,8 @@ extension VaultView {
         let currentZapsFilter = zapsFilter
         let walletGiven = walletGivenNotes
         let walletGivenSats = walletGivenAmounts
+        let walletGivenAt = walletGivenTimes
+        let locallyZapped = FeedService.shared.zappedEventIds
         let currentMaxDisplayed = maxDisplayedItems
         let gen = updateGeneration
 
@@ -282,6 +284,9 @@ extension VaultView {
                 // MARK: - Zaps Mode (cached parsing)
                 let noteKinds = NostrService.relayTabNoteKinds
                 let zapReceipts = currentEvents.filter { $0.kind == 9735 }
+                // Both lists run newest zap first: a post moves to the top
+                // when a zap on it comes in.
+                let receiptTimes = Dictionary(zapReceipts.map { ($0.id, $0.created_at) }, uniquingKeysWith: { a, _ in a })
 
                 // Parse all zap receipts, using cache for already-parsed ones
                 let existingCache = await MainActor.run { self.zapReceiptCache }
@@ -325,18 +330,31 @@ extension VaultView {
 
                 if currentZapsFilter == .myZaps {
                     // My Zaps: notes I zapped
-                    let myZappedNoteIds = Set(parsedReceipts.compactMap { item -> String? in
+                    var myZappedNoteIds = Set(parsedReceipts.compactMap { item -> String? in
                         guard item.parsed.senderPubkey == owner, item.parsed.requestIsSigned else { return nil }
                         return item.parsed.targetNoteId
                     })
-                    // The wallet's history first (newest payment first), then
-                    // anything only a receipt on the relays knows about.
+                    // …and what this app recorded zapping from this phone.
+                    myZappedNoteIds.formUnion(locallyZapped.keys)
+                    // The wallet's history, then anything only a receipt on
+                    // the relays or this app's own list knows about.
                     var seen = Set(walletGiven.map(\.id))
                     var filtered = walletGiven
                     filtered += currentEvents.filter {
                         noteKinds.contains($0.kind) && myZappedNoteIds.contains($0.id) && seen.insert($0.id).inserted
                     }
+                    var lastZapAt = walletGivenAt
+                    for item in parsedReceipts where item.parsed.senderPubkey == owner && item.parsed.requestIsSigned {
+                        guard let id = item.parsed.targetNoteId, let at = receiptTimes[item.receiptId] else { continue }
+                        lastZapAt[id] = max(lastZapAt[id] ?? 0, at)
+                    }
+                    // A zap only this app recorded has no time: the post's own stands in.
+                    filtered.sort { a, b in
+                        let ta = lastZapAt[a.id] ?? a.created_at, tb = lastZapAt[b.id] ?? b.created_at
+                        return ta != tb ? ta > tb : a.created_at > b.created_at
+                    }
                     var givenMap: [String: [(pubkey: String, amount: Int64)]] = [:]
+                    for (id, sats) in locallyZapped where sats > 0 { givenMap[id] = [(pubkey: owner, amount: Int64(sats))] }
                     for (id, sats) in walletGivenSats { givenMap[id] = [(pubkey: owner, amount: sats)] }
 
                     let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
@@ -363,19 +381,21 @@ extension VaultView {
 
                     let excludeSelf = (currentZapsFilter == .onMyNotes)
                     var zMap: [String: [(pubkey: String, amount: Int64)]] = [:]
+                    var lastZapAt: [String: Int64] = [:]
                     for item in parsedReceipts {
                         guard let targetId = item.parsed.targetNoteId,
                               targetNoteIds.contains(targetId) else { continue }
                         if excludeSelf && item.parsed.senderPubkey == owner { continue }
                         zMap[targetId, default: []].append((pubkey: item.parsed.senderPubkey, amount: item.parsed.amountSats))
+                        lastZapAt[targetId] = max(lastZapAt[targetId] ?? 0, receiptTimes[item.receiptId] ?? 0)
                     }
 
                     let zappedNoteIds = Set(zMap.keys)
                     var filtered = currentEvents.filter { noteKinds.contains($0.kind) && zappedNoteIds.contains($0.id) }
-                    let zapTotals = { (noteId: String) -> Int64 in
-                        zMap[noteId]?.reduce(0) { $0 + $1.amount } ?? 0
+                    filtered.sort { a, b in
+                        let ta = lastZapAt[a.id] ?? 0, tb = lastZapAt[b.id] ?? 0
+                        return ta != tb ? ta > tb : a.created_at > b.created_at
                     }
-                    filtered.sort { zapTotals($0.id) > zapTotals($1.id) }
 
                     let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
 
