@@ -29,6 +29,18 @@ class SearchResultSectionsTest {
     }
 
     @Test
+    fun linksComeFromMatchingNotesOncePerUrl() {
+        val notes = listOf(
+            note("a", "read https://example.com/post and http://foo.org"),
+            note("b", "again https://example.com/post"),
+        )
+        val links = SearchResultSections.links(notes)
+        assertEquals(listOf("https://example.com/post", "http://foo.org"), links.map { it.url })
+        assertEquals(listOf("example.com/post", "foo.org"), links.map { it.title })
+        assertEquals(listOf("a", "a"), links.map { it.noteId })
+    }
+
+    @Test
     fun filterShowsOnlyItsSectionExceptAll() {
         val f = SearchResultFilter.entries
         for (section in f) {

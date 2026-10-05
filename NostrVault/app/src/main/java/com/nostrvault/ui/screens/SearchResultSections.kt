@@ -2,13 +2,22 @@ package com.nostrvault.ui.screens
 
 import com.nostrvault.data.model.FeedNote
 
+/** A link found in a note that matched the search. */
+data class SearchLink(
+    val url: String,
+    /** The URL without its scheme, for the row's title. */
+    val title: String,
+    val noteId: String,
+)
+
 /**
  * The sections a search result list is built from, derived from what the
- * search returned: hashtags come out of the matching notes, the
+ * search returned: hashtags and links come out of the matching notes, the
  * same way the iPhone's SearchView builds them.
  */
 object SearchResultSections {
     private val hashtagRegex = Regex("#(\\w+)")
+    private val urlRegex = Regex("https?://\\S+")
 
     /**
      * Hashtags written in [notes] whose text contains [query] (lowercased,
@@ -26,6 +35,30 @@ object SearchResultSections {
             }
         }
         return found.sorted()
+    }
+
+    /**
+     * Links the matching notes contain, in note order. A note that matches on
+     * its text contributes its links even when the query is not in the URL.
+     * Each URL is kept once: the list is keyed by URL.
+     */
+    fun links(notes: List<FeedNote>): List<SearchLink> {
+        val seen = HashSet<String>()
+        val links = ArrayList<SearchLink>()
+        for (note in notes) {
+            for (match in urlRegex.findAll(note.content)) {
+                val url = match.value
+                if (!seen.add(url)) continue
+                links.add(
+                    SearchLink(
+                        url = url,
+                        title = url.removePrefix("https://").removePrefix("http://"),
+                        noteId = note.id,
+                    ),
+                )
+            }
+        }
+        return links
     }
 
     /** Whether the section for [section] is drawn under [filter]. */

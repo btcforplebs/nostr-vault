@@ -13,9 +13,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -473,12 +475,14 @@ fun SearchScreen(
     val toast by viewModel.toast.collectAsState()
     val colors = LocalNostrVaultColors.current
 
-    // Hashtags are read out of the matching notes, as on the iPhone.
+    // Hashtags and links are read out of the matching notes, as on the iPhone.
     val hashtagResults = remember(results.notes, query) { SearchResultSections.hashtags(results.notes, query) }
+    val linkResults = remember(results.notes) { SearchResultSections.links(results.notes) }
     val anyResults = results.profiles.isNotEmpty() || results.notes.isNotEmpty()
     val showUsers = SearchResultSections.shows(resultFilter, SearchResultFilter.USERS) && results.profiles.isNotEmpty()
     val showNotes = SearchResultSections.shows(resultFilter, SearchResultFilter.NOTES) && results.notes.isNotEmpty()
     val showHashtags = SearchResultSections.shows(resultFilter, SearchResultFilter.HASHTAGS) && hashtagResults.isNotEmpty()
+    val showLinks = SearchResultSections.shows(resultFilter, SearchResultFilter.LINKS) && linkResults.isNotEmpty()
     val context = LocalContext.current
 
     // Zap feedback, the same way the profile timeline reports it.
@@ -833,6 +837,17 @@ fun SearchScreen(
                     item(key = "hashtags-end") { Spacer(Modifier.height(8.dp)) }
                 }
 
+                // Links the matching notes contain
+                if (showLinks) {
+                    item(key = "links-header") {
+                        SearchSectionHeader("Links")
+                    }
+                    items(linkResults, key = { "link-${it.url}" }) { link ->
+                        SearchLinkRow(link = link, colors = colors)
+                    }
+                    item(key = "links-end") { Spacer(Modifier.height(8.dp)) }
+                }
+
                 // No results
                 if (!isSearching && !anyResults) {
                     item {
@@ -845,7 +860,7 @@ fun SearchScreen(
                             Text("No results found", color = SecondaryText, fontSize = 15.sp)
                         }
                     }
-                } else if (!isSearching && !showUsers && !showNotes && !showHashtags) {
+                } else if (!isSearching && !showUsers && !showNotes && !showHashtags && !showLinks) {
                     // The query matched something, just not in the open tab;
                     // a blank screen there reads as a bug.
                     item(key = "empty-filter") {
@@ -1027,6 +1042,42 @@ private fun SearchHashtagRow(
                 contentDescription = null,
                 tint = SecondaryText.copy(alpha = 0.5f),
                 modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
+/** Opens the link in the browser. */
+@Composable
+private fun SearchLinkRow(
+    link: SearchLink,
+    colors: NostrVaultColorScheme,
+) {
+    val uriHandler = LocalUriHandler.current
+    Surface(
+        onClick = { runCatching { uriHandler.openUri(link.url) } },
+        shape = RoundedCornerShape(8.dp),
+        color = SeparatorColor.copy(alpha = 0.08f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(
+                text = link.title,
+                color = colors.primary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = link.url,
+                color = SecondaryText,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
