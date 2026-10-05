@@ -144,3 +144,16 @@ final class NotificationPolicyTests: XCTestCase {
         XCTAssertEqual(NotificationPolicy.dmPreview(String(repeating: "b", count: 160), limit: 160)?.count, 160)
     }
 }
+
+final class NotificationAuthorTrustTests: XCTestCase {
+    func testOnlyTrustedAuthorsNotify() {
+        let trusted: Set<String> = ["friend"]
+        XCTAssertTrue(NotificationPolicy.authorMayNotify("friend", type: "reply", trusted: trusted, own: []))
+        XCTAssertFalse(NotificationPolicy.authorMayNotify("stranger", type: "reply", trusted: trusted, own: []))
+        XCTAssertFalse(NotificationPolicy.authorMayNotify("stranger", type: "dm", trusted: trusted, own: []))
+        // Graph not loaded, own events, gift wraps and the summary are not held back.
+        XCTAssertTrue(NotificationPolicy.authorMayNotify("stranger", type: "reply", trusted: [], own: []))
+        XCTAssertTrue(NotificationPolicy.authorMayNotify("me", type: "zap", trusted: trusted, own: ["me"]))
+        XCTAssertTrue(NotificationPolicy.authorMayNotify("throwaway", type: "giftwrap", trusted: trusted, own: []))
+    }
+}

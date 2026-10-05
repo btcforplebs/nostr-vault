@@ -51,6 +51,8 @@ struct CondensedNoteLine: View {
     var mediaURLs: [URL] = []
     var engagement: CondensedEngagement = .none
     var showsMediaThumbnail: Bool = true
+    /// A Translate button under the text for posts in another language.
+    var showsTranslate: Bool = false
 
     var onProfile: ((String) -> Void)? = nil
     var onTap: (() -> Void)? = nil
@@ -138,6 +140,11 @@ struct CondensedNoteLine: View {
                 VStack(alignment: .leading, spacing: 2) {
                     headerRow
                     bodyText
+                    if showsTranslate {
+                        NoteTranslateButton(noteID: note.id, content: contentOverride ?? note.content,
+                                            kind: contentOverride == nil ? note.kind : 1)
+                            .padding(.top, 2)
+                    }
                     linkChip
                     engagementRow
                 }

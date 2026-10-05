@@ -77,3 +77,38 @@ enum FeedLayoutMode: String, Codable, CaseIterable {
         return (storedCompact ?? defaultCompact) ? .condensed : .expanded
     }
 }
+
+/// Which feeds the feed picker lists, and in what order. The reader edits
+/// both; stored as raw values so a feed added in a later version still
+/// appears (at its default place) and one that was removed is dropped.
+enum FeedMenuOrder {
+    /// The feeds to list, in the reader's order. `pinned` (the home feed)
+    /// can't be hidden. New feeds the stored order doesn't know about go in
+    /// after the feed that precedes them by default.
+    static func ordered(stored: [String], defaults: [String]) -> [String] {
+        var out = stored.filter { defaults.contains($0) }
+        var seen = Set<String>()
+        out = out.filter { seen.insert($0).inserted }
+        for (index, value) in defaults.enumerated() where !seen.contains(value) {
+            let before = defaults[..<index].last { out.contains($0) }
+            let at = before.flatMap { out.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
+            out.insert(value, at: at)
+            seen.insert(value)
+        }
+        return out
+    }
+
+    static func visible(stored: [String], hidden: [String], defaults: [String], pinned: String) -> [String] {
+        let hiddenSet = Set(hidden).subtracting([pinned])
+        return ordered(stored: stored, defaults: defaults).filter { !hiddenSet.contains($0) }
+    }
+
+    /// Stored as one comma-separated string so `@AppStorage` can hold it.
+    static func decode(_ string: String) -> [String] {
+        string.split(separator: ",").map(String.init).filter { !$0.isEmpty }
+    }
+
+    static func encode(_ values: [String]) -> String {
+        values.joined(separator: ",")
+    }
+}

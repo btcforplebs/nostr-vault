@@ -72,6 +72,16 @@ enum NotificationPolicy {
     /// switched off. Only a DM, and only as the in-app banner while the app is
     /// open: that banner is part of the app, not a phone notification, so the
     /// switch shouldn't hide it. Everything else stays silent.
+    /// Only people in your Web of Trust (or follows) notify. `trusted` empty
+    /// means the graph has not loaded, and then nobody is held back. Gift
+    /// wraps (`giftwrap`) carry a throwaway author and the catch-up summary
+    /// carries none, so they are not judged here.
+    static func authorMayNotify(_ author: String, type: String, trusted: Set<String>, own: Set<String>) -> Bool {
+        if author.isEmpty || type == "giftwrap" || type == "summary" { return true }
+        if trusted.isEmpty || own.contains(author) { return true }
+        return trusted.contains(author)
+    }
+
     static func allowsWithPushOff(type: String, appInForeground: Bool) -> Bool {
         appInForeground && (type == "dm" || type == "giftwrap")
     }

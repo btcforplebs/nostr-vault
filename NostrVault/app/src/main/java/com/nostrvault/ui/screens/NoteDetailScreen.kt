@@ -1300,15 +1300,27 @@ private fun HeroNoteCard(
 
             // Content
             if (note.content.isNotBlank()) {
-                NostrContentText(
+                val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
+                val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
+                TranslatableNoteText(
+                    noteKey = note.effectiveEventId,
                     content = note.content,
                     profiles = profiles,
-                    mediaURLs = note.mediaURLs.toSet(),
-                    linkURLs = note.cardLinkURLs.toSet(),
-                    onProfileClick = onProfileClick,
+                    mediaURLs = mediaSet,
+                    linkURLs = linkSet,
                     fontSize = 17.sp,
                     lineHeight = 24.sp,
-                )
+                ) {
+                    NostrContentText(
+                        content = note.content,
+                        profiles = profiles,
+                        mediaURLs = mediaSet,
+                        linkURLs = linkSet,
+                        onProfileClick = onProfileClick,
+                        fontSize = 17.sp,
+                        lineHeight = 24.sp,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
             }
 

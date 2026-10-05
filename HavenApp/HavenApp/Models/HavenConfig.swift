@@ -63,6 +63,10 @@ struct HavenConfig: Codable, Equatable {
     static let lineLimitRange = 1...12
     /// ISO 639-1 codes the Global feed is narrowed to. Empty shows every language.
     var globalFeedLanguages: [String] = []
+    /// A Translate button under posts written in another language.
+    var showTranslateButton: Bool = true
+    /// ISO 639-1 code posts are translated into. Empty follows the device language.
+    var translateTargetLanguage: String = ""
     /// Global shows everyone, not only people in your Web of Trust. Off by default.
     var globalShowsEveryone: Bool = false
 
@@ -260,7 +264,7 @@ struct HavenConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case ownerNpub, relayURL, relayPort, dbEngine, blossomPath, logLevel
         case launchAtLogin, autoStartRelay, hasCompletedSetup, hasSeenWelcome, hasAcceptedToS, setupMode, hasCompletedInitialImport, disableMediaCache, autoplayVideos, cacheTTLDays, prefetchProfilePictures, ownerNcryptsec, ownerNsec, showReplies, nwcURI, defaultZapAmount, themeColor, autoLoadNewPosts, showReposts, showBitcoinWallet
-        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, compactLineLimit, threadedLineLimit, globalFeedLanguages, globalShowsEveryone
+        case useOLED, textSizeScale, useFeedCompactMode, feedCompactModes, feedLayoutModes, noteDetailExpandedEngagement, defaultReactionEmoji, appIcon, zapsOnlyMode, disableTabBarAnimation, showNewPostsPill, compactLineLimit, threadedLineLimit, globalFeedLanguages, globalShowsEveryone, showTranslateButton, translateTargetLanguage
         case signingMode, nip46BunkerURI, nip46SignerPubkey, nip46RelayURL, nip46Secret, nip46ClientSecretKey, nip46ClientPubkey
         case enableRemotePushServer, enablePushNotifications, notificationPrefsPerAccount, notificationSoundName, enableFeedNotifications
         case macRelayURL
@@ -339,6 +343,8 @@ struct HavenConfig: Codable, Equatable {
         compactLineLimit = try container.decodeIfPresent(Int.self, forKey: .compactLineLimit) ?? defaults.compactLineLimit
         threadedLineLimit = try container.decodeIfPresent(Int.self, forKey: .threadedLineLimit) ?? defaults.threadedLineLimit
         globalFeedLanguages = try container.decodeIfPresent([String].self, forKey: .globalFeedLanguages) ?? defaults.globalFeedLanguages
+        showTranslateButton = try container.decodeIfPresent(Bool.self, forKey: .showTranslateButton) ?? defaults.showTranslateButton
+        translateTargetLanguage = try container.decodeIfPresent(String.self, forKey: .translateTargetLanguage) ?? defaults.translateTargetLanguage
         globalShowsEveryone = try container.decodeIfPresent(Bool.self, forKey: .globalShowsEveryone) ?? defaults.globalShowsEveryone
 
         signingMode = try container.decodeIfPresent(String.self, forKey: .signingMode) ?? defaults.signingMode

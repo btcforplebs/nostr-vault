@@ -197,6 +197,18 @@
                 android:resource="@xml/widget_feed_info" />
         </receiver>
 
+        <!-- ML Kit (Translate post) brings Google's datatransport, which
+             uploads ML Kit usage logs through its CCT backend. Removing the
+             backend's registration leaves the runtime with nowhere to send
+             them, so they are dropped on the phone: the translation model
+             download stays the only thing ML Kit fetches. -->
+        <service
+            android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery"
+            android:exported="false">
+            <meta-data
+                android:name="backend:com.google.android.datatransport.cct.CctBackendFactory"
+                tools:node="remove" />
+        </service>
         <receiver
             android:name=".widget.MosaicReceiver"
             android:exported="true"
