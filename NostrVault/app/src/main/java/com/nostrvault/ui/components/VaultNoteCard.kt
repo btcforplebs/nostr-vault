@@ -3,10 +3,14 @@ package com.nostrvault.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,6 +42,7 @@ import java.util.Date
  * Two modes: compact (no engagement) and expanded (inline engagement bar).
  * No parent notes, no quick-action buttons.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VaultNoteCard(
     note: FeedNote,
@@ -60,12 +65,32 @@ fun VaultNoteCard(
     onReactorsClick: (() -> Unit)? = null,
     onRepostersClick: (() -> Unit)? = null,
     onQuotersClick: (() -> Unit)? = null,
+    /**
+     * Long-press menu on someone else's note (iOS NoteRow's context menu).
+     * Report sends a NIP-56 report with the picked reason; the caller also
+     * blocks the author, as everywhere else in the app.
+     */
+    onReport: ((reason: String, description: String) -> Unit)? = null,
+    onBlock: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isCompact = layoutMode == VaultNoteLayoutMode.COMPACT
     var showReactors by remember { mutableStateOf(false) }
     var showReposters by remember { mutableStateOf(false) }
     var showQuoters by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showReport by remember { mutableStateOf(false) }
+    var showBlockConfirm by remember { mutableStateOf(false) }
+    val menuActions = buildList {
+        if (noteType != VaultNoteType.MINE) {
+            if (onReport != null) {
+                add(NoteAction(NostrVaultIcons.Alert, "Report Post", destructive = true) { showReport = true })
+            }
+            if (onBlock != null) {
+                add(NoteAction(NostrVaultIcons.Blocked, "Block User", destructive = true) { showBlockConfirm = true })
+            }
+        }
+    }
     val colors = LocalNostrVaultColors.current
     // Zaps Only mode strips reactions from the inline engagement bar entirely.
     val effectiveReactors = if (LocalZapsOnlyMode.current) emptyList() else reactors
@@ -88,8 +113,16 @@ fun VaultNoteCard(
                 ),
                 cardShape,
             )
-            .clickable { onNoteClick(note.id) },
+            .combinedClickable(
+                onClick = { onNoteClick(note.id) },
+                onLongClick = if (menuActions.isNotEmpty()) ({ showMenu = true }) else null,
+            ),
     ) {
+        NoteActionsMenu(
+            expanded = showMenu,
+            actions = menuActions,
+            onDismiss = { showMenu = false },
+        )
         if (isCompact) {
             CompactLayout(
                 note = note,
@@ -148,6 +181,32 @@ fun VaultNoteCard(
             onDismiss = { showQuoters = false },
             title = "Quoted By",
             emptyText = "No quotes yet",
+        )
+    }
+
+    if (showReport && onReport != null) {
+        UGCReportDialog(
+            onReport = { reason, description ->
+                showReport = false
+                onReport(reason, description)
+            },
+            onDismiss = { showReport = false },
+        )
+    }
+    if (showBlockConfirm && onBlock != null) {
+        AlertDialog(
+            onDismissRequest = { showBlockConfirm = false },
+            title = { Text("Block User") },
+            text = { Text("Block this user? Their posts will be hidden from your feed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBlockConfirm = false
+                    onBlock()
+                }) { Text("Block", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBlockConfirm = false }) { Text("Cancel") }
+            },
         )
     }
 }
