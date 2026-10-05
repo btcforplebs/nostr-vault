@@ -42,6 +42,26 @@ class MarketListingTest {
         assertEquals("https://plebeian.market/products/id1", l.plebeianUrl)
     }
 
+    /** Message seller opens with the listing's name and its Plebeian page. */
+    @Test fun `message to the seller names the listing and links it`() {
+        val content = """{"id":"christmas-baking-j99b2pic5f","name":"Christmas Baking","description":"A selection of traditional Christmas cookies","images":["https://image.nostr.build/ace2.jpg"],"price":21000,"quantity":21,"currency":"SATS"}"""
+        val l = listing(30018, content, listOf(listOf("d", "christmas-baking-j99b2pic5f"), listOf("t", "Baking")))!!
+        assertEquals("Hi! I'm interested in “Christmas Baking”.\nhttps://plebeian.market/products/id1", l.messageToSeller)
+    }
+
+    /** Zero stock is as unbuyable as sold; a missing or null count is no limit. */
+    @Test fun `out of stock listings are hidden`() {
+        fun product(q: String) = """{"name":"Mug","images":["https://e.example/m.jpg"],"price":1,"currency":"SATS","quantity":$q}"""
+        assertNull(listing(30018, product("0"), listOf(listOf("d", "m"))))
+        assertNull(listing(30018, product("\"0\""), listOf(listOf("d", "m"))))
+        assertNotNull(listing(30018, product("3"), listOf(listOf("d", "m"))))
+        assertNotNull(listing(30018, product("null"), listOf(listOf("d", "m"))))
+        val classified = listOf(listOf("d", "c"), listOf("title", "Chair"), listOf("image", "https://e.example/c.jpg"))
+        assertNull(listing(30402, "", classified + listOf(listOf("quantity", "0"))))
+        assertNotNull(listing(30402, "", classified + listOf(listOf("quantity", "2"))))
+        assertNotNull(listing(30402, "", classified))
+    }
+
     @Test fun `Conduit JSON classified`() {
         val content = """{"title":"Mug","summary":"Orange mug","price":2,"currency":"USD","images":[{"url":"https://shop.conduit.market/mug.jpg"}]}"""
         val l = listing(30402, content, listOf(listOf("d", "mug")))!!

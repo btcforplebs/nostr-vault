@@ -54,6 +54,8 @@ fun ProfileScreen(
     onQuote: (String) -> Unit = {},
     onNavigateToDMs: () -> Unit = {},
     onNavigateToDMThread: (String) -> Unit = {},
+    /** Opens a DM with a pubkey, its box prefilled (Message seller). */
+    onMessageUser: (pubkey: String, draft: String) -> Unit = { pk, _ -> onNavigateToDMThread(pk) },
     onNavigateToSettings: () -> Unit = {},
     /** Opens the Sell composer (own profile, Shop tab). */
     onSell: () -> Unit = {},
@@ -389,6 +391,8 @@ fun ProfileScreen(
             listing = listing,
             seller = profile,
             onOpenSeller = null,
+            // Not to yourself: your own Shop tab lists what you sell.
+            onMessageSeller = if (isOwnProfile) null else { l -> openListing = null; onMessageUser(l.pubkey, l.messageToSeller) },
             onEventInfo = null,
             onDismiss = { openListing = null },
         )

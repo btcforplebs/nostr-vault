@@ -230,6 +230,9 @@ fun NostrVaultNavHost(
                     onProfileClick = { pubkey ->
                         navController.navigate(Screen.Profile.createRoute(pubkey))
                     },
+                    onMessageUser = { pubkey, draft ->
+                        navController.navigate(Screen.DMThread.createRoute(pubkey, draft))
+                    },
                     onCompose = {
                         navController.navigate(Screen.ComposeNote.createRoute())
                     },
@@ -337,6 +340,9 @@ fun NostrVaultNavHost(
                     onNavigateToDMThread = { pk ->
                         navController.navigate(Screen.DMThread.createRoute(pk))
                     },
+                    onMessageUser = { pk, draft ->
+                        navController.navigate(Screen.DMThread.createRoute(pk, draft))
+                    },
                     onBack = { navController.popBackStack() },
                 )
             }
@@ -385,11 +391,15 @@ fun NostrVaultNavHost(
 
             composable(
                 route = Screen.DMThread.route,
-                arguments = listOf(navArgument("pubkey") { type = NavType.StringType }),
+                arguments = listOf(
+                    navArgument("pubkey") { type = NavType.StringType },
+                    navArgument("draft") { type = NavType.StringType; nullable = true; defaultValue = null },
+                ),
             ) { entry ->
                 val pubkey = entry.arguments?.getString("pubkey") ?: return@composable
                 DMThreadScreen(
                     counterpartyPubkey = pubkey,
+                    initialMessage = entry.arguments?.getString("draft"),
                     onProfileClick = { pk ->
                         navController.navigate(Screen.Profile.createRoute(pk))
                     },

@@ -22,8 +22,10 @@ sealed class Screen(val route: String) {
     data object NoteDetail : Screen("note/{noteId}") {
         fun createRoute(noteId: String) = "note/$noteId"
     }
-    data object DMThread : Screen("dm_thread/{pubkey}") {
-        fun createRoute(pubkey: String) = "dm_thread/$pubkey"
+    data object DMThread : Screen("dm_thread/{pubkey}?draft={draft}") {
+        /** [draft] is typed into the message box on open (Message seller). */
+        fun createRoute(pubkey: String, draft: String? = null) =
+            if (draft != null) "dm_thread/$pubkey?draft=${android.net.Uri.encode(draft)}" else "dm_thread/$pubkey"
     }
     data object NewMessage : Screen("new_message?pubkey={pubkey}") {
         fun createRoute(pubkey: String? = null) =

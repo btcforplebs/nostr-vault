@@ -89,6 +89,9 @@ struct MarketListing: Identifiable, Hashable {
         var price = ""
         var currency = ""
         var isJSON = false
+        // Stock left. NIP-15 puts `quantity` in the JSON (null = no limit);
+        // some classifieds carry a `quantity` tag.
+        var quantity: Any?
 
         // NIP-15 puts everything in JSON content. A classified's markdown body
         // is not JSON, so this does nothing for kind 30402.
@@ -104,6 +107,7 @@ struct MarketListing: Identifiable, Hashable {
             } ?? []
             price = Self.amountString(json["price"] ?? json["starting_bid"]) ?? ""
             currency = (json["currency"] as? String) ?? ""
+            quantity = json["quantity"]
         } else {
             summary = content
         }
@@ -131,6 +135,9 @@ struct MarketListing: Identifiable, Hashable {
 
         guard !title.isEmpty, title != "Untitled Product", !images.isEmpty else { return nil }
         if tagValue("status")?.lowercased() == "sold" { return nil }
+        // Out of stock: as unbuyable as sold. 18 of ~950 live listings on
+        // 2026-10-04 (13 NIP-15 products, 5 classifieds) said quantity 0.
+        if Self.isOutOfStock(quantity ?? tagValue("quantity")) { return nil }
         // Conduit and Shopstr hide delisted items this way instead of deleting.
         if tagValue("visibility")?.lowercased() == "hidden" { return nil }
 
@@ -154,6 +161,16 @@ struct MarketListing: Identifiable, Hashable {
     }
 
     /// NIP-15 prices are JSON numbers, but some clients write strings.
+    /// True for a stock count of zero, as a number or a string. A missing
+    /// or unreadable count is not "out": NIP-15 leaves it null for no limit.
+    static func isOutOfStock(_ raw: Any?) -> Bool {
+        if let number = raw as? NSNumber { return number.doubleValue <= 0 }
+        if let text = (raw as? String)?.trimmingCharacters(in: .whitespaces), let value = Double(text) {
+            return value <= 0
+        }
+        return false
+    }
+
     private static func amountString(_ value: Any?) -> String? {
         switch value {
         case let string as String:

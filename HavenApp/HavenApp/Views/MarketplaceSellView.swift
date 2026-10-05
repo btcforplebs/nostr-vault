@@ -89,7 +89,7 @@ struct MarketplaceSellView: View {
                 } header: {
                     Text("Description")
                 } footer: {
-                    Text("Condition, size, shipping, and how buyers should pay or reach you. Buyers see this here, on Shopstr and on Plebeian.")
+                    Text("Condition, size, shipping, and how buyers should pay or reach you. Buyers see this here and on Plebeian Market, and can message you from the listing.")
                 }
 
                 if let status {
