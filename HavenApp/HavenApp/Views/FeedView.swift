@@ -823,8 +823,8 @@ struct FeedView: View {
             } else {
                 if feedService.feedMode == .global {
                     // One button for who Global shows, so the pill keeps its
-                    // width: the shield is your Web of Trust, the globe is
-                    // everyone (behind a warning).
+                    // width: the shield is your Web of Trust, the crossed-out
+                    // shield is everyone (behind a warning).
                     trustScopeButton
                     LanguageFilterMenu(selected: configService.config.globalFeedLanguages, color: .havenPurple) { codes in
                         configService.config.globalFeedLanguages = codes
@@ -858,22 +858,23 @@ struct FeedView: View {
 
     /// Who every Global view shows (Global, and Media, Articles, diVines,
     /// Recipes, Live and Marketplace on Global): the shield is your Web of
-    /// Trust, the globe is everyone. One app-wide setting, one button so the
-    /// pill keeps its width. Everyone is the only step behind the
+    /// Trust, the crossed-out shield is everyone. Not a globe: Global's own
+    /// button already is one, so Everyone read as a second Global. One
+    /// app-wide setting, one button so the pill keeps its width. Everyone is the only step behind the
     /// sensitive-content warning.
     @ViewBuilder
     private var trustScopeButton: some View {
         let everyone = configService.config.globalShowsEveryone
         #if os(macOS)
         Button(action: toggleTrustScope) {
-            Image(systemName: everyone ? "globe" : "checkmark.shield.fill")
+            Image(systemName: everyone ? "shield.slash.fill" : "checkmark.shield.fill")
                 .font(.appSystem(size: 15, weight: .semibold))
                 .foregroundColor(everyone ? Color.orange : Color.havenPurple)
         }
         .buttonStyle(.plain)
         .help(everyone ? "Everyone: unfiltered posts. Click for your Web of Trust" : "Web of Trust: people you follow and the people they follow. Click for everyone")
         #else
-        IconFilterButton(icon: everyone ? "globe" : "checkmark.shield.fill", tooltip: everyone ? "Everyone" : "Web of Trust", isSelected: true, color: everyone ? .orange : .havenPurple, action: toggleTrustScope)
+        IconFilterButton(icon: everyone ? "shield.slash.fill" : "checkmark.shield.fill", tooltip: everyone ? "Everyone" : "Web of Trust", isSelected: true, color: everyone ? .orange : .havenPurple, action: toggleTrustScope)
         #endif
     }
 
@@ -887,7 +888,7 @@ struct FeedView: View {
         Button {
             if !configService.config.globalShowsEveryone { showingGlobalEveryoneWarning = true }
         } label: {
-            Label("Everyone", systemImage: configService.config.globalShowsEveryone ? "checkmark" : "globe")
+            Label("Everyone", systemImage: configService.config.globalShowsEveryone ? "checkmark" : "shield.slash")
         }
     }
 

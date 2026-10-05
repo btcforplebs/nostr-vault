@@ -1683,7 +1683,8 @@ private fun FeedTopBar(
 
 /**
  * Who Global (and Media's Global) shows: the shield is your Web of Trust, the
- * globe (in orange) is everyone. One button, so the pill keeps its width.
+ * crossed-out shield (in orange) is everyone: not a globe, which is Global's
+ * own button. One button, so the pill keeps its width.
  */
 @Composable
 private fun TrustScopeButton(everyone: Boolean, onClick: () -> Unit) {
@@ -1697,7 +1698,7 @@ private fun TrustScopeButton(everyone: Boolean, onClick: () -> Unit) {
             },
     ) {
         Icon(
-            imageVector = if (everyone) NostrVaultIcons.Globe else NostrVaultIcons.TrustShield,
+            imageVector = if (everyone) NostrVaultIcons.TrustOff else NostrVaultIcons.TrustShield,
             contentDescription = if (everyone) {
                 "Everyone: unfiltered posts. Tap for your Web of Trust"
             } else {
