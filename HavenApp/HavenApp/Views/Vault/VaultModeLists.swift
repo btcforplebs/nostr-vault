@@ -146,6 +146,7 @@ extension VaultView {
                             .padding(.horizontal, 16)
                         }
                         .buttonStyle(.plain)
+                        .onAppear { loadMoreIfLast(event) }
                         #else
                         NoteRow(
                             event: event,
@@ -162,6 +163,7 @@ extension VaultView {
                         .onTapGesture {
                             self.openNote(event.id)
                         }
+                        .onAppear { loadMoreIfLast(event) }
                         #endif
                     }
                 }
@@ -514,6 +516,15 @@ extension VaultView {
         }
         let shownIds = Set(shown.map(\.id))
         return focusCandidates(for: request).first(where: shownIds.contains)
+    }
+}
+
+extension VaultView {
+    /// The last Notes row showing raises the cap on how many are listed. Without
+    /// it the list stopped at 100 notes (50 after a filter change): older ones
+    /// kept loading from the relay underneath but were never shown.
+    func loadMoreIfLast(_ event: NostrEvent) {
+        if event.id == displayNotes.last?.id { loadMoreItems() }
     }
 }
 
