@@ -190,4 +190,30 @@ class FeedThreadGroupingTest {
         assertEquals(listOf("root", "r"), ids(threads[0]))
         assertEquals(listOf(0, 1), depths(threads[0]))
     }
+
+    // ── replyTree (the thread view's condensed replies) ──
+
+    @Test
+    fun `reply tree is depth first oldest first`() {
+        val pool = listOf(
+            note("b", 20, parent = "focus"),
+            note("a", 10, parent = "focus"),
+            note("a2", 40, parent = "a"),
+            note("a1", 30, parent = "a"),
+            note("other", 5, parent = "elsewhere"),
+        )
+        val tree = FeedThreadGrouping.replyTree("focus", pool)
+        assertEquals(listOf("a", "a1", "a2", "b"), tree.map { it.id })
+        assertEquals(listOf(1, 2, 2, 1), tree.map { it.depth })
+    }
+
+    @Test
+    fun `reply tree caps depth and survives cycles`() {
+        val pool = mutableListOf(note("r1", 1, parent = "focus"))
+        for (i in 2..7) pool.add(note("r$i", i.toLong(), parent = "r${i - 1}"))
+        pool.add(note("focus", 0, parent = "r7")) // a cycle back to the top
+        val tree = FeedThreadGrouping.replyTree("focus", pool)
+        assertEquals(7, tree.size)
+        assertEquals(FeedThreadGrouping.MAX_DEPTH, tree.maxOf { it.depth })
+    }
 }
