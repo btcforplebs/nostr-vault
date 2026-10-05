@@ -230,6 +230,20 @@ class FeedService @Inject constructor(
                     contactListConfirmed = false
                     pendingFollowActions.clear()
                     forceReload()
+                    // Likes and zaps are the account's own: the previous
+                    // one's showed under Relay > Given (iOS loads them per
+                    // account on switch). No legacy fallback, which would
+                    // hand a new account someone else's.
+                    _likedEventIds.value = emptySet()
+                    _zappedEventIds.value = emptyMap()
+                    val key = currentSnapshotKey()
+                    val (liked, zapped) = withContext(Dispatchers.IO) {
+                        engagementTracker.loadInteractionState(key, fallbackToLegacy = false)
+                    }
+                    if (currentSnapshotKey() == key) {
+                        _likedEventIds.value = _likedEventIds.value + liked
+                        _zappedEventIds.value = zapped + _zappedEventIds.value
+                    }
                 }
         }
         // Follows' relay lists arrive in batches after the feed is up; once
@@ -3607,19 +3621,32 @@ class FeedService @Inject constructor(
         val reactionEmoji = emoji ?: configStore.config.value.defaultReactionEmoji
 
         scope.launch(Dispatchers.IO) {
-            val reactionTags = tags ?: listOf(listOf("e", noteId))
+            // iOS tags the author (p) and kind (k) too; without p the liked
+            // post's author is unknown and Relay > Likes > Given cannot ask
+            // that author's relays for it.
+            // Only the note itself: a repost found under its original's id
+            // would name the reposter and kind 6.
+            val reactionTags = tags ?: findNote(noteId)?.takeIf { it.id == noteId }.let { note ->
+                buildList {
+                    add(listOf("e", noteId))
+                    note?.pubkey?.let { add(listOf("p", it)) }
+                    note?.kind?.let { add(listOf("k", it.toString())) }
+                }
+            }
             val event = runCatching { nostrService.signEventAsync(kind = 7, content = reactionEmoji, tags = reactionTags) }
                 .onFailure { Log.e(TAG, "like not signed: ${it.message}") }.getOrNull()
             if (event != null) {
                 nostrService.postEvent(event)
+                keepLikedNoteLocally(noteId)
                 // A like signed by a remote signer takes a round trip; with
                 // nothing on screen there was no telling one that went out
                 // from one the signer never answered (iOS #295).
-                notificationManager.showToast(likedToastMessage(emoji))
-                keepLikedNoteLocally(noteId)
+                withContext(Dispatchers.Main) { notificationManager.showToast(likedToastMessage(emoji)) }
             } else {
-                unlikeNote(noteId)
-                notificationManager.showError("Like failed: your signer didn't answer")
+                withContext(Dispatchers.Main) {
+                    unlikeNote(noteId)
+                    notificationManager.showError("Like failed: your signer didn't answer")
+                }
             }
         }
 

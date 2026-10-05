@@ -327,6 +327,8 @@ class DashboardViewModel @Inject constructor(
     @Volatile private var walletGiven = WalletGiven()
     /** Account + wallet the history was read for; null until it was. */
     @Volatile private var walletGivenKey: String? = null
+    /** Bumped on account switch, so a read still running for the previous account is dropped. */
+    @Volatile private var walletGivenGen = 0
     private val _walletGivenLoading = MutableStateFlow(false)
     val walletGivenLoading: StateFlow<Boolean> = _walletGivenLoading.asStateFlow()
 
@@ -460,7 +462,10 @@ class DashboardViewModel @Inject constructor(
             allEventsMutex.withLock { allEvents.clear() }
             seenIds.clear()
             forgetGivenLookups()
+            walletGivenGen++
+            walletGivenKey = null
             walletGiven = WalletGiven()
+            _walletGivenLoading.value = false
             newestEventCreatedAt = 0L
             updateGeneration++
             _notesHasLoadedOnce.value = false
@@ -1395,6 +1400,14 @@ class DashboardViewModel @Inject constructor(
             delay(debounceMs)
             if (gen != updateGeneration) return@launch
             updateDisplayData(gen)
+            // Likes and zaps that arrive later name more missing posts; ask
+            // for those too (iOS re-asks on every events change). Ids already
+            // asked for are skipped.
+            when (_viewMode.value) {
+                VaultViewMode.LIKES -> if (_likesFilter.value == VaultLikesFilter.MY_LIKES) fetchMissingLikedNotes()
+                VaultViewMode.ZAPS -> if (_zapsFilter.value == VaultZapsFilter.MY_ZAPS) fetchMissingZappedNotes()
+                else -> {}
+            }
         }
     }
 
@@ -1630,7 +1643,8 @@ class DashboardViewModel @Inject constructor(
                         .filter { it.parsed.senderPubkey == owner && it.parsed.requestIsSigned }
                     // Receipts on the relays, plus what this app recorded
                     // zapping from this phone.
-                    val locallyZapped = feedService.zappedEventIds.value
+                    // Stream and profile zaps record a non-note key; only event ids count.
+                    val locallyZapped = feedService.zappedEventIds.value.filterKeys(RelayGiven::isEventId)
                     val myZappedNoteIds = myReceipts.mapNotNull { it.parsed.targetNoteId }.toSet() + locallyZapped.keys
                     val wallet = walletGiven
 
@@ -1761,7 +1775,7 @@ class DashboardViewModel @Inject constructor(
             }
 
             // Posts this app zapped from this phone, for Given (iOS #296).
-            targetNoteIds.addAll(feedService.zappedEventIds.value.keys)
+            targetNoteIds.addAll(feedService.zappedEventIds.value.keys.filter(RelayGiven::isEventId))
 
             val existingIds = events.map { it.id }.toSet()
             val missingIds = targetNoteIds.subtract(existingIds).subtract(requestedMissingZapNoteIds)
@@ -1820,6 +1834,8 @@ class DashboardViewModel @Inject constructor(
         walletGivenKey = key
         walletGiven = WalletGiven()
         _walletGivenLoading.value = true
+        val gen = walletGivenGen
+        fun stillCurrent() = walletGivenGen == gen && walletGivenKey == key
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1830,7 +1846,7 @@ class DashboardViewModel @Inject constructor(
                     } catch (e: Exception) {
                         // Unsupported or unreachable: try again on the next visit.
                         Log.w(TAG, "Wallet history for Given failed: ${e.message}")
-                        if (page == 0) walletGivenKey = null
+                        if (page == 0 && stillCurrent()) walletGivenKey = null
                         break
                     }
                     sent += txs.filter {
@@ -1839,10 +1855,10 @@ class DashboardViewModel @Inject constructor(
                     }
                     if (txs.size < WALLET_GIVEN_PAGE_SIZE) break
                 }
-                if (walletGivenKey != key || sent.isEmpty()) return@launch
+                if (!stillCurrent() || sent.isEmpty()) return@launch
 
                 val found = zapHistoryService.lookup(sent, owner)
-                if (walletGivenKey != key) return@launch
+                if (!stillCurrent()) return@launch
                 val notes = mutableListOf<FeedNote>()
                 val amounts = HashMap<String, Long>()
                 val times = HashMap<String, Long>()
@@ -1857,8 +1873,10 @@ class DashboardViewModel @Inject constructor(
                 }
                 walletGiven = WalletGiven(notes, amounts, times)
             } finally {
-                _walletGivenLoading.value = false
-                scheduleUpdateDisplayData()
+                if (walletGivenGen == gen) {
+                    _walletGivenLoading.value = false
+                    scheduleUpdateDisplayData()
+                }
             }
         }
     }
@@ -1872,7 +1890,10 @@ class DashboardViewModel @Inject constructor(
                 // seenIds too: the live subscription marks an event seen before
                 // it reaches allEvents, so checking allEvents alone let one
                 // arriving on both paths be added twice.
-                if (event.kind in listOf(1, 6, 7, 30023, 9735) && existingIds.add(event.id) && seenIds.add(event.id)) {
+                // Every kind the tab lists, so a liked or zapped comment or
+                // highlight fetched for Given is kept.
+                if ((event.kind in RELAY_TAB_NOTE_KINDS || event.kind == 7 || event.kind == 9735) &&
+                    existingIds.add(event.id) && seenIds.add(event.id)) {
                     allEvents.add(event)
                 }
             }

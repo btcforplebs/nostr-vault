@@ -100,6 +100,13 @@ object RelayGiven {
     }
 
     /**
+     * A 64-character lowercase hex event id. This app's zapped list also holds
+     * stream and profile zaps, keyed by an empty string or a pubkey; asking a
+     * relay for those can make it reject the whole ids batch.
+     */
+    fun isEventId(id: String): Boolean = id.length == 64 && id.all { it in '0'..'9' || it in 'a'..'f' }
+
+    /**
      * When you last zapped each post, in unix seconds: the wallet's payment
      * time, or a receipt's, whichever is newer.
      */

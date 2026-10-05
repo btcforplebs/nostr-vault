@@ -125,4 +125,13 @@ class RelayGivenTest {
         assertNull(RelayGiven.eventFromJson("""{"id":"abc","pubkey":"pk","kind":1,"tags":[],"content":"hi","sig":"s"}"""))
         assertNull(RelayGiven.eventFromJson("not json"))
     }
+
+    @Test
+    fun onlyEventIdsCountAsZappedPosts() {
+        assertTrue(RelayGiven.isEventId("a".repeat(64)))
+        assertFalse(RelayGiven.isEventId(""))
+        assertFalse(RelayGiven.isEventId("A".repeat(64)))
+        assertFalse(RelayGiven.isEventId("30311:" + "b".repeat(64) + ":d"))
+        assertFalse(RelayGiven.isEventId("b".repeat(63)))
+    }
 }
