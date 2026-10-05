@@ -74,6 +74,7 @@ import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.ReelsScope
 import com.nostrvault.ui.screens.LiveStreamScreen
 import com.nostrvault.ui.components.AvatarMenuActions
+import com.nostrvault.ui.navigation.FeedTabPicker
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.FullScreenMediaRouter
 import com.nostrvault.ui.components.MediaSourceKey
@@ -433,6 +434,16 @@ fun FeedScreen(
         }
         if (row != null) listState.requestScrollToItem(row)
         layoutAnchor = null
+    }
+
+    // Hold-the-Feed-tab picker (iOS #239): it shows this feed's mode and
+    // hands its pick here, where the mode lives.
+    LaunchedEffect(feedMode) { FeedTabPicker.shownMode = feedMode }
+    LaunchedEffect(Unit) {
+        FeedTabPicker.request.filterNotNull().collect { mode ->
+            FeedTabPicker.request.value = null
+            if (mode != viewModel.feedMode.value) viewModel.setFeedMode(mode)
+        }
     }
 
     // Handle tab re-selection: scroll to top or refresh if already at top
@@ -2110,7 +2121,7 @@ private fun List<String>.resolveAgainst(
 }
 
 /** Icon for the feed picker and the top bar; matches the iPhone's. */
-private val FeedMode.icon: ImageVector
+internal val FeedMode.icon: ImageVector
     get() = when (this) {
         FeedMode.FOLLOWING -> NostrVaultIcons.People
         FeedMode.DISCOVERY -> NostrVaultIcons.Discover
