@@ -109,3 +109,49 @@ fun sampleSizeFor(width: Int, height: Int, maxPixel: Int): Int {
 
 /** A stable hue (0..359) for a tile or avatar with no picture, keyed to its id. */
 fun seededHue(seed: String): Float = ((seed.hashCode() % 360 + 360) % 360).toFloat()
+
+/**
+ * How many feed rows a widget draws, and how far apart (iOS NVFeedLayout).
+ *
+ * A fixed row count either clips the last row on a short widget or leaves a
+ * hole under it on a tall one, so the count comes from the measured height
+ * and the leftover space is spread between rows instead of dumped at the end.
+ */
+object FeedLayout {
+    data class Plan(val rows: Int, val spacing: Float)
+
+    fun plan(
+        availableHeight: Float,
+        headerHeight: Float,
+        rowHeight: Float,
+        minSpacing: Float,
+        maxSpacing: Float,
+        noteCount: Int,
+    ): Plan {
+        if (noteCount <= 0 || rowHeight <= 0f) return Plan(0, minSpacing)
+        val usable = max(0f, availableHeight - headerHeight)
+        // Rows that fit packed at minimum spacing: n*row + (n-1)*min <= usable
+        val capacity = ((usable + minSpacing) / (rowHeight + minSpacing)).toInt()
+        val rows = max(1, min(noteCount, capacity))
+        if (rows <= 1) return Plan(rows, minSpacing)
+        val even = (usable - rows * rowHeight) / (rows - 1)
+        return Plan(rows, min(max(even, minSpacing), maxSpacing))
+    }
+}
+
+/** "now", "3m", "4h", "2d" — a widget never has room for a real date (iOS NV.shortAge). */
+fun shortAge(createdAtMillis: Long, nowMillis: Long): String {
+    val s = max(0L, (nowMillis - createdAtMillis) / 1000)
+    return when {
+        s < 60 -> "now"
+        s < 3_600 -> "${s / 60}m"
+        s < 86_400 -> "${s / 3_600}h"
+        else -> "${s / 86_400}d"
+    }
+}
+
+/** A note counts as a mention when it p-tags you and is not your own (iOS NVWidgetBridge.mentions). */
+fun isMentionOf(me: String, author: String, tags: List<List<String>>): Boolean {
+    if (me.isEmpty() || author == me) return false
+    return tags.any { it.size >= 2 && it[0] == "p" && it[1] == me }
+}

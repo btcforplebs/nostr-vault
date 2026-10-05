@@ -88,20 +88,24 @@ class WidgetPublisher @Inject constructor(
                 dmService.totalUnreadCountFlow,
                 nostrService.profiles,
             ) { notes, unread, profiles ->
+                fun snap(note: FeedNote) = VaultSnapshot.SnapshotNote(
+                    id = note.id,
+                    author = note.pubkey,
+                    displayName = profiles[note.pubkey]?.bestName
+                        ?: note.pubkey.take(8),
+                    // Trimmed here rather than at draw time: the snapshot is
+                    // a file the widgets re-read, and a long-form note would
+                    // otherwise sit in it whole. Newlines collapsed: a widget
+                    // row has no paragraph rendering.
+                    text = note.content.replace('\n', ' ').trim().take(200),
+                    createdAt = note.createdAt.time,
+                    authorPicture = profiles[note.pubkey]?.pictureURL?.takeIf { it.isNotBlank() },
+                )
                 VaultSnapshot(
-                    feed = notes.take(FEED_ITEMS).map { note ->
-                        VaultSnapshot.SnapshotNote(
-                            id = note.id,
-                            author = note.pubkey,
-                            displayName = profiles[note.pubkey]?.bestName
-                                ?: note.pubkey.take(8),
-                            // Trimmed here rather than at draw time: the
-                            // snapshot is a file the widgets re-read, and a
-                            // long-form note would otherwise sit in it whole.
-                            text = note.content.trim().take(200),
-                            createdAt = note.createdAt.time,
-                        )
-                    },
+                    // Top-level notes only, as on iOS: a reply out of its
+                    // thread reads as an answer to a question the widget
+                    // cannot show.
+                    feed = notes.asSequence().filter { !it.isReply }.take(FEED_ITEMS).map(::snap).toList(),
                     unreadDMs = unread,
                 )
             }

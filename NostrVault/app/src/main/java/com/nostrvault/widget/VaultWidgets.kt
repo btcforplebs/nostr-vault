@@ -1,13 +1,18 @@
 package com.nostrvault.widget
 
 import android.content.Context
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.Image
+import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
@@ -18,9 +23,14 @@ import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
+import androidx.glance.layout.size
 import androidx.glance.layout.width
+import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.util.concurrent.TimeUnit
 
 /**
@@ -118,9 +128,46 @@ private fun QuickActionsContent(context: Context) {
 // ── Feed ───────────────────────────────────────────────────────────────
 
 class FeedWidget : GlanceAppWidget() {
+    // Exact: the row count is worked out from the real height (FeedLayout).
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val snapshot = WidgetSnapshotStore.read(context)
-        provideContent { GlanceTheme { FeedContent(context, snapshot) } }
+        val avatars = loadAvatars(context, snapshot.feed + snapshot.mentions)
+        provideContent { GlanceTheme { FeedContent(context, snapshot, avatars) } }
+    }
+
+    /**
+     * Avatars have to exist before the composition runs — it draws once and
+     * cannot wait on a download. Keyed by picture URL, so two notes from one
+     * author cost one fetch; both lists are loaded so switching the source is
+     * a recompose, not a refetch. Every author gets a bitmap: the picture cut
+     * to a circle, or a circle tinted to their pubkey.
+     */
+    private suspend fun loadAvatars(
+        context: Context,
+        notes: List<VaultSnapshot.SnapshotNote>,
+    ): Map<String, Bitmap> {
+        val urls = notes.mapNotNull { it.authorPicture }.distinct().take(AVATAR_FETCH_LIMIT)
+        val pictures = WidgetImages.load(
+            context,
+            urls.map { WidgetImages.Source(id = it, url = it) },
+            maxPixel = AVATAR_PIXELS * 2,
+            remoteLimit = AVATAR_FETCH_LIMIT,
+        )
+        val out = mutableMapOf<String, Bitmap>()
+        for (note in notes) {
+            if (note.author in out) continue
+            val picture = note.authorPicture?.let { pictures[it] }
+            out[note.author] = picture?.let { WidgetImages.square(it, AVATAR_PIXELS, circle = true) }
+                ?: WidgetImages.fallback(note.author, AVATAR_PIXELS, circle = true, strong = 0.9f, weak = 0.45f)
+        }
+        return out
+    }
+
+    companion object {
+        private const val AVATAR_PIXELS = 64
+        private const val AVATAR_FETCH_LIMIT = 16
     }
 }
 
@@ -128,34 +175,111 @@ class FeedReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = FeedWidget()
 }
 
+/**
+ * One text size for the whole widget — author, age, body, header. Mixing sizes
+ * in a box this small reads as clutter; weight and colour carry the hierarchy
+ * (iOS FeedGlanceView.textSize).
+ */
+private val FEED_TEXT = 12.sp
+private const val FEED_LINE_DP = 15f
+private const val FEED_HEADER_DP = 26f
+private val FEED_PAD = 12.dp
+
 @Composable
-private fun FeedContent(context: Context, snapshot: VaultSnapshot) {
+private fun FeedContent(
+    context: Context,
+    snapshot: VaultSnapshot,
+    avatars: Map<String, Bitmap>,
+    mentions: Boolean = false,
+    bodyLines: Int = 2,
+    showAvatars: Boolean = true,
+) {
+    val notes = if (mentions) snapshot.mentions else snapshot.feed
+    val size = LocalSize.current
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
             .background(WidgetTheme.Background)
-            .padding(12.dp),
+            .padding(FEED_PAD)
+            .clickable(openApp(context, if (mentions) "mentions" else "feed")),
     ) {
-        Row(modifier = GlanceModifier.fillMaxWidth()) {
-            Text("Feed", style = WidgetTheme.Title)
+        Row(modifier = GlanceModifier.fillMaxWidth().height(18.dp)) {
+            Text(if (mentions) "Mentions" else "Following", style = WidgetTheme.Title)
             Spacer(GlanceModifier.defaultWeight())
             Text(freshness(snapshot.updatedAt), style = WidgetTheme.Caption)
         }
         Spacer(GlanceModifier.height(8.dp))
-        if (snapshot.feed.isEmpty()) {
-            Text("Open the app to fill this in", style = WidgetTheme.Caption)
-            return@Column
-        }
-        snapshot.feed.take(4).forEach { note ->
-            Column(
-                modifier = GlanceModifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp)
-                    .clickable(openApp(context, "note/${note.id}")),
-            ) {
-                Text(note.displayName, style = WidgetTheme.Caption)
-                Text(note.text.take(90), style = WidgetTheme.Body, maxLines = 2)
+        when {
+            snapshot.updatedAt <= 0L -> {
+                Text("Open Nostr Vault to load your feed", style = WidgetTheme.Caption)
+                return@Column
             }
+            notes.isEmpty() -> {
+                Text(if (mentions) "No recent mentions" else "No recent notes", style = WidgetTheme.Caption)
+                return@Column
+            }
+        }
+        val plan = FeedLayout.plan(
+            availableHeight = size.height.value - FEED_PAD.value * 2,
+            headerHeight = FEED_HEADER_DP,
+            rowHeight = FEED_LINE_DP * (1 + bodyLines),
+            minSpacing = 6f,
+            maxSpacing = 18f,
+            noteCount = notes.size,
+        )
+        val now = System.currentTimeMillis()
+        notes.take(plan.rows).forEachIndexed { index, note ->
+            if (index > 0) Spacer(GlanceModifier.height(plan.spacing.dp))
+            NoteRow(context, note, avatars[note.author].takeIf { showAvatars }, bodyLines, now)
+        }
+    }
+}
+
+@Composable
+private fun NoteRow(
+    context: Context,
+    note: VaultSnapshot.SnapshotNote,
+    avatar: Bitmap?,
+    bodyLines: Int,
+    now: Long,
+) {
+    Row(
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .clickable(openApp(context, "note/${note.id}")),
+        verticalAlignment = Alignment.Top,
+    ) {
+        if (avatar != null) {
+            Image(
+                provider = ImageProvider(avatar),
+                contentDescription = null,
+                modifier = GlanceModifier.size(20.dp),
+            )
+            Spacer(GlanceModifier.width(7.dp))
+        }
+        Column(modifier = GlanceModifier.defaultWeight()) {
+            Row {
+                Text(
+                    note.displayName,
+                    maxLines = 1,
+                    style = TextStyle(
+                        color = ColorProvider(WidgetTheme.Primary),
+                        fontSize = FEED_TEXT,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                )
+                Spacer(GlanceModifier.width(4.dp))
+                Text(
+                    shortAge(note.createdAt, now),
+                    maxLines = 1,
+                    style = TextStyle(color = ColorProvider(WidgetTheme.Secondary), fontSize = FEED_TEXT),
+                )
+            }
+            Text(
+                note.text,
+                maxLines = bodyLines,
+                style = TextStyle(color = ColorProvider(WidgetTheme.Primary.copy(alpha = 0.82f)), fontSize = FEED_TEXT),
+            )
         }
     }
 }

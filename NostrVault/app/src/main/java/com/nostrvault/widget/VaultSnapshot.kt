@@ -49,6 +49,8 @@ data class VaultSnapshot(
         val displayName: String,
         val text: String,
         val createdAt: Long,
+        /** The author's profile picture, fetched and shrunk by the feed widget's provider. */
+        val authorPicture: String? = null,
     )
 
     /**
