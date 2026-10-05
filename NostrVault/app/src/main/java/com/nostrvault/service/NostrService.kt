@@ -6,6 +6,7 @@ import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.local.ProfileRepository
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.NIP10Thread
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.GlobalSearchResults
 import com.nostrvault.data.model.SearchTermMatcher
@@ -1142,6 +1143,47 @@ class NostrService @Inject constructor(
         tags: List<List<String>> = emptyList(),
         password: String? = null,
         forceOwner: Boolean = false,
+        lockedTo: PostingAccount.Lock? = null,
+    ): NostrEvent? {
+        // With [lockedTo], refuse to sign unless that account is still the
+        // active one, and refuse the result unless it carries its key.
+        if (lockedTo != null) requireStillPostingAs(lockedTo, eventPubkey = null)
+        val event = signEventRouted(kind, content, tags, forceOwner)
+        if (lockedTo != null && event != null) requireStillPostingAs(lockedTo, eventPubkey = event.pubkey)
+        return event
+    }
+
+    /**
+     * The account active right now, for `signEventAsync(lockedTo:)`. Take it
+     * when Post is tapped, before any upload.
+     */
+    fun lockPostingAccount(): PostingAccount.Lock {
+        val cfg = configStore.config.value
+        return PostingAccount.Lock(npub = PostingAccount.resolve(cfg.activeAccountNpub, cfg.ownerNpub), hex = activeHexPubkey)
+    }
+
+    /**
+     * Throws [PostingAccount.AccountChangedException] unless [lock] is still
+     * the active account and, once signed, [eventPubkey] is its key.
+     */
+    fun requireStillPostingAs(lock: PostingAccount.Lock, eventPubkey: String?) {
+        val cfg = configStore.config.value
+        val ok = if (eventPubkey == null) {
+            PostingAccount.resolve(cfg.activeAccountNpub, cfg.ownerNpub) == lock.npub
+        } else {
+            PostingAccount.signedAsLocked(lock, cfg.activeAccountNpub, cfg.ownerNpub, eventPubkey)
+        }
+        if (!ok) {
+            Log.w(TAG, "account changed while posting – locked=${lock.npub.take(20)} signed=${eventPubkey?.take(8)}; not publishing")
+            throw PostingAccount.AccountChangedException()
+        }
+    }
+
+    private suspend fun signEventRouted(
+        kind: Int,
+        content: String,
+        tags: List<List<String>>,
+        forceOwner: Boolean,
     ): NostrEvent? = withContext(Dispatchers.IO) {
         val signingMode = configStore.config.value.activeSigningMode()
         Log.d(TAG, "signEventAsync: kind=$kind signingMode=$signingMode bridgeLoaded=${com.nostrvault.relay.HavenBridge.isLoaded}")
@@ -1185,7 +1227,9 @@ class NostrService @Inject constructor(
                     pubkey = if (forceOwner) ownerHexPubkey else activeHexPubkey,
                 )
                 ensureBunkerConnected()
-                val signed = gatedIfBackground(kind) { NIP46Service.signEvent(eventJson) }
+                val signed = gatedIfBackground(kind) {
+                    NIP46Service.signEvent(eventJson, userInitiated = kind in NIP46Service.userActionKinds)
+                }
                     ?: throw IllegalStateException("NIP-46 remote signer failed")
                 return@withContext requireSignedAsRequested(eventJson, parseSignedEvent(signed), "NIP-46 signer")
             }

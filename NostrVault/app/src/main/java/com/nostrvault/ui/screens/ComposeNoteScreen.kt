@@ -54,6 +54,7 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.MediaUploadOutcomeMessage
 import com.nostrvault.data.model.NIP10Thread
 import com.nostrvault.data.model.NoteTagging
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.QueuedMediaPost
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.BlobDescriptor
@@ -784,6 +785,11 @@ class ComposeNoteViewModel @Inject constructor(
         val text = _content.value.trim()
         if (text.isBlank() && _attachments.value.isEmpty()) return
 
+        // The account this note is for, locked now: the signer reads whichever
+        // account is active when it signs, after the media upload, and the
+        // account can change in between (see PostingAccount).
+        val lock = nostrService.lockPostingAccount()
+
         viewModelScope.launch {
             _isPublishing.value = true
             _error.value = null
@@ -857,7 +863,7 @@ class ComposeNoteViewModel @Inject constructor(
                     // from, minus the media lines (URLs carry no nostr: refs).
                     tags.addAll(extractMentionPTags(baseContent + (quoteSuffix ?: ""), tags))
                     val queued = QueuedMediaPost(
-                        accountNpub = configStore.config.value.activeOrOwnerNpub(),
+                        accountNpub = lock.npub,
                         body = baseContent,
                         media = queuedMedia,
                         quoteSuffix = quoteSuffix,
@@ -896,9 +902,14 @@ class ComposeNoteViewModel @Inject constructor(
                 // 2d. NIP-92 `imeta`, one per uploaded attachment, in content order.
                 tags.addAll(NoteTagging.imetaTags(mediaDescriptors))
 
-                // 3. Sign and publish
-                val event = nostrService.signEventAsync(kind = eventKind, content = finalContent, tags = tags)
+                // 3. Sign and publish — but not as an account switched to during
+                // the upload: that would ask the new account's signer to sign it.
+                val event = nostrService.signEventAsync(kind = eventKind, content = finalContent, tags = tags, lockedTo = lock)
                 if (event != null) {
+                    // Checked again here, on the main thread in the same turn that
+                    // hands the note to PendingPostManager, so no switch can slip
+                    // in between the check and the hand-off.
+                    nostrService.requireStillPostingAs(lock, eventPubkey = event.pubkey)
                     // Optimistic insert: inject the note immediately so the thread
                     // view shows it before relay confirmation (mirrors iOS behavior).
                     feedService.emitOptimisticNote(
@@ -929,6 +940,23 @@ class ComposeNoteViewModel @Inject constructor(
                     Log.e("ComposeNote", "signEventAsync returned null for kind=$eventKind")
                     _error.value = "Failed to sign note"
                 }
+            } catch (e: PostingAccount.AccountChangedException) {
+                // Keep the note: save it as a draft now (the debounced autosave
+                // may not have run), and show a banner in case the switch closed
+                // this screen.
+                if (text.isNotBlank()) {
+                    draftService.saveDraft(
+                        Draft(
+                            id = draftId,
+                            content = convertMentionsToNostr(text),
+                            replyToId = replyToNoteId,
+                            quoteId = quoteCitedId(),
+                        )
+                    )
+                }
+                val message = if (text.isNotBlank()) PostingAccount.NOTE_MESSAGE else PostingAccount.MESSAGE
+                notificationManager.showError(message)
+                _error.value = message
             } catch (e: Exception) {
                 Log.e("ComposeNote", "publish failed", e)
                 _error.value = e.message ?: "Failed to publish"
