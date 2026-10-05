@@ -2341,7 +2341,7 @@ fun DashboardScreen(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "Dashboard",
+                            text = "Relay",
                             color = PrimaryText,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,

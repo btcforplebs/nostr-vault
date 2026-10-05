@@ -425,7 +425,7 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             val result = zapSendService.zapNote(pk, pk, DEFAULT_ZAP_SATS)
             _toast.value = result.fold(
-                onSuccess = { "Zapped $DEFAULT_ZAP_SATS sats ⚡️" },
+                onSuccess = { "Zapped $DEFAULT_ZAP_SATS sats" },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )
         }
@@ -440,7 +440,7 @@ class ProfileViewModel @Inject constructor(
             _toast.value = result.fold(
                 onSuccess = {
                     ZapFlight.launch(noteId)
-                    "Zapped $DEFAULT_ZAP_SATS sats ⚡️"
+                    "Zapped $DEFAULT_ZAP_SATS sats"
                 },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )

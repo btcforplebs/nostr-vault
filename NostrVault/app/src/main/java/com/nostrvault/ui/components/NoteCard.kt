@@ -280,10 +280,10 @@ fun NoteCard(
             }
         } else {
             onReport?.let {
-                add(NoteAction(NostrVaultIcons.Alert, "Report", destructive = true, onClick = it))
+                add(NoteAction(NostrVaultIcons.Alert, "Report Post", destructive = true, onClick = it))
             }
             onBlock?.let {
-                add(NoteAction(NostrVaultIcons.Blocked, "Block", destructive = true, onClick = it))
+                add(NoteAction(NostrVaultIcons.Blocked, "Block User", destructive = true, onClick = it))
             }
         }
     }

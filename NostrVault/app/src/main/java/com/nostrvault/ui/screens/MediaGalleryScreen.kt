@@ -735,7 +735,7 @@ fun MediaGalleryScreen(
                                     },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Paste") },
+                                    text = { Text("Magic Paste") },
                                     leadingIcon = {
                                         Icon(
                                             androidx.compose.material.icons.Icons.Filled.ContentPaste,
@@ -1244,20 +1244,6 @@ private fun MediaItemContextMenu(
                 },
             )
         }
-        DropdownMenuItem(
-            text = { Text(if (is404) "Remove from 404" else "Mark as 404") },
-            leadingIcon = {
-                Icon(NostrVaultIcons.Alert, contentDescription = null, modifier = Modifier.size(20.dp))
-            },
-            onClick = {
-                if (is404) {
-                    mediaCacheService.unmarkNotFound(item.displayUrl)
-                } else {
-                    mediaCacheService.markNotFound(item.displayUrl)
-                }
-                onDismiss()
-            },
-        )
         if (!item.isLocal) {
             DropdownMenuItem(
                 text = { Text(if (backup.busy) "Saving…" else "Save to Vault") },
@@ -1284,6 +1270,22 @@ private fun MediaItemContextMenu(
                 },
             )
         }
+        // Order as iOS: saving and mirroring, then Mark as 404, then deletes.
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text(if (is404) "Remove from 404" else "Mark as 404") },
+            leadingIcon = {
+                Icon(NostrVaultIcons.Alert, contentDescription = null, modifier = Modifier.size(20.dp))
+            },
+            onClick = {
+                if (is404) {
+                    mediaCacheService.unmarkNotFound(item.displayUrl)
+                } else {
+                    mediaCacheService.markNotFound(item.displayUrl)
+                }
+                onDismiss()
+            },
+        )
         // Each asks for confirmation first, as in the viewer.
         HorizontalDivider()
         DropdownMenuItem(

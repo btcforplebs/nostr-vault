@@ -86,6 +86,8 @@ internal fun MarketplaceGrid(
     onNeedProfiles: (List<String>) -> Unit,
     onAppear: () -> Unit,
     followSetIsEmpty: Boolean = false,
+    scopeFollowing: Boolean = false,
+    onShowGlobal: () -> Unit = {},
 ) {
     val colors = LocalNostrVaultColors.current
     // Switching modes loads too, but a launch that restores Marketplace as the
@@ -96,10 +98,12 @@ internal fun MarketplaceGrid(
             if (isLoading) {
                 CircularProgressIndicator(color = colors.primary)
             } else {
-                EmptyFeedPlaceholder(
+                ScopedEmptyPlaceholder(
                     FeedMode.MARKETPLACE,
+                    scopeFollowing = scopeFollowing,
                     onRefresh = onRefresh,
-                    subtitleOverride = if (followSetIsEmpty) "You don't follow anyone yet. Tap the globe for everyone's listings" else null,
+                    onShowGlobal = onShowGlobal,
+                    subtitleOverride = if (followSetIsEmpty) "You don't follow anyone yet. Switch to Global to see every listing." else null,
                 )
             }
         }

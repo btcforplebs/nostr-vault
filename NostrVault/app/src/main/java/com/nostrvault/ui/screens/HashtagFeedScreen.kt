@@ -289,7 +289,7 @@ class HashtagFeedViewModel @Inject constructor(
             _toast.value = result.fold(
                 onSuccess = {
                     ZapFlight.launch(noteId)
-                    "Zapped $DEFAULT_ZAP_SATS sats ⚡️"
+                    "Zapped $DEFAULT_ZAP_SATS sats"
                 },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )

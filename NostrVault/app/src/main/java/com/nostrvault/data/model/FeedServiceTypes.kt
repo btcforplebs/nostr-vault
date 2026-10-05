@@ -520,7 +520,7 @@ data class FeedProfile(
 
 enum class FeedMode(val displayName: String) {
     FOLLOWING("Following"),
-    DISCOVERY("Discovery"),
+    DISCOVERY("Discover"),
     GLOBAL("Global"),
     POPULAR("Popular"),
     MEDIA("Media"),

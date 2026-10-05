@@ -563,7 +563,7 @@ class FeedViewModel @Inject constructor(
             zapSendService.zapNote(note.effectiveEventId, note.pubkey, amount).fold(
                 onSuccess = {
                     ZapFlight.launch(note.effectiveEventId)
-                    _zapMessage.emit("Zapped ⚡$amount sats")
+                    _zapMessage.emit("Zapped $amount sats")
                 },
                 onFailure = { e -> _zapMessage.emit(e.message ?: "Zap failed") },
             )
