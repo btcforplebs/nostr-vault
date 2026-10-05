@@ -1270,23 +1270,8 @@ private fun MediaItemContextMenu(
                 },
             )
         }
-        // Order as iOS: saving and mirroring, then Mark as 404, then deletes.
-        HorizontalDivider()
-        DropdownMenuItem(
-            text = { Text(if (is404) "Remove from 404" else "Mark as 404") },
-            leadingIcon = {
-                Icon(NostrVaultIcons.Alert, contentDescription = null, modifier = Modifier.size(20.dp))
-            },
-            onClick = {
-                if (is404) {
-                    mediaCacheService.unmarkNotFound(item.displayUrl)
-                } else {
-                    mediaCacheService.markNotFound(item.displayUrl)
-                }
-                onDismiss()
-            },
-        )
-        // Each asks for confirmation first, as in the viewer.
+        // Order as iOS: saving and mirroring, then the deletes (each asks
+        // for confirmation first, as in the viewer), then Mark as 404.
         HorizontalDivider()
         DropdownMenuItem(
             text = { Text("Delete from mirrors", color = ErrorRed) },
@@ -1306,6 +1291,21 @@ private fun MediaItemContextMenu(
             onClick = {
                 onDismiss()
                 onDelete(DeleteScope.EVERYWHERE)
+            },
+        )
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text(if (is404) "Remove from 404" else "Mark as 404") },
+            leadingIcon = {
+                Icon(NostrVaultIcons.Alert, contentDescription = null, modifier = Modifier.size(20.dp))
+            },
+            onClick = {
+                if (is404) {
+                    mediaCacheService.unmarkNotFound(item.displayUrl)
+                } else {
+                    mediaCacheService.markNotFound(item.displayUrl)
+                }
+                onDismiss()
             },
         )
     }
