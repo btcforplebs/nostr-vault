@@ -123,6 +123,8 @@ struct VaultView: View {
     @State var zapReceiptsFetchGeneration: Int?
 
     // Static regex pattern to avoid recompilation
+    /// Scroll target for tapping the Relay tab again.
+    static let topAnchor = "vaultTop"
     nonisolated static let hexPattern = try! NSRegularExpression(pattern: "[a-f0-9]{64}", options: .caseInsensitive)
 
 
@@ -394,8 +396,10 @@ struct VaultView: View {
         ZStack {
             Color.platformWindowBackground.ignoresSafeArea()
 
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id(Self.topAnchor)
                     listContent
 
                     if !displayNotes.isEmpty || !displayLikedNotes.isEmpty {
@@ -417,6 +421,16 @@ struct VaultView: View {
                 refreshAll(.incremental)
             }
             .scrollDirectionTracking(feedService: feedService)
+            // Tapping the Relay tab again: back to the list from a note, or
+            // up to the top, as the Feed tab does.
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RelayScrollToTop"))) { _ in
+                if !navigationPath.isEmpty {
+                    navigationPath = NavigationPath()
+                } else {
+                    withAnimation(Motion.scrollJump) { proxy.scrollTo(Self.topAnchor, anchor: .top) }
+                }
+            }
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             ChromeFold(anchor: .bottomTrailing) {

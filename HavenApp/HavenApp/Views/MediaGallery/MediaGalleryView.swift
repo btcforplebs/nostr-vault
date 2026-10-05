@@ -20,6 +20,8 @@ struct MediaGalleryView: View {
     // MARK: - State
 
     @State var navigationPath = NavigationPath()
+    /// Scroll target for tapping the Media tab again.
+    static let topAnchor = "mediaTop"
     @State var selectedMedia: MediaItem? = nil
     @State var initialLoad = false
     @State var mediaSourceFilter: MediaSourceFilter = .all
@@ -195,8 +197,10 @@ struct MediaGalleryView: View {
         ZStack {
             Color.platformWindowBackground.ignoresSafeArea()
 
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id(Self.topAnchor)
                     listContent
 
                     if !displayMedia.isEmpty {
@@ -215,6 +219,16 @@ struct MediaGalleryView: View {
                 refreshAll()
             }
             .scrollDirectionTracking(feedService: feedService)
+            // Tapping the Media tab again: back to the grid from a pushed
+            // view, or up to the top, as the Feed tab does.
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("MediaScrollToTop"))) { _ in
+                if !navigationPath.isEmpty {
+                    navigationPath = NavigationPath()
+                } else {
+                    withAnimation(Motion.scrollJump) { proxy.scrollTo(Self.topAnchor, anchor: .top) }
+                }
+            }
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             ChromeFold(anchor: .bottomTrailing) {
