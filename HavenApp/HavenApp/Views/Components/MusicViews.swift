@@ -1389,6 +1389,12 @@ struct PlayerSheet: View {
             LiveStreamPlayerView(stream: stream)
                 .environmentObject(NostrService.shared)
                 .environmentObject(ConfigService.shared)
+                // The window paused the small player to play its own video.
+                // Swiped away, the stream carries on in the small player
+                // rather than going silent.
+                .onDisappear {
+                    if player.current?.isLive == true, !player.isPlaying { player.resume() }
+                }
         } else {
             NowPlayingView()
         }
