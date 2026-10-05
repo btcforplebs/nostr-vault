@@ -124,6 +124,8 @@ fun BottomNavBar(
     condensedActionTint: Color? = null,
     onCondensedAction: () -> Unit = {},
     onExpand: () -> Unit = {},
+    /** Left of the avatar in the folded bar: music's now-playing disc (iOS CollapsedNowPlayingButton). */
+    nowPlaying: @Composable () -> Unit = {},
     /** Hold the Feed tab and slide to a feed (iOS #239). Null keeps it a plain tab. */
     onPickFeedMode: ((FeedMode) -> Unit)? = null,
 ) {
@@ -175,6 +177,7 @@ fun BottomNavBar(
                     onAction = onCondensedAction,
                     onExpand = onExpand,
                     onAccountSwitcher = onAccountSwitcher,
+                    nowPlaying = nowPlaying,
                     modifier = Modifier.blockedWhen(!folded),
                 )
             },
@@ -319,6 +322,7 @@ private fun CondensedNavCluster(
     onAction: () -> Unit,
     onExpand: () -> Unit,
     onAccountSwitcher: () -> Unit,
+    nowPlaying: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -330,6 +334,9 @@ private fun CondensedNavCluster(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Music or a minimized live stream: play/pause, left of the avatar.
+        nowPlaying()
+
         // Avatar — tap to expand the bar, long-press to switch accounts.
         Box(
             modifier = Modifier

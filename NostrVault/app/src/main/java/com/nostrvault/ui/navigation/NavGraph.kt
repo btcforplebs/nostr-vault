@@ -4,6 +4,9 @@ import androidx.compose.ui.graphics.TransformOrigin
 import com.nostrvault.ui.components.ThreadZoomOrigin
 import com.nostrvault.ui.components.ZapFlightStage
 import com.nostrvault.ui.components.ScrollChrome
+import com.nostrvault.ui.components.blockedWhen
+import com.nostrvault.ui.components.chromeFold
+import com.nostrvault.ui.components.rememberChromeFolded
 import com.nostrvault.ui.components.rememberScrollChromeConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.animation.*
@@ -713,6 +716,15 @@ fun NostrVaultNavHost(
             }
         }
 
+        // Shared by the mini player and the folded bar's now-playing disc.
+        val musicActions = remember(navController) {
+            com.nostrvault.ui.screens.music.MusicActions(
+                onShare = { navController.navigate(Screen.ComposeNote.createRoute(text = it)) },
+                onOpenProfile = { navController.navigate(Screen.Profile.createRoute(it)) },
+                npubToHex = nostrService::npubToHex,
+            )
+        }
+
         // Floating bottom nav pill overlay
         if (showBottomBar) {
             // The bar reads the fold progress in layout and draw only, so a drag
@@ -792,6 +804,7 @@ fun NostrVaultNavHost(
                     condensedActionTint = condensedActionTint,
                     onCondensedAction = onCondensedAction,
                     onExpand = { ScrollChrome.expand(scope) },
+                    nowPlaying = { com.nostrvault.ui.screens.music.CollapsedNowPlayingButton(musicActions) },
                     onPickFeedMode = { mode ->
                         // The feed applies it (its ViewModel owns the mode),
                         // now or as soon as it is back on screen.
@@ -811,13 +824,9 @@ fun NostrVaultNavHost(
         // Music mini player: above the bottom bar on every tab while a song or
         // a live stream is loaded. On tabs with a floating button (Post,
         // Blossom, Relay) it stops short of it so the two share the row.
-        val musicActions = remember(navController) {
-            com.nostrvault.ui.screens.music.MusicActions(
-                onShare = { navController.navigate(Screen.ComposeNote.createRoute(text = it)) },
-                onOpenProfile = { navController.navigate(Screen.Profile.createRoute(it)) },
-                npubToHex = nostrService::npubToHex,
-            )
-        }
+        // Folds away with the bar and the floating button; the folded bar
+        // carries a small now-playing disc instead (iOS ChromeFold).
+        val miniFolded by rememberChromeFolded()
         com.nostrvault.ui.screens.music.MiniPlayerBar(
             actions = musicActions,
             modifier = Modifier
@@ -828,7 +837,9 @@ fun NostrVaultNavHost(
                     // sits level with it (FloatingButtonRow); the bar's own
                     // 12dp side inset already counts toward the gap.
                     end = (FloatingButtonRow.reservedWidth - 12.dp).coerceAtLeast(0.dp),
-                ),
+                )
+                .chromeFold()
+                .blockedWhen(miniFolded),
         )
 
         // The live player, over everything above (tab bar and mini player

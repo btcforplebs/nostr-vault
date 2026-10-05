@@ -9,18 +9,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,9 +32,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -45,8 +49,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import com.nostrvault.data.model.FeedMenuSettings
 import com.nostrvault.data.model.FeedMode
@@ -55,9 +57,16 @@ import com.nostrvault.ui.theme.NostrVaultIcons
 import com.nostrvault.ui.theme.PrimaryText
 import com.nostrvault.ui.theme.SecondaryGroupedBg
 import com.nostrvault.ui.theme.SecondaryText
+import com.nostrvault.ui.theme.SeparatorColor
 import com.nostrvault.ui.theme.WindowBackground
+import kotlinx.coroutines.launch
 
-private val RowHeight = 56.dp
+// iOS list rows are 44pt; these are 48dp, Android's touch minimum, with
+// iOS's icon and text sizes. Stacked full-width rows can't draw at 44 and
+// still each own 48 without overlapping their neighbours' targets.
+// Hairline separators inset to the text, as iOS.
+private val RowHeight = 48.dp
+private val SeparatorInset = 16.dp + 20.dp + 12.dp + 24.dp + 12.dp
 
 /**
  * Show, hide and reorder the feeds in the feed picker (iOS #303,
@@ -65,6 +74,7 @@ private val RowHeight = 56.dp
  * change is saved as it is made; [onSaved] gets the hidden feeds, so the
  * caller can leave a feed that was just hidden.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedMenuEditor(
     onSaved: (hidden: Set<FeedMode>) -> Unit,
@@ -90,14 +100,18 @@ fun FeedMenuEditor(
         return true
     }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .background(WindowBackground)
-                .statusBarsPadding()
-                .navigationBarsPadding(),
-        ) {
+    // A sheet, as on iOS (FeedView .sheet), not a full-screen page.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = WindowBackground,
+        contentColor = PrimaryText,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        dragHandle = null,
+    ) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
             Box(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp)) {
                 Text(
                     "Edit Feeds",
@@ -106,7 +120,12 @@ fun FeedMenuEditor(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.align(Alignment.Center),
                 )
-                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd)) {
+                // Slide down first, as a swipe or a tap outside does; leaving
+                // the composition at once would cut the sheet off mid-screen.
+                TextButton(
+                    onClick = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } },
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                ) {
                     Text("Done", color = colors.primary, fontWeight = FontWeight.SemiBold)
                 }
             }
@@ -123,7 +142,8 @@ fun FeedMenuEditor(
                         .clip(RoundedCornerShape(12.dp))
                         .background(SecondaryGroupedBg),
                 ) {
-                    for (mode in order) key(mode) {
+                    for ((index, mode) in order.withIndex()) key(mode) {
+                        val isLast = index == order.lastIndex
                         val isPinned = mode == FeedMenuSettings.PINNED
                         val isShown = isPinned || mode !in hidden
                         val isDragged = dragging == mode
@@ -138,6 +158,12 @@ fun FeedMenuEditor(
                                     shadowElevation = if (isDragged) 8.dp.toPx() else 0f
                                 }
                                 .background(SecondaryGroupedBg)
+                                .drawBehind {
+                                    if (!isLast && !isDragged) {
+                                        val y = size.height - 0.5.dp.toPx() / 2
+                                        drawLine(SeparatorColor, Offset(SeparatorInset.toPx(), y), Offset(size.width, y), 0.5.dp.toPx())
+                                    }
+                                }
                                 .clickable(enabled = !isPinned) {
                                     hidden = if (isShown) hidden + mode else hidden - mode
                                     save()
@@ -160,20 +186,22 @@ fun FeedMenuEditor(
                                 imageVector = if (isShown) NostrVaultIcons.CheckCircle else NostrVaultIcons.CircleOutline,
                                 contentDescription = null,
                                 tint = if (isShown && !isPinned) colors.primary else SecondaryText,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Icon(
-                                imageVector = mode.icon,
-                                contentDescription = null,
-                                tint = if (isShown) colors.primary else SecondaryText,
                                 modifier = Modifier.size(20.dp),
                             )
+                            Spacer(Modifier.width(12.dp))
+                            Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = mode.icon,
+                                    contentDescription = null,
+                                    tint = if (isShown) colors.primary else SecondaryText,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
                             Spacer(Modifier.width(12.dp))
                             Text(
                                 mode.displayName,
                                 color = if (isShown) PrimaryText else SecondaryText,
-                                fontSize = 16.sp,
+                                fontSize = 17.sp,
                                 modifier = Modifier.weight(1f),
                             )
                             // The handle takes the drag, so a tap anywhere
@@ -215,7 +243,7 @@ fun FeedMenuEditor(
                                     imageVector = NostrVaultIcons.DragHandle,
                                     contentDescription = null,
                                     tint = SecondaryText,
-                                    modifier = Modifier.size(22.dp),
+                                    modifier = Modifier.size(20.dp),
                                 )
                             }
                         }

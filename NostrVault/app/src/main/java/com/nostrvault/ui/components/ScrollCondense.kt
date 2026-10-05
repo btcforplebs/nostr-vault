@@ -245,6 +245,26 @@ fun Modifier.chromeFab(): Modifier = this.layout { measurable, constraints ->
 }
 
 /**
+ * Chrome that fades away with the bars and returns with them, shrinking a
+ * little toward its bottom-start corner: the music mini player, whose folded
+ * stand-in is the now-playing disc in the folded bar. iOS `ChromeFold`
+ * (anchor .bottomLeading).
+ */
+fun Modifier.chromeFold(): Modifier = this.layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val visible = ScrollChrome.fadeOut(ScrollChrome.progress)
+    layout(placeable.width, placeable.height) {
+        // Faded out entirely: not placed, so it takes no taps meant for the feed.
+        if (visible > 0f) placeable.placeRelativeWithLayer(0, 0) {
+            alpha = visible
+            transformOrigin = TransformOrigin(0f, 1f)
+            scaleX = 0.85f + 0.15f * visible
+            scaleY = 0.85f + 0.15f * visible
+        }
+    }
+}
+
+/**
  * The floating "New Posts" button's fold: it fades, shrinks toward its top
  * edge and rises [rise] back under the top bar as the bars fold, and returns
  * with them. Folded, a small pill in the top bar's row stands in for it
