@@ -997,9 +997,8 @@ struct ProfileView: View {
         )
     }
 
-    /// `trailing` (the zap pill) sits beside the copy button, not in its label:
-    /// inside it, the pill's own tap and long-press competed with the button's
-    /// click on macOS.
+    /// `trailing` (the zap pill) sits beside the copy button, not in its label,
+    /// so a click on the pill can only ever zap, never also copy the address.
     private func identityRow(label: String, value: String, icon: String, tint: Color, copied: Bool, trailing: AnyView, action: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
             Button(action: action) {
