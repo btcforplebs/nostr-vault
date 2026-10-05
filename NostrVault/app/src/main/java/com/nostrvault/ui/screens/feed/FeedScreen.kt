@@ -203,6 +203,15 @@ fun FeedScreen(
     // LazyColumn item's own `remember` is dropped when it scrolls out of view.
     val threadFolds = remember { mutableStateMapOf<String, Boolean>() }
 
+    // An artist or album opened from the full player on another feed:
+    // the Music feed comes up with the page open.
+    val musicReveal by com.nostrvault.ui.screens.music.MusicFeedState.revealRequested.collectAsState()
+    LaunchedEffect(musicReveal) {
+        if (!musicReveal) return@LaunchedEffect
+        com.nostrvault.ui.screens.music.MusicFeedState.consumeReveal()
+        if (feedMode != FeedMode.MUSIC) viewModel.setFeedMode(FeedMode.MUSIC)
+    }
+
     // Reset expanded note when feed mode or layout mode changes
     LaunchedEffect(feedMode, isCompact, isThreaded) {
         expandedNoteId = null

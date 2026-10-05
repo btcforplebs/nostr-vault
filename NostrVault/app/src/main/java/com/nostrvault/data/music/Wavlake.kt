@@ -1,6 +1,8 @@
 package com.nostrvault.data.music
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -35,11 +37,32 @@ data class WavlakeTrack(
     val msatTotal: String? = null,
     /** The artist's Nostr key, when they've linked one on Wavlake. */
     val artistNpub: String? = null,
+    val artistArtUrl: String? = null,
 ) {
     val pageUrl: String get() = "https://wavlake.com/track/$id"
     /** Sats earned, from Wavlake's millisat total. */
     val sats: Long? get() = msatTotal?.toLongOrNull()?.div(1000)
 }
+
+/** A Wavlake artist, as the music feed lists and opens them. iOS: WavlakeArtist. */
+@kotlinx.serialization.Serializable
+data class WavlakeArtist(
+    val id: String,
+    val name: String,
+    val artUrl: String? = null,
+    val npub: String? = null,
+)
+
+/** A Wavlake album, as an artist page lists it and an album page heads it. iOS: WavlakeAlbum. */
+data class WavlakeAlbum(
+    val id: String,
+    val title: String,
+    val artUrl: String? = null,
+    val artist: String? = null,
+    val artistId: String? = null,
+    /** Release year, from Wavlake's ISO release date. */
+    val year: Int? = null,
+)
 
 /** One row of a Wavlake search: a track, or an album or artist to open. */
 sealed class WavlakeSearchResult {
@@ -87,6 +110,7 @@ object WavlakeApi {
             duration = durationEl?.intOrNull ?: durationEl?.doubleOrNull?.toInt(),
             msatTotal = obj.str("msatTotal"),
             artistNpub = obj.str("artistNpub")?.takeIf { it.startsWith("npub1") },
+            artistArtUrl = obj.str("artistArtUrl"),
         )
     }
 
@@ -115,10 +139,48 @@ object WavlakeApi {
         return (album["tracks"] as? JsonArray)?.mapNotNull { (it as? JsonObject)?.let { t -> track(t, artist) } } ?: emptyList()
     }
 
-    /** The ids of an artist's albums, in the order Wavlake lists them. */
-    fun albumIdsFromArtist(body: String): List<String> {
+    /** An album row or heading: title, cover, artist and year. */
+    fun album(obj: JsonObject, artistFallback: String? = null): WavlakeAlbum? {
+        val id = obj.str("id") ?: return null
+        return WavlakeAlbum(
+            id = id,
+            title = obj.str("title") ?: obj.str("name") ?: "Untitled",
+            artUrl = obj.str("albumArtUrl"),
+            artist = obj.str("artist") ?: artistFallback,
+            artistId = obj.str("artistId"),
+            year = obj.str("releaseDate")?.take(4)?.toIntOrNull(),
+        )
+    }
+
+    /** An album page's heading. */
+    fun albumFromAlbum(body: String): WavlakeAlbum? = (parse(body) as? JsonObject)?.let { album(it) }
+
+    /**
+     * An artist's albums, newest release first. Wavlake lists them oldest
+     * first; undated albums go last, and same-day albums keep their order.
+     */
+    fun albumsFromArtist(body: String): List<WavlakeAlbum> {
         val artist = parse(body) as? JsonObject ?: return emptyList()
-        return (artist["albums"] as? JsonArray)?.mapNotNull { (it as? JsonObject)?.str("id") } ?: emptyList()
+        val name = artist.str("name")
+        val rows = (artist["albums"] as? JsonArray)?.mapNotNull { el ->
+            val row = el as? JsonObject ?: return@mapNotNull null
+            album(row, name)?.let { it to (row.str("releaseDate") ?: "") }
+        } ?: return emptyList()
+        // ISO dates sort as strings; sortedByDescending is stable.
+        return rows.sortedByDescending { it.second }.map { it.first }
+    }
+
+    /** An artist page's name, picture and Nostr key; only this endpoint carries the key. */
+    fun artistFromArtist(body: String, id: String): WavlakeArtist? {
+        val obj = parse(body) as? JsonObject ?: return null
+        val name = obj.str("name") ?: obj.str("title") ?: ""
+        if (name.isEmpty()) return null
+        return WavlakeArtist(
+            id = id,
+            name = name,
+            artUrl = obj.str("artistArtUrl"),
+            npub = obj.str("artistNpub")?.takeIf { it.startsWith("npub1") },
+        )
     }
 
     // ── Fetching ────────────────────────────────────────────────
@@ -130,12 +192,29 @@ object WavlakeApi {
         }
     }
 
-    suspend fun trending(): List<WavlakeTrack> = tracksFromRankings(fetch(rankingsUrl()))
+    /** Wavlake answers 1 to 90 days; anything longer is a 400. */
+    suspend fun trending(days: Int = 7): List<WavlakeTrack> = tracksFromRankings(fetch(rankingsUrl(days)))
     suspend fun search(term: String): List<WavlakeSearchResult> = resultsFromSearch(fetch(searchUrl(term)))
     suspend fun track(id: String): WavlakeTrack? = tracksFromRankings(fetch(trackUrl(id))).firstOrNull()
     suspend fun album(id: String): List<WavlakeTrack> = tracksFromAlbum(fetch(albumUrl(id)))
-    suspend fun artistTracks(id: String): List<WavlakeTrack> =
-        albumIdsFromArtist(fetch(artistUrl(id))).take(10).flatMap { runCatching { album(it) }.getOrDefault(emptyList()) }
+    suspend fun artist(id: String): WavlakeArtist? = artistFromArtist(fetch(artistUrl(id)), id)
+
+    /** An album's heading and tracks, from one request. */
+    suspend fun albumPage(id: String): Pair<WavlakeAlbum?, List<WavlakeTrack>> {
+        val body = fetch(albumUrl(id))
+        return albumFromAlbum(body) to tracksFromAlbum(body)
+    }
+
+    /** An artist's details and albums (newest first), from one request. */
+    suspend fun artistPage(id: String): Pair<WavlakeArtist?, List<WavlakeAlbum>> {
+        val body = fetch(artistUrl(id))
+        return artistFromArtist(body, id) to albumsFromArtist(body)
+    }
+
+    /** Every track on [albums], album by album in the order given; they load side by side, a failed one is left out. */
+    suspend fun tracksOnAlbums(albums: List<WavlakeAlbum>): List<WavlakeTrack> = kotlinx.coroutines.coroutineScope {
+        albums.map { a -> async { runCatching { album(a.id) }.getOrDefault(emptyList()) } }.awaitAll().flatten()
+    }
 }
 
 /** Wavlake links as they appear in Nostr posts. */

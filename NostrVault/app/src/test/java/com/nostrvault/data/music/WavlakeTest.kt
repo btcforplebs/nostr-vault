@@ -36,8 +36,37 @@ class WavlakeTest {
         assertEquals(200, tracks[0].duration)
     }
 
-    @Test fun artistAlbumIds() {
-        assertEquals(listOf("x", "y"), WavlakeApi.albumIdsFromArtist("""{"albums":[{"id":"x"},{"id":"y"},{"title":"none"}]}"""))
+    @Test fun artistAlbumsNewestFirstUndatedLast() {
+        val body = """{"name":"Rare Scrilla","artistArtUrl":"https://x/a.jpg","artistNpub":"npub1art","albums":[
+            {"id":"old","title":"Old","releaseDate":"2021-03-01T00:00:00.000Z","albumArtUrl":"https://x/o.jpg"},
+            {"id":"none","title":"Undated"},
+            {"id":"new","title":"New","releaseDate":"2024-07-04T00:00:00.000Z"},
+            {"id":"same","title":"Same day","releaseDate":"2024-07-04T00:00:00.000Z"},
+            {"title":"no id"}]}"""
+        val albums = WavlakeApi.albumsFromArtist(body)
+        assertEquals(listOf("new", "same", "old", "none"), albums.map { it.id })
+        assertEquals(2024, albums[0].year)
+        assertNull(albums[3].year)
+        // Album rows carry no artist; the artist page's name fills in.
+        assertEquals("Rare Scrilla", albums[2].artist)
+        assertEquals("https://x/o.jpg", albums[2].artUrl)
+
+        val artist = WavlakeApi.artistFromArtist(body, "a1")!!
+        assertEquals(WavlakeArtist("a1", "Rare Scrilla", "https://x/a.jpg", "npub1art"), artist)
+        assertNull(WavlakeApi.artistFromArtist("""{"albums":[]}""", "a1"))
+    }
+
+    @Test fun albumHeading() {
+        val body = """{"id":"al","title":"Sound Money","albumArtUrl":"https://x/c.jpg","artist":"Rare Scrilla","artistId":"a1","releaseDate":"2023-01-02","tracks":[]}"""
+        assertEquals(
+            WavlakeAlbum("al", "Sound Money", "https://x/c.jpg", "Rare Scrilla", "a1", 2023),
+            WavlakeApi.albumFromAlbum(body),
+        )
+    }
+
+    @Test fun trackCarriesArtistArt() {
+        val body = """[{"id":"t","title":"S","artist":"A","mediaUrl":"https://x/a.mp3","artistArtUrl":"https://x/p.jpg"}]"""
+        assertEquals("https://x/p.jpg", WavlakeApi.tracksFromRankings(body)[0].artistArtUrl)
     }
 
     @Test fun garbageIsEmpty() {

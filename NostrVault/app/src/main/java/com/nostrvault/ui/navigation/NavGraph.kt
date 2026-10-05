@@ -182,6 +182,15 @@ fun NostrVaultNavHost(
         snapshotFlow { ScrollChrome.isFolded }.collect { feedService.setFeedScrollingDown(it) }
     }
 
+    // An artist or album opened from the full player off the Feed tab: go
+    // back to the Feed tab, which switches to Music and shows the page.
+    val musicReveal by com.nostrvault.ui.screens.music.MusicFeedState.revealRequested.collectAsState()
+    LaunchedEffect(musicReveal) {
+        if (musicReveal && currentRoute != Screen.Feed.route) {
+            navController.popBackStack(Screen.Feed.route, inclusive = false)
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
