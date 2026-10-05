@@ -171,6 +171,7 @@ extension VaultView {
         walletGivenLoading = true
         walletGivenNotes = []
         walletGivenAmounts = [:]
+        walletGivenTimes = [:]
 
         Task {
             defer {
@@ -194,14 +195,19 @@ extension VaultView {
             guard walletGivenKey == key else { return }
             var notes: [NostrEvent] = []
             var amounts: [String: Int64] = [:]
+            var times: [String: Int64] = [:]
             for tx in sent.sorted(by: { $0.createdAt > $1.createdAt }) {
                 guard let postId = found.details[tx.id]?.postId,
                       let event = found.postEvents[postId] else { continue }
-                if amounts[postId] == nil { notes.append(event) }
+                if amounts[postId] == nil {
+                    notes.append(event)
+                    times[postId] = Int64(tx.createdAt.timeIntervalSince1970)
+                }
                 amounts[postId, default: 0] += Int64(tx.amountSats)
             }
             walletGivenNotes = notes
             walletGivenAmounts = amounts
+            walletGivenTimes = times
         }
     }
 

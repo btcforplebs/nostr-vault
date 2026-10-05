@@ -100,6 +100,8 @@ struct VaultView: View {
     @State var walletGivenNotes: [NostrEvent] = []
     /// Post id -> sats you paid it, from the same wallet history.
     @State var walletGivenAmounts: [String: Int64] = [:]
+    /// Post id -> when you last paid a zap on it (unix seconds).
+    @State var walletGivenTimes: [String: Int64] = [:]
     /// Account + wallet the wallet history was read for; nil until it was.
     @State var walletGivenKey: String?
     @State var walletGivenLoading = false
