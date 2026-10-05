@@ -105,6 +105,27 @@ object QuoteRef {
         return Coordinate(kind, parts[2], if (parts.size > 3) parts[3] else "")
     }
 
+    /**
+     * The coordinate of a NIP-53 live stream (kind 30311) that a web link
+     * points at: `zap.stream/naddr1…`, `shosho.live/live/naddr1…`,
+     * `njump.me/naddr1…`. Any host, because the naddr in the path is what names
+     * the stream; null for anything else. iOS:
+     * QuoteReference.liveStreamCoordinate(in:).
+     */
+    fun liveStreamCoordinate(url: String, decoder: Decoder): String? {
+        val afterScheme = url.substringAfter("://", missingDelimiterValue = "")
+        val path = afterScheme.substringAfter('/', missingDelimiterValue = "")
+            .substringBefore('?')
+            .substringBefore('#')
+        for (component in path.split('/')) {
+            val lower = component.lowercase()
+            if (!lower.startsWith("naddr1")) continue
+            val coordinate = decoder.naddrToCoordinate(lower) ?: continue
+            if (coordinate.kind == LiveStream.KIND) return format(coordinate)
+        }
+        return null
+    }
+
     private fun isHexEventId(value: String): Boolean =
         value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 }

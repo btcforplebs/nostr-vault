@@ -207,10 +207,9 @@ fun LiveStreamScreen(
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .imePadding()
-                    // The player is an overlay inside the feed screen, which
-                    // draws its own floating tab bar underneath everything
-                    // here — without this the message box sits behind it.
-                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 80.dp),
+                    // LiveStreamHost draws this above the floating tab bar, so
+                    // no room is kept for it.
+                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             ) {
                 OutlinedTextField(
                     value = chatInput,
@@ -357,7 +356,12 @@ class LiveStreamViewModel @Inject constructor(
     private val _sending = MutableStateFlow(false)
     val sending: StateFlow<Boolean> = _sending.asStateFlow()
 
-    fun join(stream: LiveStream) = liveChatService.join(stream)
+    fun join(stream: LiveStream) {
+        // One view model serves every stream opened (LiveStreamHost sits
+        // outside the nav graph), so the last stream's "Zapped" must not carry over.
+        _status.value = null
+        liveChatService.join(stream)
+    }
 
     fun leave() = liveChatService.leave()
 

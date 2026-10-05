@@ -439,7 +439,15 @@ private val trackCache = mutableMapOf<String, WavlakeTrack>()
  * the same way. iOS: WavlakeTrackCard.
  */
 @Composable
-fun WavlakeTrackCard(trackId: String, modifier: Modifier = Modifier) {
+fun WavlakeTrackCard(
+    trackId: String,
+    modifier: Modifier = Modifier,
+    /**
+     * The link this card replaced. The note text no longer shows it, so a
+     * track that fails to load falls back to it instead of vanishing.
+     */
+    fallbackUrl: String? = null,
+) {
     var track by remember(trackId) { mutableStateOf(trackCache[trackId]) }
     var failed by remember(trackId) { mutableStateOf(false) }
     val current by MusicPlayer.current.collectAsState()
@@ -452,7 +460,11 @@ fun WavlakeTrackCard(trackId: String, modifier: Modifier = Modifier) {
     }
     val t = track
     if (t == null) {
-        if (!failed) Box(modifier.fillMaxWidth().height(68.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.06f)))
+        if (!failed) {
+            Box(modifier.fillMaxWidth().height(68.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.06f)))
+        } else if (fallbackUrl != null) {
+            com.nostrvault.ui.components.LinkFallbackCard(fallbackUrl, modifier)
+        }
         return
     }
     val isCurrent = current?.id == t.id
