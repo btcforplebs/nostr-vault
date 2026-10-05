@@ -2048,6 +2048,9 @@ struct ProfileView: View {
             switch feedService.unfollowUser(pubkey) {
             case .success:
                 FollowNotificationManager.shared.add(recipientName: name, kind: .unfollowed)
+            case .failure(.contactsNotLoaded), .failure(.listUnavailable):
+                // Queued until the follow list is confirmed; not an error.
+                FollowNotificationManager.shared.addPending(pubkey: pubkey, recipientName: name, follow: false)
             case .failure(let err):
                 FollowNotificationManager.shared.add(recipientName: name, kind: .failed(unfollowErrorMessage(err)))
             }
@@ -2055,6 +2058,8 @@ struct ProfileView: View {
             switch feedService.followUser(pubkey) {
             case .success:
                 FollowNotificationManager.shared.add(recipientName: name, kind: .followed)
+            case .failure(.contactsNotLoaded), .failure(.listUnavailable):
+                FollowNotificationManager.shared.addPending(pubkey: pubkey, recipientName: name, follow: true)
             case .failure(let err):
                 FollowNotificationManager.shared.add(recipientName: name, kind: .failed(followErrorMessage(err)))
             }
@@ -2084,8 +2089,7 @@ struct ProfileView: View {
 
     private func followErrorMessage(_ err: FeedService.FollowActionError) -> String {
         switch err {
-        case .contactsNotLoaded: return "Following once your follow list loads…"
-        case .listUnavailable: return "Couldn't load your follow list. Not changing it."
+        case .contactsNotLoaded, .listUnavailable: return "Following once your follow list loads…"
         case .alreadyFollowing:  return "Already following"
         case .cannotUnfollowSelf: return "Follow failed"
         }
@@ -2093,8 +2097,7 @@ struct ProfileView: View {
 
     private func unfollowErrorMessage(_ err: FeedService.FollowActionError) -> String {
         switch err {
-        case .contactsNotLoaded:  return "Unfollowing once your follow list loads…"
-        case .listUnavailable:    return "Couldn't load your follow list. Not changing it."
+        case .contactsNotLoaded, .listUnavailable: return "Unfollowing once your follow list loads…"
         case .cannotUnfollowSelf: return "Can't unfollow yourself"
         case .alreadyFollowing:   return "Unfollow failed"
         }
