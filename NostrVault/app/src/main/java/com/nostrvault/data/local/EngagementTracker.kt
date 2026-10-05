@@ -46,11 +46,11 @@ object EngagementTracker {
      * Load interaction state from disk for the given account key.
      * Falls back to the legacy global file when no per-account file exists.
      */
-    fun loadInteractionState(forKey: String): Pair<Set<String>, Map<String, Int>> {
+    fun loadInteractionState(forKey: String, fallbackToLegacy: Boolean = true): Pair<Set<String>, Map<String, Int>> {
         val file = interactionStateFile(forKey)
 
         // Try per-account file
-        val state = loadFromFile(file) ?: loadFromFile(legacyFile)
+        val state = loadFromFile(file) ?: if (fallbackToLegacy) loadFromFile(legacyFile) else null
         return if (state != null) {
             state.likedEventIds to state.zappedEventIds
         } else {
