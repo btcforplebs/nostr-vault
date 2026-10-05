@@ -1386,15 +1386,11 @@ struct PlayerSheet: View {
 
     var body: some View {
         if player.current?.isLive == true, let stream = player.liveStream {
+            // The window shows the mini player's own video, so the stream
+            // plays straight through opening it and swiping it away.
             LiveStreamPlayerView(stream: stream)
                 .environmentObject(NostrService.shared)
                 .environmentObject(ConfigService.shared)
-                // The window paused the small player to play its own video.
-                // Swiped away, the stream carries on in the small player
-                // rather than going silent.
-                .onDisappear {
-                    if player.current?.isLive == true, !player.isPlaying { player.resume() }
-                }
         } else {
             NowPlayingView()
         }
