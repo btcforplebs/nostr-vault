@@ -111,6 +111,7 @@ struct FeedMediaViewer: View {
     /// server the user happens to list as a mirror is NOT their backup.
     @State private var isOnMirror: Bool = false
     @State private var isDeleting: Bool = false
+    @State private var pendingDelete: MediaDeleteScope?
     @State private var deleteStatus: DeleteStatus? = nil
     @State private var isCopied: Bool = false
     @State private var photosSave: PhotosSave = .idle
@@ -293,13 +294,13 @@ struct FeedMediaViewer: View {
                 if !isLoadingType && isDeleting {
                     HStack(spacing: 16) {
                         Button(role: .destructive) {
-                            deleteFromMirrorsTapped()
+                            pendingDelete = .mirrors
                         } label: {
                             Label("Delete from mirrors", systemImage: "trash")
                         }
 
                         Button(role: .destructive) {
-                            deleteEverywhereTapped()
+                            pendingDelete = .everywhere
                         } label: {
                             Label("Delete everywhere", systemImage: "trash.fill")
                         }
@@ -334,6 +335,12 @@ struct FeedMediaViewer: View {
 
             if let status = deleteStatus {
                 deleteStatusView(status)
+            }
+        }
+        .confirmMediaDelete($pendingDelete) { scope in
+            switch scope {
+            case .mirrors: deleteFromMirrorsTapped()
+            case .everywhere: deleteEverywhereTapped()
             }
         }
         .task(id: url) {

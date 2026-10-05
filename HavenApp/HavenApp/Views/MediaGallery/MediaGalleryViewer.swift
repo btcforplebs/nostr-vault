@@ -152,12 +152,12 @@ extension MediaGalleryView {
 
                         Menu {
                             Button(role: .destructive, action: {
-                                deleteMediaFromMirrors(item: item)
+                                pendingViewerDelete = .mirrors
                             }) {
                                 Label("Delete from mirrors", systemImage: "trash")
                             }
                             Button(role: .destructive, action: {
-                                deleteMediaEverywhere(item: item)
+                                pendingViewerDelete = .everywhere
                             }) {
                                 Label("Delete everywhere", systemImage: "trash.fill")
                             }
@@ -276,6 +276,12 @@ extension MediaGalleryView {
                     .foregroundColor(.secondary)
                     .padding(.bottom)
                     .opacity(max(0, 1.0 - (abs(dragOffset.height) / 100.0)))
+            }
+        }
+        .confirmMediaDelete($pendingViewerDelete) { scope in
+            switch scope {
+            case .mirrors: deleteMediaFromMirrors(item: item)
+            case .everywhere: deleteMediaEverywhere(item: item)
             }
         }
         .transition(.opacity)

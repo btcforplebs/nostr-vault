@@ -13,6 +13,7 @@ struct MediaGridItem: View {
     @EnvironmentObject var nostrService: NostrService
     @State private var isHovered = false
     @State private var showingReportDialog = false
+    @State private var pendingDelete: MediaDeleteScope?
     @State private var isMirroringToLocal = false
     @State private var isPushingToMirrors = false
     @State private var onPhone = false
@@ -118,16 +119,16 @@ struct MediaGridItem: View {
 
             if onDeleteFromMirrors != nil || onDeleteEverywhere != nil {
                 Menu {
-                    if let onDeleteFromMirrors = onDeleteFromMirrors {
+                    if onDeleteFromMirrors != nil {
                         Button(role: .destructive, action: {
-                            onDeleteFromMirrors(item)
+                            pendingDelete = .mirrors
                         }) {
                             Label("Delete from mirrors", systemImage: "trash")
                         }
                     }
-                    if let onDeleteEverywhere = onDeleteEverywhere {
+                    if onDeleteEverywhere != nil {
                         Button(role: .destructive, action: {
-                            onDeleteEverywhere(item)
+                            pendingDelete = .everywhere
                         }) {
                             Label("Delete everywhere", systemImage: "trash.fill")
                         }
@@ -168,6 +169,12 @@ struct MediaGridItem: View {
                 }) {
                     Label("Block User", systemImage: "hand.raised.fill")
                 }
+            }
+        }
+        .confirmMediaDelete($pendingDelete) { scope in
+            switch scope {
+            case .mirrors: onDeleteFromMirrors?(item)
+            case .everywhere: onDeleteEverywhere?(item)
             }
         }
         .sheet(isPresented: $showingReportDialog) {
