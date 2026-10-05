@@ -565,7 +565,8 @@ final class FeedHoldPicker: ObservableObject {
 
     /// Closest to the finger first: the list grows upward from the tab, so
     /// Following (the usual feed) sits right above it.
-    static let order: [FeedMode] = FeedMode.allCases.reversed()
+    /// In the reader's feed order (Edit Feeds), hidden feeds left out.
+    static var order: [FeedMode] { FeedMode.menuModes.reversed() }
 
     func mode(at point: CGPoint) -> FeedMode? {
         rowFrames.first { $0.value.insetBy(dx: -12, dy: 0).contains(point) }?.key
@@ -626,7 +627,7 @@ private struct FeedTabHoldItem: View {
         .accessibilityHint("Hold to pick a feed")
         .accessibilityAction { onTap() }
         .accessibilityActions {
-            ForEach(FeedMode.allCases, id: \.self) { mode in
+            ForEach(FeedMode.menuModes, id: \.self) { mode in
                 Button(mode.displayName) {
                     feedService.switchMode(mode)
                     if !selected { onTap() }
