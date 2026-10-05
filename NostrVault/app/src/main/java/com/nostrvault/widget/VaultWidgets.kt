@@ -3,6 +3,9 @@ package com.nostrvault.widget
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
@@ -13,9 +16,12 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
+import androidx.glance.appwidget.cornerRadius
+import androidx.glance.currentState
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
@@ -89,8 +95,16 @@ private fun PulseContent(context: Context, snapshot: VaultSnapshot) {
 // ── Quick actions ──────────────────────────────────────────────────────
 
 class QuickActionsWidget : GlanceAppWidget() {
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        provideContent { GlanceTheme { QuickActionsContent(context) } }
+        val snapshot = WidgetSnapshotStore.read(context)
+        provideContent {
+            GlanceTheme {
+                val config = QuickActionsConfig.from(currentState<Preferences>().asLookup())
+                QuickActionsContent(context, config, snapshot.unreadDMs)
+            }
+        }
     }
 }
 
@@ -98,32 +112,90 @@ class QuickActionsReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = QuickActionsWidget()
 }
 
+/**
+ * The chosen tiles (iOS QuickActionsView). A narrow widget shows the first
+ * two — four crammed into a 2-cell slot leaves tap targets too small to hit;
+ * a tall one lays four out two by two.
+ */
 @Composable
-private fun QuickActionsContent(context: Context) {
-    Row(
+private fun QuickActionsContent(context: Context, config: QuickActionsConfig, unreadDMs: Int) {
+    val size = LocalSize.current
+    val actions = if (size.width < 200.dp) config.slots.take(2) else config.slots
+    val rows = if (size.height >= 110.dp && actions.size > 2) actions.chunked(2) else listOf(actions)
+    Column(
         modifier = GlanceModifier
             .fillMaxSize()
             .background(WidgetTheme.Background)
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        listOf(
-            "Post" to "compose",
-            "Search" to "search",
-            "DMs" to "dms",
-            "Media" to "media",
-        ).forEach { (label, destination) ->
-            Column(
-                modifier = GlanceModifier
-                    .defaultWeight()
-                    .clickable(openApp(context, destination)),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(label, style = WidgetTheme.Title)
+        rows.forEachIndexed { r, row ->
+            if (r > 0) Spacer(GlanceModifier.height(8.dp))
+            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                row.forEachIndexed { i, action ->
+                    if (i > 0) Spacer(GlanceModifier.width(8.dp))
+                    ActionTile(
+                        context,
+                        action,
+                        badge = unreadDMs.takeIf { action == QuickAction.DMS && it > 0 },
+                        modifier = GlanceModifier.defaultWeight(),
+                    )
+                }
             }
         }
     }
 }
+
+@Composable
+private fun ActionTile(context: Context, action: QuickAction, badge: Int?, modifier: GlanceModifier) {
+    val tint = Color(action.tint)
+    Row(
+        modifier = modifier
+            .background(Color.White.copy(alpha = 0.06f))
+            .cornerRadius(13.dp)
+            .padding(horizontal = 9.dp, vertical = 8.dp)
+            .clickable(openApp(context, action.destination)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // The tint swatch stands in for iOS's SF Symbol: it is what tells the
+        // tiles apart at a glance.
+        Box(
+            modifier = GlanceModifier
+                .size(10.dp)
+                .background(tint)
+                .cornerRadius(5.dp),
+        ) {}
+        Spacer(GlanceModifier.width(7.dp))
+        Text(
+            action.label,
+            maxLines = 1,
+            style = TextStyle(
+                color = ColorProvider(WidgetTheme.Primary),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+            ),
+        )
+        if (badge != null) {
+            Spacer(GlanceModifier.width(5.dp))
+            Text(
+                if (badge > 99) "99+" else "$badge",
+                maxLines = 1,
+                style = TextStyle(
+                    color = ColorProvider(Color.White),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
+                modifier = GlanceModifier
+                    .background(Color(0xFFFF3B30))
+                    .cornerRadius(7.dp)
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+            )
+        }
+    }
+}
+
+/** Glance state as the string lookup WidgetConfig parses. */
+internal fun Preferences.asLookup(): (String) -> String? = { key -> this[stringPreferencesKey(key)] }
 
 // ── Feed ───────────────────────────────────────────────────────────────
 
@@ -134,7 +206,19 @@ class FeedWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val snapshot = WidgetSnapshotStore.read(context)
         val avatars = loadAvatars(context, snapshot.feed + snapshot.mentions)
-        provideContent { GlanceTheme { FeedContent(context, snapshot, avatars) } }
+        provideContent {
+            GlanceTheme {
+                val config = FeedConfig.from(currentState<Preferences>().asLookup())
+                FeedContent(
+                    context,
+                    snapshot,
+                    avatars,
+                    mentions = config.source == FeedSource.MENTIONS,
+                    bodyLines = config.density.bodyLines,
+                    showAvatars = config.showAvatars,
+                )
+            }
+        }
     }
 
     /**
@@ -190,9 +274,9 @@ private fun FeedContent(
     context: Context,
     snapshot: VaultSnapshot,
     avatars: Map<String, Bitmap>,
-    mentions: Boolean = false,
-    bodyLines: Int = 2,
-    showAvatars: Boolean = true,
+    mentions: Boolean,
+    bodyLines: Int,
+    showAvatars: Boolean,
 ) {
     val notes = if (mentions) snapshot.mentions else snapshot.feed
     val size = LocalSize.current

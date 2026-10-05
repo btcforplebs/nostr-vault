@@ -40,7 +40,7 @@
     <string name="retry">Retry</string>
     <string name="widget_pulse_description">Whether your vault is live, and how much it holds.</string>
     <string name="widget_actions_description">Post, search, messages and media in one tap.</string>
-    <string name="widget_feed_description">The last few notes from people you follow.</string>
+    <string name="widget_feed_description">Recent notes from your feed or your mentions.</string>
     <string name="widget_mosaic_label">Mosaic</string>
     <string name="widget_mosaic_description">Your Blossom media as a living grid.</string>
 </resources>

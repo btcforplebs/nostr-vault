@@ -144,6 +144,20 @@
         </receiver>
 
 
+        <!-- Widget settings (Quick Actions slots, Feed source/density/avatars,
+             Mosaic layout). Exported because the launcher starts it with
+             APPWIDGET_CONFIGURE; it can only change widget settings. -->
+        <activity
+            android:name=".widget.WidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.NostrVault">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <!-- Home-screen widgets (Glance). Each receiver names the provider XML
              that gives its size; the widget itself draws from the snapshot file
              the app publishes. -->

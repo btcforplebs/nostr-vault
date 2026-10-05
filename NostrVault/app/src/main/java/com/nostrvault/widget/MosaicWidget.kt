@@ -82,6 +82,7 @@ class MosaicWidget : GlanceAppWidget() {
                     snapshot = snapshot,
                     images = images,
                     filter = MosaicFilter.fromKey(prefs[FILTER_KEY]),
+                    config = MosaicConfig.from(prefs.asLookup()),
                 )
             }
         }
@@ -121,6 +122,7 @@ class MosaicFilterAction : ActionCallback {
 private val GAP = 4.dp
 private val PAD = 8.dp
 private val CHROME_HEIGHT = 26.dp
+private val STRIP = 44.dp
 
 @Composable
 private fun MosaicContent(
@@ -128,6 +130,7 @@ private fun MosaicContent(
     snapshot: VaultSnapshot,
     images: Map<String, Bitmap>,
     filter: MosaicFilter,
+    config: MosaicConfig,
 ) {
     val size = LocalSize.current
     // Small is too narrow for four chips and a paste button; it stays a pure
@@ -155,7 +158,11 @@ private fun MosaicContent(
                 Text(emptyMessage(snapshot, filter), style = WidgetTheme.Caption)
             }
         } else {
-            Grid(context, visible, images, gridWidth, gridHeight)
+            val corner = if (config.rounded) 8.dp else 0.dp
+            when (config.style) {
+                MosaicStyle.GRID -> Grid(context, visible, images, gridWidth, gridHeight, corner)
+                MosaicStyle.FEATURED -> Featured(context, visible, images, gridWidth, gridHeight, corner)
+            }
         }
     }
 }
@@ -167,6 +174,7 @@ private fun Grid(
     images: Map<String, Bitmap>,
     width: Dp,
     height: Dp,
+    corner: Dp,
 ) {
     val plan = MosaicGrid.plan(width.value, height.value, GAP.value)
     val shown = tiles.take(plan.capacity)
@@ -177,7 +185,41 @@ private fun Grid(
             Row {
                 row.forEachIndexed { i, item ->
                     if (i > 0) Spacer(GlanceModifier.width(GAP))
-                    images[item.id]?.let { Tile(context, item, it, tile, tile) }
+                    images[item.id]?.let { Tile(context, item, it, tile, tile, corner) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One large tile, and a strip of small ones under it when the widget is tall
+ * enough to spare the row (iOS MosaicView's featured style).
+ */
+@Composable
+private fun Featured(
+    context: Context,
+    tiles: List<VaultSnapshot.MediaTile>,
+    images: Map<String, Bitmap>,
+    width: Dp,
+    height: Dp,
+    corner: Dp,
+) {
+    val strip = MosaicGrid.featuredStripCount(width.value, height.value, STRIP.value, GAP.value)
+        .coerceAtMost(tiles.size - 1)
+    val heroHeight = if (strip > 0) height - STRIP - GAP else height
+    val hero = tiles.first()
+    Column {
+        images[hero.id]?.let { Tile(context, hero, it, width, heroHeight, corner) }
+        if (strip > 0) {
+            Spacer(GlanceModifier.height(GAP))
+            // Equal shares of the row rather than squares, so the strip always
+            // fits across and never pushes a tile off the edge.
+            val small = (width - GAP * (strip - 1)) / strip
+            Row {
+                tiles.drop(1).take(strip).forEachIndexed { i, item ->
+                    if (i > 0) Spacer(GlanceModifier.width(GAP))
+                    images[item.id]?.let { Tile(context, item, it, small, STRIP, corner) }
                 }
             }
         }
@@ -191,13 +233,14 @@ private fun Tile(
     bitmap: Bitmap,
     width: Dp,
     height: Dp,
+    corner: Dp,
 ) {
     // Every tile opens the Media tab, as on iOS: the widget's job is to get
     // you to your media, and the gallery is where an item can be acted on.
     Box(
         modifier = GlanceModifier
             .size(width, height)
-            .cornerRadius(8.dp)
+            .cornerRadius(corner)
             .clickable(openApp(context, "media")),
         contentAlignment = Alignment.Center,
     ) {

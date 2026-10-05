@@ -72,6 +72,8 @@ class WidgetPublisher @Inject constructor(
                 VaultPulseWidget().updateAll(context)
                 FeedWidget().updateAll(context)
                 MosaicWidget().updateAll(context)
+                // The DMs tile carries the unread badge.
+                QuickActionsWidget().updateAll(context)
             }.onFailure { Log.w(TAG, "widget redraw failed: ${it.message}") }
         }
     }
@@ -88,6 +90,7 @@ class WidgetPublisher @Inject constructor(
                 dmService.totalUnreadCountFlow,
                 nostrService.profiles,
             ) { notes, unread, profiles ->
+                val me = configStore.activeAccountHexPubkey.value
                 fun snap(note: FeedNote) = VaultSnapshot.SnapshotNote(
                     id = note.id,
                     author = note.pubkey,
@@ -106,6 +109,11 @@ class WidgetPublisher @Inject constructor(
                     // thread reads as an answer to a question the widget
                     // cannot show.
                     feed = notes.asSequence().filter { !it.isReply }.take(FEED_ITEMS).map(::snap).toList(),
+                    // Mentions keep replies: a reply to your note is the most
+                    // common way someone mentions you at all.
+                    mentions = notes.take(40)
+                        .filter { isMentionOf(me, it.pubkey, it.tags) }
+                        .take(FEED_ITEMS).map(::snap),
                     unreadDMs = unread,
                 )
             }
