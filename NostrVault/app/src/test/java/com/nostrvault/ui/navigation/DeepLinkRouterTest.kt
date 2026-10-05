@@ -34,7 +34,22 @@ class DeepLinkRouterTest {
         assertEquals(Screen.MediaGallery.route, route("nostrvault://media"))
         assertEquals(Screen.Wallet.route, route("nostrvault://wallet"))
         assertEquals(Screen.ComposeNote.createRoute(), route("nostrvault://compose"))
-        assertEquals(Screen.ComposeNote.createRoute(), route("nostrvault://mediapaste"))
+    }
+
+    @Test fun `mediapaste opens the Media tab with a paste request`() {
+        val target = DeepLinkRouter.fromUri("nostrvault://mediapaste", decoder)!!
+        assertEquals(Screen.MediaGallery.route, target.route)
+        assertEquals(true, target.mediaPaste)
+        assertEquals(false, DeepLinkRouter.fromUri("nostrvault://media", decoder)!!.mediaPaste)
+    }
+
+    @Test fun `clipboard paste prefers media, then a link`() {
+        assertEquals(ClipboardMedia.ContentUri("content://x/1"), ClipboardMedia.from("content://x/1", "https://a.example/b.jpg"))
+        assertEquals(ClipboardMedia.Link("https://a.example/b.jpg"), ClipboardMedia.from(null, "  https://a.example/b.jpg \n"))
+        assertEquals(ClipboardMedia.NotALink, ClipboardMedia.from(null, "hello there"))
+        assertEquals(ClipboardMedia.NotALink, ClipboardMedia.from(null, "ftp://a.example/b"))
+        assertEquals(ClipboardMedia.Empty, ClipboardMedia.from(null, "  "))
+        assertEquals(ClipboardMedia.Empty, ClipboardMedia.from(null, null))
     }
 
     @Test fun `bare scheme and trailing slash open the feed`() {

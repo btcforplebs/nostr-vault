@@ -358,10 +358,15 @@ class FeedViewModel @Inject constructor(
 
     fun fetchMissingNote(id: String) = feedService.fetchMissingNote(id)
 
+    /** Retry from "Could not load original note": asks again even if just given up on. */
+    fun retryMissingNote(id: String) = feedService.retryMissingNote(id)
+
     // ── Feed filter toggles (per-mode) ─────────────────────────
 
-    private val _autoLoadEnabled = MutableStateFlow(true)
-    val autoLoadEnabled: StateFlow<Boolean> = _autoLoadEnabled.asStateFlow()
+    /** Persisted, and the same value as Settings' "Auto-Load New Posts". */
+    val autoLoadEnabled: StateFlow<Boolean> = configStore.config
+        .map { it.autoLoadNewPosts }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.autoLoadNewPosts)
 
     val showReposts: StateFlow<Boolean> = feedService.showReposts
 
@@ -429,7 +434,7 @@ class FeedViewModel @Inject constructor(
     private val _showEngagementStats = MutableStateFlow(false)
     val showEngagementStats: StateFlow<Boolean> = _showEngagementStats.asStateFlow()
 
-    fun toggleAutoLoad() { _autoLoadEnabled.value = !_autoLoadEnabled.value }
+    fun toggleAutoLoad() { configStore.update { it.copy(autoLoadNewPosts = !it.autoLoadNewPosts) } }
     fun toggleShowReposts() { feedService.setShowReposts(!showReposts.value) }
     fun toggleShowReplies() { feedService.setShowReplies(!showReplies.value) }
     fun toggleShowEngagementStats() { _showEngagementStats.value = !_showEngagementStats.value }
@@ -506,6 +511,19 @@ class FeedViewModel @Inject constructor(
         }
     }
 
+    /** Feed videos play inline, muted, while on screen (Settings > Advanced > Autoplay Videos). */
+    val autoplayVideos: StateFlow<Boolean> = configStore.config
+        .map { it.autoplayVideos }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.autoplayVideos)
+
+    /** The bolt only shows with a wallet to pay from (iOS rowData.hasNWC). */
+    val hasWallet: StateFlow<Boolean> = configStore.config
+        .map { !it.nwcURI.isNullOrBlank() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), !configStore.config.value.nwcURI.isNullOrBlank())
+
+    /** One tap on the bolt: the default amount from Wallet settings, no sheet. */
+    fun quickZap(noteId: String) = zapNote(noteId, configStore.config.value.defaultZapAmount)
+
     fun zapNote(noteId: String, amount: Int = 21) {
         viewModelScope.launch {
             val note = feedService.findNote(noteId)
@@ -547,6 +565,13 @@ class FeedViewModel @Inject constructor(
     fun blockUser(pubkey: String) {
         viewModelScope.launch { feedService.blockUser(pubkey) }
     }
+
+    // Avatar quick menu (iOS FeedView avatar toolbar).
+    fun isFollowing(pubkey: String): Boolean = feedService.isFollowing(pubkey)
+    fun followUser(pubkey: String) { viewModelScope.launch { feedService.followUser(pubkey) } }
+    fun unfollowUser(pubkey: String) { viewModelScope.launch { feedService.unfollowUser(pubkey) } }
+    fun slowDownUser(pubkey: String) =
+        feedService.throttleUser(pubkey, com.nostrvault.ui.components.SLOW_DOWN_POSTS_PER_DAY)
 
     /** NIP-56 report. Also blocks the author, matching NoteDetail and iOS. */
     fun reportNote(noteId: String, pubkey: String, reason: String, description: String = "") {

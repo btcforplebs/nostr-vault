@@ -27,14 +27,27 @@ data class ArticleMeta(
     companion object {
         const val KIND = 30023
 
-        /**
-         * Reading time in minutes, rounded up, at 200 words per minute; null
-         * for an empty body. iOS: LongFormMetadata.readingTimeMinutes.
-         */
+        /** Minutes to read [body] at 200 words a minute, at least 1; null when empty. iOS LongFormMetadata. */
         fun readingTimeMinutes(body: String): Int? {
             val words = body.split(Regex("\\s+")).count { it.isNotEmpty() }
             if (words == 0) return null
             return maxOf(1, (words + 199) / 200)
+        }
+
+        /**
+         * What an article row says under its title: the author's summary, or
+         * else the top of the body with the Markdown stripped — never raw
+         * Markdown. iOS ArticleInlineBody.previewText.
+         */
+        fun previewText(summary: String?, body: String, limit: Int = 200): String? {
+            if (!summary.isNullOrBlank()) return summary
+            val plain = ArticleEngagement.plainText(body)
+                .lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && !it.matches(Regex("[-*_=]{3,}")) }
+                .joinToString(" ")
+            if (plain.isEmpty()) return null
+            return if (plain.length > limit) plain.take(limit).trimEnd() + "…" else plain
         }
 
         fun from(note: FeedNote): ArticleMeta {

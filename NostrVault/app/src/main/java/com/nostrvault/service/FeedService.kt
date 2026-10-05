@@ -2334,6 +2334,16 @@ class FeedService @Inject constructor(
         recomputeFilteredNotes()
     }
 
+    /**
+     * Slow an author down to [maxPosts] a day — the avatar menu's Slow down,
+     * the same per-account limit as Settings > Blocked — and re-filter now.
+     */
+    fun throttleUser(hexPubkey: String, maxPosts: Int) {
+        val npub = nostrService.hexToNpub(hexPubkey) ?: return
+        configStore.throttleProfile(npub, maxPosts)
+        recomputeFilteredNotes()
+    }
+
     fun unblockUser(hexPubkey: String) {
         val npub = nostrService.hexToNpub(hexPubkey) ?: return
         if (npub !in configStore.config.value.blockedForActiveAccount()) return
@@ -2613,6 +2623,16 @@ class FeedService @Inject constructor(
      * one REQ per relay instead of a socket fan-out each.
      */
     fun fetchMissingNote(id: String) = fetchMissingNotesBatch(listOf(id))
+
+    /**
+     * A user's Retry: forget that [id] was given up on, so the lookup runs now
+     * instead of waiting out [UNAVAILABLE_RETRY_MS]. iOS retryMissingNote.
+     */
+    fun retryMissingNote(id: String) {
+        unavailableSince.remove(id)
+        if (id in _unavailableNoteIds.value) _unavailableNoteIds.update { it - id }
+        fetchMissingNote(id)
+    }
 
     fun fetchMissingNotesBatch(ids: List<String>) {
         val now = System.currentTimeMillis()

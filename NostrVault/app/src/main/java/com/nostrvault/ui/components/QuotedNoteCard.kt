@@ -25,6 +25,7 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.MarketListing
 import com.nostrvault.data.model.QuoteRef
 import com.nostrvault.ui.theme.*
+import kotlinx.coroutines.delay
 
 /**
  * Embedded quoted note card, rendered below note content when a note
@@ -63,6 +64,14 @@ fun QuotedNoteCard(
     } else null
     if (listing != null) {
         com.nostrvault.ui.screens.feed.QuotedListingCard(listing, profile, modifier)
+        return
+    }
+    // A quoted live stream is something to watch, not text to read: the
+    // Live-tab tile, and a tap plays it rather than opening a thread (a stream
+    // event has none). iOS #172.
+    val stream = remember(note.id) { com.nostrvault.data.model.LiveStream.from(note) }
+    if (stream != null) {
+        LiveStreamEmbed(stream, modifier)
         return
     }
 
@@ -224,8 +233,28 @@ private fun QuotedArticleBody(meta: ArticleMeta) {
     }
 }
 
+/** How long a parent or quote skeleton waits before saying it could not load (iOS: 12 s). */
+internal const val PLACEHOLDER_TIMEOUT_MS = 12_000L
+
 /**
- * Placeholder for a quoted note that hasn't been fetched yet.
+ * True once [PLACEHOLDER_TIMEOUT_MS] has passed for [key] without the caller
+ * replacing the placeholder. A new [attempt] (Retry) starts the clock again.
+ */
+@Composable
+internal fun rememberPlaceholderTimedOut(key: Any, attempt: Int = 0): Boolean {
+    var timedOut by remember(key, attempt) { mutableStateOf(false) }
+    LaunchedEffect(key, attempt) {
+        delay(PLACEHOLDER_TIMEOUT_MS)
+        timedOut = true
+    }
+    return timedOut
+}
+
+/**
+ * Placeholder for a quoted note that hasn't been fetched yet. After
+ * [PLACEHOLDER_TIMEOUT_MS] it says "Quoted note unavailable" instead of
+ * skeleton-loading forever (iOS FeedView quoteFetchFailed). The real card
+ * still replaces it if the note turns up later.
  */
 @Composable
 fun QuotedNotePlaceholder(
@@ -233,6 +262,15 @@ fun QuotedNotePlaceholder(
     onClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (rememberPlaceholderTimedOut(identifier)) {
+        Text(
+            text = "Quoted note unavailable",
+            color = SecondaryText,
+            fontSize = 12.sp,
+            modifier = modifier.fillMaxWidth(),
+        )
+        return
+    }
     val colors = LocalNostrVaultColors.current
     // An unresolved naddr is a coordinate, not an event id, so handing it to
     // the note screen opens a route that can never load. Once it resolves the

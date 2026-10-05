@@ -105,6 +105,14 @@ fun SettingsScreen(
             }
             item {
                 SettingsItem(
+                    icon = NostrVaultIcons.DMs,
+                    title = "DM Relays",
+                    subtitle = "Where people send your DMs",
+                    onClick = { onNavigate(Screen.DMRelaysSettings) },
+                )
+            }
+            item {
+                SettingsItem(
                     icon = NostrVaultIcons.Blastr,
                     title = "Blastr",
                     subtitle = "Broadcast notes to public relays",

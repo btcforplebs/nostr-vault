@@ -51,6 +51,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.stateDescription
+import com.nostrvault.data.model.FeedMode
 import com.nostrvault.ui.components.AvatarImage
 import com.nostrvault.ui.components.glassPillBackground
 import com.nostrvault.ui.components.zapFlightOrigin
@@ -116,6 +123,8 @@ fun BottomNavBar(
     condensedActionTint: Color? = null,
     onCondensedAction: () -> Unit = {},
     onExpand: () -> Unit = {},
+    /** Hold the Feed tab and slide to a feed (iOS #239). Null keeps it a plain tab. */
+    onPickFeedMode: ((FeedMode) -> Unit)? = null,
 ) {
     val colors = LocalNostrVaultColors.current
     val isOled = LocalOledMode.current
@@ -150,6 +159,7 @@ fun BottomNavBar(
                     onNavigate = onNavigate,
                     onReselect = onReselect,
                     onAccountSwitcher = onAccountSwitcher,
+                    onPickFeedMode = onPickFeedMode,
                     modifier = Modifier.blockedWhen(folded),
                 )
                 CondensedNavCluster(
@@ -227,6 +237,7 @@ private fun ExpandedNavRow(
     onNavigate: (Screen) -> Unit,
     onReselect: (Screen) -> Unit,
     onAccountSwitcher: () -> Unit,
+    onPickFeedMode: ((FeedMode) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // The glass pill is drawn by BottomNavBar, behind both forms.
@@ -265,19 +276,21 @@ private fun ExpandedNavRow(
                     modifier = Modifier.weight(1f),
                 )
             } else {
+                val onTabClick = {
+                    if (selected) {
+                        onReselect(item.screen)
+                    } else {
+                        onNavigate(item.screen)
+                    }
+                }
                 NavTab(
                     icon = item.icon,
                     label = item.label,
                     selected = selected,
                     selectedColor = primaryColor,
                     showBadge = item.screen == Screen.Dashboard && hasNewRelayActivity,
-                    onClick = {
-                        if (selected) {
-                            onReselect(item.screen)
-                        } else {
-                            onNavigate(item.screen)
-                        }
-                    },
+                    onClick = onTabClick,
+                    holdToPick = if (item.screen == Screen.Feed) onPickFeedMode else null,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -384,19 +397,48 @@ private fun NavTab(
     selectedColor: Color,
     showBadge: Boolean = false,
     onClick: () -> Unit,
+    /** The Feed tab: hold to open the feed list, slide, let go to pick. */
+    holdToPick: ((FeedMode) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val pickerOpen = holdToPick != null && FeedTabPicker.isOpen
     val scale by animateFloatAsState(
-        targetValue = if (selected) 1.1f else 1.0f,
+        targetValue = if (pickerOpen) 1.18f else if (selected) 1.1f else 1.0f,
         animationSpec = Motion.control(),
         label = "tabScale",
     )
+    val haptic = LocalHapticFeedback.current
+    val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentPick by rememberUpdatedState(holdToPick)
+    val gesture = if (holdToPick != null) {
+        Modifier
+            .onGloballyPositioned { coords[0] = it }
+            .feedTabHold(
+                coordinates = { coords[0] },
+                haptic = haptic,
+                onTap = { currentOnClick() },
+                onPick = { mode -> currentPick?.invoke(mode) },
+            )
+            .semantics {
+                role = Role.Tab
+                onClick(label = null) { currentOnClick(); true }
+                stateDescription = FeedTabPicker.shownMode?.displayName ?: ""
+                // One action per feed, as iOS's accessibilityActions.
+                customActions = FeedMode.entries.map { mode ->
+                    CustomAccessibilityAction(mode.displayName) { currentPick?.invoke(mode); true }
+                }
+            }
+    } else {
+        Modifier
+            .semantics { role = Role.Tab }
+            .combinedClickableCompat(onClick = onClick)
+    }
 
     Column(
         modifier = modifier
             .clip(CircleShape)
-            .semantics { role = Role.Tab }
-            .combinedClickableCompat(onClick = onClick)
+            .then(gesture)
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),

@@ -54,6 +54,7 @@ import com.nostrvault.ui.screens.settings.AdvancedSettingsScreen
 import com.nostrvault.ui.screens.settings.AppearanceSettingsScreen
 import com.nostrvault.ui.screens.settings.BackupSettingsScreen
 import com.nostrvault.ui.screens.settings.BlastrSettingsScreen
+import com.nostrvault.ui.screens.settings.DMRelaysSettingsScreen
 import com.nostrvault.ui.screens.settings.BlockedSettingsScreen
 import com.nostrvault.ui.screens.settings.BlossomSettingsScreen
 import com.nostrvault.ui.screens.settings.FollowingBackupScreen
@@ -148,6 +149,7 @@ fun NostrVaultNavHost(
         target.accountNpub
             ?.takeIf { it != configStore.config.value.activeOrOwnerNpub() }
             ?.let { configStore.switchActiveAccount(it) }
+        if (target.mediaPaste) PendingMediaPaste.request()
         val focus = target.relayFocus
         if (focus == null) {
             navController.navigate(target.route) { launchSingleTop = true }
@@ -191,451 +193,496 @@ fun NostrVaultNavHost(
         }
     }
 
+    // A tapped #hashtag anywhere under the nav host opens that hashtag's feed
+    // (iOS `.hashtagLinks()`). The same tag already on top is left alone.
+    val openHashtag: (String) -> Unit = remember(navController) {
+        { raw ->
+            HashtagLink.normalize(raw)?.let { tag ->
+                val top = navController.currentBackStackEntry
+                val onTop = top?.destination?.route == Screen.HashtagFeed.route &&
+                    top.arguments?.getString("tag") == tag
+                if (!onTop) navController.navigate(Screen.HashtagFeed.createRoute(tag))
+            }
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
-        NavHost(
-            navController = navController,
-            startDestination = startDestination,
-            modifier = Modifier.fillMaxSize().nestedScroll(chromeConnection),
-            // Motion matched to the navigation type: lateral tab switches use a
-            // Material "fade-through" (fade + subtle scale), hierarchical pushes use
-            // "shared-axis Z" (zoom into/out of depth). See navMotion() below.
-            enterTransition = {
-                if (isTabSwitch()) fadeIn(tabMotion()) + scaleIn(initialScale = 0.92f, animationSpec = tabMotion())
-                else fadeIn(pushMotion()) + scaleIn(initialScale = 0.80f, animationSpec = pushMotion())
-            },
-            exitTransition = {
-                if (isTabSwitch()) fadeOut(tabMotion())
-                else fadeOut(pushMotion()) + scaleOut(targetScale = 1.10f, animationSpec = pushMotion())
-            },
-            popEnterTransition = {
-                if (isTabSwitch()) fadeIn(tabMotion()) + scaleIn(initialScale = 0.92f, animationSpec = tabMotion())
-                else fadeIn(pushMotion()) + scaleIn(initialScale = 1.10f, animationSpec = pushMotion())
-            },
-            popExitTransition = {
-                if (isTabSwitch()) fadeOut(tabMotion())
-                else fadeOut(pushMotion()) + scaleOut(targetScale = 0.80f, animationSpec = pushMotion())
-            },
-        ) {
-            // ── Setup ─────────────────────────────────────────────
-            composable(Screen.SetupWizard.route) {
-                SetupWizardScreen(
-                    onComplete = {
-                        navController.navigate(Screen.Feed.route) {
-                            popUpTo(Screen.SetupWizard.route) { inclusive = true }
-                        }
-                    },
-                )
-            }
-
-            // ── Bottom nav tabs ───────────────────────────────────
-            composable(Screen.Feed.route) {
-                FeedScreen(
-                    onNoteClick = { noteId ->
-                        navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                    },
-                    onArticleClick = { noteId ->
-                        navController.navigate(Screen.ArticleReader.createRoute(noteId))
-                    },
-                    onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
-                    },
-                    onMessageUser = { pubkey, draft ->
-                        navController.navigate(Screen.DMThread.createRoute(pubkey, draft))
-                    },
-                    onCompose = {
-                        navController.navigate(Screen.ComposeNote.createRoute())
-                    },
-                    onComposeMode = { kind ->
-                        navController.navigate(Screen.ModeCompose.createRoute(kind.route))
-                    },
-                    onComposeText = { text ->
-                        navController.navigate(Screen.ComposeNote.createRoute(text = text))
-                    },
-                    onReply = { noteId ->
-                        navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
-                    },
-                    onQuote = { noteId ->
-                        navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
-                    },
-                    onNavigateToSettings = {
-                        navController.navigate(Screen.Settings.route)
-                    },
-                )
-            }
-
-            composable(Screen.Search.route) {
-                SearchScreen(
-                    onNoteClick = { noteId ->
-                        navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                    },
-                    onArticleClick = { noteId ->
-                        navController.navigate(Screen.ArticleReader.createRoute(noteId))
-                    },
-                    onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
-                    },
-                    onReply = { noteId ->
-                        navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
-                    },
-                    onQuote = { noteId ->
-                        navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
-                    },
-                )
-            }
-
-            composable(Screen.MediaGallery.route) {
-                MediaGalleryScreen(
-                    feedService = feedService,
-                    onMediaClick = { index ->
-                        navController.navigate(Screen.MediaViewer.createRoute(index))
-                    },
-                    onNoteClick = { noteId ->
-                        navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                    },
-                    onBlossomClick = {
-                        navController.navigate(Screen.BlossomDashboard.route)
-                    },
-                )
-            }
-
-            composable(Screen.DMInbox.route) {
-                DMInboxScreen(
-                    onConversationClick = { pubkey ->
-                        navController.navigate(Screen.DMThread.createRoute(pubkey))
-                    },
-                    onNewMessage = {
-                        navController.navigate(Screen.NewMessage.createRoute())
-                    },
-                )
-            }
-
-            composable(
-                route = Screen.Profile.route,
-                arguments = listOf(navArgument("pubkey") { type = NavType.StringType }),
-            ) { entry ->
-                val pubkey = entry.arguments?.getString("pubkey") ?: return@composable
-                ProfileScreen(
-                    pubkey = pubkey,
-                    onNoteClick = { noteId ->
-                        navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                    },
-                    onArticleClick = { noteId ->
-                        navController.navigate(Screen.ArticleReader.createRoute(noteId))
-                    },
-                    onProfileClick = { pk ->
-                        navController.navigate(Screen.Profile.createRoute(pk))
-                    },
-                    onEditProfile = {
-                        navController.navigate(Screen.ProfileEdit.route)
-                    },
-                    onCompose = {
-                        navController.navigate(Screen.ComposeNote.createRoute())
-                    },
-                    onReply = { noteId ->
-                        navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
-                    },
-                    onQuote = { noteId ->
-                        navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
-                    },
-                    onNavigateToDMs = {
-                        navController.navigate(Screen.DMInbox.route)
-                    },
-                    onSell = {
-                        navController.navigate(Screen.ModeCompose.createRoute(com.nostrvault.ui.screens.ModeComposerKind.LISTING.route))
-                    },
-                    onNavigateToSettings = {
-                        navController.navigate(Screen.Settings.route)
-                    },
-                    onNavigateToDMThread = { pk ->
-                        navController.navigate(Screen.DMThread.createRoute(pk))
-                    },
-                    onMessageUser = { pk, draft ->
-                        navController.navigate(Screen.DMThread.createRoute(pk, draft))
-                    },
-                    onBack = { navController.popBackStack() },
-                )
-            }
-
-            // ── Detail screens ────────────────────────────────────
-            composable(
-                route = Screen.ArticleReader.route,
-                arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
+        CompositionLocalProvider(LocalOpenHashtag provides openHashtag) {
+            NavHost(
+                navController = navController,
+                startDestination = startDestination,
+                modifier = Modifier.fillMaxSize().nestedScroll(chromeConnection),
+                // Motion matched to the navigation type: lateral tab switches use a
+                // Material "fade-through" (fade + subtle scale), hierarchical pushes use
+                // "shared-axis Z" (zoom into/out of depth). See navMotion() below.
+                enterTransition = {
+                    if (isTabSwitch()) fadeIn(tabMotion()) + scaleIn(initialScale = 0.92f, animationSpec = tabMotion())
+                    else fadeIn(pushMotion()) + scaleIn(initialScale = 0.80f, animationSpec = pushMotion())
+                },
+                exitTransition = {
+                    if (isTabSwitch()) fadeOut(tabMotion())
+                    else fadeOut(pushMotion()) + scaleOut(targetScale = 1.10f, animationSpec = pushMotion())
+                },
+                popEnterTransition = {
+                    if (isTabSwitch()) fadeIn(tabMotion()) + scaleIn(initialScale = 0.92f, animationSpec = tabMotion())
+                    else fadeIn(pushMotion()) + scaleIn(initialScale = 1.10f, animationSpec = pushMotion())
+                },
+                popExitTransition = {
+                    if (isTabSwitch()) fadeOut(tabMotion())
+                    else fadeOut(pushMotion()) + scaleOut(targetScale = 0.80f, animationSpec = pushMotion())
+                },
             ) {
-                ArticleReaderScreen(
-                    onBack = { navController.popBackStack() },
-                    onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
-                    },
-                    onComment = { id ->
-                        navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = id))
-                    },
-                )
-            }
+                // ── Setup ─────────────────────────────────────────────
+                composable(Screen.SetupWizard.route) {
+                    SetupWizardScreen(
+                        onComplete = {
+                            navController.navigate(Screen.Feed.route) {
+                                popUpTo(Screen.SetupWizard.route) { inclusive = true }
+                            }
+                        },
+                    )
+                }
 
-            composable(
-                route = Screen.NoteDetail.route,
-                arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
-            ) { entry ->
-                val noteId = entry.arguments?.getString("noteId") ?: return@composable
-                NoteDetailScreen(
-                    noteId = noteId,
-                    onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
-                    },
-                    onNoteClick = { id ->
-                        navController.navigate(Screen.NoteDetail.createRoute(id))
-                    },
-                    onArticleClick = { id ->
-                        navController.navigate(Screen.ArticleReader.createRoute(id))
-                    },
-                    onReply = { id ->
-                        navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = id))
-                    },
-                    onQuote = { id ->
-                        navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = id))
-                    },
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                // ── Bottom nav tabs ───────────────────────────────────
+                composable(Screen.Feed.route) {
+                    FeedScreen(
+                        onNoteClick = { noteId ->
+                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
+                        },
+                        onArticleClick = { noteId ->
+                            navController.navigate(Screen.ArticleReader.createRoute(noteId))
+                        },
+                        onProfileClick = { pubkey ->
+                            navController.navigate(Screen.Profile.createRoute(pubkey))
+                        },
+                        onMessageUser = { pubkey, draft ->
+                            navController.navigate(Screen.DMThread.createRoute(pubkey, draft))
+                        },
+                        onCompose = {
+                            navController.navigate(Screen.ComposeNote.createRoute())
+                        },
+                        onComposeMode = { kind ->
+                            navController.navigate(Screen.ModeCompose.createRoute(kind.route))
+                        },
+                        onComposeText = { text ->
+                            navController.navigate(Screen.ComposeNote.createRoute(text = text))
+                        },
+                        onReply = { noteId ->
+                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
+                        },
+                        onQuote = { noteId ->
+                            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
+                        },
+                        onNavigateToSettings = {
+                            navController.navigate(Screen.Settings.route)
+                        },
+                    )
+                }
 
-            composable(
-                route = Screen.DMThread.route,
-                arguments = listOf(
-                    navArgument("pubkey") { type = NavType.StringType },
-                    navArgument("draft") { type = NavType.StringType; nullable = true; defaultValue = null },
-                ),
-            ) { entry ->
-                val pubkey = entry.arguments?.getString("pubkey") ?: return@composable
-                DMThreadScreen(
-                    counterpartyPubkey = pubkey,
-                    initialMessage = entry.arguments?.getString("draft"),
-                    onProfileClick = { pk ->
-                        navController.navigate(Screen.Profile.createRoute(pk))
-                    },
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.Search.route) {
+                    SearchScreen(
+                        onNoteClick = { noteId ->
+                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
+                        },
+                        onArticleClick = { noteId ->
+                            navController.navigate(Screen.ArticleReader.createRoute(noteId))
+                        },
+                        onProfileClick = { pubkey ->
+                            navController.navigate(Screen.Profile.createRoute(pubkey))
+                        },
+                        onReply = { noteId ->
+                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
+                        },
+                        onQuote = { noteId ->
+                            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
+                        },
+                    )
+                }
 
-            composable(
-                route = Screen.NewMessage.route,
-                arguments = listOf(
-                    navArgument("pubkey") { type = NavType.StringType; nullable = true; defaultValue = null },
-                ),
-            ) {
-                NewMessageScreen(
-                    onMessageSent = { recipientHex ->
-                        navController.navigate(Screen.DMThread.createRoute(recipientHex)) {
-                            popUpTo(Screen.NewMessage.route) { inclusive = true }
-                        }
-                    },
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.MediaGallery.route) {
+                    MediaGalleryScreen(
+                        feedService = feedService,
+                        onMediaClick = { index ->
+                            navController.navigate(Screen.MediaViewer.createRoute(index))
+                        },
+                        onNoteClick = { noteId ->
+                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
+                        },
+                        onBlossomClick = {
+                            navController.navigate(Screen.BlossomDashboard.route)
+                        },
+                    )
+                }
 
-            composable(
-                route = Screen.ComposeNote.route,
-                arguments = listOf(
-                    navArgument("replyTo") { type = NavType.StringType; nullable = true; defaultValue = null },
-                    navArgument("quoteTo") { type = NavType.StringType; nullable = true; defaultValue = null },
-                    navArgument("draftId") { type = NavType.StringType; nullable = true; defaultValue = null },
-                    navArgument("text") { type = NavType.StringType; nullable = true; defaultValue = null },
-                ),
-            ) { entry ->
-                ComposeNoteScreen(
-                    onPublished = { navController.popBackStack() },
-                    onBack = { navController.popBackStack() },
-                    onOpenDrafts = { navController.navigate(Screen.Drafts.route) },
-                )
-            }
+                composable(Screen.DMInbox.route) {
+                    DMInboxScreen(
+                        onConversationClick = { pubkey ->
+                            navController.navigate(Screen.DMThread.createRoute(pubkey))
+                        },
+                        onNewMessage = {
+                            navController.navigate(Screen.NewMessage.createRoute())
+                        },
+                    )
+                }
 
-            composable(
-                route = Screen.ModeCompose.route,
-                arguments = listOf(navArgument("kind") { type = NavType.StringType }),
-            ) {
-                ModeComposeScreen(onDone = { navController.popBackStack() })
-            }
+                composable(
+                    route = Screen.Profile.route,
+                    arguments = listOf(navArgument("pubkey") { type = NavType.StringType }),
+                ) { entry ->
+                    val pubkey = entry.arguments?.getString("pubkey") ?: return@composable
+                    ProfileScreen(
+                        pubkey = pubkey,
+                        onNoteClick = { noteId ->
+                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
+                        },
+                        onArticleClick = { noteId ->
+                            navController.navigate(Screen.ArticleReader.createRoute(noteId))
+                        },
+                        onProfileClick = { pk ->
+                            navController.navigate(Screen.Profile.createRoute(pk))
+                        },
+                        onEditProfile = {
+                            navController.navigate(Screen.ProfileEdit.route)
+                        },
+                        onCompose = {
+                            navController.navigate(Screen.ComposeNote.createRoute())
+                        },
+                        onReply = { noteId ->
+                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = noteId))
+                        },
+                        onQuote = { noteId ->
+                            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
+                        },
+                        onNavigateToDMs = {
+                            navController.navigate(Screen.DMInbox.route)
+                        },
+                        onSell = {
+                            navController.navigate(Screen.ModeCompose.createRoute(com.nostrvault.ui.screens.ModeComposerKind.LISTING.route))
+                        },
+                        onNavigateToSettings = {
+                            navController.navigate(Screen.Settings.route)
+                        },
+                        onNavigateToDMThread = { pk ->
+                            navController.navigate(Screen.DMThread.createRoute(pk))
+                        },
+                        onMessageUser = { pk, draft ->
+                            navController.navigate(Screen.DMThread.createRoute(pk, draft))
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.Drafts.route) {
-                DraftsScreen(
-                    onResumeDraft = { draftId, _, replyToId, quoteToId ->
-                        // Replace the composer this was opened from, rather than
-                        // stacking a second one behind it (matches iOS, which loads
-                        // the draft into the open composer). Popping Drafts as well
-                        // means Back from the resumed draft leaves the composer
-                        // entirely instead of landing on the list again.
-                        navController.navigate(
-                            Screen.ComposeNote.createRoute(
-                                replyToNoteId = replyToId,
-                                quoteToNoteId = quoteToId,
-                                draftId = draftId,
-                            )
-                        ) {
-                            popUpTo(Screen.ComposeNote.route) { inclusive = true }
-                        }
-                    },
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                // ── Detail screens ────────────────────────────────────
+                composable(
+                    route = Screen.ArticleReader.route,
+                    arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
+                ) {
+                    ArticleReaderScreen(
+                        onBack = { navController.popBackStack() },
+                        onProfileClick = { pubkey ->
+                            navController.navigate(Screen.Profile.createRoute(pubkey))
+                        },
+                        onComment = { id ->
+                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = id))
+                        },
+                    )
+                }
 
-            composable(Screen.ProfileEdit.route) {
-                ProfileEditScreen(
-                    onSaved = { navController.popBackStack() },
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(
+                    route = Screen.NoteDetail.route,
+                    arguments = listOf(navArgument("noteId") { type = NavType.StringType }),
+                ) { entry ->
+                    val noteId = entry.arguments?.getString("noteId") ?: return@composable
+                    NoteDetailScreen(
+                        noteId = noteId,
+                        onProfileClick = { pubkey ->
+                            navController.navigate(Screen.Profile.createRoute(pubkey))
+                        },
+                        onNoteClick = { id ->
+                            navController.navigate(Screen.NoteDetail.createRoute(id))
+                        },
+                        onArticleClick = { id ->
+                            navController.navigate(Screen.ArticleReader.createRoute(id))
+                        },
+                        onReply = { id ->
+                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = id))
+                        },
+                        onQuote = { id ->
+                            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = id))
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            // ── Wallet ────────────────────────────────────────────
-            composable(Screen.Wallet.route) {
-                WalletScreen(
-                    onBack = { navController.popBackStack() },
-                    onSweep = { navController.navigate(Screen.BitcoinSweep.route) },
-                    onNoteClick = { noteId ->
-                        navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                    },
-                )
-            }
+                composable(
+                    route = Screen.HashtagFeed.route,
+                    arguments = listOf(navArgument("tag") { type = NavType.StringType }),
+                ) {
+                    HashtagFeedScreen(
+                        onNoteClick = { id ->
+                            navController.navigate(Screen.NoteDetail.createRoute(id))
+                        },
+                        onArticleClick = { id ->
+                            navController.navigate(Screen.ArticleReader.createRoute(id))
+                        },
+                        onProfileClick = { pubkey ->
+                            navController.navigate(Screen.Profile.createRoute(pubkey))
+                        },
+                        onReply = { id ->
+                            navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = id))
+                        },
+                        onQuote = { id ->
+                            navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = id))
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.BitcoinSweep.route) {
-                BitcoinSweepScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(
+                    route = Screen.DMThread.route,
+                    arguments = listOf(
+                        navArgument("pubkey") { type = NavType.StringType },
+                        navArgument("draft") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    ),
+                ) { entry ->
+                    val pubkey = entry.arguments?.getString("pubkey") ?: return@composable
+                    DMThreadScreen(
+                        counterpartyPubkey = pubkey,
+                        initialMessage = entry.arguments?.getString("draft"),
+                        onProfileClick = { pk ->
+                            navController.navigate(Screen.Profile.createRoute(pk))
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            // ── Settings ──────────────────────────────────────────
-            composable(Screen.Settings.route) {
-                SettingsScreen(
-                    onNavigate = { screen -> navController.navigate(screen.route) },
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(
+                    route = Screen.NewMessage.route,
+                    arguments = listOf(
+                        navArgument("pubkey") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    ),
+                ) {
+                    NewMessageScreen(
+                        onMessageSent = { recipientHex ->
+                            navController.navigate(Screen.DMThread.createRoute(recipientHex)) {
+                                popUpTo(Screen.NewMessage.route) { inclusive = true }
+                            }
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.AppearanceSettings.route) {
-                AppearanceSettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(
+                    route = Screen.ComposeNote.route,
+                    arguments = listOf(
+                        navArgument("replyTo") { type = NavType.StringType; nullable = true; defaultValue = null },
+                        navArgument("quoteTo") { type = NavType.StringType; nullable = true; defaultValue = null },
+                        navArgument("draftId") { type = NavType.StringType; nullable = true; defaultValue = null },
+                        navArgument("text") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    ),
+                ) { entry ->
+                    ComposeNoteScreen(
+                        onPublished = { navController.popBackStack() },
+                        onBack = { navController.popBackStack() },
+                        onOpenDrafts = { navController.navigate(Screen.Drafts.route) },
+                    )
+                }
 
-            composable(Screen.AccountSettings.route) {
-                AccountSettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(
+                    route = Screen.ModeCompose.route,
+                    arguments = listOf(navArgument("kind") { type = NavType.StringType }),
+                ) {
+                    ModeComposeScreen(onDone = { navController.popBackStack() })
+                }
 
-            composable(Screen.BlockedSettings.route) {
-                BlockedSettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.Drafts.route) {
+                    DraftsScreen(
+                        onResumeDraft = { draftId, _, replyToId, quoteToId ->
+                            // Replace the composer this was opened from, rather than
+                            // stacking a second one behind it (matches iOS, which loads
+                            // the draft into the open composer). Popping Drafts as well
+                            // means Back from the resumed draft leaves the composer
+                            // entirely instead of landing on the list again.
+                            navController.navigate(
+                                Screen.ComposeNote.createRoute(
+                                    replyToNoteId = replyToId,
+                                    quoteToNoteId = quoteToId,
+                                    draftId = draftId,
+                                )
+                            ) {
+                                popUpTo(Screen.ComposeNote.route) { inclusive = true }
+                            }
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.AdvancedSettings.route) {
-                AdvancedSettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.ProfileEdit.route) {
+                    ProfileEditScreen(
+                        onSaved = { navController.popBackStack() },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.ImportSettings.route) {
-                ImportSettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                // ── Wallet ────────────────────────────────────────────
+                composable(Screen.Wallet.route) {
+                    WalletScreen(
+                        onBack = { navController.popBackStack() },
+                        onSweep = { navController.navigate(Screen.BitcoinSweep.route) },
+                        onNoteClick = { noteId ->
+                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
+                        },
+                    )
+                }
 
-            composable(Screen.SearchRelaySettings.route) {
-                SearchRelaySettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.BitcoinSweep.route) {
+                    BitcoinSweepScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.BackupSettings.route) {
-                BackupSettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                // ── Settings ──────────────────────────────────────────
+                composable(Screen.Settings.route) {
+                    SettingsScreen(
+                        onNavigate = { screen -> navController.navigate(screen.route) },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.RelayListEditor.route) {
-                RelayListEditorScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.AppearanceSettings.route) {
+                    AppearanceSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.BlastrSettings.route) {
-                BlastrSettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.AccountSettings.route) {
+                    AccountSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.BlossomSettings.route) {
-                BlossomSettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.BlockedSettings.route) {
+                    BlockedSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.PowSettings.route) {
-                PowSettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.AdvancedSettings.route) {
+                    AdvancedSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.FollowingBackup.route) {
-                FollowingBackupScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.ImportSettings.route) {
+                    ImportSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.NotificationSettings.route) {
-                NotificationSettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.SearchRelaySettings.route) {
+                    SearchRelaySettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.HavenRelaySettings.route) {
-                HavenRelaySettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.BackupSettings.route) {
+                    BackupSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            // ── Dashboard ─────────────────────────────────────────
-            composable(Screen.Dashboard.route) {
-                DashboardScreen(
-                    onNavigate = { screen -> navController.navigate(screen.route) },
-                    onNoteClick = { noteId ->
-                        navController.navigate(Screen.NoteDetail.createRoute(noteId))
-                    },
-                    onArticleClick = { noteId ->
-                        navController.navigate(Screen.ArticleReader.createRoute(noteId))
-                    },
-                    onProfileClick = { pubkey ->
-                        navController.navigate(Screen.Profile.createRoute(pubkey))
-                    },
-                    logStore = logStore,
-                    feedService = feedService,
-                )
-            }
+                composable(Screen.RelayListEditor.route) {
+                    RelayListEditorScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.BlossomDashboard.route) {
-                BlossomDashboardScreen(
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.BlastrSettings.route) {
+                    BlastrSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Screen.LogViewer.route) {
-                val currentLogs by logStore.logs.collectAsState()
-                LogViewerScreen(
-                    logs = currentLogs,
-                    onBack = { navController.popBackStack() },
-                )
-            }
+                composable(Screen.DMRelaysSettings.route) {
+                    DMRelaysSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
 
-            // ── Media viewer ──────────────────────────────────────
-            composable(
-                route = Screen.MediaViewer.route,
-                arguments = listOf(navArgument("index") { type = NavType.IntType }),
-            ) { entry ->
-                val index = entry.arguments?.getInt("index") ?: 0
-                MediaViewerScreen(
-                    initialIndex = index,
-                    onBack = { navController.popBackStack() },
-                    autoplayVideos = config.autoplayVideos,
-                )
+                composable(Screen.BlossomSettings.route) {
+                    BlossomSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Screen.PowSettings.route) {
+                    PowSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Screen.FollowingBackup.route) {
+                    FollowingBackupScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Screen.NotificationSettings.route) {
+                    NotificationSettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Screen.HavenRelaySettings.route) {
+                    HavenRelaySettingsScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                // ── Dashboard ─────────────────────────────────────────
+                composable(Screen.Dashboard.route) {
+                    DashboardScreen(
+                        onNavigate = { screen -> navController.navigate(screen.route) },
+                        onNoteClick = { noteId ->
+                            navController.navigate(Screen.NoteDetail.createRoute(noteId))
+                        },
+                        onArticleClick = { noteId ->
+                            navController.navigate(Screen.ArticleReader.createRoute(noteId))
+                        },
+                        onProfileClick = { pubkey ->
+                            navController.navigate(Screen.Profile.createRoute(pubkey))
+                        },
+                        logStore = logStore,
+                        feedService = feedService,
+                    )
+                }
+
+                composable(Screen.BlossomDashboard.route) {
+                    BlossomDashboardScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Screen.LogViewer.route) {
+                    val currentLogs by logStore.logs.collectAsState()
+                    LogViewerScreen(
+                        logs = currentLogs,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                // ── Media viewer ──────────────────────────────────────
+                composable(
+                    route = Screen.MediaViewer.route,
+                    arguments = listOf(navArgument("index") { type = NavType.IntType }),
+                ) { entry ->
+                    val index = entry.arguments?.getInt("index") ?: 0
+                    MediaViewerScreen(
+                        initialIndex = index,
+                        onBack = { navController.popBackStack() },
+                        autoplayVideos = config.autoplayVideos,
+                    )
+                }
             }
         }
 
@@ -717,6 +764,18 @@ fun NostrVaultNavHost(
                     condensedActionTint = condensedActionTint,
                     onCondensedAction = onCondensedAction,
                     onExpand = { ScrollChrome.expand(scope) },
+                    onPickFeedMode = { mode ->
+                        // The feed applies it (its ViewModel owns the mode),
+                        // now or as soon as it is back on screen.
+                        FeedTabPicker.request.value = mode
+                        if (currentRoute != Screen.Feed.route) {
+                            navController.navigate(Screen.Feed.route) {
+                                popUpTo(Screen.Feed.route) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    },
                 )
             }
         }
@@ -741,6 +800,12 @@ fun NostrVaultNavHost(
                 ),
         )
 
+        // The live player, over everything above (tab bar and mini player
+        // included) rather than on a nav route: it needs the LiveStream object
+        // it was opened with, and a route argument would mean re-resolving a
+        // replaceable event that may already be gone.
+        com.nostrvault.ui.components.LiveStreamHost()
+
         // Pending post countdown banner
         PendingPostBanner(
             pendingPostManager = pendingPostManager,
@@ -754,6 +819,22 @@ fun NostrVaultNavHost(
             notificationManager = notificationManager,
             modifier = Modifier.align(Alignment.TopCenter),
         )
+
+        // Hold-the-Feed-tab list: over everything, the bar included.
+        if (showBottomBar) {
+            FeedTabPickerOverlay(
+                onPick = { mode ->
+                    FeedTabPicker.request.value = mode
+                    if (currentRoute != Screen.Feed.route) {
+                        navController.navigate(Screen.Feed.route) {
+                            popUpTo(Screen.Feed.route) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                },
+            )
+        }
 
         // Zap flights cross the whole window, so they're drawn above it all.
         ZapFlightStage()

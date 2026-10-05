@@ -81,6 +81,14 @@ object HavenBridge {
      */
     external fun requestRelaySync()
 
+    /**
+     * Re-run the copy from the Mac relay and its missing-events check; the
+     * result lands in mac_sync_status.json. Non-blocking, coalesced, and a
+     * no-op without a Mac relay or when the relay is not running.
+     * Maps to Go: RequestMacSyncCheckC()
+     */
+    external fun requestMacSyncCheck()
+
     // -----------------------------------------------------------------------
     // Database operations
     // -----------------------------------------------------------------------

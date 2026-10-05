@@ -16,6 +16,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.QueuedMediaPost
+import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaPostQueue
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
@@ -35,7 +36,21 @@ class BlossomSettingsViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
     private val mediaPostQueue: MediaPostQueue,
+    private val blossomService: BlossomService,
 ) : ViewModel() {
+
+    /** The shared mirror-from-servers run (Mirror Now, dashboard, auto-mirror). */
+    val mirrorRun: StateFlow<BlossomService.MirrorRun> = blossomService.mirrorRun
+
+    fun mirrorNow() { blossomService.runMirror() }
+
+    private val _autoMirror = MutableStateFlow(configStore.config.value.autoMirrorMedia)
+    val autoMirror = _autoMirror.asStateFlow()
+
+    fun setAutoMirror(enabled: Boolean) {
+        _autoMirror.value = enabled
+        configStore.update { it.copy(autoMirrorMedia = enabled) }
+    }
 
     /** Posts whose media is on this device but on no outside server yet. */
     val waitingPosts: StateFlow<List<QueuedMediaPost>> = mediaPostQueue.posts
@@ -109,7 +124,18 @@ fun BlossomSettingsScreen(
     val macRelayHttps by viewModel.macRelayHttps.collectAsState()
     val publishStatus by viewModel.publishStatus.collectAsState()
     val waitingPosts by viewModel.waitingPosts.collectAsState()
+    val mirrorRun by viewModel.mirrorRun.collectAsState()
+    val autoMirror by viewModel.autoMirror.collectAsState()
     val colors = LocalNostrVaultColors.current
+    val offlineCopies: @Composable () -> Unit = {
+        OfflineCopiesSection(
+            run = mirrorRun,
+            hasMirrors = mirrors.isNotEmpty() || !macRelayHttps.isNullOrBlank(),
+            autoMirror = autoMirror,
+            onMirrorNow = viewModel::mirrorNow,
+            onAutoMirrorChange = viewModel::setAutoMirror,
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -269,6 +295,7 @@ fun BlossomSettingsScreen(
                 ) {
                     Text("No additional mirrors configured", color = SecondaryText, fontSize = 15.sp)
                 }
+                offlineCopies()
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(mirrors) { mirror ->
@@ -282,8 +309,88 @@ fun BlossomSettingsScreen(
                             modifier = Modifier.padding(start = 16.dp),
                         )
                     }
+                    item { offlineCopies() }
                 }
             }
+        }
+    }
+}
+
+/**
+ * "Offline Copies": Mirror from Servers (Mirror Now) and the Auto-Mirror
+ * Media switch, as in iOS BlossomSettingsView.
+ */
+@Composable
+private fun OfflineCopiesSection(
+    run: BlossomService.MirrorRun,
+    hasMirrors: Boolean,
+    autoMirror: Boolean,
+    onMirrorNow: () -> Unit,
+    onAutoMirrorChange: (Boolean) -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "OFFLINE COPIES",
+            color = SecondaryText,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Mirror from Servers", color = PrimaryText, fontSize = 15.sp)
+                Text(
+                    text = when {
+                        run.running -> run.status
+                        run.lastResult.isNotEmpty() -> run.lastResult
+                        else -> "Download your media from external Blossom mirrors to local storage"
+                    },
+                    color = SecondaryText,
+                    fontSize = 12.sp,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = onMirrorNow,
+                enabled = !run.running && hasMirrors,
+                shape = RoundedCornerShape(6.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                if (run.running) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = PrimaryText,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(run.progress?.let { "${(it * 100).toInt()}%" } ?: "Mirroring", fontSize = 13.sp)
+                } else {
+                    Text("Mirror Now", fontSize = 13.sp)
+                }
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 16.dp),
+        ) {
+            Text("Auto-Mirror Media", color = PrimaryText, fontSize = 15.sp)
+            InfoButton(SettingsHelp.SHARE_AUTO_MIRROR)
+            Spacer(Modifier.weight(1f))
+            Switch(
+                checked = autoMirror,
+                onCheckedChange = onAutoMirrorChange,
+                colors = SwitchDefaults.colors(checkedTrackColor = colors.primary),
+            )
         }
     }
 }

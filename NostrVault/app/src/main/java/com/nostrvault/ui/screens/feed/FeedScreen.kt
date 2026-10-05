@@ -76,7 +76,8 @@ import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.RecipeTopics
 import com.nostrvault.data.model.ReelsScope
-import com.nostrvault.ui.screens.LiveStreamScreen
+import com.nostrvault.ui.components.AvatarMenuActions
+import com.nostrvault.ui.navigation.FeedTabPicker
 import com.nostrvault.ui.components.CustomZapSheet
 import com.nostrvault.ui.components.FullScreenMediaRouter
 import com.nostrvault.ui.components.MediaSourceKey
@@ -150,10 +151,6 @@ fun FeedScreen(
     val marketCategory by viewModel.marketCategory.collectAsState()
     val marketScope by viewModel.marketScope.collectAsState()
     val marketFollowSetIsEmpty by viewModel.marketFollowSetIsEmpty.collectAsState()
-    // The tapped stream is held rather than looked up again by id: a kind-30311
-    // event is replaceable and short-lived, so the copy the grid was showing is
-    // the one to play.
-    var playingStream by remember { mutableStateOf<LiveStream?>(null) }
     val notes by viewModel.filteredNotes.collectAsState()
     val mediaNotes by viewModel.mediaNotes.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -256,6 +253,7 @@ fun FeedScreen(
 
     // Zap sheet state
     var zapNoteId by remember { mutableStateOf<String?>(null) }
+    var showNoLightningAddress by remember { mutableStateOf(false) }
     val zapSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Zap result feedback
@@ -444,6 +442,16 @@ fun FeedScreen(
         }
         if (row != null) listState.requestScrollToItem(row)
         layoutAnchor = null
+    }
+
+    // Hold-the-Feed-tab picker (iOS #239): it shows this feed's mode and
+    // hands its pick here, where the mode lives.
+    LaunchedEffect(feedMode) { FeedTabPicker.shownMode = feedMode }
+    LaunchedEffect(Unit) {
+        FeedTabPicker.request.filterNotNull().collect { mode ->
+            FeedTabPicker.request.value = null
+            if (mode != viewModel.feedMode.value) viewModel.setFeedMode(mode)
+        }
     }
 
     // Handle tab re-selection: scroll to top or refresh if already at top
@@ -643,7 +651,11 @@ fun FeedScreen(
                     profiles = allProfiles,
                     isLoading = liveLoading,
                     contentPadding = padding,
-                    onStreamClick = { playingStream = it },
+                    // The tapped stream is handed over whole rather than looked
+                    // up again by id: a kind-30311 event is replaceable and
+                    // short-lived, so the copy the grid was showing is the one
+                    // to play. LiveStreamHost draws the player over the app.
+                    onStreamClick = { com.nostrvault.ui.components.LiveStreamRouter.open(it) },
                     onRefresh = viewModel::refreshLive,
                 )
             } else if (feedMode == FeedMode.ARTICLES || feedMode == FeedMode.RECIPES) {
@@ -734,7 +746,9 @@ fun FeedScreen(
                                         onProfileClick = onProfileClick,
                                         onReply = onReply ?: { _ -> onCompose() },
                                         onQuote = onQuote ?: {},
-                                        onZap = { id -> zapNoteId = id },
+                                        onZap = viewModel::quickZap,
+                                        onLongPressZap = { id -> zapNoteId = id },
+                                        onNoLightningAddress = { showNoLightningAddress = true },
                                         onBroadcast = { id -> broadcastNoteId = id },
                                         onReport = { id -> reportNoteId = id },
                                         onBlock = { id -> blockNoteId = id },
@@ -803,7 +817,9 @@ fun FeedScreen(
                                 onProfileClick = onProfileClick,
                                 onReply = onReply ?: { _ -> onCompose() },
                                 onQuote = onQuote ?: {},
-                                onZap = { id -> zapNoteId = id },
+                                onZap = viewModel::quickZap,
+                                onLongPressZap = { id -> zapNoteId = id },
+                                onNoLightningAddress = { showNoLightningAddress = true },
                                 onBroadcast = { id -> broadcastNoteId = id },
                                 onReport = { id -> reportNoteId = id },
                                 onBlock = { id -> blockNoteId = id },
@@ -876,7 +892,18 @@ fun FeedScreen(
 
 
 
-    // Custom zap sheet
+    if (showNoLightningAddress) {
+        AlertDialog(
+            onDismissRequest = { showNoLightningAddress = false },
+            title = { Text("No Lightning Address") },
+            text = { Text("This user hasn't configured a lightning address, so they can't receive zaps.") },
+            confirmButton = {
+                TextButton(onClick = { showNoLightningAddress = false }) { Text("OK") }
+            },
+        )
+    }
+
+    // Custom zap sheet (long-press on the bolt)
     if (zapNoteId != null) {
         CustomZapSheet(
             sheetState = zapSheetState,
@@ -924,17 +951,6 @@ fun FeedScreen(
             dismissButton = {
                 TextButton(onClick = { blockNoteId = null }) { Text("Cancel") }
             },
-        )
-    }
-
-    // The live player takes over the screen rather than living on a nav route:
-    // it needs the LiveStream object it was opened with, and a route argument
-    // would mean re-resolving a replaceable event that may already be gone.
-    playingStream?.let { stream ->
-        LiveStreamScreen(
-            stream = stream,
-            hostName = allProfiles[stream.hostPubkey]?.bestName,
-            onBack = { playingStream = null },
         )
     }
 
@@ -1372,6 +1388,8 @@ private fun FeedFullNoteRow(
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
     onZap: (String) -> Unit,
+    onLongPressZap: (String) -> Unit,
+    onNoLightningAddress: () -> Unit,
     onBroadcast: (String) -> Unit,
     onReport: (String) -> Unit,
     onBlock: (String) -> Unit,
@@ -1394,6 +1412,8 @@ private fun FeedFullNoteRow(
             onReply = onReply,
             onQuote = onQuote,
             onZap = onZap,
+            onLongPressZap = onLongPressZap,
+            onNoLightningAddress = onNoLightningAddress,
             onBroadcast = onBroadcast,
             onReport = onReport,
             onBlock = onBlock,
@@ -1448,6 +1468,8 @@ private fun FeedFullNoteRowContent(
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
     onZap: (String) -> Unit,
+    onLongPressZap: (String) -> Unit,
+    onNoLightningAddress: () -> Unit,
     onBroadcast: (String) -> Unit,
     onReport: (String) -> Unit,
     onBlock: (String) -> Unit,
@@ -1508,6 +1530,13 @@ private fun FeedFullNoteRowContent(
     val cardProfiles by remember(cardPubkeys) {
         derivedStateOf { cardPubkeys.resolveAgainst(allProfiles) }
     }
+    // Zap bolt (iOS FeedView): only with a wallet; tap zaps the default
+    // amount, long-press picks one; faint, and an explanation on tap, when
+    // the author has no lightning address.
+    val hasWallet by viewModel.hasWallet.collectAsState()
+    val autoplayVideos by viewModel.autoplayVideos.collectAsState()
+    val authorProfile = cardProfiles[note.pubkey]
+    val hasLightning = !authorProfile?.lud16.isNullOrBlank() || !authorProfile?.lud06.isNullOrBlank()
 
     NoteCard(
         note = note,
@@ -1529,7 +1558,11 @@ private fun FeedFullNoteRowContent(
         onProfileClick = onProfileClick,
         onLike = viewModel::likeNote,
         onRepost = viewModel::repostNote,
-        onZap = onZap,
+        onZap = if (hasWallet) {
+            { id -> if (hasLightning) onZap(id) else onNoLightningAddress() }
+        } else null,
+        onLongPressZap = if (hasWallet && hasLightning) onLongPressZap else null,
+        zapDimmed = !hasLightning,
         onReply = onReply,
         onQuote = onQuote,
         onBroadcast = onBroadcast,
@@ -1542,6 +1575,18 @@ private fun FeedFullNoteRowContent(
         onBlock = { onBlock(note.id) },
         onDelete = { onDelete(note.id) },
         onLongPressLike = onLongPressLike,
+        onRetryParent = viewModel::retryMissingNote,
+        autoplayVideos = autoplayVideos,
+        avatarMenu = remember(viewModel) {
+            AvatarMenuActions(
+                isOwn = viewModel::isOwnNote,
+                isFollowed = viewModel::isFollowing,
+                onFollow = viewModel::followUser,
+                onUnfollow = viewModel::unfollowUser,
+                onSlowDown = viewModel::slowDownUser,
+                onBlock = viewModel::blockUser,
+            )
+        },
         modifier = modifier,
     )
 }
@@ -1779,14 +1824,17 @@ private fun FeedTopBar(
                             modifier = Modifier.size(18.dp),
                         )
                     }
-                    // Show replies
-                    IconButton(onClick = onToggleReplies, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            imageVector = NostrVaultIcons.Chat,
-                            contentDescription = "Replies",
-                            tint = if (showReplies) colors.primary else SecondaryText,
-                            modifier = Modifier.size(18.dp),
-                        )
+                    // Show replies. Not on Global, where iOS has no Replies
+                    // button either (#230): Global is the top-level firehose.
+                    if (feedMode != FeedMode.GLOBAL) {
+                        IconButton(onClick = onToggleReplies, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                imageVector = NostrVaultIcons.Chat,
+                                contentDescription = "Replies",
+                                tint = if (showReplies) colors.primary else SecondaryText,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
                 FeedMode.MEDIA -> {
@@ -2120,7 +2168,7 @@ private fun List<String>.resolveAgainst(
 }
 
 /** Icon for the feed picker and the top bar; matches the iPhone's. */
-private val FeedMode.icon: ImageVector
+internal val FeedMode.icon: ImageVector
     get() = when (this) {
         FeedMode.FOLLOWING -> NostrVaultIcons.People
         FeedMode.DISCOVERY -> NostrVaultIcons.Discover

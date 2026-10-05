@@ -11,6 +11,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
+import com.nostrvault.data.model.LiveStream
 import com.nostrvault.data.music.WavlakeTrack
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -88,6 +89,9 @@ object MusicPlayer {
     /** Kept across queues; a live stream ignores it. */
     private val _repeatMode = MutableStateFlow(MusicRepeatMode.OFF)
     val repeatMode: StateFlow<MusicRepeatMode> = _repeatMode.asStateFlow()
+    /** The stream whose sound is playing, so the full player can offer Watch. */
+    private val _liveStream = MutableStateFlow<LiveStream?>(null)
+    val liveStream: StateFlow<LiveStream?> = _liveStream.asStateFlow()
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -189,11 +193,18 @@ object MusicPlayer {
     fun play(tracks: List<WavlakeTrack>, startIndex: Int = 0) =
         playTracks(tracks.map(PlayerTrack::of), startIndex)
 
-    /** Listens to a live stream: sound only, in the mini player. */
-    fun playLive(track: PlayerTrack) = playTracks(listOf(track), 0)
+    /**
+     * Listens to a live stream: sound only, in the mini player and the
+     * notification. Replaces whatever was queued. iOS: playLive(stream:item:).
+     */
+    fun playLive(stream: LiveStream, track: PlayerTrack) {
+        playTracks(listOf(track), 0)
+        _liveStream.value = stream
+    }
 
     fun playTracks(tracks: List<PlayerTrack>, startIndex: Int = 0) {
         if (tracks.isEmpty()) return
+        _liveStream.value = null
         queue = tracks
         _isShuffled.value = false
         unshuffledQueue = emptyList()
@@ -297,6 +308,7 @@ object MusicPlayer {
         queue = emptyList()
         _isShuffled.value = false
         unshuffledQueue = emptyList()
+        _liveStream.value = null
         _current.value = null
         withController { c ->
             c.stop()
