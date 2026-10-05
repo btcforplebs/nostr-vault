@@ -48,6 +48,11 @@ struct IconFilterButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tooltip)
+        #if os(macOS)
+        // Icon-only on the Mac too, where hovering is how you find out what
+        // an icon does.
+        .help(tooltip)
+        #endif
     }
 }
 

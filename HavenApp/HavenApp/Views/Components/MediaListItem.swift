@@ -18,7 +18,11 @@ struct MediaListItem: View {
     @ObservedObject private var backupStore = BlossomBackupStore.shared
 
     var body: some View {
-        Button(action: onSelect) {
+        // Not a Button around the whole row: the row holds its own Upload,
+        // Save to Vault and Copy link buttons, and on iOS a Button nested in
+        // a Button never gets the tap, so all three opened the viewer
+        // instead. The open action covers everything but those three.
+        HStack(spacing: 12) {
             HStack(spacing: 12) {
                 // Thumbnail
                 Color.clear
@@ -84,48 +88,51 @@ struct MediaListItem: View {
                 }
 
                 Spacer()
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onSelect)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
 
-                // Action Buttons
-                HStack(spacing: 8) {
-                    // Upload only when it is on the phone and some server lacks it
-                    if needsMirror {
-                        Button(action: pushToMirrors) {
-                            Image(systemName: isPushingToMirrors ? "arrow.up.circle.fill" : "arrow.up.circle")
-                                .font(.appSystem(size: 22))
-                                .foregroundColor(isPushingToMirrors ? .secondary : .havenPurple)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isPushingToMirrors)
-                    }
-
-                    // Save to Vault (only when it is not on the phone yet)
-                    if !onPhone {
-                        Button(action: mirrorToLocalRelay) {
-                            Image(systemName: isMirroringToLocal ? "arrow.down.circle.fill" : "arrow.down.circle")
-                                .font(.appSystem(size: 22))
-                                .foregroundColor(isMirroringToLocal ? .secondary : .havenPurple)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isMirroringToLocal)
-                    }
-
-                    // Copy link
-                    Button(action: {
-                        PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
-                    }) {
-                        Image(systemName: "doc.on.doc")
+            // Action Buttons
+            HStack(spacing: 8) {
+                // Upload only when it is on the phone and some server lacks it
+                if needsMirror {
+                    Button(action: pushToMirrors) {
+                        Image(systemName: isPushingToMirrors ? "arrow.up.circle.fill" : "arrow.up.circle")
                             .font(.appSystem(size: 22))
-                            .foregroundColor(.havenPurple)
+                            .foregroundColor(isPushingToMirrors ? .secondary : .havenPurple)
                     }
                     .buttonStyle(.plain)
+                    .disabled(isPushingToMirrors)
                 }
-                .padding(.trailing, 8)
+
+                // Save to Vault (only when it is not on the phone yet)
+                if !onPhone {
+                    Button(action: mirrorToLocalRelay) {
+                        Image(systemName: isMirroringToLocal ? "arrow.down.circle.fill" : "arrow.down.circle")
+                            .font(.appSystem(size: 22))
+                            .foregroundColor(isMirroringToLocal ? .secondary : .havenPurple)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isMirroringToLocal)
+                }
+
+                // Copy link
+                Button(action: {
+                    PlatformClipboard.copy(item.shareURL(with: configService).absoluteString)
+                }) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.appSystem(size: 22))
+                        .foregroundColor(.havenPurple)
+                }
+                .buttonStyle(.plain)
             }
-            .padding(12)
-            .background(Color(red: 0.1, green: 0.1, blue: 0.14).opacity(0.6))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.trailing, 8)
         }
-        .buttonStyle(.plain)
+        .padding(12)
+        .background(Color(red: 0.1, green: 0.1, blue: 0.14).opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .task(id: item.id) {
             refreshOnPhone()
         }

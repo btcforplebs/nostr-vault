@@ -1207,8 +1207,14 @@ struct FeedView: View {
                         .font(.appSystem(size: 9, weight: .bold))
                 }
                 .foregroundColor(.primary)
+                .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
+            // .borderlessButton flattens the label's font and colour on the
+            // Mac; this header is macOS-only. The label draws its own chevron.
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .help("Switch feed")
             .fixedSize()
 
             Spacer()

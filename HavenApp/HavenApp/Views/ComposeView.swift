@@ -723,6 +723,7 @@ struct ComposeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isAttachmentLimitReached)
+                    .help("Add photos")
 
                     PhotosPicker(selection: $selectedItems, maxSelectionCount: remainingAttachmentSlots, matching: .videos) {
                         Image(systemName: "video.fill")
@@ -734,6 +735,7 @@ struct ComposeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isAttachmentLimitReached)
+                    .help("Add a video")
 
                     Button(action: handlePasteFromClipboard) {
                         Image(systemName: "wand.and.stars")
@@ -745,6 +747,7 @@ struct ComposeView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isAttachmentLimitReached)
+                    .help("Paste media from the clipboard")
 
 // Hidden when no GIF source is available in this build (no nostr.build
                     // key, and Tenor not opted in): never show a picker that finds nothing.
@@ -780,6 +783,7 @@ struct ComposeView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .help("Pick from your Blossom media")
                 }
             }
         }
@@ -2251,6 +2255,13 @@ struct BlossomMediaPickerSheet: View {
                 .foregroundColor(.havenPurple)
         }
         .accessibilityLabel("Sort")
+        #if os(macOS)
+        // A default Menu drops the label's purple and weight on the Mac.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .help("Sort")
+        #endif
     }
 
     /// Pinned date heading, styled like the Media tab's. Nothing for the

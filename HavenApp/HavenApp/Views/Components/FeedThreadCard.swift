@@ -306,6 +306,8 @@ struct FeedThreadCard: View {
             .foregroundColor(.secondary)
             .padding(.vertical, 6)
             .padding(.horizontal, 10)
+            // The gap between "Open thread" and the chevron is part of it.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.leading, 22)
