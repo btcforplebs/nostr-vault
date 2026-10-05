@@ -46,16 +46,23 @@ struct NoteDetailView: View {
 
     @State private var focusedNoteId: String = ""
 
+    /// Replies and the conversation above drawn as condensed lines, the same
+    /// lines the threaded feed uses. The note you are reading always stays
+    /// full size with its action bar, so replying is still one tap: that is
+    /// what the old compact mode got wrong (#56). Remembered across threads.
+    @AppStorage("thread.condensedReplies") private var condensedReplies = false
+
     /// The note pinned to the top of the scroll view. Kept in step with
     /// `focusedNoteId` so that whichever note the reader landed on never
     /// moves on screen — thread history that loads in above it just extends
     /// the scrollable area upward instead of shoving the note (and
     /// everything below it) down mid-read.
     @State private var pinnedScrollId: String?
-    /// Whether the view has brought the note you tapped into view once the
-    /// thread above it appeared. Only the first arrival scrolls; after that
-    /// the reader is in charge.
+    /// Set once the reader scrolls or picks another note; until then the
+    /// opened note is kept at the top as the thread above it loads.
     @State private var didLandOnFocusedNote = false
+    /// Height of the scroll view, for the room left under a short thread.
+    @State private var viewportHeight: CGFloat = 0
     /// Your Web of Trust plus follows, read once when the view appears.
     /// Empty while the graph isn't loaded, which counts nobody as outside.
     @State private var trustedPubkeys: Set<String> = []
@@ -182,17 +189,28 @@ struct NoteDetailView: View {
         threadReplies(in: allThreadNotes).outside
     }
 
+    /// Puts the note you opened at the top, with the posts it answers
+    /// scrollable above. Runs again whenever the content above it changes
+    /// (history arriving, images in it loading, the screen size settling),
+    /// until the reader scrolls: a single jump was undone by whatever loaded
+    /// next, and the opened reply ended up down the screen.
     private func landOnFocusedNote(proxy: ScrollViewProxy) {
         guard !didLandOnFocusedNote, !dynamicParents.isEmpty else { return }
-        didLandOnFocusedNote = true
         let target = focusedNoteId.isEmpty ? note.id : focusedNoteId
-        // Next runloop turn, once the revealed history has laid out.
+        // Next runloop turn, once the revealed history has laid out, and once
+        // more after images above have had a moment to size themselves.
         DispatchQueue.main.async {
+            guard !didLandOnFocusedNote else { return }
+            proxy.scrollTo(target, anchor: .top)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            guard !didLandOnFocusedNote else { return }
             proxy.scrollTo(target, anchor: .top)
         }
     }
 
     private func selectAndScrollToNote(_ targetId: String, proxy: ScrollViewProxy) {
+        didLandOnFocusedNote = true
         withAnimation(Motion.scrollJump) {
             focusedNoteId = targetId
             pinnedScrollId = targetId
@@ -237,12 +255,28 @@ struct NoteDetailView: View {
 
                     otherResponsesSection
 
-
+                    // Room under a short thread, so the opened note can scroll
+                    // to the top with the posts it answers above it. Without
+                    // it a reply with few replies of its own stayed at the
+                    // bottom of the screen: there was nothing below to scroll into.
+                    if !dynamicParents.isEmpty {
+                        Color.clear.frame(height: max(0, viewportHeight - 200))
+                    }
                 }
+                // Makes the opened note (a direct child with its id) a scroll
+                // target, so `scrollPosition` below can hold it at the top.
+                // Without this the pin was ignored, and the posts loading in
+                // above pushed the opened reply down out of view.
+                .scrollTargetLayout()
                 .padding(.top, 16)
                 .padding(.bottom, 90)
             }
             .scrollPosition(id: $pinnedScrollId, anchor: .top)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
+            // The reader took over: stop putting the opened note back on top.
+            .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in didLandOnFocusedNote = true })
+            .onChange(of: dynamicParents.count) { _, _ in landOnFocusedNote(proxy: proxy) }
+            .onChange(of: viewportHeight) { _, _ in landOnFocusedNote(proxy: proxy) }
             // Opening a reply loads the conversation above it, which pushed the
             // reply below the fold: the pin above does not hold, because the
             // parents are not direct scroll targets. Once they are shown, put
@@ -285,6 +319,16 @@ struct NoteDetailView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 8) {
+                    // Condensed / full replies
+                    IconFilterButton(
+                        icon: condensedReplies ? "list.bullet.indent" : "rectangle.grid.1x2",
+                        tooltip: condensedReplies ? "Condensed replies" : "Full replies",
+                        isSelected: condensedReplies,
+                        color: .havenPurple
+                    ) {
+                        withAnimation(Motion.panel) { condensedReplies.toggle() }
+                    }
+
                     // Stats toggle
                     IconFilterButton(
                         icon: expandedEngagement ? "chart.bar.fill" : "chart.bar",
@@ -483,7 +527,25 @@ struct NoteDetailView: View {
         .shadow(color: Color.havenPurple.opacity(0.35), radius: 8)
     }
 
+    @ViewBuilder
     private func threadHistory(proxy: ScrollViewProxy) -> some View {
+        if condensedReplies {
+            // The conversation above, one line per note, oldest at the top.
+            VStack(alignment: .leading, spacing: 2) {
+                // Notes above it by someone you blocked are left out, as in
+                // the full history.
+                ForEach(dynamicParents.filter { !configService.activeAccountBlockedHexPubkeys.contains($0.pubkey) }) { parent in
+                    condensedLine(for: parent, depth: 0, proxy: proxy)
+                }
+            }
+            .threadCard()
+            .padding(.horizontal, 16)
+        } else {
+            fullThreadHistory(proxy: proxy)
+        }
+    }
+
+    private func fullThreadHistory(proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             // Notes above it by someone you blocked are left out.
             ForEach(dynamicParents.filter { !configService.activeAccountBlockedHexPubkeys.contains($0.pubkey) }) { parent in
@@ -637,9 +699,59 @@ struct NoteDetailView: View {
         }
     }
 
-    /// The reply tree. Every reply keeps its own card and its own action bar,
-    /// so replying is one tap from wherever you landed.
+    /// The reply tree. Full: every reply keeps its own card and its own action
+    /// bar. Condensed: one card of lines, nested under what they answer; tap
+    /// a line and it becomes the note you are reading, full size.
+    @ViewBuilder
     private func repliesList(_ currentReplies: [FeedNote], pool: [FeedNote], proxy: ScrollViewProxy) -> some View {
+        if condensedReplies {
+            let tree = FeedThreadGrouping.replyTree(under: repliesParentId, in: pool)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(tree) { entry in
+                    condensedLine(for: entry.note, depth: entry.depth, pool: pool, proxy: proxy)
+                }
+            }
+            .threadCard()
+            .padding(.horizontal, 16)
+            .transition(.opacity)
+        } else {
+            fullRepliesList(currentReplies, pool: pool, proxy: proxy)
+        }
+    }
+
+    /// What replies answer: the focused note, or the note a bare repost carries.
+    private var repliesParentId: String {
+        (focusedNote.kind == 6 && focusedNote.repostedEventId != nil) ? focusedNote.repostedEventId! : focusedNote.id
+    }
+
+    /// One condensed line, as the threaded feed draws it: a bare repost shows
+    /// the note it carries, credited to its author.
+    private func condensedLine(for note: FeedNote, depth: Int, pool: [FeedNote] = [], proxy: ScrollViewProxy) -> some View {
+        let rowData = FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService)
+        let original = (note.kind == 6 && note.content.isEmpty) ? rowData.resolvedOriginal : nil
+        let shown = original ?? note
+        let replyCount = pool.reduce(0) { $0 + ($1.parentEventId == note.id ? 1 : 0) }
+        return CondensedNoteLine(
+            note: note,
+            profile: nostrService.profiles[shown.pubkey],
+            displayPubkey: original?.pubkey,
+            depth: depth,
+            style: .plain,
+            replyCount: replyCount,
+            contentOverride: original.map { $0.kind == 30023 ? $0.longFormDisplayTitle : $0.content },
+            postedAt: original.map { $0.originalCreatedAt ?? $0.createdAt },
+            mediaURLs: shown.mediaURLs,
+            engagement: CondensedEngagement(
+                reactions: rowData.zapsOnlyMode ? 0 : rowData.stats.reactions,
+                reposts: rowData.stats.reposts
+            ),
+            onProfile: { showingProfilePubkey = $0 },
+            onTap: { selectAndScrollToNote(note.id, proxy: proxy) }
+        )
+        .id(note.id)
+    }
+
+    private func fullRepliesList(_ currentReplies: [FeedNote], pool: [FeedNote], proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 12) {
                 ForEach(currentReplies) { reply in
                     ThreadedReplyNode(

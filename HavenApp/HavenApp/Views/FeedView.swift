@@ -650,9 +650,11 @@ struct FeedView: View {
     #endif
 
     /// The floating "New Posts" button is up: unloaded posts, and either
-    /// auto-load is off or the user has scrolled away from the top.
+    /// auto-load is off or the user has scrolled away from the top. Never
+    /// when it's switched off in Appearance settings.
     private var showsNewPostsButton: Bool {
-        !feedService.pendingNotes.isEmpty && (!configService.config.autoLoadNewPosts || !isAtTop)
+        configService.config.showNewPostsPill
+            && !feedService.pendingNotes.isEmpty && (!configService.config.autoLoadNewPosts || !isAtTop)
     }
 
     #if os(iOS)
@@ -2802,6 +2804,9 @@ struct FeedView: View {
                 .transition(.opacity)
                 .refreshable {
                     isRefreshing = true
+                    // Pulling down takes in the posts waiting behind the New
+                    // Posts pill, the only way to reach them with it switched off.
+                    if !feedService.pendingNotes.isEmpty { feedService.applyPendingNotes() }
                     feedService.refresh()
                     // Hold the indicator until loading finishes
                     while feedService.isLoadingFeed {
@@ -4584,6 +4589,8 @@ struct FeedPickerMenu: View, Equatable {
     static func == (lhs: FeedPickerMenu, rhs: FeedPickerMenu) -> Bool {
         lhs.mode == rhs.mode
             && lhs.connectionStatus == rhs.connectionStatus
+            // The dot also follows relay health while the status stays "Live".
+            && lhs.dotColor == rhs.dotColor
             && lhs.isCompactWidth == rhs.isCompactWidth
     }
 
