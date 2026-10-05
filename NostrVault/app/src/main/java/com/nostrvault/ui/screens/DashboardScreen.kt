@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
+import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.*
 import com.nostrvault.data.remote.WebSocketClient
@@ -2323,7 +2324,7 @@ fun DashboardScreen(
                         viewModel.loadStats()
                         showDashboardSheet = true
                     },
-                    modifier = Modifier.padding(bottom = 88.dp),
+                    modifier = Modifier.floatingRowButton(),
                     color = dotColor,
                     shape = CircleShape,
                     shadowElevation = 8.dp,

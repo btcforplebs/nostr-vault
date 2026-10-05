@@ -49,6 +49,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.*
 import com.nostrvault.ui.components.GlassPill
@@ -759,7 +760,7 @@ fun MediaGalleryScreen(
             Box(Modifier.chromeFab().blockedWhen(folded)) {
                 Surface(
                     onClick = onBlossomClick,
-                    modifier = Modifier.padding(bottom = 88.dp),
+                    modifier = Modifier.floatingRowButton(),
                     color = colors.primary,
                     shape = CircleShape,
                     shadowElevation = 8.dp,

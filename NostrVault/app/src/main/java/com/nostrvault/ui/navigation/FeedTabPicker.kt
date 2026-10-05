@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.data.model.FeedMenuSettings
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.ui.screens.feed.icon
 import com.nostrvault.ui.theme.LocalNostrVaultColors
@@ -92,10 +94,18 @@ object FeedTabPicker {
      */
     val request = MutableStateFlow<FeedMode?>(null)
 
-    /** Closest to the finger first: the list grows upward, so Following sits right above the tab. */
-    val order: List<FeedMode> get() = FeedMode.entries.reversed()
+    /**
+     * Closest to the finger first: the list grows upward, so the first feed
+     * sits right above the tab. In the reader's order, hidden feeds left out
+     * (Edit Feeds, iOS #303).
+     */
+    val order: List<FeedMode> get() = FeedMenuSettings.menuModes().reversed()
 
-    fun modeAt(point: Offset): FeedMode? = feedModeAt(rowBounds, point)
+    /** Only feeds still listed: a row hidden since it was laid out keeps its old bounds here. */
+    fun modeAt(point: Offset): FeedMode? {
+        val listed = order.toSet()
+        return feedModeAt(rowBounds.filterKeys { it in listed }, point)
+    }
 
     fun open(from: Rect) {
         anchor = from
@@ -212,6 +222,9 @@ fun FeedTabPickerOverlay(
 ) {
     val open = FeedTabPicker.isOpen
     val density = LocalDensity.current
+    // Subscribed, so an edit shows the next time the list opens.
+    val menuStored by FeedMenuSettings.stored.collectAsState()
+    val order = remember(menuStored) { FeedMenuSettings.menuModes(menuStored).reversed() }
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         AnimatedVisibility(visible = open, enter = fadeIn(), exit = fadeOut()) {
             Box(
@@ -252,7 +265,7 @@ fun FeedTabPickerOverlay(
                         .background(SecondaryGroupedBg.copy(alpha = 0.97f))
                         .padding(6.dp),
                 ) {
-                    for (mode in FeedTabPicker.order) {
+                    for (mode in order) {
                         FeedPickerRow(
                             mode = mode,
                             current = FeedTabPicker.shownMode == mode,

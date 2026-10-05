@@ -2668,8 +2668,15 @@ class FeedService @Inject constructor(
     }
 
     fun fetchMissingNotesBatch(ids: List<String>) {
+        // A post that arrived through the feed itself can be the parent (or
+        // repost original, or quote) a row is waiting on. Rows read parents
+        // from the cache only, so they kept their skeleton until a relay
+        // answered for a note the phone already had (iOS #302). Checked
+        // before the in-flight filter: the feed often delivers it mid-lookup.
+        val inFeed = adoptFeedNotes(ids)
         val now = System.currentTimeMillis()
         val wanted = ids.filter { id ->
+            if (id in inFeed) return@filter false
             if (_parentNotesCache.value.containsKey(id) || id in noteFetchInFlight) return@filter false
             val since = unavailableSince[id] ?: return@filter true
             now - since >= UNAVAILABLE_RETRY_MS
@@ -2701,6 +2708,24 @@ class FeedService @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Copies the notes among [ids] that are already in the feed into the
+     * parent cache and clears any "unavailable" mark on them. Matches on the
+     * note's own id only: a repost is indexed under its original's id too,
+     * and a row must not show the repost as the parent. Returns the ids found.
+     */
+    private fun adoptFeedNotes(ids: List<String>): Set<String> {
+        val index = noteIndex()
+        val found = ids.mapNotNull { id -> index[id]?.takeIf { it.id == id } }
+            .filter { !_parentNotesCache.value.containsKey(it.id) }
+        if (found.isEmpty()) return emptySet()
+        _parentNotesCache.update { cache -> cache + found.associateBy { it.id } }
+        val foundIds = found.mapTo(HashSet()) { it.id }
+        foundIds.forEach { unavailableSince.remove(it) }
+        if (_unavailableNoteIds.value.any { it in foundIds }) _unavailableNoteIds.update { it - foundIds }
+        return foundIds
     }
 
     /**

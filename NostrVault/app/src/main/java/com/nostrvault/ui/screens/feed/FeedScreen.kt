@@ -65,9 +65,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
+import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedLayoutMode
+import com.nostrvault.data.model.FeedMenuSettings
 import com.nostrvault.data.model.FeedMode
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.LiveStream
@@ -281,6 +283,7 @@ fun FeedScreen(
 
     // Feed config sheet state
     var showFeedConfig by remember { mutableStateOf(false) }
+    var showFeedMenuEditor by remember { mutableStateOf(false) }
 
     // Reels' Global scope is unmoderated video from the whole network; it sits
     // behind a warning (iOS parity: the same one Media's Global uses there).
@@ -535,6 +538,7 @@ fun FeedScreen(
                 onSetPopularFilter = viewModel::setPopularFilter,
                 onToggleEngagementStats = viewModel::toggleShowEngagementStats,
                 onOpenFeedDashboard = { showFeedConfig = true },
+                onEditFeeds = { showFeedMenuEditor = true },
                 newPostsCount = if (showNewPosts) pendingCount else 0,
                 onLoadNewPosts = loadNewPosts,
             )
@@ -553,7 +557,7 @@ fun FeedScreen(
                     shape = RoundedCornerShape(50),
                     color = Color.Transparent,
                     modifier = Modifier
-                        .padding(bottom = 88.dp)
+                        .floatingRowButton()
                         .shadow(
                             elevation = 8.dp,
                             shape = RoundedCornerShape(50),
@@ -1022,6 +1026,15 @@ fun FeedScreen(
             nostrService = viewModel.nostrServiceRef,
             configStore = viewModel.configStoreRef,
             onDismiss = { listingInfoNote = null },
+        )
+    }
+
+    // Edit Feeds: show, hide and reorder the feed picker's feeds (iOS #303).
+    if (showFeedMenuEditor) {
+        FeedMenuEditor(
+            // Hiding the feed you're on would leave the picker without it.
+            onSaved = { hidden -> if (feedMode in hidden) viewModel.setFeedMode(FeedMenuSettings.PINNED) },
+            onDismiss = { showFeedMenuEditor = false },
         )
     }
 
@@ -1626,12 +1639,16 @@ private fun FeedTopBar(
     onSetPopularFilter: (PopularFilter) -> Unit,
     onToggleEngagementStats: () -> Unit,
     onOpenFeedDashboard: () -> Unit,
+    onEditFeeds: () -> Unit,
     /** Posts are waiting and the floating "New Posts" button is up. */
     newPostsCount: Int,
     onLoadNewPosts: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
     var feedModeExpanded by remember { mutableStateOf(false) }
+    // The reader's order, less hidden feeds (Edit Feeds).
+    val menuStored by FeedMenuSettings.stored.collectAsState()
+    val menuModes = remember(menuStored) { FeedMenuSettings.menuModes(menuStored) }
 
     // Resolve connection dot color (FeedRelayHealth.dotColor)
     val dotColor = when (connectionColor) {
@@ -1714,7 +1731,7 @@ private fun FeedTopBar(
                 expanded = feedModeExpanded,
                 onDismissRequest = { feedModeExpanded = false },
             ) {
-                FeedMode.entries.forEach { mode ->
+                menuModes.forEach { mode ->
                     DropdownMenuItem(
                         text = {
                             Text(
@@ -1750,6 +1767,15 @@ private fun FeedTopBar(
                     onClick = {
                         feedModeExpanded = false
                         onOpenFeedDashboard()
+                    },
+                )
+                // Last, at the bottom of the list it edits (iOS #303).
+                DropdownMenuItem(
+                    text = { Text("Edit Feeds") },
+                    leadingIcon = { Icon(NostrVaultIcons.EditFeeds, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        feedModeExpanded = false
+                        onEditFeeds()
                     },
                 )
             }
