@@ -148,6 +148,11 @@ object RelayConfiguration {
             // DM Relays
             "DM_RELAYS_FILE" to DM_RELAYS_FILE_NAME,
 
+            // Mac relay: synced like any other relay, plus a one-time
+            // full-history copy whose result lands in mac_sync_status.json
+            // (iOS passes the same; see MacSync).
+            "MAC_RELAY_URL" to MacSync.macRelayURL(config),
+
             // Backup
             "BACKUP_PROVIDER" to config.backupProvider,
             "BACKUP_INTERVAL_HOURS" to config.backupIntervalHours.toString(),
