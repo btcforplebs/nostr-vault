@@ -106,6 +106,11 @@ final class LocalNotificationService {
             }
         }()
         guard allowed else { return }
+        // Nothing from outside your Web of Trust: those were the spam alerts.
+        let own: Set<String> = [recipientHex, NostrService.shared.activeHexPubkey]
+        guard NotificationPolicy.authorMayNotify(author, type: type,
+                                                 trusted: FeedService.shared.relayTabTrustedPubkeys(),
+                                                 own: own) else { return }
 
         // One summary per absence: record it as soon as it is cleared to fire,
         // so the next background wake's round does not repeat it.
