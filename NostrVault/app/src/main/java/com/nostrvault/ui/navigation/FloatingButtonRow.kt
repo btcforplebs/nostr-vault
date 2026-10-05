@@ -22,7 +22,9 @@ import androidx.compose.ui.unit.dp
  * 2026-10-05).
  */
 object FloatingButtonRow {
-    val miniPlayerHeight: Dp = 52.dp
+    /** Every floating button and the mini player: one height, so the two read as one row (iOS buttonHeight). */
+    val buttonHeight: Dp = 48.dp
+    val miniPlayerHeight: Dp = buttonHeight
     /** The clear space the bottom bar keeps above its pill (its vertical padding). */
     private val barTopPadding: Dp = 12.dp
     /** The row sits this far above the bar's pill (iOS: the inset's 6pt spacing). */
@@ -44,6 +46,8 @@ object FloatingButtonRow {
     /** Where a Scaffold puts a FAB above its bottom insets (Material3 FabSpacing). */
     private val scaffoldFabSpacing: Dp = 16.dp
     private val scaffoldFabEndInset: Dp = 16.dp
+    /** The button's gap from the screen's right edge (iOS trailingInset). */
+    private val endInset: Dp = 20.dp
     private val gap: Dp = 10.dp
 
     private val widths = mutableStateMapOf<Any, Dp>()
@@ -53,7 +57,7 @@ object FloatingButtonRow {
      * widest showing button, its end inset and a gap. Zero with no button.
      */
     val reservedWidth: Dp
-        get() = widths.values.maxOrNull()?.let { it + scaffoldFabEndInset + gap } ?: 0.dp
+        get() = widths.values.maxOrNull()?.let { it + endInset + gap } ?: 0.dp
 
     internal fun report(key: Any, width: Dp?) {
         if (width == null) widths.remove(key) else widths[key] = width
@@ -63,7 +67,8 @@ object FloatingButtonRow {
      * For a button in a Scaffold's FAB slot: lifts it so its centre is level
      * with the mini player's, and reports its width for as long as it is on
      * screen. The Scaffold already puts the FAB [scaffoldFabSpacing] above
-     * the system bar inset, so that is taken off the lift.
+     * the system bar inset, so that is taken off the lift. The Scaffold's
+     * 16dp end inset is topped up to [endInset].
      */
     @Composable
     fun Modifier.floatingRowButton(): Modifier {
@@ -78,7 +83,8 @@ object FloatingButtonRow {
                 val centre = (rowBottom + miniPlayerHeight / 2).roundToPx()
                 val lift = (centre - placeable.height / 2 - scaffoldFabSpacing.roundToPx() - bottomInset)
                     .coerceAtLeast(0)
-                layout(placeable.width, placeable.height + lift) { placeable.place(0, 0) }
+                val extraEnd = (endInset - scaffoldFabEndInset).roundToPx()
+                layout(placeable.width + extraEnd, placeable.height + lift) { placeable.place(0, 0) }
             }
             .onSizeChanged { report(key, with(density) { it.width.toDp() }) }
     }

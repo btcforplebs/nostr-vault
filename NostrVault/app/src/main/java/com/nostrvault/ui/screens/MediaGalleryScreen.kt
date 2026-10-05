@@ -49,6 +49,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.nostrvault.ui.navigation.FloatingButtonRow
 import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.service.*
@@ -767,7 +768,9 @@ fun MediaGalleryScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                        modifier = Modifier
+                            .height(FloatingButtonRow.buttonHeight)
+                            .padding(horizontal = 18.dp),
                     ) {
                         Icon(
                             imageVector = NostrVaultIcons.Blossom,
