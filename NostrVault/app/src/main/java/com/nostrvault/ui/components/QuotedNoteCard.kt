@@ -66,6 +66,14 @@ fun QuotedNoteCard(
         com.nostrvault.ui.screens.feed.QuotedListingCard(listing, profile, modifier)
         return
     }
+    // A quoted live stream is something to watch, not text to read: the
+    // Live-tab tile, and a tap plays it rather than opening a thread (a stream
+    // event has none). iOS #172.
+    val stream = remember(note.id) { com.nostrvault.data.model.LiveStream.from(note) }
+    if (stream != null) {
+        LiveStreamEmbed(stream, modifier)
+        return
+    }
 
     val colors = LocalNostrVaultColors.current
     val meta = if (note.kind == ArticleMeta.KIND) {

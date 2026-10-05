@@ -21,7 +21,9 @@ fun ImportExportSection(
     importCompleted: Boolean,
     isExportingJsonl: Boolean,
     isExportingMedia: Boolean,
+    isImportingBlossom: Boolean,
     onImportNotes: () -> Unit,
+    onImportBlossom: () -> Unit,
     onExportJsonl: () -> Unit,
     onExportMedia: () -> Unit,
     onDismissImport: () -> Unit,
@@ -110,7 +112,7 @@ fun ImportExportSection(
             Spacer(Modifier.height(12.dp))
         }
 
-        // Action buttons grid
+        // Action buttons grid: imports on top, exports below (iOS actionGrid)
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth(),
@@ -123,6 +125,21 @@ fun ImportExportSection(
                 modifier = Modifier.weight(1f),
                 onClick = onImportNotes,
             )
+            // Pulls your media from the Blossom mirrors into this device's relay.
+            ActionButton(
+                icon = NostrVaultIcons.Blossom,
+                title = "Import Blossom",
+                isLoading = isImportingBlossom,
+                enabled = !isImportingBlossom,
+                modifier = Modifier.weight(1f),
+                onClick = onImportBlossom,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             ActionButton(
                 icon = NostrVaultIcons.Backup,
                 title = "Export JSONL",

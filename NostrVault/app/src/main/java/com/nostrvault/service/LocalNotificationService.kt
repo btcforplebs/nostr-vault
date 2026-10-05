@@ -297,6 +297,23 @@ class LocalNotificationService @Inject constructor(
         }
     }
 
+    /**
+     * "N new notes in your feed" from [FeedActivityNotifier]. Tapping it opens
+     * the feed (the "summary" type has no event). iOS showFeedNotification.
+     */
+    fun postFeedSummary(newCount: Int) {
+        val title = if (newCount == 1) "New note in your feed" else "$newCount new notes in your feed"
+        post(
+            id = "feed-summary-${System.currentTimeMillis() / 1000}",
+            title = title,
+            text = "People you follow posted while you were away.",
+            type = "summary",
+            author = "",
+            npub = "",
+            pictureUrl = null,
+        )
+    }
+
     @SuppressLint("MissingPermission") // guarded by the runtime check below
     private fun post(id: String, title: String, text: String, type: String, author: String, npub: String, pictureUrl: String?) {
         ensureChannel()

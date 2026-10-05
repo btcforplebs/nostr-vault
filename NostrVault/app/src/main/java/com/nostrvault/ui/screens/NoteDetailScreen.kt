@@ -27,6 +27,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -219,7 +222,7 @@ class NoteDetailViewModel @Inject constructor(
         } else if (rootId == foundNote.id) {
             NIP10Thread.coordinate(foundNote.kind, foundNote.pubkey, foundNote.tags)
         } else null
-        nostrService.fetchOtherResponses(rootId) { found ->
+        nostrService.fetchOtherResponses(rootId, rootCoordinate) { found ->
             _otherResponses.value = found
                 .filter { isOtherResponse(it, rootId) && !FeedNote.isNoiseOrSpam(it.content, it.tags) }
                 .sortedByDescending { it.createdAt }
@@ -775,6 +778,7 @@ fun NoteDetailScreen(
                             }.toMap()
                         },
                         stats = viewModel.statsFor(focusedNote!!.id),
+                        engagement = engagementDetails,
                         isLiked = viewModel.isLiked(focusedNote!!.id),
                         isReposted = viewModel.isReposted(focusedNote!!.effectiveEventId),
                         isOwnNote = viewModel.isOwnNote(focusedNote!!.pubkey),
@@ -1178,6 +1182,8 @@ private fun HeroNoteCard(
     /** Quoted events keyed by the lookup key `note.quotedEventIds` holds. */
     quotedNotes: Map<String, FeedNote> = emptyMap(),
     stats: NoteStats?,
+    /** Who reacted with what and each zap's amount, for the engagement row. */
+    engagement: EngagementDetails? = null,
     isLiked: Boolean,
     isReposted: Boolean = false,
     isOwnNote: Boolean,
@@ -1347,21 +1353,64 @@ private fun HeroNoteCard(
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
 
-            // Engagement stats row — only shown when at least one count is non-zero.
-            // Reactions are dropped entirely in Zaps Only mode.
-            val reactions = stats?.reactions ?: 0
-            val reposts = stats?.reposts ?: 0
-            val zaps = stats?.zaps ?: 0
-            val showReactions = reactions > 0 && !LocalZapsOnlyMode.current
-            if (showReactions || reposts > 0 || zaps > 0) {
+            // Engagement row — only shown when at least one count is non-zero.
+            // Reactions as per-emoji pills, zaps as "count · total sats", the
+            // way iOS shows them. The per-event details arrive after the
+            // counts, so the counts stand in until then. Reactions are dropped
+            // entirely in Zaps Only mode.
+            val zapsOnly = LocalZapsOnlyMode.current
+            val emojiGroups = remember(engagement?.reactions, stats?.reactions, zapsOnly) {
+                when {
+                    zapsOnly -> emptyList()
+                    !engagement?.reactions.isNullOrEmpty() -> EngagementSummary.groupReactions(engagement!!.reactions)
+                    (stats?.reactions ?: 0) > 0 -> listOf(EngagementSummary.EmojiGroup("\u2764\uFE0F", stats!!.reactions))
+                    else -> emptyList()
+                }
+            }
+            val reposts = engagement?.reposts?.map { it.pubkey }?.distinct()?.size?.takeIf { it > 0 }
+                ?: stats?.reposts ?: 0
+            val zapDetails = engagement?.zaps.orEmpty()
+            val zapCount = if (zapDetails.isNotEmpty()) zapDetails.size else stats?.zaps ?: 0
+            val zapSats = if (zapDetails.isNotEmpty()) zapDetails.sumOf { it.amountSats } else stats?.zapAmountSats ?: 0L
+            if (emojiGroups.isNotEmpty() || reposts > 0 || zapCount > 0) {
                 Spacer(Modifier.height(12.dp))
                 Row(
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    if (showReactions) EngagementStat(count = reactions, label = "Likes", onClick = onReactionsClick)
-                    if (reposts > 0) EngagementStat(count = reposts, label = "Reposts", onClick = onRepostsClick)
-                    if (zaps > 0) EngagementStat(count = zaps, label = "Zaps", onClick = onZapsClick)
+                    if (emojiGroups.isNotEmpty()) {
+                        val shown = emojiGroups.take(EngagementSummary.VISIBLE_EMOJI_GROUPS)
+                        EngagementPill(
+                            description = emojiGroups.joinToString(prefix = "Reactions: ") { "${it.emoji} ${it.count}" },
+                            onClick = onReactionsClick,
+                        ) {
+                            shown.forEach { group ->
+                                Text(group.emoji, fontSize = 12.sp)
+                                Spacer(Modifier.width(2.dp))
+                                Text("${group.count}", color = SecondaryText, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                Spacer(Modifier.width(4.dp))
+                            }
+                            if (emojiGroups.size > shown.size) {
+                                Text("+${emojiGroups.size - shown.size}", color = SecondaryText, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                    if (zapCount > 0) {
+                        val text = EngagementSummary.zapText(zapCount, zapSats)
+                        EngagementPill(description = "Zaps: $text sats", onClick = onZapsClick) {
+                            Icon(NostrVaultIcons.Zap, contentDescription = null, tint = ZapOrange, modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(text, color = SecondaryText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                    if (reposts > 0) {
+                        EngagementPill(description = "Reposts: $reposts", onClick = onRepostsClick) {
+                            Icon(NostrVaultIcons.Repost, contentDescription = null, tint = RepostGreen, modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("$reposts", color = SecondaryText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                        }
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
@@ -1394,25 +1443,23 @@ private fun HeroNoteCard(
     }
 }
 
+/** One compact, tappable pill in the hero note's engagement row. */
 @Composable
-private fun EngagementStat(count: Int, label: String, onClick: () -> Unit = {}) {
+private fun EngagementPill(
+    description: String,
+    onClick: () -> Unit,
+    content: @Composable RowScope.() -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(onClick = onClick),
-    ) {
-        Text(
-            text = count.toString(),
-            color = PrimaryText,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(Modifier.width(4.dp))
-        Text(
-            text = label,
-            color = SecondaryText,
-            fontSize = 14.sp,
-        )
-    }
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f))
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = description }
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        content = content,
+    )
 }
 
 /** One "below the fold" response: who, what kind, and the text. */

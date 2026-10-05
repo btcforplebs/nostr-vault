@@ -12,7 +12,18 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.content.Context
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.relay.HavenBridge
+import com.nostrvault.relay.MacSync
+import com.nostrvault.relay.MacSyncStatus
+import com.nostrvault.relay.RelayForegroundService
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
+import java.io.File
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +35,51 @@ import javax.inject.Inject
 class HavenRelaySettingsViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val nostrService: com.nostrvault.service.NostrService,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
+
+    // ── Sync with Mac (iOS MacRelaySyncStatusView) ──────────────
+
+    private val _macSync = MutableStateFlow<MacSyncStatus?>(null)
+    val macSync = _macSync.asStateFlow()
+
+    /** Poll time in seconds, so a copy whose heartbeat stops reads as interrupted. */
+    private val _pollNow = MutableStateFlow(System.currentTimeMillis() / 1000)
+    val pollNow = _pollNow.asStateFlow()
+
+    private val _checkRequested = MutableStateFlow(false)
+    val checkRequested = _checkRequested.asStateFlow()
+
+    private var checkRequestedAt = 0L
+    private var statusAtRequest: MacSyncStatus? = null
+
+    /** The Mac address the relay runs with (MAC_RELAY_URL) for the saved config. */
+    val configuredMac: String get() = MacSync.macRelayURL(configStore.config.value)
+
+    /** Polls the relay's status file every 2s while the screen shows. */
+    suspend fun pollMacSync() {
+        val relayDir = File(context.filesDir, "relay_data")
+        while (kotlin.coroutines.coroutineContext.isActive) {
+            val latest = withContext(Dispatchers.IO) { MacSync.read(relayDir) }
+            if (_checkRequested.value) {
+                // Never spin forever: a request the relay didn't take clears itself.
+                if (MacSync.pickedUp(latest, statusAtRequest) || System.currentTimeMillis() - checkRequestedAt > 30_000) {
+                    _checkRequested.value = false
+                }
+            }
+            _macSync.value = latest
+            _pollNow.value = System.currentTimeMillis() / 1000
+            delay(2_000)
+        }
+    }
+
+    fun checkSyncWithMac() {
+        if (!HavenBridge.isLoaded) return
+        statusAtRequest = _macSync.value
+        checkRequestedAt = System.currentTimeMillis()
+        _checkRequested.value = true
+        HavenBridge.requestMacSyncCheck()
+    }
 
     private val _urlInput = MutableStateFlow("")
     val urlInput = _urlInput.asStateFlow()
@@ -70,7 +125,12 @@ fun HavenRelaySettingsScreen(
 ) {
     val urlInput by viewModel.urlInput.collectAsState()
     val saved by viewModel.saved.collectAsState()
+    val macSync by viewModel.macSync.collectAsState()
+    val checkRequested by viewModel.checkRequested.collectAsState()
+    val pollNow by viewModel.pollNow.collectAsState()
+    val relayReady by RelayForegroundService.readyForConnections.collectAsState()
     val colors = LocalNostrVaultColors.current
+    LaunchedEffect(Unit) { viewModel.pollMacSync() }
 
     Scaffold(
         topBar = {
@@ -167,6 +227,72 @@ fun HavenRelaySettingsScreen(
                     }
                 }
             }
+
+            val configuredMac = viewModel.configuredMac
+            if (configuredMac.isNotEmpty()) {
+                Spacer(Modifier.height(24.dp))
+                MacSyncSection(
+                    view = MacSync.view(macSync, configuredMac, checkRequested, pollNow),
+                    checkRequested = checkRequested,
+                    relayReady = relayReady,
+                    onCheck = viewModel::checkSyncWithMac,
+                )
+            }
+        }
+    }
+}
+
+/** The copy from the Mac and its missing-events check, with a re-run button. */
+@Composable
+private fun MacSyncSection(
+    view: MacSync.View,
+    checkRequested: Boolean,
+    relayReady: Boolean,
+    onCheck: () -> Unit,
+) {
+    val colors = LocalNostrVaultColors.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "SYNC",
+            color = SecondaryText,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (view.running || checkRequested) {
+                CircularProgressIndicator(
+                    color = colors.primary,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(16.dp),
+                )
+            } else {
+                val (icon, tint) = when (view.outcome) {
+                    "done" -> NostrVaultIcons.Check to SuccessGreen
+                    "incomplete" -> NostrVaultIcons.Alert to ZapOrange
+                    "failed" -> NostrVaultIcons.Alert to ErrorRed
+                    else -> NostrVaultIcons.History to SecondaryText
+                }
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(view.headline, color = PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+        view.detail?.let {
+            Spacer(Modifier.height(6.dp))
+            Text(it, color = SecondaryText, fontSize = 12.sp, lineHeight = 16.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+        Button(
+            onClick = onCheck,
+            enabled = !view.running && !checkRequested && relayReady,
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
+        ) {
+            Icon(NostrVaultIcons.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Check sync with Mac", fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

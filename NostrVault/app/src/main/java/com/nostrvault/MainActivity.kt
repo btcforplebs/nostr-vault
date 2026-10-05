@@ -60,6 +60,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var nostrService: NostrService
     @Inject lateinit var logStore: LogStore
     @Inject lateinit var localNotificationService: LocalNotificationService
+    @Inject lateinit var feedActivityNotifier: com.nostrvault.service.FeedActivityNotifier
     @Inject lateinit var notificationManager: NotificationManager
     @Inject lateinit var pendingPostManager: PendingPostManager
     @Inject lateinit var mediaUploadManager: MediaUploadManager
@@ -323,6 +324,8 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         localNotificationService.appInForeground = false
+        // The absence starts now; the feed on screen counts as seen.
+        feedActivityNotifier.onBackground()
         MusicPlayer.setAppInForeground(false)
         // Entering PiP pauses but does not stop the activity, so this only runs on a
         // real background transition: snapshot the feed and disconnect WebSockets.
@@ -335,6 +338,7 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         localNotificationService.appInForeground = true
+        feedActivityNotifier.onForeground()
         // A live stream another app's sound paused while we were away carries on.
         MusicPlayer.setAppInForeground(true)
         // Back in the foreground: a sleeping Mac vault may be awake now.

@@ -72,7 +72,6 @@ import com.nostrvault.data.model.toNote
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.ReelsScope
-import com.nostrvault.ui.screens.LiveStreamScreen
 import com.nostrvault.ui.components.AvatarMenuActions
 import com.nostrvault.ui.navigation.FeedTabPicker
 import com.nostrvault.ui.components.CustomZapSheet
@@ -148,10 +147,6 @@ fun FeedScreen(
     val marketCategory by viewModel.marketCategory.collectAsState()
     val marketScope by viewModel.marketScope.collectAsState()
     val marketFollowSetIsEmpty by viewModel.marketFollowSetIsEmpty.collectAsState()
-    // The tapped stream is held rather than looked up again by id: a kind-30311
-    // event is replaceable and short-lived, so the copy the grid was showing is
-    // the one to play.
-    var playingStream by remember { mutableStateOf<LiveStream?>(null) }
     val notes by viewModel.filteredNotes.collectAsState()
     val mediaNotes by viewModel.mediaNotes.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -642,7 +637,11 @@ fun FeedScreen(
                     profiles = allProfiles,
                     isLoading = liveLoading,
                     contentPadding = padding,
-                    onStreamClick = { playingStream = it },
+                    // The tapped stream is handed over whole rather than looked
+                    // up again by id: a kind-30311 event is replaceable and
+                    // short-lived, so the copy the grid was showing is the one
+                    // to play. LiveStreamHost draws the player over the app.
+                    onStreamClick = { com.nostrvault.ui.components.LiveStreamRouter.open(it) },
                     onRefresh = viewModel::refreshLive,
                 )
             } else if (feedMode == FeedMode.ARTICLES || feedMode == FeedMode.RECIPES) {
@@ -938,17 +937,6 @@ fun FeedScreen(
             dismissButton = {
                 TextButton(onClick = { blockNoteId = null }) { Text("Cancel") }
             },
-        )
-    }
-
-    // The live player takes over the screen rather than living on a nav route:
-    // it needs the LiveStream object it was opened with, and a route argument
-    // would mean re-resolving a replaceable event that may already be gone.
-    playingStream?.let { stream ->
-        LiveStreamScreen(
-            stream = stream,
-            hostName = allProfiles[stream.hostPubkey]?.bestName,
-            onBack = { playingStream = null },
         )
     }
 

@@ -47,7 +47,12 @@ fun LinkPreviewCard(
 ) {
     // A Wavlake song plays right here instead of opening a web page.
     com.nostrvault.data.music.WavlakeLink.trackId(url)?.let { trackId ->
-        com.nostrvault.ui.screens.music.WavlakeTrackCard(trackId, modifier)
+        com.nostrvault.ui.screens.music.WavlakeTrackCard(trackId, modifier, fallbackUrl = url)
+        return
+    }
+    // A stream link plays in place, like a quoted stream does.
+    remember(url) { liveStreamCoordinate(url) }?.let { coordinate ->
+        LiveStreamReferenceCard(coordinate, fallbackUrl = url, modifier = modifier)
         return
     }
     val colors = LocalNostrVaultColors.current

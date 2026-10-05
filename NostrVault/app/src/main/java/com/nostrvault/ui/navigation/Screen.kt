@@ -22,6 +22,10 @@ sealed class Screen(val route: String) {
     data object NoteDetail : Screen("note/{noteId}") {
         fun createRoute(noteId: String) = "note/$noteId"
     }
+    /** Posts tagged with one hashtag (`#t`), live. [tag] is lowercased, no #. */
+    data object HashtagFeed : Screen("hashtag/{tag}") {
+        fun createRoute(tag: String) = "hashtag/${android.net.Uri.encode(tag)}"
+    }
     data object DMThread : Screen("dm_thread/{pubkey}?draft={draft}") {
         /** [draft] is typed into the message box on open (Message seller). */
         fun createRoute(pubkey: String, draft: String? = null) =
@@ -65,6 +69,7 @@ sealed class Screen(val route: String) {
     data object BlockedSettings : Screen("settings/blocked")
     data object RelayListEditor : Screen("settings/relays")
     data object BlastrSettings : Screen("settings/blastr")
+    data object DMRelaysSettings : Screen("settings/dm_relays")
     data object BlossomSettings : Screen("settings/blossom")
     data object PowSettings : Screen("settings/pow")
     data object AdvancedSettings : Screen("settings/advanced")
