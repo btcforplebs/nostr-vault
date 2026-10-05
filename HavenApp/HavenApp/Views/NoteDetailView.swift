@@ -1351,8 +1351,15 @@ struct NoteDetailView: View {
         feedService.saveInteractionState()
         let relayHint = ConfigService.shared.config.nostrURL
         Task {
-            guard let signed = await nostrService.signEventAsync(kind: 7, content: "+", tags: [["e", noteId, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]) else { return }
+            guard let signed = await nostrService.signEventAsync(kind: 7, content: "+", tags: [["e", noteId, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]) else {
+                await MainActor.run { LikeFeedback.failed() }
+                return
+            }
             nostrService.postEvent(signed)
+            await MainActor.run {
+                LikeFeedback.liked()
+                feedService.keepLikedNoteLocally(id: noteId)
+            }
         }
     }
 
@@ -1369,8 +1376,15 @@ struct NoteDetailView: View {
         }
         let relayHint = ConfigService.shared.config.nostrURL
         Task {
-            guard let signed = await nostrService.signEventAsync(kind: 7, content: emoji, tags: [["e", note.id, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]) else { return }
+            guard let signed = await nostrService.signEventAsync(kind: 7, content: emoji, tags: [["e", note.id, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]) else {
+                await MainActor.run { LikeFeedback.failed() }
+                return
+            }
             nostrService.postEvent(signed)
+            await MainActor.run {
+                LikeFeedback.liked(emoji)
+                feedService.keepLikedNoteLocally(id: note.id)
+            }
         }
     }
     

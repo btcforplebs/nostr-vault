@@ -759,6 +759,24 @@ class ActionToastManager: ObservableObject {
     }
 }
 
+/// The short "Liked" pill after a like is signed and sent. A like signed by a
+/// remote signer takes a round trip, and with nothing on screen there was no
+/// telling a like that went out from one the signer never answered.
+@MainActor
+enum LikeFeedback {
+    static func liked(_ emoji: String? = nil) {
+        let shown = emoji.map(reactionDisplayEmoji) ?? ""
+        let message = shown.isEmpty || shown == "❤️" ? "Liked" : "Reacted \(shown)"
+        ActionToastManager.shared.show(icon: "heart.fill", message: message, color: .pink)
+    }
+
+    static func failed() {
+        ActionToastManager.shared.show(icon: "exclamationmark.triangle.fill",
+                                       message: "Like failed: your signer didn't answer",
+                                       color: Color.red.opacity(0.85))
+    }
+}
+
 // MARK: - Action Toast Banner
 
 struct ActionToastBanner: View {

@@ -128,9 +128,14 @@ struct FeedActions {
                             feedService.noteStats[noteId] = s
                             feedService.saveInteractionState()
                         }
+                        await MainActor.run { LikeFeedback.failed() }
                         return
                     }
                     nostrService.postEvent(signed)
+                    await MainActor.run {
+                        LikeFeedback.liked()
+                        feedService.keepLikedNoteLocally(id: noteId)
+                    }
                 }
             },
             unlikeNote: { note in
@@ -167,9 +172,14 @@ struct FeedActions {
                                 feedService.saveInteractionState()
                             }
                         }
+                        await MainActor.run { LikeFeedback.failed() }
                         return
                     }
                     nostrService.postEvent(signed)
+                    await MainActor.run {
+                        LikeFeedback.liked(emoji)
+                        feedService.keepLikedNoteLocally(id: note.id)
+                    }
                 }
             },
             repostNote: { note in

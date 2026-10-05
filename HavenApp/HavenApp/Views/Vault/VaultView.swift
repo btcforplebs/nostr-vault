@@ -130,6 +130,8 @@ struct VaultView: View {
     /// nil until the first fetch. A refresh anywhere (this tab, Media) wipes
     /// the receipts pulled from feed relays, so a stale generation refetches.
     @State var zapReceiptsFetchGeneration: Int?
+    /// The `eventsResetGeneration` `requestedMissingIds` belongs to.
+    @State var likedNotesFetchGeneration: Int?
 
     // Static regex pattern to avoid recompilation
     /// Scroll target for tapping the Relay tab again.
@@ -328,6 +330,7 @@ struct VaultView: View {
             zapsHasLoadedOnce = false
             zapsInitialSettled = false
             zapReceiptsFetchGeneration = nil
+            likedNotesFetchGeneration = nil
             zapReceiptCache = [:]
             refreshAll()
         }
@@ -776,6 +779,7 @@ struct VaultView: View {
             zapsHasLoadedOnce = false
             zapsInitialSettled = false
             zapReceiptsFetchGeneration = nil
+            likedNotesFetchGeneration = nil
             zapReceiptCache = [:]
             refreshAll()
         }

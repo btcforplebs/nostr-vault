@@ -2321,6 +2321,9 @@ class NostrService: ObservableObject {
 
             let client = WebSocketClient()
             client.isTemporary = true
+            // Held until it disconnects. Nothing else kept it: it was freed when this
+            // function returned, before `connect` ran, so no request was ever sent.
+            trackTemporaryClient(client)
             client.messageSubject
                 .receive(on: processingQueue)
                 .sink { [weak self] message in
@@ -2364,6 +2367,9 @@ class NostrService: ObservableObject {
 
             let client = WebSocketClient()
             client.isTemporary = true
+            // Held until it disconnects. Nothing else kept it: it was freed when this
+            // function returned, before `connect` ran, so no request was ever sent.
+            trackTemporaryClient(client)
             client.messageSubject
                 .receive(on: processingQueue)
                 .sink { [weak self] message in
@@ -2415,6 +2421,9 @@ class NostrService: ObservableObject {
 
             let client = WebSocketClient()
             client.isTemporary = true
+            // Held until it disconnects. Nothing else kept it: it was freed when this
+            // function returned, before `connect` ran, so no request was ever sent.
+            trackTemporaryClient(client)
             client.messageSubject
                 .receive(on: processingQueue)
                 .sink { [weak self] message in

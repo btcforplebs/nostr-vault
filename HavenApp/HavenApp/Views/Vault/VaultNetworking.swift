@@ -95,7 +95,22 @@ extension VaultView {
         let owner = nostrService.activeHexPubkey
         guard !owner.isEmpty else { return }
 
-        let likedNoteIds = Set(nostrService.events.filter { $0.kind == 7 && $0.pubkey == owner }.compactMap { event in
+        // A refresh wipes the events and the liked notes with them, but the
+        // ids stayed in `requestedMissingIds`, so they were never asked for
+        // again and "Given" came back empty. Zaps had the same bug (#204).
+        let generation = nostrService.eventsResetGeneration
+        if likedNotesFetchGeneration != generation {
+            likedNotesFetchGeneration = generation
+            requestedMissingIds.removeAll()
+        }
+
+        let myLikes = nostrService.events.filter { $0.kind == 7 && $0.pubkey == owner }
+        var likedAuthor: [String: String] = [:]
+        for like in myLikes {
+            guard let target = like.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] else { continue }
+            if let author = like.tags.first(where: { $0.count >= 2 && $0[0] == "p" })?[1] { likedAuthor[target] = author }
+        }
+        let likedNoteIds = Set(myLikes.compactMap { event in
             event.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
         })
         let existingIds = Set(nostrService.events.map { $0.id })
@@ -104,17 +119,37 @@ extension VaultView {
         guard !missingIds.isEmpty else { return }
         for id in missingIds { requestedMissingIds.insert(id) }
 
+        // You mostly like posts from the feed, which already holds them signed
+        // and whole: take those now instead of waiting on relays, which on
+        // 2026-10-05 returned 7 of the last 20 liked posts from primal.
+        let feedCache = FeedService.shared.rawEventCache
+        for id in missingIds {
+            guard let json = feedCache[id], let data = json.data(using: .utf8),
+                  let event = try? JSONDecoder().decode(NostrEvent.self, from: data), event.id == id else { continue }
+            nostrService.injectEvent(event)
+        }
+
         #if DEBUG
         print("VaultView: Fetching \(missingIds.count) missing liked notes")
         #endif
 
-        var urls = [configService.config.nostrURL].compactMap { URL(string: $0) }
-        // Also try external relays for notes not on the local relay
-        let externalStrs = configService.config.activeFeedRelays.isEmpty ? [
+        // The local relay's root only holds your own events; the notes you
+        // like are mostly other people's, which the embedded relay keeps on
+        // /feed. Then the feed relays, then where the authors themselves write.
+        var strings = [configService.config.nostrURL, configService.config.nostrURL + "/feed"]
+        strings += configService.config.activeFeedRelays.isEmpty ? [
             "wss://relay.primal.net",
             "wss://nos.lol",
         ] : configService.config.activeFeedRelays
-        urls.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
+        var authorRelays: [String] = []
+        for id in missingIds {
+            guard let author = likedAuthor[id], let outbox = nostrService.outboxRelays[author] else { continue }
+            for relay in outbox.prefix(2) where !strings.contains(relay) && !authorRelays.contains(relay) {
+                authorRelays.append(relay)
+            }
+        }
+        strings += authorRelays.prefix(6)
+        let urls = strings.compactMap { URL(string: $0) }
 
         nostrService.fetchNotesByIds(missingIds, from: urls)
     }
