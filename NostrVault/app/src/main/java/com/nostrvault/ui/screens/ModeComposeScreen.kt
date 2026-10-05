@@ -50,6 +50,7 @@ import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.model.DivinePost
 import com.nostrvault.data.model.LongFormDraft
 import com.nostrvault.data.model.MediaUploadOutcomeMessage
+import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.Reel
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.NostrService
@@ -281,6 +282,8 @@ class ModeComposeViewModel @Inject constructor(
 
     fun postDivine(title: String, caption: String, onDone: () -> Unit) {
         val clip = _clip.value ?: return
+        // Locked at Post, before the uploads: see PostingAccount.
+        val lock = nostrService.lockPostingAccount()
         viewModelScope.launch {
             _busy.value = true
             _error.value = null
@@ -300,7 +303,7 @@ class ModeComposeViewModel @Inject constructor(
                     durationSeconds = clip.durationSeconds, title = title.trim(), caption = caption.trim(),
                     publishedAt = System.currentTimeMillis() / 1000,
                 )
-                val event = nostrService.signEventAsync(kind = DivinePost.KIND, content = caption.trim(), tags = tags)
+                val event = nostrService.signEventAsync(kind = DivinePost.KIND, content = caption.trim(), tags = tags, lockedTo = lock)
                     ?: throw IllegalStateException("Couldn't sign the post. Check your key or remote signer in Settings.")
                 nostrService.postEvent(event)
                 val (accepted, message) = nostrService.publishAwaitingOk(event, Reel.DIVINE_RELAY)
@@ -315,6 +318,8 @@ class ModeComposeViewModel @Inject constructor(
                 onDone()
             } catch (e: Exception) {
                 Log.e(TAG, "postDivine failed", e)
+                // The switch may have closed this screen; the banner is seen either way.
+                if (e is PostingAccount.AccountChangedException) notificationManager.showError(PostingAccount.MESSAGE)
                 _error.value = e.message ?: "Couldn't post the diVine."
             }
             _status.value = null
@@ -323,6 +328,7 @@ class ModeComposeViewModel @Inject constructor(
     }
 
     fun publishLongForm(draft: LongFormDraft, onDone: () -> Unit) {
+        val lock = nostrService.lockPostingAccount()
         viewModelScope.launch {
             _busy.value = true
             _error.value = null
@@ -346,11 +352,14 @@ class ModeComposeViewModel @Inject constructor(
                     kind = LongFormDraft.KIND,
                     content = final.content(),
                     tags = final.tags(System.currentTimeMillis() / 1000),
+                    lockedTo = lock,
                 ) ?: throw IllegalStateException("Couldn't sign the post. Check your key or remote signer in Settings.")
                 nostrService.postEvent(event)
                 onDone()
             } catch (e: Exception) {
                 Log.e(TAG, "publishLongForm failed", e)
+                // The switch may have closed this screen; the banner is seen either way.
+                if (e is PostingAccount.AccountChangedException) notificationManager.showError(PostingAccount.MESSAGE)
                 _error.value = e.message ?: "Couldn't publish."
             }
             _status.value = null
@@ -364,6 +373,7 @@ class ModeComposeViewModel @Inject constructor(
      * Plebeian look. Port of MarketplaceSellView.publish on iPhone.
      */
     fun publishListing(draft: com.nostrvault.data.model.ListingDraft, photos: List<Uri>, onDone: () -> Unit) {
+        val lock = nostrService.lockPostingAccount()
         viewModelScope.launch {
             _busy.value = true
             _error.value = null
@@ -381,6 +391,7 @@ class ModeComposeViewModel @Inject constructor(
                     kind = com.nostrvault.data.model.ListingDraft.KIND,
                     content = final.content(),
                     tags = final.tags(System.currentTimeMillis() / 1000),
+                    lockedTo = lock,
                 ) ?: throw IllegalStateException("Couldn't sign the listing. Check your key or remote signer in Settings.")
                 nostrService.postEvent(event)
                 val results = kotlinx.coroutines.coroutineScope {
@@ -398,6 +409,8 @@ class ModeComposeViewModel @Inject constructor(
                 onDone()
             } catch (e: Exception) {
                 Log.e(TAG, "publishListing failed", e)
+                // The switch may have closed this screen; the banner is seen either way.
+                if (e is PostingAccount.AccountChangedException) notificationManager.showError(PostingAccount.MESSAGE)
                 _error.value = e.message ?: "Couldn't list it."
             }
             _status.value = null
