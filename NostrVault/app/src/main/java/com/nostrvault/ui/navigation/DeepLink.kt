@@ -13,6 +13,8 @@ data class DeepLinkTarget(
     val accountNpub: String? = null,
     /** Set when the route is the Relay tab and it should scroll to one event. */
     val relayFocus: RelayFocusRequest? = null,
+    /** Paste the clipboard into Blossom once the Media tab shows (`nostrvault://mediapaste`). */
+    val mediaPaste: Boolean = false,
 )
 
 /**
@@ -66,7 +68,9 @@ object DeepLinkRouter {
             // A notification about a specific mention does better than this — it
             // carries the event id and opens the note.
             "mentions" -> DeepLinkTarget(Screen.Feed.route)
-            "compose", "mediapaste" -> DeepLinkTarget(Screen.ComposeNote.createRoute())
+            "compose" -> DeepLinkTarget(Screen.ComposeNote.createRoute())
+            // iOS opens the Media tab and pastes the clipboard into Blossom.
+            "mediapaste" -> DeepLinkTarget(Screen.MediaGallery.route, mediaPaste = true)
             "dms" -> DeepLinkTarget(Screen.DMInbox.route)
             "search" -> DeepLinkTarget(Screen.Search.route)
             "relay" -> DeepLinkTarget(Screen.Dashboard.route)

@@ -149,6 +149,7 @@ fun NostrVaultNavHost(
         target.accountNpub
             ?.takeIf { it != configStore.config.value.activeOrOwnerNpub() }
             ?.let { configStore.switchActiveAccount(it) }
+        if (target.mediaPaste) PendingMediaPaste.request()
         val focus = target.relayFocus
         if (focus == null) {
             navController.navigate(target.route) { launchSingleTop = true }

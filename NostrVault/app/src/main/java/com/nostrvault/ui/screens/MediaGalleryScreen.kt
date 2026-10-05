@@ -366,6 +366,32 @@ class MediaGalleryViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Saves what's on the clipboard to Blossom (`nostrvault://mediapaste`):
+     * copied media uploads like a picked file, a copied link is downloaded
+     * into the vault. Port of iOS handlePasteFromClipboard.
+     */
+    fun pasteFromClipboard(context: android.content.Context) {
+        val clip = (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager)
+            ?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+        when (val media = com.nostrvault.ui.navigation.ClipboardMedia.from(clip?.uri?.toString(), clip?.text?.toString())) {
+            is com.nostrvault.ui.navigation.ClipboardMedia.ContentUri -> uploadMedia(Uri.parse(media.uri), context.contentResolver)
+            is com.nostrvault.ui.navigation.ClipboardMedia.Link -> viewModelScope.launch {
+                val uploadId = notificationManager.addUpload(media.url.substringAfterLast('/').ifBlank { "pasted-media" })
+                if (blossomService.mirrorUrlToLocal(media.url) != null) {
+                    notificationManager.markUploadSuccess(uploadId)
+                    refresh()
+                } else {
+                    notificationManager.markUploadFailed(uploadId, "Couldn't download that link")
+                }
+            }
+            com.nostrvault.ui.navigation.ClipboardMedia.NotALink ->
+                android.widget.Toast.makeText(context, "The clipboard doesn't hold media or a link", android.widget.Toast.LENGTH_SHORT).show()
+            com.nostrvault.ui.navigation.ClipboardMedia.Empty ->
+                android.widget.Toast.makeText(context, "The clipboard is empty", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     companion object {
         private const val TAG = "MediaGalleryVM"
     }
@@ -460,6 +486,15 @@ fun MediaGalleryScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val mediaCacheService = viewModel.mediaCacheService
+
+    // nostrvault://mediapaste: paste once the tab is on screen. A beat behind,
+    // as iOS does; Android also hides the clipboard until the window has focus.
+    val pasteRequested by com.nostrvault.ui.navigation.PendingMediaPaste.requested.collectAsState()
+    LaunchedEffect(pasteRequested) {
+        if (!pasteRequested) return@LaunchedEffect
+        kotlinx.coroutines.delay(400)
+        if (com.nostrvault.ui.navigation.PendingMediaPaste.consume()) viewModel.pasteFromClipboard(context)
+    }
 
     val mediaPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
