@@ -1,5 +1,12 @@
 package com.nostrvault.ui.screens
 
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.TextStyle
+import java.time.temporal.WeekFields
+import java.util.Locale
+
 /**
  * How the Media tab orders its items. Port of iOS `MediaSortOption`; the raw
  * [key] is what is stored, under the same name iOS uses.
@@ -43,5 +50,69 @@ enum class MediaSortOption(val key: String, val label: String) {
             item.isAudio -> 3
             else -> 4
         }
+    }
+}
+
+/** One run of consecutive items under the same heading; [startIndex] is the first item's place in the whole list. */
+data class MediaDateSection(val title: String, val startIndex: Int, val items: List<BlossomMediaItem>)
+
+/**
+ * The gallery's date headings: Today / This Week / This Month / month, with
+ * the year added for older years. Port of iOS `MediaDateGrouping`.
+ *
+ * "This Week" is the calendar week containing [now], not the last seven days.
+ */
+object MediaDateGrouping {
+    const val UNDATED = "Undated"
+
+    fun bucketKey(
+        epochSeconds: Long,
+        now: LocalDate,
+        zone: ZoneId = ZoneId.systemDefault(),
+        locale: Locale = Locale.getDefault(),
+    ): String {
+        // No upload time and no file time: there is nothing to date it by.
+        if (epochSeconds <= 0) return UNDATED
+        val date = Instant.ofEpochSecond(epochSeconds).atZone(zone).toLocalDate()
+        if (date == now) return "Today"
+        val week = WeekFields.of(locale)
+        if (date.get(week.weekBasedYear()) == now.get(week.weekBasedYear()) &&
+            date.get(week.weekOfWeekBasedYear()) == now.get(week.weekOfWeekBasedYear())
+        ) {
+            return "This Week"
+        }
+        if (date.year == now.year && date.month == now.month) return "This Month"
+        val month = date.month.getDisplayName(TextStyle.FULL_STANDALONE, locale)
+        // Within the current year the year is noise; older media needs it.
+        return if (date.year == now.year) month else "$month ${date.year}"
+    }
+
+    /**
+     * Splits [items] into consecutive runs sharing a heading, in the order
+     * given — never reorders. Under a sort that is not by date the whole list
+     * is one untitled section, so no heading sits above unrelated months.
+     */
+    fun sections(
+        items: List<BlossomMediaItem>,
+        sort: MediaSortOption,
+        now: LocalDate = LocalDate.now(),
+        zone: ZoneId = ZoneId.systemDefault(),
+        locale: Locale = Locale.getDefault(),
+    ): List<MediaDateSection> {
+        if (items.isEmpty()) return emptyList()
+        if (!sort.groupsByDate) return listOf(MediaDateSection("", 0, items))
+        val runs = mutableListOf<MediaDateSection>()
+        var title: String? = null
+        var start = 0
+        items.forEachIndexed { i, item ->
+            val key = bucketKey(item.sortTime, now, zone, locale)
+            if (key != title) {
+                if (title != null) runs.add(MediaDateSection(title!!, start, items.subList(start, i)))
+                title = key
+                start = i
+            }
+        }
+        runs.add(MediaDateSection(title!!, start, items.subList(start, items.size)))
+        return runs
     }
 }

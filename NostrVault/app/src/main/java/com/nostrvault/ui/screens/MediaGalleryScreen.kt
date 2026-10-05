@@ -16,6 +16,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -579,6 +580,10 @@ fun MediaGalleryScreen(
     val filteredItems = remember(mediaItems, activeFilter, sortOption) {
         sortOption.sorted(mediaItems.filter { activeFilter.matches(it) })
     }
+    // Today / This Week / This Month / month headings, only under a date sort.
+    val sections = remember(filteredItems, sortOption) {
+        MediaDateGrouping.sections(filteredItems, sortOption)
+    }
 
     GlassScaffold(
         toolbar = {
@@ -799,34 +804,47 @@ fun MediaGalleryScreen(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    itemsIndexed(
-                        items = filteredItems,
-                        key = { _, item -> item.sha256 },
-                    ) { index, item ->
-                        MediaGridCell(
-                            item = item,
-                            index = index,
-                            backup = BackupBadgeState(
-                                summary = viewModel.backupSummary(item.sha256, mirrorPresence),
-                                mirrorCount = blossomMirrors.size,
-                                mirrorsKey = blossomMirrors,
-                                busy = busySha == item.sha256,
-                                check = { viewModel.checkBackup(item.sha256) },
-                                onMirror = { viewModel.mirrorMissing(item) },
-                                onSaveToVault = { viewModel.saveToVault(item) },
-                            ),
-                            contextMenuTarget = contextMenuTarget,
-                            noteId = noteIdByHash[item.sha256.lowercase()],
-                            onNoteClick = onNoteClick,
-                            onTap = {
-                                MediaGalleryBridge.currentItems = filteredItems
-                                onMediaClick(index)
-                            },
-                            onLongPress = { contextMenuTarget = index },
-                            onDismissMenu = { contextMenuTarget = null },
-                            mediaCacheService = mediaCacheService,
-                            clipboardManager = clipboardManager,
-                        )
+                    for (section in sections) {
+                        if (section.title.isNotEmpty()) {
+                            item(
+                                key = "header:${section.title}",
+                                span = { GridItemSpan(maxLineSpan) },
+                                contentType = "header",
+                            ) {
+                                MediaSectionHeader(section.title)
+                            }
+                        }
+                        itemsIndexed(
+                            items = section.items,
+                            key = { _, item -> item.sha256 },
+                            contentType = { _, _ -> "media" },
+                        ) { offset, item ->
+                            val index = section.startIndex + offset
+                            MediaGridCell(
+                                item = item,
+                                index = index,
+                                backup = BackupBadgeState(
+                                    summary = viewModel.backupSummary(item.sha256, mirrorPresence),
+                                    mirrorCount = blossomMirrors.size,
+                                    mirrorsKey = blossomMirrors,
+                                    busy = busySha == item.sha256,
+                                    check = { viewModel.checkBackup(item.sha256) },
+                                    onMirror = { viewModel.mirrorMissing(item) },
+                                    onSaveToVault = { viewModel.saveToVault(item) },
+                                ),
+                                contextMenuTarget = contextMenuTarget,
+                                noteId = noteIdByHash[item.sha256.lowercase()],
+                                onNoteClick = onNoteClick,
+                                onTap = {
+                                    MediaGalleryBridge.currentItems = filteredItems
+                                    onMediaClick(index)
+                                },
+                                onLongPress = { contextMenuTarget = index },
+                                onDismissMenu = { contextMenuTarget = null },
+                                mediaCacheService = mediaCacheService,
+                                clipboardManager = clipboardManager,
+                            )
+                        }
                     }
                 }
             } else {
@@ -842,39 +860,64 @@ fun MediaGalleryScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    itemsIndexed(
-                        items = filteredItems,
-                        key = { _, item -> item.sha256 },
-                    ) { index, item ->
-                        MediaListRow(
-                            item = item,
-                            index = index,
-                            backup = BackupBadgeState(
-                                summary = viewModel.backupSummary(item.sha256, mirrorPresence),
-                                mirrorCount = blossomMirrors.size,
-                                mirrorsKey = blossomMirrors,
-                                busy = busySha == item.sha256,
-                                check = { viewModel.checkBackup(item.sha256) },
-                                onMirror = { viewModel.mirrorMissing(item) },
-                                onSaveToVault = { viewModel.saveToVault(item) },
-                            ),
-                            contextMenuTarget = contextMenuTarget,
-                            noteId = noteIdByHash[item.sha256.lowercase()],
-                            onNoteClick = onNoteClick,
-                            onTap = {
-                                MediaGalleryBridge.currentItems = filteredItems
-                                onMediaClick(index)
-                            },
-                            onLongPress = { contextMenuTarget = index },
-                            onDismissMenu = { contextMenuTarget = null },
-                            mediaCacheService = mediaCacheService,
-                            clipboardManager = clipboardManager,
-                        )
+                    for (section in sections) {
+                        if (section.title.isNotEmpty()) {
+                            stickyHeader(key = "header:${section.title}", contentType = "header") {
+                                MediaSectionHeader(section.title)
+                            }
+                        }
+                        itemsIndexed(
+                            items = section.items,
+                            key = { _, item -> item.sha256 },
+                            contentType = { _, _ -> "media" },
+                        ) { offset, item ->
+                            val index = section.startIndex + offset
+                            MediaListRow(
+                                item = item,
+                                index = index,
+                                backup = BackupBadgeState(
+                                    summary = viewModel.backupSummary(item.sha256, mirrorPresence),
+                                    mirrorCount = blossomMirrors.size,
+                                    mirrorsKey = blossomMirrors,
+                                    busy = busySha == item.sha256,
+                                    check = { viewModel.checkBackup(item.sha256) },
+                                    onMirror = { viewModel.mirrorMissing(item) },
+                                    onSaveToVault = { viewModel.saveToVault(item) },
+                                ),
+                                contextMenuTarget = contextMenuTarget,
+                                noteId = noteIdByHash[item.sha256.lowercase()],
+                                onNoteClick = onNoteClick,
+                                onTap = {
+                                    MediaGalleryBridge.currentItems = filteredItems
+                                    onMediaClick(index)
+                                },
+                                onLongPress = { contextMenuTarget = index },
+                                onDismissMenu = { contextMenuTarget = null },
+                                mediaCacheService = mediaCacheService,
+                                clipboardManager = clipboardManager,
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/** Heading over one dated run of media (iOS `mediaSectionHeader`). */
+@Composable
+private fun MediaSectionHeader(title: String) {
+    Text(
+        text = title,
+        color = PrimaryText,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.3.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(WindowBackground.copy(alpha = 0.92f))
+            .padding(horizontal = 6.dp, vertical = 8.dp),
+    )
 }
 
 /** Grid cell with context menu. */
