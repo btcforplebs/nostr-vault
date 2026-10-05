@@ -200,6 +200,13 @@ dependencies {
     // ---- Markdown ----
     implementation("com.github.jeziellago:compose-markdown:0.5.4")
 
+    // ---- On-device translation (ML Kit) ----
+    // "Translate post": language ID ships its model in the APK; translation
+    // downloads one model per language from Google on first use. The note
+    // text never leaves the phone.
+    implementation("com.google.mlkit:language-id:17.0.6")
+    implementation("com.google.mlkit:translate:17.0.3")
+
     // ---- Permissions ----
     implementation("com.google.accompanist:accompanist-permissions:0.36.0")
 
