@@ -212,8 +212,6 @@ extension VaultView {
                     }
                     let myLikedNoteIds = Set(myLikeDates.keys)
                     var filtered = currentEvents.filter { noteKinds.contains($0.kind) && myLikedNoteIds.contains($0.id) }
-                    let matchedAnyKind = currentEvents.filter { myLikedNoteIds.contains($0.id) }
-                    print("LIKESDIAG show: owner=\(owner.prefix(8)) events=\(currentEvents.count) kind7=\(currentEvents.filter { $0.kind == 7 }.count) mine=\(currentEvents.filter { $0.kind == 7 && $0.pubkey == owner }.count) targets=\(myLikedNoteIds.count) found=\(matchedAnyKind.count) kinds=\(Set(matchedAnyKind.map(\.kind)).sorted()) shown=\(filtered.count)")
                     filtered.sort { (myLikeDates[$0.id] ?? Date.distantPast) > (myLikeDates[$1.id] ?? Date.distantPast) }
 
                     let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)

@@ -115,7 +115,6 @@ extension VaultView {
         })
         let existingIds = Set(nostrService.events.map { $0.id })
         let missingIds = Array(likedNoteIds.subtracting(existingIds).subtracting(requestedMissingIds))
-        print("LIKESDIAG fetch: owner=\(owner.prefix(8)) events=\(nostrService.events.count) myLikes=\(myLikes.count) newest=\(myLikes.map(\.created_at).max() ?? 0) liked=\(likedNoteIds.count) have=\(likedNoteIds.intersection(existingIds).count) asked=\(requestedMissingIds.count) missing=\(missingIds.count)")
 
         guard !missingIds.isEmpty else { return }
         for id in missingIds { requestedMissingIds.insert(id) }
@@ -152,7 +151,6 @@ extension VaultView {
         strings += authorRelays.prefix(6)
         let urls = strings.compactMap { URL(string: $0) }
 
-        print("LIKESDIAG asking \(missingIds.count) from \(urls.map(\.absoluteString))")
         nostrService.fetchNotesByIds(missingIds, from: urls)
     }
 
