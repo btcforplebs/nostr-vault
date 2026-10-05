@@ -390,7 +390,8 @@ fun LiveStreamScreen(
                 onSelect = { item ->
                     // The link goes after anything already typed, ready to send.
                     val typed = chatInput.trim()
-                    chatInput = if (typed.isEmpty()) item.displayUrl else "$typed ${item.displayUrl}"
+                    val link = blossomShareLink(item)
+                    chatInput = if (typed.isEmpty()) link else "$typed $link"
                     showBlossomPicker = false
                 },
                 loadItems = viewModel::loadBlossomMedia,

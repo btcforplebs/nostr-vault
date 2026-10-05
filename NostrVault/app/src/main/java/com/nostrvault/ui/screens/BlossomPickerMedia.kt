@@ -137,3 +137,20 @@ class BlossomPickerMedia @Inject constructor(
         }
     }
 }
+
+/**
+ * The link to send for a picked file. A mirror URL is the bare
+ * `{server}/{sha256}`, and with no extension a chat or DM shows it as text,
+ * not a picture; Blossom servers serve the same blob at `/{sha256}.{ext}`
+ * (BUD-01), so the extension is added from the file's type.
+ */
+internal fun blossomShareLink(item: BlossomMediaItem): String {
+    val url = item.displayUrl
+    val path = url.substringBefore('?').substringBefore('#').substringAfterLast('/')
+    if ('.' in path) return url
+    val mime = blobMimeType(item.mimeType, item.localFile?.name)
+        ?: if (item.isVideo) "video/mp4" else "image/jpeg"
+    val ext = com.nostrvault.service.MediaSaveService.extensionForMimeType(mime)
+    val cut = url.indexOfFirst { it == '?' || it == '#' }.let { if (it < 0) url.length else it }
+    return url.substring(0, cut) + "." + ext + url.substring(cut)
+}
