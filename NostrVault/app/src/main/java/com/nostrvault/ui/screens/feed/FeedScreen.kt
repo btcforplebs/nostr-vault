@@ -586,7 +586,7 @@ fun FeedScreen(
                                 com.nostrvault.ui.screens.ModeComposerKind.ARTICLE -> NostrVaultIcons.Articles
                                 com.nostrvault.ui.screens.ModeComposerKind.RECIPE -> NostrVaultIcons.Recipes
                                 com.nostrvault.ui.screens.ModeComposerKind.LISTING -> NostrVaultIcons.Marketplace
-                                else -> NostrVaultIcons.Create
+                                else -> NostrVaultIcons.Compose
                             },
                             contentDescription = "Compose",
                             tint = Color.White,
@@ -749,7 +749,8 @@ fun FeedScreen(
                                 onFetchMissingNote = viewModel::fetchMissingNote,
                                 rootUnavailable = thread.rootId in unavailableNoteIds,
                                 lineAnchor = threadLineAnchor,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                // iOS: 12pt sides in threaded mode, 12pt between rows.
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 expandedRow = { note, _ ->
                                     FeedFullNoteRow(
                                         note = note,
@@ -819,7 +820,8 @@ fun FeedScreen(
                                     expandedNoteId = id
                                 },
                                 onProfileClick = onProfileClick,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                                // iOS: 8pt sides for a compact row, 12pt between rows.
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                             )
                         } else {
                             FeedFullNoteRow(
@@ -839,7 +841,8 @@ fun FeedScreen(
                                 onBlock = { id -> blockNoteId = id },
                                 onDelete = { id -> deleteNoteId = id },
                                 onLongPressLike = { id -> emojiPickerNoteId = id },
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                // iOS: 16pt sides, 12pt between rows.
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                             )
                         }
                     }
@@ -1515,12 +1518,11 @@ private fun FeedFullNoteRowContent(
     }
     // Subscribed here, not read with `viewModel.isLiked(...)`: a plain
     // StateFlow `.value` read is invisible to Compose, so the row skipped
-    // recomposition and a tapped heart, a zap, new counts or a late-arriving
+    // recomposition and a tapped heart, a zap or a late-arriving
     // parent never showed until the row scrolled off and back. derivedStateOf
     // narrows each to this note, so another note's like does not redraw it.
     val likedState = viewModel.likedEventIds.collectAsState()
     val zappedState = viewModel.zappedEventIds.collectAsState()
-    val statsState = viewModel.noteStats.collectAsState()
     val parentsState = viewModel.parentNotesCache.collectAsState()
     val parentNextState = viewModel.parentIsNextNote.collectAsState()
     val quotedState = viewModel.quotedNotesCache.collectAsState()
@@ -1530,7 +1532,6 @@ private fun FeedFullNoteRowContent(
     // repost is looked up by the note it reposts.
     val isLiked by remember(note.id) { derivedStateOf { note.effectiveEventId in likedState.value } }
     val isZapped by remember(note.id) { derivedStateOf { note.effectiveEventId in zappedState.value } }
-    val stats by remember(note.id) { derivedStateOf { statsState.value[note.effectiveEventId] } }
     val parentEventId = note.parentEventId
     val parentNote by remember(note.id) { derivedStateOf { parentEventId?.let { parentsState.value[it] } } }
     val isParentNext by remember(note.id) {
@@ -1569,7 +1570,6 @@ private fun FeedFullNoteRowContent(
     NoteCard(
         note = note,
         profile = cardProfiles[note.pubkey],
-        stats = stats,
         profiles = cardProfiles,
         quotedNotes = quotedNotesMap,
         isLiked = isLiked,

@@ -448,7 +448,6 @@ fun ProfileScreen(
                         note = note,
                         profile = if (selectedSection == ProfileSection.TAGGED)
                             allProfiles[note.pubkey] else profile,
-                        stats = viewModel.statsFor(note.id),
                         profiles = allProfiles,
                         quotedNotes = quotedNotes,
                         isLiked = viewModel.isLiked(note.id),
@@ -659,7 +658,7 @@ private fun ProfileActionRow(
             .padding(horizontal = 16.dp, vertical = 4.dp),
     ) {
         if (isOwnProfile) {
-            ActionChip("Post", NostrVaultIcons.Create, Color.White, colors.primary, onClick = onCompose)
+            ActionChip("Post", NostrVaultIcons.Compose, Color.White, colors.primary, onClick = onCompose)
             ActionChip("Edit", NostrVaultIcons.Edit, colors.primary, colors.primary.copy(alpha = 0.12f), onClick = onEditProfile)
         } else {
             ActionChip(

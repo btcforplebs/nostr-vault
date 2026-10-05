@@ -64,7 +64,6 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
-import com.nostrvault.data.model.NoteStats
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
@@ -173,7 +172,6 @@ private fun AvatarWithMenu(
 fun NoteCard(
     note: FeedNote,
     profile: FeedProfile?,
-    stats: NoteStats?,
     profiles: Map<String, FeedProfile> = emptyMap(),
     quotedNotes: Map<String, FeedNote> = emptyMap(),
     isLiked: Boolean = false,
@@ -330,13 +328,27 @@ fun NoteCard(
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = SecondaryGroupedBg.copy(alpha = 0.85f),
-        // Unfocused cards get a neutral hairline, not accent-at-18%. Every card in
-        // the feed carrying an orange outline spends the accent on structure,
-        // which is what the accent is for drawing the eye *away* from. Focus
-        // still gets the accent, at full strength, where it means something.
+        // The accent outline iOS draws (FeedNoteRow.fullLayout): faint on a
+        // grey card, 30% (40% on a reply) in OLED mode where the card has no
+        // fill to separate it from the black; full strength when focused.
         border = BorderStroke(
-            if (isFocused) 2.dp else if (isOled) 1.dp else 0.8.dp,
-            if (isFocused) colors.primary else SeparatorColor.copy(alpha = if (isOled) 0.9f else 0.6f),
+            when {
+                isFocused -> 2.dp
+                isOled -> 1.5.dp
+                note.isReply -> 0.8.dp
+                else -> 0.5.dp
+            },
+            if (isFocused) {
+                colors.primary
+            } else {
+                colors.primary.copy(
+                    alpha = if (isOled) {
+                        if (note.isReply) 0.40f else 0.30f
+                    } else {
+                        if (note.isReply) 0.15f else 0.06f
+                    },
+                )
+            },
         ),
         // No shadow: 8dp of it is not legible on a near-black surface. The 2dp
         // accent border above is what says "focused".
@@ -631,7 +643,6 @@ fun NoteCard(
             // reposts, not the repost wrapper event.
             EngagementBar(
                 noteId = note.effectiveEventId,
-                stats = stats,
                 isLiked = isLiked,
                 isZapped = isZapped,
                 isReposted = isReposted,
@@ -731,19 +742,13 @@ private fun ArticleInlineBody(
  * active states.
  * Order: Reply → Repost → Quote → Like → Zap.
  *
- * Repost, Like and Zap carry their count when there is one. Reply does not:
- * [NoteStats] has no reply count, and inventing one from the loaded thread would
- * be wrong for any note whose replies are not in the cache.
+ * No counts, as on iOS: the numbers belong to the thread view, which shows
+ * them as its own row (ThreadNoteEngagementRow, the hero note's stats).
  *
- * **Five buttons, because seven plus three counts does not fit a phone.** A
- * 360dp device leaves this row 312dp once the card's 10dp a side and the
- * column's 14dp a side are paid for. Seven 32dp buttons at 12dp spacing are
- * 296dp *icon-only* — already over once the old 50dp text indent was on it —
- * and a count adds its glyphs plus a 3dp gap to three of them: 3×58 + 4×32 +
- * 6×8 = 350dp. No arrangement fixes that; membership does. Share and Broadcast
- * moved to the overflow menu (neither carries a count, both are secondary to
- * Reply/Repost/Like/Zap, and Share sits next to Copy link where it belongs),
- * leaving 3×58 + 2×32 = 238dp.
+ * **Five buttons, with Share and Broadcast in the ⋯ menu.** iOS put them in
+ * the row and had no ⋯ menu, so a note there could not be reported, blocked
+ * or copied; both apps now use this row plus the menu. Share sits next to
+ * Copy link there, where it belongs.
  *
  * **Every child is unweighted, deliberately.** An equal `weight(1f)` hands each
  * cell the same width whether it needs 32dp or 58dp, and inside a counted cell
@@ -769,7 +774,6 @@ private fun ArticleInlineBody(
 @Composable
 internal fun EngagementBar(
     noteId: String,
-    stats: NoteStats?,
     isLiked: Boolean,
     isZapped: Boolean,
     isReposted: Boolean = false,
@@ -794,7 +798,7 @@ internal fun EngagementBar(
         // Reply
         if (onReply != null) {
             EngagementButton(
-                icon = NostrVaultIcons.Reply,
+                icon = NostrVaultIcons.ReplyAction,
                 isActive = false,
                 activeColor = SecondaryText,
                 contentDescription = "Reply",
@@ -809,7 +813,6 @@ internal fun EngagementBar(
                 isActive = isReposted,
                 activeColor = RepostGreen,
                 contentDescription = if (isReposted) "Reposted" else "Repost",
-                count = engagementCountLabel(stats?.repostCount ?: 0),
                 onClick = { onRepost.invoke(noteId) },
             )
         }
@@ -832,7 +835,6 @@ internal fun EngagementBar(
                 isActive = isLiked,
                 activeColor = LikeRed,
                 contentDescription = if (isLiked) "Unlike" else "Like",
-                count = engagementCountLabel(stats?.reactionCount ?: 0),
                 onClick = { onLike.invoke(noteId) },
                 onLongClick = if (onLongPressLike != null) {
                     { onLongPressLike.invoke(noteId) }
@@ -843,11 +845,10 @@ internal fun EngagementBar(
         // Zap
         if (onZap != null) Box(Modifier.zapFlightTarget(noteId)) {
             EngagementButton(
-                icon = NostrVaultIcons.Zap,
+                icon = if (isZapped) NostrVaultIcons.Zap else NostrVaultIcons.ZapOutline,
                 isActive = isZapped,
                 activeColor = ZapOrange,
                 contentDescription = if (isZapped) "Zapped" else "Zap",
-                count = zapCountLabel(stats?.zapCount ?: 0, stats?.zapAmountSats ?: 0L),
                 onClick = { onZap.invoke(noteId) },
                 onLongClick = onLongPressZap?.let { longPress -> { longPress(noteId) } },
                 dimmed = zapDimmed && !isZapped,

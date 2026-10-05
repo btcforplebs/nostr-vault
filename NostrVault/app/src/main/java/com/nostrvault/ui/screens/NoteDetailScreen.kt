@@ -907,7 +907,6 @@ fun NoteDetailScreen(
                         NoteCard(
                             note = parent,
                             profile = viewModel.profileFor(parent.pubkey),
-                            stats = viewModel.statsFor(parent.id),
                             profiles = profiles,
                             quotedNotes = quotedNotesMap,
                             isLiked = viewModel.isLiked(parent.id),
@@ -928,12 +927,14 @@ fun NoteDetailScreen(
                             onBlock = { blockTarget = parent },
                             onDelete = { deleteTarget = parent },
                             onLongPressLike = { emojiTargetNote = parent },
+                            modifier = Modifier.padding(horizontal = ThreadSideInset),
                         )
                         if (expandedEngagement && parent.id != focusedNoteId) {
                             perNoteEngagement[parent.id]?.let { details ->
                                 ThreadNoteEngagementRow(
                                     details = details,
                                     onClick = { kind -> engagementSheet = EngagementSheetTarget(kind, parent.id) },
+                                    modifier = Modifier.padding(horizontal = ThreadSideInset),
                                 )
                             }
                         }
@@ -1061,6 +1062,7 @@ fun NoteDetailScreen(
                         },
                         onLongPressLikeNote = { emojiTargetNote = it },
                         onEngagementClick = { kind, id -> engagementSheet = EngagementSheetTarget(kind, id) },
+                        modifier = Modifier.padding(horizontal = ThreadSideInset),
                     )
                 }
 
@@ -1219,7 +1221,7 @@ private fun InlineLoadingRow(text: String, color: androidx.compose.ui.graphics.C
 private fun ThreadConnectorLine(color: androidx.compose.ui.graphics.Color) {
     Box(
         modifier = Modifier
-            .padding(start = 36.dp)
+            .padding(start = ThreadSideInset + 36.dp)
             .width(1.5.dp)
             .height(12.dp)
             .background(color.copy(alpha = 0.25f)),
@@ -1327,6 +1329,7 @@ private fun ThreadedReplyNode(
     onLongPressLikeNote: (FeedNote) -> Unit,
     /** A pill in a note's engagement row: open that list for that note. */
     onEngagementClick: (EngagementSheetKind, String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     // Keyed on the pool too: late-arriving replies (refocus fetch,
     // pull-to-refresh) must recompute each node's children.
@@ -1340,13 +1343,12 @@ private fun ThreadedReplyNode(
     }
 
     Column(
-        modifier = Modifier.animateContentSize(animationSpec = Motion.panel()),
+        modifier = modifier.animateContentSize(animationSpec = Motion.panel()),
     ) {
         // The reply itself
         NoteCard(
             note = reply,
             profile = viewModel.profileFor(reply.pubkey),
-            stats = viewModel.statsFor(reply.id),
             profiles = profiles,
             quotedNotes = quotedNotesMap,
             isLiked = viewModel.isLiked(reply.id),
@@ -1770,13 +1772,8 @@ private fun HeroNoteCard(
             // was a hand-duplicated seven-button row under a comment claiming it
             // was identical, which is how it kept Share and Broadcast inline
             // while every other note on this screen had moved them to the menu.
-            //
-            // `stats = null`: the numbers are already in the `EngagementStat`
-            // row above, and the focused note is the worst place to show them
-            // twice.
             EngagementBar(
                 noteId = note.effectiveEventId,
-                stats = null,
                 isLiked = isLiked,
                 isZapped = false,
                 isReposted = isReposted,
@@ -1830,11 +1827,12 @@ private data class EngagementSheetTarget(val kind: EngagementSheetKind, val note
 private fun ThreadNoteEngagementRow(
     details: EngagementDetails,
     onClick: (EngagementSheetKind) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val zapsOnly = LocalZapsOnlyMode.current
     val row = remember(details, zapsOnly) { EngagementSummary.threadRow(details, zapsOnly) }
     if (row.isEmpty) return
-    Column(modifier = Modifier.padding(horizontal = 12.dp)) {
+    Column(modifier = modifier.padding(horizontal = 12.dp)) {
         HorizontalDivider(
             color = SecondaryText.copy(alpha = 0.1f),
             thickness = 0.5.dp,
@@ -1939,6 +1937,12 @@ private fun OtherResponseCard(note: FeedNote, profile: FeedProfile?, onClick: ()
  * focused reply read as the same card.
  */
 private const val HERO_TINT_ALPHA = 0.04f
+
+/**
+ * Parents and replies sit this far in from the screen's edges, lined up with
+ * the focused card (iOS pads both .horizontal 16).
+ */
+private val ThreadSideInset = 16.dp
 
 /** Where the opened note lands in the thread view, as a share of its height from the top (iOS #306). */
 private const val THREAD_LANDING_ANCHOR = 0.12f

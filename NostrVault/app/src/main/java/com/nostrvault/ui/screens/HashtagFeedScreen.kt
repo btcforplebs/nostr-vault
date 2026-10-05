@@ -324,7 +324,6 @@ fun HashtagFeedScreen(
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val likedIds by viewModel.likedEventIds.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
-    val noteStats by viewModel.noteStats.collectAsState()
     val toast by viewModel.toast.collectAsState()
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
@@ -449,7 +448,6 @@ fun HashtagFeedScreen(
                 NoteCard(
                     note = note,
                     profile = profiles[note.pubkey],
-                    stats = noteStats[note.effectiveEventId],
                     profiles = profiles,
                     quotedNotes = quotedNotesMap,
                     isLiked = note.effectiveEventId in likedIds,
