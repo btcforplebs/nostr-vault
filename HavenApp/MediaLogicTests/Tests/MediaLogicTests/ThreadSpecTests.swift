@@ -63,3 +63,21 @@ final class ThreadSpecTests: XCTestCase {
         XCTAssertEqual(NIP10Thread.parentEventId(kind: 1111, tags: nested), commentId)
     }
 }
+
+final class ThreadReplyVisibilityTests: XCTestCase {
+    func testOutsideNeedsALoadedGraph() {
+        XCTAssertFalse(ThreadReplyVisibility.isOutside("stranger", trusted: [], insiders: []))
+        XCTAssertTrue(ThreadReplyVisibility.isOutside("stranger", trusted: ["friend"], insiders: []))
+        XCTAssertFalse(ThreadReplyVisibility.isOutside("friend", trusted: ["friend"], insiders: []))
+        // The opened note's author is never folded, trusted or not.
+        XCTAssertFalse(ThreadReplyVisibility.isOutside("op", trusted: ["friend"], insiders: ["op"]))
+    }
+
+    func testDescendantsReachEveryDepthOnly() {
+        struct N { let id: String; let parent: String? }
+        let notes = [N(id: "a", parent: "root"), N(id: "b", parent: "a"), N(id: "c", parent: "b"),
+                     N(id: "x", parent: "other"), N(id: "root", parent: nil)]
+        let ids = ThreadReplyVisibility.descendants(of: "root", in: notes, id: \.id, parentId: \.parent).map(\.id)
+        XCTAssertEqual(Set(ids), ["a", "b", "c"])
+    }
+}
