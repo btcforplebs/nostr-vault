@@ -31,7 +31,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntSize
@@ -288,8 +288,9 @@ fun NoteCard(
         }
     }
     val connectorColor = colors.primary.copy(alpha = 0.3f)
-    // A holder, not state: read only on tap, so scrolling never recomposes the card.
-    val cardBounds = remember { arrayOf(Rect.Zero) }
+    // A holder, not state, and the bounds are worked out only on tap: no
+    // per-frame work while the feed scrolls.
+    val cardCoords = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val zoomView = LocalView.current
 
     // Thread connector lines drawn behind the card
@@ -343,10 +344,12 @@ fun NoteCard(
         modifier = modifier
             .fillMaxWidth()
             .then(connectorModifier)
-            .onGloballyPositioned { cardBounds[0] = it.boundsInWindow() }
+            .onGloballyPositioned { cardCoords[0] = it }
             .clickable {
                 // The thread view zooms open out of this card (iOS #306).
-                ThreadZoomOrigin.mark(cardBounds[0].center.x, cardBounds[0].center.y, zoomView.width, zoomView.height)
+                cardCoords[0]?.takeIf { it.isAttached }?.boundsInWindow()?.let { b ->
+                    ThreadZoomOrigin.mark(b.center.x, b.center.y, zoomView.width, zoomView.height)
+                }
                 onNoteClick(note.id)
             },
     ) {

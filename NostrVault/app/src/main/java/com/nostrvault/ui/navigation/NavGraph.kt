@@ -408,6 +408,12 @@ fun NostrVaultNavHost(
                         val origin = ThreadZoomOrigin.take(targetState.id) ?: TransformOrigin.Center
                         fadeIn(pushMotion()) + scaleIn(initialScale = 0.80f, transformOrigin = origin, animationSpec = pushMotion())
                     },
+                    // Coming back to a thread is the host's return, not the
+                    // open-zoom: composable() would otherwise reuse enterTransition.
+                    popEnterTransition = {
+                        if (isTabSwitch()) fadeIn(tabMotion()) + scaleIn(initialScale = 0.92f, animationSpec = tabMotion())
+                        else fadeIn(pushMotion()) + scaleIn(initialScale = 1.10f, animationSpec = pushMotion())
+                    },
                     popExitTransition = {
                         val origin = ThreadZoomOrigin.closing(initialState.id) ?: TransformOrigin.Center
                         fadeOut(pushMotion()) + scaleOut(targetScale = 0.80f, transformOrigin = origin, animationSpec = pushMotion())

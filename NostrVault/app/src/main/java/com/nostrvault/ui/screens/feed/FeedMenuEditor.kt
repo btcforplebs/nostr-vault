@@ -3,6 +3,7 @@ package com.nostrvault.ui.screens.feed
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -181,6 +182,9 @@ fun FeedMenuEditor(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
                                     .size(RowHeight)
+                                    // A tap on the handle is not a tap on the
+                                    // row: it would show or hide the feed.
+                                    .pointerInput(Unit) { detectTapGestures { } }
                                     .pointerInput(mode) {
                                         detectDragGestures(
                                             onDragStart = {

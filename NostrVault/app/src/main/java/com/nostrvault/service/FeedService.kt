@@ -2483,6 +2483,14 @@ class FeedService @Inject constructor(
         return map
     }
 
+    /**
+     * Builds the note index for the current list, so the next lookup on Main
+     * does not. The feed calls it off Main when its list changes.
+     */
+    fun warmNoteIndex() {
+        noteIndex()
+    }
+
     fun findNote(id: String): FeedNote? {
         return noteIndex()[id]
             ?: _parentNotesCache.value[id]
@@ -2718,7 +2726,8 @@ class FeedService @Inject constructor(
      */
     private fun adoptFeedNotes(ids: List<String>): Set<String> {
         val index = noteIndex()
-        val found = ids.mapNotNull { id -> index[id]?.takeIf { it.id == id } }
+        val notes = _notes.value
+        val found = ids.mapNotNull { id -> feedNoteWithOwnId(index, notes, id) }
             .filter { !_parentNotesCache.value.containsKey(it.id) }
         if (found.isEmpty()) return emptySet()
         _parentNotesCache.update { cache -> cache + found.associateBy { it.id } }
@@ -3755,3 +3764,14 @@ data class DiskFeedSnapshot(
 )
 
 // AccumulatorBatch replaced by BackgroundAccumulator.Snapshot in FeedServiceTypes.kt
+
+/**
+ * The note in the feed whose own id is [id], or null. [index] is the feed's
+ * lookup by id and by effectiveEventId; a repost is filed under its original's
+ * id too, and a newer repost claims that key before the original, so a miss
+ * there falls back to [notes] (iOS #302 matches on the note's own id).
+ */
+internal fun feedNoteWithOwnId(index: Map<String, FeedNote>, notes: List<FeedNote>, id: String): FeedNote? {
+    val hit = index[id] ?: return null
+    return if (hit.id == id) hit else notes.firstOrNull { it.id == id }
+}

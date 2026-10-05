@@ -227,6 +227,9 @@ fun FeedScreen(
     // only the fetch call comes back to it.
     LaunchedEffect(notes) {
         val missingIds = withContext(Dispatchers.Default) {
+            // The fetch below first looks the ids up in the feed (iOS #302);
+            // building that index here keeps a 10k-note pass off Main.
+            viewModel.warmNoteIndex()
             notes.flatMap { note ->
                 // A bare repost's row shows the note it points at.
                 listOfNotNull(note.parentEventId, note.repostedEventId?.takeIf { note.isBareRepost })

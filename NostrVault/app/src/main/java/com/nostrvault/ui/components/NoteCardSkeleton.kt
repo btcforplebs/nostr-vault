@@ -103,8 +103,8 @@ fun NoteCardSkeleton(
 
             Spacer(Modifier.height(12.dp))
 
-            // Content text skeleton (3 rows)
-            Column(modifier = Modifier.padding(start = 50.dp)) {
+            // Content text skeleton (3 rows), full width like the card's text
+            Column {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
