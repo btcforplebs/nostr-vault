@@ -15,9 +15,11 @@ import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
@@ -32,10 +34,15 @@ import com.nostrvault.service.LocalNotificationService
 import com.nostrvault.service.MediaPostQueue
 import com.nostrvault.service.MediaUploadManager
 import com.nostrvault.service.NostrService
+import com.nostrvault.service.NoteTranslationPolicy
+import com.nostrvault.service.NoteTranslator
 import com.nostrvault.service.PendingPostManager
 import com.nostrvault.service.music.MusicPlayer
 import com.nostrvault.ui.components.FullScreenMediaHost
 import com.nostrvault.ui.components.InAppBannerHost
+import com.nostrvault.ui.components.LocalNoteTranslation
+import com.nostrvault.ui.components.NoteTranslationContext
+import com.nostrvault.ui.components.deviceLanguageTags
 import com.nostrvault.ui.components.VideoPiPBridge
 import com.nostrvault.ui.navigation.BridgeEntityDecoder
 import com.nostrvault.ui.navigation.DeepLinkRouter
@@ -63,6 +70,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var feedActivityNotifier: com.nostrvault.service.FeedActivityNotifier
     @Inject lateinit var notificationManager: NotificationManager
     @Inject lateinit var pendingPostManager: PendingPostManager
+    @Inject lateinit var noteTranslator: NoteTranslator
     @Inject lateinit var mediaUploadManager: MediaUploadManager
     @Inject lateinit var mediaPostQueue: MediaPostQueue
     @Inject lateinit var widgetPublisher: WidgetPublisher
@@ -144,27 +152,42 @@ class MainActivity : FragmentActivity() {
                 zapsOnlyMode = config.zapsOnlyMode,
                 feedLineLimits = FeedLineLimits(config.compactLineLimit, config.threadedLineLimit),
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = Surface0,
-                ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        NostrVaultNavHost(
-                            isSetupComplete = config.hasCompletedSetup,
-                            configStore = configStore,
-                            feedService = feedService,
-                            nostrService = nostrService,
-                            logStore = logStore,
-                            dmUnreadCount = dmService.totalUnreadCountFlow,
-                            hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
-                            notificationManager = notificationManager,
-                            pendingPostManager = pendingPostManager,
-                        )
-                        // Full-screen media viewer overlay — lives in the activity window
-                        // (not a Dialog) so Picture-in-Picture can capture the video.
-                        FullScreenMediaHost()
-                        // DMs that arrive while the app is open.
-                        InAppBannerHost(modifier = Modifier.align(Alignment.TopCenter))
+                // "Translate post" (Appearance > Translation): one context for
+                // every note card, rebuilt only when the switch or language changes.
+                val noteTranslation = remember(config.showTranslateButton, config.translateTargetLanguage) {
+                    NoteTranslationContext(
+                        translator = noteTranslator,
+                        enabled = config.showTranslateButton,
+                        target = NoteTranslationPolicy.target(
+                            config.translateTargetLanguage,
+                            deviceLanguageTags(),
+                            noteTranslator.supportedLanguages,
+                        ),
+                    )
+                }
+                CompositionLocalProvider(LocalNoteTranslation provides noteTranslation) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = Surface0,
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            NostrVaultNavHost(
+                                isSetupComplete = config.hasCompletedSetup,
+                                configStore = configStore,
+                                feedService = feedService,
+                                nostrService = nostrService,
+                                logStore = logStore,
+                                dmUnreadCount = dmService.totalUnreadCountFlow,
+                                hasNewRelayActivity = RelayForegroundService.hasNewRelayActivity,
+                                notificationManager = notificationManager,
+                                pendingPostManager = pendingPostManager,
+                            )
+                            // Full-screen media viewer overlay — lives in the activity window
+                            // (not a Dialog) so Picture-in-Picture can capture the video.
+                            FullScreenMediaHost()
+                            // DMs that arrive while the app is open.
+                            InAppBannerHost(modifier = Modifier.align(Alignment.TopCenter))
+                        }
                     }
                 }
             }
