@@ -731,11 +731,11 @@ private fun ProfileStatsRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        ProfileStat(shortInt(notes), "Notes")
-        ProfileStat(shortInt(media), "Media")
-        ProfileStat(following?.let { shortInt(it) } ?: "—", "Following")
+        ProfileStat(shortInt(notes), "NOTES")
+        ProfileStat(shortInt(media), "MEDIA")
+        ProfileStat(following?.let { shortInt(it) } ?: "—", "FOLLOWING")
         if (!isOwnProfile) {
-            ProfileStat(followers?.let { shortInt(it) } ?: "∞", "Followers")
+            ProfileStat(followers?.let { shortInt(it) } ?: "∞", "FOLLOWERS")
         }
     }
 }

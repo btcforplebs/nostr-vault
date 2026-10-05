@@ -171,7 +171,7 @@ class SearchViewModel @Inject constructor(
             _toast.value = result.fold(
                 onSuccess = {
                     ZapFlight.launch(noteId)
-                    "Zapped $DEFAULT_ZAP_SATS sats ⚡️"
+                    "Zapped $DEFAULT_ZAP_SATS sats"
                 },
                 onFailure = { "Zap failed: ${it.message ?: "unknown error"}" },
             )
@@ -599,7 +599,7 @@ fun SearchScreen(
                 OutlinedTextField(
                     value = query,
                     onValueChange = viewModel::setQuery,
-                    placeholder = { Text("Search Nostr...", color = PlaceholderText) },
+                    placeholder = { Text("Search users, notes, hashtags...", color = PlaceholderText) },
                     leadingIcon = {
                         Icon(NostrVaultIcons.Search, null, tint = SecondaryText)
                     },
@@ -779,9 +779,17 @@ fun SearchScreen(
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            text = "Search for people and notes",
+                            text = "Search",
                             color = SecondaryText,
                             fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Find users, notes, hashtags and links\nOr paste a note1 or nevent1 ID",
+                            color = TertiaryText,
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center,
                         )
                     }
                 }
@@ -820,7 +828,7 @@ fun SearchScreen(
                 if (showUsers) {
                     item {
                         Text(
-                            text = "People",
+                            text = "Users",
                             color = SecondaryText,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,

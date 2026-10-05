@@ -652,6 +652,8 @@ fun FeedScreen(
                     onNeedProfiles = viewModel::fetchMissingProfiles,
                     onAppear = viewModel::loadMarketplaceIfNeeded,
                     followSetIsEmpty = marketFollowSetIsEmpty,
+                    scopeFollowing = !scopeGlobal,
+                    onShowGlobal = { viewModel.setScope(FeedMode.MARKETPLACE, global = true) },
                 )
             } else if (feedMode == FeedMode.LIVE) {
                 LiveGrid(
@@ -665,6 +667,8 @@ fun FeedScreen(
                     // to play. LiveStreamHost draws the player over the app.
                     onStreamClick = { com.nostrvault.ui.components.LiveStreamRouter.open(it) },
                     onRefresh = viewModel::refreshLive,
+                    scopeFollowing = !scopeGlobal,
+                    onShowGlobal = { viewModel.setScope(FeedMode.LIVE, global = true) },
                 )
             } else if (feedMode == FeedMode.ARTICLES || feedMode == FeedMode.RECIPES) {
                 ArticleList(
@@ -675,6 +679,8 @@ fun FeedScreen(
                     contentPadding = padding,
                     onArticleClick = onArticleClick,
                     onRefresh = viewModel::refresh,
+                    scopeFollowing = !scopeGlobal,
+                    onShowGlobal = { viewModel.setScope(feedMode, global = true) },
                 )
             } else if (feedMode == FeedMode.MEDIA) {
                 MediaFeedGrid(
@@ -1086,9 +1092,11 @@ private fun ArticleList(
     contentPadding: PaddingValues,
     onArticleClick: (String) -> Unit,
     onRefresh: () -> Unit,
+    scopeFollowing: Boolean = false,
+    onShowGlobal: () -> Unit = {},
 ) {
     if (notes.isEmpty()) {
-        if (!isRefreshing) EmptyFeedPlaceholder(mode, onRefresh = onRefresh)
+        if (!isRefreshing) ScopedEmptyPlaceholder(mode, scopeFollowing, onRefresh, onShowGlobal)
         return
     }
 
@@ -1211,6 +1219,8 @@ private fun LiveGrid(
     contentPadding: PaddingValues,
     onStreamClick: (LiveStream) -> Unit,
     onRefresh: () -> Unit,
+    scopeFollowing: Boolean = false,
+    onShowGlobal: () -> Unit = {},
 ) {
     val colors = LocalNostrVaultColors.current
     if (streams.isEmpty()) {
@@ -1218,7 +1228,7 @@ private fun LiveGrid(
             if (isLoading) {
                 CircularProgressIndicator(color = colors.primary)
             } else {
-                EmptyFeedPlaceholder(FeedMode.LIVE, onRefresh = onRefresh)
+                ScopedEmptyPlaceholder(FeedMode.LIVE, scopeFollowing, onRefresh, onShowGlobal)
             }
         }
         return
@@ -2018,6 +2028,59 @@ private fun LanguageFilterButton(selected: List<String>, onChange: (List<String>
 
 // iOS FeedView empty state: thin gradient icon, bold title, monospaced
 // subtitle, and a full-width gradient "Refresh Feed" button.
+/**
+ * iOS's empty states for the feeds with a Following / Global choice (Recipes,
+ * Marketplace, Live): from your follows, with a Show Global button; otherwise
+ * what came back, with Try again. iOS also says "Could not reach any relay"
+ * when every relay failed; these Android feeds do not track that yet.
+ */
+internal data class ScopedEmptyText(val title: String, val subtitle: String, val action: String, val showsGlobal: Boolean)
+
+internal fun scopedEmptyText(mode: FeedMode, scopeFollowing: Boolean): ScopedEmptyText? = when (mode) {
+    FeedMode.RECIPES -> if (scopeFollowing) ScopedEmptyText(
+        "No recipes from your follows",
+        "Nobody you follow has posted a recipe. Switch to Global to see everyone's.",
+        "Show Global recipes", true,
+    ) else ScopedEmptyText("No recipes found", "Nothing tagged zapcooking or nostrcooking came back.", "Try again", false)
+    FeedMode.MARKETPLACE -> if (scopeFollowing) ScopedEmptyText(
+        "No listings from your follows",
+        "Nobody you follow is selling anything. Switch to Global to see every listing.",
+        "Show Global listings", true,
+    ) else ScopedEmptyText("No listings found", "No products, auctions or classifieds with a photo came back.", "Try again", false)
+    FeedMode.LIVE -> if (scopeFollowing) ScopedEmptyText(
+        "Nobody you follow is live",
+        "Switch to Global to see everyone who is streaming.",
+        "Show Global streams", true,
+    ) else ScopedEmptyText(
+        "Nothing live right now",
+        "Most stream announcements on Nostr are for streams that already ended. Only running ones show here.",
+        "Try again", false,
+    )
+    else -> null
+}
+
+@Composable
+internal fun ScopedEmptyPlaceholder(
+    mode: FeedMode,
+    scopeFollowing: Boolean,
+    onRefresh: () -> Unit,
+    onShowGlobal: () -> Unit,
+    subtitleOverride: String? = null,
+) {
+    val text = scopedEmptyText(mode, scopeFollowing)
+    if (text == null) {
+        EmptyFeedPlaceholder(mode, onRefresh = onRefresh, subtitleOverride = subtitleOverride)
+        return
+    }
+    EmptyFeedPlaceholder(
+        mode,
+        onRefresh = if (text.showsGlobal) onShowGlobal else onRefresh,
+        subtitleOverride = subtitleOverride ?: text.subtitle,
+        titleOverride = text.title,
+        actionLabel = text.action,
+    )
+}
+
 @Composable
 internal fun EmptyFeedPlaceholder(
     mode: FeedMode,
@@ -2025,6 +2088,9 @@ internal fun EmptyFeedPlaceholder(
     /// Overrides the per-mode subtitle. Discovery uses it to say which of the
     /// two reasons its feed is empty — see the call site in FeedScreen.
     subtitleOverride: String? = null,
+    titleOverride: String? = null,
+    /** What the button under the text says; it runs [onRefresh]. */
+    actionLabel: String = "Refresh Feed",
 ) {
     val colors = LocalNostrVaultColors.current
     val gradient = Brush.linearGradient(listOf(colors.primary, colors.primaryLight))
@@ -2055,7 +2121,7 @@ internal fun EmptyFeedPlaceholder(
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                text = when (mode) {
+                text = titleOverride ?: when (mode) {
                     FeedMode.FOLLOWING -> "No Following Feed"
                     FeedMode.DISCOVERY -> "Discovering Notes"
                     FeedMode.GLOBAL -> "No Global Notes Yet"
@@ -2113,7 +2179,7 @@ internal fun EmptyFeedPlaceholder(
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
-                        text = "Refresh Feed",
+                        text = actionLabel,
                         color = Color.Black,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,

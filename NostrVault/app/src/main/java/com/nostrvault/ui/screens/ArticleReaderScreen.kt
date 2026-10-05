@@ -140,7 +140,7 @@ class ArticleReaderViewModel @Inject constructor(
                 onSuccess = {
                     _zapped.value = true
                     _zappedSats.update { it + amountSats }
-                    _message.emit("Zapped ⚡$amountSats sats")
+                    _message.emit("Zapped $amountSats sats")
                 },
                 onFailure = { e -> _message.emit(e.message ?: "Zap failed") },
             )

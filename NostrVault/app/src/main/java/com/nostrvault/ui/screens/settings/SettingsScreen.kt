@@ -88,7 +88,7 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = NostrVaultIcons.Appearance,
                     title = "Theme & Display",
-                    subtitle = "Colors, text size, OLED mode",
+                    subtitle = "Text size, feed text, translation",
                     onClick = { onNavigate(Screen.AppearanceSettings) },
                 )
             }

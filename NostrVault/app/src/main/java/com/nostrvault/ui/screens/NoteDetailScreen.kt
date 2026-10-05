@@ -368,7 +368,7 @@ class NoteDetailViewModel @Inject constructor(
             result.fold(
                 onSuccess = {
                     ZapFlight.launch(note.effectiveEventId)
-                    _zapMessage.emit("Zapped ⚡$amountSats sats")
+                    _zapMessage.emit("Zapped $amountSats sats")
                     kotlinx.coroutines.delay(3_000)
                     fetchEngagement(note.effectiveEventId)
                 },
@@ -1566,8 +1566,9 @@ private fun HeroNoteCard(
                                 } else {
                                     add(NoteAction(NostrVaultIcons.PersonAdd, "Follow", onClick = onFollow))
                                 }
-                                add(NoteAction(NostrVaultIcons.Blocked, "Block", destructive = true, onClick = onBlock))
-                                add(NoteAction(NostrVaultIcons.Alert, "Report", destructive = true, onClick = onReport))
+                                // Same names and order as the feed's ⋯ menu.
+                                add(NoteAction(NostrVaultIcons.Alert, "Report Post", destructive = true, onClick = onReport))
+                                add(NoteAction(NostrVaultIcons.Blocked, "Block User", destructive = true, onClick = onBlock))
                             }
                         },
                         onDismiss = { showMoreMenu = false },

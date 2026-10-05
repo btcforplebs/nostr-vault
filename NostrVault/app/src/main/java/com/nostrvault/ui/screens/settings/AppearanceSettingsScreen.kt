@@ -347,14 +347,14 @@ fun AppearanceSettingsScreen(
 
             Spacer(Modifier.height(32.dp))
 
-            // Disable tab bar animation
+            // Keep the tab bar full size (iOS wording)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Disable Tab Bar Animation",
+                        text = "Keep Tab Bar Full Size",
                         color = PrimaryText,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -384,7 +384,7 @@ fun AppearanceSettingsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Zaps Only Mode",
+                        text = "Zaps Only",
                         color = PrimaryText,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -529,7 +529,7 @@ private fun TranslationSection(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = "Show Translate on posts", color = PrimaryText, fontSize = 15.sp)
+            Text(text = "Translate Button on Posts", color = PrimaryText, fontSize = 15.sp)
             Text(
                 text = "Posts in another language get a Translate button. Translation happens on your phone; " +
                     "the first time for a language, its model is downloaded from Google.",
@@ -557,7 +557,7 @@ private fun TranslationSection(
                     .clickable(onClickLabel = "Choose language") { expanded = true }
                     .padding(vertical = 12.dp),
             ) {
-                Text("Translate to", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Text("Translate To", color = PrimaryText, fontSize = 15.sp, modifier = Modifier.weight(1f))
                 Text(
                     text = FeedLanguage(target).displayName(),
                     color = LocalNostrVaultColors.current.primary,
