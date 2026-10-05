@@ -66,6 +66,8 @@ class GlobalSearchSession(
     private val plan: Plan,
     private val own: Set<String>,
     private val follows: Set<String>,
+    /** The rest of the Web of Trust, ranked after follows. */
+    private val wot: Set<String> = emptySet(),
     private val cachedProfiles: Collection<FeedProfile> = emptyList(),
     private val onFinished: (GlobalSearchResults) -> Unit = {},
 ) {
@@ -456,7 +458,7 @@ class GlobalSearchSession(
     }
 
     private fun publish(running: Boolean): GlobalSearchResults = synchronized(lock) {
-        val results = accumulator.ranked(own, follows)
+        val results = accumulator.ranked(own, follows, wot)
         if (!cancelled) {
             _state.value = GlobalSearchState(results = results, sources = sources.toList(), isRunning = running)
         }

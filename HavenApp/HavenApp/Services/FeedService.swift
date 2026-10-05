@@ -490,6 +490,13 @@ class FeedService: ObservableObject {
     /// nothing to show yet.
     var curatedGraphReady: Bool { !wotPubkeys.isEmpty }
 
+    /// Everyone around the user for ranking search and mention results after
+    /// their follows: the relay's Web of Trust graph plus the extended network
+    /// (follows of follows), whichever has loaded.
+    var webOfTrustForRanking: Set<String> {
+        wotPubkeys.union(extendedNetworkPubkeys)
+    }
+
     /// Status text for a Global feed with no graph yet. Global fails closed, so
     /// without this the user would sit in front of an empty screen labelled
     /// "No notes found" and reasonably conclude the app is broken.

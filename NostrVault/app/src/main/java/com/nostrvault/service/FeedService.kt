@@ -356,6 +356,13 @@ class FeedService @Inject constructor(
     private val _wotPubkeys = MutableStateFlow<Set<String>>(emptySet())
     val wotPubkeys: StateFlow<Set<String>> = _wotPubkeys.asStateFlow()
 
+    /**
+     * Everyone around the user, for ranking search and mention results after
+     * their follows: the relay's Web of Trust graph plus the extended network.
+     * iOS: FeedService.webOfTrustForRanking.
+     */
+    fun webOfTrustForRanking(): Set<String> = _wotPubkeys.value + _extendedNetworkPubkeys.value
+
     private val _parentIsNextNote = MutableStateFlow<Set<String>>(emptySet())
     val parentIsNextNote: StateFlow<Set<String>> = _parentIsNextNote.asStateFlow()
 

@@ -403,9 +403,11 @@ class ComposeNoteViewModel @Inject constructor(
             (threadProfiles + followedProfiles).take(8)
         } else {
             // Search the entire profile cache (feed authors, search results, etc.),
-            // not just follows, ranking thread participants and follows first.
+            // not just follows, ranking thread participants, follows, then the
+            // rest of the Web of Trust first.
             val lower = query.lowercase()
             val followedSet = followed.toHashSet()
+            val wotSet = feedService.webOfTrustForRanking()
             profilesMap.values.asSequence()
                 .filter { it.pubkey != self }
                 .filter { p ->
@@ -417,6 +419,7 @@ class ComposeNoteViewModel @Inject constructor(
                 .sortedWith(
                     compareByDescending<FeedProfile> { threadPubkeys.contains(it.pubkey) }
                         .thenByDescending { followedSet.contains(it.pubkey) }
+                        .thenByDescending { wotSet.contains(it.pubkey) }
                         .thenByDescending { it.bestName.lowercase().startsWith(lower) }
                         .thenBy { it.bestName.length }
                 )

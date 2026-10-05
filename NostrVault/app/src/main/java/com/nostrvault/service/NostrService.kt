@@ -1712,7 +1712,7 @@ class NostrService @Inject constructor(
      * Global adds the Mac relay (if configured) and the configured NIP-50
      * search relays, all at once.
      */
-    fun startSearch(query: String, includeGlobal: Boolean, follows: Set<String>): GlobalSearchSession? {
+    fun startSearch(query: String, includeGlobal: Boolean, follows: Set<String>, wot: Set<String> = emptySet()): GlobalSearchSession? {
         val matcher = SearchTermMatcher.create(query) ?: return null
         val config = configStore.config.value
         val plan = GlobalSearchSession.Plan(
@@ -1726,6 +1726,7 @@ class NostrService @Inject constructor(
             plan = plan,
             own = ownSearchPubkeys(),
             follows = follows,
+            wot = wot,
             cachedProfiles = _profiles.value.values.toList(),
             onFinished = { results -> scope.launch { mergeSearchProfiles(results.profiles) } },
         )
