@@ -29,9 +29,19 @@ enum class ProfileSection(val displayName: String) {
     NOTES("Notes"),
     MEDIA("Media"),
     REPLIES("Replies"),
+    /** Long-form posts (kind 30023). Shown only when there are some. */
+    ARTICLES("Articles"),
+    /** Short videos (kind 34236). Shown only when there are some. */
+    DIVINES("diVines"),
+    /** Wavlake songs. Shown only when the artist is found. */
+    MUSIC("Music"),
     TAGGED("Tagged"),
     /** Marketplace listings. Shown only when there are some, or on your own profile. */
     SHOP("Shop"),
+    ;
+
+    /** Sections that list notes, and page in older ones as you scroll. */
+    val isNoteList: Boolean get() = this == NOTES || this == MEDIA || this == REPLIES || this == TAGGED
 }
 
 /** Per-tab counts shown next to the section labels. */
@@ -62,6 +72,32 @@ class ProfileViewModel @Inject constructor(
     val shopListings = shop.listings
     val shopLoading = shop.isLoading
     fun reloadShop() = shop.load(_pubkey.value, force = true)
+
+    /** This person's articles, diVines and music, each a tab when they have any. */
+    private val extras = ProfileExtrasLoader(viewModelScope, nostrService)
+    val articles = extras.articles
+    val reels = extras.reels
+    val tracks = extras.tracks
+
+    private fun loadExtras(pubkey: String, force: Boolean = false) {
+        val config = configStore.config.value
+        val relayUp = com.nostrvault.relay.RelayForegroundService.relayStatus.value ==
+            com.nostrvault.relay.RelayForegroundService.RelayStatus.RUNNING
+        val relays = ProfileExtras.relays(
+            ownRelay = config.nostrURL?.takeIf { relayUp },
+            feedRelays = config.activeFeedRelays,
+            outbox = nostrService.outboxRelays.value[pubkey].orEmpty(),
+        )
+        extras.load(pubkey, relays, force)
+    }
+
+    fun npubToHex(npub: String): String? = nostrService.npubToHex(npub)
+
+    /** Makes [note] resolvable by id for the article reader; returns that id. */
+    fun prepareOpen(note: FeedNote): String {
+        feedService.cacheNote(note)
+        return note.id
+    }
 
     private val _pubkey = MutableStateFlow(savedStateHandle.get<String>("pubkey") ?: "")
     val pubkey: String get() = _pubkey.value
@@ -147,6 +183,8 @@ class ProfileViewModel @Inject constructor(
             ProfileSection.TAGGED -> tagged.filter { it.pubkey != _pubkey.value }
             // Listings are not notes; the Shop tab reads [shopListings].
             ProfileSection.SHOP -> emptyList()
+            // Not notes either; these tabs read [extras].
+            ProfileSection.ARTICLES, ProfileSection.DIVINES, ProfileSection.MUSIC -> emptyList()
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -172,6 +210,7 @@ class ProfileViewModel @Inject constructor(
         if (_pubkey.value.isNotEmpty()) {
             loadProfile()
             shop.load(_pubkey.value)
+            loadExtras(_pubkey.value)
         }
     }
 
@@ -182,6 +221,7 @@ class ProfileViewModel @Inject constructor(
             _selectedSection.value = ProfileSection.NOTES
             loadProfile()
             shop.load(pubkey)
+            loadExtras(pubkey)
         }
     }
 
@@ -212,6 +252,7 @@ class ProfileViewModel @Inject constructor(
         resetLoadedState()
         loadProfile()
         shop.load(pk, force = true)
+        loadExtras(pk, force = true)
         viewModelScope.launch {
             // Done once the first page is in (the spinner the load drives
             // drops on EOSE), or after a few seconds regardless.

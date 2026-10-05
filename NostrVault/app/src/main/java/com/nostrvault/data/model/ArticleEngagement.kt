@@ -191,3 +191,166 @@ data class ArticleHighlight(
         }
     }
 }
+
+// ── Likes, zaps and comments ─────────────────────────────────────────
+
+/** The fields of a raw relay event that [ArticleEngagement.tally] reads. */
+data class ArticleEngagementEvent(
+    val id: String,
+    val kind: Int,
+    val pubkey: String,
+    val content: String,
+    /** Unix seconds. */
+    val createdAt: Long,
+    val tags: List<List<String>>,
+) {
+    fun toNote(): FeedNote = FeedNote.fromEvent(id, pubkey, content, tags, createdAt, kind)
+}
+
+/**
+ * What the network says about an article: likes, zaps and comments.
+ *
+ * Mirrors `ArticleTally` in HavenApp/HavenApp/Models/ArticleEngagement.swift.
+ */
+data class ArticleTally(
+    /** People who reacted, not reactions: one person liking twice is one like. */
+    val likers: Set<String> = emptySet(),
+    val zaps: Int = 0,
+    val zapSats: Long = 0,
+    /** Every comment, including replies to comments. */
+    val commentCount: Int = 0,
+    /** Comments on the article itself, oldest first. Replies open from their comment. */
+    val topLevelComments: List<ArticleEngagementEvent> = emptyList(),
+    /** Replies to each comment, keyed by the comment's id. */
+    val replyCounts: Map<String, Int> = emptyMap(),
+) {
+    /** How much this tally has found, to keep a later snapshot from being replaced by a smaller one. */
+    val size: Int get() = likers.size + zaps + commentCount
+}
+
+object ArticleTallies {
+    const val REACTION_KIND = 7
+    const val ZAP_RECEIPT_KIND = 9735
+    /** NIP-22 comment, what NIP-23 asks for on an article. */
+    const val COMMENT_KIND = 1111
+    /** Older clients reply to an article with a plain kind 1 note. */
+    const val NOTE_KIND = 1
+
+    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+    /**
+     * REQ filters for an article's likes, zaps and comments. By `a`
+     * coordinate (survives edits) and by this version's `e` id; NIP-22
+     * comments also carry the article as their uppercase root, which is the
+     * only tag a reply to a comment has that points at the article.
+     */
+    fun engagementFilters(id: String, coordinate: String?, limit: Int = 500): List<String> {
+        val kinds = JsonArray(listOf(REACTION_KIND, ZAP_RECEIPT_KIND, COMMENT_KIND, NOTE_KIND).map { JsonPrimitive(it) })
+        val commentOnly = JsonArray(listOf(JsonPrimitive(COMMENT_KIND)))
+        fun filter(kinds: JsonArray, tag: String, value: String) = buildJsonObject {
+            put("kinds", kinds)
+            put(tag, JsonArray(listOf(JsonPrimitive(value))))
+            put("limit", limit)
+        }.toString()
+        return buildList {
+            add(filter(kinds, "#e", id))
+            add(filter(commentOnly, "#E", id))
+            if (coordinate != null) {
+                add(filter(kinds, "#a", coordinate))
+                add(filter(commentOnly, "#A", coordinate))
+            }
+        }
+    }
+
+    /**
+     * Sats a zap receipt paid: the request's `amount` tag, then the
+     * receipt's own, then the invoice. Same rungs as the live chat.
+     */
+    fun zapSats(receiptTags: List<List<String>>): Long {
+        val requestTags = receiptTags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
+            ?.let { runCatching { json.parseToJsonElement(it) as? kotlinx.serialization.json.JsonObject }.getOrNull() }
+            ?.get("tags")?.let { it as? JsonArray }
+            ?.map { tag -> (tag as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty() }
+            .orEmpty()
+        fun msats(tags: List<List<String>>) =
+            tags.firstOrNull { it.size >= 2 && it[0] == "amount" }?.get(1)?.toLongOrNull()?.takeIf { it > 0 }
+        (msats(requestTags) ?: msats(receiptTags))?.let { return it / 1000 }
+        return receiptTags.firstOrNull { it.size >= 2 && it[0] == "bolt11" }?.get(1)
+            ?.let { com.nostrvault.util.Bolt11.satsOrNull(it) } ?: 0L
+    }
+
+    /**
+     * Counts what points at this article. The caller checks signatures and
+     * drops spam; this checks that each event really is about this article,
+     * since a relay may answer a tag filter loosely.
+     */
+    fun tally(
+        events: List<ArticleEngagementEvent>,
+        articleId: String,
+        coordinate: String?,
+        nowSeconds: Long = System.currentTimeMillis() / 1000,
+    ): ArticleTally {
+        fun pointsHere(tags: List<List<String>>, lower: Boolean = true, upper: Boolean = false): Boolean =
+            tags.any { tag ->
+                if (tag.size < 2) return@any false
+                val isE = (lower && tag[0] == "e") || (upper && tag[0] == "E")
+                val isA = (lower && tag[0] == "a") || (upper && tag[0] == "A")
+                (isE && tag[1] == articleId) || (isA && coordinate != null && tag[1] == coordinate)
+            }
+
+        val likers = mutableSetOf<String>()
+        var zaps = 0
+        var zapSats = 0L
+        val seen = mutableSetOf<String>()
+        // (event, parent id or null when it is on the article itself)
+        val comments = mutableListOf<Pair<ArticleEngagementEvent, String?>>()
+
+        for (event in events) {
+            if (!seen.add(event.id)) continue
+            if (event.createdAt > nowSeconds + ArticleHighlight.MAX_FUTURE_SKEW_SECONDS) continue
+            val tags = event.tags
+            when (event.kind) {
+                REACTION_KIND -> {
+                    // "-" is a dislike (NIP-25).
+                    if (pointsHere(tags) && event.content != "-") likers.add(event.pubkey)
+                }
+                ZAP_RECEIPT_KIND -> {
+                    if (!pointsHere(tags)) continue
+                    zaps += 1
+                    zapSats += zapSats(tags)
+                }
+                COMMENT_KIND -> {
+                    if (!pointsHere(tags, lower = true, upper = true)) continue
+                    // Lowercase tags name the parent: the article makes it
+                    // top-level, otherwise it replies to the comment its `e` names.
+                    val parent = if (pointsHere(tags)) null
+                    else tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1)
+                    comments.add(event to parent)
+                }
+                NOTE_KIND -> {
+                    // A mention or quote names the article without replying to it.
+                    val replyTags = tags.filter {
+                        it.size >= 2 && (it[0] == "e" || it[0] == "a") && (it.size < 4 || it[3] != "mention")
+                    }
+                    if (!pointsHere(replyTags)) continue
+                    // NIP-10: the reply-marked `e` is the parent; with no
+                    // markers the last `e` is. Top-level when it is the article.
+                    val eTags = replyTags.filter { it[0] == "e" }
+                    val parent = (eTags.firstOrNull { it.size >= 4 && it[3] == "reply" } ?: eTags.lastOrNull())?.get(1)
+                    comments.add(event to parent?.takeIf { it != articleId })
+                }
+            }
+        }
+
+        val replyCounts = mutableMapOf<String, Int>()
+        for ((_, parent) in comments) if (parent != null) replyCounts[parent] = (replyCounts[parent] ?: 0) + 1
+        return ArticleTally(
+            likers = likers,
+            zaps = zaps,
+            zapSats = zapSats,
+            commentCount = comments.size,
+            topLevelComments = comments.filter { it.second == null }.map { it.first }.sortedBy { it.createdAt },
+            replyCounts = replyCounts,
+        )
+    }
+}

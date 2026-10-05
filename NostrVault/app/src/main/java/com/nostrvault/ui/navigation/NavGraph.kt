@@ -296,6 +296,9 @@ fun NostrVaultNavHost(
                         onQuote = { noteId ->
                             navController.navigate(Screen.ComposeNote.createRoute(quoteToNoteId = noteId))
                         },
+                        onCompose = {
+                            navController.navigate(Screen.ComposeNote.createRoute())
+                        },
                     )
                 }
 
@@ -359,6 +362,9 @@ fun NostrVaultNavHost(
                         onSell = {
                             navController.navigate(Screen.ModeCompose.createRoute(com.nostrvault.ui.screens.ModeComposerKind.LISTING.route))
                         },
+                        onComposeText = { text ->
+                            navController.navigate(Screen.ComposeNote.createRoute(text = text))
+                        },
                         onNavigateToSettings = {
                             navController.navigate(Screen.Settings.route)
                         },
@@ -384,6 +390,9 @@ fun NostrVaultNavHost(
                         },
                         onComment = { id ->
                             navController.navigate(Screen.ComposeNote.createRoute(replyToNoteId = id))
+                        },
+                        onNoteClick = { id ->
+                            navController.navigate(Screen.NoteDetail.createRoute(id))
                         },
                     )
                 }

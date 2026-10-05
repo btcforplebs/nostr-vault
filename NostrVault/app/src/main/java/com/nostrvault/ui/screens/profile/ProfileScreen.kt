@@ -7,6 +7,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -62,6 +66,8 @@ fun ProfileScreen(
     onNavigateToSettings: () -> Unit = {},
     /** Opens the Sell composer (own profile, Shop tab). */
     onSell: () -> Unit = {},
+    /** Opens the composer with text in it (sharing a song from the Music tab). */
+    onComposeText: (String) -> Unit = {},
     onBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
@@ -93,6 +99,19 @@ fun ProfileScreen(
     val toast by viewModel.toast.collectAsState()
     val shopListings by viewModel.shopListings.collectAsState()
     val shopLoading by viewModel.shopLoading.collectAsState()
+    val articles by viewModel.articles.collectAsState()
+    val reels by viewModel.reels.collectAsState()
+    val tracks by viewModel.tracks.collectAsState()
+    var reelIndex by remember { mutableStateOf<Int?>(null) }
+    val musicActions = remember(onComposeText, onProfileClick) {
+        com.nostrvault.ui.screens.music.MusicActions(
+            onShare = onComposeText,
+            onOpenProfile = onProfileClick,
+            npubToHex = viewModel::npubToHex,
+        )
+    }
+    val currentTrack by com.nostrvault.service.music.MusicPlayer.current.collectAsState()
+    val musicPlaying by com.nostrvault.service.music.MusicPlayer.isPlaying.collectAsState()
     var openListing by remember { mutableStateOf<com.nostrvault.data.model.MarketListing?>(null) }
     // Coming back from the Sell composer: show the listing just posted.
     var sellLaunched by rememberSaveable { mutableStateOf(false) }
@@ -168,8 +187,28 @@ fun ProfileScreen(
             }
         },
     ) { padding ->
+        val listState = rememberLazyListState()
+        // Items before the section tabs: header, actions, bio (when there is
+        // one), stats and identity rows.
+        val tabsIndex = if (profile?.about?.isNotBlank() == true) 5 else 4
+        // A section is at least as tall as the screen, so picking one with a
+        // single item keeps the tabs where they were instead of the page
+        // snapping back down (iOS #283). This blank space after the section
+        // makes up the difference.
+        var fillerPx by remember { mutableIntStateOf(0) }
+        LaunchedEffect(listState, tabsIndex) {
+            snapshotFlow { ProfileTabFiller.needed(listState.layoutInfo, tabsIndex) }
+                .collect { needed -> if (needed != null) fillerPx = needed }
+        }
+        val selectSection: (ProfileSection) -> Unit = { section ->
+            // Until the new section is measured, assume it is short; the
+            // measurement then trims this to what it needs.
+            fillerPx = ProfileTabFiller.visibleHeight(listState.layoutInfo)
+            viewModel.setSection(section)
+        }
         val list: @Composable () -> Unit = {
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 top = padding.calculateTopPadding(),
                 bottom = padding.calculateBottomPadding() + 88.dp,
@@ -250,20 +289,69 @@ fun ProfileScreen(
                 )
             }
 
-            item {
+            item(key = "section-tabs") {
                 ProfileSectionTabs(
                     selected = selectedSection,
                     counts = counts,
-                    shopCount = shopListings.size,
+                    extraCounts = mapOf(
+                        ProfileSection.SHOP to shopListings.size,
+                        ProfileSection.ARTICLES to articles.size,
+                        ProfileSection.DIVINES to reels.size,
+                        ProfileSection.MUSIC to tracks.size,
+                    ),
                     // Shop only shows when this person sells something, or on
-                    // your own profile where it holds the Sell button.
-                    showShop = isOwnProfile || shopListings.isNotEmpty(),
-                    onSelect = viewModel::setSection,
+                    // your own profile where it holds the Sell button; the
+                    // others only when this person has some.
+                    shown = { section ->
+                        when (section) {
+                            ProfileSection.SHOP -> isOwnProfile || shopListings.isNotEmpty()
+                            ProfileSection.ARTICLES -> articles.isNotEmpty()
+                            ProfileSection.DIVINES -> reels.isNotEmpty()
+                            ProfileSection.MUSIC -> tracks.isNotEmpty()
+                            else -> true
+                        }
+                    },
+                    onSelect = selectSection,
                 )
             }
 
             // ── Section content ──────────────────────────────────────
-            if (selectedSection == ProfileSection.SHOP) {
+            if (selectedSection == ProfileSection.ARTICLES) {
+                items(articles, key = { "article-" + it.id }) { article ->
+                    ProfileArticleRow(article, onClick = { onArticleClick(viewModel.prepareOpen(article)) })
+                    HorizontalDivider(color = colors.primary.copy(alpha = 0.10f))
+                }
+            } else if (selectedSection == ProfileSection.DIVINES) {
+                // 9:16 posters, three to a row; a tap plays them in a viewer.
+                items(reels.withIndex().chunked(3), key = { row -> "divine-" + row.first().value.id }) { row ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        row.forEach { (index, reel) ->
+                            DiVineTile(reel, onClick = { reelIndex = index }, modifier = Modifier.weight(1f))
+                        }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            } else if (selectedSection == ProfileSection.MUSIC) {
+                itemsIndexed(tracks, key = { _, t -> "track-" + t.id }) { index, track ->
+                    Box(Modifier.padding(horizontal = 16.dp)) {
+                        com.nostrvault.ui.screens.music.MusicTrackRow(
+                            track = track,
+                            isCurrent = currentTrack?.id == track.id,
+                            isPlaying = musicPlaying,
+                            actions = musicActions,
+                            onTap = {
+                                if (currentTrack?.id == track.id) com.nostrvault.service.music.MusicPlayer.togglePlayPause()
+                                else com.nostrvault.service.music.MusicPlayer.play(tracks, index)
+                            },
+                        )
+                    }
+                }
+            } else if (selectedSection == ProfileSection.SHOP) {
                 if (isOwnProfile) {
                     item {
                         Button(
@@ -381,7 +469,7 @@ fun ProfileScreen(
 
             // ── Infinite-scroll sentinel ─────────────────────────────
             val hasMore = if (selectedSection == ProfileSection.TAGGED) hasMoreTagged else hasMoreNotes
-            if (selectedSection != ProfileSection.SHOP && !isLoading && filteredNotes.isNotEmpty() && hasMore) {
+            if (selectedSection.isNoteList && !isLoading && filteredNotes.isNotEmpty() && hasMore) {
                 item(key = "load-more-${selectedSection.name}-${filteredNotes.size}") {
                     LaunchedEffect(Unit) { viewModel.loadOlder() }
                     if (isLoadingOlder) {
@@ -390,6 +478,12 @@ fun ProfileScreen(
                         Spacer(Modifier.height(24.dp))
                     }
                 }
+            }
+
+            // Keeps a short section from pulling the tabs down (see fillerPx).
+            item(key = ProfileTabFiller.KEY) {
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                Spacer(Modifier.height(with(density) { fillerPx.toDp() }))
             }
         }
         }
@@ -415,6 +509,12 @@ fun ProfileScreen(
             onEventInfo = null,
             onDismiss = { openListing = null },
         )
+    }
+
+    reelIndex?.let { start ->
+        if (reels.isNotEmpty()) {
+            DiVineViewer(reels, start.coerceIn(0, reels.lastIndex), onDismiss = { reelIndex = null })
+        }
     }
 
     // Full-screen media viewer overlay.
@@ -707,8 +807,9 @@ private fun IdentityRow(
 private fun ProfileSectionTabs(
     selected: ProfileSection,
     counts: ProfileCounts,
-    shopCount: Int,
-    showShop: Boolean,
+    /** Counts for the tabs that are not notes: Shop, Articles, diVines, Music. */
+    extraCounts: Map<ProfileSection, Int>,
+    shown: (ProfileSection) -> Boolean,
     onSelect: (ProfileSection) -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -717,45 +818,49 @@ private fun ProfileSectionTabs(
         ProfileSection.MEDIA -> counts.media
         ProfileSection.REPLIES -> counts.replies
         ProfileSection.TAGGED -> counts.tagged
-        ProfileSection.SHOP -> shopCount
+        else -> extraCounts[s] ?: 0
     }
-    val sections = ProfileSection.entries.filter { it != ProfileSection.SHOP || showShop }
-    // Five tabs with counts crowd a phone's width; set them tighter, as iPhone does.
-    val tight = sections.size > 4
+    val sections = ProfileSection.entries.filter(shown)
     Row(modifier = Modifier
         .fillMaxWidth()
         .padding(horizontal = 16.dp)) {
         sections.forEach { section ->
             val isSelected = section == selected
             val c = countFor(section)
+            val label = if (c > 0) shortInt(c) else null
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { onSelect(section) }
+                    .clickable(onClickLabel = section.displayName) { onSelect(section) }
+                    .semantics { contentDescription = section.displayName + (label?.let { ", $it" } ?: "") }
                     .padding(top = 4.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(if (tight) 3.dp else 5.dp),
-                ) {
-                    Text(
-                        text = section.displayName.uppercase(),
-                        fontSize = if (tight) 10.sp else 11.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = if (tight) 0.2.sp else 0.6.sp,
-                        maxLines = 1,
-                        color = if (isSelected) colors.primary else SecondaryText,
-                    )
-                    if (c > 0) {
-                        Text(
-                            text = shortInt(c),
-                            fontSize = if (tight) 10.sp else 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            color = SecondaryText,
+                // Icons, as the feed types show them: icon and count, or the
+                // icon alone on a tab too narrow for the count (iOS #280).
+                BoxWithConstraints(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth().height(20.dp)) {
+                    val fitsCount = label != null && maxWidth >= ProfileTabFiller.tabWidthWithCount(label.length)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            section.icon,
+                            contentDescription = null,
+                            tint = if (isSelected) colors.primary else SecondaryText,
+                            modifier = Modifier.size(17.dp),
                         )
+                        if (fitsCount && label != null) {
+                            Text(
+                                text = label,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                                softWrap = false,
+                                color = SecondaryText,
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -766,6 +871,135 @@ private fun ProfileSectionTabs(
                         .background(if (isSelected) colors.primary else Color.Transparent),
                 )
             }
+        }
+    }
+}
+
+/** The feed types' own icons, so a tab reads the same as the feed it matches. */
+private val ProfileSection.icon: androidx.compose.ui.graphics.vector.ImageVector
+    get() = when (this) {
+        ProfileSection.NOTES -> NostrVaultIcons.Chat
+        ProfileSection.MEDIA -> NostrVaultIcons.Media
+        ProfileSection.REPLIES -> NostrVaultIcons.Reply
+        ProfileSection.ARTICLES -> NostrVaultIcons.Articles
+        ProfileSection.DIVINES -> NostrVaultIcons.Reels
+        ProfileSection.MUSIC -> NostrVaultIcons.Music
+        ProfileSection.TAGGED -> NostrVaultIcons.At
+        ProfileSection.SHOP -> NostrVaultIcons.Marketplace
+    }
+
+/** One of this person's articles: cover, title, summary and date. Opens the reader. */
+@Composable
+private fun ProfileArticleRow(note: com.nostrvault.data.model.FeedNote, onClick: () -> Unit) {
+    val meta = remember(note.id, note.tags) { com.nostrvault.data.model.ArticleMeta.from(note) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        meta.imageUrl?.let { url ->
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .clip(RoundedCornerShape(10.dp)),
+            )
+            Spacer(Modifier.height(10.dp))
+        }
+        Text(
+            text = meta.title,
+            color = PrimaryText,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = 22.sp,
+            maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+        meta.summary?.let {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = it,
+                color = SecondaryText,
+                fontSize = 14.sp,
+                lineHeight = 19.sp,
+                maxLines = 3,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = buildString {
+                append(java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(meta.publishedAt))
+                com.nostrvault.data.model.ArticleMeta.readingTimeMinutes(note.content)?.let { append(" · $it min read") }
+            },
+            color = TertiaryText,
+            fontSize = 12.sp,
+        )
+    }
+}
+
+/** A diVine's poster, 9:16, with a play mark. */
+@Composable
+private fun DiVineTile(reel: com.nostrvault.data.model.Reel, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        contentAlignment = Alignment.BottomStart,
+        modifier = modifier
+            .aspectRatio(9f / 16f)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.Black)
+            .clickable(onClickLabel = reel.title ?: "diVine", onClick = onClick),
+    ) {
+        reel.posterUrl?.let { poster ->
+            AsyncImage(
+                model = poster,
+                contentDescription = reel.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
+        Icon(
+            NostrVaultIcons.PlayArrow,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.padding(6.dp).size(16.dp),
+        )
+    }
+}
+
+/** This person's diVines full screen, one page each, the visible one playing. */
+@Composable
+private fun DiVineViewer(reels: List<com.nostrvault.data.model.Reel>, startIndex: Int, onDismiss: () -> Unit) {
+    val pagerState = rememberPagerState(initialPage = startIndex, pageCount = { reels.size })
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        androidx.compose.foundation.pager.VerticalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                // Only the visible page gets a player, to keep memory at one instance.
+                if (page == pagerState.currentPage) {
+                    com.nostrvault.ui.components.VideoPlayer(uri = reels[page].videoUrl, modifier = Modifier.fillMaxSize())
+                } else {
+                    reels[page].posterUrl?.let {
+                        AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                    }
+                }
+            }
+        }
+        IconButton(
+            onClick = onDismiss,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(12.dp),
+        ) {
+            Icon(NostrVaultIcons.Dismiss, "Close", tint = Color.White, modifier = Modifier.size(28.dp))
         }
     }
 }

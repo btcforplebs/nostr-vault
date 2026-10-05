@@ -6,7 +6,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
+import com.nostrvault.ui.components.AvatarImage
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,6 +58,9 @@ class ProfileEditViewModel @Inject constructor(
 
     private val _website = MutableStateFlow("")
     val website = _website.asStateFlow()
+
+    /** Whose profile this is, for the preview's placeholder avatar. */
+    val pubkey: String = configStore.activeAccountHexPubkey.value
 
     private val _isSaving = MutableStateFlow(false)
     val isSaving = _isSaving.asStateFlow()
@@ -181,6 +189,15 @@ fun ProfileEditScreen(
                     modifier = Modifier.padding(bottom = 12.dp),
                 )
             }
+            ProfilePreview(
+                pubkey = viewModel.pubkey,
+                pictureUrl = pictureUrl,
+                displayName = displayName,
+                name = name,
+                nip05 = nip05,
+                about = about,
+            )
+            HorizontalDivider(color = SeparatorColor.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 16.dp))
             ProfileField("Display Name", displayName, viewModel::setDisplayName)
             ProfileField("Username", name, viewModel::setName)
             ProfileField("About", about, viewModel::setAbout, singleLine = false, minLines = 3)
@@ -189,6 +206,47 @@ fun ProfileEditScreen(
             ProfileField("Lightning Address", lud16, viewModel::setLud16)
             ProfileField("Website", website, viewModel::setWebsite)
             Spacer(Modifier.height(32.dp))
+        }
+    }
+}
+
+/** How the profile will look, updating as the fields are edited. */
+@Composable
+private fun ProfilePreview(
+    pubkey: String,
+    pictureUrl: String,
+    displayName: String,
+    name: String,
+    nip05: String,
+    about: String,
+) {
+    val colors = LocalNostrVaultColors.current
+    val shownName = displayName.ifBlank { name.ifBlank { "Unnamed" } }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .padding(bottom = 8.dp),
+    ) {
+        AvatarImage(
+            url = pictureUrl.trim().ifEmpty { null },
+            pubkey = pubkey,
+            size = 56.dp,
+            displayName = shownName,
+            modifier = Modifier.border(1.5.dp, colors.primary.copy(alpha = 0.35f), CircleShape),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.weight(1f)) {
+            Text(shownName, color = PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (nip05.isNotBlank()) {
+                Text(nip05, color = SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (about.isNotBlank()) {
+                Text(about, color = PrimaryText.copy(alpha = 0.75f), fontSize = 12.sp,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
