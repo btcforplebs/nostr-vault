@@ -1660,13 +1660,27 @@ class NostrService @Inject constructor(
      * blastr relays and [alsoAsk], or null if none answered in time. Asks
      * fresh: the profile caches can hold a list replaced long ago.
      */
-    suspend fun fetchNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): NostrEvent? {
+    suspend fun fetchNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): NostrEvent? =
+        lookupNewestReplaceable(kind, pubkey, alsoAsk, timeoutMs).event
+
+    /**
+     * One [lookupNewestReplaceable] answer: the newest event, and how many
+     * relays were asked and answered (EOSE). No event with every relay
+     * answered means there genuinely is none, not that the lookup timed out.
+     */
+    data class ReplaceableLookup(val event: NostrEvent?, val asked: Int, val answered: Int) {
+        val confirmedNone: Boolean get() = event == null && asked > 0 && answered >= asked
+    }
+
+    /** [fetchNewestReplaceable], also saying whether "none" was confirmed. */
+    suspend fun lookupNewestReplaceable(kind: Int, pubkey: String, alsoAsk: List<String>, timeoutMs: Long = 6_000): ReplaceableLookup {
         val targets = (configStore.config.value.activeBlastrRelays + alsoAsk)
             .map { it.trim() }
             .filter { it.isNotEmpty() && !isLoopbackRelay(it) }
             .distinct()
-        if (targets.isEmpty()) return null
+        if (targets.isEmpty()) return ReplaceableLookup(null, 0, 0)
         val best = java.util.concurrent.atomic.AtomicReference<NostrEvent?>(null)
+        val answered = java.util.concurrent.atomic.AtomicInteger(0)
         coroutineScope {
             targets.map { url ->
                 launch(Dispatchers.IO) {
@@ -1685,7 +1699,11 @@ class NostrService @Inject constructor(
                                             if (ev.kind != kind || ev.pubkey != pubkey || !HavenBridge.verifyEvent(obj.toString())) return@collect
                                             best.updateAndGet { cur -> if (cur == null || ev.createdAt > cur.createdAt) ev else cur }
                                         }
-                                        "EOSE", "CLOSED" -> done.complete(Unit)
+                                        "EOSE" -> {
+                                            val ours = arr.getOrNull(1)?.jsonPrimitive?.contentOrNull == subId
+                                            if (done.complete(Unit) && ours) answered.incrementAndGet()
+                                        }
+                                        "CLOSED" -> done.complete(Unit)
                                     }
                                 }
                             }
@@ -1703,7 +1721,7 @@ class NostrService @Inject constructor(
                 }
             }.joinAll()
         }
-        return best.get()
+        return ReplaceableLookup(best.get(), targets.size, answered.get())
     }
 
     fun publishDMRelayList(dmRelays: List<String>) {

@@ -18,8 +18,6 @@ import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -59,6 +57,9 @@ class ProfileEditViewModel @Inject constructor(
     private val _saveError = MutableStateFlow<String?>(null)
     val saveError = _saveError.asStateFlow()
 
+    /** What the form showed when opened, by kind-0 key: a save applies only fields changed from it. */
+    private val initialFields: Map<String, String>
+
     init {
         val pubkey = configStore.activeAccountHexPubkey.value
         val profile = nostrService.profiles.value[pubkey]
@@ -71,7 +72,18 @@ class ProfileEditViewModel @Inject constructor(
             _lud16.value = it.lud16 ?: ""
             _website.value = it.website ?: ""
         }
+        initialFields = formFields()
     }
+
+    private fun formFields(): Map<String, String> = mapOf(
+        ProfileMetadataMerge.DISPLAY_NAME to _displayName.value,
+        ProfileMetadataMerge.NAME to _name.value,
+        ProfileMetadataMerge.ABOUT to _about.value,
+        ProfileMetadataMerge.PICTURE to _pictureUrl.value,
+        ProfileMetadataMerge.NIP05 to _nip05.value,
+        ProfileMetadataMerge.LUD16 to _lud16.value,
+        ProfileMetadataMerge.WEBSITE to _website.value,
+    )
 
     fun setDisplayName(v: String) { _displayName.value = v }
     fun setName(v: String) { _name.value = v }
@@ -85,15 +97,21 @@ class ProfileEditViewModel @Inject constructor(
         viewModelScope.launch {
             _isSaving.value = true
             _saveError.value = null
-            val metadataJson = buildJsonObject {
-                if (_displayName.value.isNotBlank()) put("display_name", _displayName.value)
-                if (_name.value.isNotBlank()) put("name", _name.value)
-                if (_about.value.isNotBlank()) put("about", _about.value)
-                if (_pictureUrl.value.isNotBlank()) put("picture", _pictureUrl.value)
-                if (_nip05.value.isNotBlank()) put("nip05", _nip05.value)
-                if (_lud16.value.isNotBlank()) put("lud16", _lud16.value)
-                if (_website.value.isNotBlank()) put("website", _website.value)
-            }.toString()
+            // A kind 0 replaces the whole profile. Start from the newest one on
+            // the relays so banner, lud06 and every key this form doesn't show
+            // survive; if it can't be fetched, publishing would wipe them, so
+            // don't (same rule as the follow list, #180).
+            val pubkey = configStore.activeAccountHexPubkey.value
+            val alsoAsk = nostrService.outboxRelays.value[pubkey].orEmpty() +
+                nostrService.relayLists.value[pubkey].orEmpty()
+            val lookup = nostrService.lookupNewestReplaceable(0, pubkey, alsoAsk)
+            if (lookup.event == null && !lookup.confirmedNone) {
+                _saveError.value = "Couldn't load your current profile from the relays. Nothing was changed; try again."
+                _isSaving.value = false
+                return@launch
+            }
+            val base = ProfileMetadataMerge.parseContent(lookup.event?.content)
+            val metadataJson = ProfileMetadataMerge.merge(base, initialFields, formFields()).toString()
             // A bunker timeout or an Amber rejection throws; uncaught here it
             // crashed the app. Stay on the screen when nothing was published.
             val event = try {
