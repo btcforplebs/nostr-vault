@@ -12,6 +12,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -76,7 +79,9 @@ fun ProfileScreen(
     val isOwnProfile by viewModel.isOwnProfile.collectAsState()
     val followsMe by viewModel.followsMe.collectAsState()
     val isBlocked by viewModel.isBlocked.collectAsState()
+    val isThrottled by viewModel.isThrottled.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
     val hasMoreNotes by viewModel.hasMoreNotes.collectAsState()
     val hasMoreTagged by viewModel.hasMoreTagged.collectAsState()
@@ -163,6 +168,7 @@ fun ProfileScreen(
             }
         },
     ) { padding ->
+        val list: @Composable () -> Unit = {
         LazyColumn(
             contentPadding = PaddingValues(
                 top = padding.calculateTopPadding(),
@@ -192,6 +198,7 @@ fun ProfileScreen(
                     isOwnProfile = isOwnProfile,
                     isFollowing = isFollowing,
                     isBlocked = isBlocked,
+                    isThrottled = isThrottled,
                     canZap = canZap,
                     zapSats = viewModel.defaultZapSats,
                     onCompose = onCompose,
@@ -199,6 +206,7 @@ fun ProfileScreen(
                     onFollow = viewModel::toggleFollow,
                     onMessage = { onNavigateToDMThread(pubkey) },
                     onBlock = viewModel::toggleBlock,
+                    onThrottle = viewModel::toggleThrottle,
                     onZap = viewModel::zap,
                 )
             }
@@ -384,6 +392,17 @@ fun ProfileScreen(
                 }
             }
         }
+        }
+        // Pull to refresh on your own profile, as on iOS.
+        if (isOwnProfile) {
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize(),
+            ) { list() }
+        } else {
+            list()
+        }
     }
 
     openListing?.let { listing ->
@@ -520,6 +539,7 @@ private fun ProfileActionRow(
     isOwnProfile: Boolean,
     isFollowing: Boolean,
     isBlocked: Boolean,
+    isThrottled: Boolean,
     canZap: Boolean,
     zapSats: Int,
     onCompose: () -> Unit,
@@ -527,6 +547,7 @@ private fun ProfileActionRow(
     onFollow: () -> Unit,
     onMessage: () -> Unit,
     onBlock: () -> Unit,
+    onThrottle: () -> Unit,
     onZap: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
@@ -556,6 +577,16 @@ private fun ProfileActionRow(
                 (if (isBlocked) Color(0xFFFF9800) else Color(0xFFE53935)).copy(alpha = 0.12f),
                 onClick = onBlock,
             )
+            // Slow Down keeps this person to a few posts in the feed (Settings → Blocked lists them).
+            val throttleColor = if (isThrottled) Color(0xFF2196F3) else SecondaryText
+            ActionChip(
+                if (isThrottled) "Speed Up" else "Slow Down",
+                Icons.Filled.Speed,
+                throttleColor,
+                throttleColor.copy(alpha = 0.12f),
+                onClick = onThrottle,
+                description = if (isThrottled) "Remove speed limit" else "Slow down posts",
+            )
             if (canZap) {
                 ActionChip("Zap $zapSats", NostrVaultIcons.Zap, Color(0xFFFF9800), Color(0xFFFF9800).copy(alpha = 0.15f), onClick = onZap)
             }
@@ -570,6 +601,7 @@ private fun ActionChip(
     contentColor: Color,
     background: Color,
     onClick: () -> Unit,
+    description: String = label,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -580,7 +612,7 @@ private fun ActionChip(
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp),
     ) {
-        Icon(icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(14.dp))
+        Icon(icon, contentDescription = description, tint = contentColor, modifier = Modifier.size(14.dp))
         Text(label, color = contentColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
@@ -738,13 +770,30 @@ private fun ProfileSectionTabs(
     }
 }
 
+/**
+ * Whether a media link is worth copying: anything but this phone's own
+ * relay (127.0.0.1 / localhost), which nobody else can open.
+ * iOS: ConfigService.hasExternalShareURL.
+ */
+internal fun isShareableMediaUrl(url: String): Boolean {
+    val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return false
+    return host != "127.0.0.1" && host != "localhost" && host != "0.0.0.0"
+}
+
 @Composable
 private fun MediaViewerOverlay(
     urls: List<String>,
     startIndex: Int,
     onDismiss: () -> Unit,
+    // The feed viewer's save: MediaStore, the same toast lines.
+    saver: com.nostrvault.ui.components.FeedMediaMirrorViewModel = hiltViewModel(),
 ) {
     val pagerState = rememberPagerState(initialPage = startIndex, pageCount = { urls.size })
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val saveState by saver.saveState.collectAsState()
+    val currentUrl = urls[pagerState.currentPage.coerceIn(0, urls.lastIndex)]
+    LaunchedEffect(currentUrl) { saver.onOpen(currentUrl) }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -769,6 +818,45 @@ private fun MediaViewerOverlay(
                 .padding(12.dp),
         ) {
             Icon(NostrVaultIcons.Dismiss, "Close", tint = Color.White, modifier = Modifier.size(28.dp))
+        }
+        // Copy link and Save to gallery, as iOS's profile viewer offers.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .statusBarsPadding()
+                .padding(12.dp),
+        ) {
+            if (isShareableMediaUrl(currentUrl)) {
+                IconButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(currentUrl))
+                        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.1f)),
+                ) {
+                    Icon(NostrVaultIcons.Copy, "Copy link", tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+            }
+            val saving = saveState == com.nostrvault.ui.components.FeedMediaMirrorViewModel.SaveState.Saving
+            val saved = saveState == com.nostrvault.ui.components.FeedMediaMirrorViewModel.SaveState.Saved
+            IconButton(
+                onClick = {
+                    saver.saveToGallery(currentUrl) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+                },
+                enabled = !saving && !saved,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.1f)),
+            ) {
+                if (saving) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                } else {
+                    Icon(
+                        if (saved) NostrVaultIcons.Check else NostrVaultIcons.Import,
+                        if (saved) "Saved to gallery" else "Save to gallery",
+                        tint = Color.White, modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
         }
     }
 }

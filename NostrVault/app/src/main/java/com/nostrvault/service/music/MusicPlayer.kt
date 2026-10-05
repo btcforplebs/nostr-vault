@@ -74,6 +74,21 @@ object MusicPlayer {
     private val _hasNext = MutableStateFlow(false)
     val hasNext: StateFlow<Boolean> = _hasNext.asStateFlow()
 
+    /** The queue is in shuffled order; turning it off puts back the order it was played in. */
+    private val _isShuffled = MutableStateFlow(false)
+    val isShuffled: StateFlow<Boolean> = _isShuffled.asStateFlow()
+    /** The queue's order before shuffle, while shuffle is on. */
+    private var unshuffledQueue: List<PlayerTrack> = emptyList()
+
+    /** The queue in play order, and where the player is in it, for Up Next. */
+    private val _queueState = MutableStateFlow<List<PlayerTrack>>(emptyList())
+    val queueState: StateFlow<List<PlayerTrack>> = _queueState.asStateFlow()
+    private val _index = MutableStateFlow(0)
+    val index: StateFlow<Int> = _index.asStateFlow()
+
+    /** Kept across queues; a live stream ignores it. */
+    private val _repeatMode = MutableStateFlow(MusicRepeatMode.OFF)
+    val repeatMode: StateFlow<MusicRepeatMode> = _repeatMode.asStateFlow()
     /** The stream whose sound is playing, so the full player can offer Watch. */
     private val _liveStream = MutableStateFlow<LiveStream?>(null)
     val liveStream: StateFlow<LiveStream?> = _liveStream.asStateFlow()
@@ -148,9 +163,11 @@ object MusicPlayer {
         val c = controller ?: return
         val idx = c.currentMediaItemIndex
         _current.value = if (c.mediaItemCount > 0) queue.getOrNull(idx) else null
+        _queueState.value = queue
+        _index.value = idx
         _isPlaying.value = c.isPlaying
         _isBuffering.value = c.playbackState == Player.STATE_BUFFERING
-        _hasNext.value = c.hasNextMediaItem()
+        _hasNext.value = c.hasNextMediaItem() && queue.getOrNull(idx)?.isLive != true
         _positionMs.value = c.currentPosition.coerceAtLeast(0)
         _durationMs.value = c.duration.takeIf { it > 0 }
             ?: ((queue.getOrNull(idx)?.durationSec ?: 0) * 1000L)
@@ -189,11 +206,79 @@ object MusicPlayer {
         if (tracks.isEmpty()) return
         _liveStream.value = null
         queue = tracks
+        _isShuffled.value = false
+        unshuffledQueue = emptyList()
         _current.value = tracks.getOrNull(startIndex)
         withController { c ->
             c.setMediaItems(tracks.map(::item), startIndex.coerceIn(0, tracks.lastIndex), 0L)
+            applyRepeat(c)
             c.prepare()
             c.play()
+        }
+    }
+
+    /**
+     * Plays [tracks] in a random order, with shuffle showing as on, so
+     * turning it off goes back to the list's own order.
+     */
+    fun playShuffled(tracks: List<WavlakeTrack>) {
+        if (tracks.isEmpty()) return
+        val ordered = tracks.map(PlayerTrack::of)
+        playTracks(ordered.shuffled(), 0)
+        unshuffledQueue = ordered
+        _isShuffled.value = true
+    }
+
+    /**
+     * Shuffles everything but the song playing, which keeps playing at the
+     * top; off, the original order comes back with the current song in
+     * place. The playing item is never touched, so the song doesn't skip.
+     */
+    fun toggleShuffle() = withController { c ->
+        val idx = c.currentMediaItemIndex
+        val playing = queue.getOrNull(idx) ?: return@withController
+        if (playing.isLive || c.mediaItemCount != queue.size) return@withController
+        val (newQueue, newIndex) = if (_isShuffled.value) {
+            MusicQueueOrder.unshuffle(unshuffledQueue, queue, playing.id) { it.id }
+                .also { unshuffledQueue = emptyList() }
+        } else {
+            unshuffledQueue = queue
+            MusicQueueOrder.shuffleAround(queue, idx) to 0
+        }
+        queue = newQueue
+        _isShuffled.value = !_isShuffled.value
+        // Everything around the playing item goes, then the new order is
+        // put back before and after it.
+        if (idx + 1 < c.mediaItemCount) c.removeMediaItems(idx + 1, c.mediaItemCount)
+        if (idx > 0) c.removeMediaItems(0, idx)
+        val before = newQueue.subList(0, newIndex)
+        val after = newQueue.subList(newIndex + 1, newQueue.size)
+        if (after.isNotEmpty()) c.addMediaItems(after.map(::item))
+        if (before.isNotEmpty()) c.addMediaItems(0, before.map(::item))
+        sync()
+    }
+
+    /** Plays the queue's song at [position], from Up Next. */
+    fun jump(position: Int) = withController { c ->
+        if (position !in 0 until c.mediaItemCount || position == c.currentMediaItemIndex) return@withController
+        c.seekToDefaultPosition(position)
+        if (c.playbackState == Player.STATE_IDLE) c.prepare()
+        c.play()
+    }
+
+    /** Off → repeat all → repeat one → off. */
+    fun cycleRepeat() {
+        _repeatMode.value = _repeatMode.value.next()
+        withController { c -> applyRepeat(c); sync() }
+    }
+
+    /** The owner's repeat choice, except on a live stream, which has no end to go round from. */
+    private fun applyRepeat(c: MediaController) {
+        val live = queue.getOrNull(c.currentMediaItemIndex)?.isLive == true
+        c.repeatMode = if (live) Player.REPEAT_MODE_OFF else when (_repeatMode.value) {
+            MusicRepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            MusicRepeatMode.ALL -> Player.REPEAT_MODE_ALL
+            MusicRepeatMode.ONE -> Player.REPEAT_MODE_ONE
         }
     }
 
@@ -221,6 +306,8 @@ object MusicPlayer {
     /** Stops and clears the queue; the mini player goes away. */
     fun stop() {
         queue = emptyList()
+        _isShuffled.value = false
+        unshuffledQueue = emptyList()
         _liveStream.value = null
         _current.value = null
         withController { c ->

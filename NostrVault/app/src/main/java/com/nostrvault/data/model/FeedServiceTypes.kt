@@ -583,6 +583,37 @@ object RecipeTopics {
             topic in BASE || topic.startsWith(CATEGORY_PREFIX)
         }
     }
+
+    /** How many category chips the bar shows. */
+    const val MAX_CATEGORIES = 12
+
+    /** The `zapcooking-<category>` names on one recipe, once each. */
+    fun categoriesOf(tags: List<List<String>>): Set<String> = tags.asSequence()
+        .filter { it.size >= 2 && it[0] == "t" }
+        .map { it[1].lowercase() }
+        .filter { it.startsWith(CATEGORY_PREFIX) }
+        .map { it.removePrefix(CATEGORY_PREFIX) }
+        .filter { it.isNotEmpty() }
+        .toSet()
+
+    /**
+     * The most common categories in [recipes], for the chip bar. Capped: a
+     * 200-recipe page carries close to 300 distinct tags, most used once.
+     * Ranked by how many recipes carry it, then alphabetically.
+     * iOS: RecipeFeedService.categories.
+     */
+    fun topCategories(recipes: List<FeedNote>): List<String> {
+        val counts = HashMap<String, Int>()
+        for (recipe in recipes) for (name in categoriesOf(recipe.tags)) counts[name] = (counts[name] ?: 0) + 1
+        return counts.entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+            .take(MAX_CATEGORIES)
+            .map { it.key }
+    }
+
+    /** Recipes in [category], or all of them for null. */
+    fun filter(recipes: List<FeedNote>, category: String?): List<FeedNote> =
+        if (category == null) recipes else recipes.filter { category in categoriesOf(it.tags) }
 }
 
 enum class MediaFeedMode(val displayName: String) {

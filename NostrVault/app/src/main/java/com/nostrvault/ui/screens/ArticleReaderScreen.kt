@@ -490,6 +490,7 @@ private fun ArticleBody(
     modifier: Modifier = Modifier,
 ) {
     val meta = remember(note.id, note.tags) { ArticleMeta.from(note) }
+    val readMinutes = remember(note.id) { ArticleMeta.readingTimeMinutes(note.content) }
     val blocks = remember(note.content) { ArticleEngagement.blocks(note.content) }
     val placed = remember(blocks, highlights) { ArticleEngagement.place(highlights, blocks) }
     val colors = LocalNostrVaultColors.current
@@ -521,6 +522,7 @@ private fun ArticleBody(
                 append(author?.bestName ?: note.pubkey.take(8))
                 append(" · ")
                 append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(meta.publishedAt))
+                readMinutes?.let { append(" · $it min read") }
             },
             color = SecondaryText,
             fontSize = 13.sp,
