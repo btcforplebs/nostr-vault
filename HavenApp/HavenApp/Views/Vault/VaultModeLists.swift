@@ -497,7 +497,7 @@ extension VaultView {
                 try? await Task.sleep(for: .milliseconds(250))
             }
             if Task.isCancelled { return }
-            openNote(focusCandidates(for: request).dropFirst().first ?? request.eventId)
+            openNote(fallbackNoteId(for: request))
         }
     }
 
@@ -515,7 +515,21 @@ extension VaultView {
         return ids
     }
 
-    private func focusTargetId(for request: RelayFocusRequest) -> String? {
+    /// The post to open when the event never showed up in the list. A reply
+    /// or mention opens on itself: the thread view puts it at the top with the
+    /// post it answers scrollable above. Opening what it points at (your post)
+    /// landed on your post with the reply out of sight below it. A reaction,
+    /// zap or repost opens the post it targets, since it has no body of its own.
+    private func fallbackNoteId(for request: RelayFocusRequest) -> String {
+        switch request.type {
+        case "reply", "mention":
+            return request.eventId
+        default:
+            return focusCandidates(for: request).dropFirst().first ?? request.eventId
+        }
+    }
+
+        private func focusTargetId(for request: RelayFocusRequest) -> String? {
         let shown: [NostrEvent]
         switch viewMode {
         case .likes: shown = displayLikedNotes
