@@ -2448,11 +2448,11 @@ fun DashboardScreen(
                 onDismissImport = viewModel::dismissImport,
                 showReposts = feedService.showReposts.collectAsState().value,
                 showReplies = feedService.showReplies.collectAsState().value,
-                autoLoadNewNotes = true, // Default; auto-load state lives in FeedViewModel
+                autoLoadNewNotes = currentConfig.autoLoadNewPosts,
                 feedRelays = currentConfig.activeFeedRelays,
                 onToggleReposts = { feedService.setShowReposts(it) },
                 onToggleReplies = { feedService.setShowReplies(it) },
-                onToggleAutoLoad = { /* auto-load managed by FeedViewModel */ },
+                onToggleAutoLoad = { on -> viewModel.configStore.update { it.copy(autoLoadNewPosts = on) } },
                 onManageRelays = {
                     showDashboardSheet = false
                     onNavigate(Screen.RelayListEditor)

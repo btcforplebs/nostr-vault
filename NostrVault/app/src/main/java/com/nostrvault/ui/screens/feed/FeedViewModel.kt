@@ -360,8 +360,10 @@ class FeedViewModel @Inject constructor(
 
     // ── Feed filter toggles (per-mode) ─────────────────────────
 
-    private val _autoLoadEnabled = MutableStateFlow(true)
-    val autoLoadEnabled: StateFlow<Boolean> = _autoLoadEnabled.asStateFlow()
+    /** Persisted, and the same value as Settings' "Auto-Load New Posts". */
+    val autoLoadEnabled: StateFlow<Boolean> = configStore.config
+        .map { it.autoLoadNewPosts }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), configStore.config.value.autoLoadNewPosts)
 
     val showReposts: StateFlow<Boolean> = feedService.showReposts
 
@@ -429,7 +431,7 @@ class FeedViewModel @Inject constructor(
     private val _showEngagementStats = MutableStateFlow(false)
     val showEngagementStats: StateFlow<Boolean> = _showEngagementStats.asStateFlow()
 
-    fun toggleAutoLoad() { _autoLoadEnabled.value = !_autoLoadEnabled.value }
+    fun toggleAutoLoad() { configStore.update { it.copy(autoLoadNewPosts = !it.autoLoadNewPosts) } }
     fun toggleShowReposts() { feedService.setShowReposts(!showReposts.value) }
     fun toggleShowReplies() { feedService.setShowReplies(!showReplies.value) }
     fun toggleShowEngagementStats() { _showEngagementStats.value = !_showEngagementStats.value }

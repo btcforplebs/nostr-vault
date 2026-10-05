@@ -394,6 +394,12 @@ data class HavenConfig(
     /** Lines a thread's root shows in Threaded View; replies show one fewer. Mirrors iOS. */
     val threadedLineLimit: Int = 3,
     val autoplayVideos: Boolean = true,
+    /**
+     * New posts join the feed on their own while you are at the top, instead
+     * of waiting behind the "New Posts" pill. Off by default. Mirrors iOS
+     * HavenConfig.autoLoadNewPosts.
+     */
+    val autoLoadNewPosts: Boolean = false,
     /** ISO 639-1 codes the Global feed is narrowed to. Empty shows every language. Mirrors iOS. */
     val globalFeedLanguages: List<String> = emptyList(),
     /** Global (and Media's Global) shows everyone, not only your Web of Trust. Off by default. Mirrors iOS. */
