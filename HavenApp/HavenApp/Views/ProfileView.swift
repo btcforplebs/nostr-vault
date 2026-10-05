@@ -128,7 +128,8 @@ struct ProfileView: View {
         var id: String { rawValue }
 
         /// The feed types' own icons, so a tab reads the same as the feed it
-        /// matches. Tabs show the icon, and the name too where there's room.
+        /// matches. Tabs are icons only; the name is the accessibility label
+        /// and, on the Mac, the tooltip.
         var symbol: String {
             switch self {
             case .notes: return "text.bubble"
@@ -1093,12 +1094,11 @@ struct ProfileView: View {
                     }
                 }) {
                     VStack(spacing: 6) {
-                        // Icon, name and count where they fit; icon and count
-                        // on a narrow tab; the icon alone at the narrowest.
+                        // Icons only, no names (Logen): icon and count, or the
+                        // icon alone on a tab too narrow for the count.
                         ViewThatFits(in: .horizontal) {
-                            tabLabel(section, showsName: true, showsCount: true)
-                            tabLabel(section, showsName: false, showsCount: true)
-                            tabLabel(section, showsName: false, showsCount: false)
+                            tabLabel(section, showsCount: true)
+                            tabLabel(section, showsCount: false)
                         }
                         .foregroundColor(selectedSection == section ? .havenPurple : .secondary)
 
@@ -1121,15 +1121,10 @@ struct ProfileView: View {
         .padding(.horizontal, 16)
     }
 
-    private func tabLabel(_ section: ProfileSection, showsName: Bool, showsCount: Bool) -> some View {
+    private func tabLabel(_ section: ProfileSection, showsCount: Bool) -> some View {
         HStack(spacing: 4) {
             Image(systemName: section.symbol)
                 .font(.appSystem(size: 14, weight: .semibold))
-            if showsName {
-                Text(section.rawValue.uppercased())
-                    .font(.appSystem(size: 10, weight: .heavy))
-                    .tracking(0.2)
-            }
             let count = countLabel(for: section)
             if showsCount, !count.isEmpty {
                 Text(count)
