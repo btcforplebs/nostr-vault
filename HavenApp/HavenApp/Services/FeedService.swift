@@ -1284,6 +1284,9 @@ class FeedService: ObservableObject {
             loadPopularFeed()
             return
         }
+        // Global's thread replies were fetched under the old list and trust
+        // setting; Threaded View fetches them again for the reloaded posts.
+        if feedMode == .global { resetFeedThreadReplies() }
 
         #if DEBUG
         print("FeedService: [refresh] start — followedPubkeys=\(followedPubkeys.count) notes=\(notes.count) filtered=\(filteredNotes.count)")
