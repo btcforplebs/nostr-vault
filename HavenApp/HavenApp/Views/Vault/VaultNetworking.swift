@@ -150,7 +150,11 @@ extension VaultView {
             "wss://relay.primal.net",
             "wss://nos.lol",
         ] : configService.config.activeFeedRelays
-        let externalURLs = externalStrs.compactMap { URL(string: $0) }
+        // Your published inbox too: zaps sent from here ask for receipts there.
+        var seen = Set<String>()
+        let externalURLs = (externalStrs + (nostrService.relayLists[owner] ?? []))
+            .filter { seen.insert($0.lowercased()).inserted }
+            .compactMap { URL(string: $0) }
         nostrService.fetchZapReceipts(from: externalURLs, limit: 500, tagFilter: ["#P": [owner]])
     }
 
@@ -204,7 +208,7 @@ extension VaultView {
     /// Fetch notes referenced by zap receipts that aren't already in the events array.
     func fetchMissingZappedNotes() {
         let zapReceipts = nostrService.events.filter { $0.kind == 9735 }
-        guard !zapReceipts.isEmpty else { return }
+        guard !zapReceipts.isEmpty || !FeedService.shared.zappedEventIds.isEmpty else { return }
 
         var targetNoteIds = Set<String>()
         for receipt in zapReceipts {
@@ -214,6 +218,9 @@ extension VaultView {
                 targetNoteIds.insert(targetId)
             }
         }
+
+        // Posts this app zapped from this phone, for Given.
+        targetNoteIds.formUnion(FeedService.shared.zappedEventIds.keys)
 
         let existingIds = Set(nostrService.events.map { $0.id })
         let missingIds = Array(targetNoteIds.subtracting(existingIds).subtracting(requestedMissingZapNoteIds))

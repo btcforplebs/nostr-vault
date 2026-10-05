@@ -190,6 +190,7 @@ extension VaultView {
         let currentZapsFilter = zapsFilter
         let walletGiven = walletGivenNotes
         let walletGivenSats = walletGivenAmounts
+        let locallyZapped = FeedService.shared.zappedEventIds
         let currentMaxDisplayed = maxDisplayedItems
         let gen = updateGeneration
 
@@ -325,10 +326,12 @@ extension VaultView {
 
                 if currentZapsFilter == .myZaps {
                     // My Zaps: notes I zapped
-                    let myZappedNoteIds = Set(parsedReceipts.compactMap { item -> String? in
+                    var myZappedNoteIds = Set(parsedReceipts.compactMap { item -> String? in
                         guard item.parsed.senderPubkey == owner, item.parsed.requestIsSigned else { return nil }
                         return item.parsed.targetNoteId
                     })
+                    // …and what this app recorded zapping from this phone.
+                    myZappedNoteIds.formUnion(locallyZapped.keys)
                     // The wallet's history first (newest payment first), then
                     // anything only a receipt on the relays knows about.
                     var seen = Set(walletGiven.map(\.id))
@@ -337,6 +340,7 @@ extension VaultView {
                         noteKinds.contains($0.kind) && myZappedNoteIds.contains($0.id) && seen.insert($0.id).inserted
                     }
                     var givenMap: [String: [(pubkey: String, amount: Int64)]] = [:]
+                    for (id, sats) in locallyZapped where sats > 0 { givenMap[id] = [(pubkey: owner, amount: Int64(sats))] }
                     for (id, sats) in walletGivenSats { givenMap[id] = [(pubkey: owner, amount: sats)] }
 
                     let result = Self.applySearchFilter(to: filtered, search: currentSearch, scope: currentScope)
