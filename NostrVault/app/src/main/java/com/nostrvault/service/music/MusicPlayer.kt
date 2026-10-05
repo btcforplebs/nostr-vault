@@ -93,6 +93,18 @@ object MusicPlayer {
     private val _liveStream = MutableStateFlow<LiveStream?>(null)
     val liveStream: StateFlow<LiveStream?> = _liveStream.asStateFlow()
 
+    /**
+     * The player behind the live stream at [address], while that is what the
+     * mini player has minimized; null otherwise. The stream window shows its
+     * video rather than opening the stream a second time, so popping out and
+     * back in never stops the sound. iOS: MusicPlayerService.livePlayer.
+     */
+    fun livePlayer(address: String): Player? {
+        val c = controller ?: return null
+        if (_current.value?.isLive != true || _liveStream.value?.address != address) return null
+        return c
+    }
+
     fun init(context: Context) {
         appContext = context.applicationContext
     }

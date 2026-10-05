@@ -100,7 +100,13 @@ fun LiveStreamScreen(
         onDispose { viewModel.leave() }
     }
 
-    val player = remember(stream?.streamingUrl) {
+    // The mini player's own player, when this is the stream it has
+    // minimized: read once, as the screen opens. The screen shows that
+    // player's video instead of opening the stream again, so popping out of
+    // the mini player and going back never stops the sound. iOS #301.
+    val sharedPlayer = remember(stream?.address) { stream?.let { MusicPlayer.livePlayer(it.address) } }
+    val ownPlayer = remember(stream?.streamingUrl, sharedPlayer) {
+        if (sharedPlayer != null) return@remember null
         val url = stream?.streamingUrl ?: return@remember null
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(url))
@@ -115,14 +121,26 @@ fun LiveStreamScreen(
     }
     // A player left running behind a closed screen keeps the socket and the
     // audio session; releasing on dispose is not optional.
-    DisposableEffect(player) { onDispose { player?.release() } }
+    // A shared player is the mini player's, which carries on.
+    DisposableEffect(ownPlayer) { onDispose { ownPlayer?.release() } }
+    val player: Player? = sharedPlayer ?: ownPlayer
+    // Popped out of a paused mini player, the stream plays; Play rejoins the
+    // broadcast where it is now (LiveRejoinListener in the service).
+    LaunchedEffect(sharedPlayer) {
+        val p = sharedPlayer ?: return@LaunchedEffect
+        if (!p.playWhenReady) {
+            if (p.playbackState == Player.STATE_IDLE) p.prepare()
+            p.play()
+        }
+    }
 
     // Another app took the sound (its own video, say): coming back to the app
     // carries on with the broadcast where it is now. Paused by the owner, the
     // stream stays paused.
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(player, lifecycleOwner) {
-        val p = player ?: return@DisposableEffect onDispose {}
+    // The mini player's own player does this itself (MusicPlayer.setAppInForeground).
+    DisposableEffect(ownPlayer, lifecycleOwner) {
+        val p = ownPlayer ?: return@DisposableEffect onDispose {}
         var pausedByOtherApp = false
         val listener = object : Player.Listener {
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -182,17 +200,21 @@ fun LiveStreamScreen(
                             useController = true
                         }
                     },
+                    // Let go of the surface, so a shared player carries on
+                    // as sound only in the mini player.
+                    onRelease = { it.player = null },
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f)
                         .background(Color.Black),
                 )
                 // Minimize: the stream's sound carries on in the mini player and
-                // the notification while you browse; Watch in the full player
+                // the notification while you browse; tapping the mini player
                 // brings the video back. iOS: listenInBackground.
                 IconButton(
                     onClick = {
-                        MusicPlayer.playLive(
+                        // Already the mini player's stream: it plays on as it is.
+                        if (sharedPlayer == null) MusicPlayer.playLive(
                             stream,
                             PlayerTrack(
                                 id = "live:${stream.address}",
