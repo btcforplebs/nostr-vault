@@ -16,6 +16,7 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.ui.notification.FollowKind
 import com.nostrvault.ui.notification.NotificationManager
+import com.nostrvault.ui.components.likedToastMessage
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -3556,6 +3557,19 @@ class FeedService @Inject constructor(
         connectFeedRelay(localUrl)
     }
 
+    /**
+     * Keeps a copy of a post you liked on your own relay. Its root stores only
+     * your events and its inbox only events that tag you, so a liked post
+     * lived nowhere local and Relay > Likes > Given had to find it on outside
+     * relays, which on iOS returned 47 of 293. The /feed store takes any note
+     * and keeps the feed window (iOS #295).
+     */
+    private fun keepLikedNoteLocally(noteId: String) {
+        val raw = rawEventCache[noteId] ?: return
+        val feedUrl = configStore.config.value.localRelayURL("feed") ?: return
+        feedClients[feedUrl]?.send("[\"EVENT\",$raw]")
+    }
+
     fun sendToLocalRelay(text: String): Boolean {
         val config = configStore.config.value
         val localUrl = config.nostrURL ?: return false
@@ -3596,7 +3610,17 @@ class FeedService @Inject constructor(
             val reactionTags = tags ?: listOf(listOf("e", noteId))
             val event = runCatching { nostrService.signEventAsync(kind = 7, content = reactionEmoji, tags = reactionTags) }
                 .onFailure { Log.e(TAG, "like not signed: ${it.message}") }.getOrNull()
-            if (event != null) nostrService.postEvent(event) else unlikeNote(noteId)
+            if (event != null) {
+                nostrService.postEvent(event)
+                // A like signed by a remote signer takes a round trip; with
+                // nothing on screen there was no telling one that went out
+                // from one the signer never answered (iOS #295).
+                notificationManager.showToast(likedToastMessage(emoji))
+                keepLikedNoteLocally(noteId)
+            } else {
+                unlikeNote(noteId)
+                notificationManager.showError("Like failed: your signer didn't answer")
+            }
         }
 
         val stats = _noteStats.value.toMutableMap()
