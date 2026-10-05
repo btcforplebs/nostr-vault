@@ -183,10 +183,9 @@ func importTaggedNotes(ctx context.Context) {
 
 	wdbInbox := eventstore.RelayWrapper{Store: inboxDB}
 	wdbChat := eventstore.RelayWrapper{Store: chatDB}
+	pTags := slices.Collect(maps.Keys(config.WhitelistedPubKeys))
 	filter := nostr.Filter{
-		Tags: nostr.TagMap{
-			"p": slices.Collect(maps.Keys(config.WhitelistedPubKeys)),
-		},
+		Tags: nostr.TagMap{"p": pTags},
 	}
 
 	log.Println("📦 importing inbox notes, please wait up to", timeout)
@@ -196,34 +195,25 @@ func importTaggedNotes(ctx context.Context) {
 		// select below waits out the full timeout.
 		defer close(done)
 		runsafe.Run("importTaggedNotes.fetch", func() {
-			events := pool.FetchMany(ctx, config.ImportSeedRelays, filter)
-			for ev := range events {
-				if ctx.Err() != nil {
-					break // Stop the loop on timeout
-				}
-
-				if isBlacklisted(ev.PubKey) {
-					slog.Debug("🚫 skipping tagged event from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
-					continue
-				}
-
-				if !wot.GetInstance().Has(ctx, ev.PubKey) && ev.Kind != nostr.KindGiftWrap {
-					continue
-				}
-				for tag := range ev.Tags.FindAll("p") {
-					if len(tag) < 2 {
+			// Same rules as the live inbox (classifyInboxEvent), so a zap
+			// is judged by its zapper here too, plus the zaps you sent.
+			for _, f := range []nostr.Filter{filter, givenZapsFilter(pTags, nil)} {
+				for ev := range pool.FetchMany(ctx, config.ImportSeedRelays, f) {
+					if ctx.Err() != nil {
+						break // Stop the loop on timeout
+					}
+					c := classifyInboxEvent(ctx, ev.Event)
+					if !c.accept {
 						continue
 					}
-					if _, ok := config.WhitelistedPubKeys[tag[1]]; ok {
-						dbToWrite := wdbInbox
-						if ev.Kind == nostr.KindGiftWrap {
-							dbToWrite = wdbChat
-						}
-						if err := dbToWrite.Publish(ctx, *ev.Event); err != nil {
-							log.Println("🚫 error importing tagged note", ev.ID, ":", err)
-						}
-						taggedImportedNotes++
+					dbToWrite := wdbInbox
+					if c.chat {
+						dbToWrite = wdbChat
 					}
+					if err := dbToWrite.Publish(ctx, *ev.Event); err != nil {
+						log.Println("🚫 error importing tagged note", ev.ID, ":", err)
+					}
+					taggedImportedNotes++
 				}
 			}
 		})
@@ -483,6 +473,14 @@ func subscribeInboxAndChat(ctx context.Context) {
 			inboxCatchup(fallback)
 			ownerCatchup(fallback)
 		}
+		// Receipts for zaps you sent tag you with `P`, which neither the
+		// negentropy filter nor the catch-up above asks for.
+		if ctx.Err() == nil {
+			givenSince := syncSince()
+			for ev := range pool.FetchMany(ctx, relays, givenZapsFilter(pTags, &givenSince)) {
+				processInboxEvent(ctx, ev, wdbInbox, wdbChat, notifier, rejects, false)
+			}
+		}
 		// Advance both watermarks to the start of this round regardless of
 		// whether anything was written. The fallback catch-up queries start from
 		// lastSeen-60; if the watermark only moved when an event was actually
@@ -616,6 +614,21 @@ func subscribeInboxAndChat(ctx context.Context) {
 	// context is cancelled or all relays send CLOSED; the previous code treated
 	// that as terminal and never resubscribed. Now we reconnect (resuming from
 	// lastSeen) with capped exponential backoff until the context is cancelled.
+	// Receipts for zaps you send, live (see givenZapSender).
+	runsafe.Go("subscribeInboxAndChat.givenZaps", func() {
+		for ctx.Err() == nil {
+			since := nostr.Timestamp(time.Now().Add(-time.Hour).Unix())
+			for ev := range pool.SubscribeMany(ctx, relays, givenZapsFilter(pTags, &since)) {
+				processInboxEvent(ctx, ev, wdbInbox, wdbChat, nil, rejects, false)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(30 * time.Second):
+			}
+		}
+	})
+
 	log.Println("📢 subscribing to inbox on", len(relays), "relays (import + DM)")
 	backoff := time.Second
 	for ctx.Err() == nil {
@@ -736,11 +749,16 @@ type inboxClassification struct {
 // subscription, the watermark catch-up pull, and the negentropy sync path so
 // their accept/reject behavior cannot drift.
 func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassification {
-	if isBlacklisted(ev.PubKey) {
-		slog.Debug("🚫discarding imported note from blacklisted pubkey", "pubkey", ev.PubKey, "id", ev.ID)
+	// A zap you sent: kept so the Relay tab can list it, never notified.
+	if sender := givenZapSender(ev); sender != "" {
+		return inboxClassification{accept: true, recipient: sender}
+	}
+	trustKey := inboxTrustKey(ev)
+	if isBlacklisted(ev.PubKey) || isBlacklisted(trustKey) {
+		slog.Debug("🚫discarding imported note from blacklisted pubkey", "pubkey", trustKey, "id", ev.ID)
 		return inboxClassification{reason: rejectBlacklist}
 	}
-	if !wot.GetInstance().Has(ctx, ev.PubKey) && ev.Kind != nostr.KindGiftWrap {
+	if !wot.GetInstance().Has(ctx, trustKey) && ev.Kind != nostr.KindGiftWrap {
 		// Anyone may reply to the owner's own posts: a stranger answering you
 		// is news, where a stranger merely tagging you is the spam the WoT
 		// keeps out.
@@ -760,7 +778,7 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 			chat:   ev.Kind == nostr.KindGiftWrap,
 			// Skip notifying when the author is tagging themselves (e.g.
 			// replying to their own note) — still imported, just not notified.
-			notify:    ev.PubKey != tag[1],
+			notify:    trustKey != tag[1],
 			recipient: tag[1],
 		}
 	}
