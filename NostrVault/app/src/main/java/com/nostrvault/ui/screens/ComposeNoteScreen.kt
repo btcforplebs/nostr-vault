@@ -60,6 +60,7 @@ import com.nostrvault.service.BlossomService
 import com.nostrvault.service.DraftService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.MediaPostQueue
+import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.NostrService
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.PendingPostManager
@@ -934,6 +935,13 @@ class ComposeNoteViewModel @Inject constructor(
                     inputStream.use { input ->
                         input.copyTo(output)
                     }
+                }
+
+                // The location comes out before the hash: the blob is public
+                // once uploaded (iOS #335).
+                if (!MediaPrivacy.removeLocation(tempFile, attachment.mimeType)) {
+                    tempFile.delete()
+                    return@withContext AttachmentUploadResult.Failed(MediaPrivacy.FAILURE_MESSAGE)
                 }
 
                 // Compute SHA-256

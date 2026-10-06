@@ -33,6 +33,7 @@ import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.DMService
+import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.NostrService
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -172,8 +173,12 @@ class NewMessageViewModel @Inject constructor(
             val input = context.contentResolver.openInputStream(uri) ?: return@withContext null
             val tempFile = File.createTempFile("dm_upload_", ".tmp", context.cacheDir)
             tempFile.outputStream().use { out -> input.use { it.copyTo(out) } }
-            val sha256 = blossomService.computeSHA256(tempFile)
             val contentType = context.contentResolver.getType(uri) ?: "image/jpeg"
+            if (!MediaPrivacy.removeLocation(tempFile, contentType)) {
+                tempFile.delete()
+                return@withContext null
+            }
+            val sha256 = blossomService.computeSHA256(tempFile)
             val url = blossomService.uploadAndMirror(tempFile, sha256, contentType)
             tempFile.delete()
             url
