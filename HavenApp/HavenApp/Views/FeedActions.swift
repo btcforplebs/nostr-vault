@@ -237,19 +237,21 @@ struct FeedActions {
     static func make(feedService: FeedService, nostrService: NostrService) -> FeedActions {
         FeedActions(
             likeNote: { note in
-                react(to: note, with: ConfigService.shared.config.defaultReactionEmoji,
+                react(to: feedService.originalNote(for: note), with: ConfigService.shared.config.defaultReactionEmoji,
                       feedService: feedService, nostrService: nostrService)
             },
             unlikeNote: { note in
-                removeReaction(from: note, feedService: feedService, nostrService: nostrService)
+                removeReaction(from: feedService.originalNote(for: note), feedService: feedService, nostrService: nostrService)
             },
             reactToNote: { note, emoji in
-                react(to: note, with: emoji, feedService: feedService, nostrService: nostrService)
+                react(to: feedService.originalNote(for: note), with: emoji, feedService: feedService, nostrService: nostrService)
             },
             repostNote: { note in
                 PendingPostManager.shared.startRepost(sourceNote: note, nostrService: nostrService)
             },
             zapNote: { note, lud16, amount in
+                // A repost is zapped as the note it carries: its id, its author.
+                let note = feedService.originalNote(for: note)
                 let amountSats = amount ?? (ConfigService.shared.config.defaultZapAmount / 1000)
                 do {
                     try await ZapService.shared.zapNote(
@@ -399,15 +401,17 @@ struct FeedNoteRowData: Equatable {
             ? note.repostedEventId.flatMap { feedService.findNote(id: $0) }
             : nil
 
-        let lud16 = nostrService.profiles[note.pubkey]?.lud16
-        let lud06 = nostrService.profiles[note.pubkey]?.lud06
+        // Likes, zaps and counts on a repost row belong to the note it carries.
+        let original = feedService.originalNote(for: note)
+        let lud16 = nostrService.profiles[original.pubkey]?.lud16
+        let lud06 = nostrService.profiles[original.pubkey]?.lud06
         let hasLightning = (lud16 != nil && !lud16!.isEmpty) || (lud06 != nil && !lud06!.isEmpty)
 
         return FeedNoteRowData(
-            isLiked: feedService.likedEventIds.contains(note.id),
-            myReaction: feedService.myReactions[note.id]?.content,
+            isLiked: feedService.likedEventIds.contains(original.id),
+            myReaction: feedService.myReactions[original.id]?.content,
             isReposted: feedService.repostedEventIds.contains(repostCheckId),
-            zapAmount: feedService.zappedEventIds[note.id],
+            zapAmount: feedService.zappedEventIds[original.id],
             hasNWC: !ConfigService.shared.config.nwcURI.isEmpty,
             defaultZapAmount: ConfigService.shared.config.defaultZapAmount,
             hasLightningAddress: hasLightning,
@@ -422,7 +426,7 @@ struct FeedNoteRowData: Equatable {
             isOwnNote: note.pubkey == nostrService.activeHexPubkey,
             isFollowed: feedService.followedPubkeys.contains(displayPubkey),
             isParentFollowed: parentNote.map { feedService.followedPubkeys.contains($0.pubkey) } ?? false,
-            stats: feedService.noteStats[note.id] ?? NoteStats()
+            stats: feedService.noteStats[original.id] ?? NoteStats()
         )
     }
 }

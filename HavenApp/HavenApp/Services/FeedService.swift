@@ -2296,6 +2296,14 @@ class FeedService: ObservableObject {
     /// Still holding that tag means nothing was unpacked and this note carries
     /// the reposter's identity, so take the author from the repost's `p` tag.
     func quoteTarget(for note: FeedNote) -> FeedNote {
+        originalNote(for: note)
+    }
+
+    /// The note a repost stands for, for anything that acts on it: quoting,
+    /// liking, zapping, and the counts and states a repost row shows. Always
+    /// carries the original's id and author, even before its body arrives;
+    /// see `quoteTarget` for how an embedded copy is told from a bare repost.
+    func originalNote(for note: FeedNote) -> FeedNote {
         guard note.kind == 6, let refId = note.repostedEventId else { return note }
         if let original = findNote(id: refId) { return original }
         let carriesOriginal = !note.tags.contains { $0.count >= 2 && $0[0] == "e" && $0[1] == refId }
@@ -2306,6 +2314,21 @@ class FeedService: ObservableObject {
         let author = note.tags.first { $0.count >= 2 && $0[0] == "p" }?[1] ?? note.pubkey
         return FeedNote(id: refId, pubkey: author, content: "",
                         createdAt: note.createdAt, tags: [], kind: 1)
+    }
+
+    /// The note a thread view should open. Opening a kind-6 repost showed the
+    /// original's text over the wrapper's own empty likes and zaps, with no
+    /// conversation above it. Uses the loaded original, else the one the
+    /// repost embeds (same test as `quoteTarget`). A bare repost whose
+    /// original hasn't arrived stays as it is; the thread view already
+    /// handles that wrapper.
+    func threadTarget(for note: FeedNote) -> FeedNote {
+        guard note.kind == 6, let refId = note.repostedEventId else { return note }
+        if let original = findNote(id: refId) { return original }
+        let carriesOriginal = !note.tags.contains { $0.count >= 2 && $0[0] == "e" && $0[1] == refId }
+        guard carriesOriginal else { return note }
+        return FeedNote(id: refId, pubkey: note.pubkey, content: note.content,
+                        createdAt: note.originalCreatedAt ?? note.createdAt, tags: note.tags, kind: 1)
     }
 
     /// Finds a note matching an naddr coordinate ("naddr:<kind>:<pubkey>:<d-tag>").

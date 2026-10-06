@@ -2160,6 +2160,12 @@ struct FeedView: View {
     /// `FeedNoteRowData: Equatable` makes that comparison free.
     private func resolveRows(matching ids: Set<String>) {
         guard !ids.isEmpty else { return }
+        // A repost row shows its original's likes, zaps and counts, which are
+        // keyed by the original's id, not the row's.
+        var ids = ids
+        for note in feedService.filteredNotes where note.kind == 6 {
+            if let refId = note.repostedEventId, ids.contains(refId) { ids.insert(note.id) }
+        }
         var updated = rowDataCache
         var didChange = false
         for id in ids {
@@ -3672,6 +3678,12 @@ struct FeedNoteRow: View {
         bodySource.originalCreatedAt ?? bodySource.createdAt
     }
 
+    /// Who a zap on this row pays: the author of the note a repost carries,
+    /// never the person who reposted it.
+    private var zapRecipient: String {
+        FeedService.shared.originalNote(for: note).pubkey
+    }
+
     /// True while an empty-content repost is waiting for the note it reposted.
     private var isWaitingForRepostedNote: Bool {
         note.kind == 6 && note.content.isEmpty && note.repostedEventId != nil
@@ -3821,7 +3833,7 @@ struct FeedNoteRow: View {
             }
 
             if rowData.hasNWC {
-                let lud16 = actions.getLightningAddress(note.pubkey)
+                let lud16 = actions.getLightningAddress(zapRecipient)
                 let isZapped = rowData.zapAmount != nil
                 let hasLightning = lud16 != nil
                 Image(systemName: isZapped ? "bolt.fill" : "bolt")
@@ -3903,7 +3915,7 @@ struct FeedNoteRow: View {
         }
         .sheet(item: $zapSheetContext) { context in
             CustomZapSheet(defaultAmount: context.defaultAmount) { amount in
-                if let lud16 = actions.getLightningAddress(note.pubkey) {
+                if let lud16 = actions.getLightningAddress(zapRecipient) {
                     Task {
                         let sent = await actions.zapNote(note, lud16, amount)
                         if sent { Motion.firePulse($zapPulse) }
