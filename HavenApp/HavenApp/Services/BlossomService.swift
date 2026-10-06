@@ -300,7 +300,9 @@ class BlossomService: @unchecked Sendable {
     /// system woke from sleep (gracefulRestart enforces coalescing, a
     /// cooldown, and the post-wake grace window).
     private func uploadToLocalWithRecovery(source: UploadSource, sha256: String, contentType: String, authBase64: String? = nil) async -> URL? {
-        var relayReady = await RelayProcessManager.shared.ensureRelayReady()
+        // Flags and a real HTTP answer: a relay that reads as running but
+        // lost its socket in the background goes straight to the restart.
+        var relayReady = await RelayProcessManager.shared.ensureRelayServing()
         if !relayReady {
             logger.warning("uploadToLocalWithRecovery: relay not ready, attempting graceful restart")
             relayReady = await RelayProcessManager.shared.gracefulRestart()
