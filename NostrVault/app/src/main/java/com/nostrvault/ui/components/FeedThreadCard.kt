@@ -67,6 +67,13 @@ fun FeedThreadCard(
     rootUnavailable: Boolean = false,
     /** Holds a tapped line in place in the feed; null outside the feed. */
     lineAnchor: ThreadLineAnchor? = null,
+    /**
+     * A bare repost as its line shows it: the note it reposted once that has
+     * loaded, otherwise the repost and what to say instead of the text. The
+     * feed passes the resolver its condensed rows use; any other note comes
+     * back as it is.
+     */
+    bareRepostDisplay: @Composable (FeedNote) -> Pair<FeedNote, RepostPlaceholder?> = { it to null },
     expandedRow: @Composable (note: FeedNote, depth: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -123,6 +130,7 @@ fun FeedThreadCard(
                 onProfileClick = onProfileClick,
                 onTap = tapAction(root),
                 lineAnchor = lineAnchor,
+                bareRepostDisplay = bareRepostDisplay,
                 expandedRow = expandedRow,
             )
         } else if (!rootUnavailable) {
@@ -152,6 +160,7 @@ fun FeedThreadCard(
                 onProfileClick = onProfileClick,
                 onTap = tapAction(entry.note),
                 lineAnchor = lineAnchor,
+                bareRepostDisplay = bareRepostDisplay,
                 expandedRow = expandedRow,
             )
         }
@@ -209,6 +218,7 @@ private fun ThreadCardLine(
     onProfileClick: (String) -> Unit,
     onTap: () -> Unit,
     lineAnchor: ThreadLineAnchor?,
+    bareRepostDisplay: @Composable (FeedNote) -> Pair<FeedNote, RepostPlaceholder?>,
     expandedRow: @Composable (note: FeedNote, depth: Int) -> Unit,
 ) {
     val note = entry.note
@@ -235,15 +245,20 @@ private fun ThreadCardLine(
             expandedRow(note, entry.depth)
         }
     } else {
+        // A bare kind-6 repost carries no text: show the note it reposted,
+        // its text, media and time credited to its author, as the condensed
+        // feed row does. It keeps the repost's id, so taps are unchanged.
+        val (shown, placeholder) = bareRepostDisplay(note)
         CondensedNoteLine(
-            note = note,
-            profile = profileFor(note.pubkey),
+            note = shown,
+            profile = profileFor(shown.pubkey),
             profiles = profiles,
             depth = entry.depth,
             style = CondensedLineStyle.PLAIN,
             isFocused = note.id == focusedNoteId,
             replyCount = replyCount,
-            mediaURLs = note.mediaURLs,
+            contentOverride = placeholder?.text,
+            mediaURLs = shown.mediaURLs,
             onProfileClick = onProfileClick,
             onTap = onTap,
             modifier = anchored,

@@ -1,17 +1,48 @@
 package com.nostrvault.ui.screens.dashboard
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.service.FeedRelayHealth
+import com.nostrvault.service.FeedService
 import com.nostrvault.ui.theme.*
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/**
+ * The feed's singletons, reached from the sheet itself so the Noise Filtering
+ * and Actions sections work from both places it opens (feed and dashboard)
+ * without either caller threading more state through.
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface FeedConfigEntryPoint {
+    fun feedService(): FeedService
+    fun configStore(): ConfigStore
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,6 +60,20 @@ fun FeedConfigSheet(
     onDismiss: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current
+    val context = LocalContext.current
+    val services = remember(context) {
+        EntryPointAccessors.fromApplication(context.applicationContext, FeedConfigEntryPoint::class.java)
+    }
+    val feedService = services.feedService()
+    val config by services.configStore().config.collectAsState()
+    val noise = remember(config) { NoiseFilterCounts.of(config) }
+    val isLoadingFeed by feedService.isLoadingFeed.collectAsState()
+    val pending by feedService.pendingNotes.collectAsState()
+    // Counted through the feed's filter, as the New Posts pill counts it, off
+    // the main thread (FeedViewModel.pendingNoteCount).
+    val pendingCount by produceState(0, pending, config) {
+        value = withContext(Dispatchers.Default) { feedService.visiblePendingCount(pending) }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -37,6 +82,8 @@ fun FeedConfigSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // Four sections no longer fit a small phone's sheet.
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp),
         ) {
@@ -101,6 +148,43 @@ fun FeedConfigSheet(
 
             Spacer(Modifier.height(24.dp))
 
+            // ── Noise Filtering ──────────────────────────────────
+
+            Text(
+                text = "Noise Filtering",
+                color = SecondaryText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+
+            Surface(
+                color = SecondaryGroupedBg,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                ) {
+                    NoiseStat(NostrVaultIcons.Blocked, ZapOrange, "${noise.blocked}", "Blocked")
+                    NoiseStat(NostrVaultIcons.TrustOff, ErrorRed.copy(alpha = 0.8f), "${noise.blacklisted}", "Blacklisted")
+                    // FeedNote.isNoiseOrSpam runs on every feed; there is no off switch.
+                    NoiseStat(NostrVaultIcons.TrustShield, SuccessGreen, "Active", "Spam Filter")
+                }
+            }
+
+            Text(
+                text = "Blocked users' content is hidden from your feed. Spam and noise are filtered automatically.",
+                color = TertiaryText,
+                fontSize = 11.sp,
+                fontStyle = FontStyle.Italic,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+
+            Spacer(Modifier.height(24.dp))
+
             // ── Feed Relays ──────────────────────────────────────
 
             Text(
@@ -162,7 +246,7 @@ fun FeedConfigSheet(
                                     color = stateColor.copy(alpha = 0.8f),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium,
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    fontFamily = FontFamily.Monospace,
                                 )
                             }
                             if (index < feedRelays.size - 1) {
@@ -184,6 +268,69 @@ fun FeedConfigSheet(
                     }
                 }
             }
+
+            Spacer(Modifier.height(24.dp))
+
+            // ── Actions ──────────────────────────────────────────
+
+            Text(
+                text = "Actions",
+                color = SecondaryText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                ActionButton(
+                    icon = NostrVaultIcons.Refresh,
+                    title = "Refresh",
+                    isLoading = isLoadingFeed,
+                    modifier = Modifier.weight(1f),
+                    onClick = { feedService.refresh() },
+                )
+                // Drops the in-memory feed and refetches; forceReload refreshes itself.
+                ActionButton(
+                    icon = NostrVaultIcons.History,
+                    title = "Reload",
+                    modifier = Modifier.weight(1f),
+                    onClick = { feedService.forceReload() },
+                )
+                ActionButton(
+                    icon = NostrVaultIcons.Received,
+                    title = "Load $pendingCount",
+                    enabled = pendingCount > 0,
+                    modifier = Modifier.weight(1f),
+                    onClick = { feedService.applyPendingNotes() },
+                )
+            }
+        }
+    }
+}
+
+/** One Noise Filtering figure: icon, a monospaced value, and its caption. */
+@Composable
+private fun NoiseStat(icon: ImageVector, tint: Color, value: String, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(
+                text = value,
+                color = PrimaryText,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+            )
+            Text(text = label, color = SecondaryText, fontSize = 10.sp)
         }
     }
 }

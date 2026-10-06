@@ -6,6 +6,7 @@ import com.nostrvault.data.local.CredentialStore
 import com.nostrvault.data.local.ProfileRepository
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.NIP10Thread
+import com.nostrvault.data.model.NIP88Poll
 import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.GlobalSearchResults
@@ -2006,7 +2007,7 @@ class NostrService @Inject constructor(
             setOfNotNull(configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() })
         private val initialSubId = "profile-${UUID.randomUUID().toString().take(6)}"
 
-        /** Note authored by [pubkey] (kinds 1/6/30023). */
+        /** Note authored by [pubkey] (kinds 1/6/30023, and 1068 polls). */
         var onNote: ((FeedNote) -> Unit)? = null
         /** Note by someone else that p-tags [pubkey] (Tagged tab). */
         var onTagged: ((FeedNote) -> Unit)? = null
@@ -2046,23 +2047,23 @@ class NostrService @Inject constructor(
         }
 
         private fun buildInitialReq(): String {
-            val notes = """{"kinds":[1,6,30023],"authors":["$pubkey"],"limit":50}"""
+            val notes = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"authors":["$pubkey"],"limit":50}"""
             val meta = """{"kinds":[0],"authors":["$pubkey"],"limit":1}"""
             val contacts = """{"kinds":[3],"authors":["$pubkey"],"limit":1}"""
             val followers = """{"kinds":[3],"#p":["$pubkey"],"limit":100}"""
-            val tagged = """{"kinds":[1,6,30023],"#p":["$pubkey"],"limit":50}"""
+            val tagged = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"#p":["$pubkey"],"limit":50}"""
             return "[\"REQ\",\"$initialSubId\",$notes,$meta,$contacts,$followers,$tagged]"
         }
 
         fun loadOlder(until: Long) {
             val subId = "older-${UUID.randomUUID().toString().take(6)}"
-            val filter = """{"kinds":[1,6,30023],"authors":["$pubkey"],"until":$until,"limit":50}"""
+            val filter = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"authors":["$pubkey"],"until":$until,"limit":50}"""
             clients.forEach { it.send("[\"REQ\",\"$subId\",$filter]") }
         }
 
         fun loadOlderTagged(until: Long) {
             val subId = "older-tagged-${UUID.randomUUID().toString().take(6)}"
-            val filter = """{"kinds":[1,6,30023],"#p":["$pubkey"],"until":$until,"limit":50}"""
+            val filter = """{"kinds":[1,6,30023,${NIP88Poll.KIND}],"#p":["$pubkey"],"until":$until,"limit":50}"""
             clients.forEach { it.send("[\"REQ\",\"$subId\",$filter]") }
         }
 
@@ -2105,7 +2106,7 @@ class NostrService @Inject constructor(
                         onContacts?.invoke(following, followsMe)
                     }
                     kind == 3 && evPubkey != pubkey -> onFollower?.invoke(evPubkey)
-                    kind == 1 || kind == 6 || kind == 30023 -> {
+                    kind == 1 || kind == 6 || kind == 30023 || kind == NIP88Poll.KIND -> {
                         // fromEvent() resolves NIP-18 reposts (kind 6 → original
                         // author as pubkey, repostedBy = the reposter), which powers
                         // the profile Reposts tab + repost attribution.
@@ -2265,7 +2266,7 @@ class NostrService @Inject constructor(
         onResult: (FeedNote?) -> Unit,
     ) {
         val delivered = java.util.concurrent.atomic.AtomicBoolean(false)
-        queryDetailRelays(listOf("""{"kinds":[1,$COMMENT],"ids":["$id"]}"""), onRawEvent) { notes ->
+        queryDetailRelays(listOf("""{"kinds":[1,$COMMENT,${NIP88Poll.KIND}],"ids":["$id"]}"""), onRawEvent) { notes ->
             val match = notes.firstOrNull { it.id == id }
             if (match != null && delivered.compareAndSet(false, true)) onResult(match)
         }

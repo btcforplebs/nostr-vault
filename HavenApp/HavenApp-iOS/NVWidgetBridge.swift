@@ -270,6 +270,12 @@ enum NVDeepLinkRouter {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 center.post(name: .havenMagicPaste, object: nil)
             }
+        case .shareInbox:
+            center.post(name: .havenOpenMedia, object: nil)
+            // Same beat as Magic Paste: the gallery has to be listening.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                center.post(name: .havenImportShareInbox, object: nil)
+            }
         case .wallet:
             center.post(name: .havenOpenWallet, object: nil)
         }

@@ -89,6 +89,9 @@ enum NVDeepLink: String {
     /// Media tab with the app's Magic Paste already running. A widget cannot
     /// read the clipboard itself, so the tap lands here instead.
     case mediaPaste = "mediapaste"
+    /// Media tab, uploading what the share sheet queued (NVShareInbox). The
+    /// share extension's "ready to upload" notification carries this link.
+    case shareInbox = "shareinbox"
     case wallet
 
     var url: URL { URL(string: "nostrvault://\(rawValue)")! }
