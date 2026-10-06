@@ -358,7 +358,8 @@ struct NoteDetailView: View {
                         icon: expandedEngagement ? "chart.bar.fill" : "chart.bar",
                         tooltip: "Thread Stats",
                         isSelected: expandedEngagement,
-                        color: .havenPurple
+                        color: .havenPurple,
+                        label: "Stats"
                     ) {
                         withAnimation(Motion.panel) {
                             expandedEngagement.toggle()
@@ -1225,37 +1226,62 @@ struct NoteDetailView: View {
         ] : configService.config.activeFeedRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
-        let subId = "thread-eng-\(UUID().uuidString.prefix(6))"
+        // One request per small batch of notes, sent one after another on
+        // each relay, so every batch gets its own `limit`.
+        let requests = ThreadEngagementQuery.requests(
+            for: noteIds,
+            subscriptionPrefix: "thread-eng-\(UUID().uuidString.prefix(6))"
+        )
+        let threadIds = Set(noteIds)
+        let timeout = min(6.0 + 2.0 * Double(requests.count - 1), 20.0)
 
         for url in relayURLs {
             let client = WebSocketClient()
             client.isTemporary = true
-            let threadIds = Set(noteIds)
+            var nextRequest = 0
+
+            func sendNextRequest() {
+                guard nextRequest < requests.count else {
+                    client.disconnect()
+                    isLoadingExpandedEngagement = false
+                    return
+                }
+                let request = requests[nextRequest]
+                nextRequest += 1
+                let req = ["REQ", request.subscriptionId, request.filter] as [Any]
+                if let data = try? JSONSerialization.data(withJSONObject: req),
+                   let str = String(data: data, encoding: .utf8) {
+                    client.send(text: str)
+                }
+            }
 
             client.messageSubject
                 .receive(on: DispatchQueue.main)
                 .sink { msg in
-                    self.handleExpandedEngagementMessage(msg, threadIds: threadIds, client: client)
+                    self.handleExpandedEngagementMessage(msg, threadIds: threadIds) { subId in
+                        guard nextRequest > 0, subId == requests[nextRequest - 1].subscriptionId else { return }
+                        let req = ["CLOSE", subId]
+                        if let data = try? JSONSerialization.data(withJSONObject: req),
+                           let str = String(data: data, encoding: .utf8) {
+                            client.send(text: str)
+                        }
+                        sendNextRequest()
+                    }
                 }
                 .store(in: &cancellables)
 
             client.$connectionState
                 .receive(on: DispatchQueue.main)
                 .sink { state in
-                    if state == .connected {
-                        let filter: [String: Any] = ["kinds": [6, 7, 9735], "#e": noteIds, "limit": 500]
-                        let req = ["REQ", subId, filter] as [Any]
-                        if let data = try? JSONSerialization.data(withJSONObject: req),
-                           let str = String(data: data, encoding: .utf8) {
-                            client.send(text: str)
-                        }
+                    if state == .connected, nextRequest == 0 {
+                        sendNextRequest()
                     }
                 }
                 .store(in: &cancellables)
 
             client.connect(url: url)
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
                 client.disconnect()
                 if self.isLoadingExpandedEngagement {
                     self.isLoadingExpandedEngagement = false
@@ -1264,7 +1290,7 @@ struct NoteDetailView: View {
         }
     }
 
-    private func handleExpandedEngagementMessage(_ msg: String, threadIds: Set<String>, client: WebSocketClient) {
+    private func handleExpandedEngagementMessage(_ msg: String, threadIds: Set<String>, onEOSE: (String) -> Void) {
         guard let data = msg.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json[0] as? String else { return }
@@ -1315,9 +1341,8 @@ struct NoteDetailView: View {
                nostrService.profiles[senderPubkey] == nil {
                 nostrService.fetchMissingProfiles(for: [senderPubkey])
             }
-        } else if type == "EOSE" {
-            client.disconnect()
-            isLoadingExpandedEngagement = false
+        } else if type == "EOSE", json.count >= 2, let subId = json[1] as? String {
+            onEOSE(subId)
         }
     }
 
