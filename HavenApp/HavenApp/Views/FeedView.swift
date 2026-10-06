@@ -1153,6 +1153,50 @@ struct FeedView: View {
 
     var body: some View {
         #if os(iOS)
+        feedStack
+            .onAppear { openNotificationNote() }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenNotificationNote)) { _ in
+                openNotificationNote()
+            }
+        #else
+        VStack(spacing: 0) {
+            macFeedHeader
+            Divider()
+            rootContent
+        }
+        #endif
+    }
+
+    #if os(iOS)
+    /// Opens the post a tapped notification parked, with no push animation:
+    /// the app should come up already showing it.
+    private func openNotificationNote() {
+        guard let open = NotificationOpen.pending else { return }
+        NotificationOpen.pending = nil
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            switch open {
+            case .note(let note):
+                if let noteDetailSelection {
+                    noteDetailSelection.select(note)
+                } else {
+                    navigationPath = NavigationPath([note])
+                }
+            case .id(let id):
+                if let noteDetailSelection {
+                    noteDetailSelection.select(id: id)
+                } else {
+                    var path = NavigationPath()
+                    path.append(NotificationNoteRoute(id: id))
+                    navigationPath = path
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var feedStack: some View {
         if noteDetailSelection != nil {
             // iPad two-pane layout: the enclosing NoteSplitPane owns the detail
             // column, so the feed must NOT wrap itself in a stack — a private
@@ -1179,19 +1223,16 @@ struct FeedView: View {
                     .navigationDestination(for: ArticleRoute.self) { route in
                         ArticleReaderView(note: route.note)
                     }
+                    .navigationDestination(for: NotificationNoteRoute.self) { route in
+                        NoteDetailViewWrapper(noteId: route.id, pushed: true)
+                    }
             }
             // Over the stack, not in the feed: the navigation bar would
             // take its taps.
             .overlay(alignment: .top) { foldedNewPostsPill }
         }
-        #else
-        VStack(spacing: 0) {
-            macFeedHeader
-            Divider()
-            rootContent
-        }
-        #endif
     }
+    #endif
 
     #if os(macOS)
     private var macFeedHeader: some View {

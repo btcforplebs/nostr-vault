@@ -189,3 +189,77 @@ struct NotificationPreferences: Codable, Equatable {
         mentions || replies || dms || zaps || reactions || reposts
     }
 }
+
+/// The post a relay notification opens, carried inside the notification.
+///
+/// The relay raises its notification marker only after it has stored the
+/// event, so the app can read that event — and, for a like, zap or repost,
+/// your post it is about — from this device and put both in the notification.
+/// A tap then opens the post from that copy: no relay round trip and no hunt
+/// through a list, even on a cold start.
+///
+/// Pure Foundation so MediaLogicTests can compile and test it directly.
+enum NotificationNote {
+    /// userInfo key for the notifying event, as NIP-01 JSON.
+    static let eventKey = "notif_event"
+    /// userInfo key for the post a like, zap or repost is about.
+    static let targetKey = "notif_target"
+
+    /// Past this size an event is left out and the tap loads it by id instead.
+    /// iOS keeps delivered notifications in its own store; a long-form post
+    /// has no business there.
+    static let maxEncodedBytes = 32 * 1024
+
+    /// Whether a tap opens the post the event is about rather than the event.
+    /// A like or zap on its own is not something to read.
+    static func opensTarget(type: String) -> Bool {
+        type == "reaction" || type == "zap" || type == "repost"
+    }
+
+    /// The id of the post a like, zap or repost is about: its last `e` tag
+    /// (NIP-25, NIP-57, NIP-18). Nil for a zap on a profile.
+    static func targetId(type: String, tags: [[String]]) -> String? {
+        guard opensTarget(type: type) else { return nil }
+        return tags.last { $0.count >= 2 && $0[0] == "e" && isEventId($0[1]) }?[1]
+    }
+
+    /// Compact JSON for userInfo, or nil when the event is malformed or too big.
+    static func encode(_ event: [String: Any]) -> String? {
+        guard parse(event) != nil,
+              JSONSerialization.isValidJSONObject(event),
+              let data = try? JSONSerialization.data(withJSONObject: event),
+              data.count <= maxEncodedBytes else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// The fields a note needs, from userInfo's JSON. Nil for anything that
+    /// is not a whole event.
+    static func decode(_ json: String) -> Event? {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return parse(object)
+    }
+
+    struct Event: Equatable {
+        let id: String
+        let pubkey: String
+        let createdAt: Int64
+        let kind: Int
+        let tags: [[String]]
+        let content: String
+    }
+
+    private static func parse(_ object: [String: Any]) -> Event? {
+        guard let id = object["id"] as? String, isEventId(id),
+              let pubkey = object["pubkey"] as? String, isEventId(pubkey),
+              let createdAt = (object["created_at"] as? NSNumber)?.int64Value,
+              let kind = (object["kind"] as? NSNumber)?.intValue,
+              let tags = object["tags"] as? [[String]],
+              let content = object["content"] as? String else { return nil }
+        return Event(id: id, pubkey: pubkey, createdAt: createdAt, kind: kind, tags: tags, content: content)
+    }
+
+    private static func isEventId(_ s: String) -> Bool {
+        s.count == 64 && s.allSatisfy(\.isHexDigit)
+    }
+}

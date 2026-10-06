@@ -318,7 +318,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
             // Tapped a relay NOTIFY-marker notification (LocalNotificationService).
             let notifNpub = userInfo["notif_npub"] as? String
             Task { @MainActor in
-                LocalNotificationService.navigate(type: notifType, id: notifId, npub: notifNpub)
+                LocalNotificationService.navigate(type: notifType, id: notifId, npub: notifNpub, carried: userInfo)
             }
         }
 
