@@ -1553,7 +1553,7 @@ struct ProfileView: View {
 
                 Spacer()
 
-                MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true) { mediaItem in
+                MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true, showsPositionBar: false) { mediaItem in
                     ViewerViewMediaItem(mediaItem: mediaItem)
                         #if os(iOS)
                         .transition(.opacity.animation(Motion.media))

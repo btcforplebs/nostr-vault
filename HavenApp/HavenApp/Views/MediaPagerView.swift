@@ -20,6 +20,11 @@ struct MediaPagerView<Item: Hashable, ItemContent: View>: View {
     /// this off and rely on the always-visible tap-target arrow buttons instead.
     var enableKeyboardNavigation: Bool = false
 
+    /// Draws the thin position bar under a multi-item pager. The full-screen viewers page
+    /// across *notes* (possibly hundreds), where a bar per item means nothing, so they
+    /// turn it off; inline carousels (one note's images) keep it.
+    var showsPositionBar: Bool = true
+
     private let externalSelection: Binding<Item?>?
     @State private var localSelection: Item?
 
@@ -33,11 +38,13 @@ struct MediaPagerView<Item: Hashable, ItemContent: View>: View {
         items: [Item],
         selection: Binding<Item?>? = nil,
         enableKeyboardNavigation: Bool = false,
+        showsPositionBar: Bool = true,
         @ViewBuilder content: @escaping (Item) -> ItemContent
     ) {
         self.items = items
         self.externalSelection = selection
         self.enableKeyboardNavigation = enableKeyboardNavigation
+        self.showsPositionBar = showsPositionBar
         self.content = content
         if selection == nil {
             self._localSelection = State(initialValue: items.first)
@@ -74,7 +81,7 @@ struct MediaPagerView<Item: Hashable, ItemContent: View>: View {
             // and propagates it onto every child element instead — verified with an
             // AXUIElement probe, where both arrow buttons ended up announcing
             // "Image 1 of 3" and no element carried the pager's own position. There the
-            // position lives in the dots' *label*; see `pageDots`.
+            // position lives in the bar's *label*; see `MacMediaPager`.
             .accessibilityValue(items.isEmpty ? "" : "Image \((index ?? 0) + 1) of \(items.count)")
             #endif
             .onAppear { syncIndexOnAppear() }
@@ -89,10 +96,18 @@ struct MediaPagerView<Item: Hashable, ItemContent: View>: View {
                 content(item).tag(offset as Int?)
             }
         }
-        // Dots hidden so the viewer stays clean; callers show their own position UI where needed.
+        // System dots off: the position reads from the thin bar below instead.
         .tabViewStyle(.page(indexDisplayMode: .never))
+        .overlay(alignment: .bottom) {
+            if showsPositionBar && items.count > 1 {
+                PagePositionBar(count: items.count, index: index ?? 0)
+                    .padding(.bottom, 10)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         #else
-        MacMediaPager(items: items, index: indexBinding, enableKeyboardNavigation: enableKeyboardNavigation, content: content)
+        MacMediaPager(items: items, index: indexBinding, enableKeyboardNavigation: enableKeyboardNavigation, showsPositionBar: showsPositionBar, content: content)
         #endif
     }
 
@@ -125,12 +140,13 @@ struct MediaPagerView<Item: Hashable, ItemContent: View>: View {
 }
 
 #if os(macOS)
-/// macOS has no swipe to teach a pager affordance, so the arrows and dots stay visible
+/// macOS has no swipe to teach a pager affordance, so the arrows and position bar stay visible
 /// rather than appearing only on hover.
 private struct MacMediaPager<Item: Hashable, ItemContent: View>: View {
     let items: [Item]
     @Binding var index: Int?
     let enableKeyboardNavigation: Bool
+    let showsPositionBar: Bool
     let content: (Item) -> ItemContent
 
     var body: some View {
@@ -169,12 +185,18 @@ private struct MacMediaPager<Item: Hashable, ItemContent: View>: View {
                 .padding(.horizontal, 12)
                 .allowsHitTesting(true)
 
-                VStack {
-                    Spacer()
-                    pageDots
-                        .padding(.bottom, 10)
+                if showsPositionBar {
+                    VStack {
+                        Spacer()
+                        PagePositionBar(count: items.count, index: index ?? 0)
+                            .padding(.bottom, 10)
+                    }
+                    .allowsHitTesting(false)
+                    // One element carrying the position as its label: macOS AX drops
+                    // `value` on a group, so the label is the only field that survives.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Image \((index ?? 0) + 1) of \(items.count)")
                 }
-                .allowsHitTesting(false)
             }
         }
     }
@@ -217,28 +239,38 @@ private struct MacMediaPager<Item: Hashable, ItemContent: View>: View {
         .animation(Motion.chrome, value: enabled)
         .accessibilityLabel(accessibilityLabel)
     }
-
-    private var pageDots: some View {
-        HStack(spacing: 6) {
-            ForEach(items.indices, id: \.self) { i in
-                let isCurrent = i == (index ?? 0)
-                Circle()
-                    .fill(isCurrent ? Color.white : Color.white.opacity(0.55))
-                    // A hairline stroke keeps inactive dots readable as a distinct state
-                    // even when the fill alone would wash out over a bright photo.
-                    .overlay(Circle().stroke(Color.white.opacity(isCurrent ? 0 : 0.9), lineWidth: 0.5))
-                    .frame(width: isCurrent ? 6 : 5, height: isCurrent ? 6 : 5)
-            }
-        }
-        .animation(Motion.pick, value: index)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(Color.black.opacity(0.7)))
-        // One element for the whole row, carrying the position as its label: a row of
-        // circles read one at a time is noise, and macOS AX drops `value` on a group, so
-        // the label is the only field that survives here.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Image \((index ?? 0) + 1) of \(items.count)")
-    }
 }
 #endif
+
+/// Thin position bar for a multi-image note: a hairline track split into one slot per
+/// item, with the current slot lit. Reads as "where am I in this post" without the
+/// bead-row of system dots. A dark underlay, hairline edge and soft shadow instead of a
+/// platter keep it legible over bright photos while staying out of the image.
+struct PagePositionBar: View {
+    let count: Int
+    let index: Int
+
+    private let height: CGFloat = 2.5
+    /// Slots shrink as the count grows so a 20-image post still fits under a narrow card.
+    private var slot: CGFloat { max(8, min(18, 140 / CGFloat(max(count, 1)))) }
+
+    var body: some View {
+        let width = slot * CGFloat(count)
+        let clamped = min(max(index, 0), count - 1)
+        ZStack(alignment: .leading) {
+            // Dark underlay under the light track: grey over a bright photo, pale over a
+            // dark one, so the lit slot always has something to stand out against.
+            Capsule().fill(Color.black.opacity(0.3))
+            Capsule().fill(Color.white.opacity(0.3))
+            Capsule()
+                .fill(Color.white)
+                .frame(width: slot)
+                .offset(x: slot * CGFloat(clamped))
+        }
+        .frame(width: width, height: height)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.black.opacity(0.25), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.45), radius: 2, y: 0.5)
+        .animation(Motion.pick, value: clamped)
+    }
+}
