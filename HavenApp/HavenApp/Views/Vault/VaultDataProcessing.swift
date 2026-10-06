@@ -306,12 +306,9 @@ extension VaultView {
                         // receipt can wrap your real request and point it at another note.
                         let requestTargetId = (zapReq["tags"] as? [[String]])?.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
                         let targetId = requestTargetId ?? receipt.tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1]
-                        var amountSats: Int64 = 0
-                        if let reqTags = zapReq["tags"] as? [[String]],
-                           let amountTag = reqTags.first(where: { $0.count >= 2 && $0[0] == "amount" }),
-                           let msats = Int64(amountTag[1]) {
-                            amountSats = msats / 1000
-                        }
+                        // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
+                        let amountSats = Int64(LiveChat.zapAmountSats(receiptTags: receipt.tags,
+                                                                         requestTags: zapReq["tags"] as? [[String]] ?? []))
                         let parsed = ParsedZapReceipt(senderPubkey: senderPubkey, targetNoteId: targetId, amountSats: amountSats,
                                                       requestIsSigned: NostrEventVerifier.isValid(json: descJson))
                         newCacheEntries[receipt.id] = parsed
@@ -484,12 +481,9 @@ extension VaultView {
                               let descData = descJson.data(using: .utf8),
                               let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
                               let senderPubkey = zapReq["pubkey"] as? String else { continue }
-                        var amountSats: Int64 = 0
-                        if let reqTags = zapReq["tags"] as? [[String]],
-                           let amountTag = reqTags.first(where: { $0.count >= 2 && $0[0] == "amount" }),
-                           let msats = Int64(amountTag[1]) {
-                            amountSats = msats / 1000
-                        }
+                        // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
+                        let amountSats = Int64(LiveChat.zapAmountSats(receiptTags: receipt.tags,
+                                                                         requestTags: zapReq["tags"] as? [[String]] ?? []))
                         zMap[targetId, default: []].append((pubkey: senderPubkey, amount: amountSats))
                     }
                 }

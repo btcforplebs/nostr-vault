@@ -1365,14 +1365,7 @@ struct NoteDetailView: View {
         let zaps = perNoteZaps[noteId] ?? []
         var totalSats: Int64 = 0
         for zap in zaps {
-            if let descJson = zap.tags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
-               let descData = descJson.data(using: .utf8),
-               let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
-               let reqTags = zapReq["tags"] as? [[String]],
-               let amountTag = reqTags.first(where: { $0.count >= 2 && $0[0] == "amount" }),
-               let msats = Int64(amountTag[1]) {
-                totalSats += msats / 1000
-            }
+            totalSats += Int64(LiveChat.zapAmountSats(receiptTags: zap.tags))
         }
         return (count: zaps.count, sats: totalSats)
     }
@@ -1562,12 +1555,9 @@ struct NoteDetailView: View {
                   let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
                   let senderPubkey = zapReq["pubkey"] as? String else { continue }
             
-            var amountSats: Int64 = 0
-            if let reqTags = zapReq["tags"] as? [[String]],
-               let amountTag = reqTags.first(where: { $0.count >= 2 && $0[0] == "amount" }),
-               let msats = Int64(amountTag[1]) {
-                amountSats = msats / 1000
-            }
+            // The request's `amount` tag is optional (NIP-57); the paid invoice is not.
+            let amountSats = Int64(LiveChat.zapAmountSats(receiptTags: zap.tags,
+                                                             requestTags: zapReq["tags"] as? [[String]] ?? []))
             let comment = zapReq["content"] as? String ?? ""
             list.append(ZapDetail(id: zap.id, zapperPubkey: senderPubkey, amountSats: amountSats, comment: comment))
         }
@@ -1997,14 +1987,7 @@ struct ThreadedReplyNode: View {
         let zaps = perNoteZaps[noteId] ?? []
         var totalSats: Int64 = 0
         for zap in zaps {
-            if let descJson = zap.tags.first(where: { $0.count >= 2 && $0[0] == "description" })?[1],
-               let descData = descJson.data(using: .utf8),
-               let zapReq = try? JSONSerialization.jsonObject(with: descData) as? [String: Any],
-               let reqTags = zapReq["tags"] as? [[String]],
-               let amountTag = reqTags.first(where: { $0.count >= 2 && $0[0] == "amount" }),
-               let msats = Int64(amountTag[1]) {
-                totalSats += msats / 1000
-            }
+            totalSats += Int64(LiveChat.zapAmountSats(receiptTags: zap.tags))
         }
         return (count: zaps.count, sats: totalSats)
     }

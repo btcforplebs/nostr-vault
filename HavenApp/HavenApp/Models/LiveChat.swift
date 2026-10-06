@@ -198,6 +198,11 @@ enum LiveChat {
         return 0
     }
 
+    /// Amount in sats from a receipt alone, reading its embedded request.
+    static func zapAmountSats(receiptTags: [[String]]) -> Int {
+        zapAmountSats(receiptTags: receiptTags, requestTags: zapRequest(from: receiptTags)?.tags ?? [])
+    }
+
     /// Sats from a BOLT-11 invoice, or nil when it states none.
     ///
     /// The reading lives in ``Bolt11`` because the wallet needs the same
