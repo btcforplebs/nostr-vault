@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 )
 
@@ -42,4 +43,16 @@ func nip46ConnectConfirmed(result, secret string) bool {
 		return true
 	}
 	return result == "ack" || result == secret
+}
+
+// nip46PingLogLevel: a keepalive that times out, finds the session torn down
+// or cannot reach the signer's relay is expected (signer apps sleep), so WARN.
+// Anything else, a rejection or an unknown error, stays an ERROR.
+func nip46PingLogLevel(kind string) slog.Level {
+	switch kind {
+	case "timeout", "disconnected", "offline":
+		return slog.LevelWarn
+	default:
+		return slog.LevelError
+	}
 }

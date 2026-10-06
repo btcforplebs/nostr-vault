@@ -147,6 +147,9 @@ class DMService: ObservableObject {
                 if state == .running && self.inboxClient == nil {
                     self.startListening()
                 } else if state == .idle {
+                    self.chatReconnectTask?.cancel()
+                    self.chatReconnectTask = nil
+                    self.chatReconnectAttempt = 0
                     self.connectionCancellables.removeAll()
                     self.inboxClient?.disconnect()
                     self.inboxClient = nil
@@ -187,7 +190,14 @@ class DMService: ObservableObject {
             }
             .store(in: &connectionCancellables)
 
+        // dropFirst: @Published replays the current value (.disconnected) on
+        // subscribe. removeDuplicates: the ping timer re-sets .disconnected on
+        // a dead socket every 25 s. Between them they printed "disconnected"
+        // three times per foreground and again every 25 s (71 in one report).
+        var wasConnected = false
         client.$connectionState
+            .dropFirst()
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 guard let self = self, self.inboxClient === client else { return }
@@ -196,9 +206,16 @@ class DMService: ObservableObject {
                     // /chat requires NIP-42 AUTH — wait for the AUTH challenge
                     // before sending subscription
                     print("✅ DM chat relay connected, awaiting AUTH challenge...")
+                    wasConnected = true
+                    self.chatReconnectAttempt = 0
+                    self.chatReconnectTask?.cancel()
+                    self.chatReconnectTask = nil
                 case .disconnected, .error:
-                    print("❌ DM chat relay disconnected")
+                    // Only a connection that was up can be "lost".
+                    if wasConnected { print("❌ DM chat relay disconnected") }
+                    wasConnected = false
                     self.isAuthenticated = false
+                    self.scheduleChatReconnect()
                 default:
                     break
                 }
@@ -1425,7 +1442,41 @@ class DMService: ObservableObject {
         reconnectInbox()
     }
 
+    // MARK: - /chat auto-reconnect
+
+    /// Nothing used to redial a dead /chat socket: DMs stopped arriving until
+    /// the app was next foregrounded or the relay restarted. Retry with
+    /// backoff 1, 2, 4 … 60 s while the relay is running. In the background
+    /// iOS suspends us anyway, and the foreground refresh() reconnects.
+    private var chatReconnectTask: Task<Void, Never>?
+    private var chatReconnectAttempt = 0
+
+    static func chatReconnectDelay(attempt: Int) -> TimeInterval {
+        min(pow(2, Double(min(attempt, 6))), 60)
+    }
+
+    private func scheduleChatReconnect() {
+        guard chatReconnectTask == nil, RelayProcessManager.shared.state == .running else { return }
+        let delay = Self.chatReconnectDelay(attempt: chatReconnectAttempt)
+        chatReconnectAttempt += 1
+        chatReconnectTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.chatReconnectTask = nil
+            guard RelayProcessManager.shared.state == .running,
+                  self.inboxClient?.connectionState != .connected,
+                  self.inboxClient?.connectionState != .connecting else { return }
+            print("🔄 DM chat relay: reconnecting (attempt \(self.chatReconnectAttempt))")
+            self.startListening()
+        }
+    }
+
     private func reconnectInbox() {
+        // Drop the old client's subscriptions first, so tearing it down does
+        // not log a "disconnected" (or schedule a reconnect) of its own.
+        connectionCancellables.removeAll()
+        chatReconnectTask?.cancel()
+        chatReconnectTask = nil
         inboxClient?.disconnect()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.startListening()
