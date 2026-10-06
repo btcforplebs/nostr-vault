@@ -8,6 +8,14 @@ The Android app now matches the iPhone: same tabs, same wording, same feed, thre
 *   **Marketplace**: A Marketplace feed, a Shop tab on profiles, Sell a listing, and Message seller.
 *   **Translate**: Posts in another language get a Translate button. Translation runs on your phone (ML Kit); the text is not sent anywhere.
 *   **Hashtags**: Tap a hashtag to open a live feed for it.
+*   **Hashtags Feed**: Follow hashtags and get a feed of them, with a chip for each tag and suggestions to follow.
+*   **Polls**: See and vote on polls in the feed and in a note.
+*   **Profile Banners**: Profiles show their banner, and Edit Profile has a Banner URL field.
+*   **Reactions and Thread Stats**: Tap to react, hold to pick a reaction, and a Thread Stats panel.
+*   **Profile Media**: Media on a profile opens the full viewer, with video, audio and drag to close. The Media grid has Report and Block.
+*   **Noise Filtering**: The feed dashboard has Noise Filtering and Actions.
+*   **Notification Sound**: Pick the sound for notifications.
+*   **Select Text**: Select and copy text in a note.
 *   **Articles**: The reader shows highlights and lets you add your own, comment on them, and react, zap or comment on the article. Profiles have Articles, diVines and Music tabs.
 *   **Post From Any Feed**: Post diVines, articles and recipes from their own feeds.
 *   **GIFs**: A nostr.build GIF picker in the composer.
@@ -30,6 +38,9 @@ The Android app now matches the iPhone: same tabs, same wording, same feed, thre
 
 ## Changed
 
+*   **Location Removed**: The location is taken out of photos and videos before they upload.
+*   **Threaded Global and Popular**: The Threaded view loads the replies under each post, and bare reposts show in thread lines.
+*   **No Signer Banner**: The "Approve in your signer" banner is gone.
 *   **One Feed Rule**: Following, Global and the shield work the same way in every feed. Everyone is a crossed-out shield.
 *   **Notifications Come From Your Web of Trust**, and zap notifications name the person who zapped you.
 *   **Replies From Anyone**: Replies to your own posts are kept even when they come from outside your network.
@@ -38,10 +49,11 @@ The Android app now matches the iPhone: same tabs, same wording, same feed, thre
 
 ## Bug Fixes
 
+*   **Reposts**: A repost opens, zaps, reports and replies as the note it reposts.
 *   **Global and Discovery Empty**: The Web of Trust list was read and saved wrongly, which emptied Global and Discovery.
 *   **Blocked People** stay out of every feed.
 *   **Following** reads the people you follow from their own relays and keeps bare reposts.
-*   **Photo Posts** no longer wait behind a signer request nobody answered, and "Approve in your signer" clears when the signer answers.
+*   **Photo Posts** no longer wait behind a signer request nobody answered.
 *   **Big Follow Lists** can be signed through a remote signer.
 *   **Saving Your Profile** keeps your other fields, such as your banner.
 *   **Follow** taps made while your list is still loading are applied once it loads.
