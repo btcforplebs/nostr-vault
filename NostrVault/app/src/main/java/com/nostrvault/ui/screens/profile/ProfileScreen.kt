@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -141,13 +140,13 @@ fun ProfileScreen(
         }
     }
 
-    // Full-screen media viewer state: media urls for the current (Media) tab.
+    // The Media tab's urls, in grid order; a tap opens the app's full-screen
+    // viewer on them (video, audio, drag to close; iOS MediaItemRenderer).
     val mediaItems = remember(filteredNotes, selectedSection) {
         if (selectedSection == ProfileSection.MEDIA) {
             filteredNotes.flatMap { note -> note.mediaURLs.map { it to note } }
         } else emptyList()
     }
-    var viewerIndex by remember { mutableStateOf<Int?>(null) }
 
     GlassScaffold(
         toolbar = {
@@ -438,7 +437,11 @@ fun ProfileScreen(
                                     .aspectRatio(1f)
                                     .clip(RoundedCornerShape(6.dp))
                                     .background(SecondaryGroupedBg)
-                                    .clickable { viewerIndex = idx },
+                                    .clickable {
+                                        com.nostrvault.ui.components.FullScreenMediaRouter.open(
+                                            mediaItems.map { it.first }, idx, copyLink = true,
+                                        )
+                                    },
                             )
                         }
                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -515,17 +518,6 @@ fun ProfileScreen(
     reelIndex?.let { start ->
         if (reels.isNotEmpty()) {
             DiVineViewer(reels, start.coerceIn(0, reels.lastIndex), onDismiss = { reelIndex = null })
-        }
-    }
-
-    // Full-screen media viewer overlay.
-    viewerIndex?.let { startIndex ->
-        if (mediaItems.isNotEmpty()) {
-            MediaViewerOverlay(
-                urls = mediaItems.map { it.first },
-                startIndex = startIndex.coerceIn(0, mediaItems.size - 1),
-                onDismiss = { viewerIndex = null },
-            )
         }
     }
 }
@@ -1001,97 +993,6 @@ private fun DiVineViewer(reels: List<com.nostrvault.data.model.Reel>, startIndex
                 .padding(12.dp),
         ) {
             Icon(NostrVaultIcons.Dismiss, "Close", tint = Color.White, modifier = Modifier.size(28.dp))
-        }
-    }
-}
-
-/**
- * Whether a media link is worth copying: anything but this phone's own
- * relay (127.0.0.1 / localhost), which nobody else can open.
- * iOS: ConfigService.hasExternalShareURL.
- */
-internal fun isShareableMediaUrl(url: String): Boolean {
-    val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return false
-    return host != "127.0.0.1" && host != "localhost" && host != "0.0.0.0"
-}
-
-@Composable
-private fun MediaViewerOverlay(
-    urls: List<String>,
-    startIndex: Int,
-    onDismiss: () -> Unit,
-    // The feed viewer's save: MediaStore, the same toast lines.
-    saver: com.nostrvault.ui.components.FeedMediaMirrorViewModel = hiltViewModel(),
-) {
-    val pagerState = rememberPagerState(initialPage = startIndex, pageCount = { urls.size })
-    val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
-    val saveState by saver.saveState.collectAsState()
-    val currentUrl = urls[pagerState.currentPage.coerceIn(0, urls.lastIndex)]
-    LaunchedEffect(currentUrl) { saver.onOpen(currentUrl) }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.95f))
-            .clickable(onClick = onDismiss),
-    ) {
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                AsyncImage(
-                    model = urls[page],
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-        IconButton(
-            onClick = onDismiss,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(12.dp),
-        ) {
-            Icon(NostrVaultIcons.Dismiss, "Close", tint = Color.White, modifier = Modifier.size(28.dp))
-        }
-        // Copy link and Save to gallery, as iOS's profile viewer offers.
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .statusBarsPadding()
-                .padding(12.dp),
-        ) {
-            if (isShareableMediaUrl(currentUrl)) {
-                IconButton(
-                    onClick = {
-                        clipboard.setText(AnnotatedString(currentUrl))
-                        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.1f)),
-                ) {
-                    Icon(NostrVaultIcons.Copy, "Copy link", tint = Color.White, modifier = Modifier.size(20.dp))
-                }
-            }
-            val saving = saveState == com.nostrvault.ui.components.FeedMediaMirrorViewModel.SaveState.Saving
-            val saved = saveState == com.nostrvault.ui.components.FeedMediaMirrorViewModel.SaveState.Saved
-            IconButton(
-                onClick = {
-                    saver.saveToGallery(currentUrl) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
-                },
-                enabled = !saving && !saved,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.1f)),
-            ) {
-                if (saving) {
-                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                } else {
-                    Icon(
-                        if (saved) NostrVaultIcons.Check else NostrVaultIcons.Import,
-                        if (saved) "Saved to gallery" else "Save to gallery",
-                        tint = Color.White, modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
         }
     }
 }

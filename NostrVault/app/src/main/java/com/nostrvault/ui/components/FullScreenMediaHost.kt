@@ -17,9 +17,15 @@ object FullScreenMediaRouter {
     /**
      * [origin] names the row of media the tap came from (see [mediaZoomSource]);
      * with it the viewer zooms out of the tapped photo and back into it. Null
-     * opens with a fade.
+     * opens with a fade. [copyLink] adds a Copy link button, as iOS's
+     * profile viewer has.
      */
-    data class Request(val urls: List<String>, val initialIndex: Int, val origin: Long? = null)
+    data class Request(
+        val urls: List<String>,
+        val initialIndex: Int,
+        val origin: Long? = null,
+        val copyLink: Boolean = false,
+    )
 
     private val _request = MutableStateFlow<Request?>(null)
     val request = _request.asStateFlow()
@@ -32,9 +38,9 @@ object FullScreenMediaRouter {
     private val _hiddenSource = MutableStateFlow<MediaSourceKey?>(null)
     val hiddenSource = _hiddenSource.asStateFlow()
 
-    fun open(urls: List<String>, initialIndex: Int, origin: Long? = null) {
+    fun open(urls: List<String>, initialIndex: Int, origin: Long? = null, copyLink: Boolean = false) {
         if (urls.isEmpty()) return
-        _request.value = Request(urls, initialIndex, origin)
+        _request.value = Request(urls, initialIndex, origin, copyLink)
         _position.value = origin?.let { MediaSourceKey(it, initialIndex) }
     }
 
@@ -67,8 +73,19 @@ fun FullScreenMediaHost() {
                 urls = it.urls,
                 initialIndex = it.initialIndex,
                 origin = it.origin,
+                copyLink = it.copyLink,
                 onDismiss = FullScreenMediaRouter::dismiss,
             )
         }
     }
+}
+
+/**
+ * Whether a media link is worth copying: anything but this phone's own
+ * relay (127.0.0.1 / localhost), which nobody else can open.
+ * iOS: ConfigService.hasExternalShareURL.
+ */
+internal fun isShareableMediaUrl(url: String): Boolean {
+    val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return false
+    return host != "127.0.0.1" && host != "localhost" && host != "0.0.0.0"
 }

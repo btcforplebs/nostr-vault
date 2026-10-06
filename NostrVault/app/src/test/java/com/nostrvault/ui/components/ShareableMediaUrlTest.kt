@@ -1,4 +1,4 @@
-package com.nostrvault.ui.screens.profile
+package com.nostrvault.ui.components
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

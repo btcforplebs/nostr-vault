@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1080,6 +1081,10 @@ private fun VisualMediaPreview(
  * (swipe, back, or the X), back into it — iOS #117. It fades instead for a
  * video, a zoomed-in photo, a spot that has scrolled away, or Reduce Motion.
  * [onDismiss] runs once the close animation has landed.
+ *
+ * Audio pages play in [AudioPlayer], as iOS's MediaItemRenderer does; a
+ * vertical drag closes video and audio pages as it does a photo. [copyLink]
+ * adds a Copy link button (the profile viewer's, iOS ProfileView).
  */
 @Composable
 internal fun FullScreenMediaPager(
@@ -1087,11 +1092,13 @@ internal fun FullScreenMediaPager(
     initialIndex: Int,
     onDismiss: () -> Unit,
     origin: Long? = null,
+    copyLink: Boolean = false,
     viewModel: FeedMediaMirrorViewModel = hiltViewModel(),
 ) {
     val mirrorState by viewModel.state.collectAsState()
     val saveState by viewModel.saveState.collectAsState()
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -1137,7 +1144,7 @@ internal fun FullScreenMediaPager(
     fun zoomFor(page: Int): Pair<ZoomTransform, ZoomRect>? {
         if (origin == null || Motion.isReduced || containerSize == IntSize.Zero) return null
         val url = urls.getOrNull(page) ?: return null
-        if (isVideoUrl(url)) return null
+        if (isVideoUrl(url) || isAudioUrl(url)) return null
         val source = MediaZoomSources.get(MediaSourceKey(origin, page)) ?: return null
         if (!MediaZoomGeometry.isOnScreen(source.full, source.visible)) return null
         val rect = source.full.offset(-containerOrigin.x, -containerOrigin.y)
@@ -1184,6 +1191,27 @@ internal fun FullScreenMediaPager(
     }
 
     BackHandler(onBack = close)
+
+    // Drag-to-dismiss, fed by ZoomableImage on a photo and by a drag detector
+    // on a video or audio page.
+    val onVerticalDrag: (Float) -> Unit = { deltaY ->
+        if (currentScale <= 1.05f && !closing) {
+            accumulatedDragY += deltaY
+            scope.launch { dragOffsetY.snapTo(accumulatedDragY) }
+        }
+    }
+    val onVerticalDragEnd: () -> Unit = {
+        if (closing) {
+            // The close animation owns the offset now.
+        } else if (abs(accumulatedDragY) > dismissThresholdPx) {
+            close()
+        } else {
+            scope.launch {
+                dragOffsetY.animateTo(0f, Motion.snapBack())
+            }
+        }
+        accumulatedDragY = 0f
+    }
 
     val shown by remember { derivedStateOf { progress.value.coerceIn(0f, 1f) } }
 
@@ -1241,36 +1269,41 @@ internal fun FullScreenMediaPager(
                     },
             ) { page ->
                 val url = urls[page]
-                if (isVideoUrl(url)) {
-                    // Only the visible page gets a player, to keep memory at one instance.
-                    if (page == pagerState.currentPage) {
-                        VideoPlayer(uri = url, modifier = Modifier.fillMaxSize())
-                    } else {
-                        Box(Modifier.fillMaxSize().background(Color.Black))
+                if (isVideoUrl(url) || isAudioUrl(url)) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color.Black)
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onDragEnd = onVerticalDragEnd,
+                                    onDragCancel = onVerticalDragEnd,
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    onVerticalDrag(dragAmount)
+                                }
+                            },
+                    ) {
+                        // Only the visible page gets a player, to keep memory at one instance.
+                        if (page == pagerState.currentPage) {
+                            if (isAudioUrl(url)) {
+                                AudioPlayer(
+                                    uri = url,
+                                    fileName = url.substringAfterLast('/').substringBefore('?').substringBefore('#'),
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                VideoPlayer(uri = url, modifier = Modifier.fillMaxSize())
+                            }
+                        }
                     }
                 } else {
                     ZoomableImage(
                         model = url,
                         contentDescription = null,
                         onScaleChanged = { currentScale = it },
-                        onVerticalDrag = { deltaY ->
-                            if (currentScale <= 1.05f && !closing) {
-                                accumulatedDragY += deltaY
-                                scope.launch { dragOffsetY.snapTo(accumulatedDragY) }
-                            }
-                        },
-                        onVerticalDragEnd = {
-                            if (closing) {
-                                // The close animation owns the offset now.
-                            } else if (abs(accumulatedDragY) > dismissThresholdPx) {
-                                close()
-                            } else {
-                                scope.launch {
-                                    dragOffsetY.animateTo(0f, Motion.snapBack())
-                                }
-                            }
-                            accumulatedDragY = 0f
-                        },
+                        onVerticalDrag = onVerticalDrag,
+                        onVerticalDragEnd = { onVerticalDragEnd() },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -1308,14 +1341,30 @@ internal fun FullScreenMediaPager(
                         .padding(8.dp)
                         .graphicsLayer { alpha = overlayAlpha * shown },
                 ) {
-                    SaveToGalleryPill(
-                        state = saveState,
-                        onSave = {
-                            viewModel.saveToGallery(currentUrl) { message ->
-                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                    )
+                    if (copyLink && isShareableMediaUrl(currentUrl)) {
+                        IconButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(currentUrl))
+                                Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color.Black.copy(alpha = 0.6f), CircleShape),
+                        ) {
+                            Icon(NostrVaultIcons.Copy, "Copy link", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    // A photo or video, as iOS offers Save to Photos; not audio.
+                    if (!isAudioUrl(currentUrl)) {
+                        SaveToGalleryPill(
+                            state = saveState,
+                            onSave = {
+                                viewModel.saveToGallery(currentUrl) { message ->
+                                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        )
+                    }
                     if (viewModel.canMirror) {
                         MirrorToBlossomPill(
                             state = mirrorState,
