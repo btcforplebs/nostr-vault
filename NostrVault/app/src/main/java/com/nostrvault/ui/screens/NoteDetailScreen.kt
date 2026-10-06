@@ -1654,7 +1654,10 @@ private fun HeroNoteCard(
                     linkURLs = linkSet,
                     fontSize = 17.sp,
                     lineHeight = 24.sp,
+                    selectable = true,
                 ) {
+                    // Long-press selects the focused note's text (iOS
+                    // FeedNoteRow `.textSelection(.enabled)`).
                     NostrContentText(
                         content = note.content,
                         profiles = profiles,
@@ -1663,6 +1666,7 @@ private fun HeroNoteCard(
                         onProfileClick = onProfileClick,
                         fontSize = 17.sp,
                         lineHeight = 24.sp,
+                        selectable = true,
                     )
                 }
                 Spacer(Modifier.height(12.dp))
