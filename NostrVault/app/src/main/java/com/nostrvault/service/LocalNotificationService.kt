@@ -21,6 +21,8 @@ import coil.request.ImageRequest
 import com.nostrvault.MainActivity
 import com.nostrvault.R
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.FeedNote
+import com.nostrvault.ui.navigation.NotificationTarget
 import com.nostrvault.relay.HavenBridge
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -28,6 +30,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import java.util.Collections
 import java.util.LinkedHashSet
 import javax.inject.Inject
@@ -59,6 +69,25 @@ class LocalNotificationService @Inject constructor(
     companion object {
         private const val TAG = "LocalNotif"
         private const val MARKER = "🔔NOTIFY|"
+        /** Per lookup on the relay on this device, which answers in milliseconds. */
+        private const val LOOKUP_TIMEOUT_MS = 1_500L
+
+        private fun tagsOf(event: JsonObject): List<List<String>> = try {
+            event["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.content } }.orEmpty()
+        } catch (_: Exception) { emptyList() }
+
+        /** A note from a raw event as a relay sends it; null when it isn't one. */
+        fun noteFromEventJson(json: String): FeedNote? = try {
+            val ev = Json.parseToJsonElement(json).jsonObject
+            FeedNote.fromEvent(
+                ev["id"]!!.jsonPrimitive.content,
+                ev["pubkey"]!!.jsonPrimitive.content,
+                ev["content"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                tagsOf(ev),
+                ev["created_at"]?.jsonPrimitive?.longOrNull ?: 0L,
+                ev["kind"]!!.jsonPrimitive.int,
+            )
+        } catch (_: Exception) { null }
         private const val PREVIEW_MARKER = "|preview="
         private const val MAX_SEEN = 500
         /** How long a DM marker waits for the inbox to decrypt its message. */
@@ -257,7 +286,42 @@ class LocalNotificationService @Inject constructor(
 
         val profile = if (author.length == 64) nostrService.get().profiles.value[author] else null
         val (title, text) = buildContent(type, profile?.bestName, preview)
-        post(id, title, text, type, author, npub, profile?.pictureURL)
+        if (type !in NotificationTarget.RELAY_TYPES) {
+            post(id, title, text, type, author, npub, profile?.pictureURL)
+            return
+        }
+        // Look the post up before posting, so a tap opens it with nothing left
+        // to load. The relay on this device has just stored the event.
+        scope.launch {
+            val target = resolveTarget(type, id)
+            post(id, title, text, type, author, npub, profile?.pictureURL, target)
+        }
+    }
+
+    /** The post a notification opens; [eventJson] when this device holds it. */
+    private data class NoteTarget(val noteId: String, val eventJson: String?)
+
+    /**
+     * The post a notification is about, read from the relay on this device:
+     * its inbox holds the mention, reaction or zap, its outbox your note one
+     * points at. The note is cached so the thread view finds it at once.
+     */
+    private suspend fun resolveTarget(type: String, id: String): NoteTarget? {
+        val config = configStore.config.value
+        val urls = listOfNotNull(config.localInboxURL, config.nostrURL).distinct()
+        val nostr = nostrService.get()
+        val event = nostr.queryRawEvents(listOf("{\"ids\":[\"$id\"]}"), urls, LOOKUP_TIMEOUT_MS)
+            .firstOrNull()
+        val targetId = NotificationTarget.targetNoteId(type, id, event?.let(::tagsOf).orEmpty())
+            ?: return null
+        val target = when {
+            targetId == id -> event
+            else -> nostr.queryRawEvents(listOf("{\"ids\":[\"$targetId\"]}"), urls, LOOKUP_TIMEOUT_MS)
+                .firstOrNull()
+        }
+        val json = target?.toString()
+        json?.let(::noteFromEventJson)?.let { feedService.get().cacheNote(it) }
+        return NoteTarget(targetId, json)
     }
 
     /**
@@ -368,7 +432,10 @@ class LocalNotificationService @Inject constructor(
     }
 
     @SuppressLint("MissingPermission") // guarded by the runtime check below
-    private fun post(id: String, title: String, text: String, type: String, author: String, npub: String, pictureUrl: String?) {
+    private fun post(
+        id: String, title: String, text: String, type: String, author: String, npub: String,
+        pictureUrl: String?, target: NoteTarget? = null,
+    ) {
         ensureChannel()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -390,6 +457,12 @@ class LocalNotificationService @Inject constructor(
             putExtra("notif_author", author)
             // The account it arrived for; the nav host switches to it on tap.
             putExtra("notif_npub", npub)
+            // The post a tap opens, and the event itself so a restarted app
+            // can show it without fetching (MainActivity caches it).
+            target?.let {
+                putExtra("notif_note_id", it.noteId)
+                it.eventJson?.let { json -> putExtra("notif_note_json", json) }
+            }
         }
         val pending = PendingIntent.getActivity(
             context,

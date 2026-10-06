@@ -127,6 +127,8 @@ object DeepLinkRouter {
         eventId: String?,
         author: String?,
         npub: String?,
+        /** The post to open, looked up when the notification went out. */
+        noteId: String? = null,
     ): DeepLinkTarget? {
         val account = npub?.takeIf { it.isNotBlank() }
         if (type == null) return null
@@ -138,14 +140,17 @@ object DeepLinkRouter {
             // (that is only known after decrypting), so it opens the inbox —
             // as iOS does. Opening a thread with the wrap key showed a stranger.
             "giftwrap" -> DeepLinkTarget(Screen.DMInbox.route, account)
-            // Every post-related notification lands on that post in the Relay
-            // tab, matching iOS: the tab picks the list that holds it, scrolls to
-            // it and outlines it, and opens the post if it never shows up. The id
-            // here is the notification's own event — for a reaction, repost or
-            // zap that is the kind 7/6/9735 event, which the Relay tab resolves to
-            // the post it is about (NotificationTarget.targetNoteId). Opening it
-            // as a note directly, as this used to, found nothing.
-            in NotificationTarget.RELAY_TYPES -> eventId?.takeIf { isHex64(it) }
+            // A post-related notification opens the post, matching iOS: the
+            // mention or reply itself, or your note a reaction, repost or zap
+            // is about, looked up when the notification went out ([noteId]).
+            // Without that, a mention or reply is a note and opens as one; a
+            // reaction, repost or zap lands in the Relay tab, which resolves
+            // the post from the stored event (NotificationTarget.targetNoteId).
+            in NotificationTarget.RELAY_TYPES -> noteId?.takeIf { isHex64(it) }
+                ?.let { DeepLinkTarget(Screen.NoteDetail.createRoute(it), account) }
+                ?: eventId?.takeIf { isHex64(it) && type in NOTE_TYPES }
+                    ?.let { DeepLinkTarget(Screen.NoteDetail.createRoute(it), account) }
+                ?: eventId?.takeIf { isHex64(it) }
                 ?.let {
                     DeepLinkTarget(
                         route = Screen.Dashboard.route,
@@ -158,6 +163,9 @@ object DeepLinkRouter {
             else -> null
         }
     }
+
+    /** Notification types whose own event is the post. */
+    private val NOTE_TYPES = setOf("mention", "reply", "quote")
 
     private fun isHex64(s: String): Boolean =
         s.length == 64 && s.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }

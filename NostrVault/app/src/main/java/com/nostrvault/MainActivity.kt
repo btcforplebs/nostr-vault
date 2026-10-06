@@ -229,8 +229,14 @@ class MainActivity : FragmentActivity() {
             eventId = intent.getStringExtra("notif_event_id"),
             author = intent.getStringExtra("notif_author"),
             npub = intent.getStringExtra("notif_npub"),
+            noteId = intent.getStringExtra("notif_note_id"),
         )
         if (fromNotification != null) {
+            // The post rides along, so a tap that restarted the app still
+            // opens it without a fetch.
+            intent.getStringExtra("notif_note_json")
+                ?.let { LocalNotificationService.noteFromEventJson(it) }
+                ?.let(feedService::cacheNote)
             // Consumed: a rotation re-delivers the same intent, and without this
             // the app would jump back to the note every time.
             intent.removeExtra("notif_type")
