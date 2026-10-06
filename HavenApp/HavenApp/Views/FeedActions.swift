@@ -377,6 +377,15 @@ struct FeedNoteRowData: Equatable {
     let isFollowed: Bool
     let isParentFollowed: Bool
     let stats: NoteStats
+    /// Likes, reposts, replies and zap sats, when the screen fetched them
+    /// (`ProfileEngagementStore`). nil leaves the row without a numbers line.
+    var engagement: PostEngagement? = nil
+
+    func with(engagement: PostEngagement?) -> FeedNoteRowData {
+        var copy = self
+        copy.engagement = engagement
+        return copy
+    }
 
     /// Convenience factory to avoid duplicating resolution logic across call sites
     /// (FeedView, NoteDetailView, ProfileView, MenuBarView).

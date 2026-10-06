@@ -3849,6 +3849,12 @@ struct FeedNoteRow: View {
         }
 
 
+        // Engagement numbers, where the caller fetched them (profiles).
+        if let engagement = rowData.engagement, !engagement.isEmpty {
+            EngagementSummaryLine(engagement: engagement, showsLikes: !rowData.zapsOnlyMode)
+                .padding(.top, 2)
+        }
+
         // Actions row - minimal and clean
         HStack(spacing: 12) {
             actionButton(icon: "message", action: { onReply?() })

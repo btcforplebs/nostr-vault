@@ -13,6 +13,8 @@ struct ProfileView: View {
     @EnvironmentObject var nostrService: NostrService
     @StateObject private var feedService = FeedService.shared
     @StateObject private var dmService = DMService.shared
+    /// Likes, reposts, replies and zap sats under each post.
+    @ObservedObject private var engagementStore = ProfileEngagementStore.shared
     @EnvironmentObject var configService: ConfigService
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -1398,7 +1400,7 @@ struct ProfileView: View {
                             for: note,
                             feedService: feedService,
                             nostrService: nostrService
-                        ),
+                        ).with(engagement: engagementStore.engagement(for: feedService.originalNote(for: note).id)),
                         onReply: {
                             if note.kind == 6, let refId = note.repostedEventId,
                                let original = feedService.findNote(id: refId) {
@@ -1444,6 +1446,12 @@ struct ProfileView: View {
                             .padding(.vertical, 16)
                     }
                 }
+            }
+            // Numbers under each post, fetched as the posts appear. The tagged
+            // tab is other people's posts, so it is left out.
+            .task(id: selectedSection == .tagged ? [] : notes.map(\.id)) {
+                guard selectedSection != .tagged else { return }
+                await engagementStore.load(ids: notes.map { feedService.originalNote(for: $0).id }, author: pubkey)
             }
             .scrollTargetLayout()
             .padding(.top, 4)
