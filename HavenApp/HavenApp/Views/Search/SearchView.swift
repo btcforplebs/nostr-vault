@@ -1371,6 +1371,8 @@ final class HashtagFeedModel: ObservableObject {
 
     /// `follows` fill the top group. `trust` is who else may show: nil is
     /// everyone, empty is nobody (no Web of Trust yet fails closed, like Global).
+    /// Everyone is one list by time: with follows on top, a busy follow list
+    /// buried everyone else and the shield seemed to do nothing.
     func start(follows: Set<String>, trust: Set<String>?) {
         stop()
         generation += 1
@@ -1480,7 +1482,7 @@ final class HashtagFeedModel: ObservableObject {
 
     private func insert(_ note: FeedNote) {
         guard seen.insert(note.id).inserted else { return }
-        if follows.contains(note.pubkey) {
+        if shownTrust != nil, follows.contains(note.pubkey) {
             Self.insert(note, into: &fromFollows)
         } else {
             Self.insert(note, into: &fromOthers)
@@ -1563,7 +1565,7 @@ struct HashtagFeedView: View {
                         ForEach(model.fromFollows) { row($0) }
                     }
                     if !model.fromOthers.isEmpty {
-                        sectionHeader(everyone ? "More from everyone" : "More from your network")
+                        if !everyone { sectionHeader("More from your network") }
                         ForEach(model.fromOthers) { row($0) }
                     }
                 }

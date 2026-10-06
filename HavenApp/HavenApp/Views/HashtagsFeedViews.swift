@@ -56,7 +56,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                             ForEach(model.fromFollows) { row($0) }
                         }
                         if !model.fromOthers.isEmpty {
-                            sectionHeader(everyone ? "More from everyone" : "More from your network")
+                            if !everyone { sectionHeader("More from your network") }
                             ForEach(model.fromOthers) { row($0) }
                         }
                     }
@@ -246,7 +246,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                 ForEach(top) { threadRow($0) }
             }
             if !rest.isEmpty {
-                sectionHeader(everyone ? "More from everyone" : "More from your network")
+                if !everyone { sectionHeader("More from your network") }
                 ForEach(rest) { threadRow($0) }
             }
         }

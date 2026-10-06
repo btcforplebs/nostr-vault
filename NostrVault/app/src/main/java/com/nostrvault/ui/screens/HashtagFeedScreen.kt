@@ -146,6 +146,12 @@ abstract class HashtagNotesViewModel(
     private val lock = Any()
     private val seen = HashSet<String>()
     @Volatile private var follows: Set<String> = emptySet()
+    /**
+     * Who fills the top group: your follows under the shield, nobody with
+     * Everyone. Everyone is one list by time; with follows on top, a busy
+     * follow list buried everyone else and the shield seemed to do nothing.
+     */
+    @Volatile private var topGroup: Set<String> = emptySet()
     private val requestedAuthors = HashSet<String>()
     @Volatile private var generation = 0
     private var clients = mutableListOf<WebSocketClient>()
@@ -210,6 +216,7 @@ abstract class HashtagNotesViewModel(
             generation += 1
             if (!resuming) seen.clear()
             follows = followSet
+            topGroup = if (trust == null) emptySet() else followSet
             generation
         }
         if (!resuming) {
@@ -358,7 +365,7 @@ abstract class HashtagNotesViewModel(
     private fun insert(note: FeedNote, gen: Int) {
         val updated = synchronized(lock) {
             if (gen != generation || !seen.add(note.id)) return
-            val target = if (note.pubkey in follows) _fromFollows else _fromOthers
+            val target = if (note.pubkey in topGroup) _fromFollows else _fromOthers
             val current = target.value
             val index = current.indexOfFirst { it.createdAt < note.createdAt }.let { if (it < 0) current.size else it }
             val list = current.toMutableList().apply { add(index, note) }
@@ -600,10 +607,8 @@ fun HashtagFeedScreen(
                 HashtagNote(note, quotedNotesCache, profiles, likedIds, repostedIds, viewModel,
                     onNoteClick, onArticleClick, onProfileClick, onReply, onQuote)
             }
-            if (fromOthers.isNotEmpty()) {
-                item(key = "hashtag-others-header") {
-                    HashtagSectionHeader(if (everyone) "More from everyone" else "More from your network")
-                }
+            if (fromOthers.isNotEmpty() && !everyone) {
+                item(key = "hashtag-others-header") { HashtagSectionHeader("More from your network") }
             }
             items(fromOthers, key = { it.id }) { note ->
                 HashtagNote(note, quotedNotesCache, profiles, likedIds, repostedIds, viewModel,

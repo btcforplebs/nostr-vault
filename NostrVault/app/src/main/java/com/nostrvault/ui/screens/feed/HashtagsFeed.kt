@@ -498,15 +498,14 @@ internal fun HashtagsFeed(
             }
         }
 
-        val othersTitle = if (everyone) "More from everyone" else "More from your network"
         if (threadSections != null) {
             val (top, rest) = threadSections
             if (top.isNotEmpty()) {
                 item(key = "hashtags-follows-header") { HashtagSectionHeader("From people you follow") }
             }
             items(top, key = { "thread-${it.rootId}" }) { threadRow(it) }
-            if (rest.isNotEmpty()) {
-                item(key = "hashtags-others-header") { HashtagSectionHeader(othersTitle) }
+            if (rest.isNotEmpty() && !everyone) {
+                item(key = "hashtags-others-header") { HashtagSectionHeader("More from your network") }
             }
             items(rest, key = { "thread-${it.rootId}" }) { threadRow(it) }
         } else {
@@ -514,8 +513,8 @@ internal fun HashtagsFeed(
                 item(key = "hashtags-follows-header") { HashtagSectionHeader("From people you follow") }
             }
             items(fromFollows, key = { it.id }) { noteRow(it) }
-            if (fromOthers.isNotEmpty()) {
-                item(key = "hashtags-others-header") { HashtagSectionHeader(othersTitle) }
+            if (fromOthers.isNotEmpty() && !everyone) {
+                item(key = "hashtags-others-header") { HashtagSectionHeader("More from your network") }
             }
             items(fromOthers, key = { it.id }) { noteRow(it) }
         }
