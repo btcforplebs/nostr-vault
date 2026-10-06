@@ -38,7 +38,7 @@ description: |
 
 website: https://nostrvault.app
 repository: https://github.com/btcforplebs/nostr-vault
-source_url: https://github.com/btcforplebs/nostr-vault/tree/v2.7.2-b18
+source_url: https://github.com/btcforplebs/nostr-vault/tree/v2.7.2-b20
 tags: [nostr, bitcoin, relay, blossom, lightning]
 release_notes: ./RELEASE_NOTES.md
 images:
@@ -49,4 +49,4 @@ images:
   - screenshots/05_settings.png
 
 release_source:
-  asset_url: https://github.com/btcforplebs/nostr-vault/releases/download/v2.7.2-b18/NostrVault-b18-v2.7.2.apk
+  asset_url: https://github.com/btcforplebs/nostr-vault/releases/download/v2.7.2-b20/NostrVault-b20-v2.7.2.apk
