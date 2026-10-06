@@ -28,14 +28,17 @@ struct FeedMediaPager: View {
     let urls: [URL]
     let selected: URL
     var onDismiss: (() -> Void)? = nil
+    /// The page now showing, so the zoom can close into that photo's spot.
+    var onPage: ((URL) -> Void)? = nil
 
     @State private var selection: URL
     @Environment(\.mediaZoomPresented) private var zoomPresented
 
-    init(urls: [URL], selected: URL, onDismiss: (() -> Void)? = nil) {
+    init(urls: [URL], selected: URL, onDismiss: (() -> Void)? = nil, onPage: ((URL) -> Void)? = nil) {
         self.urls = urls.isEmpty ? [selected] : urls
         self.selected = selected
         self.onDismiss = onDismiss
+        self.onPage = onPage
         _selection = State(initialValue: selected)
     }
 
@@ -60,6 +63,7 @@ struct FeedMediaPager: View {
                 // MediaGalleryViewer's pager does.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
+                .onChange(of: selection) { _, page in onPage?(page) }
             }
         }
         #else
@@ -136,6 +140,10 @@ struct FeedMediaViewer: View {
         BlossomService(configService: configService, nostrService: nostrService)
     }
     
+    /// Under the zoom, the system's own swipe-down moves the photo; this
+    /// reports how far it has been pulled.
+    @StateObject private var zoomSwipe = ZoomSwipeWatch()
+
     /// The photo shrinks as you pull it down, so it reads as being put back.
     private var dragShrink: CGFloat {
         scale > 1 ? 1 : max(0.6, 1 - abs(offset.height) / 900)
@@ -143,7 +151,15 @@ struct FeedMediaViewer: View {
 
     private var controlsOpacity: Double {
         if isClosing { return 0 }
+        if zoomPresented { return max(0, 1 - abs(zoomSwipe.pull) / 60) }
         return scale > 1 ? 1 : max(0, 1 - abs(offset.height) / 150)
+    }
+
+    private var backdropOpacity: Double {
+        if isClosing { return 0 }
+        // The black goes first, so only the photo travels into the post.
+        if zoomPresented { return max(0, 1 - abs(zoomSwipe.pull) / 120) }
+        return max(0.1, 1.0 - (abs(offset.height) / 500.0))
     }
 
     /// Which way a drag at rest scale is going, decided on its first ~10pt
@@ -156,8 +172,9 @@ struct FeedMediaViewer: View {
             Color.black
                 // Under the zoom the cover is see-through, so the post shows
                 // through as you pull the photo away.
-                .opacity(isClosing ? 0 : max(zoomPresented ? 0 : 0.1, 1.0 - (abs(offset.height) / 500.0)))
+                .opacity(backdropOpacity)
                 .ignoresSafeArea()
+                .background { if zoomPresented { ZoomSwipeProbe(watch: zoomSwipe) } }
             
             Group {
                 if isLoadingType {
@@ -190,8 +207,12 @@ struct FeedMediaViewer: View {
                         }
                     }
             )
+            // Under the zoom the system's swipe-down closes the viewer and
+            // carries the photo into its spot in one motion. A drag here
+            // stops that swipe from starting, so it only pans a zoomed-in
+            // photo.
             .simultaneousGestureIf(
-                enableDragDismiss,
+                enableDragDismiss && (!zoomPresented || scale > 1),
                 DragGesture()
                     .onChanged { value in
                         if scale > 1.0 {
@@ -202,9 +223,6 @@ struct FeedMediaViewer: View {
                         } else {
                             // Swipe to dismiss tracking - ONLY vertical when not zoomed
                             // This allows simultaneous gesture in parent TabView to handle horizontal page swiping.
-                            // Under the zoom transition the system does not
-                            // dismiss a full-screen cover on a swipe, so this
-                            // stays the only way to swipe the viewer away.
                             let t = value.translation
                             if dragAxis == .undecided, hypot(t.width, t.height) > 10 {
                                 dragAxis = abs(t.height) > abs(t.width) ? .vertical : .horizontal
@@ -226,13 +244,8 @@ struct FeedMediaViewer: View {
                             let carried = value.predictedEndTranslation.height
                             let sameWay = (pulled >= 0) == (carried >= 0)
                             if sameWay && (abs(pulled) > 100 || abs(carried) > 260) {
-                                // Glide the photo back to the centre while the
-                                // zoom carries the screen into the post, so it
-                                // lands on its spot instead of short and low.
                                 withAnimation(.smooth(duration: 0.3)) {
                                     isClosing = true
-                                    offset = .zero
-                                    lastOffset = .zero
                                 }
                                 performDismiss()
                             } else {
@@ -977,6 +990,110 @@ extension View {
 
 // MARK: - Zoom presentation
 
+/// Follows the zoom transition's swipe-down on the presented viewer, so the
+/// black and the buttons can fade with it. Once the finger lifts, `pull`
+/// returns to zero only if the swipe put the viewer back; on a close it
+/// holds, or the black would come back during the flight into the post.
+final class ZoomSwipeWatch: NSObject, ObservableObject {
+    @Published private(set) var pull: CGFloat = 0
+
+    #if os(iOS)
+    private weak var swipe: UIGestureRecognizer?
+
+    /// UIKit's name for the zoom transition's swipe-down recognizer. If a
+    /// later iOS renames it, the swipe still closes the viewer; only the
+    /// fade is lost.
+    private static let swipeName = "com.apple.UIKit.ZoomInteractiveDismissSwipeDown"
+
+    // Each page of a pager attaches to the same recognizer, and pages come
+    // and go while the cover stays up.
+    deinit { swipe?.removeTarget(self, action: nil) }
+
+    func attach(from view: UIView) {
+        guard swipe == nil else { return }
+        var ancestor: UIView? = view
+        while let v = ancestor {
+            if let g = v.gestureRecognizers?.first(where: { $0.name == Self.swipeName }) {
+                g.addTarget(self, action: #selector(track(_:)))
+                swipe = g
+                return
+            }
+            ancestor = v.superview
+        }
+    }
+
+    @objc private func track(_ g: UIGestureRecognizer) {
+        switch g.state {
+        case .began, .changed:
+            if let pan = g as? UIPanGestureRecognizer {
+                pull = pan.translation(in: nil).y
+            }
+        case .ended, .cancelled, .failed:
+            settle(from: g.view)
+        default:
+            break
+        }
+    }
+
+    private func settle(from view: UIView?) {
+        var responder: UIResponder? = view
+        while let r = responder, !(r is UIViewController) { responder = r.next }
+        guard var controller = responder as? UIViewController else { return restore() }
+        while let parent = controller.parent { controller = parent }
+        guard controller.isBeingDismissed, let coordinator = controller.transitionCoordinator else {
+            return restore()
+        }
+        if coordinator.isInteractive {
+            coordinator.notifyWhenInteractionChanges { [weak self] in
+                if $0.isCancelled { self?.restore() }
+            }
+        } else if coordinator.isCancelled {
+            restore()
+        }
+    }
+
+    private func restore() {
+        guard pull != 0 else { return }
+        withAnimation(Motion.snapBack) { pull = 0 }
+    }
+    #endif
+}
+
+#if os(iOS)
+/// Finds the zoom's swipe-down once the viewer is on screen.
+private struct ZoomSwipeProbe: UIViewRepresentable {
+    let watch: ZoomSwipeWatch
+
+    func makeUIView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.watch = watch
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: ProbeView, context: Context) {}
+
+    final class ProbeView: UIView {
+        weak var watch: ZoomSwipeWatch?
+        // The presentation may install the swipe after this view joins the
+        // window, so look again on layout until it is found.
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil { watch?.attach(from: self) }
+        }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            if window != nil { watch?.attach(from: self) }
+        }
+    }
+}
+#else
+private struct ZoomSwipeProbe: View {
+    let watch: ZoomSwipeWatch
+    var body: some View { EmptyView() }
+}
+#endif
+
 /// Namespace the tapped thumbnail and the full-screen viewer share, so the
 /// viewer grows out of the photo's spot on screen and shrinks back into it.
 private struct MediaZoomNamespaceKey: EnvironmentKey {
@@ -998,6 +1115,16 @@ extension EnvironmentValues {
         get { self[MediaZoomPresentedKey.self] }
         set { self[MediaZoomPresentedKey.self] = newValue }
     }
+    /// The photo the open viewer is showing. An inline carousel holding it
+    /// turns to it, so the zoom closes into a photo that is on screen.
+    var mediaViewerPage: URL? {
+        get { self[MediaViewerPageKey.self] }
+        set { self[MediaViewerPageKey.self] = newValue }
+    }
+}
+
+private struct MediaViewerPageKey: EnvironmentKey {
+    static let defaultValue: URL? = nil
 }
 
 extension View {
@@ -1026,17 +1153,21 @@ extension View {
 private struct MediaViewerPresentation: ViewModifier {
     @Binding var item: IdentifiableURL?
     let namespace: Namespace.ID
+    /// The page swiped to in the viewer; nil until the first swipe.
+    @State private var page: URL?
 
     func body(content: Content) -> some View {
         #if os(iOS)
         if #available(iOS 18.0, *) {
             content
                 .environment(\.mediaZoomNamespace, namespace)
-                .fullScreenCover(item: $item) { media in
-                    FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil })
+                .environment(\.mediaViewerPage, item == nil ? nil : page)
+                .fullScreenCover(item: $item, onDismiss: { page = nil }) { media in
+                    FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil }, onPage: { page = $0 })
                         .environment(\.mediaZoomPresented, true)
                         .presentationBackground(.clear)
-                        .navigationTransition(.zoom(sourceID: media.url.absoluteString, in: namespace))
+                        // Close into the photo on screen, not the one tapped.
+                        .navigationTransition(.zoom(sourceID: (page ?? media.url).absoluteString, in: namespace))
                 }
         } else {
             sheetFallback(content)

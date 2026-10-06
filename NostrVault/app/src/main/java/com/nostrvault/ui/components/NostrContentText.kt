@@ -1,10 +1,16 @@
 package com.nostrvault.ui.components
 
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -28,6 +34,11 @@ import com.nostrvault.ui.theme.*
  * - [linkURLs] → stripped too, for callers that draw a LinkPreviewCard per
  *   link (#170 parity). A caller that draws no card must not pass them, or
  *   the link disappears from the note.
+ *
+ * [selectable] lets the text be long-pressed and selected (iOS
+ * `.textSelection(.enabled)`). Mentions, links and hashtags stay tappable,
+ * as link annotations rather than a tap detector that would fight the
+ * selection gesture; [onPlainTextClick] is not supported in that mode.
  */
 @Composable
 fun NostrContentText(
@@ -41,6 +52,7 @@ fun NostrContentText(
     fontSize: TextUnit = 15.sp,
     lineHeight: TextUnit = 21.sp,
     modifier: Modifier = Modifier,
+    selectable: Boolean = false,
 ) {
     val colors = LocalNostrVaultColors.current
     val uriHandler = LocalUriHandler.current
@@ -97,6 +109,29 @@ fun NostrContentText(
 
     if (annotated.text.isBlank()) return
 
+    if (selectable) {
+        // The links are built once per string; they call through these so a
+        // recomposed caller's new lambdas are the ones that run.
+        val currentProfileClick by rememberUpdatedState(onProfileClick)
+        val currentOpenHashtag by rememberUpdatedState(openHashtag)
+        val linked = remember(annotated, openHashtag != null) {
+            withContentLinks(annotated, hashtagsClickable = openHashtag != null) { tag, item ->
+                when (tag) {
+                    "profile" -> currentProfileClick(item)
+                    "url" -> try { uriHandler.openUri(item) } catch (_: Exception) {}
+                    "hashtag" -> currentOpenHashtag?.invoke(item)
+                }
+            }
+        }
+        SelectionContainer(modifier = modifier) {
+            BasicText(
+                text = linked,
+                style = TextStyle(color = textColor, fontSize = fontSize, lineHeight = lineHeight),
+            )
+        }
+        return
+    }
+
     @Suppress("DEPRECATION")
     ClickableText(
         text = annotated,
@@ -125,6 +160,31 @@ fun NostrContentText(
         },
         modifier = modifier,
     )
+}
+
+/**
+ * [annotated] with each profile / url / hashtag string annotation also made a
+ * clickable link over the same range, calling [onLink] with the annotation's
+ * tag and item. Text styling is left as it was built. Hashtags only become
+ * links when [hashtagsClickable], matching the tap path, where a screen with no
+ * hashtag feed leaves them inert.
+ */
+internal fun withContentLinks(
+    annotated: AnnotatedString,
+    hashtagsClickable: Boolean,
+    onLink: (tag: String, item: String) -> Unit,
+): AnnotatedString {
+    val tags = if (hashtagsClickable) listOf("profile", "url", "hashtag") else listOf("profile", "url")
+    return AnnotatedString.Builder(annotated).apply {
+        for (range in annotated.getStringAnnotations(0, annotated.length)) {
+            if (range.tag !in tags) continue
+            addLink(
+                LinkAnnotation.Clickable(range.tag) { onLink(range.tag, range.item) },
+                range.start,
+                range.end,
+            )
+        }
+    }.toAnnotatedString()
 }
 
 // ── Content parsing ──────────────────────────────────────────────

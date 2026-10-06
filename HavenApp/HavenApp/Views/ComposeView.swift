@@ -1498,7 +1498,18 @@ struct ComposeView: View {
                 var uploadedSHA256: String?
                 var pixelSize: CGSize?
                 var byteCount: Int?
-                if let fileURL = attachments[i].fileURL {
+                if let originalURL = attachments[i].fileURL {
+                    // Never upload where it was taken (MediaPrivacy).
+                    guard let fileURL = await MediaPrivacy.removingLocation(fromFileAt: originalURL) else {
+                        DispatchQueue.main.async {
+                            error = MediaPrivacy.failureMessage
+                            isPosting = false
+                            isUploading = false
+                            uploadInfoProvider.reset()
+                        }
+                        return
+                    }
+                    defer { if fileURL != originalURL { try? FileManager.default.removeItem(at: fileURL) } }
                     guard let sha256 = ComposeView.streamingSHA256(of: fileURL) else {
                         DispatchQueue.main.async {
                             error = "Failed to read video file for upload."
@@ -1518,7 +1529,17 @@ struct ComposeView: View {
                         skipOutsideServers: skipOutside,
                         progress: progressHandler
                     )
-                } else if let data = attachments[i].data {
+                } else if let originalData = attachments[i].data {
+                    // Never upload where it was taken (MediaPrivacy).
+                    guard let data = MediaPrivacy.removingLocation(fromImageData: originalData) else {
+                        DispatchQueue.main.async {
+                            error = MediaPrivacy.failureMessage
+                            isPosting = false
+                            isUploading = false
+                            uploadInfoProvider.reset()
+                        }
+                        return
+                    }
                     let sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
                     uploadedSHA256 = sha256
                     pixelSize = ComposeView.pixelSize(ofImageData: data)

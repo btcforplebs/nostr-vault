@@ -29,6 +29,7 @@ import coil.request.ImageRequest
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.model.FeedThreadGrouping
+import com.nostrvault.data.model.pollSummary
 import com.nostrvault.ui.theme.*
 
 /**
@@ -119,7 +120,8 @@ fun CondensedNoteLine(
     val isRoot = depth == 0
     val authorPubkey = displayPubkey ?: note.pubkey
     val displayName = profile?.bestName ?: shortKey(authorPubkey)
-    val displayContent = contentOverride ?: note.content
+    // A poll's one line is its question, marked as a poll (iOS condensedTitle).
+    val displayContent = contentOverride ?: note.pollSummary ?: note.content
 
     val avatarSize = if (isRoot) 32.dp else 26.dp
     val nameSize = if (isRoot) 13.sp else 12.sp

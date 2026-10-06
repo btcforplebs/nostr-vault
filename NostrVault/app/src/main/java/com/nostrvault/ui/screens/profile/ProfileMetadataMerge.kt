@@ -8,8 +8,8 @@ import kotlinx.serialization.json.jsonObject
 /**
  * Builds the kind-0 content an Edit Profile save publishes. A kind 0 replaces
  * the whole profile, so the new content starts from the newest one on the
- * relays and changes only the fields the user edited: banner, lud06, bot and
- * any key this form does not show are kept.
+ * relays and changes only the fields the user edited: lud06, bot and any key
+ * this form does not show are kept.
  */
 object ProfileMetadataMerge {
     /** The kind-0 keys the edit form shows. */
@@ -17,6 +17,7 @@ object ProfileMetadataMerge {
     const val NAME = "name"
     const val ABOUT = "about"
     const val PICTURE = "picture"
+    const val BANNER = "banner"
     const val NIP05 = "nip05"
     const val LUD16 = "lud16"
     const val WEBSITE = "website"

@@ -32,15 +32,18 @@ import (
 )
 
 // KindComment (NIP-22) carries replies from clients that have moved off kind 1
-// replies; the apps only show the ones on kind 1 notes.
-var feedKinds = []int{nostr.KindTextNote, nostr.KindRepost, nostr.KindArticle, nostr.KindComment}
+// replies; the apps only show the ones on kind 1 notes. KindPoll is a NIP-88
+// poll, which the apps draw in the feed; its votes are fetched per poll.
+const KindPoll = 1068
+
+var feedKinds = []int{nostr.KindTextNote, nostr.KindRepost, nostr.KindArticle, nostr.KindComment, KindPoll}
 
 // OnlyFeedKinds restricts writes on the /feed route to feed note kinds.
 func OnlyFeedKinds(ctx context.Context, event *nostr.Event) (bool, string) {
 	if slices.Contains(feedKinds, event.Kind) {
 		return false, ""
 	}
-	return true, "restricted: this relay only accepts feed notes (kinds 1, 6, 30023, 1111)"
+	return true, "restricted: this relay only accepts feed notes (kinds 1, 6, 30023, 1111, 1068)"
 }
 
 // feedSyncCh triggers an immediate feed sync round (pull-to-refresh).

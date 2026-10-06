@@ -427,7 +427,7 @@ data class HavenConfig(
 
     // Advanced / media (client-side; not sent to the Go relay)
     val disableMediaCache: Boolean = false,
-    val cacheTTLDays: Int = 7, // 0 = never evict
+    val cacheTTLDays: Int = 3, // 0 = never evict
     val autoStartRelay: Boolean = true,
 
     // External relay (Android only). Some users keep the client and their
@@ -445,6 +445,8 @@ data class HavenConfig(
     val enablePushNotifications: Boolean = false,
     /** "New Notes in Your Feed": one summary per absence of 2h+ (iOS enableFeedNotifications). */
     val enableFeedNotifications: Boolean = false,
+    /** The picked notification sound's name (iOS notificationSoundName); see NotificationSound. */
+    val notificationSoundName: String = "Chime",
     val pushNotifyMentions: Boolean = true,
     val pushNotifyReplies: Boolean = true,
     val pushNotifyDMs: Boolean = true,

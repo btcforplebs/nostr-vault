@@ -92,4 +92,36 @@ class QuoteTargetTest {
         )
         assertSame(note, target(note))
     }
+
+    // effectiveAuthor / effectiveKind / publisher: who a zap, report or block
+    // on a repost reaches, and who may delete it.
+
+    @Test fun bareRepostEngagesOriginalAuthor() {
+        val n = repostNote("")
+        assertEquals(author, n.effectiveAuthor)
+        assertEquals(original, n.effectiveEventId)
+        assertEquals(1, n.effectiveKind)
+        assertEquals(reposter, n.publisher)
+    }
+
+    @Test fun repostWhoseContentIsNotACopyEngagesOriginalAuthor() {
+        val n = repostNote("look at this")
+        assertEquals(author, n.effectiveAuthor)
+        assertEquals(reposter, n.publisher)
+    }
+
+    @Test fun embeddedRepostEngagesOriginalAuthor() {
+        val n = repostNote(embedded())
+        assertEquals(author, n.effectiveAuthor)
+        assertEquals(1, n.effectiveKind)
+        assertEquals(reposter, n.publisher)
+    }
+
+    @Test fun ordinaryNoteEngagesItsOwnAuthor() {
+        val n = FeedNote.fromEvent(id = original, pubkey = author, content = "hi",
+            tags = listOf(listOf("p", reposter)), createdAt = 1_700_000_000, kind = 1)
+        assertEquals(author, n.effectiveAuthor)
+        assertEquals(author, n.publisher)
+        assertEquals(1, n.effectiveKind)
+    }
 }

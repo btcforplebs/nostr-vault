@@ -2,14 +2,15 @@ import Foundation
 
 /// Builds the kind-0 content an Edit Profile save publishes. A kind 0 replaces
 /// the whole profile, so the new content starts from the newest one on the
-/// relays and changes only the fields the user edited: banner, lud06, bot and
-/// any key the form does not show are kept.
+/// relays and changes only the fields the user edited: lud06, bot and any key
+/// the form does not show are kept.
 enum ProfileMetadataMerge {
     /// The kind-0 keys the edit form shows.
     static let displayName = "display_name"
     static let name = "name"
     static let about = "about"
     static let picture = "picture"
+    static let banner = "banner"
     static let nip05 = "nip05"
     static let lud16 = "lud16"
     static let website = "website"

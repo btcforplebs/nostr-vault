@@ -53,6 +53,7 @@ import com.nostrvault.data.model.MediaUploadOutcomeMessage
 import com.nostrvault.data.model.PostingAccount
 import com.nostrvault.data.model.Reel
 import com.nostrvault.service.BlossomService
+import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ReelsFeedService
 import com.nostrvault.ui.notification.ErrorStyle
@@ -261,6 +262,8 @@ class ModeComposeViewModel @Inject constructor(
     }
 
     private suspend fun upload(file: File, mime: String, label: String): Pair<String, String> {
+        // Every file here is a temp copy, so the location can come out in place.
+        if (!MediaPrivacy.removeLocation(file, mime)) throw IllegalStateException(MediaPrivacy.FAILURE_MESSAGE)
         val sha = blossomService.computeSHA256(file)
         val outcome = blossomService.uploadForPost(
             fileURL = file,

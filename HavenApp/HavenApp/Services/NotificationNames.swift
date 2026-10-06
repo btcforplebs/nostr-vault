@@ -43,6 +43,9 @@ extension Notification.Name {
     /// Mosaic widget's wand is tapped, so one tap gets the same result as
     /// Media tab -> + -> Magic Paste.
     static let havenMagicPaste = Notification.Name("com.haven.magicPaste")
+    /// Upload what the share sheet left in the App Group inbox (NVShareInbox).
+    /// Posted after `havenOpenMedia` by the share notification and app launch.
+    static let havenImportShareInbox = Notification.Name("com.haven.importShareInbox")
 
     /// A `nostr:` link opened from outside the app. `object` is the hex pubkey
     /// (`havenOpenProfile`), or the hex event id / `naddr1…` (`havenOpenNote`).
