@@ -95,7 +95,6 @@
 		2CF4B408A85E82C349EA0380 /* MusicPlayerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4305ED0FAA1EFC4C5F3CFE00 /* MusicPlayerService.swift */; };
 		2D933AF056427997387682C7 /* ReferencedNoteRepair.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8BC6C1B7108F0D538B2C558 /* ReferencedNoteRepair.swift */; };
 		2DD420459ECE57ACDD5E1432 /* LinkPreviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8826E9845079D00F1FE9D22A /* LinkPreviewCard.swift */; };
-		2E016A87010042DE2A3A3527 /* SignerApprovalBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D661145C7723C64C01870CE /* SignerApprovalBanner.swift */; };
 		2E304B4E05F97AA440250926 /* MusicViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BB78CB53982611165FC71C6 /* MusicViews.swift */; };
 		2ECB078027E2F4742D8F63A6 /* NVThumbnails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0419EB3F68D0DEFEAAB8BEC5 /* NVThumbnails.swift */; };
 		2F01D696DE1AD2109C69A981 /* ComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F4167692AA94E7EC99B29BD /* ComposeView.swift */; };
@@ -183,7 +182,6 @@
 		5BE1C0F1ADE02933CC0A2272 /* BlossomDashboardComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C27B2F22F799426D3D276B3 /* BlossomDashboardComponents.swift */; };
 		5C0AEAD4DE0514BF0CAD6AF3 /* VaultChangeHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 982E5846CE3EB2461F41A4FB /* VaultChangeHandlers.swift */; };
 		5C1ABDD8E012865478E08AFB /* FeedOutboxPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CA3570ED08E58BCFE90E28 /* FeedOutboxPlan.swift */; };
-		5D2DB8447424AFC98D5680CE /* SignerApprovalBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D661145C7723C64C01870CE /* SignerApprovalBanner.swift */; };
 		5E779E545DA5566174AE5AF6 /* FeedServiceTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19809A765C51F397B19FD14 /* FeedServiceTypes.swift */; };
 		5E7C388BDCF4352D837F6ED9 /* MediaCacheService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B294C3B4DE4C63104876789 /* MediaCacheService.swift */; };
 		5E92A621990EB60F7D3CEA01 /* SetupWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89B8E92EE192A7FDE8094D4D /* SetupWizardView.swift */; };
@@ -570,7 +568,6 @@
 		27A87225270090D65AC98D48 /* libhaven.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhaven.a; path = build/libhaven.a; sourceTree = SDKROOT; };
 		2B14053AFA5E916B43335BEE /* LNURLService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LNURLService.swift; sourceTree = "<group>"; };
 		2BEA112FAABC73A446279BB0 /* NVWidgetKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVWidgetKit.swift; sourceTree = "<group>"; };
-		2D661145C7723C64C01870CE /* SignerApprovalBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignerApprovalBanner.swift; sourceTree = "<group>"; };
 		2E884308913F1B4723D26D1C /* VideoPlaybackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlaybackService.swift; sourceTree = "<group>"; };
 		2FE41D591439EC1513D51DAF /* VaultToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultToolbar.swift; sourceTree = "<group>"; };
 		3041B6BA67CC97B2AC442E6D /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
@@ -1168,7 +1165,6 @@
 				797BE98DE5E15BC89A516724 /* RelayActivityBanner.swift */,
 				F8495489F7284415840FE673 /* RetryableAsyncImage.swift */,
 				A9CCBF9ECF9001937FA713A9 /* ShareSheet.swift */,
-				2D661145C7723C64C01870CE /* SignerApprovalBanner.swift */,
 				51BD3B4068A03F5AF468D320 /* SignInWithClaveView.swift */,
 				81AB8C04FD43E0DE0F8BA520 /* SourceIndicatorView.swift */,
 				EC0AF323C6A978AA0E08E94A /* StatsCard.swift */,
@@ -1687,7 +1683,6 @@
 				5E92A621990EB60F7D3CEA01 /* SetupWizardView.swift in Sources */,
 				72CD4E84E5ECC2F15E446436 /* ShareSheet.swift in Sources */,
 				F34E2131558134F8708AB50E /* SignInWithClaveView.swift in Sources */,
-				5D2DB8447424AFC98D5680CE /* SignerApprovalBanner.swift in Sources */,
 				F54A606BD7416C56D334ADD5 /* SleepWakeMonitor.swift in Sources */,
 				0171628A378595AE2A1C48CD /* SourceIndicatorView.swift in Sources */,
 				1597A09CA45445BBDE879AFC /* StarterPack.swift in Sources */,
@@ -1932,7 +1927,6 @@
 				79E1E1A82F04ABF7DE2C2957 /* SetupWizardView.swift in Sources */,
 				EC05976F014D8D0EA368495B /* ShareSheet.swift in Sources */,
 				D4CBD50DD844C82D618664BA /* SignInWithClaveView.swift in Sources */,
-				2E016A87010042DE2A3A3527 /* SignerApprovalBanner.swift in Sources */,
 				DFDA2D4ADCC88506D3F07CF0 /* SleepWakeMonitor.swift in Sources */,
 				50D12D38589AF317DAA47E4E /* SourceIndicatorView.swift in Sources */,
 				34760E06C9CE16B9730639F4 /* StarterPack.swift in Sources */,
