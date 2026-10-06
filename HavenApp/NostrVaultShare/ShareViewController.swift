@@ -155,18 +155,16 @@ struct ShareCard: View {
     @ObservedObject var model: ShareModel
 
     var body: some View {
-        VStack {
-            Spacer()
-            VStack(spacing: 16) {
-                header
-                content
-            }
-            .padding(20)
-            .frame(maxWidth: 420)
-            .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(.secondarySystemBackground)))
-            .padding()
+        // Fills the sheet the system presents rather than floating a card in
+        // it: the sheet is already the card, and follows light/dark itself.
+        VStack(spacing: 16) {
+            header
+            content
+            Spacer(minLength: 0)
         }
-        .preferredColorScheme(.dark)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground).ignoresSafeArea())
     }
 
     private var header: some View {
