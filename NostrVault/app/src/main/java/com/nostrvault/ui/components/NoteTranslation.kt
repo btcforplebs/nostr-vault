@@ -1,6 +1,7 @@
 package com.nostrvault.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -66,6 +67,8 @@ fun TranslatableNoteText(
     lineHeight: TextUnit,
     modifier: Modifier = Modifier,
     onTranslationClick: (() -> Unit)? = null,
+    /** Lets the translation be selected, as the note detail's original is. */
+    selectable: Boolean = false,
     original: @Composable () -> Unit,
 ) {
     val context = LocalNoteTranslation.current
@@ -95,13 +98,16 @@ fun TranslatableNoteText(
     Column(modifier) {
         val shown = translation
         if (offer && showTranslation && shown != null) {
-            Text(
-                text = shown,
-                color = PrimaryText,
-                fontSize = fontSize,
-                lineHeight = lineHeight,
-                modifier = if (onTranslationClick != null) Modifier.clickable(onClick = onTranslationClick) else Modifier,
-            )
+            val translated = @Composable {
+                Text(
+                    text = shown,
+                    color = PrimaryText,
+                    fontSize = fontSize,
+                    lineHeight = lineHeight,
+                    modifier = if (onTranslationClick != null) Modifier.clickable(onClick = onTranslationClick) else Modifier,
+                )
+            }
+            if (selectable) SelectionContainer { translated() } else translated()
         } else {
             original()
         }
