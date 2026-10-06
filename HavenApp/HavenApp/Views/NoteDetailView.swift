@@ -22,7 +22,6 @@ struct NoteDetailView: View {
     @Namespace private var mediaZoom
     @State private var showingReportDialog = false
     @State private var showingDeleteConfirm = false
-    @State private var showingEmojiPicker = false
     @State private var showingBroadcastSheet = false
     @State private var noLightningAddressAlert = false
 
@@ -1357,62 +1356,6 @@ struct NoteDetailView: View {
         Set((perNoteReposts[noteId] ?? []).map(\.pubkey)).count
     }
 
-    private func likeNote() {
-        let noteId = note.id
-        if feedService.likedEventIds.contains(noteId) {
-            UnlikeNotificationManager.shared.startCountdown {
-                self.feedService.likedEventIds.remove(noteId)
-                var stats = self.feedService.noteStats[noteId] ?? NoteStats()
-                stats.reactions = max(0, stats.reactions - 1)
-                self.feedService.noteStats[noteId] = stats
-                self.feedService.saveInteractionState()
-            }
-            return
-        }
-        feedService.likedEventIds.insert(noteId)
-        var currentStats = feedService.noteStats[noteId] ?? NoteStats()
-        currentStats.reactions += 1
-        feedService.noteStats[noteId] = currentStats
-        feedService.saveInteractionState()
-        let relayHint = ConfigService.shared.config.nostrURL
-        Task {
-            guard let signed = await nostrService.signEventAsync(kind: 7, content: "+", tags: [["e", noteId, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]) else {
-                await MainActor.run { LikeFeedback.failed() }
-                return
-            }
-            nostrService.postEvent(signed)
-            await MainActor.run {
-                LikeFeedback.liked()
-                feedService.keepLikedNoteLocally(id: noteId)
-            }
-        }
-    }
-
-    private func reactToNote(with emoji: String) {
-        if !feedService.likedEventIds.contains(note.id) {
-            feedService.likedEventIds.insert(note.id)
-
-            // Proactively update stats locally
-            var currentStats = feedService.noteStats[note.id] ?? NoteStats()
-            currentStats.reactions += 1
-            feedService.noteStats[note.id] = currentStats
-
-            feedService.saveInteractionState()
-        }
-        let relayHint = ConfigService.shared.config.nostrURL
-        Task {
-            guard let signed = await nostrService.signEventAsync(kind: 7, content: emoji, tags: [["e", note.id, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]) else {
-                await MainActor.run { LikeFeedback.failed() }
-                return
-            }
-            nostrService.postEvent(signed)
-            await MainActor.run {
-                LikeFeedback.liked(emoji)
-                feedService.keepLikedNoteLocally(id: note.id)
-            }
-        }
-    }
-    
     private func blockUser(hexPubkey: String) {
         guard let data = Bech32.hexToData(hexPubkey),
               let npub = Bech32.encode(hrp: "npub", data: data) else { return }
