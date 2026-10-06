@@ -32,9 +32,9 @@ struct EngagementSummaryLine: View {
             Image(systemName: symbol)
                 .font(.appSystem(size: 10, weight: .semibold))
                 .foregroundColor(tint.opacity(0.85))
-            Text(PostEngagement.compact(value))
+            Text(engagement.display(value))
                 .monospacedDigit()
         }
-        .accessibilityLabel("\(value) \(label)")
+        .accessibilityLabel(engagement.isLowerBound && value >= PostEngagement.lowerBoundFrom ? "at least \(value) \(label)" : "\(value) \(label)")
     }
 }

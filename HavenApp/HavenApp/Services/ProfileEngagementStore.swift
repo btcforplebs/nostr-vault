@@ -36,6 +36,9 @@ final class ProfileEngagementStore: ObservableObject {
         let relays = Self.relays(for: author)
         guard !relays.isEmpty else { return }
         let targets = Set(due)
+        // Your own posts, with your inbox relay asked, are counted from what
+        // was sent to you; anything else may be missing likes on other relays.
+        let lowerBound = !relays.contains { $0.absoluteString.hasSuffix("/inbox") }
         let events = await ZapHistoryService.query(
             filters: PostEngagementQuery.filters(for: due),
             relays: relays,
@@ -44,18 +47,19 @@ final class ProfileEngagementStore: ObservableObject {
                 // Counts fill in as each relay answers rather than all at the
                 // end. ZapHistoryService calls this on the main queue.
                 MainActor.assumeIsolated {
-                    self?.apply(PostEngagementQuery.tally(partial, targets: targets))
+                    self?.apply(PostEngagementQuery.tally(partial, targets: targets), lowerBound: lowerBound)
                 }
             })
-        apply(PostEngagementQuery.tally(events, targets: targets))
+        apply(PostEngagementQuery.tally(events, targets: targets), lowerBound: lowerBound)
         let done = Date()
         for id in due { fetchedAt[id] = done }
     }
 
-    private func apply(_ found: [String: PostEngagement]) {
+    private func apply(_ found: [String: PostEngagement], lowerBound: Bool) {
         guard !found.isEmpty else { return }
         var next = counts
-        for (id, e) in found {
+        for (id, var e) in found {
+            e.isLowerBound = lowerBound
             next[id] = next[id].map { $0.merged(with: e) } ?? e
         }
         if next != counts { counts = next }

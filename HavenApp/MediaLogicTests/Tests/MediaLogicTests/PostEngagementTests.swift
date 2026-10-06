@@ -91,4 +91,23 @@ final class PostEngagementTests: XCTestCase {
         XCTAssertEqual(PostEngagement.compact(21_049), "21k")
         XCTAssertEqual(PostEngagement.compact(1_250_000), "1.3M")
     }
+
+    func testLowerBoundShowsPlusOnlyFromTen() {
+        var e = PostEngagement(likes: 64, reposts: 3, replies: 10, zapSats: 2_100)
+        e.isLowerBound = true
+        XCTAssertEqual(e.display(e.likes), "64+")
+        XCTAssertEqual(e.display(e.reposts), "3")
+        XCTAssertEqual(e.display(e.replies), "10+")
+        XCTAssertEqual(e.display(e.zapSats), "2.1k+")
+        e.isLowerBound = false
+        XCTAssertEqual(e.display(e.likes), "64")
+    }
+
+    func testMergeIsExactIfEitherSideIs() {
+        var relayOnly = PostEngagement(likes: 12)
+        relayOnly.isLowerBound = true
+        let fromInbox = PostEngagement(likes: 15)
+        XCTAssertFalse(relayOnly.merged(with: fromInbox).isLowerBound)
+        XCTAssertTrue(relayOnly.merged(with: relayOnly).isLowerBound)
+    }
 }

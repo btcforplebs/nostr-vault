@@ -15,6 +15,20 @@ struct PostEngagement: Equatable {
     var replies = 0
     /// Total sats across zap receipts.
     var zapSats = 0
+    /// The counts came from a handful of relays and may be missing what sits
+    /// on others: true for anyone else's posts. Large numbers then show as
+    /// "64+" so nobody reads them as exact. Your own posts are counted from
+    /// your relay's inbox, which receives what's sent to you.
+    var isLowerBound = false
+
+    /// From this many up, a lower-bound count gets its "+". Small accounts
+    /// measured within about one of Primal's numbers; the gap opens on popular posts.
+    static let lowerBoundFrom = 10
+
+    /// `value` as shown: compact, with "+" when it is a lower bound and large.
+    func display(_ value: Int) -> String {
+        Self.compact(value) + (isLowerBound && value >= Self.lowerBoundFrom ? "+" : "")
+    }
 
     var isEmpty: Bool { likes == 0 && reposts == 0 && replies == 0 && zapSats == 0 }
 
@@ -22,7 +36,8 @@ struct PostEngagement: Equatable {
     /// this time must not shrink a number already on screen.
     func merged(with other: PostEngagement) -> PostEngagement {
         PostEngagement(likes: max(likes, other.likes), reposts: max(reposts, other.reposts),
-                       replies: max(replies, other.replies), zapSats: max(zapSats, other.zapSats))
+                       replies: max(replies, other.replies), zapSats: max(zapSats, other.zapSats),
+                       isLowerBound: isLowerBound && other.isLowerBound)
     }
 
     /// `2100` → "2.1k", `1_250_000` → "1.3M". Below 1,000 the number itself.
