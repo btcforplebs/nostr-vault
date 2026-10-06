@@ -1394,8 +1394,8 @@ class FeedService: ObservableObject {
 
     func refresh() {
         guard !isLoadingContacts, !isPaused else { return }
-        // Music has no relay feed to reload.
-        if feedMode == .music { return }
+        // Music has no relay feed to reload; Hashtags reloads its own.
+        if feedMode == .music || feedMode == .hashtags { return }
 
         // Ask the embedded relay to catch up its inbox/outbox from external
         // relays too, so a feed pull-to-refresh also freshens the Relay tab,
@@ -1658,6 +1658,8 @@ class FeedService: ObservableObject {
         if mode == .music {
             // Wavlake, not relays: MusicBrowserView loads its own catalogue,
             // and the note pipeline stays idle underneath it.
+        } else if mode == .hashtags {
+            // HashtagsFeedSection queries relays for its tags itself.
         } else if mode == .live {
             // Same reasoning as Recipes: LiveFeedService owns this one.
             LiveFeedService.shared.loadIfNeeded()
@@ -1797,7 +1799,7 @@ class FeedService: ObservableObject {
         case .following, .discovery: return true
         case .media: return mediaFeedMode == .following
         case .articles: return articlesFeedMode == .following
-        case .global, .popular, .recipes, .marketplace, .live, .reels, .music: return false
+        case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return false
         }
     }
 
@@ -1824,7 +1826,7 @@ class FeedService: ObservableObject {
         case .articles: return articlesFeedMode == .following ? followedPubkeys : []
         case .media: return mediaFeedMode == .following ? followedPubkeys : []
         case .discovery: return extendedNetworkPubkeys
-        case .global, .popular, .recipes, .marketplace, .live, .reels, .music: return []
+        case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return []
         }
     }
 
@@ -1854,7 +1856,7 @@ class FeedService: ObservableObject {
         // no relay feed. Reconciling here opened an author-less kind-1 REQ
         // underneath them, so the hidden note pipeline filled with strangers'
         // posts and a "New Posts" pill appeared over the grid.
-        guard ![.recipes, .marketplace, .live, .music].contains(feedMode) else { return }
+        guard ![.recipes, .marketplace, .live, .music, .hashtags].contains(feedMode) else { return }
 
         // Author-filtered mode with no follows yet → no valid primary sub. Don't
         // send a dead authors:[] REQ; instead self-heal by (re)fetching contacts
@@ -2057,7 +2059,7 @@ class FeedService: ObservableObject {
         case .following: searchAuthors = followedPubkeys
         case .articles: searchAuthors = articlesFeedMode == .following ? followedPubkeys : nil
         case .discovery: searchAuthors = extendedNetworkPubkeys
-        case .global, .popular, .media, .recipes, .marketplace, .live, .reels, .music: searchAuthors = nil
+        case .global, .popular, .media, .recipes, .marketplace, .live, .reels, .music, .hashtags: searchAuthors = nil
         }
         if let searchAuthors, searchAuthors.isEmpty {
             searchCancellable?.cancel()

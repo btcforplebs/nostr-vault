@@ -207,7 +207,8 @@ private final class OneShotQuery {
             return
         }
         guard type == "EVENT", json.count >= 3,
-              let eventData = try? JSONSerialization.data(withJSONObject: json[2]),
+              let raw = json[2] as? [String: Any], NostrEventVerifier.isValid(raw),
+              let eventData = try? JSONSerialization.data(withJSONObject: raw),
               let event = try? JSONDecoder().decode(NostrEvent.self, from: eventData),
               event.kind == 10015, event.pubkey == author else { return }
         if event.created_at > (newest?.createdAt ?? -1) {

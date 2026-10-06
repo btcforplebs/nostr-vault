@@ -472,7 +472,7 @@ struct FeedView: View {
     /// timeline feeds follow the legacy global preference.
     private var defaultCompactForCurrentFeed: Bool {
         switch feedService.feedMode {
-        case .following, .articles, .recipes, .marketplace, .live, .reels, .music:
+        case .following, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags:
             return false
         case .discovery, .global, .popular, .media:
             return configService.config.useFeedCompactMode
@@ -485,7 +485,7 @@ struct FeedView: View {
         switch feedService.feedMode {
         case .following, .discovery, .global, .popular:
             return true
-        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags:
             return false
         }
     }
@@ -615,7 +615,7 @@ struct FeedView: View {
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
         // compact mode has nothing to condense.
-        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags:
             return false
         }
     }
@@ -806,6 +806,10 @@ struct FeedView: View {
                 if marketplaceService.scope == .global {
                     trustScopeButton
                 }
+            } else if feedService.feedMode == .hashtags {
+                // Follows and network always show here; the shield picks
+                // network or everyone, as on the hashtag sheet.
+                trustScopeButton
             } else if feedService.feedMode == .music {
                 MusicToolbarButtons()
             } else if feedService.feedMode == .live {
@@ -1028,6 +1032,8 @@ struct FeedView: View {
                     Divider()
                     trustScopeMenuItems
                 }
+            } else if feedService.feedMode == .hashtags {
+                trustScopeMenuItems
             } else if feedService.feedMode == .music {
                 MusicToolbarMenuItems()
             } else if feedService.feedMode == .live {
@@ -1342,6 +1348,10 @@ struct FeedView: View {
                 if marketplaceService.scope == .global {
                     trustScopeButton
                 }
+            } else if feedService.feedMode == .hashtags {
+                // Follows and network always show here; the shield picks
+                // network or everyone, as on the hashtag sheet.
+                trustScopeButton
             } else if feedService.feedMode == .music {
                 MusicToolbarButtons()
             } else if feedService.feedMode == .live {
@@ -2570,6 +2580,26 @@ struct FeedView: View {
     /// player can open. Never cached — a stream is only interesting while it is
     /// live, and a saved one is a gravestone.
     @ViewBuilder
+    /// Followed hashtags; rows open and act like the main timeline's.
+    private var hashtagsFeedView: some View {
+        HashtagsFeedSection { note in
+            let row = feedNoteRowContent(
+                note: note,
+                profile: nostrService.profiles[note.pubkey],
+                rowData: rowDataCache[note.id] ?? FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService),
+                parentIsNext: false,
+                isExpanded: false
+            )
+            .onAppear { nostrService.fetchMissingProfiles(for: [note.pubkey]) }
+            #if os(iOS)
+            NoteNavigationLink(note: note) { row }
+                .buttonStyle(.plain)
+            #else
+            row.onTapGesture { showingNoteId = note.id }
+            #endif
+        }
+    }
+
     private var liveGridView: some View {
         VStack(spacing: 12) {
             if liveService.isLoading && liveService.streams.isEmpty {
@@ -2697,6 +2727,8 @@ struct FeedView: View {
                             recipeGridView
                         } else if feedService.feedMode == .marketplace {
                             marketplaceGridView
+                        } else if feedService.feedMode == .hashtags {
+                            hashtagsFeedView
                         } else if feedService.feedMode == .music {
                             MusicBrowserView()
                         } else if feedService.feedMode == .live {

@@ -1344,7 +1344,8 @@ private struct HashtagLinkHandling: ViewModifier {
 /// Trust, or everyone).
 @MainActor
 final class HashtagFeedModel: ObservableObject {
-    let tag: String
+    /// The hashtags being shown. One for the sheet; the Hashtags feed swaps them.
+    private(set) var tags: [String]
     @Published private(set) var fromFollows: [FeedNote] = []
     @Published private(set) var fromOthers: [FeedNote] = []
     @Published private(set) var isLoading = true
@@ -1356,7 +1357,14 @@ final class HashtagFeedModel: ObservableObject {
     private let queue = DispatchQueue(label: "com.haven.hashtag-feed")
     private var generation = 0
 
-    init(tag: String) { self.tag = tag }
+    init(tag: String) { self.tags = [tag] }
+    init(tags: [String]) { self.tags = tags }
+
+    /// Same as `start(follows:trust:)` for a new set of hashtags.
+    func start(tags: [String], follows: Set<String>, trust: Set<String>?) {
+        self.tags = tags
+        start(follows: follows, trust: trust)
+    }
 
     /// `follows` fill the top group. `trust` is who else may show: nil is
     /// everyone, empty is nobody (no Web of Trust yet fails closed, like Global).
@@ -1370,11 +1378,17 @@ final class HashtagFeedModel: ObservableObject {
         self.follows = follows
         isLoading = true
 
+        // NIP-24 says t tags are lowercase; some clients keep the typed case.
+        // Capped so the REQ stays under relay message limits.
+        let wantedTags = Set(tags.prefix(Self.maxTags).flatMap { [$0, $0.lowercased()] })
+        guard !wantedTags.isEmpty else {
+            isLoading = false
+            return
+        }
         let base: [String: Any] = [
             "kinds": [1],
-            // NIP-24 says t tags are lowercase; some clients keep the typed case.
-            "#t": Array(Set([tag, tag.lowercased()])),
-            "limit": 100,
+            "#t": Array(wantedTags).sorted(),
+            "limit": tags.count > 1 ? 200 : 100,
         ]
         // Follows asked by name, so a busy tag cannot push them out of the page;
         // past the cap, the open filter finds them. Capped so the REQ stays
@@ -1399,7 +1413,6 @@ final class HashtagFeedModel: ObservableObject {
             isLoading = false
             return
         }
-        let wantedTags = Set([tag, tag.lowercased()])
         let wantedAuthors = trust.map { $0.union(follows) }
 
         let subId = "hashtag-\(UUID().uuidString.prefix(8))"
@@ -1444,6 +1457,8 @@ final class HashtagFeedModel: ObservableObject {
             self.isLoading = false
         }
     }
+
+    static let maxTags = 100
 
     func stop() {
         clients.forEach { $0.disconnect() }
