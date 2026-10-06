@@ -183,12 +183,37 @@ struct iPadSidebarView: View {
         configService.allAccountNpubs.count > 1
     }
 
+    @AppStorage(FeedMode.menuOrderKey) private var feedMenuOrder = ""
+    @AppStorage(FeedMode.menuHiddenKey) private var feedMenuHidden = ""
+    private var menuModes: [FeedMode] { FeedMode.menuModes(order: feedMenuOrder, hidden: feedMenuHidden) }
+
+    /// A sidebar row: one of the feeds (all of which show in the Feed tab),
+    /// or one of the other tabs.
+    private enum SidebarItem: Hashable {
+        case feed(FeedMode)
+        case tab(Int)
+    }
+
+    private var sidebarSelection: Binding<SidebarItem?> {
+        Binding(
+            get: { selectedTab == 0 ? .feed(feedService.feedMode) : .tab(selectedTab) },
+            set: { item in
+                switch item {
+                case .feed(let mode):
+                    selectedTab = 0
+                    feedService.switchMode(mode)
+                case .tab(let tab):
+                    selectedTab = tab
+                case nil:
+                    break
+                }
+            }
+        )
+    }
+
     var body: some View {
         NavigationSplitView {
-            List(selection: Binding(
-                get: { selectedTab },
-                set: { if let val = $0 { selectedTab = val } }
-            )) {
+            List(selection: sidebarSelection) {
                 // Account switcher section
                 Section {
                     Button {
@@ -233,15 +258,22 @@ struct iPadSidebarView: View {
                     .buttonStyle(.plain)
                 }
 
-                // Navigation tabs
-                Section {
-                    NavigationLink(value: 0) {
-                        Label("Feed", systemImage: "person.2.wave.2")
+                // Each feed is its own row, in the reader's feed-menu order,
+                // so the current feed shows here and switching is one tap.
+                Section("Feeds") {
+                    ForEach(menuModes, id: \.self) { mode in
+                        NavigationLink(value: SidebarItem.feed(mode)) {
+                            Label(mode.displayName, systemImage: mode.symbolName)
+                        }
                     }
-                    NavigationLink(value: 1) {
+                }
+
+                // Navigation tabs, headed so they read apart from the feeds.
+                Section("Vault") {
+                    NavigationLink(value: SidebarItem.tab(1)) {
                         Label("Search", systemImage: "magnifyingglass")
                     }
-                    NavigationLink(value: 2) {
+                    NavigationLink(value: SidebarItem.tab(2)) {
                         HStack {
                             Label("Profile", systemImage: "person.crop.circle")
                             Spacer()
@@ -252,10 +284,12 @@ struct iPadSidebarView: View {
                             }
                         }
                     }
-                    NavigationLink(value: 3) {
-                        Label("Media", systemImage: "photo.on.rectangle")
+                    // "My Media" with its own icon: the Media feed above is a
+                    // different thing (other people's posts, not your files).
+                    NavigationLink(value: SidebarItem.tab(3)) {
+                        Label("My Media", systemImage: "photo.stack")
                     }
-                    NavigationLink(value: 4) {
+                    NavigationLink(value: SidebarItem.tab(4)) {
                         HStack {
                             Label("Relay", systemImage: "doc.text.image")
                             Spacer()
@@ -266,7 +300,7 @@ struct iPadSidebarView: View {
                             }
                         }
                     }
-                    NavigationLink(value: 5) {
+                    NavigationLink(value: SidebarItem.tab(5)) {
                         Label("Settings", systemImage: "gearshape")
                     }
                 }
