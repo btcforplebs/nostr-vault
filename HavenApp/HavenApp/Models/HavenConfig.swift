@@ -770,6 +770,14 @@ struct HavenConfig: Codable, Equatable {
         }
     }
 
+    /// The relay to name in a tag's relay hint for other clients: this relay
+    /// when the world can reach it, otherwise none. A loopback or home-network
+    /// address points every other client at itself, or at nothing.
+    var publicRelayHint: String {
+        guard !isLocal, !Self.isPrivateNetworkHost(sanitizedRelayURL) else { return "" }
+        return nostrURL
+    }
+
     /// Returns the appropriate Web/Blossom URL (https:// on iOS for Blossom, http:// on macOS)
     var webURL: String {
         if isLocal {

@@ -62,7 +62,8 @@ enum NotificationPolicy {
         var kinds: [Int] = []
         if mentionsOrReplies { kinds.append(contentsOf: [1, 1111]) }
         if dms { kinds.append(contentsOf: [4, 1059]) }
-        if reposts { kinds.append(6) }
+        // Kind 16 is the generic repost: an article, picture or anything but a text note.
+        if reposts { kinds.append(contentsOf: [6, 16]) }
         if reactions { kinds.append(7) }
         if zaps { kinds.append(9735) }
         return kinds.isEmpty ? [silentKind] : kinds.sorted()

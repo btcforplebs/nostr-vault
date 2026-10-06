@@ -227,6 +227,8 @@ class LocalNotificationService @Inject constructor(
         val allowed = when (type) {
             "mention" -> prefs.mentions
             "reply" -> prefs.replies
+            // A quote of your note is a mention of you, so the Mentions switch governs it.
+            "quote" -> prefs.mentions
             "dm", "giftwrap" -> prefs.dms
             "zap" -> prefs.zaps
             "reaction" -> prefs.reactions
@@ -338,6 +340,7 @@ class LocalNotificationService @Inject constructor(
         return when (type) {
             "mention" -> "$who mentioned you" to preview.ifBlank { "You were mentioned in a note" }
             "reply" -> "$who replied to your note" to preview.ifBlank { "Tap to view the reply" }
+            "quote" -> "$who quoted your note" to preview.ifBlank { "Tap to view the quote" }
             "dm", "giftwrap" -> {
                 val title = if (name != null) "Message from $who" else "New message"
                 title to preview.ifBlank { "You have a new encrypted message" }

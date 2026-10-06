@@ -47,7 +47,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             case 7:
                 NotificationCenter.default.post(name: .havenOpenRelayLikes, object: nil)
                 if let id = action.eventId { RelayFocus.request(type: "reaction", eventId: id) }
-            case 6:
+            case 6, 16:
                 NotificationCenter.default.post(name: .havenOpenRelayNotes, object: nil)
                 if let id = action.eventId { RelayFocus.request(type: "repost", eventId: id) }
             case 9735:

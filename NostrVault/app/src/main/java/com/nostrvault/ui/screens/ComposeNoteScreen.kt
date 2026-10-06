@@ -755,9 +755,11 @@ class ComposeNoteViewModel @Inject constructor(
                 var quoteSuffix: String? = null
                 val quotedId = quoteCitedId()
                 if (quotedId != null) {
-                    val relayHint = configStore.config.value.nostrURL ?: ""
+                    // No relay hint: this app's relay, embedded or external,
+                    // only ever runs on this phone (see normalizeExternalRelayURL),
+                    // and naming it would point every other client at itself.
                     val quotedPubkey = quoteTarget()?.pubkey ?: ""
-                    tags.add(listOf("q", quotedId, relayHint, quotedPubkey))
+                    tags.add(listOf("q", quotedId, "", quotedPubkey))
                     if (quotedPubkey.isNotEmpty() && tags.none { it.size >= 2 && it[0] == "p" && it[1] == quotedPubkey }) {
                         tags.add(listOf("p", quotedPubkey))
                     }

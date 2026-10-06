@@ -759,10 +759,10 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 		return inboxClassification{reason: rejectBlacklist}
 	}
 	if !wot.GetInstance().Has(ctx, trustKey) && ev.Kind != nostr.KindGiftWrap {
-		// Anyone may reply to the owner's own posts: a stranger answering you
-		// is news, where a stranger merely tagging you is the spam the WoT
-		// keeps out.
-		if !repliesToOwnerPost(ctx, ev) {
+		// Anyone may reply to or quote the owner's own posts: a stranger
+		// answering you is news, where a stranger merely tagging you is the
+		// spam the WoT keeps out.
+		if !engagesOwnerPost(ctx, ev) {
 			return inboxClassification{reason: rejectNotInWot}
 		}
 	}
@@ -785,45 +785,6 @@ func classifyInboxEvent(ctx context.Context, ev *nostr.Event) inboxClassificatio
 	return inboxClassification{reason: rejectNoWhitelistedPTag}
 }
 
-// repliesToOwnerPost reports whether ev is a text note or comment replying
-// to a post a whitelisted account wrote: one of its e/E tags names an event in
-// the outbox by that account. Any e tag counts (root, reply or unmarked), so a
-// reply deeper in the owner's thread qualifies too.
-func repliesToOwnerPost(ctx context.Context, ev *nostr.Event) bool {
-	if outboxDB == nil || (ev.Kind != nostr.KindTextNote && ev.Kind != nostr.KindComment) {
-		return false
-	}
-	var ids []string
-	for _, tag := range ev.Tags {
-		if len(tag) >= 2 && (tag[0] == "e" || tag[0] == "E") && nostr.IsValid32ByteHex(tag[1]) {
-			ids = append(ids, tag[1])
-		}
-	}
-	if len(ids) == 0 || len(config.WhitelistedPubKeys) == 0 {
-		return false
-	}
-	// A reply carries one or two e tags; dozens is not a reply.
-	if len(ids) > 10 {
-		return false
-	}
-	qctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	// The author is checked on each result, not in the filter: a lookup by
-	// IDs ignores the filter's Authors, which let a reply to anyone's post in
-	// the outbox through.
-	ch, err := outboxDB.QueryEvents(qctx, nostr.Filter{IDs: ids})
-	if err != nil {
-		return false
-	}
-	found := false
-	for parent := range ch {
-		if _, ok := config.WhitelistedPubKeys[parent.PubKey]; ok {
-			found = true
-		}
-	}
-	return found
-}
-
 // logInboxImport prints the human-readable import line for a stored inbox/chat
 // event. These exact phrases also drive the clients' relay-activity red dot.
 func logInboxImport(ev *nostr.Event) {
@@ -838,7 +799,7 @@ func logInboxImport(ev *nostr.Event) {
 		log.Println("🔒✉️ new encrypted message in your inbox")
 	case nostr.KindGiftWrap:
 		log.Println("🎁🔒️✉️ new gift-wrapped message in your chat relay")
-	case nostr.KindRepost:
+	case nostr.KindRepost, nostr.KindGenericRepost:
 		log.Println("🔁 new repost in your inbox")
 	case nostr.KindFollowList:
 		// do nothing
@@ -979,12 +940,13 @@ func emitInboxNotify(ev *nostr.Event, recipient string) {
 	var typ, preview string
 	switch ev.Kind {
 	case nostr.KindTextNote:
-		typ = "mention"
-		for _, tag := range ev.Tags {
-			if len(tag) >= 1 && tag[0] == "e" {
-				typ = "reply" // an "e" tag means this note replies to another
-				break
-			}
+		switch {
+		case isReplyNote(ev):
+			typ = "reply"
+		case quotesPostBy(context.Background(), ev, recipient):
+			typ = "quote"
+		default:
+			typ = "mention"
 		}
 		preview = sanitizeNotifyPreview(ev.Content)
 	case nostr.KindComment:
@@ -993,7 +955,7 @@ func emitInboxNotify(ev *nostr.Event, recipient string) {
 	case nostr.KindReaction:
 		typ = "reaction"
 		preview = sanitizeNotifyPreview(ev.Content)
-	case nostr.KindRepost:
+	case nostr.KindRepost, nostr.KindGenericRepost:
 		typ = "repost"
 	case nostr.KindZap:
 		typ = "zap"

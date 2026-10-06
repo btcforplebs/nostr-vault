@@ -120,3 +120,19 @@ final class DMInboxRelaysTests: XCTestCase {
                                                      published: ["wss://a", "wss://b"], publishedAt: 200), .none)
     }
 }
+
+final class PublicRelayHintTests: XCTestCase {
+    /// A quote's relay hint goes to everyone who reads the note, so a relay
+    /// only this device or this network can reach is left out.
+    func testOnlyAReachableRelayIsAHint() {
+        var config = HavenConfig()
+        config.relayURL = ""
+        XCTAssertEqual(config.publicRelayHint, "")
+        for address in ["127.0.0.1:3355", "localhost", "https://192.168.1.20", "https://mac.local", "100.68.246.56:3355"] {
+            config.relayURL = address
+            XCTAssertEqual(config.publicRelayHint, "", address)
+        }
+        config.relayURL = "https://vault.example.com/"
+        XCTAssertEqual(config.publicRelayHint, "wss://vault.example.com")
+    }
+}

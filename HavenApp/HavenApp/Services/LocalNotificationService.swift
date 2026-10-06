@@ -90,6 +90,8 @@ final class LocalNotificationService {
             switch type {
             case "mention":        return prefs.mentions
             case "reply":          return prefs.replies
+            // A quote of your note is a mention of you, so the Mentions switch governs it.
+            case "quote":          return prefs.mentions
             case "dm", "giftwrap": return prefs.dms
             case "zap":            return prefs.zaps
             // Zaps Only mode hard-disables reaction notifications regardless of the stored preference.
@@ -200,6 +202,9 @@ final class LocalNotificationService {
         case "reply":
             return ("\(who) replied to your note",
                     preview.isEmpty ? "Tap to view the reply" : preview)
+        case "quote":
+            return ("\(who) quoted your note",
+                    preview.isEmpty ? "Tap to view the quote" : preview)
         case "dm", "giftwrap":
             return (name != nil ? "Message from \(who)" : "New message",
                     preview.isEmpty ? "You have a new encrypted message" : preview)
@@ -246,6 +251,7 @@ final class LocalNotificationService {
         switch type {
         case "mention":        return ("at", Color.havenPurple)
         case "reply":          return ("arrowshape.turn.up.left.fill", Color.havenPurple)
+        case "quote":          return ("quote.bubble.fill", Color.havenPurple)
         case "dm", "giftwrap": return ("envelope.fill", Color.blue)
         case "zap":            return ("bolt.fill", Color.orange)
         case "reaction":       return ("heart.fill", Color.pink)
@@ -271,7 +277,7 @@ final class LocalNotificationService {
         // Mentions and replies used to open the thread sheet over the Feed tab
         // instead, and the others only picked a filter without finding the post.
         switch type {
-        case "mention", "reply", "repost":
+        case "mention", "reply", "quote", "repost":
             NotificationCenter.default.post(name: .havenOpenRelayNotes, object: nil)
             RelayFocus.request(type: type, eventId: id)
         case "reaction":
