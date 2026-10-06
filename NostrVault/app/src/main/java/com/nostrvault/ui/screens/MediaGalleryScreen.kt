@@ -86,6 +86,7 @@ class MediaGalleryViewModel @Inject constructor(
     val mediaCacheService: MediaCacheService,
     private val blossomService: BlossomService,
     private val notificationManager: NotificationManager,
+    blobNoteIndexStore: com.nostrvault.data.local.BlobNoteIndexStore,
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -113,6 +114,22 @@ class MediaGalleryViewModel @Inject constructor(
     fun refresh() {
         blossomService.forgetMirrorPresence()
         loadBlossomMedia()
+    }
+
+    /** hash → author of the note that posted the blob, where one has been seen. */
+    val blobAuthors = blobNoteIndexStore.authors
+
+    /** The pubkey a tile's Report Media / Block User acts on, or null to hide them. */
+    fun moderationTarget(sha256: String, authors: Map<String, String>): String? =
+        mediaModerationTarget(authors[sha256.lowercase()], nostrService.ownerHexPubkey, nostrService.activeHexPubkey)
+
+    /**
+     * NIP-56 report of a blob's author. A blob has no event to name, so it is
+     * a user report, as iOS's UGCReportingDialog sends with no event id. The
+     * caller also blocks, as reporting does everywhere else in the app.
+     */
+    fun reportAuthor(pubkey: String, reason: String, description: String) {
+        nostrService.reportUser(pubkey, reason, description.ifBlank { null })
     }
 
     /** Each Blossom server's answer per blob; the tile badges read this. */
@@ -494,6 +511,15 @@ data class BlossomMediaItem(
 
 data class MediaItem(val url: String, val noteId: String)
 
+/**
+ * Who Report Media / Block User on a tile act on: the author of the note the
+ * blob was posted in, when that is someone else. Null — the items hidden —
+ * when no note is known, or it is yours (owner or the account in use).
+ * iOS MediaGridItem: `item.pubkey != nostrService.activeHexPubkey`.
+ */
+internal fun mediaModerationTarget(author: String?, ownerHex: String, activeHex: String): String? =
+    author?.takeIf { it.isNotEmpty() && it != ownerHex && it != activeHex }
+
 /** Scope for a pending destructive delete in MediaViewerScreen. */
 enum class DeleteScope { MIRRORS, EVERYWHERE }
 
@@ -556,6 +582,9 @@ fun MediaGalleryScreen(
     }
     var contextMenuTarget by remember { mutableStateOf<Int?>(null) }
     var pendingDelete by remember { mutableStateOf<Pair<BlossomMediaItem, DeleteScope>?>(null) }
+    // Report Media / Block User from the long-press menu: the author's pubkey.
+    var reportTarget by remember { mutableStateOf<String?>(null) }
+    var blockTarget by remember { mutableStateOf<String?>(null) }
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -593,6 +622,7 @@ fun MediaGalleryScreen(
     // a state they cannot see and cannot predict. The index keeps every mapping
     // the feed has ever handed it, so the answer is a property of the blob.
     val noteIdByHash by feedService.blobNoteIndex.collectAsState()
+    val authorByHash by viewModel.blobAuthors.collectAsState()
     val mirrorPresence by viewModel.mirrorPresence.collectAsState()
     val blossomMirrors by viewModel.blossomMirrors.collectAsState()
     val busySha by viewModel.busySha.collectAsState()
@@ -874,6 +904,9 @@ fun MediaGalleryScreen(
                                 clipboardManager = clipboardManager,
                                 onSaveToPhotos = { mediaActions.saveToGallery(item) },
                                 onDelete = { scope -> pendingDelete = item to scope },
+                                moderationTarget = viewModel.moderationTarget(item.sha256, authorByHash),
+                                onReport = { reportTarget = it },
+                                onBlock = { blockTarget = it },
                             )
                         }
                     }
@@ -928,6 +961,9 @@ fun MediaGalleryScreen(
                                 clipboardManager = clipboardManager,
                                 onSaveToPhotos = { mediaActions.saveToGallery(item) },
                                 onDelete = { scope -> pendingDelete = item to scope },
+                                moderationTarget = viewModel.moderationTarget(item.sha256, authorByHash),
+                                onReport = { reportTarget = it },
+                                onBlock = { blockTarget = it },
                             )
                         }
                     }
@@ -947,6 +983,34 @@ fun MediaGalleryScreen(
                 }
             },
             onDismiss = { pendingDelete = null },
+        )
+    }
+
+    // Reporting also blocks the author, as on iOS and everywhere else in the app.
+    reportTarget?.let { pubkey ->
+        com.nostrvault.ui.components.UGCReportDialog(
+            onReport = { reason, description ->
+                reportTarget = null
+                viewModel.reportAuthor(pubkey, reason, description)
+                feedService.blockUser(pubkey)
+            },
+            onDismiss = { reportTarget = null },
+        )
+    }
+    blockTarget?.let { pubkey ->
+        AlertDialog(
+            onDismissRequest = { blockTarget = null },
+            title = { Text("Block User") },
+            text = { Text("Block this user? Their posts will be hidden from your feed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    blockTarget = null
+                    feedService.blockUser(pubkey)
+                }) { Text("Block", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { blockTarget = null }) { Text("Cancel") }
+            },
         )
     }
 }
@@ -984,6 +1048,9 @@ private fun MediaGridCell(
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
     onSaveToPhotos: () -> Unit,
     onDelete: (DeleteScope) -> Unit,
+    moderationTarget: String?,
+    onReport: (String) -> Unit,
+    onBlock: (String) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -1056,6 +1123,9 @@ private fun MediaGridCell(
             clipboardManager = clipboardManager,
             onSaveToPhotos = onSaveToPhotos,
             onDelete = onDelete,
+            moderationTarget = moderationTarget,
+            onReport = onReport,
+            onBlock = onBlock,
         )
     }
 }
@@ -1077,6 +1147,9 @@ private fun MediaListRow(
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
     onSaveToPhotos: () -> Unit,
     onDelete: (DeleteScope) -> Unit,
+    moderationTarget: String?,
+    onReport: (String) -> Unit,
+    onBlock: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val colors = LocalNostrVaultColors.current
@@ -1191,6 +1264,9 @@ private fun MediaListRow(
             clipboardManager = clipboardManager,
             onSaveToPhotos = onSaveToPhotos,
             onDelete = onDelete,
+            moderationTarget = moderationTarget,
+            onReport = onReport,
+            onBlock = onBlock,
         )
     }
 }
@@ -1208,6 +1284,10 @@ private fun MediaItemContextMenu(
     clipboardManager: androidx.compose.ui.platform.ClipboardManager,
     onSaveToPhotos: () -> Unit,
     onDelete: (DeleteScope) -> Unit,
+    /** Someone else's media: offer Report Media and Block User on them. */
+    moderationTarget: String?,
+    onReport: (String) -> Unit,
+    onBlock: (String) -> Unit,
 ) {
     val is404 = remember(item.displayUrl) { mediaCacheService.isKnown404(item.displayUrl) }
 
@@ -1316,6 +1396,30 @@ private fun MediaItemContextMenu(
                 onDismiss()
             },
         )
+        // Last, as on iOS: only for media someone else posted.
+        if (moderationTarget != null) {
+            DropdownMenuItem(
+                text = { Text("Report Media", color = ErrorRed) },
+                leadingIcon = {
+                    Icon(NostrVaultIcons.Flag, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    onReport(moderationTarget)
+                },
+            )
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Block User", color = ErrorRed) },
+                leadingIcon = {
+                    Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+                },
+                onClick = {
+                    onDismiss()
+                    onBlock(moderationTarget)
+                },
+            )
+        }
     }
 }
 

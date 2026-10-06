@@ -9,9 +9,9 @@ import java.util.Date
 private const val HASH_A = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 private const val HASH_B = "0f9e8d7c6b5a49382716f5e4d3c2b1a00f9e8d7c6b5a49382716f5e4d3c2b1a0"
 
-private fun note(id: String, at: Long, media: List<String>) = FeedNote(
+private fun note(id: String, at: Long, media: List<String>, pubkey: String = "pub") = FeedNote(
     id = id,
-    pubkey = "pub",
+    pubkey = pubkey,
     content = "",
     createdAt = Date(at),
     tags = emptyList(),
@@ -94,5 +94,17 @@ class BlobNoteIndexTest {
             emptyMap<String, String>(),
             noteIdsByBlobHash(listOf(note("n1", 1L, listOf("https://example.com/cat.gif")))),
         )
+    }
+
+    @Test
+    fun `the author comes from the same note the id does`() {
+        // Report Media / Block User act on this pubkey, so a later quote by
+        // someone else must not move the blame onto them.
+        val original = note("orig", 1000L, listOf("https://b/$HASH_A"), pubkey = "alice")
+        val quote = note("quote", 5000L, listOf("https://b/$HASH_A"), pubkey = "bob")
+        val picked = oldestNoteByBlobHash(listOf(quote, original))
+        assertEquals("orig", picked[HASH_A]?.id)
+        assertEquals("alice", picked[HASH_A]?.pubkey)
+        assertEquals(noteIdsByBlobHash(listOf(quote, original)), picked.mapValues { it.value.id })
     }
 }
