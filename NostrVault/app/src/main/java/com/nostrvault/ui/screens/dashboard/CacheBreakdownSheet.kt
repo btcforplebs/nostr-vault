@@ -24,7 +24,7 @@ private val OtherCacheColor = Color(0xFF64D2FF)
 fun CacheBreakdownSheet(
     statsService: StatsService,
     cacheDir: String?,
-    cacheTTLDays: Int = 7,
+    cacheTTLDays: Int = 3,
     onDismiss: () -> Unit,
 ) {
     val colors = LocalNostrVaultColors.current

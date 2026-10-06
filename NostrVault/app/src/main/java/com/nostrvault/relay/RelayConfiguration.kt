@@ -427,7 +427,7 @@ data class HavenConfig(
 
     // Advanced / media (client-side; not sent to the Go relay)
     val disableMediaCache: Boolean = false,
-    val cacheTTLDays: Int = 7, // 0 = never evict
+    val cacheTTLDays: Int = 3, // 0 = never evict
     val autoStartRelay: Boolean = true,
 
     // External relay (Android only). Some users keep the client and their
