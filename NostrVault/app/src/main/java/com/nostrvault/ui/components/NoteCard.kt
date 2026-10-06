@@ -64,6 +64,7 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.poll
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
@@ -557,6 +558,7 @@ fun NoteCard(
             // quotes, links and media run the card's full width under the
             // avatar row, in every view (iOS #286, Logen: the most room).
             val isArticle = note.kind == ArticleMeta.KIND
+            val poll = remember(note.id, note.kind) { note.poll }
             if (repostPlaceholder != null) {
                 RepostPlaceholderLine(repostPlaceholder)
             } else if (isArticle) {
@@ -567,6 +569,11 @@ fun NoteCard(
                     note = note,
                     onClick = { (onArticleClick ?: onNoteClick)(note.id) },
                 )
+            } else if (poll != null) {
+                // A NIP-88 poll's question is its content and its options are
+                // tags, so the text path drew the question with nothing to
+                // vote on.
+                PollCard(poll = poll, isFocused = isFocused)
             } else if (note.content.isNotBlank()) {
                 val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
                 val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
