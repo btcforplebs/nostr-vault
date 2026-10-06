@@ -57,7 +57,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let host = UIHostingController(rootView: ZStack {
             ZapFlightStage()
             AppBannerStack()
+            ReactionTapbackLayer()
         })
+        // While the tapback bar waits for a tap, this window takes every
+        // touch, so a tap anywhere else closes the bar instead of reaching
+        // the post underneath.
+        ReactionTapback.shared.onModalChange = { modal in
+            BannerHitRegions.frames["tapback"] = modal ? CGRect(x: -1e6, y: -1e6, width: 2e6, height: 2e6) : nil
+        }
         host.view.backgroundColor = .clear
         banners.rootViewController = host
         banners.isHidden = false

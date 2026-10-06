@@ -112,6 +112,7 @@ enum ProfileRepository {
         let name = metadata["name"] as? String
         let displayName = metadata["display_name"] as? String
         let picture = (metadata["picture"] as? String).flatMap { URL(string: $0) }
+        let banner = (metadata["banner"] as? String).flatMap { URL(string: $0) }
         let nip05 = metadata["nip05"] as? String
         let about = metadata["about"] as? String
         let lud16 = metadata["lud16"] as? String
@@ -124,6 +125,7 @@ enum ProfileRepository {
         if profile.name != name { profile.name = name; changed = true }
         if profile.displayName != displayName { profile.displayName = displayName; changed = true }
         if profile.pictureURL != picture { profile.pictureURL = picture; changed = true }
+        if profile.bannerURL != banner { profile.bannerURL = banner; changed = true }
         if profile.nip05 != nip05 { profile.nip05 = nip05; changed = true }
         if profile.about != about { profile.about = about; changed = true }
         if profile.lud16 != lud16 { profile.lud16 = lud16; changed = true }
