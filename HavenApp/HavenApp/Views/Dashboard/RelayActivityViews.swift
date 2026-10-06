@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import UniformTypeIdentifiers
 
 // The dashboard's console in plain language, built on `PlainLog`.
@@ -9,8 +10,49 @@ import UniformTypeIdentifiers
 // Export only ever hand out `PlainLog.exportText`, which is built from the
 // translated items and scrubbed of keys, ids, IPs and paths.
 //
-// Each view observes `LogStore` itself so log traffic redraws the console and
-// nothing else on the dashboard.
+// The views observe one shared `RelayActivityModel`, which summarizes the log
+// off the main thread when it changes, so log traffic redraws the console and
+// nothing else on the dashboard, and `body` never re-runs PlainLog.
+
+// MARK: - Model
+
+/// `PlainLog.summarize` over the whole log, cached. Recomputed off the main
+/// thread only when `LogStore.logs` changes (at most once a second, its flush
+/// rate), and shared by the card, the wide console and the window so having
+/// the window open doesn't double the work.
+@MainActor
+final class RelayActivityModel: ObservableObject {
+    @Published private(set) var items: [PlainLog.Item] = []
+    @Published private(set) var health: PlainLog.Severity = .good
+
+    private var cancellable: AnyCancellable?
+    private static var shared: [ObjectIdentifier: RelayActivityModel] = [:]
+
+    /// One model per log store. The app has a single `LogStore`, so this is
+    /// effectively a singleton that lives as long as the relay manager.
+    static func shared(for store: LogStore) -> RelayActivityModel {
+        let key = ObjectIdentifier(store)
+        if let model = shared[key] { return model }
+        let model = RelayActivityModel(store: store)
+        shared[key] = model
+        return model
+    }
+
+    private init(store: LogStore) {
+        cancellable = store.$logs
+            .receive(on: DispatchQueue.global(qos: .utility))
+            .map { logs -> ([PlainLog.Item], PlainLog.Severity) in
+                let items = PlainLog.summarize(logs)
+                return (items, PlainLog.health(items))
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] items, health in
+                guard let self else { return }
+                if self.items != items { self.items = items }
+                if self.health != health { self.health = health }
+            }
+    }
+}
 
 // MARK: - Shared pieces
 
@@ -151,7 +193,7 @@ struct RelayActivityShareButtons: View {
             // doesn't present reliably on iOS. The file is written only when
             // the user picks a destination.
             ShareLink(
-                item: RelayReportFile(text: RelayActivityReport.text(items)),
+                item: RelayReportFile(items: items, header: RelayActivityReport.header),
                 preview: SharePreview("Relay report")
             ) {
                 label("Export", systemImage: "square.and.arrow.up")
@@ -203,16 +245,22 @@ struct RelayActivityShareButtons: View {
     #endif
 }
 
-/// The report as a .txt for the share sheet, written to a temp file only
-/// when the user picks where it goes.
+/// The report as a .txt for the share sheet. The text is built and the file
+/// written only when the user picks where it goes, into a folder that is
+/// emptied each time, so at most one report is ever left in tmp.
 struct RelayReportFile: Transferable {
-    let text: String
+    let items: [PlainLog.Item]
+    let header: [String]
 
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .plainText) { report in
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent(RelayActivityReport.fileName())
-            try report.text.write(to: url, atomically: true, encoding: .utf8)
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("RelayReports", isDirectory: true)
+            try? FileManager.default.removeItem(at: dir)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(RelayActivityReport.fileName())
+            try PlainLog.exportText(report.items, header: report.header)
+                .write(to: url, atomically: true, encoding: .utf8)
             return SentTransferredFile(url)
         }
     }
@@ -221,7 +269,7 @@ struct RelayReportFile: Transferable {
 /// The text Copy and Export hand out: app version and OS on top, then the
 /// scrubbed plain items. Nothing about the user's identity or network.
 enum RelayActivityReport {
-    static func text(_ items: [PlainLog.Item]) -> String {
+    @MainActor static func text(_ items: [PlainLog.Item]) -> String {
         PlainLog.exportText(items, header: header)
     }
 
@@ -232,7 +280,7 @@ enum RelayActivityReport {
         return "nostr-vault-relay-report-\(f.string(from: now)).txt"
     }
 
-    private static var header: [String] {
+    @MainActor static var header: [String] {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
@@ -307,13 +355,18 @@ private struct RelayActivityList: View {
 /// The compact console on the dashboard: status pill, the latest few items,
 /// and "View All" into the window.
 struct RelayActivityCard: View {
-    @ObservedObject var logStore: LogStore
+    @ObservedObject private var model: RelayActivityModel
     let onViewAll: () -> Void
 
+    init(logStore: LogStore, onViewAll: @escaping () -> Void) {
+        model = .shared(for: logStore)
+        self.onViewAll = onViewAll
+    }
+
     var body: some View {
-        let items = PlainLog.summarize(logStore.logs)
+        let items = model.items
         VStack(alignment: .leading, spacing: 0) {
-            RelayConsoleHeader(title: "RELAY ACTIVITY", health: PlainLog.health(items)) {
+            RelayConsoleHeader(title: "RELAY ACTIVITY", health: model.health) {
                 Button(action: onViewAll) {
                     Text("View All")
                         .font(.appSystem(size: 10, weight: .semibold))
@@ -349,12 +402,19 @@ struct RelayActivityCard: View {
 /// The full-height console in the wide macOS layout. Same content as the
 /// window, with Copy/Export in the header.
 struct RelayActivityPanel: View {
-    @ObservedObject var logStore: LogStore
+    let logStore: LogStore
+    @ObservedObject private var model: RelayActivityModel
+    @State private var showingRawLogs = false
+
+    init(logStore: LogStore) {
+        self.logStore = logStore
+        model = .shared(for: logStore)
+    }
 
     var body: some View {
-        let items = PlainLog.summarize(logStore.logs)
+        let items = model.items
         VStack(alignment: .leading, spacing: 0) {
-            RelayConsoleHeader(title: "RELAY ACTIVITY", health: PlainLog.health(items)) {
+            RelayConsoleHeader(title: "RELAY ACTIVITY", health: model.health) {
                 RelayActivityShareButtons(items: items, iconOnly: true)
                     .disabled(items.isEmpty)
             }
@@ -368,7 +428,19 @@ struct RelayActivityPanel: View {
                     .frame(maxHeight: .infinity)
             }
 
-            RelayPrivacyFooter()
+            HStack {
+                RelayPrivacyFooter(padded: false)
+                Spacer(minLength: 8)
+                Button { showingRawLogs = true } label: {
+                    Text("Open full logs")
+                        .font(.appSystem(size: 12, weight: .semibold))
+                        .foregroundColor(.havenPurple)
+                }
+                .buttonStyle(.plain)
+                .help("The raw relay log, for troubleshooting")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.platformTertiaryGroupedBackground)
@@ -377,6 +449,19 @@ struct RelayActivityPanel: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.havenOnline.opacity(0.12), lineWidth: 1)
         )
+        .sheet(isPresented: $showingRawLogs) {
+            NavigationStack {
+                LogsView(logStore: logStore)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showingRawLogs = false }
+                        }
+                    }
+            }
+            #if os(macOS)
+            .frame(minWidth: 600, idealWidth: 700, minHeight: 400, idealHeight: 500)
+            #endif
+        }
     }
 }
 
@@ -385,14 +470,21 @@ struct RelayActivityPanel: View {
 /// "View All": the whole plain log with a status banner, a Problems filter,
 /// Copy/Export, and a way through to the raw log for power users.
 struct RelayActivityWindow: View {
-    @ObservedObject var logStore: LogStore
+    let logStore: LogStore
+    @ObservedObject private var model: RelayActivityModel
     let onDone: () -> Void
 
     @State private var issuesOnly = false
 
+    init(logStore: LogStore, onDone: @escaping () -> Void) {
+        self.logStore = logStore
+        model = .shared(for: logStore)
+        self.onDone = onDone
+    }
+
     var body: some View {
-        let items = PlainLog.summarize(logStore.logs)
-        let health = PlainLog.health(items)
+        let items = model.items
+        let health = model.health
         let shown = issuesOnly ? items.filter { $0.severity != .good } : items
 
         VStack(spacing: 0) {
