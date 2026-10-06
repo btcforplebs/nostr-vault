@@ -166,13 +166,13 @@ struct FeedThreadCard: View {
     }
 
     private func contentOverride(for note: FeedNote, original: FeedNote?) -> String? {
-        if let original { return original.kind == 30023 ? original.longFormDisplayTitle : original.content }
+        if let original { return original.condensedTitle ?? original.content }
         if note.kind == 6 && note.content.isEmpty, let refId = note.repostedEventId {
             return FeedService.shared.unavailableNoteIds.contains(refId)
                 ? String(localized: "feed.note.repostUnavailable", defaultValue: "The reposted note is unavailable")
                 : String(localized: "feed.note.loadingRepost")
         }
-        return note.kind == 30023 ? note.longFormDisplayTitle : nil
+        return note.condensedTitle
     }
 
     /// The first tap opens a line in place; with no row data to expand into,

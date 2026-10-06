@@ -3308,7 +3308,7 @@ struct FeedNoteRow: View {
     /// title, or the original note behind a bare repost.
     private var compactContentOverride: String? {
         if note.kind == 6 && note.content.isEmpty, let original = rowData.resolvedOriginal {
-            return original.content
+            return original.condensedTitle ?? original.content
         }
         // A bare repost still waiting on its original said nothing at all.
         if repostedNoteIsUnavailable {
@@ -3316,9 +3316,9 @@ struct FeedNoteRow: View {
         }
         if isWaitingForRepostedNote { return String(localized: "feed.note.loadingRepost") }
         // An article's three compact lines are worth far more spent on its
-        // title than on the first three lines of markdown.
-        if note.kind == 30023 { return note.longFormDisplayTitle }
-        return nil
+        // title than on the first three lines of markdown; a poll's on its
+        // question.
+        return note.condensedTitle
     }
 
     // MARK: - Full Layout
@@ -3719,6 +3719,11 @@ struct FeedNoteRow: View {
             // title lives in a tag and its body is markdown, so the plain-text
             // path below drew the whole article raw and untitled.
             ArticleInlineBody(note: bodySource, isFocused: isFocused)
+        } else if let poll = bodySource.poll {
+            // A NIP-88 poll's question is its content and its options are
+            // tags, so the plain-text path drew the question with nothing
+            // to vote on.
+            PollCardView(poll: poll, isFocused: isFocused)
         } else {
             let formattedContent = NostrContentFormatter.format(bodySource.content, mediaURLs: bodySource.mediaURLs + LinkCards.shown(bodySource.linkURLs))
             VStack(alignment: .leading, spacing: 8) {
