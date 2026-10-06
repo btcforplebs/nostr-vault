@@ -71,6 +71,10 @@ struct ContentView: View {
                 }
             }
         }
+        // Every scroll view in the app, not just the Feed's: under a top bar
+        // whose items draw their own glass, iOS 26 otherwise picks the hard
+        // edge, a solid black band with a cut line.
+        .softTopScrollEdge()
         .onAppear {
             DMService.shared.startListening()
             // Auto-connect NIP-46 remote signer if configured
