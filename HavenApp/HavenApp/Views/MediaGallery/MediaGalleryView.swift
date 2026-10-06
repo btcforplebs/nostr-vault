@@ -5,6 +5,7 @@ import PhotosUI
 import UniformTypeIdentifiers
 #if os(iOS)
 import Photos
+import UserNotifications
 #endif
 
 struct MediaGalleryView: View {
@@ -183,6 +184,7 @@ struct MediaGalleryView: View {
         }
         .modifier(mediaChangeHandlers)
         .modifier(MagicPasteFromWidget { handlePasteFromClipboard() })
+        .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { handleUploadFileURLs($0) })
         .onReceive(NotificationCenter.default.publisher(for: .openBlossomDashboard)) { _ in
             showingBlossomMediaList = true
         }
@@ -314,6 +316,7 @@ struct MediaGalleryView: View {
         }
         .modifier(mediaChangeHandlers)
         .modifier(MagicPasteFromWidget { handlePasteFromClipboard() })
+        .modifier(ShareInboxImport(isRelayReady: relayManager.isRunning && !relayManager.isBooting) { handleUploadFileURLs($0) })
         .modifier(mediaSheetsAndPickers)
     }
 
@@ -488,6 +491,59 @@ struct MagicPasteFromWidget: ViewModifier {
             paste()
         }
     }
+}
+
+// MARK: - Share sheet inbox
+
+/// Uploads what the share extension dropped in the App Group inbox: when the
+/// gallery appears, when a "ready to upload" notification or the app opening
+/// asks for it, and once the device relay is up (a cold launch from the
+/// notification lands here before the relay can take an upload).
+struct ShareInboxImport: ViewModifier {
+    let isRelayReady: Bool
+    let upload: ([URL]) -> Void
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content
+            .onAppear { importIfReady() }
+            .onChange(of: isRelayReady) { _, _ in importIfReady() }
+            .onReceive(NotificationCenter.default.publisher(for: .havenImportShareInbox)) { _ in
+                importIfReady()
+            }
+        #else
+        content
+        #endif
+    }
+
+    #if os(iOS)
+    private func importIfReady() {
+        guard isRelayReady, NVShareInbox.hasPending else { return }
+        let claimedDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nv-share-claimed", isDirectory: true)
+        removeStaleClaims(in: claimedDir)
+        let urls = NVShareInbox.claimAll(into: claimedDir)
+        guard !urls.isEmpty else { return }
+        upload(urls)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(
+            withIdentifiers: [NVShareInbox.notificationID]
+        )
+    }
+
+    /// `handleUploadFileURLs` copies each file before it uploads and cannot
+    /// say when it is done, so claimed files are cleared on the next import
+    /// once they are an hour old rather than straight away.
+    private func removeStaleClaims(in dir: URL) {
+        let cutoff = Date().addingTimeInterval(-3600)
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+        for file in files {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if modified < cutoff { try? FileManager.default.removeItem(at: file) }
+        }
+    }
+    #endif
 }
 
 // MARK: - MediaGalleryChangeHandlers

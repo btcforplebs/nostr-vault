@@ -145,6 +145,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // scene activation fires more often than the data meaningfully changes.
         Task { @MainActor in NVWidgetBridge.publish() }
 
+        // Something was shared to Nostr Vault while it was in the background:
+        // opening the app finishes the upload, notification tapped or not.
+        // Claiming the inbox is atomic, so a notification tap that also routes
+        // here cannot upload a file twice.
+        if NVShareInbox.hasPending {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                NVDeepLinkRouter.handle(NVDeepLink.shareInbox.url)
+            }
+        }
+
         // Show the in-app banner (not a system push) for relay activity while visible.
         LocalNotificationService.shared.appInForeground = true
 

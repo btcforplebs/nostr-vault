@@ -302,6 +302,18 @@ extension MediaGalleryView {
             var success = false
             var notificationId: UUID? = nil
 
+            // SCENARIO 0: a video. Checked first because an app that copies a
+            // clip may put a still frame next to it, and the image branch
+            // would upload that frame instead. Handed to the file upload,
+            // which streams from disk and shows the usual progress.
+            if let video = await PlatformClipboard.copyVideoToTemporaryFile() {
+                await MainActor.run {
+                    isPastingContent = false
+                    handleUploadFileURLs([video])
+                }
+                return
+            }
+
             // SCENARIO 1: Check for image data first (higher priority)
             if PlatformClipboard.hasImage(), let imageData = PlatformClipboard.getImageData() {
                 // Detect actual image format from magic bytes
