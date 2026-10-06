@@ -118,6 +118,14 @@ class FeedService: ObservableObject {
     @Published var newNoteCount: Int = 0
     @Published var pendingNotes: [FeedNote] = []
     @Published var likedEventIds: Set<String> = []
+    /// The emoji (and kind-7 event) behind each entry of `likedEventIds`.
+    @Published var myReactions: [String: EngagementTracker.MyReaction] = [:]
+    /// Reactions this account deleted; see `InteractionState.retractedReactionIds`.
+    var retractedReactionIds: Set<String> = []
+    /// Per note, the reaction currently being signed. A tap that changes or
+    /// removes it before signing ends replaces the token, and the stale
+    /// reaction is then never published.
+    var pendingReactionTokens: [String: UUID] = [:]
     @Published var repostedEventIds: Set<String> = []
     @Published var zappedEventIds: [String: Int] = [:]
     /// Per-note engagement counts (replies, reactions, reposts) from relay data.
@@ -989,6 +997,10 @@ class FeedService: ObservableObject {
         noteStats = snap.noteStats
         likedEventIds = snap.likedEventIds
         zappedEventIds = snap.zappedEventIds
+        // Which emoji went with each like lives only in the account's file.
+        let saved = EngagementTracker.loadInteractionState(forKey: key)
+        myReactions = saved.myReactions
+        retractedReactionIds = saved.retractedReactionIds
         contactListContent = snap.contactListContent
         contactListPTags = snap.contactListPTags
         lastFetchedContactCount = snap.lastFetchedContactCount
@@ -1024,6 +1036,8 @@ class FeedService: ObservableObject {
         resetFeedThreadReplies()
         isLoadingPopular = false
         likedEventIds.removeAll()
+        myReactions.removeAll()
+        retractedReactionIds.removeAll()
         zappedEventIds.removeAll()
         contactListContent = ""
         contactListPTags.removeAll()
@@ -1203,6 +1217,10 @@ class FeedService: ObservableObject {
 
         // 1. Stash the just-rendered state under the previous npub.
         captureSnapshot(forKey: previousKey)
+        // Write its likes now: a throttled save still waiting would run under
+        // the new account's key. Reactions still being signed are dropped.
+        writeInteractionState()
+        pendingReactionTokens.removeAll()
 
         // 2. Only disconnect feed clients if we need a full refresh (no snapshot available).
         // This prevents unnecessary relay disconnections when switching between accounts
@@ -1329,19 +1347,45 @@ class FeedService: ObservableObject {
         let result = EngagementTracker.loadInteractionState(forKey: key)
         self.likedEventIds = result.likedEventIds
         self.zappedEventIds = result.zappedEventIds
+        self.myReactions = result.myReactions
+        self.retractedReactionIds = result.retractedReactionIds
         #if DEBUG
         print("FeedService: Loaded \(result.likedEventIds.count) likes, \(result.zappedEventIds.count) zaps for account \(key.prefix(8))")
         #endif
     }
 
+    private var interactionSaveScheduled = false
+
     func saveInteractionState() {
-        // Throttle saves to at most once per 2 seconds
+        // Throttle saves to at most once per 2 seconds. A save inside the
+        // window runs at its end instead of being dropped: dropping one lost
+        // the newest like (or removal) whenever two came within 2 seconds.
         let now = Date()
-        guard now.timeIntervalSince(interactionSaveThrottle) > 2.0 else { return }
+        let wait = 2.0 - now.timeIntervalSince(interactionSaveThrottle)
+        guard wait <= 0 else {
+            guard !interactionSaveScheduled else { return }
+            interactionSaveScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait + 0.05) { [weak self] in
+                guard let self else { return }
+                self.interactionSaveScheduled = false
+                self.saveInteractionState()
+            }
+            return
+        }
         interactionSaveThrottle = now
+        writeInteractionState()
+    }
+
+    /// Saves the current account's interaction state now, unthrottled.
+    private func writeInteractionState() {
         EngagementTracker.saveInteractionState(
-            likedEventIds: likedEventIds,
-            zappedEventIds: zappedEventIds,
+            EngagementTracker.InteractionState(
+                likedEventIds: likedEventIds,
+                zappedEventIds: zappedEventIds,
+                myReactions: myReactions,
+                retractedReactionIds: retractedReactionIds,
+                account: loadedSnapshotNpub
+            ),
             forKey: loadedSnapshotNpub
         )
     }
@@ -3533,13 +3577,14 @@ class FeedService: ObservableObject {
         if kind == 7 {
             if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
                 let acc = self.bgAccumulator
-                let reactorPubkey = pubkey
-                let eventId = id
+                let reaction = EngagementTracker.ReactionEvent(
+                    targetId: targetId, pubkey: pubkey, eventId: id,
+                    content: ev["content"] as? String ?? "")
                 processingQueue.async { [weak self] in
                     // Deduplicate reactions from multiple relays
-                    guard !acc.seenEngagementIds.contains(eventId) else { return }
-                    acc.seenEngagementIds.insert(eventId)
-                    acc.reactionEvents.append((targetId: targetId, pubkey: reactorPubkey))
+                    guard !acc.seenEngagementIds.contains(reaction.eventId) else { return }
+                    acc.seenEngagementIds.insert(reaction.eventId)
+                    acc.reactionEvents.append(reaction)
                     self?.scheduleBackgroundFlush()
                 }
             }
@@ -3730,11 +3775,20 @@ class FeedService: ObservableObject {
             let ownerHex = NostrService.shared.activeHexPubkey
 
             // Self-likes: reactions authored by the owner
-            let selfLikes = EngagementTracker.detectSelfLikes(reactions: snap.reactionEvents, ownerHex: ownerHex)
-            if !selfLikes.isEmpty {
+            let selfReactions = EngagementTracker.detectSelfReactions(
+                reactions: snap.reactionEvents, ownerHex: ownerHex, retracted: retractedReactionIds)
+            if !selfReactions.isEmpty {
                 let before = likedEventIds.count
-                likedEventIds.formUnion(selfLikes)
-                if likedEventIds.count > before {
+                likedEventIds.formUnion(selfReactions.keys)
+                var changed = likedEventIds.count > before
+                // Only fills in notes with no known reaction. One made here
+                // (signed, or still signing) is the one to show and to delete
+                // on removal; an older echo of a replaced one must not win.
+                for (noteId, rx) in selfReactions where myReactions[noteId] == nil {
+                    myReactions[noteId] = rx
+                    changed = true
+                }
+                if changed {
                     saveInteractionState()
                 }
             }
@@ -3743,7 +3797,8 @@ class FeedService: ObservableObject {
             noteStats = EngagementTracker.mergeEngagementCounts(
                 reactions: snap.reactionEvents,
                 repostTargets: snap.repostTargets,
-                currentStats: noteStats
+                currentStats: noteStats,
+                retracted: retractedReactionIds
             )
         }
 

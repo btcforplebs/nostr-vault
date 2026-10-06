@@ -5,6 +5,8 @@ struct FeedProfile: Codable, Identifiable, Equatable {
     var name: String?
     var displayName: String?
     var pictureURL: URL?
+    /// The wide header image (kind-0 `banner`).
+    var bannerURL: URL?
     var nip05: String?
     var lud16: String?
     var lud06: String? // Raw bech32-encoded LNURL (LUD-06 fallback)

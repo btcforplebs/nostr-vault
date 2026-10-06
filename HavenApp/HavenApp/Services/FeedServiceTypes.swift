@@ -324,9 +324,9 @@ extension FeedNote: ThreadGroupable {
 final class BackgroundAccumulator: @unchecked Sendable {
     var notes: [FeedNote] = []
     var profiles: [String] = []
-    /// Reaction events: (target note ID, reactor pubkey). Used for both self-like
-    /// detection and per-note reaction counting.
-    var reactionEvents: [(targetId: String, pubkey: String)] = []
+    /// Reaction events. Used for both self-like detection and per-note
+    /// reaction counting.
+    var reactionEvents: [EngagementTracker.ReactionEvent] = []
     /// Note IDs that were reposted (from kind 6 events).
     var repostTargets: [String] = []
     /// Raw event JSON strings for NIP-18 repost embedding (id → stringified JSON with sig).
@@ -387,7 +387,7 @@ final class BackgroundAccumulator: @unchecked Sendable {
     struct Snapshot {
         let notes: [FeedNote]
         let profiles: [String]
-        let reactionEvents: [(targetId: String, pubkey: String)]
+        let reactionEvents: [EngagementTracker.ReactionEvent]
         let repostTargets: [String]
         let rawEventEntries: [(id: String, json: String)]
     }
