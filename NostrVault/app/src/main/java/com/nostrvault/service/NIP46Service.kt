@@ -58,8 +58,11 @@ object NIP46Service {
     @Volatile internal var activeSignerKey: String? = null
         private set
 
-    /** Kinds signed because the person did something (iOS `userActionKinds`). */
-    val userActionKinds: Set<Int> = setOf(0, 1, 3, 5, 6, 7, 9, 13, 16, 20, 21, 22, 1111, 1984, 9734, 30023)
+    /**
+     * Kinds signed because the person did something (iOS `userActionKinds`).
+     * 10015 is the hashtag Follow button: a tap, like a kind 3 follow.
+     */
+    val userActionKinds: Set<Int> = setOf(0, 1, 3, 5, 6, 7, 9, 13, 16, 20, 21, 22, 1111, 1984, 9734, 10015, 30023)
 
     /** Sign requests sent to the active session and not yet answered. */
     private val outstandingRequests = AtomicInteger(0)

@@ -1505,9 +1505,12 @@ struct HashtagFeedView: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     @ObservedObject private var feedService = FeedService.shared
+    @ObservedObject private var interests = InterestListService.shared
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model: HashtagFeedModel
     @State private var showingEveryoneWarning = false
+    @State private var followSaving = false
+    @State private var showingFollowFailed = false
     @State private var showingProfile: IdentifiableString?
     @State private var showingNote: FeedNote?
     @State private var showingMediaUrl: IdentifiableURL?
@@ -1524,6 +1527,7 @@ struct HashtagFeedView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 12) {
+                    header
                     if model.fromFollows.isEmpty && model.fromOthers.isEmpty {
                         emptyState
                     }
@@ -1540,7 +1544,7 @@ struct HashtagFeedView: View {
                 .padding(.bottom, 24)
             }
             .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
-            .navigationTitle("#\(tag)")
+            .navigationTitle("")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -1566,7 +1570,10 @@ struct HashtagFeedView: View {
             }
         }
         .hashtagLinks()
-        .task { restart() }
+        .task {
+            interests.refreshIfNeeded()
+            restart()
+        }
         // The follow list and the trust graph can arrive after the sheet opens.
         .onChange(of: feedService.followedPubkeys.count) { _, _ in restart() }
         .onChange(of: feedService.wotPubkeys.count) { _, _ in restart() }
@@ -1580,6 +1587,11 @@ struct HashtagFeedView: View {
             Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
         } message: {
             Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
+        }
+        .alert("Couldn't save", isPresented: $showingFollowFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Your relays didn't answer, so your hashtag list wasn't changed. Try again in a moment.")
         }
         .sheet(item: $showingProfile) { profile in
             ProfileView(pubkey: profile.id, onDismiss: { showingProfile = nil })
@@ -1602,6 +1614,48 @@ struct HashtagFeedView: View {
         var follows = Set(feedService.followedPubkeys)
         if !configService.activeAccountHexPubkey.isEmpty { follows.insert(configService.activeAccountHexPubkey) }
         model.start(follows: follows, trust: feedService.globalTrustSet())
+    }
+
+    private var isFollowingTag: Bool { interests.isFollowing(tag) }
+
+    /// Big #tag with the Follow button. Followed tags are your interest list
+    /// (kind 10015), the same list other Nostr apps read.
+    private var header: some View {
+        HStack(spacing: 12) {
+            Text("#\(tag)")
+                .font(.appTitle2)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            Button(action: toggleFollow) {
+                HStack(spacing: 6) {
+                    Image(systemName: isFollowingTag ? "checkmark" : "plus")
+                        .font(.appSystem(size: 12, weight: .semibold))
+                    Text(isFollowingTag ? "Following" : "Follow")
+                        .font(.appSystem(size: 13, weight: .semibold))
+                }
+                .foregroundColor(isFollowingTag ? .white : .havenPurple)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(isFollowingTag ? Color.havenPurple : Color.havenPurple.opacity(0.12))
+                .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+            .disabled(followSaving || configService.activeAccountHexPubkey.isEmpty)
+            .accessibilityLabel(isFollowingTag ? "Unfollow #\(tag)" : "Follow #\(tag)")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+    }
+
+    private func toggleFollow() {
+        let follow = !isFollowingTag
+        followSaving = true
+        Task {
+            let ok = await interests.setFollowing(tag, follow)
+            followSaving = false
+            if !ok { showingFollowFailed = true }
+        }
     }
 
     @ViewBuilder

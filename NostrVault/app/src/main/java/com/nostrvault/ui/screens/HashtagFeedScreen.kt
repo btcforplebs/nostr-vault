@@ -2,13 +2,20 @@ package com.nostrvault.ui.screens
 
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -28,6 +35,7 @@ import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.service.FeedService
+import com.nostrvault.service.InterestListService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.ui.components.GlassPill
@@ -75,6 +83,7 @@ class HashtagFeedViewModel @Inject constructor(
     private val configStore: ConfigStore,
     private val feedService: FeedService,
     private val zapSendService: ZapSendService,
+    private val interestListService: InterestListService,
 ) : ViewModel() {
 
     companion object {
@@ -115,6 +124,21 @@ class HashtagFeedViewModel @Inject constructor(
     private val _toast = MutableStateFlow<String?>(null)
     val toast = _toast.asStateFlow()
 
+    /** Followed hashtags: the account's interest list (kind 10015), the one other Nostr apps read. */
+    val isFollowingTag: StateFlow<Boolean> = interestListService.hashtags
+        .map { tag in it }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, interestListService.isFollowing(tag))
+
+    val hasAccount: StateFlow<Boolean> = configStore.activeAccountHexPubkey
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, configStore.activeAccountHexPubkey.value.isNotEmpty())
+
+    private val _followSaving = MutableStateFlow(false)
+    val followSaving: StateFlow<Boolean> = _followSaving.asStateFlow()
+
+    private val _followFailed = MutableStateFlow(false)
+    val followFailed: StateFlow<Boolean> = _followFailed.asStateFlow()
+
     private val lock = Any()
     private val seen = HashSet<String>()
     @Volatile private var follows: Set<String> = emptySet()
@@ -124,6 +148,7 @@ class HashtagFeedViewModel @Inject constructor(
     private var jobs = mutableListOf<Job>()
 
     init {
+        interestListService.refreshIfNeeded()
         // The follow list and the trust graph can arrive after the screen opens.
         viewModelScope.launch {
             combine(
@@ -303,6 +328,21 @@ class HashtagFeedViewModel @Inject constructor(
         if (updated) nostrService.fetchMissingProfiles(listOf(note.pubkey))
     }
 
+    fun toggleFollow() {
+        if (tag.isEmpty() || _followSaving.value) return
+        val follow = !isFollowingTag.value
+        _followSaving.value = true
+        viewModelScope.launch {
+            try {
+                if (!interestListService.setFollowing(tag, follow)) _followFailed.value = true
+            } finally {
+                _followSaving.value = false
+            }
+        }
+    }
+
+    fun clearFollowFailed() { _followFailed.value = false }
+
     // ── Engagement (same services as the feed, search and profile) ────────
 
     fun clearToast() { _toast.value = null }
@@ -359,6 +399,10 @@ fun HashtagFeedScreen(
     val likedIds by viewModel.likedEventIds.collectAsState()
     val repostedIds by viewModel.repostedEventIds.collectAsState()
     val toast by viewModel.toast.collectAsState()
+    val isFollowingTag by viewModel.isFollowingTag.collectAsState()
+    val hasAccount by viewModel.hasAccount.collectAsState()
+    val followSaving by viewModel.followSaving.collectAsState()
+    val followFailed by viewModel.followFailed.collectAsState()
     val colors = LocalNostrVaultColors.current
     val context = LocalContext.current
     val tag = viewModel.tag
@@ -397,16 +441,8 @@ fun HashtagFeedScreen(
                             Icon(NostrVaultIcons.Back, "Back", tint = PrimaryText, modifier = Modifier.size(25.dp))
                         }
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        text = "#$tag",
-                        color = PrimaryText,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
+                    // The list's header carries the #tag, next to its Follow button.
+                    Spacer(Modifier.weight(1f))
                     // The app-wide shield, as on Global: leaving the Web of
                     // Trust goes through the warning, coming back does not.
                     GlassPill {
@@ -441,6 +477,14 @@ fun HashtagFeedScreen(
             ),
             modifier = Modifier.fillMaxSize(),
         ) {
+            item(key = "hashtag-header") {
+                HashtagHeader(
+                    tag = tag,
+                    isFollowing = isFollowingTag,
+                    enabled = !followSaving && hasAccount && tag.isNotEmpty(),
+                    onToggle = viewModel::toggleFollow,
+                )
+            }
             if (notes.isEmpty()) {
                 item(key = "hashtag-empty") {
                     Column(
@@ -495,6 +539,15 @@ fun HashtagFeedScreen(
         }
     }
 
+    if (followFailed) {
+        AlertDialog(
+            onDismissRequest = viewModel::clearFollowFailed,
+            title = { Text("Couldn't save") },
+            text = { Text("Your relays didn't answer, so your hashtag list wasn't changed. Try again in a moment.") },
+            confirmButton = { TextButton(onClick = viewModel::clearFollowFailed) { Text("OK") } },
+        )
+    }
+
     if (showEveryoneWarning) {
         AlertDialog(
             onDismissRequest = { showEveryoneWarning = false },
@@ -514,6 +567,62 @@ fun HashtagFeedScreen(
                 TextButton(onClick = { showEveryoneWarning = false }) { Text("Cancel") }
             },
         )
+    }
+}
+
+/**
+ * Big #tag with the Follow button. Followed tags are your interest list
+ * (kind 10015). Styled like the profile Follow chip.
+ */
+@Composable
+private fun HashtagHeader(tag: String, isFollowing: Boolean, enabled: Boolean, onToggle: () -> Unit) {
+    val colors = LocalNostrVaultColors.current
+    val content = if (isFollowing) Color.White else colors.primary
+    val background = if (isFollowing) colors.primary else colors.primary.copy(alpha = 0.12f)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+    ) {
+        Text(
+            text = "#$tag",
+            color = PrimaryText,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .alpha(if (enabled) 1f else 0.5f)
+                .clip(RoundedCornerShape(6.dp))
+                .background(background)
+                .clickable(
+                    enabled = enabled,
+                    onClickLabel = if (isFollowing) "Unfollow #$tag" else "Follow #$tag",
+                    role = Role.Button,
+                    onClick = onToggle,
+                )
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+        ) {
+            Icon(
+                imageVector = if (isFollowing) NostrVaultIcons.Check else NostrVaultIcons.Create,
+                contentDescription = null,
+                tint = content,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = if (isFollowing) "Following" else "Follow",
+                color = content,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 
