@@ -1141,7 +1141,7 @@ struct GatedArticleBody: View {
     private var statusText: String {
         switch phase {
         case .failed(let message): return message
-        case .waiting: return "Paid. Waiting for the zap receipt to reach the network…"
+        case .waiting: return "Paid. Waiting for the author's server to see your zap. This can take a minute or two."
         case _ where paid && unpaid.isEmpty:
             return "You've zapped for this article. If it hasn't opened, the receipt is still on its way."
         case _ where paid:

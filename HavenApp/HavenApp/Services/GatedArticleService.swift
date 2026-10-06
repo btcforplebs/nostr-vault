@@ -145,10 +145,13 @@ final class GatedArticleService {
 
     /// Asks for the key until the server has seen the receipts. The receipt
     /// is published by the author's lightning provider, so it lands seconds
-    /// after the payment, not with it. Never pays.
+    /// after the payment, not with it — and Fanfares' server took about two
+    /// minutes to see a paid receipt on the first real unlock (2026-10-06),
+    /// answering each check in ~4 s. So keep asking for about three minutes.
+    /// Never pays.
     func waitForKey(note: FeedNote, gated: GatedArticle) async throws -> String {
         var lastError: Error = UnlockError.notPaid
-        for delay in [2, 3, 4, 5, 6, 8, 10] {
+        for delay in [2, 3, 5, 5, 8, 8, 10, 10, 10, 15, 15, 15, 15, 15] {
             try await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000)
             do {
                 return try await open(note: note, gated: gated)
