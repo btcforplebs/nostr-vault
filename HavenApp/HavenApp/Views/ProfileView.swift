@@ -1845,7 +1845,7 @@ struct ProfileView: View {
                 .sink { state in
                     if state == .connected {
                         let notesFilter: [String: Any] = [
-                            "kinds": [1, 6, 30023],
+                            "kinds": [1, 6, 30023, NIP88Poll.kind],
                             "authors": [pubkey],
                             "limit": 50
                         ]
@@ -1865,7 +1865,7 @@ struct ProfileView: View {
                             "limit": 100
                         ]
                         let taggedFilter: [String: Any] = [
-                            "kinds": [1, 6, 30023],
+                            "kinds": [1, 6, 30023, NIP88Poll.kind],
                             "#p": [pubkey],
                             "limit": 50
                         ]
@@ -1937,7 +1937,7 @@ struct ProfileView: View {
 
             // Check if this is a tagged event (authored by someone else, but p-tagging the profile user)
             let isTaggedEvent = event.pubkey != pubkey &&
-                [1, 6, 30023].contains(event.kind) &&
+                [1, 6, 30023, NIP88Poll.kind].contains(event.kind) &&
                 event.tags.contains(where: { $0.count >= 2 && $0[0] == "p" && $0[1] == pubkey })
 
             if isTaggedEvent {
@@ -2040,7 +2040,7 @@ struct ProfileView: View {
         olderPageSection = selectedSection
 
         let filter: [String: Any] = [
-            "kinds": [1, 6, 30023],
+            "kinds": [1, 6, 30023, NIP88Poll.kind],
             "authors": [pubkey],
             "until": Int(oldest.createdAt.timeIntervalSince1970),
             "limit": 50
@@ -2128,7 +2128,7 @@ struct ProfileView: View {
         olderTaggedVisibleBefore = taggedFilteredNotes.count
 
         let filter: [String: Any] = [
-            "kinds": [1, 6, 30023],
+            "kinds": [1, 6, 30023, NIP88Poll.kind],
             "#p": [pubkey],
             "until": Int(oldest.createdAt.timeIntervalSince1970),
             "limit": 50

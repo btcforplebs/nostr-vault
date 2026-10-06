@@ -1466,7 +1466,7 @@ class NostrService: ObservableObject {
 
         // Cache raw event JSON immediately so rebroadcast + NIP-18 repost embedding
         // work without waiting for the event to echo back from the relay.
-        if event.kind == 1 || event.kind == 6 || event.kind == 30023 || event.kind == NIP10Thread.commentKind {
+        if event.kind == 1 || event.kind == 6 || event.kind == 30023 || event.kind == NIP10Thread.commentKind || event.kind == NIP88Poll.kind {
             if let evData = try? JSONSerialization.data(withJSONObject: eventDict, options: []),
                let evJSON = String(data: evData, encoding: .utf8) {
                 FeedService.shared.cacheRawEvent(id: event.id, json: evJSON)
@@ -1764,7 +1764,7 @@ class NostrService: ObservableObject {
     /// What the Relay tab counts as a post: notes, reposts, articles, NIP-22
     /// comments and highlights. Comments and highlights that tag you were
     /// never requested, so they never showed up there.
-    static let relayTabNoteKinds = [1, 6, 30023, NIP10Thread.commentKind, 9802]
+    static let relayTabNoteKinds = [1, 6, 30023, NIP10Thread.commentKind, 9802, NIP88Poll.kind]
 
     func fetchNotes(from relayURLs: [URL], until: Int64? = nil, since: Int64? = nil, authors: [String]? = nil) {
         // Count only the subscriptions we actually open/request below — NOT every

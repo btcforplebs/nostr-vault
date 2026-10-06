@@ -770,7 +770,7 @@ struct NoteDetailView: View {
             depth: depth,
             style: .plain,
             replyCount: replyCount,
-            contentOverride: original.map { $0.kind == 30023 ? $0.longFormDisplayTitle : $0.content },
+            contentOverride: original.map { $0.condensedTitle ?? $0.content },
             postedAt: original.map { $0.originalCreatedAt ?? $0.createdAt },
             mediaURLs: shown.mediaURLs,
             engagement: CondensedEngagement(
