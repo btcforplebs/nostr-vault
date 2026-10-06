@@ -26,10 +26,13 @@ class ZapService: ObservableObject {
     /// Where a zap's receipt should be published. Your own relay is listed
     /// only when it is public: a provider cannot reach a loopback or LAN
     /// address, so listing it there only wasted a slot.
-    static func receiptRelays(me: String, recipient: String) -> [String] {
+    /// - Parameter extra: relays someone else needs to find the receipt on —
+    ///   a gated article's key server reads the relays its author named — so
+    ///   they go first and are never the ones the cap cuts.
+    static func receiptRelays(me: String, recipient: String, extra: [String] = []) -> [String] {
         let config = ConfigService.shared.config
         let lists = NostrService.shared.relayLists
-        var candidates = [config.nostrURL]
+        var candidates = extra + [config.nostrURL]
         candidates += config.activeFeedRelays.isEmpty ? ["wss://relay.primal.net", "wss://nos.lol"] : config.activeFeedRelays
         candidates += lists[me] ?? []
         candidates += (lists[recipient] ?? []).prefix(3)
@@ -59,7 +62,8 @@ class ZapService: ObservableObject {
     ///   zap belongs to. A live stream is the case that needs it: clients count
     ///   a stream's zaps by its address, so a receipt with only `e` and `p` is
     ///   invisible on the stream it paid for.
-    func zapNote(noteId: String, notePubkey: String, lud16: String, amountSats: Int? = nil, message: String = "Zap from Nostr Vault", addressTag: String? = nil) async throws {
+    /// - Parameter extraReceiptRelays: see `receiptRelays(me:recipient:extra:)`.
+    func zapNote(noteId: String, notePubkey: String, lud16: String, amountSats: Int? = nil, message: String = "Zap from Nostr Vault", addressTag: String? = nil, extraReceiptRelays: [String] = []) async throws {
         let amountSats = amountSats ?? (ConfigService.shared.config.defaultZapAmount / 1000)
         guard amountSats > 0 else {
             throw ZapError.paymentFailed("Zap amount must be greater than 0")
@@ -94,7 +98,8 @@ class ZapService: ObservableObject {
             // The provider publishes the receipt to these relays, so they must
             // be ones it can reach and that get read: the relays Given and the
             // feed query, your published inbox, and the recipient's inbox.
-            let relayList = Self.receiptRelays(me: NostrService.shared.activeHexPubkey, recipient: notePubkey)
+            let relayList = Self.receiptRelays(me: NostrService.shared.activeHexPubkey, recipient: notePubkey,
+                                                extra: extraReceiptRelays)
 
             var tags: [[String]] = [
                 ["p", notePubkey],
@@ -107,7 +112,7 @@ class ZapService: ObservableObject {
             }
 
             if let addressTag, !addressTag.isEmpty {
-                tags.append(["a", addressTag, LiveChat.streamRelay])
+                tags.append(["a", addressTag, extraReceiptRelays.first ?? LiveChat.streamRelay])
             }
             
             // Add lnurl tag — strip internal sentinel prefix if present
