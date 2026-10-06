@@ -1643,7 +1643,7 @@ struct FeedView: View {
                     .opacity(max(0.1, 1.0 - (abs(galleryDragOffset.height) / 500.0)))
                     .ignoresSafeArea()
                 
-                MediaPagerView(items: gridMediaSnapshot.map { $0.id }, selection: $selectedGridMediaNoteId, enableKeyboardNavigation: true) { noteId in
+                MediaPagerView(items: gridMediaSnapshot.map { $0.id }, selection: $selectedGridMediaNoteId, enableKeyboardNavigation: true, showsPositionBar: false) { noteId in
                     if let note = gridMediaSnapshot.first(where: { $0.id == noteId }), let firstMediaURL = note.mediaURLs.first {
                         FeedMediaViewer(url: firstMediaURL, enableDragDismiss: false, onDismiss: { isShowingGridMediaViewer = false })
                             #if os(iOS)
