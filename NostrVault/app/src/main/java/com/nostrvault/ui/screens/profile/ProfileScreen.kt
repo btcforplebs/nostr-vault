@@ -448,11 +448,13 @@ fun ProfileScreen(
                 items(items = filteredNotes, key = { it.id }) { note ->
                     NoteCard(
                         note = note,
-                        profile = if (selectedSection == ProfileSection.TAGGED)
+                        // A repost on this profile is someone else's note:
+                        // credit its author, not the profile's owner.
+                        profile = if (selectedSection == ProfileSection.TAGGED || note.kind == 6)
                             allProfiles[note.pubkey] else profile,
                         profiles = allProfiles,
                         quotedNotes = quotedNotes,
-                        isLiked = viewModel.isLiked(note.id),
+                        isLiked = viewModel.isLiked(note.effectiveEventId),
                         isReposted = note.effectiveEventId in repostedIds,
                         repostedByProfile = note.repostedBy?.let { allProfiles[it] },
                         onNoteClick = onNoteClick,
@@ -462,7 +464,7 @@ fun ProfileScreen(
                         onRepost = viewModel::repostNote,
                         onReply = onReply,
                         onQuote = onQuote,
-                        onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
+                        onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
                     )
                     HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                 }

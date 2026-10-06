@@ -560,7 +560,7 @@ class FeedViewModel @Inject constructor(
             }
             // Real NIP-57 zap; effective id redirects kind-6 reposts to the
             // reposted event. ZapSendService bumps local stats on success.
-            zapSendService.zapNote(note.effectiveEventId, note.pubkey, amount).fold(
+            zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amount).fold(
                 onSuccess = {
                     ZapFlight.launch(note.effectiveEventId)
                     _zapMessage.emit("Zapped $amount sats")

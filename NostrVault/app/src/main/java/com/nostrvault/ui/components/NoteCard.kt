@@ -249,8 +249,8 @@ fun NoteCard(
                 onClick = {
                     val nevent = HavenBridge.encodeNevent(
                         note.effectiveEventId,
-                        note.pubkey,
-                        note.kind,
+                        note.effectiveAuthor,
+                        note.effectiveKind,
                     ) ?: HavenBridge.hexToNote1(note.effectiveEventId)
                         ?: note.effectiveEventId
                     menuClipboard.setText(AnnotatedString(threadLink(nevent)))

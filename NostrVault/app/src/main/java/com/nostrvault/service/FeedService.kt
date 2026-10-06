@@ -3712,7 +3712,8 @@ class FeedService @Inject constructor(
             // kind this app has ever wrapped in kind 6).
             val note = findNote(noteId)
             val originalId = note?.repostedEventId ?: noteId
-            val originalPubkey = note?.pubkey
+            // A bare repost still carries the reposter's pubkey.
+            val originalPubkey = note?.effectiveAuthor
             val originalKind = if (note?.repostedEventId != null) 1 else (note?.kind ?: 1)
 
             val rawEvent = rawEventCache[originalId] ?: ""
