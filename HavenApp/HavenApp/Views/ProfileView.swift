@@ -2351,6 +2351,7 @@ struct ProfileEditView: View {
     @State private var name: String = ""
     @State private var about: String = ""
     @State private var pictureURL: String = ""
+    @State private var bannerURL: String = ""
     @State private var nip05: String = ""
     @State private var lud16: String = ""
     @State private var website: String = ""
@@ -2367,6 +2368,8 @@ struct ProfileEditView: View {
 
                 ScrollView {
                     VStack(spacing: 0) {
+                        bannerBlock
+
                         previewBlock
 
                         divider
@@ -2389,6 +2392,8 @@ struct ProfileEditView: View {
 
                         fieldGroup(title: "MEDIA") {
                             field(label: "Picture URL", text: $pictureURL, placeholder: "https://…", keyboardKind: .urlLike)
+                            fieldDivider
+                            field(label: "Banner URL", text: $bannerURL, placeholder: "https://…", keyboardKind: .urlLike)
                             fieldDivider
                             field(label: "Website", text: $website, placeholder: "yourdomain.com", keyboardKind: .urlLike)
                         }
@@ -2463,6 +2468,27 @@ struct ProfileEditView: View {
                 .frame(height: 0.5),
             alignment: .bottom
         )
+    }
+
+    /// The Banner URL, previewed at the 3:1 shape profiles draw it in.
+    /// Hidden until the field holds a URL.
+    @ViewBuilder
+    private var bannerBlock: some View {
+        if let url = URL(string: bannerURL.trimmingCharacters(in: .whitespaces)), url.scheme != nil {
+            // The image sits in an overlay so a wide photo can't widen the row.
+            Rectangle()
+                .fill(Color.havenPurple.opacity(0.12))
+                .aspectRatio(3, contentMode: .fit)
+                .overlay {
+                    CachedAsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        ProgressView().tint(.havenPurple)
+                    }
+                }
+                .clipped()
+                .accessibilityLabel("Banner preview")
+        }
     }
 
     private var previewBlock: some View {
@@ -2579,6 +2605,7 @@ struct ProfileEditView: View {
         name = existing.name ?? ""
         about = existing.about ?? ""
         pictureURL = existing.pictureURL?.absoluteString ?? ""
+        bannerURL = existing.bannerURL?.absoluteString ?? ""
         nip05 = existing.nip05 ?? ""
         lud16 = existing.lud16 ?? ""
         website = existing.website ?? ""
@@ -2591,6 +2618,7 @@ struct ProfileEditView: View {
             ProfileMetadataMerge.name: name,
             ProfileMetadataMerge.about: about,
             ProfileMetadataMerge.picture: pictureURL,
+            ProfileMetadataMerge.banner: bannerURL,
             ProfileMetadataMerge.nip05: nip05,
             ProfileMetadataMerge.lud16: lud16,
             ProfileMetadataMerge.website: website,
@@ -2605,7 +2633,7 @@ struct ProfileEditView: View {
 
         Task {
             // A kind 0 replaces the whole profile. Start from the newest one on
-            // the relays so banner, lud06 and every key this form doesn't show
+            // the relays so lud06 and every key this form doesn't show
             // survive; if it can't be fetched, publishing would wipe them, so
             // don't (same rule as the follow list).
             let pubkey = nostrService.activeHexPubkey
@@ -2637,7 +2665,7 @@ struct ProfileEditView: View {
             updated.displayName = merged[ProfileMetadataMerge.displayName] as? String
             updated.about = merged[ProfileMetadataMerge.about] as? String
             updated.pictureURL = (merged[ProfileMetadataMerge.picture] as? String).flatMap { URL(string: $0) }
-            updated.bannerURL = (merged["banner"] as? String).flatMap { URL(string: $0) }
+            updated.bannerURL = (merged[ProfileMetadataMerge.banner] as? String).flatMap { URL(string: $0) }
             updated.nip05 = merged[ProfileMetadataMerge.nip05] as? String
             updated.lud16 = merged[ProfileMetadataMerge.lud16] as? String
             updated.lud06 = merged["lud06"] as? String
