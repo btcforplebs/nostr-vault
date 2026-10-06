@@ -749,6 +749,7 @@ fun FeedScreen(
                                 onFetchMissingNote = viewModel::fetchMissingNote,
                                 rootUnavailable = thread.rootId in unavailableNoteIds,
                                 lineAnchor = threadLineAnchor,
+                                bareRepostDisplay = { note -> rememberBareRepostDisplay(note, viewModel) },
                                 // iOS: 12pt sides in threaded mode, 12pt between rows.
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 expandedRow = { note, _ ->

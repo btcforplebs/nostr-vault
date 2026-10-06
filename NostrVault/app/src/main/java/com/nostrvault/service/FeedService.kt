@@ -18,6 +18,7 @@ import com.nostrvault.ui.notification.FollowKind
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.components.ReactionChoice
 import com.nostrvault.ui.components.likedToastMessage
+import com.nostrvault.util.RelayGiven
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -116,6 +117,8 @@ class FeedService @Inject constructor(
         private const val EXTENDED_NETWORK_CHUNK = 200
         private const val MAX_SEEN_IDS = 10_000
         private const val RECOMPUTE_DEBOUNCE_MS = 50L
+        /** Global's stream batches land every 50 ms; gather them into one reply fetch. */
+        private const val THREAD_REPLIES_SETTLE_MS = 500L
         private const val AVATAR_PREWARM_COUNT = 80 // Warm cache for ~4 screens of visible notes
     }
 
@@ -414,6 +417,27 @@ class FeedService @Inject constructor(
     private val _popularNoteScores = MutableStateFlow<Map<String, Double>>(emptyMap())
     val popularNoteScores: StateFlow<Map<String, Double>> = _popularNoteScores.asStateFlow()
 
+    /**
+     * Replies to the Popular and Global posts, fetched only for Threaded View,
+     * by id. Kept out of [notes]: Popular lists top-level posts, and Global's
+     * stream rarely carries the replies to what it shows, so without these a
+     * threaded card had nothing under it. See [loadFeedThreadReplies].
+     */
+    private val _feedThreadReplies = MutableStateFlow<Map<String, FeedNote>>(emptyMap())
+    val feedThreadReplies: StateFlow<Map<String, FeedNote>> = _feedThreadReplies.asStateFlow()
+    private val threadRepliesLock = Any()
+    /** Post ids already asked about in this list; guarded by [threadRepliesLock]. */
+    private val threadRepliesRequested = HashSet<String>()
+    /** Post ids waiting for the worker; guarded by [threadRepliesLock]. */
+    private val threadRepliesPending = LinkedHashSet<String>()
+    /** Null when no worker is draining [threadRepliesPending]. */
+    private var threadRepliesJob: Job? = null
+    /**
+     * Bumped on every reset, so a fetch that outlives its feed's list can't
+     * add replies to the next one.
+     */
+    @Volatile private var threadRepliesGeneration = 0
+
     private val _wotPubkeys = MutableStateFlow<Set<String>>(emptySet())
     val wotPubkeys: StateFlow<Set<String>> = _wotPubkeys.asStateFlow()
 
@@ -593,6 +617,10 @@ class FeedService @Inject constructor(
             // Global is filtered against the trust graph; pick up one the relay
             // has written since the last read.
             if (isGlobalLikeMode()) loadWotPubkeys()
+            // Global's thread replies were fetched under the old list and trust
+            // setting (the shield's switch lands here); Threaded View fetches
+            // them again for the reloaded posts.
+            if (_feedMode.value == FeedMode.GLOBAL) resetFeedThreadReplies()
 
             when (_feedMode.value) {
                 FeedMode.DISCOVERY -> {
@@ -618,6 +646,7 @@ class FeedService @Inject constructor(
         // the "New Posts" count doesn't carry over stale entries. Live subs for
         // the new mode will repopulate.
         _pendingNotes.value = emptyList()
+        resetFeedThreadReplies()
 
         when (mode) {
             FeedMode.POPULAR -> loadPopularFeed()
@@ -2549,6 +2578,9 @@ class FeedService @Inject constructor(
     fun findNote(id: String): FeedNote? {
         return noteIndex()[id]
             ?: _parentNotesCache.value[id]
+            // A reply fetched for a threaded card, opened in place: replying
+            // to it, quoting it or opening its thread resolves it here.
+            ?: _feedThreadReplies.value[id]
             // Quoted addressable events are keyed by coordinate, so a lookup by
             // id has to scan them — without this, opening a quoted article
             // refetches an event already in memory.
@@ -3162,6 +3194,7 @@ class FeedService @Inject constructor(
     private fun loadPopularFeed() {
         _isLoadingPopular.value = true
         _connectionStatus.value = "Computing popular..."
+        resetFeedThreadReplies()
 
         scope.launch(Dispatchers.Default) {
             try {
@@ -3196,6 +3229,97 @@ class FeedService @Inject constructor(
                 }
             }
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Threaded View replies (Popular, Global)
+    // ══════════════════════════════════════════════════════════════════
+
+    private fun resetFeedThreadReplies() {
+        synchronized(threadRepliesLock) {
+            threadRepliesGeneration++
+            threadRepliesRequested.clear()
+            threadRepliesPending.clear()
+            threadRepliesJob?.cancel()
+            threadRepliesJob = null
+        }
+        if (_feedThreadReplies.value.isNotEmpty()) _feedThreadReplies.value = emptyMap()
+    }
+
+    /**
+     * Fetches replies to these Popular or Global posts (once per post per
+     * list) from the local relay and the feed relays. Only signature-checked
+     * events are kept, and only those [FeedThreadReplies.admits]: real
+     * replies into one of these threads, from nobody blocked, and on Global
+     * from inside the trust rule. iOS: `FeedService.loadFeedThreadReplies`.
+     *
+     * Global's list grows with every stream batch, so the ids are queued and
+     * one worker asks for them, after a short settle, in chunks — rather than
+     * a REQ per batch of three new posts.
+     */
+    fun loadFeedThreadReplies(postIds: List<String>) {
+        if (!FeedThreadReplies.fetchesReplies(_feedMode.value)) return
+        synchronized(threadRepliesLock) {
+            for (id in postIds) if (threadRepliesRequested.add(id)) threadRepliesPending.add(id)
+            if (threadRepliesPending.isEmpty() || threadRepliesJob != null) return
+            val generation = threadRepliesGeneration
+            threadRepliesJob = scope.launch(processingDispatcher) { drainThreadReplies(generation) }
+        }
+    }
+
+    private suspend fun drainThreadReplies(generation: Int) {
+        delay(THREAD_REPLIES_SETTLE_MS)
+        while (true) {
+            val chunk = synchronized(threadRepliesLock) {
+                if (generation != threadRepliesGeneration) return
+                val next = threadRepliesPending.take(FeedThreadReplies.CHUNK)
+                if (next.isEmpty()) {
+                    threadRepliesJob = null
+                    return
+                }
+                threadRepliesPending.removeAll(next.toSet())
+                next
+            }
+            val config = configStore.config.value
+            val relays = (listOfNotNull(config.nostrURL) +
+                config.activeFeedRelays.ifEmpty { RelayGiven.FALLBACK_FEED_RELAYS }).distinct()
+            val events = nostrService.queryRawEvents(
+                filters = listOf(FeedThreadReplies.filter(chunk)),
+                relayUrls = relays,
+                timeoutMs = FeedThreadReplies.TIMEOUT_MS,
+            )
+            if (generation != threadRepliesGeneration) return
+            val roots = chunk.toSet()
+            val blocked = blockedHexForActiveAccount()
+            val trusted = if (_feedMode.value == FeedMode.GLOBAL) globalTrustSet() else null
+            val known = _feedThreadReplies.value
+            val replies = events.mapNotNull { ev ->
+                threadReplyFrom(ev)?.takeIf {
+                    it.id !in known && FeedThreadReplies.admits(it, roots, blocked, trusted) &&
+                        HavenBridge.verifyEvent(ev.toString())
+                }
+            }
+            if (replies.isEmpty()) continue
+            withContext(Dispatchers.Main.immediate) {
+                if (generation == threadRepliesGeneration) {
+                    _feedThreadReplies.update { it + replies.associateBy { reply -> reply.id } }
+                }
+            }
+            nostrService.fetchMissingProfiles(replies.map { it.pubkey }.distinct())
+        }
+    }
+
+    /** A kind 1 note from a raw relay event; the signature is checked by the caller. */
+    private fun threadReplyFrom(ev: JsonObject): FeedNote? {
+        fun str(key: String) = (ev[key] as? JsonPrimitive)?.contentOrNull
+        val id = str("id") ?: return null
+        val pubkey = str("pubkey") ?: return null
+        if (str("kind")?.toIntOrNull() != 1) return null
+        val createdAt = (ev["created_at"] as? JsonPrimitive)?.longOrNull ?: return null
+        val tags = (ev["tags"] as? JsonArray)?.map { tag ->
+            (tag as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+        } ?: return null
+        return FeedNote.fromEvent(id, pubkey, str("content").orEmpty(), tags, createdAt, 1)
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -3654,6 +3778,7 @@ class FeedService @Inject constructor(
         _pendingNotes.value = emptyList()
         _noteStats.value = emptyMap()
         _newNoteCount.value = 0
+        resetFeedThreadReplies()
         seenIdsLock.withLock { seenIds.clear() }
         rawEventCache.clear()
         // A new account means new relays: what this one couldn't find, the
