@@ -9,8 +9,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -22,6 +23,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.FeedProfile
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.FeedFilterEngine
@@ -39,8 +41,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -58,8 +64,9 @@ import javax.inject.Inject
 
 /**
  * Posts tagged with one hashtag (`#t`), newest first, live: the subscription
- * stays open so new posts arrive while the screen is up. Port of iOS
- * `HashtagFeedModel` / `HashtagFeedView` (#173).
+ * stays open so new posts arrive while the screen is up. Two groups: the
+ * people you follow, then everyone else the shield lets through (your Web of
+ * Trust, or everyone). Port of iOS `HashtagFeedModel` / `HashtagFeedView`.
  */
 @HiltViewModel
 class HashtagFeedViewModel @Inject constructor(
@@ -74,6 +81,8 @@ class HashtagFeedViewModel @Inject constructor(
         private const val TAG = "HashtagFeed"
         private const val LIMIT = 100
         private const val MAX_NOTES = 300
+        /** Authors per REQ filter; relays reject very large filters (iOS `trustedAuthorsCap`). */
+        private const val AUTHORS_CAP = 500
         /** Never spin forever if every relay is slow or down. */
         private const val LOADING_TIMEOUT_MS = 8_000L
         private const val DEFAULT_ZAP_SATS = SearchViewModel.DEFAULT_ZAP_SATS
@@ -83,22 +92,19 @@ class HashtagFeedViewModel @Inject constructor(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val _notes = MutableStateFlow<List<FeedNote>>(emptyList())
-    val notes: StateFlow<List<FeedNote>> = _notes.asStateFlow()
+    private val _fromFollows = MutableStateFlow<List<FeedNote>>(emptyList())
+    val fromFollows: StateFlow<List<FeedNote>> = _fromFollows.asStateFlow()
+
+    private val _fromOthers = MutableStateFlow<List<FeedNote>>(emptyList())
+    val fromOthers: StateFlow<List<FeedNote>> = _fromOthers.asStateFlow()
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    /** Everyone (false) or People I follow (true). */
-    private val _followingOnly = MutableStateFlow(false)
-    val followingOnly: StateFlow<Boolean> = _followingOnly.asStateFlow()
-
-    /**
-     * Set when "People I follow" was asked for before the follow list loaded:
-     * showing Everyone under that label would show strangers.
-     */
-    private val _waitingForFollows = MutableStateFlow(false)
-    val waitingForFollows: StateFlow<Boolean> = _waitingForFollows.asStateFlow()
+    /** The app-wide shield: Web of Trust (false) or everyone (true). */
+    val globalShowsEveryone: StateFlow<Boolean> = configStore.config
+        .map { it.globalShowsEveryone }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, configStore.config.value.globalShowsEveryone)
 
     val profiles = nostrService.profiles
     val likedEventIds = feedService.likedEventIds
@@ -111,50 +117,74 @@ class HashtagFeedViewModel @Inject constructor(
 
     private val lock = Any()
     private val seen = HashSet<String>()
+    @Volatile private var follows: Set<String> = emptySet()
     private val requestedAuthors = HashSet<String>()
     @Volatile private var generation = 0
     private var clients = mutableListOf<WebSocketClient>()
     private var jobs = mutableListOf<Job>()
 
     init {
-        start()
-        // The follow list can arrive after "People I follow" was picked.
+        // The follow list and the trust graph can arrive after the screen opens.
         viewModelScope.launch {
-            feedService.followedPubkeys.collect { follows ->
-                if (_followingOnly.value && _waitingForFollows.value && follows.isNotEmpty()) start()
-            }
+            combine(
+                feedService.followedPubkeys,
+                feedService.wotPubkeys.map { it.size },
+                globalShowsEveryone,
+            ) { followed, _, _ -> followed }
+                .collect { start() }
         }
     }
 
-    fun setFollowingOnly(only: Boolean) {
-        if (_followingOnly.value == only) return
-        _followingOnly.value = only
-        start()
+    /** Leaving the Web of Trust goes through the screen's warning first. */
+    fun setGlobalShowsEveryone(on: Boolean) {
+        feedService.setGlobalShowsEveryone(on)
     }
 
-    /** (Re)opens the subscription for the current Everyone / People I follow choice. */
+    /**
+     * (Re)opens the subscription. Your own posts count with your follows: you
+     * just tagged it, you want to see it.
+     */
     private fun start() {
         stop()
+        val followSet = buildSet {
+            addAll(feedService.followedPubkeys.value)
+            configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() }?.let(::add)
+        }
+        // Null is everyone; empty is nobody (no Web of Trust yet fails closed, like Global).
+        val trust = feedService.globalTrustSet()
         val gen = synchronized(lock) {
             generation += 1
             seen.clear()
+            follows = followSet
             generation
         }
-        _notes.value = emptyList()
+        _fromFollows.value = emptyList()
+        _fromOthers.value = emptyList()
         _isLoading.value = true
-        _waitingForFollows.value = false
 
-        val authors: List<String>? = if (_followingOnly.value) feedService.followedPubkeys.value else null
-        if (authors != null && authors.isEmpty()) {
-            _waitingForFollows.value = true
-            _isLoading.value = false
-            return
-        }
         if (tag.isEmpty()) {
             _isLoading.value = false
             return
         }
-        val wantedAuthors = authors?.toSet()
+        // Follows asked by name, so a busy tag cannot push them out of the page;
+        // past the cap, the open filter finds them. Capped so the REQ stays
+        // under relay message limits.
+        val filters = mutableListOf<JsonObject>()
+        if (followSet.isNotEmpty()) filters += hashtagFilter(followSet.sorted().take(AUTHORS_CAP))
+        val others = trust?.minus(followSet)
+        when {
+            // Trusted authors by name, then open for those past the cap (iOS `trustScopedFilters`).
+            !others.isNullOrEmpty() -> {
+                filters += hashtagFilter(others.sorted().take(AUTHORS_CAP))
+                filters += hashtagFilter(null)
+            }
+            trust == null || followSet.size > AUTHORS_CAP -> filters += hashtagFilter(null)
+        }
+        if (filters.isEmpty()) {
+            _isLoading.value = false
+            return
+        }
+        val wantedAuthors = trust?.let { it + followSet }
         val blocked = configStore.config.value.blockedForActiveAccount()
             .mapNotNull { nostrService.npubToHex(it) }
             .toSet()
@@ -162,17 +192,10 @@ class HashtagFeedViewModel @Inject constructor(
             .ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") }
 
         val subId = "hashtag-${System.currentTimeMillis().toString(36)}"
-        val filter = buildJsonObject {
-            putJsonArray("kinds") { add(JsonPrimitive(1)) }
-            // NIP-24 says t tags are lowercase; [tag] already is.
-            putJsonArray("#t") { add(JsonPrimitive(tag)) }
-            put("limit", LIMIT)
-            if (authors != null) putJsonArray("authors") { authors.forEach { add(JsonPrimitive(it)) } }
-        }
         val req = buildJsonArray {
             add(JsonPrimitive("REQ"))
             add(JsonPrimitive(subId))
-            add(filter)
+            filters.forEach { add(it) }
         }.toString()
 
         for (url in relays) {
@@ -193,6 +216,14 @@ class HashtagFeedViewModel @Inject constructor(
             delay(LOADING_TIMEOUT_MS)
             if (gen == generation) _isLoading.value = false
         }
+    }
+
+    private fun hashtagFilter(authors: List<String>?): JsonObject = buildJsonObject {
+        putJsonArray("kinds") { add(JsonPrimitive(1)) }
+        // NIP-24 says t tags are lowercase; [tag] already is.
+        putJsonArray("#t") { add(JsonPrimitive(tag)) }
+        put("limit", LIMIT)
+        if (authors != null) putJsonArray("authors") { authors.forEach { add(JsonPrimitive(it)) } }
     }
 
     private fun stop() {
@@ -260,11 +291,12 @@ class HashtagFeedViewModel @Inject constructor(
     private fun insert(note: FeedNote, gen: Int) {
         val updated = synchronized(lock) {
             if (gen != generation || !seen.add(note.id)) return
-            val current = _notes.value
+            val target = if (note.pubkey in follows) _fromFollows else _fromOthers
+            val current = target.value
             val index = current.indexOfFirst { it.createdAt < note.createdAt }.let { if (it < 0) current.size else it }
             val list = current.toMutableList().apply { add(index, note) }
             val capped = if (list.size > MAX_NOTES) list.subList(0, MAX_NOTES).toList() else list
-            _notes.value = capped
+            target.value = capped
             _isLoading.value = false
             requestedAuthors.add(note.pubkey)
         }
@@ -316,10 +348,12 @@ fun HashtagFeedScreen(
     onBack: () -> Unit,
     viewModel: HashtagFeedViewModel = hiltViewModel(),
 ) {
-    val notes by viewModel.notes.collectAsState()
+    val fromFollows by viewModel.fromFollows.collectAsState()
+    val fromOthers by viewModel.fromOthers.collectAsState()
+    val notes = remember(fromFollows, fromOthers) { fromFollows + fromOthers }
     val isLoading by viewModel.isLoading.collectAsState()
-    val followingOnly by viewModel.followingOnly.collectAsState()
-    val waitingForFollows by viewModel.waitingForFollows.collectAsState()
+    val everyone by viewModel.globalShowsEveryone.collectAsState()
+    var showEveryoneWarning by remember { mutableStateOf(false) }
     val profiles by viewModel.profiles.collectAsState()
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val likedIds by viewModel.likedEventIds.collectAsState()
@@ -373,23 +407,27 @@ fun HashtagFeedScreen(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                }
-                Spacer(Modifier.height(8.dp))
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    listOf(false to "Everyone", true to "People I follow").forEachIndexed { index, (only, label) ->
-                        SegmentedButton(
-                            selected = followingOnly == only,
-                            onClick = { viewModel.setFollowingOnly(only) },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = 2),
-                            colors = SegmentedButtonDefaults.colors(
-                                activeContainerColor = colors.primary.copy(alpha = 0.18f),
-                                activeContentColor = colors.primary,
-                                inactiveContainerColor = Color.Transparent,
-                                inactiveContentColor = SecondaryText,
-                            ),
-                            icon = {},
+                    // The app-wide shield, as on Global: leaving the Web of
+                    // Trust goes through the warning, coming back does not.
+                    GlassPill {
+                        IconButton(
+                            onClick = {
+                                if (everyone) viewModel.setGlobalShowsEveryone(false) else showEveryoneWarning = true
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .semantics { stateDescription = if (everyone) "Everyone" else "Web of Trust" },
                         ) {
-                            Text(label, fontSize = 13.sp)
+                            Icon(
+                                imageVector = if (everyone) NostrVaultIcons.TrustOff else NostrVaultIcons.TrustShield,
+                                contentDescription = if (everyone) {
+                                    "Everyone: unfiltered posts. Tap for your Web of Trust"
+                                } else {
+                                    "Web of Trust: people you follow and the people they follow. Tap for everyone"
+                                },
+                                tint = if (everyone) ZapOrange else colors.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
                         }
                     }
                 }
@@ -412,11 +450,6 @@ fun HashtagFeedScreen(
                             .padding(top = 60.dp, start = 32.dp, end = 32.dp),
                     ) {
                         when {
-                            waitingForFollows -> {
-                                CircularProgressIndicator(color = colors.primary)
-                                Spacer(Modifier.height(10.dp))
-                                Text("Loading the people you follow…", color = SecondaryText, fontSize = 15.sp)
-                            }
                             isLoading -> CircularProgressIndicator(color = colors.primary)
                             else -> {
                                 Icon(
@@ -427,42 +460,110 @@ fun HashtagFeedScreen(
                                 )
                                 Spacer(Modifier.height(10.dp))
                                 Text(
-                                    text = if (followingOnly) "No posts tagged #$tag from people you follow yet"
-                                    else "No posts tagged #$tag yet",
+                                    text = if (everyone) "No posts tagged #$tag yet"
+                                    else "No posts tagged #$tag from people you follow or your network yet",
                                     color = SecondaryText,
                                     fontSize = 15.sp,
                                     textAlign = TextAlign.Center,
                                 )
+                                if (!everyone) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Text("The shield above shows everyone.", color = SecondaryText, fontSize = 13.sp)
+                                }
                             }
                         }
                     }
                 }
             }
 
-            items(notes, key = { it.id }) { note ->
-                val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotesCache) {
-                    note.quotedEventIds.mapNotNull { qid ->
-                        viewModel.quotedNoteFor(qid)?.let { qid to it }
-                    }.toMap()
+            if (fromFollows.isNotEmpty()) {
+                item(key = "hashtag-follows-header") { HashtagSectionHeader("From people you follow") }
+            }
+            items(fromFollows, key = { it.id }) { note ->
+                HashtagNote(note, quotedNotesCache, profiles, likedIds, repostedIds, viewModel,
+                    onNoteClick, onArticleClick, onProfileClick, onReply, onQuote)
+            }
+            if (fromOthers.isNotEmpty()) {
+                item(key = "hashtag-others-header") {
+                    HashtagSectionHeader(if (everyone) "More from everyone" else "More from your network")
                 }
-                NoteCard(
-                    note = note,
-                    profile = profiles[note.pubkey],
-                    profiles = profiles,
-                    quotedNotes = quotedNotesMap,
-                    isLiked = note.effectiveEventId in likedIds,
-                    isReposted = note.effectiveEventId in repostedIds,
-                    onNoteClick = onNoteClick,
-                    onArticleClick = onArticleClick,
-                    onProfileClick = onProfileClick,
-                    onLike = viewModel::likeNote,
-                    onRepost = viewModel::repostNote,
-                    onReply = onReply,
-                    onQuote = onQuote,
-                    onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
-                )
-                HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
+            }
+            items(fromOthers, key = { it.id }) { note ->
+                HashtagNote(note, quotedNotesCache, profiles, likedIds, repostedIds, viewModel,
+                    onNoteClick, onArticleClick, onProfileClick, onReply, onQuote)
             }
         }
     }
+
+    if (showEveryoneWarning) {
+        AlertDialog(
+            onDismissRequest = { showEveryoneWarning = false },
+            title = { Text("Sensitive Content Warning") },
+            text = {
+                Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.setGlobalShowsEveryone(true)
+                        showEveryoneWarning = false
+                    },
+                ) { Text("Proceed", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEveryoneWarning = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun HashtagSectionHeader(title: String) {
+    Text(
+        text = title,
+        color = SecondaryText,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp),
+    )
+}
+
+@Composable
+private fun HashtagNote(
+    note: FeedNote,
+    quotedNotesCache: Map<String, FeedNote>,
+    profiles: Map<String, FeedProfile>,
+    likedIds: Set<String>,
+    repostedIds: Set<String>,
+    viewModel: HashtagFeedViewModel,
+    onNoteClick: (String) -> Unit,
+    onArticleClick: (String) -> Unit,
+    onProfileClick: (String) -> Unit,
+    onReply: (String) -> Unit,
+    onQuote: (String) -> Unit,
+) {
+    val quotedNotesMap = remember(note.id, note.quotedEventIds, quotedNotesCache) {
+        note.quotedEventIds.mapNotNull { qid ->
+            viewModel.quotedNoteFor(qid)?.let { qid to it }
+        }.toMap()
+    }
+    NoteCard(
+        note = note,
+        profile = profiles[note.pubkey],
+        profiles = profiles,
+        quotedNotes = quotedNotesMap,
+        isLiked = note.effectiveEventId in likedIds,
+        isReposted = note.effectiveEventId in repostedIds,
+        onNoteClick = onNoteClick,
+        onArticleClick = onArticleClick,
+        onProfileClick = onProfileClick,
+        onLike = viewModel::likeNote,
+        onRepost = viewModel::repostNote,
+        onReply = onReply,
+        onQuote = onQuote,
+        onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
+    )
+    HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
 }

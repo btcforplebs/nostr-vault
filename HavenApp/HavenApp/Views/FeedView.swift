@@ -926,13 +926,17 @@ struct FeedView: View {
         }
     }
 
-    /// Re-filters straight away, then reloads, so the switch visibly lands
-    /// both ways: back to the Web of Trust the untrusted posts go at once
-    /// instead of lingering in the list and the new-posts count.
     private func setGlobalShowsEveryone(_ on: Bool) {
         guard configService.config.globalShowsEveryone != on else { return }
         configService.config.globalShowsEveryone = on
         configService.save()
+    }
+
+    /// Runs on every flip of the shield, here or on a hashtag sheet. Re-filters
+    /// straight away, then reloads, so the switch visibly lands both ways:
+    /// back to the Web of Trust the untrusted posts go at once instead of
+    /// lingering in the list and the new-posts count.
+    private func reloadForTrustScope() {
         feedService.recomputeFilteredNotes()
         // The shield is one app-wide setting; feeds with their own service
         // refetch under it, the note feeds re-filter and reload.
@@ -941,7 +945,9 @@ struct FeedView: View {
         case .recipes: recipeService.refresh()
         case .live: liveService.refresh()
         case .marketplace: marketplaceService.refresh()
-        default: feedService.refresh()
+        // Following and the like never use the shield; a flip from a hashtag
+        // sheet must not reload them.
+        default: if feedService.isGlobalLikeMode { feedService.refresh() }
         }
     }
 
@@ -1687,6 +1693,7 @@ struct FeedView: View {
         } message: {
             Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
         }
+        .onChange(of: configService.config.globalShowsEveryone) { _, _ in reloadForTrustScope() }
         .sheet(item: $selectedListing) { listing in
             MarketplaceListingSheet(listing: listing, onOpenProfile: { showingProfileKey = IdentifiableString(id: $0) })
                 .environmentObject(nostrService)

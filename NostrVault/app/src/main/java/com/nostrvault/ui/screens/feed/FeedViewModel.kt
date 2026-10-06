@@ -419,17 +419,31 @@ class FeedViewModel @Inject constructor(
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.wotPubkeys.value.isNotEmpty())
 
-    /**
-     * The shield is one app-wide setting. The note feeds re-filter and reload
-     * inside FeedService; feeds with their own service refetch under it.
-     */
+    // Declared after _feedMode, which the reload reads.
+    init {
+        reloadOnTrustScopeChange()
+    }
+
+    /** The shield is one app-wide setting; [reloadOnTrustScopeChange] follows every flip. */
     fun setGlobalShowsEveryone(on: Boolean) {
         feedService.setGlobalShowsEveryone(on)
-        when (_feedMode.value) {
-            FeedMode.REELS -> reelsFeedService.refresh()
-            FeedMode.LIVE -> liveFeedService.refresh()
-            FeedMode.MARKETPLACE -> marketplaceFeedService.refresh()
-            else -> Unit
+    }
+
+    /**
+     * The note feeds re-filter and reload inside FeedService; feeds with their
+     * own service refetch under the new scope. Watches the setting rather than
+     * the button, so a flip from a hashtag screen reloads this feed too.
+     */
+    private fun reloadOnTrustScopeChange() {
+        viewModelScope.launch {
+            configStore.config.map { it.globalShowsEveryone }.distinctUntilChanged().drop(1).collect {
+                when (_feedMode.value) {
+                    FeedMode.REELS -> reelsFeedService.refresh()
+                    FeedMode.LIVE -> liveFeedService.refresh()
+                    FeedMode.MARKETPLACE -> marketplaceFeedService.refresh()
+                    else -> Unit
+                }
+            }
         }
     }
 
