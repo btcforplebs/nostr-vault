@@ -274,6 +274,8 @@ enum PlainLog {
             (#"\[?[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){3,7}\]?(?::\d+)?"#, "[ip]"),
             (#"[\w.+-]+@[\w-]+\.[\w.-]+"#, "[email]"),
             (#"(?:/Users|/var/mobile|/private|/data/user|/storage|/home)/\S*"#, "[path]"),
+            // Private relay addresses (Tor, LAN, Tailscale) point at the user's own box.
+            (#"\b(?:[\w-]+\.)+(?:onion|local|lan|internal|home\.arpa|ts\.net|localhost)\b|\blocalhost\b"#, "[private-relay]"),
             // Keep a URL's scheme and host; drop path and query, where tokens live.
             (#"\b((?:wss?|https?)://[^/\s?#'"]+)[^\s'"]*"#, "$1"),
         ]
@@ -283,7 +285,8 @@ enum PlainLog {
     }()
 
     /// Removes keys, nostr ids, hex ids, IPs, emails, file paths and URL
-    /// paths/queries. Relay host names stay: they are what makes a report useful.
+    /// paths/queries, and private relay addresses (.onion, .local, .ts.net…).
+    /// Public relay host names stay: they are what makes a report useful.
     static func scrub(_ text: String) -> String {
         var out = text
         for (regex, template) in scrubRules {

@@ -247,6 +247,8 @@ object PlainLog {
         """\[?[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){3,7}]?(?::\d+)?""" to "[ip]",
         """[\w.+-]+@[\w-]+\.[\w.-]+""" to "[email]",
         """(?:/Users|/var/mobile|/private|/data/user|/storage|/home)/\S*""" to "[path]",
+        // Private relay addresses (Tor, LAN, Tailscale) point at the user's own box.
+        """\b(?:[\w-]+\.)+(?:onion|local|lan|internal|home\.arpa|ts\.net|localhost)\b|\blocalhost\b""" to "[private-relay]",
         // Keep a URL's scheme and host; drop path and query, where tokens live.
         """\b((?:wss?|https?)://[^/\s?#'"]+)[^\s'"]*""" to "$1",
     ).map { (pattern, template) -> Regex(pattern) to template }

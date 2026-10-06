@@ -78,16 +78,19 @@ final class PlainLogTests: XCTestCase {
         id=\(hex) from 10.0.0.12:4869 and [fe80::1c2b:3cff:fe4d:5e6f]:443 \
         me@example.com /var/mobile/Containers/Data/x.db \
         nostr+walletconnect://abc?relay=wss://r.example&secret=\(hex) \
-        https://cdn.example.com/u/abc.jpg?token=SECRET wss://relay.damus.io/path
+        https://cdn.example.com/u/abc.jpg?token=SECRET wss://relay.damus.io/path \
+        wss://abcdefghijklmnop.onion ws://haven.local:3355 wss://box.tail1234.ts.net ws://localhost:4869
         """
         let out = PlainLog.scrub(raw)
         for leak in ["nsec1", "npub1", hex, "10.0.0.12", "fe80", "me@example.com", "/var/mobile",
-                     "walletconnect", "SECRET", "abc.jpg", "/path"] {
+                     "walletconnect", "SECRET", "abc.jpg", "/path",
+                     "abcdefghijklmnop", "haven.local", "tail1234", "localhost"] {
             XCTAssertFalse(out.contains(leak), "leaked \(leak) in: \(out)")
         }
         // Positive control: relay hosts survive, they make the report useful.
         XCTAssertTrue(out.contains("wss://relay.damus.io"))
         XCTAssertTrue(out.contains("https://cdn.example.com"))
+        XCTAssertTrue(out.contains("wss://[private-relay]"))
     }
 
     func testExportHasNoRawLines() {
