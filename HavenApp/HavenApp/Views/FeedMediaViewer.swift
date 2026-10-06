@@ -1005,6 +1005,10 @@ final class ZoomSwipeWatch: NSObject, ObservableObject {
     /// fade is lost.
     private static let swipeName = "com.apple.UIKit.ZoomInteractiveDismissSwipeDown"
 
+    // Each page of a pager attaches to the same recognizer, and pages come
+    // and go while the cover stays up.
+    deinit { swipe?.removeTarget(self, action: nil) }
+
     func attach(from view: UIView) {
         guard swipe == nil else { return }
         var ancestor: UIView? = view
