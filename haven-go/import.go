@@ -31,29 +31,47 @@ const layout = "2006-01-02"
 // so it never reintroduces an expanding-window pull. Plus a minute of overlap.
 const giftWrapBackdateSlack = 2*24*time.Hour + time.Minute
 
-// ensureImportRelays checks connectivity to all import seed relays.
+// reachableImportRelays holds the import seed relays that passed the last
+// ensureImportRelays check. The import fetches only from these: a relay that
+// failed the check would otherwise be re-dialed for every 10-day window and
+// stall each one for the full connect timeout (~15s × ~140 windows).
+var reachableImportRelays atomic.Pointer[[]string]
+
+// importRelays returns the seed relays to fetch the import from: the ones
+// that passed ensureImportRelays, or all of them if it hasn't run.
+func importRelays() []string {
+	if r := reachableImportRelays.Load(); r != nil {
+		return *r
+	}
+	return config.ImportSeedRelays
+}
+
+// ensureImportRelays checks connectivity to all import seed relays and
+// records the reachable ones for importRelays.
 // Returns false if ALL relays are unreachable (caller should abort).
 // NOTE: never calls os.Exit — in C-shared / iOS embedded mode that would
 // terminate the entire host app process.
 func ensureImportRelays() bool {
-	nErrors := 0
+	reachable := make([]string, 0, len(config.ImportSeedRelays))
 	log.Println("🧪 Testing import relays")
 	for _, relay := range config.ImportSeedRelays {
 		if _, err := pool.EnsureRelay(relay); err != nil {
-			nErrors++
 			slog.Error("🚫 Error connecting to relay", "relay", relay, "error", err)
 		} else {
+			reachable = append(reachable, relay)
 			slog.Debug("✅ Connected to relay", "relay", relay)
 		}
 	}
+	reachableImportRelays.Store(&reachable)
+	nErrors := len(config.ImportSeedRelays) - len(reachable)
 	if nErrors == 0 {
 		slog.Info("✅ All relays connected successfully")
 		return true
-	} else if nErrors == len(config.ImportSeedRelays) {
+	} else if len(reachable) == 0 {
 		slog.Error("🚫 Unable to connect to any import relays, check your connectivity and relays_import.json file")
 		return false
 	} else {
-		slog.Warn("⚠️ Some relays failed to connect, proceeding, but this may cause issues")
+		slog.Warn("⚠️ Some relays failed to connect, importing from the reachable ones only", "reachable", len(reachable), "failed", nErrors)
 		slog.Info("ℹ️ If you always see this message during startup, consider removing the relays that are not working from your relays_import.json file")
 		return true
 	}
@@ -70,7 +88,7 @@ func runImport(ctx context.Context) {
 	wotModel := wot.NewSimpleInMemory(
 		pool,
 		config.WhitelistedPubKeys,
-		config.ImportSeedRelays,
+		importRelays(),
 		config.WotDepth,
 		config.WotMinimumFollowers,
 		config.WotFetchTimeoutSeconds,
@@ -126,7 +144,7 @@ func importOwnerNotes(ctx context.Context) {
 			// done must be signalled even if the fetch loop panics,
 			// otherwise the select below waits out the full timeout.
 			runsafe.Run("importOwnerNotes.fetch", func() {
-				events := pool.FetchMany(ctx, config.ImportSeedRelays, filter)
+				events := pool.FetchMany(ctx, importRelays(), filter)
 				for ev := range events {
 					if ctx.Err() != nil {
 						break // Stop the loop on timeout
@@ -168,8 +186,6 @@ func importOwnerNotes(ctx context.Context) {
 		if nFailedImportNotes > 0 {
 			log.Printf("⚠️ Failed to import %d notes", nFailedImportNotes)
 		}
-
-		time.Sleep(1 * time.Second) // Avoid bombarding relays with too many requests
 	}
 	debug.FreeOSMemory()
 }
@@ -198,7 +214,7 @@ func importTaggedNotes(ctx context.Context) {
 			// Same rules as the live inbox (classifyInboxEvent), so a zap
 			// is judged by its zapper here too, plus the zaps you sent.
 			for _, f := range []nostr.Filter{filter, givenZapsFilter(pTags, nil)} {
-				for ev := range pool.FetchMany(ctx, config.ImportSeedRelays, f) {
+				for ev := range pool.FetchMany(ctx, importRelays(), f) {
 					if ctx.Err() != nil {
 						break // Stop the loop on timeout
 					}
