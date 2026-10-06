@@ -395,6 +395,23 @@ class ProfileViewModel @Inject constructor(
         _isBlocked.value = !_isBlocked.value
     }
 
+    /**
+     * Who a Media grid tile's Report Media / Block User act on: the note's
+     * author, unless that is you (iOS `MediaGridItem` hides them for your own).
+     */
+    fun mediaModerationTarget(author: String): String? =
+        com.nostrvault.ui.screens.mediaModerationTarget(author, nostrService.ownerHexPubkey, nostrService.activeHexPubkey)
+
+    fun reportAuthor(pubkey: String, reason: String, description: String) {
+        nostrService.reportUser(pubkey, reason, description.ifBlank { null })
+    }
+
+    /** Blocks [pubkey]; the header's Blocked state follows when it is this profile. */
+    fun blockAuthor(pubkey: String) {
+        feedService.blockUser(pubkey)
+        if (pubkey == _pubkey.value) _isBlocked.value = true
+    }
+
     /** Slow Down (5 posts visible, as on iOS) or Speed Up. */
     fun toggleThrottle() {
         val npub = nostrService.hexToNpub(_pubkey.value) ?: return

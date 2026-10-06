@@ -3,6 +3,7 @@ package com.nostrvault.ui.screens.profile
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,7 +47,7 @@ import com.nostrvault.ui.theme.*
  * row, stats, identity rows, 4 section tabs (Notes/Media/Replies/Tagged) with
  * counts, infinite scroll, a media grid, and a full-screen media viewer.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ProfileScreen(
     pubkey: String,
@@ -147,6 +148,9 @@ fun ProfileScreen(
             filteredNotes.flatMap { note -> note.mediaURLs.map { it to note } }
         } else emptyList()
     }
+    // Report Media / Block User from a Media grid tile's long-press menu.
+    var gridReportTarget by remember { mutableStateOf<String?>(null) }
+    var gridBlockTarget by remember { mutableStateOf<String?>(null) }
 
     GlassScaffold(
         toolbar = {
@@ -426,23 +430,50 @@ fun ProfileScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp, vertical = 2.dp),
                     ) {
-                        row.forEach { (url, _) ->
+                        row.forEach { (url, note) ->
                             val idx = mediaItems.indexOfFirst { it.first == url }
-                            AsyncImage(
-                                model = url,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(SecondaryGroupedBg)
-                                    .clickable {
-                                        com.nostrvault.ui.components.FullScreenMediaRouter.open(
-                                            mediaItems.map { it.first }, idx, copyLink = true,
+                            // Long-press: Report Media / Block User on someone
+                            // else's media, as iOS's MediaGridItem menu offers.
+                            val target = remember(note.pubkey) { viewModel.mediaModerationTarget(note.pubkey) }
+                            var menuOpen by remember { mutableStateOf(false) }
+                            Box(Modifier.weight(1f).aspectRatio(1f)) {
+                                AsyncImage(
+                                    model = url,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(SecondaryGroupedBg)
+                                        .combinedClickable(
+                                            onClick = {
+                                                com.nostrvault.ui.components.FullScreenMediaRouter.open(
+                                                    mediaItems.map { it.first }, idx, copyLink = true,
+                                                )
+                                            },
+                                            onLongClick = if (target != null) ({ menuOpen = true }) else null,
+                                        ),
+                                )
+                                if (target != null) {
+                                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text("Report Media", color = ErrorRed) },
+                                            leadingIcon = {
+                                                Icon(NostrVaultIcons.Flag, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+                                            },
+                                            onClick = { menuOpen = false; gridReportTarget = target },
                                         )
-                                    },
-                            )
+                                        HorizontalDivider()
+                                        DropdownMenuItem(
+                                            text = { Text("Block User", color = ErrorRed) },
+                                            leadingIcon = {
+                                                Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+                                            },
+                                            onClick = { menuOpen = false; gridBlockTarget = target },
+                                        )
+                                    }
+                                }
+                            }
                         }
                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
@@ -512,6 +543,34 @@ fun ProfileScreen(
             onMessageSeller = if (isOwnProfile) null else { l -> openListing = null; onMessageUser(l.pubkey, l.messageToSeller) },
             onEventInfo = null,
             onDismiss = { openListing = null },
+        )
+    }
+
+    // Reporting also blocks the author, as on iOS and everywhere else in the app.
+    gridReportTarget?.let { pubkey ->
+        com.nostrvault.ui.components.UGCReportDialog(
+            onReport = { reason, description ->
+                gridReportTarget = null
+                viewModel.reportAuthor(pubkey, reason, description)
+                viewModel.blockAuthor(pubkey)
+            },
+            onDismiss = { gridReportTarget = null },
+        )
+    }
+    gridBlockTarget?.let { pubkey ->
+        AlertDialog(
+            onDismissRequest = { gridBlockTarget = null },
+            title = { Text("Block User") },
+            text = { Text("Block this user? Their posts will be hidden from your feed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    gridBlockTarget = null
+                    viewModel.blockAuthor(pubkey)
+                }) { Text("Block", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { gridBlockTarget = null }) { Text("Cancel") }
+            },
         )
     }
 
