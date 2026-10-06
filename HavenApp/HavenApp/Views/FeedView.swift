@@ -1474,6 +1474,17 @@ struct FeedView: View {
     /// there's no iPhone tab bar to carry it (iPad, Mac).
     private var rootContent: some View {
         rootContentBase.modifier(MiniPlayerInset())
+            // A tapped notification's post. onAppear covers a tap that
+            // launched the app before the feed existed.
+            .onAppear { openNotificationNote() }
+            .onReceive(NotificationCenter.default.publisher(for: .havenOpenNotificationNote)) { _ in
+                openNotificationNote()
+            }
+    }
+
+    private func openNotificationNote() {
+        guard let note = NotificationNoteOpen.consume() else { return }
+        openNoteDetail(note)
     }
 
     private var rootContentBase: some View {

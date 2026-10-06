@@ -930,6 +930,9 @@ struct MenuBarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayNotes)) { _ in
             selectedTab = .notes
         }
+        .onReceive(NotificationCenter.default.publisher(for: .havenOpenNotificationNote)) { _ in
+            selectedTab = .feed
+        }
         .onReceive(NotificationCenter.default.publisher(for: .havenOpenRelayZaps)) { _ in
             selectedTab = .notes
         }

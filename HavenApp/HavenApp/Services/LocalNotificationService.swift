@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 import SwiftUI
 import UserNotifications
@@ -161,11 +162,25 @@ final class LocalNotificationService {
         }
     }
 
+    /// Looks up the post first for a notification about one, so a tap opens it
+    /// with nothing left to load. The relay on this device has just stored the
+    /// event, so the lookup takes milliseconds.
     private func deliver(id: String, type: String, name: String?, preview: String, npub: String) {
+        guard Self.opensNote(type) else {
+            show(id: id, type: type, name: name, preview: preview, npub: npub, note: nil)
+            return
+        }
+        Task { @MainActor in
+            let note = await Self.resolveNote(type: type, id: id)
+            self.show(id: id, type: type, name: name, preview: preview, npub: npub, note: note)
+        }
+    }
+
+    private func show(id: String, type: String, name: String?, preview: String, npub: String, note: FeedNote?) {
         if appInForeground {
-            showInAppBanner(id: id, type: type, name: name, preview: preview, npub: npub)
+            showInAppBanner(id: id, type: type, name: name, preview: preview, npub: npub, note: note)
         } else {
-            post(id: id, type: type, name: name, preview: preview, npub: npub)
+            post(id: id, type: type, name: name, preview: preview, npub: npub, note: note)
         }
     }
 
@@ -221,11 +236,11 @@ final class LocalNotificationService {
     /// Shows the in-app drop-down banner (RelayActivityBanner) for activity that arrives
     /// while the app is foregrounded, tappable to jump straight to the relevant tab/note,
     /// with the same notification sound the system push would have played.
-    private func showInAppBanner(id: String, type: String, name: String?, preview: String, npub: String) {
+    private func showInAppBanner(id: String, type: String, name: String?, preview: String, npub: String, note: FeedNote?) {
         let (title, body) = titleAndBody(type: type, name: name, preview: preview)
         let (icon, color) = iconAndColor(for: type)
         RelayActivityNotificationManager.shared.show(icon: icon, title: title, body: body, color: color) {
-            Self.navigate(type: type, id: id, npub: npub)
+            Self.navigate(type: type, id: id, npub: npub, note: note)
         }
         playSound()
     }
@@ -260,26 +275,35 @@ final class LocalNotificationService {
     /// userInfo this service attaches in `post()`. Switches to the tagged account first —
     /// without this, tapping a notification for a non-active whitelisted account would
     /// open the right tab but show the wrong account's data.
-    static func navigate(type: String, id: String, npub: String? = nil) {
+    static func navigate(type: String, id: String, npub: String? = nil, note: FeedNote? = nil) {
         let currentNpub = ConfigService.shared.config.activeAccountNpub.isEmpty
             ? ConfigService.shared.config.ownerNpub
             : ConfigService.shared.config.activeAccountNpub
         if let npub, !npub.isEmpty, npub != currentNpub {
             ConfigService.shared.switchActiveAccount(to: npub)
         }
-        // Every relay-event notification lands on that event in the Relay tab.
-        // Mentions and replies used to open the thread sheet over the Feed tab
-        // instead, and the others only picked a filter without finding the post.
+        // Opens the post itself: the mention or reply, or your note that was
+        // reacted to, zapped or reposted. It was looked up when the notification
+        // went out, so there is normally nothing to wait for. This used to land
+        // on the Relay tab and search its list for up to 10 s before falling
+        // back to a sheet that fetched the post all over again.
         switch type {
-        case "mention", "reply", "repost":
-            NotificationCenter.default.post(name: .havenOpenRelayNotes, object: nil)
-            RelayFocus.request(type: type, eventId: id)
-        case "reaction":
-            NotificationCenter.default.post(name: .havenOpenRelayLikes, object: nil)
-            RelayFocus.request(type: type, eventId: id)
-        case "zap":
-            NotificationCenter.default.post(name: .havenOpenRelayZaps, object: nil)
-            RelayFocus.request(type: type, eventId: id)
+        case "mention", "reply", "repost", "reaction", "zap":
+            if let note {
+                NotificationNoteOpen.request(note)
+                return
+            }
+            Task { @MainActor in
+                if let found = await resolveNote(type: type, id: id, waitForRelay: true) {
+                    NotificationNoteOpen.request(found)
+                } else {
+                    // Nothing to open: a zap on your profile rather than a
+                    // post, or a post this device no longer holds.
+                    let list: Notification.Name = type == "zap" ? .havenOpenRelayZaps
+                        : type == "reaction" ? .havenOpenRelayLikes : .havenOpenRelayNotes
+                    NotificationCenter.default.post(name: list, object: nil)
+                }
+            }
         case "dm", "giftwrap":
             // Straight to the conversation when the inbox has the message;
             // the object is the counterparty the inbox should open.
@@ -290,7 +314,7 @@ final class LocalNotificationService {
         }
     }
 
-    private func post(id: String, type: String, name: String?, preview: String, npub: String) {
+    private func post(id: String, type: String, name: String?, preview: String, npub: String, note: FeedNote?) {
         let (title, body) = titleAndBody(type: type, name: name, preview: preview)
 
         let content = UNMutableNotificationContent()
@@ -299,7 +323,11 @@ final class LocalNotificationService {
         let sound = NotificationSound(rawValue: ConfigService.shared.config.notificationSoundName) ?? .defaultSound
         content.sound = UNNotificationSound(named: UNNotificationSoundName(sound.systemSoundName))
         content.categoryIdentifier = "RELAY_EVENT"
-        content.userInfo = ["notif_type": type, "notif_id": id, "notif_npub": npub]
+        var userInfo: [String: Any] = ["notif_type": type, "notif_id": id, "notif_npub": npub]
+        if let note, let data = try? JSONEncoder().encode(note) {
+            userInfo[Self.noteUserInfoKey] = data
+        }
+        content.userInfo = userInfo
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
         let request = UNNotificationRequest(
@@ -308,5 +336,152 @@ final class LocalNotificationService {
             trigger: trigger
         )
         UNUserNotificationCenter.current().add(request)
+    }
+}
+
+// MARK: - The post a notification opens
+
+extension LocalNotificationService {
+    /// userInfo key for the encoded `FeedNote` a tap opens.
+    static let noteUserInfoKey = "notif_note"
+
+    static func opensNote(_ type: String) -> Bool {
+        ["mention", "reply", "repost", "reaction", "zap"].contains(type)
+    }
+
+    /// The post a notification is about: the event itself for a mention or
+    /// reply, the note it points at for a reaction, zap or repost.
+    /// `waitForRelay` gives a tap that cold-launched the app time for the
+    /// relay on this device to start.
+    static func resolveNote(type: String, id: String, waitForRelay: Bool = false) async -> FeedNote? {
+        let feed = FeedService.shared
+        if type == "mention" || type == "reply", let known = feed.findNote(id: id) {
+            return known
+        }
+        if waitForRelay {
+            for _ in 0..<50 where !RelayProcessManager.shared.isRunning {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+        guard let event = await LocalEventLookup.events(ids: [id]).first else { return nil }
+        if type == "mention" || type == "reply" {
+            return FeedNote(eventJSON: event)
+        }
+        // A repost carries the note it shares in its content.
+        if type == "repost", let content = event["content"] as? String,
+           let data = content.data(using: .utf8),
+           let embedded = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let note = FeedNote(eventJSON: embedded) {
+            return note
+        }
+        // NIP-25 puts the reacted-to note in the last `e` tag; a zap receipt
+        // and a repost have one.
+        let eTags = ((event["tags"] as? [[String]]) ?? []).filter { $0.count >= 2 && $0[0] == "e" }
+        guard let targetId = (type == "reaction" ? eTags.last : eTags.first)?[1] else { return nil }
+        if let known = feed.findNote(id: targetId) { return known }
+        return await LocalEventLookup.events(ids: [targetId]).first.flatMap(FeedNote.init(eventJSON:))
+    }
+}
+
+/// A post a notification tap opens, parked until the feed can push it: a tap
+/// that launches the app is handled before the feed exists.
+@MainActor
+enum NotificationNoteOpen {
+    static var pending: FeedNote?
+
+    static func request(_ note: FeedNote) {
+        pending = note
+        // iOS switches to the Feed tab on havenOpenFeed, macOS on this one.
+        NotificationCenter.default.post(name: .havenOpenFeed, object: nil)
+        NotificationCenter.default.post(name: .havenOpenNotificationNote, object: nil)
+    }
+
+    static func consume() -> FeedNote? {
+        defer { pending = nil }
+        return pending
+    }
+}
+
+/// Reads events by id from the relay on this device, which holds everything a
+/// notification is about: the inbox has the mention, reaction or zap, and the
+/// outbox has your note it points at.
+@MainActor
+enum LocalEventLookup {
+    static func events(ids: [String], timeout: TimeInterval = 1.5) async -> [[String: Any]] {
+        guard !ids.isEmpty, RelayProcessManager.shared.isRunning else { return [] }
+        let base = ConfigService.shared.config.nostrURL
+        var found: [[String: Any]] = []
+        for url in [base + "/inbox", base].compactMap(URL.init(string:)) {
+            found += await query(url, ids: ids, timeout: timeout)
+            if Set(found.compactMap { $0["id"] as? String }).isSuperset(of: ids) { break }
+        }
+        return found
+    }
+
+    private final class Query {
+        let client = WebSocketClient()
+        let subId = "notif-\(UUID().uuidString.prefix(6))"
+        var found: [[String: Any]] = []
+        var sent = false
+        var finished = false
+        var bag = Set<AnyCancellable>()
+    }
+
+    private static func query(_ url: URL, ids: [String], timeout: TimeInterval) async -> [[String: Any]] {
+        await withCheckedContinuation { continuation in
+            let q = Query()
+            q.client.isTemporary = true
+            let finish = {
+                guard !q.finished else { return }
+                q.finished = true
+                q.bag.removeAll()
+                q.client.disconnect()
+                continuation.resume(returning: q.found)
+            }
+            q.client.messageSubject
+                .receive(on: DispatchQueue.main)
+                .sink { message in
+                    guard let data = message.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                          json.count >= 2, json[1] as? String == q.subId else { return }
+                    switch json[0] as? String {
+                    case "EVENT":
+                        if json.count >= 3, let event = json[2] as? [String: Any] { q.found.append(event) }
+                    case "EOSE", "CLOSED":
+                        finish()
+                    default:
+                        break
+                    }
+                }
+                .store(in: &q.bag)
+            q.client.$connectionState
+                .receive(on: DispatchQueue.main)
+                .sink { state in
+                    guard state == .connected, !q.sent else { return }
+                    q.sent = true
+                    let req: [Any] = ["REQ", q.subId, ["ids": ids]]
+                    if let data = try? JSONSerialization.data(withJSONObject: req),
+                       let text = String(data: data, encoding: .utf8) {
+                        q.client.send(text: text)
+                    }
+                }
+                .store(in: &q.bag)
+            q.client.connect(url: url)
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish() }
+        }
+    }
+}
+
+extension FeedNote {
+    /// A note from a raw event object, as a relay sends it.
+    init?(eventJSON event: [String: Any]) {
+        guard let id = event["id"] as? String,
+              let pubkey = event["pubkey"] as? String,
+              let content = event["content"] as? String,
+              let createdAt = (event["created_at"] as? NSNumber)?.int64Value,
+              let kind = (event["kind"] as? NSNumber)?.intValue else { return nil }
+        self.init(id: id, pubkey: pubkey, content: content,
+                  createdAt: Date(timeIntervalSince1970: TimeInterval(createdAt)),
+                  tags: event["tags"] as? [[String]] ?? [], kind: kind)
     }
 }

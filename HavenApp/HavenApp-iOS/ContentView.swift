@@ -82,6 +82,9 @@ struct ContentView: View {
             if RelayFocus.pending != nil {
                 selectedTab = 4 // Relay tab
             }
+            if NotificationNoteOpen.pending != nil {
+                selectedTab = 0 // Feed tab pushes the post
+            }
             // Replay any queued notification action from a cold start
             if let action = AppDelegate.pendingAction {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
