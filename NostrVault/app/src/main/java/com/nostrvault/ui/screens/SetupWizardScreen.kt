@@ -320,11 +320,11 @@ class SetupWizardViewModel @Inject constructor(
         val blossomURL = _externalBlossomInput.value.trim()
         if (external) {
             if (normalizeExternalRelayURL(relayURL) == null) {
-                _error.value = "Enter the relay app's address on this phone, e.g. ws://127.0.0.1:4869"
+                _error.value = "Enter a relay app on this phone (ws://127.0.0.1:4869) or your relay's wss:// address"
                 return
             }
             if (blossomURL.isNotEmpty() && normalizeExternalBlossomURL(blossomURL) == null) {
-                _error.value = "Enter the Blossom address on this phone, e.g. http://127.0.0.1:port"
+                _error.value = "Enter a Blossom address on this phone (http://127.0.0.1:port) or an https:// address"
                 return
             }
         }
@@ -1299,9 +1299,9 @@ private fun RelayChoiceStep(viewModel: SetupWizardViewModel) {
         Spacer(Modifier.height(12.dp))
 
         WizardOptionCard(
-            title = "A Relay App on This Phone",
-            subtitle = "Keep the client and your relay in separate apps, e.g. Citrine. " +
-                "The built-in relay never starts.",
+            title = "A Relay You Already Run",
+            subtitle = "A relay app on this phone, e.g. Citrine, or your own relay elsewhere, " +
+                "e.g. Nostr Vault for Mac. The built-in relay never starts.",
             selected = useExternal,
             onClick = { viewModel.setUseExternalRelay(true) },
             modifier = Modifier.fillMaxWidth(),
@@ -1313,7 +1313,7 @@ private fun RelayChoiceStep(viewModel: SetupWizardViewModel) {
                 value = relayInput,
                 onValueChange = viewModel::setExternalRelayInput,
                 label = { Text("Relay URL") },
-                placeholder = { Text("ws://127.0.0.1:4869") },
+                placeholder = { Text("ws://127.0.0.1:4869 or wss://your.domain") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 modifier = Modifier.fillMaxWidth(),
@@ -1324,7 +1324,7 @@ private fun RelayChoiceStep(viewModel: SetupWizardViewModel) {
                 value = blossomInput,
                 onValueChange = viewModel::setExternalBlossomInput,
                 label = { Text("Blossom URL (optional)") },
-                placeholder = { Text("http://127.0.0.1:port") },
+                placeholder = { Text("https://your.domain") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 modifier = Modifier.fillMaxWidth(),

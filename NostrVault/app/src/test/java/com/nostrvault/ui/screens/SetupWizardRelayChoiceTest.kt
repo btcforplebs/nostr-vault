@@ -75,16 +75,30 @@ class SetupWizardRelayChoiceTest {
     }
 
     @Test
-    fun `an address off the phone is refused`() {
+    fun `plain ws off the phone is refused`() {
         viewModel.setSetupPath(SetupPath.BROWSE)
         viewModel.advanceFromChoosePath()
         viewModel.setUseExternalRelay(true)
-        viewModel.setExternalRelayInput("wss://relay.example")
+        viewModel.setExternalRelayInput("ws://relay.example")
         viewModel.advanceFromRelayChoice()
 
         assertEquals(WizardStep.RELAY_CHOICE, viewModel.step.value)
         assertNotNull(viewModel.error.value)
         assertFalse(saved.useExternalRelay)
+    }
+
+    @Test
+    fun `a wss relay off the phone is accepted`() {
+        viewModel.setSetupPath(SetupPath.BROWSE)
+        viewModel.advanceFromChoosePath()
+        viewModel.setUseExternalRelay(true)
+        viewModel.setExternalRelayInput("wss://relay.mac.example")
+        viewModel.setExternalBlossomInput("https://relay.mac.example")
+        viewModel.advanceFromRelayChoice()
+
+        assertTrue(saved.useExternalRelay)
+        assertEquals("wss://relay.mac.example", saved.externalRelayURL)
+        assertEquals("https://relay.mac.example", saved.externalBlossomURL)
     }
 
     @Test

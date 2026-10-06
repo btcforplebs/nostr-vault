@@ -109,7 +109,10 @@ class MediaUploadManager @Inject constructor(
             notificationManager.updateUploadProgress(uploadId, 1.0f)
 
             val localBase = blossomService.localBlossomURL()
-            val isLocalOnly = resultUrl != null && localBase != null && resultUrl.startsWith(localBase)
+            // A public external Blossom (Nostr Vault for Mac on a domain) is
+            // not "local only" even though its URL is localBase.
+            val isLocalOnly = resultUrl != null && localBase != null && resultUrl.startsWith(localBase) &&
+                com.nostrvault.relay.isPrivateNetworkURL(localBase)
             val hasMirrors = configStore.config.value.activeBlossomMirrors.isNotEmpty()
 
             when {
