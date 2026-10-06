@@ -2252,6 +2252,14 @@ class FeedService: ObservableObject {
     /// Still holding that tag means nothing was unpacked and this note carries
     /// the reposter's identity, so take the author from the repost's `p` tag.
     func quoteTarget(for note: FeedNote) -> FeedNote {
+        originalNote(for: note)
+    }
+
+    /// The note a repost stands for, for anything that acts on it: quoting,
+    /// liking, zapping, and the counts and states a repost row shows. Always
+    /// carries the original's id and author, even before its body arrives;
+    /// see `quoteTarget` for how an embedded copy is told from a bare repost.
+    func originalNote(for note: FeedNote) -> FeedNote {
         guard note.kind == 6, let refId = note.repostedEventId else { return note }
         if let original = findNote(id: refId) { return original }
         let carriesOriginal = !note.tags.contains { $0.count >= 2 && $0[0] == "e" && $0[1] == refId }
