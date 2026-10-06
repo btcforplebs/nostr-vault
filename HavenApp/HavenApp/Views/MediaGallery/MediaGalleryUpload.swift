@@ -111,11 +111,24 @@ extension MediaGalleryView {
                             fileURL = dest
                         }
 
-                        guard let fileURL else {
+                        guard var fileURL else {
                             await MainActor.run {
                                 MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Failed to read video file.")
                             }
                             return
+                        }
+
+                        // Never upload where it was taken (MediaPrivacy).
+                        guard let cleanURL = await MediaPrivacy.removingLocation(fromFileAt: fileURL) else {
+                            try? FileManager.default.removeItem(at: fileURL)
+                            await MainActor.run {
+                                MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: MediaPrivacy.failureMessage)
+                            }
+                            return
+                        }
+                        if cleanURL != fileURL {
+                            try? FileManager.default.removeItem(at: fileURL)
+                            fileURL = cleanURL
                         }
 
                         guard let sha256 = ComposeView.streamingSHA256(of: fileURL) else {
@@ -182,6 +195,15 @@ extension MediaGalleryView {
                             }
                             #endif
                         }
+
+                        // Never upload where it was taken (MediaPrivacy).
+                        guard let cleanData = MediaPrivacy.removingLocation(fromImageData: finalData) else {
+                            await MainActor.run {
+                                MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: MediaPrivacy.failureMessage)
+                            }
+                            return
+                        }
+                        finalData = cleanData
 
                         let mimeType = finalType.preferredMIMEType ?? "image/jpeg"
                         let sha256 = SHA256.hash(data: finalData).map { String(format: "%02x", $0) }.joined()
@@ -261,7 +283,17 @@ extension MediaGalleryView {
                         return
                     }
 
-                    guard let sha256 = ComposeView.streamingSHA256(of: tempDest) else {
+                    // Never upload where it was taken (MediaPrivacy).
+                    guard let uploadURL = await MediaPrivacy.removingLocation(fromFileAt: tempDest) else {
+                        try? FileManager.default.removeItem(at: tempDest)
+                        await MainActor.run {
+                            MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: MediaPrivacy.failureMessage)
+                        }
+                        return
+                    }
+                    defer { if uploadURL != tempDest { try? FileManager.default.removeItem(at: uploadURL) } }
+
+                    guard let sha256 = ComposeView.streamingSHA256(of: uploadURL) else {
                         try? FileManager.default.removeItem(at: tempDest)
                         await MainActor.run {
                             MediaUploadNotificationManager.shared.markFailed(id: notificationId, message: "Failed to compute SHA256.")
@@ -270,7 +302,7 @@ extension MediaGalleryView {
                     }
 
                     let localSuccess = await blossom.saveToLocalRelay(
-                        fileURL: tempDest,
+                        fileURL: uploadURL,
                         sha256: sha256,
                         contentType: mimeType
                     ) { progress in
@@ -315,7 +347,15 @@ extension MediaGalleryView {
             }
 
             // SCENARIO 1: Check for image data first (higher priority)
-            if PlatformClipboard.hasImage(), let imageData = PlatformClipboard.getImageData() {
+            if PlatformClipboard.hasImage(), let pastedData = PlatformClipboard.getImageData() {
+                // Never upload where it was taken (MediaPrivacy).
+                guard let imageData = MediaPrivacy.removingLocation(fromImageData: pastedData) else {
+                    await MainActor.run {
+                        isPastingContent = false
+                        ErrorNotificationManager.shared.show(MediaPrivacy.failureMessage, icon: "location.slash", style: .warning)
+                    }
+                    return
+                }
                 // Detect actual image format from magic bytes
                 let detectedContentType: String
                 if imageData.count >= 6 {
