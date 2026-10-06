@@ -35,15 +35,31 @@ enum NIP88Poll {
     }
 
     /// The relays to read votes from and send them to: the poll's own first
-    /// (NIP-88 says votes go there), then `fallback`, deduplicated.
-    static func relays(poll: Poll, fallback: [String]) -> [String] {
+    /// (NIP-88 says votes go there), then `fallback`, then the author's
+    /// `outbox`, deduplicated. The poll's relays and the outbox are written by
+    /// a stranger, so only public ones count: a LAN, loopback or onion address
+    /// would make this phone dial into its own network (and iOS ask for Local
+    /// Network access). `fallback` is this device's own setup and is kept.
+    static func relays(poll: Poll, fallback: [String], outbox: [String] = []) -> [String] {
         var seen = Set<String>()
-        return (poll.relays + fallback)
+        return (poll.relays.filter(isPublicRelay) + fallback + outbox.filter(isPublicRelay))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { $0.hasPrefix("wss://") || $0.hasPrefix("ws://") }
             .filter { seen.insert($0.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))).inserted }
             .prefix(maxRelays)
             .map { $0 }
+    }
+
+    /// A public `wss` relay, by the same rule the feed uses for outboxes,
+    /// plus the private ranges that rule leaves out.
+    static func isPublicRelay(_ raw: String) -> Bool {
+        guard FeedOutboxPlan.normalizedKey(raw) != nil,
+              let host = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines))?.host?.lowercased()
+        else { return false }
+        if host.hasPrefix("169.254.") || host == "0.0.0.0" { return false }
+        let parts = host.split(separator: ".")
+        if parts.count == 4, parts[0] == "172", let b = Int(parts[1]), (16...31).contains(b) { return false }
+        return true
     }
 
     /// Counts the votes on `poll`. The caller checks signatures; this checks
