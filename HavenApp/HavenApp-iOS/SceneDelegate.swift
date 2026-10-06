@@ -313,7 +313,6 @@ private extension View {
 struct AppBannerStack: View {
     var body: some View {
         VStack(spacing: 6) {
-            SignerApprovalBanner().bannerHitRegion("signer")
             PostActionNotificationBanner().bannerHitRegion("postAction")
             ZapNotificationBanner().bannerHitRegion("zap")
             FollowNotificationBanner().bannerHitRegion("follow")
