@@ -4,6 +4,13 @@ import Combine
 
 struct NoteDetailView: View {
     let note: FeedNote
+
+    /// A repost opens the note it reposted: the thread, likes, zaps and
+    /// replies all belong to the original. Done here so every way into a
+    /// thread gets it, not each caller.
+    init(note: FeedNote) {
+        self.note = FeedService.shared.threadTarget(for: note)
+    }
     @StateObject private var feedService = FeedService.shared
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
