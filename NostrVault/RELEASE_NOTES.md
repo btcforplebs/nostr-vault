@@ -1,32 +1,48 @@
-# Nostr Vault v2.7.2 (Build 18) Release Notes
+# Nostr Vault v2.7.2 (Build 20) Release Notes
 
-A smoother, faster feed on everyday phones, and the Android app catching up with the iPhone. Scrolling on a 4 GB phone no longer stalls while posts and threads load. The feed preloads what is coming, shows photos at their real size with a soft preview, and keeps your place. New in this release: a Followers view, Web of Trust and language filters on Global, a Lightning wallet with history and lightning addresses, and one-tap sign-in with Clave.
-
-## Faster
-
-*   **Smooth Scrolling on Low-RAM Phones**: The feed was re-sorting up to 10,000 notes on the main thread every time a relay sent posts, and in threaded mode it regrouped the whole feed each time a reply's parent arrived. That work now happens in the background, so the list keeps moving. New posts wait until you stop scrolling before they are added, only the row that changed redraws, GIFs use the phone's hardware decoder, and the app's own code is precompiled at install. On a 4 GB test phone: no missed frames in 5,388, where before the list froze for 20 seconds at a time.
-*   **The Feed Loads Ahead of You**: The next posts load before you reach them. Photos open at their real size with a blurred preview while they load, and quoted and earlier posts hold their space instead of pushing the feed down.
-*   **Fewer Connections**: Lookups share one connection per relay instead of opening a new one each time, and a relay that refuses is left alone for two minutes.
+The Android app now matches the iPhone: same tabs, same wording, same feed, thread and Relay tab. New in this release: Wavlake music with background play, a Marketplace where you can buy and sell, translation of posts in other languages done on your phone, a hashtag feed, an article reader with highlights, and more reliable direct messages.
 
 ## New
 
-*   **Followers**: The Relay tab has a Followers view: who followed you recently, who came back, and everyone, with a red dot for new follows since you last looked. The Relay tab bar is now Notes · Likes · Zaps · Followers.
-*   **Global Filters**: Global shows your Web of Trust by default; the shield switches to Everyone. A language button lets you pick which languages to see.
-*   **Lightning Wallet**: Payment history, and send to lightning addresses and LNURLs as well as invoices, with the amount checked before you pay.
-*   **Sign in With Clave**: One tap opens Clave, you approve, and you are back connected. The signer session also stays up while you approve, instead of dying when you switch apps.
-*   **Comments**: NIP-22 comments (kind 1111) show up in threads, and you answer a comment with a comment.
-*   **Zaps**: The bolt flies from your avatar to the zap button and lands with a lightning strike and a haptic crack.
-*   **Photo Zoom**: Photos zoom out of their spot in the feed and swipe back into it. The viewer has Save.
-*   **Media Tab Backup Badge**: Every tile shows whether it is backed up to your Blossom servers.
-*   **One Feed Button**: Like the iPhone: an icon with a status dot, tap for the feed list.
+*   **Music**: Wavlake music plays in the background, with shuffle, repeat, a queue and artist pages. MP3s shared in posts play from a card.
+*   **Marketplace**: A Marketplace feed, a Shop tab on profiles, Sell a listing, and Message seller.
+*   **Translate**: Posts in another language get a Translate button. Translation runs on your phone (ML Kit); the text is not sent anywhere.
+*   **Hashtags**: Tap a hashtag to open a live feed for it.
+*   **Articles**: The reader shows highlights and lets you add your own, comment on them, and react, zap or comment on the article. Profiles have Articles, diVines and Music tabs.
+*   **Post From Any Feed**: Post diVines, articles and recipes from their own feeds.
+*   **GIFs**: A nostr.build GIF picker in the composer.
+*   **Search**: Filters, tappable links, and people in your Web of Trust listed right after the people you follow, in Search and in @mentions.
+*   **Event Info**: Every post has an Event Info panel with the relays it came from, its details and actions.
+*   **Relay Tab**: Likes Given and Zaps Given, count sheets, search, a compact layout, Whitelisted, load more, and tap the tab to jump to the top.
+*   **Media Tab**: Upload several files at once, paste, sort, dates, and a grid menu.
+*   **Widgets and Icons**: A Mosaic media widget, widgets you can configure, avatars in the feed widget, and a choice of app icon.
+*   **Live Streams**: Streams play inside posts, pop out to a moving mini player, rejoin after a drop, and live chat takes pictures from your Blossom servers.
+*   **Nostr Vault Badge**: Posts sent from Nostr Vault carry a small glowing badge.
+*   **Text Lines**: Settings chooses how many lines of text Compact and Threaded views show.
+*   **Signers**: Pair a signer with a nostrconnect:// link, and switch signer accounts without logging in again.
+
+## Direct Messages
+
+*   **Safer**: Message signatures are checked, and a forged sender is rejected.
+*   **New Accounts Get Messages**: A new account can be messaged straight away, and messages arrive live.
+*   **One Inbox**: One message list across all your devices, and messages you sent from another app are caught up once.
+*   **Alerts**: Notifications show the message and open the chat; your own sends do not notify you. With notifications off, a banner shows inside the app. Photos show in the conversation.
+
+## Changed
+
+*   **One Feed Rule**: Following, Global and the shield work the same way in every feed. Everyone is a crossed-out shield.
+*   **Notifications Come From Your Web of Trust**, and zap notifications name the person who zapped you.
+*   **Replies From Anyone**: Replies to your own posts are kept even when they come from outside your network.
+*   **Confirmations** before you delete or remove something.
+*   **Group chats (NIP-29) are removed.**
 
 ## Bug Fixes
 
-*   **Settings Apply Themselves**: Changing a setting the relay reads at start now restarts the relay for you, only when it would actually start differently. No more "restart to apply".
-*   **Posts With Photos Are Not Lost**: A post was cancelled when no outside Blossom server accepted its media, even though the photo was saved on your phone. It now waits and sends when a server is reachable.
-*   **Notification Taps** land on the post in the Relay tab.
-*   **Threads**: The start of a thread is looked for on the relays that have it, threaded cards show the newest replies, the thread lines sit beside profile pictures, and a quote is no longer treated as a reply.
-*   **Keep Your Place** when switching between expanded, condensed and threaded layouts.
-*   **Old Notes Show the Year**, instead of "57w".
-*   **Quoting a Repost** cites the original post, and relay picks in the composer attach as previews.
-*   **The Top Bar** folds away with the bottom bar as you scroll, and the New Posts button folds with it.
+*   **Global and Discovery Empty**: The Web of Trust list was read and saved wrongly, which emptied Global and Discovery.
+*   **Blocked People** stay out of every feed.
+*   **Following** reads the people you follow from their own relays and keeps bare reposts.
+*   **Photo Posts** no longer wait behind a signer request nobody answered, and "Approve in your signer" clears when the signer answers.
+*   **Big Follow Lists** can be signed through a remote signer.
+*   **Saving Your Profile** keeps your other fields, such as your banner.
+*   **Follow** taps made while your list is still loading are applied once it loads.
+*   **Reposts** show the original post time, nprofile links open the right profile, link URLs are hidden behind one card per link, and a post is sent from the account that was active when you tapped Post.
