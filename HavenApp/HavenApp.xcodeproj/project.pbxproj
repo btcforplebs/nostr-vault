@@ -24,6 +24,7 @@
 		070BC2E922A305BD037D845B /* ReelsFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98C1C315AD9DCB214071B65 /* ReelsFeedView.swift */; };
 		0731D8B3DE085946811D3C1A /* libhaven.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 27A87225270090D65AC98D48 /* libhaven.a */; };
 		07D3B5A3AB257E7D23940245 /* CustomZapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */; };
+		09FE21A0505086214027FF1A /* NVShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200B7EA08917B874F06B2AF /* NVShareInbox.swift */; };
 		0A25EF3C485CE440985C8FAA /* RecipeFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481ECF959698CE2F1D0E1582 /* RecipeFeedService.swift */; };
 		0A7F84AA905A79326F9B2C30 /* FeedFilterEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */; };
 		0B52F47C4995554C676125BB /* ArticleEngagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17BD202097026B7B7AE2D6F1 /* ArticleEngagement.swift */; };
@@ -96,6 +97,7 @@
 		2DD420459ECE57ACDD5E1432 /* LinkPreviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8826E9845079D00F1FE9D22A /* LinkPreviewCard.swift */; };
 		2E016A87010042DE2A3A3527 /* SignerApprovalBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D661145C7723C64C01870CE /* SignerApprovalBanner.swift */; };
 		2E304B4E05F97AA440250926 /* MusicViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BB78CB53982611165FC71C6 /* MusicViews.swift */; };
+		2ECB078027E2F4742D8F63A6 /* NVThumbnails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0419EB3F68D0DEFEAAB8BEC5 /* NVThumbnails.swift */; };
 		2F01D696DE1AD2109C69A981 /* ComposeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F4167692AA94E7EC99B29BD /* ComposeView.swift */; };
 		2F1FD7253CE6BB1663ADC269 /* MediaItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2060B412DD17816F0495D8 /* MediaItem.swift */; };
 		2F2E46994E838BCF6F8FCA7B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9410075B1BE7FC5BBAA601AD /* AppDelegate.swift */; };
@@ -145,6 +147,7 @@
 		484242402584BDA11F3FC4B5 /* ProofOfWorkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D64C528C3BBCD856610AB5 /* ProofOfWorkSettingsView.swift */; };
 		489C0CB7897C5D6A6C6EBFD2 /* EngagementTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EFA5F14E595113B47E8FC2 /* EngagementTracker.swift */; };
 		4980734C45973D0525500813 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D402A79FB4D7F03B9F67E1D2 /* PrivacyInfo.xcprivacy */; };
+		4B5D58DCD57393A28797C9F4 /* NostrVaultShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C8D23388CEDEB6EF30250B5F /* NostrVaultShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4B8B584EB02021A488F995CF /* libhaven_ios.a in Frameworks */ = {isa = PBXBuildFile; fileRef = DA8EC80FB31CC3B6EB777D12 /* libhaven_ios.a */; };
 		4BE74F42C56394DDD4DC8B80 /* NpubValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 131AAC224239A2C64C2579FC /* NpubValidation.swift */; };
 		4C51593200648C9350C77B24 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 915DF9A0796218139DE0703E /* Assets.xcassets */; };
@@ -171,6 +174,7 @@
 		5686CC2CCACE6E4F7B59F892 /* MessageComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47E52CADA44AC55958A69E64 /* MessageComposerView.swift */; };
 		57473C93C84432716881F0CD /* SellerListingsLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58DD627BE3CD8F7939B4F325 /* SellerListingsLoader.swift */; };
 		57E6069BC04523FD3F7A9DA7 /* ZapNotificationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AF859BC17F21BAE82F4F75F /* ZapNotificationBanner.swift */; };
+		57EBB30401CBC87C13A7A9B5 /* NVSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A385719722D447ECB47AA2D8 /* NVSharedStore.swift */; };
 		57FED2A701DF696811DE4001 /* FollowingFeedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4464865603517B64343AFC9 /* FollowingFeedState.swift */; };
 		5871EF7B3B1A4E58863FD494 /* VaultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD60255398375B7A8772D93 /* VaultView.swift */; };
 		587441300839972EAF70AF41 /* NIP49Service.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75ABEDE255E82775CCD37559 /* NIP49Service.swift */; };
@@ -207,6 +211,7 @@
 		6958772461ACC0B06A5D62EE /* InitialFollowsStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A58C1E653A14F58B7B1F09 /* InitialFollowsStepView.swift */; };
 		6A008FF842ADC0B20E36128C /* NVSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A385719722D447ECB47AA2D8 /* NVSharedStore.swift */; };
 		6A039C2F09BEDBDF1155FB52 /* VaultSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E82F3342C8C1BDDEF52BF87 /* VaultSearch.swift */; };
+		6B1C126C919BE5871E5977CD /* MediaPrivacy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */; };
 		6B6C7CB4A88360314C4D9A52 /* EventInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D343EC33764F0FED0D74697A /* EventInspector.swift */; };
 		6B7C1697E43C11DAD27D850A /* NWCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B6B870C61AB1313009408E /* NWCService.swift */; };
 		6B8CBB3D7A14336FF2847618 /* NotificationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D4E22D61B152894312A2DB6 /* NotificationPolicy.swift */; };
@@ -256,6 +261,7 @@
 		83352352A3848FB0FE67A278 /* HavenConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3056CC16711F7E38B7FE86D /* HavenConfig.swift */; };
 		84B35BE62D8E6FA6CA3910FB /* HTMLEntities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412B53053D0F6CC69B7152AC /* HTMLEntities.swift */; };
 		8669D5E967AF7E8F56DAB283 /* BunkerURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 702B73F5AC3EE620877BDAB0 /* BunkerURI.swift */; };
+		869E22799F9A0329D1D7C56A /* NVWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCBFE5F177EF3E08A2B49DF /* NVWidgetSnapshot.swift */; };
 		870818EFD99EBF6D0E1F6C30 /* FeedDashboardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5768CC5EF0D663BD7DBA800 /* FeedDashboardSheet.swift */; };
 		876A3213A547A96B0D26E7A9 /* ZapBurstView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C24FF7AFE3FFD1EBFFD119FA /* ZapBurstView.swift */; };
 		87D56536906D88D1C28BD2E2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D402A79FB4D7F03B9F67E1D2 /* PrivacyInfo.xcprivacy */; };
@@ -297,6 +303,7 @@
 		9A29693B7623772411B51DE7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A271B5E3364858651DC05603 /* SettingsView.swift */; };
 		9A2AB3396D1713C352DDE23E /* VaultModeLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EE02D17B251A319CA3CAA1A /* VaultModeLists.swift */; };
 		9A30F8C30EEEBD6C7ABA3C04 /* ProfileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14E3BC6EB9439A763E73FE2 /* ProfileRepository.swift */; };
+		9A3B42A4B71C1BEA1B6974A4 /* NVWidgetLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC382C7EF657BEBE0775C5A9 /* NVWidgetLogic.swift */; };
 		9A441353279669903E59CBD0 /* MediaListItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C40BA5C7F1973E84E4C8AA9 /* MediaListItem.swift */; };
 		9ACB5E2E7ECD36768A8F11DF /* VaultNetworking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F5705A371573904C7229D4 /* VaultNetworking.swift */; };
 		9B8F0ADC8DA2449B457C347A /* RelayConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 674B477FC2EDC213BEA34279 /* RelayConfiguration.swift */; };
@@ -314,6 +321,7 @@
 		A67A3D25AD98B4679381B013 /* Chime.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = D5F84F499115E83DCA24A989 /* Chime.mp3 */; };
 		A75075B57433796A3CE1B8B0 /* NVWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95DDFCB3C82896EDE259BF03 /* NVWidgetBridge.swift */; };
 		A772B3880251A670E2C1207F /* MediaGalleryUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 834869D3781DF8E49BC46F38 /* MediaGalleryUpload.swift */; };
+		A865A7B4FC4A543749DFE8A4 /* NVWidgetPrefs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D5B6503859D5F3C563D7E63 /* NVWidgetPrefs.swift */; };
 		A9175BE3300E9CE097E14F26 /* BlossomService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803F7E83A0267F02449FA666 /* BlossomService.swift */; };
 		A945F90593453AEC2794E43C /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E7F41B7A5FACA30EA7AE9015 /* Localizable.xcstrings */; };
 		A9BB3CB519144EE25890C345 /* BlossomDashboardMirrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */; };
@@ -340,6 +348,7 @@
 		B269F0CA9A5435B3EA0A9922 /* BlossomDashboardMirrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */; };
 		B2889A6B902C69E8612485A8 /* CustomZapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFC29BEE8A95187513A3787 /* CustomZapSheet.swift */; };
 		B2D799D053929F4DB6071E97 /* PowPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9953E9DA772C31A74141B335 /* PowPreferences.swift */; };
+		B2E8C326272133A8EBD69316 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 915DF9A0796218139DE0703E /* Assets.xcassets */; };
 		B349FEF83E4EA2ADDD63CD3F /* MediaPostQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD42E02DBEB72A43ECB28F5 /* MediaPostQueue.swift */; };
 		B3A065D965688DBC83174179 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC33568A91E5B5B737A03D1F /* FeedService.swift */; };
 		B65312DC3E3DC12BEA80B9DA /* MediaPagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95ECDB003F4997CEABAC3644 /* MediaPagerView.swift */; };
@@ -365,6 +374,7 @@
 		BF1F6EADB3CD222E4B0C6072 /* MediaGalleryToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC26E9FB9DE4AFA3840A2CB /* MediaGalleryToolbar.swift */; };
 		BF2C23440F6684625655CFD4 /* NostrURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D905B09C965B0356FE1B3469 /* NostrURI.swift */; };
 		C20F11831AE268F08F8E13BE /* MarketplaceFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D53D58F77A62E4B853B420 /* MarketplaceFeedViews.swift */; };
+		C22D800D759177B755F71440 /* NVShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200B7EA08917B874F06B2AF /* NVShareInbox.swift */; };
 		C244EE2E8FA58AC58748CA0C /* LocalRelaySearchPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A847D1496121BC4956AAF6 /* LocalRelaySearchPlan.swift */; };
 		C2E2BF0D5F5E31C7BFB2D179 /* ProfileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14E3BC6EB9439A763E73FE2 /* ProfileRepository.swift */; };
 		C2F3A9B7A6FD0B42164286EB /* Wavlake.swift in Sources */ = {isa = PBXBuildFile; fileRef = C91987BAC69FE261893A95BA /* Wavlake.swift */; };
@@ -407,8 +417,10 @@
 		D5B6B2758E4DB429EDC4A717 /* FollowingSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE4FF1BF35D7CF7BEF59AD4 /* FollowingSnapshot.swift */; };
 		D6B489ACF9177452BF641CAE /* BitcoinSweepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9AD59B52FA7C675CB3E04BC /* BitcoinSweepView.swift */; };
 		D6CE5283E2A14894824E1C44 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3DD3ED79F874383BC2F54F2 /* VideoPlayerView.swift */; };
+		D6D7B75E3B62CB8764254858 /* MediaPrivacy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */; };
 		D70D5D2A4C419AE701099A57 /* NetworkSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2F57E728F782BF1D8DD5B13 /* NetworkSyncService.swift */; };
 		D78888FE41863CB9D7B18949 /* MarketplaceFeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */; };
+		D78A86476C9F266C9AE64BF4 /* NVShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200B7EA08917B874F06B2AF /* NVShareInbox.swift */; };
 		D82E6B7E8F48027A2A29D7BA /* RecipeFeedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E2BF3A6A7EE811FD18ED7 /* RecipeFeedViews.swift */; };
 		D922EED792F2E8C7811F3696 /* FeedMediaViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EDBCA3BC62E9A4C8AA9E128 /* FeedMediaViewer.swift */; };
 		D95FE9EAEC6CDCF53AC7E1E5 /* RelayListEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB6A6872532B023E705FC6C /* RelayListEditor.swift */; };
@@ -448,6 +460,7 @@
 		E3E261106E739296E6F290C4 /* ContactManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4EFE6422E6E0A896809308 /* ContactManager.swift */; };
 		E4D9036E6A98FD0E5E5E4624 /* GifPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A557F0804214239CCFEDDD8 /* GifPickerSheet.swift */; };
 		E4DC095F28C9D7FE3BBED27A /* ModeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA14EC3D2D24B98A94F93B56 /* ModeButton.swift */; };
+		E4F5BCEB7F19702040277EDA /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB3E8A015C8F2D8E25729362 /* ShareViewController.swift */; };
 		E50C4B4F8787584FC7E29EA2 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 848045286D78E78658D43BE3 /* MenuBarView.swift */; };
 		E6B954A06F5DEC06F4C960AE /* MediaListItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C40BA5C7F1973E84E4C8AA9 /* MediaListItem.swift */; };
 		E72FC5DBD22EF6D6F7B72FBE /* ReactionGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FF5CDA9642898C97A55DBD /* ReactionGrouping.swift */; };
@@ -488,6 +501,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		826F74844B3CC9ADA2E909A0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AE43EF833F554F033032D12B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7C35FED02FE2AA1587F8A227;
+			remoteInfo = NostrVaultShare;
+		};
 		89F6BEE5E20F59434A7E8C4E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AE43EF833F554F033032D12B /* Project object */;
@@ -505,6 +525,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				DDC04184951013DA41106C5D /* NostrVaultWidgets.appex in Embed Foundation Extensions */,
+				4B5D58DCD57393A28797C9F4 /* NostrVaultShare.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -558,6 +579,7 @@
 		331ACF045B8F97CBE8B9F819 /* SilentPaymentsKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SilentPaymentsKit; path = SilentPaymentsKit; sourceTree = SOURCE_ROOT; };
 		3479233DA13D1E79374B68FD /* MediaTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTabView.swift; sourceTree = "<group>"; };
 		34B22EE405098B9706D5B1D8 /* WelcomeWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeWindowView.swift; sourceTree = "<group>"; };
+		3531FEF06A159858EBEB61A3 /* NostrVaultShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NostrVaultShare.entitlements; sourceTree = "<group>"; };
 		3800D9290BD369F4F26BC5C3 /* DraftService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftService.swift; sourceTree = "<group>"; };
 		382B059DAE5A61E52A3387E7 /* CondensedNoteLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CondensedNoteLine.swift; sourceTree = "<group>"; };
 		38F0A09BAA2ED410A3EAD8AB /* QuickActionsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionsWidget.swift; sourceTree = "<group>"; };
@@ -585,6 +607,7 @@
 		4AF859BC17F21BAE82F4F75F /* ZapNotificationBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapNotificationBanner.swift; sourceTree = "<group>"; };
 		4B5A4A8F28D8FA1A5E59F7EC /* Confident.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = Confident.mp3; sourceTree = "<group>"; };
 		4BE879845BEF9A356B7CB5EB /* LiveChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChatService.swift; sourceTree = "<group>"; };
+		4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPrivacy.swift; sourceTree = "<group>"; };
 		4C6F73BF6DECD70643354714 /* FloatingArrowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingArrowController.swift; sourceTree = "<group>"; };
 		4E0FC14B3CEA24424481BBA3 /* MediaGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGalleryView.swift; sourceTree = "<group>"; };
 		4E4EFE6422E6E0A896809308 /* ContactManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactManager.swift; sourceTree = "<group>"; };
@@ -677,6 +700,7 @@
 		9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlossomDashboardMirrors.swift; sourceTree = "<group>"; };
 		A0470608431CE649B6E55F7D /* QuotedNoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotedNoteView.swift; sourceTree = "<group>"; };
 		A19809A765C51F397B19FD14 /* FeedServiceTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedServiceTypes.swift; sourceTree = "<group>"; };
+		A200B7EA08917B874F06B2AF /* NVShareInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NVShareInbox.swift; sourceTree = "<group>"; };
 		A21B9BEF9DAADA51C5B8C4D3 /* LiveChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChat.swift; sourceTree = "<group>"; };
 		A271B5E3364858651DC05603 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A3192A668A74BAFF6F4B60FC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -717,6 +741,7 @@
 		C3D0631CF48FD1659E6F1005 /* NostrEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrEvent.swift; sourceTree = "<group>"; };
 		C81B813614AC332D9C184C78 /* FollowingBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowingBackupService.swift; sourceTree = "<group>"; };
 		C86A6AE71C1034FAB5E689FE /* DashboardHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardHelpers.swift; sourceTree = "<group>"; };
+		C8D23388CEDEB6EF30250B5F /* NostrVaultShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NostrVaultShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C91987BAC69FE261893A95BA /* Wavlake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Wavlake.swift; sourceTree = "<group>"; };
 		C9E0F271DFC0731ABBC9E938 /* StarterPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarterPack.swift; sourceTree = "<group>"; };
 		CAE757A797972E778F02D705 /* MarketplaceSellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketplaceSellView.swift; sourceTree = "<group>"; };
@@ -747,6 +772,7 @@
 		E7F41B7A5FACA30EA7AE9015 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		EB07D1CAEE1E5FBF436D7371 /* ListingDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingDraft.swift; sourceTree = "<group>"; };
 		EB0CF7D47686F1256BEF99DB /* VaultDataProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultDataProcessing.swift; sourceTree = "<group>"; };
+		EB3E8A015C8F2D8E25729362 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		EC0AF323C6A978AA0E08E94A /* StatsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsCard.swift; sourceTree = "<group>"; };
 		EC33568A91E5B5B737A03D1F /* FeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedService.swift; sourceTree = "<group>"; };
 		EC971B12438093F727E8967F /* Bolt11.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bolt11.swift; sourceTree = "<group>"; };
@@ -854,6 +880,7 @@
 			isa = PBXGroup;
 			children = (
 				A385719722D447ECB47AA2D8 /* NVSharedStore.swift */,
+				A200B7EA08917B874F06B2AF /* NVShareInbox.swift */,
 				0419EB3F68D0DEFEAAB8BEC5 /* NVThumbnails.swift */,
 				CC382C7EF657BEBE0775C5A9 /* NVWidgetLogic.swift */,
 				5D5B6503859D5F3C563D7E63 /* NVWidgetPrefs.swift */,
@@ -915,11 +942,21 @@
 			path = HavenApp/App;
 			sourceTree = "<group>";
 		};
+		44673691D4AA9379970F889B /* NostrVaultShare */ = {
+			isa = PBXGroup;
+			children = (
+				3531FEF06A159858EBEB61A3 /* NostrVaultShare.entitlements */,
+				EB3E8A015C8F2D8E25729362 /* ShareViewController.swift */,
+			);
+			path = NostrVaultShare;
+			sourceTree = "<group>";
+		};
 		5A21732AE3ED1711ABA42459 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				D5EBFDB16A8828F3C12C4343 /* HavenApp-iOS.app */,
 				51EA54117C5443C0DA93781D /* HavenApp.app */,
+				C8D23388CEDEB6EF30250B5F /* NostrVaultShare.appex */,
 				A9DC40B4827BE001F3762233 /* NostrVaultWidgets.appex */,
 			);
 			name = Products;
@@ -949,6 +986,7 @@
 				DFE9BC7D30030B94E1209B4E /* HavenApp */,
 				C771C5975780DEB107590D5C /* HavenApp-iOS */,
 				D2F039631F5DCD9EAE61B656 /* Models */,
+				44673691D4AA9379970F889B /* NostrVaultShare */,
 				3DD959E001AAEC2DE5548B04 /* NostrVaultWidgets */,
 				CE52609341FA9962E0A99870 /* Packages */,
 				81A8C0A1E1F0208B30E3EDCC /* Resources */,
@@ -1179,6 +1217,7 @@
 				AECAA69E57DB3F7947D9032C /* MarketplaceFeedService.swift */,
 				8B294C3B4DE4C63104876789 /* MediaCacheService.swift */,
 				8FD42E02DBEB72A43ECB28F5 /* MediaPostQueue.swift */,
+				4C4C43890E8EB9A15FFAD39A /* MediaPrivacy.swift */,
 				71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */,
 				1B03DACD65D976F80B315E19 /* MirrorService.swift */,
 				CB1613215C4C17A2C82C64F4 /* ModePostPublisher.swift */,
@@ -1226,6 +1265,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		7C35FED02FE2AA1587F8A227 /* NostrVaultShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B08B7B55C963CF42480993B1 /* Build configuration list for PBXNativeTarget "NostrVaultShare" */;
+			buildPhases = (
+				6DB9DBB47B96DD68020D2547 /* Sources */,
+				D390DE586E805CC5C3394EEB /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NostrVaultShare;
+			packageProductDependencies = (
+			);
+			productName = NostrVaultShare;
+			productReference = C8D23388CEDEB6EF30250B5F /* NostrVaultShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		B5AB61DDA63A32DCC304AE17 /* HavenApp-iOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C4838A2894D505C5FCC87843 /* Build configuration list for PBXNativeTarget "HavenApp-iOS" */;
@@ -1240,6 +1297,7 @@
 			);
 			dependencies = (
 				DC1FDCDC0A3C1A8FFB317451 /* PBXTargetDependency */,
+				50B1C4074CF9B1E63B216AF2 /* PBXTargetDependency */,
 			);
 			name = "HavenApp-iOS";
 			packageProductDependencies = (
@@ -1297,6 +1355,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					7C35FED02FE2AA1587F8A227 = {
+						DevelopmentTeam = 525WQ48Y72;
+						ProvisioningStyle = Automatic;
+					};
 					B5AB61DDA63A32DCC304AE17 = {
 						DevelopmentTeam = 525WQ48Y72;
 						ProvisioningStyle = Automatic;
@@ -1331,6 +1393,7 @@
 				BE72801738D94062BD01C051 /* HavenApp */,
 				B5AB61DDA63A32DCC304AE17 /* HavenApp-iOS */,
 				B97E68F28C3C396EE1E293C0 /* NostrVaultWidgets */,
+				7C35FED02FE2AA1587F8A227 /* NostrVaultShare */,
 			);
 		};
 /* End PBXProject section */
@@ -1373,6 +1436,14 @@
 				4980734C45973D0525500813 /* PrivacyInfo.xcprivacy in Resources */,
 				75E785C732866CC95067DE3D /* starter_packs.json in Resources */,
 				423F5321A3A3F1B60E407B0D /* templates in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D390DE586E805CC5C3394EEB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B2E8C326272133A8EBD69316 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1534,6 +1605,7 @@
 				E6B954A06F5DEC06F4C960AE /* MediaListItem.swift in Sources */,
 				A42CB5C975C2F3ADAE17DC9B /* MediaPagerView.swift in Sources */,
 				B349FEF83E4EA2ADDD63CD3F /* MediaPostQueue.swift in Sources */,
+				D6D7B75E3B62CB8764254858 /* MediaPrivacy.swift in Sources */,
 				82226E9D704A71764A35BB7D /* MediaTabView.swift in Sources */,
 				1F0E85CA638E913E0179BA1D /* MediaTypeDetector.swift in Sources */,
 				7682D9DBB00E467214FB1150 /* MempoolAPIService.swift in Sources */,
@@ -1553,6 +1625,7 @@
 				909C87487CEB2D92213EDDB4 /* NIP44Service.swift in Sources */,
 				DB41813EABB4EE98C342A4CC /* NIP46Service.swift in Sources */,
 				587441300839972EAF70AF41 /* NIP49Service.swift in Sources */,
+				D78A86476C9F266C9AE64BF4 /* NVShareInbox.swift in Sources */,
 				6A008FF842ADC0B20E36128C /* NVSharedStore.swift in Sources */,
 				300FF8BE2E8CD6AA3EC9F969 /* NVThumbnails.swift in Sources */,
 				A75075B57433796A3CE1B8B0 /* NVWidgetBridge.swift in Sources */,
@@ -1661,6 +1734,7 @@
 				065C58B5B6B49523C02038DA /* FeedGlanceWidget.swift in Sources */,
 				1DE0D88EB10F64BC56FCF08E /* LockScreenWidget.swift in Sources */,
 				5AEA663D4C925CFBB1E13E82 /* MosaicWidget.swift in Sources */,
+				09FE21A0505086214027FF1A /* NVShareInbox.swift in Sources */,
 				EC69E7FB15A8D973C111A810 /* NVSharedStore.swift in Sources */,
 				1B2B43EEF51EC229CC47FDF8 /* NVThumbnails.swift in Sources */,
 				C5352175A47EC61C4030CC20 /* NVTileFetcher.swift in Sources */,
@@ -1784,6 +1858,7 @@
 				9A441353279669903E59CBD0 /* MediaListItem.swift in Sources */,
 				B65312DC3E3DC12BEA80B9DA /* MediaPagerView.swift in Sources */,
 				3D7D31F1738232081D005FD7 /* MediaPostQueue.swift in Sources */,
+				6B1C126C919BE5871E5977CD /* MediaPrivacy.swift in Sources */,
 				68F697D47223F3BB082DC65B /* MediaTabView.swift in Sources */,
 				8C6C5418A73D68D54599A473 /* MediaTypeDetector.swift in Sources */,
 				F10135C9F1B704EF4CFDCDB7 /* MempoolAPIService.swift in Sources */,
@@ -1897,9 +1972,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6DB9DBB47B96DD68020D2547 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C22D800D759177B755F71440 /* NVShareInbox.swift in Sources */,
+				57EBB30401CBC87C13A7A9B5 /* NVSharedStore.swift in Sources */,
+				2ECB078027E2F4742D8F63A6 /* NVThumbnails.swift in Sources */,
+				9A3B42A4B71C1BEA1B6974A4 /* NVWidgetLogic.swift in Sources */,
+				A865A7B4FC4A543749DFE8A4 /* NVWidgetPrefs.swift in Sources */,
+				869E22799F9A0329D1D7C56A /* NVWidgetSnapshot.swift in Sources */,
+				E4F5BCEB7F19702040277EDA /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		50B1C4074CF9B1E63B216AF2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7C35FED02FE2AA1587F8A227 /* NostrVaultShare */;
+			targetProxy = 826F74844B3CC9ADA2E909A0 /* PBXContainerItemProxy */;
+		};
 		DC1FDCDC0A3C1A8FFB317451 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = B97E68F28C3C396EE1E293C0 /* NostrVaultWidgets */;
@@ -1967,6 +2061,28 @@
 				PRODUCT_NAME = "Nostr Vault";
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "HavenApp/HavenApp-Bridging-Header.h";
+			};
+			name = Release;
+		};
+		568D0626DF199CB0F55A8603 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NostrVaultShare/NostrVaultShare.entitlements;
+				CURRENT_PROJECT_VERSION = 19;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NostrVaultShare/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 2.7.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -2205,6 +2321,28 @@
 			};
 			name = Release;
 		};
+		F4E658DCC68A7941DEE70AAD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NostrVaultShare/NostrVaultShare.entitlements;
+				CURRENT_PROJECT_VERSION = 19;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NostrVaultShare/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 2.7.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.havenapp.relay.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		FA1B65CBEC805CB0AA28EE63 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2244,6 +2382,15 @@
 			buildConfigurations = (
 				855107A22AF692D84AD37A91 /* Debug */,
 				A1F4425AA183D6BC634A001E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B08B7B55C963CF42480993B1 /* Build configuration list for PBXNativeTarget "NostrVaultShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F4E658DCC68A7941DEE70AAD /* Debug */,
+				568D0626DF199CB0F55A8603 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -2,6 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Share sheet inbox (NVShareInbox). Unlike the keychain group below, an
+	     App Group must be registered on the developer portal; it carries the
+	     shared photos and videos, which are too big for a keychain item. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.havenapp.relay</string>
+	</array>
 	<!-- Shared with the widget extension. Not an App Group: registering that
 	     capability needs an Apple ID in Xcode, and the wildcard provisioning
 	     profile already grants every group under the 525WQ48Y72 prefix. -->
