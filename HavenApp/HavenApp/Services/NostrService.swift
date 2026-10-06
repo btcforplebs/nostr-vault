@@ -214,6 +214,18 @@ class NostrService: ObservableObject {
             }
     }
 
+    /// Asked for profile metadata on top of the broadcast relays; the same list
+    /// as Android's `PROFILE_RELAYS`. Without them a profile the phone had not
+    /// cached never loaded: of the default broadcast relays nos.lol and
+    /// nostr.mom are down and primal lacks most profiles, while purplepag.es
+    /// had every one tried (jack, ODELL, fiatjaf; 2026-10-06).
+    static let profileIndexRelays = [
+        "wss://offchain.pub",
+        "wss://relay.damus.io",
+        "wss://user.kindpag.es",
+        "wss://purplepag.es",
+    ]
+
     private func flushMetadataRequests() {
         guard !profileFetchQueue.isEmpty else { return }
         let pubkeys = Array(profileFetchQueue)
@@ -223,6 +235,16 @@ class NostrService: ObservableObject {
         var relays = ConfigService.shared.config.activeBlastrRelays
         if relays.isEmpty {
             relays = ["wss://relay.primal.net", "wss://nos.lol"]
+        }
+        relays += Self.profileIndexRelays
+
+        // A lookup that found nothing must be able to run again, or a profile
+        // missed once stays a bare key until the app restarts.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self else { return }
+            for pubkey in pubkeys where self.profiles[pubkey] == nil {
+                self.profilesInFlight.remove(pubkey)
+            }
         }
 
         #if DEBUG
@@ -2133,9 +2155,10 @@ class NostrService: ObservableObject {
             if event.kind == 0 {
                 let content = event.content
                 let pubkey = event.pubkey
+                let createdAt = event.created_at
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
-                    if let result = ProfileRepository.parseMetadataContent(content, pubkey: pubkey, existingProfile: self.profiles[pubkey]),
+                    if let result = ProfileRepository.parseMetadataContent(content, pubkey: pubkey, existingProfile: self.profiles[pubkey], createdAt: createdAt),
                        result.changed {
                         self.profiles[pubkey] = result.profile
                         self.profilesInFlight.remove(pubkey)
