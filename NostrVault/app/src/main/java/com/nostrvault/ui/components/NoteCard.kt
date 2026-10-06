@@ -828,17 +828,14 @@ internal fun EngagementBar(
             )
         }
 
-        // Like (with long-press for emoji picker) — hidden entirely in Zaps Only mode
+        // Like: tap reacts or takes it back, hold opens the tapback bar
+        // (its "+" is the emoji picker). Hidden entirely in Zaps Only mode.
         if (onLike != null && !LocalZapsOnlyMode.current) {
-            EngagementButton(
-                icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
-                isActive = isLiked,
-                activeColor = LikeRed,
-                contentDescription = if (isLiked) "Unlike" else "Like",
-                onClick = { onLike.invoke(noteId) },
-                onLongClick = if (onLongPressLike != null) {
-                    { onLongPressLike.invoke(noteId) }
-                } else null,
+            ReactionButton(
+                noteId = noteId,
+                isLiked = isLiked,
+                onTap = { onLike.invoke(noteId) },
+                onMore = onLongPressLike?.let { more -> { more(noteId) } },
             )
         }
 

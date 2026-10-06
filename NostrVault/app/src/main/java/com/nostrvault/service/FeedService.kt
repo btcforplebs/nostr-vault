@@ -16,6 +16,7 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.relay.HavenConfig
 import com.nostrvault.ui.notification.FollowKind
 import com.nostrvault.ui.notification.NotificationManager
+import com.nostrvault.ui.components.ReactionChoice
 import com.nostrvault.ui.components.likedToastMessage
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -196,6 +197,18 @@ class FeedService @Inject constructor(
         scope.launch {
             _notes.drop(1).collect { snapshotDirty = true }
         }
+        // Which emoji went with each like, and which reactions were removed,
+        // live only in the account's interaction-state file.
+        scope.launch {
+            val key = currentSnapshotKey()
+            val saved = withContext(Dispatchers.IO) {
+                engagementTracker.loadInteractionState(key, fallbackToLegacy = false)
+            }
+            if (currentSnapshotKey() == key) {
+                _myReactions.value = saved.myReactions + _myReactions.value
+                retractedReactionIds = retractedReactionIds + saved.retractedReactionIds
+            }
+        }
         // Every note that reaches the feed contributes its blob hashes to the
         // persistent index. `record` skips note ids it has already folded in, so
         // re-emissions of the same list cost a set lookup per note — up to
@@ -236,13 +249,19 @@ class FeedService @Inject constructor(
                     // hand a new account someone else's.
                     _likedEventIds.value = emptySet()
                     _zappedEventIds.value = emptyMap()
+                    _myReactions.value = emptyMap()
+                    retractedReactionIds = emptySet()
+                    // A reaction still being signed belongs to the previous account.
+                    pendingReactionTokens.clear()
                     val key = currentSnapshotKey()
-                    val (liked, zapped) = withContext(Dispatchers.IO) {
+                    val saved = withContext(Dispatchers.IO) {
                         engagementTracker.loadInteractionState(key, fallbackToLegacy = false)
                     }
                     if (currentSnapshotKey() == key) {
-                        _likedEventIds.value = _likedEventIds.value + liked
-                        _zappedEventIds.value = zapped + _zappedEventIds.value
+                        _likedEventIds.value = _likedEventIds.value + saved.likedEventIds
+                        _zappedEventIds.value = saved.zappedEventIds + _zappedEventIds.value
+                        _myReactions.value = saved.myReactions + _myReactions.value
+                        retractedReactionIds = retractedReactionIds + saved.retractedReactionIds
                     }
                 }
         }
@@ -344,6 +363,20 @@ class FeedService @Inject constructor(
 
     private val _likedEventIds = MutableStateFlow<Set<String>>(emptySet())
     val likedEventIds: StateFlow<Set<String>> = _likedEventIds.asStateFlow()
+
+    /** The emoji (and kind-7 event) behind each entry of [likedEventIds]. */
+    private val _myReactions = MutableStateFlow<Map<String, EngagementTracker.MyReaction>>(emptyMap())
+    val myReactions: StateFlow<Map<String, EngagementTracker.MyReaction>> = _myReactions.asStateFlow()
+
+    /** Reactions this account deleted; see [EngagementTracker.InteractionState.retractedReactionIds]. Main-confined. */
+    private var retractedReactionIds: Set<String> = emptySet()
+
+    /**
+     * Per note, the reaction currently being signed. A tap that changes or
+     * removes it before signing ends replaces the token, and the stale
+     * reaction is then never published. Main-confined.
+     */
+    private val pendingReactionTokens = HashMap<String, Any>()
 
     private val _repostedEventIds = MutableStateFlow<Set<String>>(emptySet())
     val repostedEventIds: StateFlow<Set<String>> = _repostedEventIds.asStateFlow()
@@ -474,6 +507,7 @@ class FeedService @Inject constructor(
     // Interaction state persistence
     private var lastInteractionSaveTime = 0L
     private var interactionSaveJob: Job? = null
+    private var interactionSaveScheduled = false
 
     // Scroll position tracking for snapshot persistence
     private var _savedScrollIndex = 0
@@ -1701,7 +1735,7 @@ class FeedService @Inject constructor(
             7 -> {
                 // Reaction event — track engagement
                 val targetId = tags.firstOrNull { it.size >= 2 && it[0] == "e" }?.get(1) ?: return
-                accumulator.addReaction(targetId, pubkey)
+                accumulator.addReaction(EngagementTracker.ReactionEvent(targetId, pubkey, id, content))
             }
             9735 -> {
                 // Zap receipt — track engagement. NIP-57: a receipt is spoofable by
@@ -1950,6 +1984,8 @@ class FeedService @Inject constructor(
 
     /** Fold batches' reactions and zaps into [_noteStats]; same off-Main pattern as [insertNotesDirect]. */
     private suspend fun applyEngagement(batches: List<BackgroundAccumulator.Snapshot>) {
+        applySelfReactions(batches.flatMap { it.reactions })
+        val retracted = retractedReactionIds
         while (true) {
             val base = _noteStats.value
             val notesNow = _notes.value
@@ -1957,7 +1993,10 @@ class FeedService @Inject constructor(
             val updated = withContext(processingDispatcher) {
                 val currentStats = base.toMutableMap()
                 for (batch in batches) {
-                    for ((targetId, _) in batch.reactions) {
+                    for (rx in batch.reactions) {
+                        // Removed by this account; relays may still serve it.
+                        if (rx.eventId in retracted) continue
+                        val targetId = rx.targetId
                         val existing = currentStats[targetId] ?: NoteStats()
                         currentStats[targetId] = existing.copy(
                             reactionCount = existing.reactionCount + 1
@@ -3198,19 +3237,36 @@ class FeedService @Inject constructor(
     // Engagement
     // ══════════════════════════════════════════════════════════════════
 
+    /**
+     * Saves likes, zaps and reactions, at most once per 2 s. A save inside
+     * that window runs at its end instead of being dropped: dropping one lost
+     * the newest like (or removal) whenever two came close together (iOS #322).
+     */
     fun saveInteractionState() {
-        val now = System.currentTimeMillis()
-        if (now - lastInteractionSaveTime < INTERACTION_SAVE_THROTTLE_MS) return
-        lastInteractionSaveTime = now
+        val wait = INTERACTION_SAVE_THROTTLE_MS - (System.currentTimeMillis() - lastInteractionSaveTime)
+        if (wait > 0) {
+            if (interactionSaveScheduled) return
+            interactionSaveScheduled = true
+            scope.launch {
+                delay(wait + 50)
+                interactionSaveScheduled = false
+                saveInteractionState()
+            }
+            return
+        }
+        lastInteractionSaveTime = System.currentTimeMillis()
 
+        // Read on Main, with the key, so the state and the account match.
+        val key = currentSnapshotKey()
+        val state = EngagementTracker.InteractionState(
+            likedEventIds = _likedEventIds.value,
+            zappedEventIds = _zappedEventIds.value,
+            myReactions = _myReactions.value,
+            retractedReactionIds = retractedReactionIds,
+        )
         interactionSaveJob?.cancel()
         interactionSaveJob = scope.launch(Dispatchers.IO) {
-            val key = currentSnapshotKey()
-            engagementTracker.saveInteractionState(
-                likedEventIds = _likedEventIds.value,
-                zappedEventIds = _zappedEventIds.value,
-                forKey = key,
-            )
+            engagementTracker.saveInteractionState(state, forKey = key)
         }
     }
 
@@ -3346,73 +3402,88 @@ class FeedService @Inject constructor(
     }
 
     /** Fetch engagement details for multiple notes at once (thread-wide stats). */
+    /**
+     * Reactions, zaps and reposts for every note in a thread (Thread Stats).
+     * The thread is split into batches of [ThreadEngagementQuery.BATCH_SIZE]
+     * notes, each its own REQ with its own limit, sent one after another on
+     * each relay, so one busy note can't use up the budget of the others
+     * (iOS #325). Relays are asked side by side.
+     */
     fun fetchThreadEngagement(noteIds: List<String>, callback: (Map<String, EngagementDetails>) -> Unit) {
         if (noteIds.isEmpty()) { callback(emptyMap()); return }
         scope.launch(Dispatchers.IO) {
             val config = configStore.config.value
+            // The account's relay and the feed relays, as iOS asks.
             val relayUrls = buildList {
                 config.nostrURL?.let { add(it) }
-                config.localInboxURL?.let { add(it) }
-                config.inboxRelays?.let { addAll(it.take(1)) }
-            }.distinct()
+                addAll(config.activeFeedRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") })
+            }.distinctBy { LookupSocketPool.relayKey(it) }
 
-            val seenIds = mutableSetOf<String>()
+            val seenIds = ConcurrentHashMap.newKeySet<String>()
             val noteIdSet = noteIds.toSet()
             val perNote = ConcurrentHashMap<String, MutableList<Any>>()
+            val requests = ThreadEngagementQuery.requests(
+                noteIdSet, "thr-${UUID.randomUUID().toString().take(6)}",
+            )
 
-            for (relayUrl in relayUrls) {
-                val subId = "thr-${UUID.randomUUID().toString().take(8)}"
-                val noteIdsJson = noteIds.joinToString(",") { "\"$it\"" }
-                val filter = """{"kinds":[6,7,9735],"#e":[$noteIdsJson],"limit":500}"""
-                lookupPool.query(relayUrl, subId, listOf(filter), NOTE_FETCH_TIMEOUT_MS) { msg ->
-                    try {
-                        val parsed = json.parseToJsonElement(msg).jsonArray
-                        if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
-                            val eventObj = parsed[2].jsonObject
-                            val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@query
-                            if (!seenIds.add(id)) return@query
-                            val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@query
-                            val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
-                            val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                            val tags = eventObj["tags"]?.jsonArray?.map { t ->
-                                t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                            } ?: emptyList()
+            withTimeoutOrNull(ThreadEngagementQuery.timeoutMs(requests.size)) {
+                relayUrls.map { relayUrl ->
+                    async {
+                        for (request in requests) {
+                            val outcome = lookupPool.query(relayUrl, request.subscriptionId, listOf(request.filter), NOTE_FETCH_TIMEOUT_MS) { msg ->
+                                try {
+                                    val parsed = json.parseToJsonElement(msg).jsonArray
+                                    if (parsed.size >= 3 && parsed[0].jsonPrimitive.contentOrNull == "EVENT") {
+                                        val eventObj = parsed[2].jsonObject
+                                        val id = eventObj["id"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                        if (!seenIds.add(id)) return@query
+                                        val kind = eventObj["kind"]?.jsonPrimitive?.intOrNull ?: return@query
+                                        val pubkey = eventObj["pubkey"]?.jsonPrimitive?.contentOrNull ?: return@query
+                                        val content = eventObj["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                        val tags = eventObj["tags"]?.jsonArray?.map { t ->
+                                            t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
+                                        } ?: emptyList()
 
-                            val targetNoteId = tags.firstOrNull { it.size >= 2 && it[0] == "e" && it[1] in noteIdSet }?.get(1) ?: return@query
+                                        val targetNoteId = ThreadEngagementQuery.targetNoteId(tags, noteIdSet) ?: return@query
 
-                            val detail: Any = when (kind) {
-                                7 -> {
-                                    val emoji = if (content == "+" || content.isBlank()) "\u2764\uFE0F" else content
-                                    ReactionDetail(id, pubkey, emoji)
-                                }
-                                9735 -> {
-                                    val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
-                                    var zapperPubkey = pubkey
-                                    var amountSats = 0L
-                                    var comment = ""
-                                    if (descTag != null) {
-                                        try {
-                                            val zapReq = json.parseToJsonElement(descTag).jsonObject
-                                            zapperPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: pubkey
-                                            comment = zapReq["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                                            val zapTags = zapReq["tags"]?.jsonArray?.map { t ->
-                                                t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
-                                            } ?: emptyList()
-                                            val amountTag = zapTags.firstOrNull { it.size >= 2 && it[0] == "amount" }
-                                            if (amountTag != null) {
-                                                amountSats = (amountTag[1].toLongOrNull() ?: 0L) / 1000
+                                        val detail: Any = when (kind) {
+                                            7 -> {
+                                                val emoji = if (content == "+" || content.isBlank()) "\u2764\uFE0F" else content
+                                                ReactionDetail(id, pubkey, emoji)
                                             }
-                                        } catch (_: Exception) {}
+                                            9735 -> {
+                                                val descTag = tags.firstOrNull { it.size >= 2 && it[0] == "description" }?.get(1)
+                                                var zapperPubkey = pubkey
+                                                var amountSats = 0L
+                                                var comment = ""
+                                                if (descTag != null) {
+                                                    try {
+                                                        val zapReq = json.parseToJsonElement(descTag).jsonObject
+                                                        zapperPubkey = zapReq["pubkey"]?.jsonPrimitive?.contentOrNull ?: pubkey
+                                                        comment = zapReq["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                                        val zapTags = zapReq["tags"]?.jsonArray?.map { t ->
+                                                            t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" }
+                                                        } ?: emptyList()
+                                                        val amountTag = zapTags.firstOrNull { it.size >= 2 && it[0] == "amount" }
+                                                        if (amountTag != null) {
+                                                            amountSats = (amountTag[1].toLongOrNull() ?: 0L) / 1000
+                                                        }
+                                                    } catch (_: Exception) {}
+                                                }
+                                                ZapDetail(id, zapperPubkey, amountSats, comment)
+                                            }
+                                            6 -> RepostDetail(id, pubkey)
+                                            else -> return@query
+                                        }
+                                        perNote.computeIfAbsent(targetNoteId) { java.util.Collections.synchronizedList(mutableListOf()) }.add(detail)
                                     }
-                                    ZapDetail(id, zapperPubkey, amountSats, comment)
-                                }
-                                6 -> RepostDetail(id, pubkey)
-                                else -> return@query
+                                } catch (_: Exception) {}
                             }
-                            perNote.getOrPut(targetNoteId) { mutableListOf() }.add(detail)
+                            // A relay that refuses the socket refuses every batch.
+                            if (outcome == LookupSocketPool.Outcome.SKIPPED || outcome == LookupSocketPool.Outcome.FAILED) break
                         }
-                    } catch (_: Exception) {}
-                }
+                    }
+                }.awaitAll()
             }
 
             val result = perNote.mapValues { (_, details) ->
@@ -3646,15 +3717,51 @@ class FeedService @Inject constructor(
     /** Alias for loadMore(), used by FeedViewModel. */
     fun loadOlderNotes() = loadMore()
 
-    /** Like a note (kind 7 reaction). */
+    /**
+     * The reaction button. A tap ([emoji] null) reacts with the default
+     * reaction, or takes the account's reaction back when it has one. A
+     * picked [emoji] (tapback bar or picker) is sent instead, replacing any
+     * other reaction; picking the one already sent takes it back. iOS #322.
+     */
     fun likeNote(noteId: String, emoji: String? = null, tags: List<List<String>>? = null) {
-        val existing = _likedEventIds.value
-        if (noteId in existing) return
-        _likedEventIds.value = existing + noteId
+        val isLiked = noteId in _likedEventIds.value
+        val current = _myReactions.value[noteId]?.content
+        val change = if (emoji == null) {
+            ReactionChoice.forTap(isLiked, configStore.config.value.defaultReactionEmoji)
+        } else {
+            ReactionChoice.forPick(isLiked, current, emoji)
+        }
+        when (change) {
+            is ReactionChoice.Change.React -> react(noteId, change.content, tags)
+            ReactionChoice.Change.Remove -> removeReaction(noteId)
+        }
+    }
 
-        val reactionEmoji = emoji ?: configStore.config.value.defaultReactionEmoji
+    /**
+     * Leaves [content] as the account's reaction on [noteId], replacing any
+     * reaction it already had there (a NIP-09 deletion retracts the old one).
+     */
+    private fun react(noteId: String, content: String, tags: List<List<String>>?) {
+        val previous = _myReactions.value[noteId]
+        val wasLiked = noteId in _likedEventIds.value
+        if (wasLiked && previous?.content == content) return
+        // A removal still in its undo window becomes final: this is a new reaction.
+        notificationManager.commitUnlikeCountdown()
+        val oldId = previous?.eventId
+        if (oldId != null) {
+            retract(oldId)
+        } else if (wasLiked && noteId !in pendingReactionTokens) {
+            retractUnknown(noteId)
+        }
 
-        scope.launch(Dispatchers.IO) {
+        val token = Any()
+        pendingReactionTokens[noteId] = token
+        _likedEventIds.value = _likedEventIds.value + noteId
+        _myReactions.value = _myReactions.value + (noteId to EngagementTracker.MyReaction(content))
+        if (!wasLiked) bumpReactionCount(noteId, +1)
+        saveInteractionState()
+
+        scope.launch {
             // iOS tags the author (p) and kind (k) too; without p the liked
             // post's author is unknown and Relay > Likes > Given cannot ask
             // that author's relays for it.
@@ -3667,36 +3774,156 @@ class FeedService @Inject constructor(
                     note?.kind?.let { add(listOf("k", it.toString())) }
                 }
             }
-            val event = runCatching { nostrService.signEventAsync(kind = 7, content = reactionEmoji, tags = reactionTags) }
-                .onFailure { Log.e(TAG, "like not signed: ${it.message}") }.getOrNull()
-            if (event != null) {
-                nostrService.postEvent(event)
-                keepLikedNoteLocally(noteId)
-                // A like signed by a remote signer takes a round trip; with
-                // nothing on screen there was no telling one that went out
-                // from one the signer never answered (iOS #295).
-                withContext(Dispatchers.Main) { notificationManager.showToast(likedToastMessage(emoji)) }
-            } else {
-                withContext(Dispatchers.Main) {
-                    unlikeNote(noteId)
-                    notificationManager.showError("Like failed: your signer didn't answer")
+            val event = withContext(Dispatchers.IO) {
+                runCatching { nostrService.signEventAsync(kind = 7, content = content, tags = reactionTags) }
+                    .onFailure { Log.e(TAG, "like not signed: ${it.message}") }.getOrNull()
+            }
+            // Changed or removed while signing: this one never goes out.
+            if (pendingReactionTokens[noteId] !== token) return@launch
+            pendingReactionTokens.remove(noteId)
+            if (event == null) {
+                unlikeNote(noteId)
+                notificationManager.showError("Like failed: your signer didn't answer")
+                return@launch
+            }
+            withContext(Dispatchers.IO) { nostrService.postEvent(event) }
+            _myReactions.value = _myReactions.value + (noteId to EngagementTracker.MyReaction(content, event.id))
+            saveInteractionState()
+            keepLikedNoteLocally(noteId)
+            // A like signed by a remote signer takes a round trip; with
+            // nothing on screen there was no telling one that went out
+            // from one the signer never answered (iOS #295).
+            notificationManager.showToast(likedToastMessage(content))
+        }
+    }
+
+    /**
+     * Clears the account's reaction on [noteId] at once, with an Undo pill.
+     * When the pill runs out the reaction is deleted on the network.
+     */
+    private fun removeReaction(noteId: String) {
+        if (noteId !in _likedEventIds.value) return
+        val removed = _myReactions.value[noteId]
+        val wasSigning = pendingReactionTokens.remove(noteId) != null
+
+        _likedEventIds.value = _likedEventIds.value - noteId
+        _myReactions.value = _myReactions.value - noteId
+        // An echo of it arriving during the countdown must not bring it back.
+        removed?.eventId?.let { retractedReactionIds = retractedReactionIds + it }
+        bumpReactionCount(noteId, -1)
+        saveInteractionState()
+
+        // Still being signed: dropping the token already stops it going out.
+        if (wasSigning) return
+        notificationManager.startUnlikeCountdown(
+            onUnlike = {
+                val eventId = removed?.eventId
+                if (eventId != null) retract(eventId) else retractUnknown(noteId)
+            },
+            onUndo = {
+                // Reacting again during the countdown commits it first, so
+                // Undo only ever restores a note left without a reaction.
+                if (noteId !in _likedEventIds.value) {
+                    removed?.eventId?.let { retractedReactionIds = retractedReactionIds - it }
+                    _likedEventIds.value = _likedEventIds.value + noteId
+                    if (removed != null) _myReactions.value = _myReactions.value + (noteId to removed)
+                    bumpReactionCount(noteId, +1)
+                    saveInteractionState()
                 }
+            },
+        )
+    }
+
+    /**
+     * Publishes a NIP-09 deletion for one of the account's reactions and
+     * remembers it, so relays that keep serving it cannot bring it back.
+     */
+    private fun retract(reactionId: String) {
+        retractedReactionIds = retractedReactionIds + reactionId
+        saveInteractionState()
+        scope.launch(Dispatchers.IO) {
+            val event = runCatching {
+                nostrService.signEventAsync(kind = 5, content = "", tags = EngagementTracker.reactionDeletionTags(reactionId))
+            }.onFailure { Log.e(TAG, "reaction deletion not signed: ${it.message}") }.getOrNull() ?: return@launch
+            nostrService.postEvent(event)
+        }
+    }
+
+    /**
+     * For a like saved before reactions kept their event id: looks the
+     * account's reactions to the note up on its relays and deletes them,
+     * except one made since (the note's current reaction).
+     */
+    private fun retractUnknown(noteId: String) {
+        scope.launch {
+            val ids = fetchOwnReactionIds(noteId)
+            val current = _myReactions.value[noteId]?.eventId
+            for (id in ids) {
+                if (id != current && id !in retractedReactionIds) retract(id)
             }
         }
+    }
 
+    /**
+     * Ids of the active account's own reactions (kind 7) to [noteId], from
+     * the account's relay and the blastr relays.
+     */
+    private suspend fun fetchOwnReactionIds(noteId: String): List<String> = withContext(Dispatchers.IO) {
+        val pubkey = nostrService.activeHexPubkey
+        if (pubkey.isEmpty()) return@withContext emptyList()
+        val config = configStore.config.value
+        val urls = buildList {
+            addAll(config.activeBlastrRelays.ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") })
+            config.nostrURL?.takeIf { it.isNotBlank() }?.let { add(it) }
+        }.filterNot { NostrService.isLoopbackRelay(it) }.distinctBy { LookupSocketPool.relayKey(it) }
+        val ids = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+        val filter = """{"kinds":[7],"authors":["$pubkey"],"#e":["$noteId"],"limit":20}"""
+        urls.map { url ->
+            async {
+                lookupPool.query(url, "myrx-${UUID.randomUUID().toString().take(6)}", listOf(filter), 5_000L) { msg ->
+                    try {
+                        val parsed = json.parseToJsonElement(msg).jsonArray
+                        if (parsed.size < 3 || parsed[0].jsonPrimitive.contentOrNull != "EVENT") return@query
+                        val ev = parsed[2].jsonObject
+                        if (ev["kind"]?.jsonPrimitive?.intOrNull != 7) return@query
+                        if (ev["pubkey"]?.jsonPrimitive?.contentOrNull != pubkey) return@query
+                        val tags = ev["tags"]?.jsonArray?.map { t -> t.jsonArray.map { it.jsonPrimitive.contentOrNull ?: "" } }.orEmpty()
+                        if (tags.none { it.size >= 2 && it[0] == "e" && it[1] == noteId }) return@query
+                        ev["id"]?.jsonPrimitive?.contentOrNull?.let { ids.add(it) }
+                    } catch (_: Exception) {}
+                }
+            }
+        }.awaitAll()
+        ids.toList()
+    }
+
+    /** The account's own reactions seen on relays: fills in notes with no known reaction. */
+    private fun applySelfReactions(reactions: List<EngagementTracker.ReactionEvent>) {
+        if (reactions.isEmpty()) return
+        val mine = EngagementTracker.detectSelfReactions(reactions, nostrService.activeHexPubkey, retractedReactionIds)
+        if (mine.isEmpty()) return
+        val liked = _likedEventIds.value
+        // One made here (signed, or still signing) is the one to show and to
+        // delete on removal; an older echo of a replaced one must not win.
+        val fresh = mine.filterKeys { it !in _myReactions.value }
+        if (fresh.isEmpty() && liked.containsAll(mine.keys)) return
+        _likedEventIds.value = liked + mine.keys
+        _myReactions.value = _myReactions.value + fresh
+        saveInteractionState()
+    }
+
+    private fun bumpReactionCount(noteId: String, by: Int) {
         val stats = _noteStats.value.toMutableMap()
-        val existing2 = stats[noteId] ?: NoteStats()
-        stats[noteId] = existing2.copy(reactionCount = existing2.reactionCount + 1)
+        val existing = stats[noteId] ?: NoteStats()
+        stats[noteId] = existing.copy(reactionCount = maxOf(0, existing.reactionCount + by))
         _noteStats.value = stats
     }
 
-    /** Remove a like (used by undo-unlike countdown). */
+    /** Take a like back locally only (a reaction that was never signed). */
     fun unlikeNote(noteId: String) {
         _likedEventIds.value = _likedEventIds.value - noteId
-        val stats = _noteStats.value.toMutableMap()
-        val existing = stats[noteId] ?: NoteStats()
-        stats[noteId] = existing.copy(reactionCount = maxOf(0, existing.reactionCount - 1))
-        _noteStats.value = stats
+        _myReactions.value = _myReactions.value - noteId
+        bumpReactionCount(noteId, -1)
         saveInteractionState()
     }
 

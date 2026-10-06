@@ -519,18 +519,8 @@ class FeedViewModel @Inject constructor(
 
     fun loadMore() = feedService.loadOlderNotes()
 
-    fun likeNote(noteId: String, emoji: String? = null) {
-        if (likedEventIds.value.contains(noteId) && emoji == null) {
-            // Already liked — start unlike countdown
-            notificationManager.startUnlikeCountdown {
-                feedService.unlikeNote(noteId)
-            }
-            return
-        }
-        viewModelScope.launch {
-            feedService.likeNote(noteId, emoji)
-        }
-    }
+    /** Tap ([emoji] null) toggles the reaction; a picked emoji is sent or, if already sent, taken back. */
+    fun likeNote(noteId: String, emoji: String? = null) = feedService.likeNote(noteId, emoji)
 
     fun repostNote(noteId: String) {
         viewModelScope.launch {

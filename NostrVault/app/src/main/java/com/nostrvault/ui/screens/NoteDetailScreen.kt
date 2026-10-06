@@ -814,18 +814,9 @@ fun NoteDetailScreen(
                             modifier = Modifier.size(25.dp),
                         )
                     }
-                    // Thread stats toggle
-                    IconButton(
-                        onClick = viewModel::toggleExpandedEngagement,
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            NostrVaultIcons.BarChart,
-                            "Thread Stats",
-                            tint = if (expandedEngagement) colors.primary else SecondaryText,
-                            modifier = Modifier.size(25.dp),
-                        )
-                    }
+                    // Thread stats toggle. While on it says "Stats": an icon
+                    // alone gave no hint what it had switched on (iOS #325).
+                    ThreadStatsToggle(isOn = expandedEngagement, onClick = viewModel::toggleExpandedEngagement)
                     // Reply
                     IconButton(onClick = { focusedNote?.let { onReply(it.effectiveEventId) } }, modifier = Modifier.size(40.dp)) {
                         Icon(NostrVaultIcons.Reply, "Reply", tint = SecondaryText, modifier = Modifier.size(25.dp))

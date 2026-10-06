@@ -25,11 +25,40 @@ object EngagementTracker {
 
     // ---- Persistence model ----
 
+    /**
+     * The reaction the signed-in account left on a note: its kind-7
+     * `content`, and the event that carried it, so removing it can publish a
+     * NIP-09 deletion. [eventId] is null while the reaction is being signed,
+     * and for likes saved before the id was kept.
+     */
+    @Serializable
+    data class MyReaction(val content: String, val eventId: String? = null)
+
+    /** One kind-7 event seen on a relay. */
+    data class ReactionEvent(
+        val targetId: String,
+        val pubkey: String,
+        val eventId: String,
+        val content: String,
+    )
+
     @Serializable
     data class InteractionState(
         val likedEventIds: Set<String>,
         val zappedEventIds: Map<String, Int>,
+        /** Which emoji each liked note got. Missing in older files; those show the plain heart. */
+        val myReactions: Map<String, MyReaction> = emptyMap(),
+        /**
+         * Reactions this account removed. Relays may keep serving them after
+         * the deletion, and seeing one again must not bring the like back or
+         * count it.
+         */
+        val retractedReactionIds: Set<String> = emptySet(),
     )
+
+    /** Tags of the NIP-09 deletion that retracts one of the account's reactions. */
+    fun reactionDeletionTags(reactionId: String): List<List<String>> =
+        listOf(listOf("e", reactionId), listOf("k", "7"))
 
     // ---- File paths ----
 
@@ -46,46 +75,56 @@ object EngagementTracker {
      * Load interaction state from disk for the given account key.
      * Falls back to the legacy global file when no per-account file exists.
      */
-    fun loadInteractionState(forKey: String, fallbackToLegacy: Boolean = true): Pair<Set<String>, Map<String, Int>> {
+    fun loadInteractionState(forKey: String, fallbackToLegacy: Boolean = true): InteractionState {
         val file = interactionStateFile(forKey)
 
         // Try per-account file
         val state = loadFromFile(file) ?: if (fallbackToLegacy) loadFromFile(legacyFile) else null
-        return if (state != null) {
-            state.likedEventIds to state.zappedEventIds
-        } else {
-            emptySet<String>() to emptyMap()
-        }
+        return state ?: InteractionState(emptySet(), emptyMap())
     }
+
+    /** An interaction-state file's contents, or null when it isn't one. */
+    fun decodeInteractionState(text: String): InteractionState? = try {
+        json.decodeFromString<InteractionState>(text)
+    } catch (_: Exception) {
+        null
+    }
+
+    fun encodeInteractionState(state: InteractionState): String = json.encodeToString(state)
 
     /**
      * Persist interaction state to disk on a background thread.
      */
     suspend fun saveInteractionState(
-        likedEventIds: Set<String>,
-        zappedEventIds: Map<String, Int>,
+        state: InteractionState,
         forKey: String,
     ) = withContext(Dispatchers.IO) {
-        val state = InteractionState(likedEventIds, zappedEventIds)
         val file = interactionStateFile(forKey)
         try {
             dataDir.mkdirs()
-            file.writeText(json.encodeToString(state))
+            file.writeText(encodeInteractionState(state))
         } catch (_: Exception) { }
     }
 
-    // ---- Self-like detection ----
+    // ---- Self-reaction detection ----
 
     /**
-     * Identify reactions authored by the owner in a batch of reaction events.
-     * Returns the note IDs that the owner has liked.
+     * The owner's own reactions in a batch, keyed by the note they react to.
+     * Reactions the owner has since removed are skipped.
      */
-    fun detectSelfLikes(
-        reactions: List<Pair<String, String>>, // (targetId, pubkey)
+    fun detectSelfReactions(
+        reactions: List<ReactionEvent>,
         ownerHex: String,
-    ): List<String> {
-        if (ownerHex.isEmpty()) return emptyList()
-        return reactions.filter { it.second == ownerHex }.map { it.first }
+        retracted: Set<String>,
+    ): Map<String, MyReaction> {
+        if (ownerHex.isEmpty()) return emptyMap()
+        val mine = LinkedHashMap<String, MyReaction>()
+        for (rx in reactions) {
+            if (rx.pubkey == ownerHex && rx.eventId !in retracted) {
+                mine[rx.targetId] = MyReaction(rx.content, rx.eventId)
+            }
+        }
+        return mine
     }
 
     // ---- Engagement count merging ----
@@ -95,16 +134,17 @@ object EngagementTracker {
      * per-note stats dictionary. Returns the updated dictionary.
      */
     fun mergeEngagementCounts(
-        reactions: List<Pair<String, String>>, // (targetId, pubkey)
+        reactions: List<ReactionEvent>,
         repostTargets: List<String>,
         currentStats: Map<String, NoteStats>,
+        retracted: Set<String> = emptySet(),
     ): Map<String, NoteStats> {
         val updated = currentStats.toMutableMap()
 
-        for ((targetId, _) in reactions) {
-            val stats = updated.getOrPut(targetId) { NoteStats() }
-            stats.reactionCount++
-            updated[targetId] = stats
+        for (rx in reactions) {
+            if (rx.eventId in retracted) continue
+            val stats = updated[rx.targetId] ?: NoteStats()
+            updated[rx.targetId] = stats.copy(reactionCount = stats.reactionCount + 1)
         }
         for (targetId in repostTargets) {
             val stats = updated.getOrPut(targetId) { NoteStats() }

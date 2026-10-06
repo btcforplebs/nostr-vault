@@ -165,7 +165,18 @@ class MainActivity : FragmentActivity() {
                         ),
                     )
                 }
-                CompositionLocalProvider(LocalNoteTranslation provides noteTranslation) {
+                // The reaction button's tapback bar sends through here.
+                val reactionActions = remember {
+                    com.nostrvault.ui.components.ReactionActions(
+                        myReactions = feedService.myReactions,
+                        defaultReaction = { configStore.config.value.defaultReactionEmoji },
+                        pick = { noteId, emoji -> feedService.likeNote(noteId, emoji) },
+                    )
+                }
+                CompositionLocalProvider(
+                    LocalNoteTranslation provides noteTranslation,
+                    com.nostrvault.ui.components.LocalReactionActions provides reactionActions,
+                ) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = Surface0,

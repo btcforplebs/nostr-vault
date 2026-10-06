@@ -106,11 +106,18 @@ class NotificationManager @Inject constructor() {
 
     private var unlikeJob: Job? = null
     private var unlikeCallback: (() -> Unit)? = null
+    private var undoCallback: (() -> Unit)? = null
     private var unlikeNotificationId: String? = null
 
-    fun startUnlikeCountdown(onUnlike: () -> Unit) {
-        cancelUnlikeCountdown()
+    /**
+     * Shows the "Reaction removed · Undo" pill. When it runs out, [onUnlike]
+     * runs (the deletion goes out); Undo runs [onUndo] instead. A countdown
+     * already running is committed first rather than dropped.
+     */
+    fun startUnlikeCountdown(onUnlike: () -> Unit, onUndo: () -> Unit = {}) {
+        commitUnlikeCountdown()
         unlikeCallback = onUnlike
+        undoCallback = onUndo
         val notification = UnlikeCountdown()
         unlikeNotificationId = notification.id
         addNotification(notification)
@@ -122,19 +129,36 @@ class NotificationManager @Inject constructor() {
                     it.copy(timeRemaining = i / 10f)
                 }
             }
-            unlikeCallback?.invoke()
-            dismiss(notification.id)
-            unlikeCallback = null
-            unlikeNotificationId = null
+            commitUnlikeCountdown()
         }
     }
 
-    fun cancelUnlikeCountdown() {
-        unlikeJob?.cancel()
+    /** Ends a running countdown now, as if it had run out. */
+    fun commitUnlikeCountdown() {
+        val callback = unlikeCallback
+        clearUnlikeCountdown()
+        callback?.invoke()
+    }
+
+    /** The pill's Undo: the countdown ends without its action, and the undo runs. */
+    fun undoUnlikeCountdown() {
+        val undo = undoCallback
+        clearUnlikeCountdown()
+        undo?.invoke()
+    }
+
+    fun cancelUnlikeCountdown() = clearUnlikeCountdown()
+
+    private fun clearUnlikeCountdown() {
+        // Cancelled from inside the countdown's own job too; take what is
+        // needed before cancelling it.
+        val job = unlikeJob
         unlikeJob = null
         unlikeCallback = null
+        undoCallback = null
         unlikeNotificationId?.let { dismiss(it) }
         unlikeNotificationId = null
+        job?.cancel()
     }
 
     // ── Dismiss ───────────────────────────────────────────────
