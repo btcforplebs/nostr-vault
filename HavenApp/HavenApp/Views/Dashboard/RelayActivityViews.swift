@@ -131,7 +131,6 @@ struct RelayActivityShareButtons: View {
     var iconOnly = false
 
     @State private var didCopy = false
-    @State private var exportError: String?
 
     var body: some View {
         HStack(spacing: iconOnly ? 12 : 8) {
@@ -162,14 +161,6 @@ struct RelayActivityShareButtons: View {
         }
         .buttonStyle(.plain)
         .foregroundColor(.havenPurple)
-        .alert("Couldn't export the report", isPresented: Binding(
-            get: { exportError != nil },
-            set: { if !$0 { exportError = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(exportError ?? "")
-        }
     }
 
     @ViewBuilder
@@ -204,7 +195,9 @@ struct RelayActivityShareButtons: View {
         do {
             try RelayActivityReport.text(items).write(to: url, atomically: true, encoding: .utf8)
         } catch {
-            exportError = error.localizedDescription
+            // NSAlert, not .alert: these buttons sit in a toolbar item, where
+            // SwiftUI presentations don't reliably show.
+            NSAlert(error: error).runModal()
         }
     }
     #endif
@@ -440,7 +433,16 @@ struct RelayActivityWindow: View {
                 RelayPrivacyFooter(padded: false)
                 Spacer(minLength: 8)
                 NavigationLink {
+                    // macOS: Done here too. The root's Done leaves with the
+                    // push, and a sheet has no other way out. iOS has Back.
                     LogsView(logStore: logStore)
+                        #if os(macOS)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Done", action: onDone)
+                            }
+                        }
+                        #endif
                 } label: {
                     Text("Open full logs")
                         .font(.appSystem(size: 12, weight: .semibold))

@@ -92,13 +92,13 @@ fun RelayActivityScreen(
                         },
                         enabled = items.isNotEmpty(),
                     ) {
-                        Icon(NostrVaultIcons.Copy, "Copy report", tint = colors.primary)
+                        Icon(NostrVaultIcons.Copy, "Copy report", tint = if (items.isNotEmpty()) colors.primary else TertiaryText)
                     }
                     IconButton(
                         onClick = { exportLauncher.launch(RelayActivityReport.fileName()) },
                         enabled = items.isNotEmpty(),
                     ) {
-                        Icon(NostrVaultIcons.Share, "Export report", tint = colors.primary)
+                        Icon(NostrVaultIcons.Share, "Export report", tint = if (items.isNotEmpty()) colors.primary else TertiaryText)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
