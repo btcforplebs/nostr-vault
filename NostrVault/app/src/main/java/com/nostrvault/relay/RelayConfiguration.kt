@@ -445,6 +445,8 @@ data class HavenConfig(
     val enablePushNotifications: Boolean = false,
     /** "New Notes in Your Feed": one summary per absence of 2h+ (iOS enableFeedNotifications). */
     val enableFeedNotifications: Boolean = false,
+    /** The picked notification sound's name (iOS notificationSoundName); see NotificationSound. */
+    val notificationSoundName: String = "Chime",
     val pushNotifyMentions: Boolean = true,
     val pushNotifyReplies: Boolean = true,
     val pushNotifyDMs: Boolean = true,

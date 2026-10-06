@@ -58,11 +58,6 @@ class LocalNotificationService @Inject constructor(
 ) {
     companion object {
         private const val TAG = "LocalNotif"
-        // Bump this id whenever the channel's sound/importance must change — a
-        // channel's settings are frozen by Android after first creation, so a new
-        // id is the only way an updated custom sound actually takes effect.
-        private const val CHANNEL_ID = "nostrvault_events_v2"
-        private const val OLD_CHANNEL_ID = "nostrvault_events"
         private const val MARKER = "🔔NOTIFY|"
         private const val PREVIEW_MARKER = "|preview="
         private const val MAX_SEEN = 500
@@ -125,34 +120,53 @@ class LocalNotificationService @Inject constructor(
     // poller is never blocked on network I/O.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Create the notification channel (idempotent). Safe to call repeatedly. */
-    fun ensureChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return
-        // Retire the pre-custom-sound channel so users don't see a stale duplicate.
-        mgr.deleteNotificationChannel(OLD_CHANNEL_ID)
-        if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Mentions & messages",
-            SystemNotificationManager.IMPORTANCE_HIGH,
-        ).apply {
-            description = "Mentions, replies, DMs, zaps, reactions, and reposts"
-            enableVibration(true)
-            // Use a bundled custom sound if one exists at res/raw/notification.*
-            // (mp3/wav/ogg). Resolved by name so the code compiles whether or not
-            // the file is present; falls back to the system default otherwise.
-            val soundId = context.resources.getIdentifier("notification", "raw", context.packageName)
-            if (soundId != 0) {
-                val soundUri = Uri.parse("android.resource://${context.packageName}/$soundId")
+    /** A bundled sound as a URI a channel or ringtone can play. */
+    fun soundUri(sound: NotificationSound): Uri =
+        Uri.parse("android.resource://${context.packageName}/${sound.resId}")
+
+    /**
+     * Create the picked sound's channel and retire every other events channel
+     * (idempotent, safe to call repeatedly; called again when the sound
+     * changes). A channel's sound is frozen at creation, so a new sound is a
+     * new channel: it copies the settings the user gave the channel it replaces
+     * (importance, vibration, lock screen), then that one is deleted.
+     * Returns the channel to post through.
+     */
+    @Synchronized
+    fun ensureChannel(): String {
+        val sound = NotificationSound.fromName(configStore.config.value.notificationSoundName)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return sound.channelId
+        val mgr = context.getSystemService(SystemNotificationManager::class.java) ?: return sound.channelId
+        val existing = mgr.notificationChannels.map { it.id }.toSet()
+        if (sound.channelId !in existing) {
+            val previous = NotificationSound.settingsSource(sound, existing)
+                ?.let { mgr.getNotificationChannel(it) }
+            val channel = NotificationChannel(
+                sound.channelId,
+                "Mentions & messages",
+                previous?.importance ?: SystemNotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "Mentions, replies, DMs, zaps, reactions, and reposts"
+                enableVibration(previous?.shouldVibrate() ?: true)
+                previous?.vibrationPattern?.let { vibrationPattern = it }
+                previous?.let {
+                    lockscreenVisibility = it.lockscreenVisibility
+                    setShowBadge(it.canShowBadge())
+                    enableLights(it.shouldShowLights())
+                }
                 val attrs = AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
-                setSound(soundUri, attrs)
+                setSound(soundUri(sound), attrs)
             }
+            mgr.createNotificationChannel(channel)
         }
-        mgr.createNotificationChannel(channel)
+        // Retire the rest so Settings shows one events channel, not a stale duplicate.
+        for (id in NotificationSound.retiredChannelIds(sound)) {
+            if (id in existing) mgr.deleteNotificationChannel(id)
+        }
+        return sound.channelId
     }
 
     /**
@@ -390,7 +404,10 @@ class LocalNotificationService @Inject constructor(
         // the large icon is the sender's profile picture when we have one.
         scope.launch {
             val largeIcon = loadAvatar(pictureUrl)
-            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            // Resolved after the avatar fetch: a sound picked meanwhile has
+            // retired the channel that was current when this started.
+            val channelId = ensureChannel()
+            val notification = NotificationCompat.Builder(context, channelId)
                 // Status-bar icons are drawn from alpha only, so use the
                 // purpose-built 24dp silhouette rather than the full-colour
                 // foreground, which flattens to a solid blob.
