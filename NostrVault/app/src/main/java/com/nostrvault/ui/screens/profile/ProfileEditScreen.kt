@@ -12,6 +12,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.style.TextOverflow
 import com.nostrvault.ui.components.AvatarImage
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,7 +32,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Profile editing screen for name, display_name, about, nip05, lud16, picture, website.
+ * Profile editing screen for name, display_name, about, nip05, lud16, picture, banner, website.
  */
 @HiltViewModel
 class ProfileEditViewModel @Inject constructor(
@@ -47,6 +51,9 @@ class ProfileEditViewModel @Inject constructor(
 
     private val _pictureUrl = MutableStateFlow("")
     val pictureUrl = _pictureUrl.asStateFlow()
+
+    private val _bannerUrl = MutableStateFlow("")
+    val bannerUrl = _bannerUrl.asStateFlow()
 
     private val _nip05 = MutableStateFlow("")
     val nip05 = _nip05.asStateFlow()
@@ -76,6 +83,7 @@ class ProfileEditViewModel @Inject constructor(
             _name.value = it.name ?: ""
             _about.value = it.about ?: ""
             _pictureUrl.value = it.pictureURL ?: ""
+            _bannerUrl.value = it.bannerURL ?: ""
             _nip05.value = it.nip05 ?: ""
             _lud16.value = it.lud16 ?: ""
             _website.value = it.website ?: ""
@@ -88,6 +96,7 @@ class ProfileEditViewModel @Inject constructor(
         ProfileMetadataMerge.NAME to _name.value,
         ProfileMetadataMerge.ABOUT to _about.value,
         ProfileMetadataMerge.PICTURE to _pictureUrl.value,
+        ProfileMetadataMerge.BANNER to _bannerUrl.value,
         ProfileMetadataMerge.NIP05 to _nip05.value,
         ProfileMetadataMerge.LUD16 to _lud16.value,
         ProfileMetadataMerge.WEBSITE to _website.value,
@@ -97,6 +106,7 @@ class ProfileEditViewModel @Inject constructor(
     fun setName(v: String) { _name.value = v }
     fun setAbout(v: String) { _about.value = v }
     fun setPictureUrl(v: String) { _pictureUrl.value = v }
+    fun setBannerUrl(v: String) { _bannerUrl.value = v }
     fun setNip05(v: String) { _nip05.value = v }
     fun setLud16(v: String) { _lud16.value = v }
     fun setWebsite(v: String) { _website.value = v }
@@ -106,7 +116,7 @@ class ProfileEditViewModel @Inject constructor(
             _isSaving.value = true
             _saveError.value = null
             // A kind 0 replaces the whole profile. Start from the newest one on
-            // the relays so banner, lud06 and every key this form doesn't show
+            // the relays so lud06 and every key this form doesn't show
             // survive; if it can't be fetched, publishing would wipe them, so
             // don't (same rule as the follow list, #180).
             val pubkey = configStore.activeAccountHexPubkey.value
@@ -151,6 +161,7 @@ fun ProfileEditScreen(
     val name by viewModel.name.collectAsState()
     val about by viewModel.about.collectAsState()
     val pictureUrl by viewModel.pictureUrl.collectAsState()
+    val bannerUrl by viewModel.bannerUrl.collectAsState()
     val nip05 by viewModel.nip05.collectAsState()
     val lud16 by viewModel.lud16.collectAsState()
     val website by viewModel.website.collectAsState()
@@ -207,6 +218,7 @@ fun ProfileEditScreen(
                     modifier = Modifier.padding(bottom = 12.dp),
                 )
             }
+            BannerPreview(bannerUrl)
             ProfilePreview(
                 pubkey = viewModel.pubkey,
                 pictureUrl = pictureUrl,
@@ -220,12 +232,34 @@ fun ProfileEditScreen(
             ProfileField("Username", name, viewModel::setName)
             ProfileField("About", about, viewModel::setAbout, singleLine = false, minLines = 3)
             ProfileField("Profile Picture URL", pictureUrl, viewModel::setPictureUrl)
+            ProfileField("Banner URL", bannerUrl, viewModel::setBannerUrl)
             ProfileField("NIP-05 Identifier", nip05, viewModel::setNip05)
             ProfileField("Lightning Address", lud16, viewModel::setLud16)
             ProfileField("Website", website, viewModel::setWebsite)
             Spacer(Modifier.height(32.dp))
         }
     }
+}
+
+/**
+ * The Banner URL at the 3:1 shape the profile draws it in; nothing until the
+ * field holds a link.
+ */
+@Composable
+private fun BannerPreview(bannerUrl: String) {
+    val url = bannerUrl.trim()
+    if (!url.startsWith("http://") && !url.startsWith("https://")) return
+    AsyncImage(
+        model = url,
+        contentDescription = "Banner preview",
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(3f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(LocalNostrVaultColors.current.primary.copy(alpha = 0.12f)),
+    )
+    Spacer(Modifier.height(12.dp))
 }
 
 /** How the profile will look, updating as the fields are edited. */
