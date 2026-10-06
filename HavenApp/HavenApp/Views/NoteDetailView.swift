@@ -1350,15 +1350,8 @@ struct NoteDetailView: View {
 
     private func groupedReactionsForNote(_ noteId: String) -> [(emoji: String, count: Int)] {
         if configService.config.zapsOnlyMode { return [] }
-        let reactions = perNoteReactions[noteId] ?? []
-        var groups: [String: Int] = [:]
-        for rx in reactions {
-            let emoji = (rx.content == "+" || rx.content.isEmpty) ? "❤️" : rx.content
-            guard emoji.count <= 4 else { continue }
-            groups[emoji, default: 0] += 1
-        }
-        return groups.map { (emoji: $0.key, count: $0.value) }
-            .sorted { $0.count > $1.count }
+        let reactions = (perNoteReactions[noteId] ?? []).map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
+        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count) }
     }
 
     private func zapTotalForNote(_ noteId: String) -> (count: Int, sats: Int64) {
@@ -1543,14 +1536,8 @@ struct NoteDetailView: View {
 
     private var groupedReactions: [(emoji: String, count: Int, reactorPubkeys: [String])] {
         if configService.config.zapsOnlyMode { return [] }
-        var groups: [String: [String]] = [:]
-        for rx in detailedReactions {
-            let emoji = (rx.content == "+" || rx.content.isEmpty) ? "❤️" : rx.content
-            guard emoji.count <= 4 else { continue }
-            groups[emoji, default: []].append(rx.pubkey)
-        }
-        return groups.map { (emoji: $0.key, count: $0.value.count, reactorPubkeys: $0.value) }
-            .sorted { $0.count > $1.count }
+        let reactions = detailedReactions.map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
+        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count, reactorPubkeys: $0.reactorPubkeys) }
     }
 
     struct ZapDetail: Hashable {
@@ -1995,14 +1982,8 @@ struct ThreadedReplyNode: View {
     // Per-note engagement helpers for this reply node
     private func groupedReactionsForReply(_ noteId: String) -> [(emoji: String, count: Int)] {
         if configService.config.zapsOnlyMode { return [] }
-        let reactions = perNoteReactions[noteId] ?? []
-        var groups: [String: Int] = [:]
-        for rx in reactions {
-            let emoji = (rx.content == "+" || rx.content.isEmpty) ? "❤️" : rx.content
-            guard emoji.count <= 4 else { continue }
-            groups[emoji, default: 0] += 1
-        }
-        return groups.map { (emoji: $0.key, count: $0.value) }.sorted { $0.count > $1.count }
+        let reactions = (perNoteReactions[noteId] ?? []).map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
+        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count) }
     }
 
     private func zapTotalForReply(_ noteId: String) -> (count: Int, sats: Int64) {
