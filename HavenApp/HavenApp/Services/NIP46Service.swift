@@ -564,7 +564,7 @@ class NIP46Service: ObservableObject {
     /// sending a DM — kind 13 is the DM seal). Everything else the app signs on
     /// its own — relay AUTH (22242), Blossom and HTTP auth (24242, 27235),
     /// list syncs — and waits in the background queue.
-    private static let userActionKinds: Set<Int> = [0, 1, 3, 5, 6, 7, 9, 13, 16, 20, 21, 22, 1111, 1984, 9734, 30023]
+    private static let userActionKinds: Set<Int> = [0, 1, 3, 5, 6, 7, 9, 13, 16, 20, 21, 22, 1111, 1984, 9734, 10015, 30023]
 
     /// Upload auth: Blossom (24242) and HTTP auth (27235). Signed without a
     /// banner like other background work, but almost always because the person

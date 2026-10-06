@@ -262,7 +262,7 @@ class FeedViewModel @Inject constructor(
      * `FeedView.currentFeedSupportsThreading`.
      */
     private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
-        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR -> true
+        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR, FeedMode.HASHTAGS -> true
         FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC -> false
     }
 
@@ -319,7 +319,8 @@ class FeedViewModel @Inject constructor(
         // A threaded feed with replies filtered out would show nothing but
         // roots, which is the layout the user just left. Turn replies on with
         // it; the Replies filter still switches them back off.
-        if (resolved == FeedLayoutMode.THREADED && !feedService.showReplies.value) {
+        // Hashtags runs its own subscription; the Replies filter is not its.
+        if (resolved == FeedLayoutMode.THREADED && feedMode != FeedMode.HASHTAGS && !feedService.showReplies.value) {
             feedService.setShowReplies(true)
         }
         _layoutModeToggle.value++
@@ -364,7 +365,8 @@ class FeedViewModel @Inject constructor(
         configStore.config.map { it.blockedForActiveAccount() }.distinctUntilChanged(),
         feedService.feedThreadReplies,
     ) { notes, threaded, _, _, fetchedReplies ->
-        if (!threaded) emptyList() else {
+        // Hashtags groups its own sections (HashtagsFeed).
+        if (!threaded || _feedMode.value == FeedMode.HASHTAGS) emptyList() else {
             val blocked = feedService.blockedHexForActiveAccount()
             // Popular holds only top-level posts, and Global's stream rarely
             // carries the replies to what it shows, so their replies are
@@ -432,17 +434,31 @@ class FeedViewModel @Inject constructor(
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.wotPubkeys.value.isNotEmpty())
 
-    /**
-     * The shield is one app-wide setting. The note feeds re-filter and reload
-     * inside FeedService; feeds with their own service refetch under it.
-     */
+    // Declared after _feedMode, which the reload reads.
+    init {
+        reloadOnTrustScopeChange()
+    }
+
+    /** The shield is one app-wide setting; [reloadOnTrustScopeChange] follows every flip. */
     fun setGlobalShowsEveryone(on: Boolean) {
         feedService.setGlobalShowsEveryone(on)
-        when (_feedMode.value) {
-            FeedMode.REELS -> reelsFeedService.refresh()
-            FeedMode.LIVE -> liveFeedService.refresh()
-            FeedMode.MARKETPLACE -> marketplaceFeedService.refresh()
-            else -> Unit
+    }
+
+    /**
+     * The note feeds re-filter and reload inside FeedService; feeds with their
+     * own service refetch under the new scope. Watches the setting rather than
+     * the button, so a flip from a hashtag screen reloads this feed too.
+     */
+    private fun reloadOnTrustScopeChange() {
+        viewModelScope.launch {
+            configStore.config.map { it.globalShowsEveryone }.distinctUntilChanged().drop(1).collect {
+                when (_feedMode.value) {
+                    FeedMode.REELS -> reelsFeedService.refresh()
+                    FeedMode.LIVE -> liveFeedService.refresh()
+                    FeedMode.MARKETPLACE -> marketplaceFeedService.refresh()
+                    else -> Unit
+                }
+            }
         }
     }
 
@@ -505,6 +521,8 @@ class FeedViewModel @Inject constructor(
         }
         // Music is Wavlake; the note subscription has nothing to switch.
         if (mode == FeedMode.MUSIC) return
+        // Hashtags runs its own #t REQ (HashtagsFeedViewModel); same as Music.
+        if (mode == FeedMode.HASHTAGS) return
         viewModelScope.launch {
             feedService.switchFeedMode(mode)
         }

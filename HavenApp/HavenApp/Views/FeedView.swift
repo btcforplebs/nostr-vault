@@ -472,7 +472,7 @@ struct FeedView: View {
     /// timeline feeds follow the legacy global preference.
     private var defaultCompactForCurrentFeed: Bool {
         switch feedService.feedMode {
-        case .following, .articles, .recipes, .marketplace, .live, .reels, .music:
+        case .following, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags:
             return false
         case .discovery, .global, .popular, .media:
             return configService.config.useFeedCompactMode
@@ -483,7 +483,7 @@ struct FeedView: View {
     /// cycle between expanded and condensed without a threaded stop.
     private var currentFeedSupportsThreading: Bool {
         switch feedService.feedMode {
-        case .following, .discovery, .global, .popular:
+        case .following, .discovery, .global, .popular, .hashtags:
             return true
         case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
             return false
@@ -611,7 +611,7 @@ struct FeedView: View {
     private var isCompactModeActive: Bool {
         guard layoutModeForCurrentFeed.usesCondensedRows else { return false }
         switch feedService.feedMode {
-        case .following, .discovery, .global, .popular:
+        case .following, .discovery, .global, .popular, .hashtags:
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
         // compact mode has nothing to condense.
@@ -806,6 +806,10 @@ struct FeedView: View {
                 if marketplaceService.scope == .global {
                     trustScopeButton
                 }
+            } else if feedService.feedMode == .hashtags {
+                // Follows and network always show here; the shield picks
+                // network or everyone, as on the hashtag sheet.
+                trustScopeButton
             } else if feedService.feedMode == .music {
                 MusicToolbarButtons()
             } else if feedService.feedMode == .live {
@@ -926,13 +930,17 @@ struct FeedView: View {
         }
     }
 
-    /// Re-filters straight away, then reloads, so the switch visibly lands
-    /// both ways: back to the Web of Trust the untrusted posts go at once
-    /// instead of lingering in the list and the new-posts count.
     private func setGlobalShowsEveryone(_ on: Bool) {
         guard configService.config.globalShowsEveryone != on else { return }
         configService.config.globalShowsEveryone = on
         configService.save()
+    }
+
+    /// Runs on every flip of the shield, here or on a hashtag sheet. Re-filters
+    /// straight away, then reloads, so the switch visibly lands both ways:
+    /// back to the Web of Trust the untrusted posts go at once instead of
+    /// lingering in the list and the new-posts count.
+    private func reloadForTrustScope() {
         feedService.recomputeFilteredNotes()
         // The shield is one app-wide setting; feeds with their own service
         // refetch under it, the note feeds re-filter and reload.
@@ -941,7 +949,9 @@ struct FeedView: View {
         case .recipes: recipeService.refresh()
         case .live: liveService.refresh()
         case .marketplace: marketplaceService.refresh()
-        default: feedService.refresh()
+        // Following and the like never use the shield; a flip from a hashtag
+        // sheet must not reload them.
+        default: if feedService.isGlobalLikeMode { feedService.refresh() }
         }
     }
 
@@ -1022,6 +1032,8 @@ struct FeedView: View {
                     Divider()
                     trustScopeMenuItems
                 }
+            } else if feedService.feedMode == .hashtags {
+                trustScopeMenuItems
             } else if feedService.feedMode == .music {
                 MusicToolbarMenuItems()
             } else if feedService.feedMode == .live {
@@ -1336,6 +1348,10 @@ struct FeedView: View {
                 if marketplaceService.scope == .global {
                     trustScopeButton
                 }
+            } else if feedService.feedMode == .hashtags {
+                // Follows and network always show here; the shield picks
+                // network or everyone, as on the hashtag sheet.
+                trustScopeButton
             } else if feedService.feedMode == .music {
                 MusicToolbarButtons()
             } else if feedService.feedMode == .live {
@@ -1687,6 +1703,7 @@ struct FeedView: View {
         } message: {
             Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
         }
+        .onChange(of: configService.config.globalShowsEveryone) { _, _ in reloadForTrustScope() }
         .sheet(item: $selectedListing) { listing in
             MarketplaceListingSheet(listing: listing, onOpenProfile: { showingProfileKey = IdentifiableString(id: $0) })
                 .environmentObject(nostrService)
@@ -2034,7 +2051,8 @@ struct FeedView: View {
     /// and debounced like the row-data cache so a burst of arriving notes
     /// doesn't regroup the timeline once per note.
     private func rebuildThreadsIfNeeded(immediate: Bool = false) {
-        guard isThreadedModeActive else {
+        // The Hashtags feed groups its own two sections (HashtagsFeedSection).
+        guard isThreadedModeActive, feedService.feedMode != .hashtags else {
             threadRebuildWork?.cancel()
             if !feedThreads.isEmpty { feedThreads = [] }
             return
@@ -2563,6 +2581,92 @@ struct FeedView: View {
     /// player can open. Never cached — a stream is only interesting while it is
     /// live, and a saved one is a gravestone.
     @ViewBuilder
+    /// One conversation card for the threaded layout. `proxy` keeps the
+    /// thread line still when a note opens in place; the Hashtags feed has no
+    /// line tracking of its own and passes nil.
+    private func feedThreadCard(_ thread: FeedThread<FeedNote>, proxy: ScrollViewProxy?) -> some View {
+        FeedThreadCard(
+            thread: thread,
+            // One open note across both condensed
+            // layouts: the same gesture, so the same
+            // selection.
+            openNoteId: $expandedNoteId,
+            isExpanded: Binding(
+                get: { expandedThreadIds.contains(thread.rootId) },
+                set: { isOpen in
+                    if isOpen {
+                        expandedThreadIds.insert(thread.rootId)
+                    } else {
+                        expandedThreadIds.remove(thread.rootId)
+                    }
+                }
+            ),
+            profileFor: { nostrService.profiles[$0] },
+            rowDataFor: { note in
+                rowDataCache[note.id] ?? FeedNoteRowData.resolve(
+                    for: note,
+                    feedService: feedService,
+                    nostrService: nostrService
+                )
+            },
+            onOpen: { openNoteDetail($0) },
+            onReply: {
+                composeContext = ComposeContext(
+                    replyTo: feedService.replyTarget(for: $0),
+                    quoteTo: nil
+                )
+            },
+            onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: $0)) },
+            onProfile: { showingProfileKey = IdentifiableString(id: $0) },
+            onMedia: { url, urls in
+                showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
+            },
+            rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId),
+            lineTops: proxy == nil ? nil : threadLineTops,
+            onOpenedInPlace: proxy.map { proxy in
+                { id, y in holdThreadLine(id, at: y, proxy: proxy) }
+            }
+        )
+    }
+
+    /// Followed hashtags; rows open and act like the main timeline's, in
+    /// whichever layout the feed's layout button picked.
+    private var hashtagsFeedView: some View {
+        HashtagsFeedSection(threaded: isThreadedModeActive) { note in
+            let isExpanded = expandedNoteId == note.id
+            let row = feedNoteRowContent(
+                note: note,
+                profile: nostrService.profiles[note.pubkey],
+                rowData: rowDataCache[note.id] ?? FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService),
+                parentIsNext: false,
+                isExpanded: isExpanded
+            )
+            .onAppear { nostrService.fetchMissingProfiles(for: [note.pubkey]) }
+            #if os(iOS)
+            // Same as the main timeline: a compact line opens in place on
+            // tap, an expanded one navigates.
+            if !isCompactModeActive || isExpanded {
+                NoteNavigationLink(note: note) { row }
+                    .buttonStyle(.plain)
+            } else {
+                row
+            }
+            #else
+            row.onTapGesture {
+                if !isCompactModeActive { showingNoteId = note.id }
+            }
+            #endif
+        } threadRow: { thread in
+            feedThreadCard(thread, proxy: nil)
+                .padding(.horizontal, 12)
+                .onAppear {
+                    nostrService.fetchMissingProfiles(for: thread.entries.map(\.note.pubkey))
+                    if thread.root == nil { feedService.fetchMissingNote(id: thread.rootId) }
+                }
+        }
+        .environment(\.feedActions, feedActionsValue)
+    }
+
     private var liveGridView: some View {
         VStack(spacing: 12) {
             if liveService.isLoading && liveService.streams.isEmpty {
@@ -2690,6 +2794,8 @@ struct FeedView: View {
                             recipeGridView
                         } else if feedService.feedMode == .marketplace {
                             marketplaceGridView
+                        } else if feedService.feedMode == .hashtags {
+                            hashtagsFeedView
                         } else if feedService.feedMode == .music {
                             MusicBrowserView()
                         } else if feedService.feedMode == .live {
@@ -2707,48 +2813,7 @@ struct FeedView: View {
 
                         if isThreadedModeActive {
                             ForEach(feedThreads) { thread in
-                                FeedThreadCard(
-                                    thread: thread,
-                                    // One open note across both condensed
-                                    // layouts: the same gesture, so the same
-                                    // selection.
-                                    openNoteId: $expandedNoteId,
-                                    isExpanded: Binding(
-                                        get: { expandedThreadIds.contains(thread.rootId) },
-                                        set: { isOpen in
-                                            if isOpen {
-                                                expandedThreadIds.insert(thread.rootId)
-                                            } else {
-                                                expandedThreadIds.remove(thread.rootId)
-                                            }
-                                        }
-                                    ),
-                                    profileFor: { nostrService.profiles[$0] },
-                                    rowDataFor: { note in
-                                        rowDataCache[note.id] ?? FeedNoteRowData.resolve(
-                                            for: note,
-                                            feedService: feedService,
-                                            nostrService: nostrService
-                                        )
-                                    },
-                                    onOpen: { openNoteDetail($0) },
-                                    onReply: {
-                                        composeContext = ComposeContext(
-                                            replyTo: feedService.replyTarget(for: $0),
-                                            quoteTo: nil
-                                        )
-                                    },
-                                    onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: $0)) },
-                                    onProfile: { showingProfileKey = IdentifiableString(id: $0) },
-                                    onMedia: { url, urls in
-                                        showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
-                                    },
-                                    rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId),
-                                    lineTops: threadLineTops,
-                                    onOpenedInPlace: { id, y in
-                                        holdThreadLine(id, at: y, proxy: proxy)
-                                    }
-                                )
+                                feedThreadCard(thread, proxy: proxy)
                                 .padding(.horizontal, 12)
                                 .onAppear { prefetchAhead(ofThread: thread.rootId) }
                                 .trackFeedVisibility(thread.rootId, in: visibleRows)

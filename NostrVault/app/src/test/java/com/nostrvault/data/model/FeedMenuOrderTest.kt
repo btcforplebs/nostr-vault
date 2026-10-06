@@ -55,4 +55,17 @@ class FeedMenuOrderTest {
     fun everyAndroidFeedIsListedByDefault() {
         assertEquals(FeedMode.entries.map { it.name }, FeedMenuOrder.ordered(emptyList(), FeedMode.entries.map { it.name }))
     }
+
+    @Test
+    fun hashtagsJoinsASavedOrderAfterGlobal() {
+        // An order saved before Hashtags existed, rearranged and with Global moved down.
+        val saved = FeedMode.entries.filter { it != FeedMode.HASHTAGS }.map { it.name }
+            .let { listOf("POPULAR", "FOLLOWING") + (it - setOf("POPULAR", "FOLLOWING")) }
+        val ordered = FeedMenuOrder.ordered(saved, FeedMode.entries.map { it.name })
+        assertEquals(FeedMode.entries.size, ordered.size)
+        assertEquals(ordered.indexOf("GLOBAL") + 1, ordered.indexOf("HASHTAGS"))
+        // Hideable like any non-home feed.
+        val shown = FeedMenuOrder.visible(saved, listOf("HASHTAGS"), FeedMode.entries.map { it.name }, "FOLLOWING")
+        assertEquals(false, "HASHTAGS" in shown)
+    }
 }
