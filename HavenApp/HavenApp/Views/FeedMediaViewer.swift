@@ -28,14 +28,17 @@ struct FeedMediaPager: View {
     let urls: [URL]
     let selected: URL
     var onDismiss: (() -> Void)? = nil
+    /// The page now showing, so the zoom can close into that photo's spot.
+    var onPage: ((URL) -> Void)? = nil
 
     @State private var selection: URL
     @Environment(\.mediaZoomPresented) private var zoomPresented
 
-    init(urls: [URL], selected: URL, onDismiss: (() -> Void)? = nil) {
+    init(urls: [URL], selected: URL, onDismiss: (() -> Void)? = nil, onPage: ((URL) -> Void)? = nil) {
         self.urls = urls.isEmpty ? [selected] : urls
         self.selected = selected
         self.onDismiss = onDismiss
+        self.onPage = onPage
         _selection = State(initialValue: selected)
     }
 
@@ -60,6 +63,7 @@ struct FeedMediaPager: View {
                 // MediaGalleryViewer's pager does.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
+                .onChange(of: selection) { _, page in onPage?(page) }
             }
         }
         #else
@@ -1107,6 +1111,16 @@ extension EnvironmentValues {
         get { self[MediaZoomPresentedKey.self] }
         set { self[MediaZoomPresentedKey.self] = newValue }
     }
+    /// The photo the open viewer is showing. An inline carousel holding it
+    /// turns to it, so the zoom closes into a photo that is on screen.
+    var mediaViewerPage: URL? {
+        get { self[MediaViewerPageKey.self] }
+        set { self[MediaViewerPageKey.self] = newValue }
+    }
+}
+
+private struct MediaViewerPageKey: EnvironmentKey {
+    static let defaultValue: URL? = nil
 }
 
 extension View {
@@ -1135,17 +1149,21 @@ extension View {
 private struct MediaViewerPresentation: ViewModifier {
     @Binding var item: IdentifiableURL?
     let namespace: Namespace.ID
+    /// The page swiped to in the viewer; nil until the first swipe.
+    @State private var page: URL?
 
     func body(content: Content) -> some View {
         #if os(iOS)
         if #available(iOS 18.0, *) {
             content
                 .environment(\.mediaZoomNamespace, namespace)
-                .fullScreenCover(item: $item) { media in
-                    FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil })
+                .environment(\.mediaViewerPage, item == nil ? nil : page)
+                .fullScreenCover(item: $item, onDismiss: { page = nil }) { media in
+                    FeedMediaPager(urls: media.allURLs, selected: media.url, onDismiss: { item = nil }, onPage: { page = $0 })
                         .environment(\.mediaZoomPresented, true)
                         .presentationBackground(.clear)
-                        .navigationTransition(.zoom(sourceID: media.url.absoluteString, in: namespace))
+                        // Close into the photo on screen, not the one tapped.
+                        .navigationTransition(.zoom(sourceID: (page ?? media.url).absoluteString, in: namespace))
                 }
         } else {
             sheetFallback(content)

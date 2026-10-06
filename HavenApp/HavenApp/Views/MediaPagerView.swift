@@ -27,6 +27,7 @@ struct MediaPagerView<Item: Hashable, ItemContent: View>: View {
 
     private let externalSelection: Binding<Item?>?
     @State private var localSelection: Item?
+    @Environment(\.mediaViewerPage) private var viewerPage
 
     /// Index-based identity for the current page. `selection` (an `Item`) is still exposed
     /// to callers for compatibility with existing bindings, but paging itself is driven off
@@ -86,6 +87,7 @@ struct MediaPagerView<Item: Hashable, ItemContent: View>: View {
             #endif
             .onAppear { syncIndexOnAppear() }
             .onChange(of: items) { _, newItems in reconcile(after: newItems) }
+            .onChange(of: viewerPage) { _, page in follow(viewerPage: page) }
     }
 
     @ViewBuilder
@@ -109,6 +111,16 @@ struct MediaPagerView<Item: Hashable, ItemContent: View>: View {
         #else
         MacMediaPager(items: items, index: indexBinding, enableKeyboardNavigation: enableKeyboardNavigation, showsPositionBar: showsPositionBar, content: content)
         #endif
+    }
+
+    /// Turns to the photo swiped to in the full-screen viewer, behind it and
+    /// without animation, so closing the viewer zooms into a photo that is
+    /// on screen instead of one paged away.
+    private func follow(viewerPage page: URL?) {
+        guard let page = page as? Item, let i = items.firstIndex(of: page), i != index else { return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { indexBinding.wrappedValue = i }
     }
 
     private func syncIndexOnAppear() {
