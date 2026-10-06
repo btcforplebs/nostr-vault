@@ -1642,8 +1642,13 @@ private fun HeroNoteCard(
 
             Spacer(Modifier.height(10.dp))
 
-            // Content
-            if (note.content.isNotBlank()) {
+            // Content. A poll draws its question and options as the card,
+            // bigger here, with who picked each option.
+            val poll = remember(note.id, note.kind) { note.poll }
+            if (poll != null) {
+                PollCard(poll = poll, isFocused = true)
+                Spacer(Modifier.height(12.dp))
+            } else if (note.content.isNotBlank()) {
                 val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
                 val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
                 TranslatableNoteText(

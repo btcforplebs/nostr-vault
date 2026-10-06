@@ -1505,11 +1505,12 @@ class FeedService @Inject constructor(
      * Kinds the primary feed REQ asks for, as a JSON array body. NIP-22
      * comments (1111) ride along so replies from Ditto, Coracle, Snort and
      * Amethyst reach the timeline; accumulateEvent keeps only those on kind 1
-     * notes. Articles mode gains nothing from them, so it does not ask.
+     * notes. Articles mode gains nothing from them, so it does not ask. NIP-88
+     * polls (1068) draw as a card in the row; their votes are fetched per poll.
      */
     private fun primaryFeedKinds(): String =
         if (_feedMode.value == FeedMode.ARTICLES) "1,6,30023"
-        else "1,6,30023,${NIP10Thread.COMMENT_KIND}"
+        else "1,6,30023,${NIP10Thread.COMMENT_KIND},${NIP88Poll.KIND}"
 
     private fun sendPrimaryFeedSubscription(relayUrl: String, subId: String) {
         // Reels runs its own queries (ReelsFeedService). The feed connections
@@ -1777,7 +1778,7 @@ class FeedService @Inject constructor(
         val client = feedClients[relayUrl] ?: return
         val ownerHex = nostrService.activeHexPubkey
         if (ownerHex.isEmpty()) return
-        val mentionFilter = """{"kinds":[1,6,30023,${NIP10Thread.COMMENT_KIND}],"#p":["$ownerHex"],"limit":50}"""
+        val mentionFilter = """{"kinds":[1,6,30023,${NIP10Thread.COMMENT_KIND},${NIP88Poll.KIND}],"#p":["$ownerHex"],"limit":50}"""
         client.send("[\"REQ\",\"feed-mentions\",$mentionFilter]")
     }
 
