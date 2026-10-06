@@ -91,7 +91,10 @@ abstract class HashtagNotesViewModel(
     companion object {
         private const val TAG = "HashtagFeed"
         private const val LIMIT = 100
-        private const val MAX_NOTES = 300
+        /** Per group, so a long read stays bounded. Live posts arrive at the top, so trimming drops the oldest. */
+        private const val MAX_NOTES = 1500
+        /** How many rows before a group's end its next older page starts loading. */
+        private const val PAGE_AHEAD = 5
         /** Authors per REQ filter; relays reject very large filters (iOS `trustedAuthorsCap`). */
         const val AUTHORS_CAP = 500
         /** Hashtags per REQ; past this the rest are left out rather than the REQ refused. */
@@ -124,6 +127,12 @@ abstract class HashtagNotesViewModel(
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    enum class Section { FOLLOWS, OTHERS }
+
+    /** The group whose older page is on its way, for the spinner under it. */
+    private val _loadingOlder = MutableStateFlow<Section?>(null)
+    val loadingOlder: StateFlow<Section?> = _loadingOlder.asStateFlow()
 
     /** The app-wide shield: Web of Trust (false) or everyone (true). */
     val globalShowsEveryone: StateFlow<Boolean> = configStore.config
@@ -161,6 +170,22 @@ abstract class HashtagNotesViewModel(
     private var shownTags: List<String>? = null
     private var shownTrust: Set<String>? = null
     private var observing: Job? = null
+    /** What `start` asked for, kept so an older page asks the same of each group. */
+    private var followsFilters: List<JsonObject> = emptyList()
+    private var othersFilters: List<JsonObject> = emptyList()
+    private var pageContext: PageContext? = null
+    private val exhausted = HashSet<Section>()
+    private var pageClients = mutableListOf<WebSocketClient>()
+    private var pageJobs = mutableListOf<Job>()
+    @Volatile private var page = 0
+
+    private class PageContext(
+        val values: List<String>,
+        val wantedTags: Set<String>,
+        val wantedAuthors: Set<String>?,
+        val blocked: Set<String>,
+        val relays: List<String>,
+    )
 
     /**
      * Loads [tags] while [active], again whenever the tags, the follow list,
@@ -217,8 +242,13 @@ abstract class HashtagNotesViewModel(
             if (!resuming) seen.clear()
             follows = followSet
             topGroup = if (trust == null) emptySet() else followSet
+            if (!resuming) exhausted.clear()
             generation
         }
+        // Rebuilt below; a resumed list keeps what it learned about its end.
+        followsFilters = emptyList()
+        othersFilters = emptyList()
+        pageContext = null
         if (!resuming) {
             _fromFollows.value = emptyList()
             _fromOthers.value = emptyList()
@@ -232,17 +262,18 @@ abstract class HashtagNotesViewModel(
         // Follows asked by name, so a busy tag cannot push them out of the page;
         // past the cap, the open filter finds them. Capped so the REQ stays
         // under relay message limits.
-        val filters = mutableListOf<JsonObject>()
-        if (followSet.isNotEmpty()) filters += hashtagFilter(values, followSet.sorted().take(AUTHORS_CAP))
+        if (followSet.isNotEmpty()) followsFilters = listOf(hashtagFilter(values, followSet.sorted().take(AUTHORS_CAP)))
         val others = trust?.minus(followSet)
-        when {
+        othersFilters = when {
             // Trusted authors by name, then open for those past the cap (iOS `trustScopedFilters`).
-            !others.isNullOrEmpty() -> {
-                filters += hashtagFilter(values, others.sorted().take(AUTHORS_CAP))
-                filters += hashtagFilter(values, null)
-            }
-            trust == null || followSet.size > AUTHORS_CAP -> filters += hashtagFilter(values, null)
+            !others.isNullOrEmpty() -> listOf(
+                hashtagFilter(values, others.sorted().take(AUTHORS_CAP)),
+                hashtagFilter(values, null),
+            )
+            trust == null || followSet.size > AUTHORS_CAP -> listOf(hashtagFilter(values, null))
+            else -> emptyList()
         }
+        val filters = followsFilters + othersFilters
         if (filters.isEmpty()) {
             _isLoading.value = false
             return
@@ -253,6 +284,7 @@ abstract class HashtagNotesViewModel(
             .toSet()
         val relays = configStore.config.value.activeFeedRelays
             .ifEmpty { listOf("wss://relay.primal.net", "wss://nos.lol") }
+        pageContext = PageContext(values, wantedTags, wantedAuthors, blocked, relays)
 
         val subId = "hashtag-${System.currentTimeMillis().toString(36)}"
         val req = buildJsonArray {
@@ -281,11 +313,16 @@ abstract class HashtagNotesViewModel(
         }
     }
 
-    private fun hashtagFilter(values: List<String>, authors: List<String>?): JsonObject = buildJsonObject {
+    private fun hashtagFilter(
+        values: List<String>,
+        authors: List<String>?,
+        until: Long? = null,
+    ): JsonObject = buildJsonObject {
         putJsonArray("kinds") { add(JsonPrimitive(1)) }
         putJsonArray("#t") { values.forEach { add(JsonPrimitive(it)) } }
         put("limit", LIMIT)
         if (authors != null) putJsonArray("authors") { authors.forEach { add(JsonPrimitive(it)) } }
+        if (until != null) put("until", until)
     }
 
     private fun stop() {
@@ -293,6 +330,112 @@ abstract class HashtagNotesViewModel(
         jobs.clear()
         clients.forEach { it.disconnect() }
         clients.clear()
+        stopPage()
+    }
+
+    private fun stopPage() {
+        pageJobs.forEach { it.cancel() }
+        pageJobs.clear()
+        pageClients.forEach { it.disconnect() }
+        pageClients.clear()
+        _loadingOlder.value = null
+    }
+
+    /**
+     * Call as each row shows. Near the end of its group, loads that group's
+     * next older page. Older posts only ever join the group being read, at its
+     * end, so nothing above the reader moves: an older post from someone you
+     * follow, found while paging the second group, waits for the first
+     * group's own page.
+     */
+    fun rowAppeared(noteId: String, section: Section) {
+        val list = if (section == Section.FOLLOWS) _fromFollows.value else _fromOthers.value
+        val index = list.indexOfLast { it.id == noteId }
+        if (index < 0 || index < list.size - PAGE_AHEAD) return
+        loadOlder(section)
+    }
+
+    /** The last card of a group showed (Threaded layout, where rows are conversations). */
+    fun reachedEnd(section: Section) = loadOlder(section)
+
+    private fun loadOlder(section: Section) {
+        val list = if (section == Section.FOLLOWS) _fromFollows.value else _fromOthers.value
+        val base = if (section == Section.FOLLOWS) followsFilters else othersFilters
+        val context = pageContext ?: return
+        val oldest = list.lastOrNull() ?: return
+        if (_loadingOlder.value != null || section in exhausted || base.isEmpty()) return
+        // Inclusive, so posts sharing the oldest second are not skipped; seen drops repeats.
+        val until = oldest.createdAt.time / 1000
+        val filters = base.map { filter ->
+            buildJsonObject {
+                filter.forEach { (k, v) -> if (k != "until") put(k, v) }
+                put("until", until)
+            }
+        }
+        val gen = generation
+        page += 1
+        val thisPage = page
+        _loadingOlder.value = section
+        val subId = "hashtag-older-${System.currentTimeMillis().toString(36)}"
+        val req = buildJsonArray {
+            add(JsonPrimitive("REQ"))
+            add(JsonPrimitive(subId))
+            filters.forEach { add(it) }
+        }.toString()
+        var added = 0
+        val pending = HashSet(context.relays)
+        fun finish() {
+            synchronized(lock) {
+                if (gen != generation || thisPage != page || _loadingOlder.value == null) return
+                if (added == 0) exhausted.add(section)
+            }
+            viewModelScope.launch { if (thisPage == page) stopPage() }
+        }
+        for (url in context.relays) {
+            val client = WebSocketClient(url, viewModelScope)
+            pageClients += client
+            pageJobs += viewModelScope.launch(Dispatchers.Default) {
+                client.messages.collect { raw ->
+                    if (gen != generation || thisPage != page) return@collect
+                    val array = try {
+                        json.parseToJsonElement(raw) as? JsonArray
+                    } catch (e: Exception) {
+                        null
+                    } ?: return@collect
+                    if (array.size < 2 || array[1].jsonPrimitive.contentOrNull != subId) return@collect
+                    when (array[0].jsonPrimitive.contentOrNull) {
+                        "EOSE" -> {
+                            val done = synchronized(lock) { pending.remove(url); pending.isEmpty() }
+                            if (done) finish()
+                        }
+                        "EVENT" -> {
+                            val event = array.getOrNull(2) as? JsonObject ?: return@collect
+                            val note = parseNote(event, context.blocked, context.wantedAuthors, context.wantedTags)
+                                ?: return@collect
+                            if (insertOlder(note, section, gen)) synchronized(lock) { added += 1 }
+                        }
+                    }
+                }
+            }
+            pageJobs += viewModelScope.launch {
+                client.connectionState.collect { state ->
+                    if (state == WebSocketClient.ConnectionState.CONNECTED) client.send(req)
+                }
+            }
+            client.connect()
+        }
+        // A relay that never answers must not hold the next page forever.
+        pageJobs += viewModelScope.launch {
+            delay(LOADING_TIMEOUT_MS)
+            finish()
+        }
+    }
+
+    /** An older page's post, kept only if it belongs to the group being paged. */
+    private fun insertOlder(note: FeedNote, section: Section, gen: Int): Boolean {
+        // Same split as [insert]: with the shield off there is one list.
+        val noteSection = if (note.pubkey in topGroup) Section.FOLLOWS else Section.OTHERS
+        return noteSection == section && insert(note, gen)
     }
 
     override fun onCleared() {
@@ -362,9 +505,10 @@ abstract class HashtagNotesViewModel(
         null
     }
 
-    private fun insert(note: FeedNote, gen: Int) {
+    /** True when the post was new and went into its group. */
+    private fun insert(note: FeedNote, gen: Int): Boolean {
         val updated = synchronized(lock) {
-            if (gen != generation || !seen.add(note.id)) return
+            if (gen != generation || !seen.add(note.id)) return false
             val target = if (note.pubkey in topGroup) _fromFollows else _fromOthers
             val current = target.value
             val index = current.indexOfFirst { it.createdAt < note.createdAt }.let { if (it < 0) current.size else it }
@@ -375,6 +519,7 @@ abstract class HashtagNotesViewModel(
             requestedAuthors.add(note.pubkey)
         }
         if (updated) nostrService.fetchMissingProfiles(listOf(note.pubkey))
+        return true
     }
 
     // ── Engagement (same services as the feed, search and profile) ────────
@@ -470,6 +615,7 @@ fun HashtagFeedScreen(
 ) {
     val fromFollows by viewModel.fromFollows.collectAsState()
     val fromOthers by viewModel.fromOthers.collectAsState()
+    val loadingOlder by viewModel.loadingOlder.collectAsState()
     val notes = remember(fromFollows, fromOthers) { fromFollows + fromOthers }
     val isLoading by viewModel.isLoading.collectAsState()
     val everyone by viewModel.globalShowsEveryone.collectAsState()
@@ -604,15 +750,23 @@ fun HashtagFeedScreen(
                 item(key = "hashtag-follows-header") { HashtagSectionHeader("From people you follow") }
             }
             items(fromFollows, key = { it.id }) { note ->
+                LaunchedEffect(note.id) { viewModel.rowAppeared(note.id, HashtagNotesViewModel.Section.FOLLOWS) }
                 HashtagNote(note, quotedNotesCache, profiles, likedIds, repostedIds, viewModel,
                     onNoteClick, onArticleClick, onProfileClick, onReply, onQuote)
+            }
+            if (loadingOlder == HashtagNotesViewModel.Section.FOLLOWS) {
+                item(key = "hashtag-follows-older") { HashtagOlderSpinner() }
             }
             if (fromOthers.isNotEmpty() && !everyone) {
                 item(key = "hashtag-others-header") { HashtagSectionHeader("More from your network") }
             }
             items(fromOthers, key = { it.id }) { note ->
+                LaunchedEffect(note.id) { viewModel.rowAppeared(note.id, HashtagNotesViewModel.Section.OTHERS) }
                 HashtagNote(note, quotedNotesCache, profiles, likedIds, repostedIds, viewModel,
                     onNoteClick, onArticleClick, onProfileClick, onReply, onQuote)
+            }
+            if (loadingOlder == HashtagNotesViewModel.Section.OTHERS) {
+                item(key = "hashtag-others-older") { HashtagOlderSpinner() }
             }
         }
     }
@@ -753,4 +907,12 @@ internal fun HashtagNote(
         onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
     )
     HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
+}
+
+/** Under a group while its next older page loads. */
+@Composable
+internal fun HashtagOlderSpinner() {
+    Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+    }
 }

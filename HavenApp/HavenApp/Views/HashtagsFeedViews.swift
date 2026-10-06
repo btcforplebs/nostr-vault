@@ -53,11 +53,17 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                     LazyVStack(spacing: 12) {
                         if !model.fromFollows.isEmpty {
                             sectionHeader("From people you follow")
-                            ForEach(model.fromFollows) { row($0) }
+                            ForEach(model.fromFollows) { note in
+                                row(note).onAppear { model.rowAppeared(note, in: .follows) }
+                            }
+                            if model.loadingOlder == .follows { olderSpinner }
                         }
                         if !model.fromOthers.isEmpty {
                             if !everyone { sectionHeader("More from your network") }
-                            ForEach(model.fromOthers) { row($0) }
+                            ForEach(model.fromOthers) { note in
+                                row(note).onAppear { model.rowAppeared(note, in: .others) }
+                            }
+                            if model.loadingOlder == .others { olderSpinner }
                         }
                     }
                 }
@@ -243,13 +249,29 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
         return LazyVStack(spacing: 12) {
             if !top.isEmpty {
                 sectionHeader("From people you follow")
-                ForEach(top) { threadRow($0) }
+                ForEach(top) { thread in
+                    threadRow(thread).onAppear {
+                        if thread.id == top.last?.id { model.reachedEnd(of: .follows) }
+                    }
+                }
+                if model.loadingOlder == .follows { olderSpinner }
             }
             if !rest.isEmpty {
                 if !everyone { sectionHeader("More from your network") }
-                ForEach(rest) { threadRow($0) }
+                ForEach(rest) { thread in
+                    threadRow(thread).onAppear {
+                        if thread.id == rest.last?.id { model.reachedEnd(of: .others) }
+                    }
+                }
+                if model.loadingOlder == .others { olderSpinner }
             }
         }
+    }
+
+    private var olderSpinner: some View {
+        ProgressView()
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
     }
 
     private func sectionHeader(_ title: String) -> some View {

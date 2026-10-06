@@ -49,6 +49,7 @@ import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
 import com.nostrvault.ui.screens.HashtagNote
 import com.nostrvault.ui.screens.HashtagNotesViewModel
+import com.nostrvault.ui.screens.HashtagOlderSpinner
 import com.nostrvault.ui.screens.HashtagSectionHeader
 import com.nostrvault.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -305,6 +306,7 @@ internal fun HashtagsFeed(
     val selected by viewModel.selected.collectAsState()
     val fromFollows by viewModel.fromFollows.collectAsState()
     val fromOthers by viewModel.fromOthers.collectAsState()
+    val loadingOlder by viewModel.loadingOlder.collectAsState()
     val notes = remember(fromFollows, fromOthers) { fromFollows + fromOthers }
     val isLoading by viewModel.isLoading.collectAsState()
     val everyone by viewModel.globalShowsEveryone.collectAsState()
@@ -498,25 +500,43 @@ internal fun HashtagsFeed(
             }
         }
 
+        val follows = HashtagNotesViewModel.Section.FOLLOWS
+        val others = HashtagNotesViewModel.Section.OTHERS
         if (threadSections != null) {
             val (top, rest) = threadSections
             if (top.isNotEmpty()) {
                 item(key = "hashtags-follows-header") { HashtagSectionHeader("From people you follow") }
             }
-            items(top, key = { "thread-${it.rootId}" }) { threadRow(it) }
+            items(top, key = { "thread-${it.rootId}" }) { thread ->
+                if (thread === top.last()) LaunchedEffect(thread.rootId) { viewModel.reachedEnd(follows) }
+                threadRow(thread)
+            }
+            if (loadingOlder == follows) item(key = "hashtags-follows-older") { HashtagOlderSpinner() }
             if (rest.isNotEmpty() && !everyone) {
                 item(key = "hashtags-others-header") { HashtagSectionHeader("More from your network") }
             }
-            items(rest, key = { "thread-${it.rootId}" }) { threadRow(it) }
+            items(rest, key = { "thread-${it.rootId}" }) { thread ->
+                if (thread === rest.last()) LaunchedEffect(thread.rootId) { viewModel.reachedEnd(others) }
+                threadRow(thread)
+            }
+            if (loadingOlder == others) item(key = "hashtags-others-older") { HashtagOlderSpinner() }
         } else {
             if (fromFollows.isNotEmpty()) {
                 item(key = "hashtags-follows-header") { HashtagSectionHeader("From people you follow") }
             }
-            items(fromFollows, key = { it.id }) { noteRow(it) }
+            items(fromFollows, key = { it.id }) { note ->
+                LaunchedEffect(note.id) { viewModel.rowAppeared(note.id, follows) }
+                noteRow(note)
+            }
+            if (loadingOlder == follows) item(key = "hashtags-follows-older") { HashtagOlderSpinner() }
             if (fromOthers.isNotEmpty() && !everyone) {
                 item(key = "hashtags-others-header") { HashtagSectionHeader("More from your network") }
             }
-            items(fromOthers, key = { it.id }) { noteRow(it) }
+            items(fromOthers, key = { it.id }) { note ->
+                LaunchedEffect(note.id) { viewModel.rowAppeared(note.id, others) }
+                noteRow(note)
+            }
+            if (loadingOlder == others) item(key = "hashtags-others-older") { HashtagOlderSpinner() }
         }
     }
 
