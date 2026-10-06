@@ -112,7 +112,7 @@ class ZapService: ObservableObject {
             }
 
             if let addressTag, !addressTag.isEmpty {
-                tags.append(["a", addressTag, LiveChat.streamRelay])
+                tags.append(["a", addressTag, extraReceiptRelays.first ?? LiveChat.streamRelay])
             }
             
             // Add lnurl tag — strip internal sentinel prefix if present

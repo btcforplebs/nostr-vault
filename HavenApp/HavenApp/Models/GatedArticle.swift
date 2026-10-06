@@ -151,6 +151,18 @@ struct GatedArticle: Equatable {
 /// Teaser text a gated article ships in `content`, minus the "zap to unlock …
 /// <link>" call to action that the lock panel replaces.
 enum GatedArticleTeaser {
+    /// The author's own link to the article: the first URL on or after the
+    /// call-to-action line, never an image earlier in the teaser.
+    static func unlockURL(_ content: String) -> URL? {
+        let lines = content.components(separatedBy: .newlines)
+        guard let cta = lines.lastIndex(where: { $0.range(of: "to unlock", options: .caseInsensitive) != nil }) else {
+            return nil
+        }
+        let tail = lines[cta...].joined(separator: "\n")
+        guard let range = tail.range(of: #"https://[^\s)\]]+"#, options: .regularExpression) else { return nil }
+        return URL(string: String(tail[range]))
+    }
+
     static func strip(_ content: String) -> String {
         let lines = content.components(separatedBy: .newlines)
         guard let cta = lines.lastIndex(where: { $0.range(of: "to unlock", options: .caseInsensitive) != nil }) else {

@@ -1010,9 +1010,10 @@ struct GatedArticleBody: View {
     }
     @State private var phase: Phase = .checking
     @State private var confirming = false
-    /// Money has already gone out for this article: the button re-checks for
-    /// the key and never pays a second time.
-    @State private var paid = false
+    /// Shares of the price not yet paid. Fewer than all means money may have
+    /// moved already: the button then pays only what is left, or just
+    /// re-checks for the key, and never pays the same share twice.
+    @State private var unpaid: [GatedArticle.Share] = []
 
     var body: some View {
         if case .unlocked(let markdown) = phase {
@@ -1025,13 +1026,18 @@ struct GatedArticleBody: View {
                 }
                 lockPanel
             }
-            .task(id: note.id) { await checkAccess() }
+            // Keyed on the reader too: the stored key and payments belong to
+            // one account.
+            .task(id: note.id + nostrService.activeHexPubkey) { await checkAccess(auto: true) }
         }
     }
 
     private var authorName: String {
         nostrService.profiles[note.pubkey]?.bestName ?? "the author"
     }
+
+    private var paid: Bool { unpaid.count < gated.shares.count }
+    private var dueSats: Int { unpaid.reduce(0) { $0 + $1.sats } }
 
     private var lockPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1055,15 +1061,15 @@ struct GatedArticleBody: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Button {
-                if paid { Task { await waitForKey() } } else { confirming = true }
+                if paid && unpaid.isEmpty { Task { await waitForKey() } } else { confirming = true }
             } label: {
                 HStack(spacing: 8) {
                     if busy {
                         ProgressView().controlSize(.small).tint(.white)
                     } else {
-                        Image(systemName: "bolt.fill")
+                        Image(systemName: paid && unpaid.isEmpty ? "arrow.clockwise" : "bolt.fill")
                     }
-                    Text(busy ? busyLabel : (paid ? "Check again" : "Zap \(gated.priceSats) sats to unlock"))
+                    Text(busy ? busyLabel : buttonLabel)
                         .font(.appSystem(size: 15, weight: .semibold))
                 }
                 .frame(maxWidth: .infinity)
@@ -1075,15 +1081,27 @@ struct GatedArticleBody: View {
             .buttonStyle(.plain)
             .disabled(busy)
 
-            if let web = webURL {
-                Button {
-                    openURL(web)
-                } label: {
-                    Label("Open on \(web.host ?? "the web")", systemImage: "safari")
-                        .font(.appSystem(size: 13, weight: .medium))
-                        .foregroundColor(.havenPurple)
+            HStack(spacing: 16) {
+                if !paid, phase == .locked {
+                    Button {
+                        Task { await checkAccess(auto: false) }
+                    } label: {
+                        Label("Already paid?", systemImage: "checkmark.seal")
+                            .font(.appSystem(size: 13, weight: .medium))
+                            .foregroundColor(.havenPurple)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                if let web = GatedArticleTeaser.unlockURL(note.content) {
+                    Button {
+                        openURL(web)
+                    } label: {
+                        Label("Open on \(web.host ?? "the web")", systemImage: "safari")
+                            .font(.appSystem(size: 13, weight: .medium))
+                            .foregroundColor(.havenPurple)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .padding(16)
@@ -1093,12 +1111,21 @@ struct GatedArticleBody: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.havenPurple.opacity(0.35), lineWidth: 1)
         )
-        .confirmationDialog("Zap \(gated.priceSats) sats to \(authorName)?", isPresented: $confirming, titleVisibility: .visible) {
-            Button("Zap \(gated.priceSats) sats") { Task { await pay() } }
+        .confirmationDialog(confirmTitle, isPresented: $confirming, titleVisibility: .visible) {
+            Button("Zap \(dueSats) sats") { Task { await pay() } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Your zap unlocks the full article.")
         }
+    }
+
+    private var confirmTitle: String {
+        gated.shares.count == 1 ? "Zap \(dueSats) sats to \(authorName)?" : "Zap \(dueSats) sats to unlock?"
+    }
+
+    private var buttonLabel: String {
+        if !paid { return "Zap \(gated.priceSats) sats to unlock" }
+        return unpaid.isEmpty ? "Check again" : "Zap the remaining \(dueSats) sats"
     }
 
     private var busy: Bool { phase == .checking || phase == .paying || phase == .waiting }
@@ -1115,23 +1142,31 @@ struct GatedArticleBody: View {
         switch phase {
         case .failed(let message): return message
         case .waiting: return "Paid. Waiting for the zap receipt to reach the network…"
-        case _ where paid: return "You've zapped for this article. If it hasn't opened, the receipt is still on its way."
+        case _ where paid && unpaid.isEmpty:
+            return "You've zapped for this article. If it hasn't opened, the receipt is still on its way."
+        case _ where paid:
+            return "Part of the price went through. Zap the rest to unlock."
         default: return "Zap \(authorName) \(gated.priceSats) sats to read the full article here."
         }
     }
 
-    /// The author's own link to the article (the teaser's call to action).
-    private var webURL: URL? {
-        let pattern = #"https://[^\s)\]]+"#
-        guard let range = note.content.range(of: pattern, options: .regularExpression) else { return nil }
-        return URL(string: String(note.content[range]))
-    }
-
-    private func checkAccess() async {
-        paid = GatedArticleService.shared.hasPaid(note: note)
+    /// - Parameter auto: the check that runs on open. It asks the signer only
+    ///   when that's silent (a local key) or money has already moved — a
+    ///   remote signer would otherwise prompt on every view.
+    private func checkAccess(auto: Bool) async {
+        // A payment in flight owns the phase; a re-run of this task (the row
+        // scrolled away and back) must not hand the pay button back.
+        guard phase != .paying, phase != .waiting else { return }
+        unpaid = GatedArticleService.shared.unpaidShares(note: note, gated: gated)
+        if auto, !paid, !GatedArticleService.shared.canCheckSilently {
+            phase = .locked
+            return
+        }
+        phase = .checking
         do {
             phase = .unlocked(try await GatedArticleService.shared.open(note: note, gated: gated))
         } catch {
+            guard phase == .checking else { return }
             // Not paid yet is the normal case; anything else still leaves the
             // way to pay open rather than a dead end.
             phase = .locked
@@ -1139,15 +1174,18 @@ struct GatedArticleBody: View {
     }
 
     private func pay() async {
+        guard !busy else { return }
         phase = .paying
         do {
             try await GatedArticleService.shared.pay(note: note, gated: gated)
         } catch {
-            paid = GatedArticleService.shared.hasPaid(note: note)
-            phase = .failed(error.localizedDescription)
+            unpaid = GatedArticleService.shared.unpaidShares(note: note, gated: gated)
+            phase = .failed(paid
+                ? "The zap may not have gone through (\(error.localizedDescription)). Check your wallet before paying again — tap Check again if it did."
+                : error.localizedDescription)
             return
         }
-        paid = true
+        unpaid = GatedArticleService.shared.unpaidShares(note: note, gated: gated)
         await waitForKey()
     }
 

@@ -65,33 +65,82 @@ final class GatedArticleService {
         return body
     }
 
-    /// Articles this reader has zapped to unlock, by coordinate, so a receipt
-    /// that is slow to arrive never turns the button back into "pay".
-    private let paidKey = "gatedArticle.paid.v1"
+    /// Shares this reader has started paying, as "reader|coordinate|recipient".
+    /// A share is recorded BEFORE its zap goes out: a wallet that times out
+    /// may still have paid, and a share that might have been paid must never
+    /// be offered again.
+    private let paidKey = "gatedArticle.paidShares.v1"
 
-    func hasPaid(note: FeedNote) -> Bool {
-        guard let coordinate = NIP10Thread.coordinate(kind: note.kind, pubkey: note.pubkey, tags: note.tags) else { return false }
-        let reader = NostrService.shared.activeHexPubkey
-        return (UserDefaults.standard.stringArray(forKey: paidKey) ?? []).contains(cacheKey(reader: reader, coordinate: coordinate))
+    private func paidShares() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: paidKey) ?? [])
     }
 
-    /// Zaps every share of the price. Recorded as paid once the first share
-    /// has gone out, because from then on money has moved.
+    private func shareKey(_ note: FeedNote, _ share: GatedArticle.Share) -> String? {
+        guard let coordinate = NIP10Thread.coordinate(kind: note.kind, pubkey: note.pubkey, tags: note.tags) else { return nil }
+        return cacheKey(reader: NostrService.shared.activeHexPubkey, coordinate: coordinate) + "|" + share.pubkey
+    }
+
+    /// Shares not yet paid (or attempted). Empty means everything that can be
+    /// paid has been, and all that's left is waiting for the key.
+    func unpaidShares(note: FeedNote, gated: GatedArticle) -> [GatedArticle.Share] {
+        let paid = paidShares()
+        return gated.shares.filter { share in shareKey(note, share).map { !paid.contains($0) } ?? true }
+    }
+
+    /// True once any money may have moved for this article.
+    func hasPaid(note: FeedNote, gated: GatedArticle) -> Bool {
+        unpaidShares(note: note, gated: gated).count < gated.shares.count
+    }
+
+    /// Zaps every share not already paid. Every recipient's lightning address
+    /// is found first, so a missing one fails before any money moves.
     func pay(note: FeedNote, gated: GatedArticle) async throws {
         let coordinate = NIP10Thread.coordinate(kind: note.kind, pubkey: note.pubkey, tags: note.tags)
-        for share in gated.shares {
+        let due = unpaidShares(note: note, gated: gated)
+        var targets: [(GatedArticle.Share, String)] = []
+        for share in due {
             guard let lud = await lightningAddress(for: share.pubkey) else { throw UnlockError.noLightningAddress }
-            try await ZapService.shared.zapNote(noteId: note.id, notePubkey: share.pubkey, lud16: lud,
-                                                amountSats: share.sats, message: "Unlocked with Nostr Vault",
-                                                addressTag: coordinate, extraReceiptRelays: gated.receiptRelays)
-            if let coordinate {
-                let key = cacheKey(reader: NostrService.shared.activeHexPubkey, coordinate: coordinate)
-                var paid = UserDefaults.standard.stringArray(forKey: paidKey) ?? []
-                if !paid.contains(key) { paid.append(key); UserDefaults.standard.set(paid, forKey: paidKey) }
+            targets.append((share, lud))
+        }
+        for (share, lud) in targets {
+            let key = shareKey(note, share)
+            if let key { record(key, paid: true) }
+            do {
+                try await ZapService.shared.zapNote(noteId: note.id, notePubkey: share.pubkey, lud16: lud,
+                                                    amountSats: share.sats, message: "Unlocked with Nostr Vault",
+                                                    addressTag: coordinate, extraReceiptRelays: gated.receiptRelays)
+            } catch {
+                // Failures before the wallet was asked to pay leave no money
+                // moved, so the share can be offered again. A payment error
+                // (a wallet timeout included) may still have paid: keep it.
+                if let key, Self.failedBeforePaying(error) { record(key, paid: false) }
+                throw error
             }
         }
         FeedService.shared.zappedEventIds[note.id] = gated.priceSats
         FeedService.shared.saveInteractionState()
+    }
+
+    private func record(_ key: String, paid: Bool) {
+        var all = paidShares()
+        if paid { all.insert(key) } else { all.remove(key) }
+        UserDefaults.standard.set(Array(all), forKey: paidKey)
+    }
+
+    private static func failedBeforePaying(_ error: Error) -> Bool {
+        switch error as? ZapService.ZapError {
+        case .lnurlResolutionFailed, .invoiceFetchFailed, .signFailed: return true
+        case .paymentFailed(let message):
+            // No wallet connected: nothing was sent.
+            return message == NWCService.NWCError.invalidURI.errorDescription
+        case nil: return false
+        }
+    }
+
+    /// Whether opening a gated article may ask the signer on its own. A local
+    /// key signs silently; a remote signer would prompt on every view.
+    var canCheckSilently: Bool {
+        ConfigService.shared.config.activeSigningMode() == "local"
     }
 
     /// Asks for the key until the server has seen the receipts. The receipt

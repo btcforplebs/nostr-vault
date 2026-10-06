@@ -131,4 +131,10 @@ final class GatedArticleTests: XCTestCase {
     func testTeaserWithoutCallToActionIsUnchanged() {
         XCTAssertEqual(GatedArticleTeaser.strip("Just a teaser."), "Just a teaser.")
     }
+
+    func testUnlockURLIsTheCallToActionLinkNotATeaserImage() {
+        let content = "![cover](https://img.example/a.png)\n\nTeaser.\n\n⚡ Zap 42 sats to unlock the full article on\nhttps://fanfares.io/naddr/naddr1xyz"
+        XCTAssertEqual(GatedArticleTeaser.unlockURL(content)?.absoluteString, "https://fanfares.io/naddr/naddr1xyz")
+        XCTAssertNil(GatedArticleTeaser.unlockURL("https://img.example/a.png only"))
+    }
 }
