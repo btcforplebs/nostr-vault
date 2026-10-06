@@ -2,6 +2,7 @@ package com.nostrvault.data.model
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
+import com.nostrvault.data.local.EngagementTracker
 import com.nostrvault.relay.HavenQuoteDecoder
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -520,6 +521,8 @@ data class FeedProfile(
     var name: String? = null,
     var displayName: String? = null,
     var pictureURL: String? = null,
+    /** The wide header image (kind-0 `banner`). */
+    var bannerURL: String? = null,
     var nip05: String? = null,
     var about: String? = null,
     var lud16: String? = null,
@@ -682,7 +685,7 @@ class BackgroundAccumulator {
 
     val notes = mutableListOf<FeedNote>()
     val profiles = mutableListOf<String>()
-    val reactionEvents = mutableListOf<Pair<String, String>>() // (targetId, pubkey)
+    val reactionEvents = mutableListOf<EngagementTracker.ReactionEvent>()
     val zapEvents = mutableListOf<Pair<String, Long>>() // (targetId, amountSats)
     val repostTargets = mutableListOf<String>()
     val rawEventEntries = mutableListOf<Pair<String, String>>() // (id, json)
@@ -704,7 +707,7 @@ class BackgroundAccumulator {
     fun addNote(note: FeedNote) { synchronized(lock) { notes.add(note) } }
 
     /** Add a reaction engagement event. */
-    fun addReaction(targetId: String, pubkey: String) { synchronized(lock) { reactionEvents.add(targetId to pubkey) } }
+    fun addReaction(reaction: EngagementTracker.ReactionEvent) { synchronized(lock) { reactionEvents.add(reaction) } }
 
     /** Add a zap engagement event. */
     fun addZap(targetId: String, amountSats: Long) { synchronized(lock) { zapEvents.add(targetId to amountSats) } }
@@ -712,7 +715,7 @@ class BackgroundAccumulator {
     data class Snapshot(
         val notes: List<FeedNote>,
         val profiles: List<String>,
-        val reactions: List<Pair<String, String>>,
+        val reactions: List<EngagementTracker.ReactionEvent>,
         val zaps: List<Pair<String, Long>>,
         val repostTargets: List<String>,
         val rawEventEntries: List<Pair<String, String>>,

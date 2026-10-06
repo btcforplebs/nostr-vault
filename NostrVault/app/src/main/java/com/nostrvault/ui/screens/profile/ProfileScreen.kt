@@ -26,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -148,8 +150,18 @@ fun ProfileScreen(
         } else emptyList()
     }
     var viewerIndex by remember { mutableStateOf<Int?>(null) }
+    // The banner, full screen, after a tap on it.
+    var bannerViewerUrl by remember { mutableStateOf<String?>(null) }
+    val listState = rememberLazyListState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
 
     GlassScaffold(
+        // The banner runs up under the toolbar; the toolbar's fade comes in
+        // as the page scrolls up behind it.
+        toolbarScrimAlpha = {
+            if (listState.firstVisibleItemIndex > 0) 1f
+            else listState.firstVisibleItemScrollOffset / with(density) { 110.dp.toPx() }
+        },
         toolbar = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -189,7 +201,6 @@ fun ProfileScreen(
             }
         },
     ) { padding ->
-        val listState = rememberLazyListState()
         // Items before the section tabs: header, actions, bio (when there is
         // one), stats and identity rows.
         val tabsIndex = if (profile?.about?.isNotBlank() == true) 5 else 4
@@ -218,6 +229,14 @@ fun ProfileScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             item {
+                ProfileBanner(
+                    bannerUrl = profile?.bannerURL?.takeIf { it.isNotBlank() },
+                    avatarUrl = profile?.pictureURL?.takeIf { it.isNotBlank() },
+                    pubkey = pubkey,
+                    topInset = padding.calculateTopPadding(),
+                    accent = colors.primary,
+                    onTap = { bannerViewerUrl = it },
+                )
                 ProfileHeader(
                     profile = profile,
                     pubkey = pubkey,
@@ -520,6 +539,10 @@ fun ProfileScreen(
         }
     }
 
+    bannerViewerUrl?.let { url ->
+        MediaViewerOverlay(urls = listOf(url), startIndex = 0, onDismiss = { bannerViewerUrl = null })
+    }
+
     // Full-screen media viewer overlay.
     viewerIndex?.let { startIndex ->
         if (mediaItems.isNotEmpty()) {
@@ -559,14 +582,24 @@ private fun ProfileHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         AvatarImage(
             url = profile?.pictureURL,
             pubkey = profile?.pubkey ?: pubkey,
-            size = 64.dp,
+            size = 72.dp,
             displayName = profile?.bestName,
+            modifier = Modifier
+                // Half over the banner; the name column stays below it.
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    val overlap = ProfileBannerStyle.avatarOverlap.roundToPx()
+                    layout(placeable.width, placeable.height - overlap) { placeable.place(0, -overlap) }
+                }
+                // A ring in the page color lifts the avatar off the banner.
+                .background(WindowBackground, CircleShape)
+                .padding(3.dp),
         )
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
