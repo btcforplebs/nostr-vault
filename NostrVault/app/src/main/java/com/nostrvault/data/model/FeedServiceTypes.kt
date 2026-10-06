@@ -522,6 +522,14 @@ enum class FeedMode(val displayName: String) {
     FOLLOWING("Following"),
     DISCOVERY("Discover"),
     GLOBAL("Global"),
+
+    /**
+     * Posts in the hashtags you follow (NIP-51 interest list, kind 10015).
+     * Like [MUSIC], not a view of the note list: HashtagsFeedViewModel runs
+     * its own `#t` REQ and the note subscription is left alone. Declared after
+     * Global so a saved picker order gains it right after Global.
+     */
+    HASHTAGS("Hashtags"),
     POPULAR("Popular"),
     MEDIA("Media"),
 

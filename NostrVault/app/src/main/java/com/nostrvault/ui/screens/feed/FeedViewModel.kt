@@ -262,7 +262,8 @@ class FeedViewModel @Inject constructor(
      */
     private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
         FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR -> true
-        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC -> false
+        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC,
+        FeedMode.HASHTAGS -> false
     }
 
     private fun defaultCompact(mode: FeedMode): Boolean = when (mode) {
@@ -506,6 +507,8 @@ class FeedViewModel @Inject constructor(
         }
         // Music is Wavlake; the note subscription has nothing to switch.
         if (mode == FeedMode.MUSIC) return
+        // Hashtags runs its own #t REQ (HashtagsFeedViewModel); same as Music.
+        if (mode == FeedMode.HASHTAGS) return
         viewModelScope.launch {
             feedService.switchFeedMode(mode)
         }

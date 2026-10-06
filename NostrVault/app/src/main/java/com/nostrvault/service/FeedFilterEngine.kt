@@ -153,6 +153,8 @@ object FeedFilterEngine {
                 FeedMode.MARKETPLACE -> false
                 // Music is Wavlake, not notes.
                 FeedMode.MUSIC -> false
+                // HashtagsFeedViewModel supplies these, not the note list.
+                FeedMode.HASHTAGS -> false
                 // Reels are served by ReelsFeedService, not the note list.
                 FeedMode.REELS -> false
             }

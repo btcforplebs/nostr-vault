@@ -35,6 +35,7 @@ import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.FeedFilterEngine
 import com.nostrvault.service.FeedService
+import com.nostrvault.service.InterestList
 import com.nostrvault.service.InterestListService
 import com.nostrvault.service.NostrService
 import com.nostrvault.service.ZapSendService
@@ -52,7 +53,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -71,19 +75,17 @@ import kotlinx.serialization.json.putJsonArray
 import javax.inject.Inject
 
 /**
- * Posts tagged with one hashtag (`#t`), newest first, live: the subscription
- * stays open so new posts arrive while the screen is up. Two groups: the
- * people you follow, then everyone else the shield lets through (your Web of
- * Trust, or everyone). Port of iOS `HashtagFeedModel` / `HashtagFeedView`.
+ * Posts tagged with any of a set of hashtags (`#t`), newest first, live: the
+ * subscription stays open so new posts arrive while the screen is up. Two
+ * groups: the people you follow, then everyone else the shield lets through
+ * (your Web of Trust, or everyone). Shared by the hashtag sheet (one tag) and
+ * the Hashtags feed (every followed tag). Port of iOS `HashtagFeedModel`.
  */
-@HiltViewModel
-class HashtagFeedViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
-    private val nostrService: NostrService,
-    private val configStore: ConfigStore,
-    private val feedService: FeedService,
+abstract class HashtagNotesViewModel(
+    protected val nostrService: NostrService,
+    protected val configStore: ConfigStore,
+    protected val feedService: FeedService,
     private val zapSendService: ZapSendService,
-    private val interestListService: InterestListService,
 ) : ViewModel() {
 
     companion object {
@@ -91,15 +93,28 @@ class HashtagFeedViewModel @Inject constructor(
         private const val LIMIT = 100
         private const val MAX_NOTES = 300
         /** Authors per REQ filter; relays reject very large filters (iOS `trustedAuthorsCap`). */
-        private const val AUTHORS_CAP = 500
+        const val AUTHORS_CAP = 500
+        /** Hashtags per REQ; past this the rest are left out rather than the REQ refused. */
+        const val MAX_TAGS = 100
         /** Never spin forever if every relay is slow or down. */
         private const val LOADING_TIMEOUT_MS = 8_000L
         private const val DEFAULT_ZAP_SATS = SearchViewModel.DEFAULT_ZAP_SATS
+
+        /**
+         * The `#t` values for [tags]: a relay matches tag values exactly, and
+         * not every client lowercases (NIP-24 asks it to), so each tag goes out
+         * as lowercase, Capitalized and UPPERCASE. At most [MAX_TAGS] tags.
+         */
+        fun tagFilterValues(tags: List<String>): List<String> = tags
+            .map(InterestList::normalize)
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .take(MAX_TAGS)
+            .flatMap { listOf(it, it.replaceFirstChar { c -> c.uppercaseChar() }, it.uppercase()) }
+            .distinct()
     }
 
-    val tag: String = HashtagLink.normalize(savedStateHandle.get<String>("tag").orEmpty()).orEmpty()
-
-    private val json = Json { ignoreUnknownKeys = true }
+    protected val json = Json { ignoreUnknownKeys = true }
 
     private val _fromFollows = MutableStateFlow<List<FeedNote>>(emptyList())
     val fromFollows: StateFlow<List<FeedNote>> = _fromFollows.asStateFlow()
@@ -124,20 +139,9 @@ class HashtagFeedViewModel @Inject constructor(
     private val _toast = MutableStateFlow<String?>(null)
     val toast = _toast.asStateFlow()
 
-    /** Followed hashtags: the account's interest list (kind 10015), the one other Nostr apps read. */
-    val isFollowingTag: StateFlow<Boolean> = interestListService.hashtags
-        .map { tag in it }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, interestListService.isFollowing(tag))
-
     val hasAccount: StateFlow<Boolean> = configStore.activeAccountHexPubkey
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, configStore.activeAccountHexPubkey.value.isNotEmpty())
-
-    private val _followSaving = MutableStateFlow(false)
-    val followSaving: StateFlow<Boolean> = _followSaving.asStateFlow()
-
-    private val _followFailed = MutableStateFlow(false)
-    val followFailed: StateFlow<Boolean> = _followFailed.asStateFlow()
 
     private val lock = Any()
     private val seen = HashSet<String>()
@@ -146,17 +150,25 @@ class HashtagFeedViewModel @Inject constructor(
     @Volatile private var generation = 0
     private var clients = mutableListOf<WebSocketClient>()
     private var jobs = mutableListOf<Job>()
+    private var currentTags: List<String> = emptyList()
+    private var observing: Job? = null
 
-    init {
-        interestListService.refreshIfNeeded()
-        // The follow list and the trust graph can arrive after the screen opens.
-        viewModelScope.launch {
+    /**
+     * Loads [tags] while [active], again whenever the tags, the follow list,
+     * the trust graph or the shield change. Called from a subclass's init,
+     * once its own properties exist.
+     */
+    protected fun observe(tags: Flow<List<String>>, active: Flow<Boolean> = flowOf(true)) {
+        observing?.cancel()
+        observing = viewModelScope.launch {
             combine(
+                tags.distinctUntilChanged(),
+                active.distinctUntilChanged(),
                 feedService.followedPubkeys,
-                feedService.wotPubkeys.map { it.size },
+                feedService.wotPubkeys.map { it.size }.distinctUntilChanged(),
                 globalShowsEveryone,
-            ) { followed, _, _ -> followed }
-                .collect { start() }
+            ) { t, on, _, _, _ -> t to on }
+                .collect { (t, on) -> if (on) start(t) else stop() }
         }
     }
 
@@ -165,18 +177,25 @@ class HashtagFeedViewModel @Inject constructor(
         feedService.setGlobalShowsEveryone(on)
     }
 
+    /** Pull to refresh: the same tags, asked again. */
+    fun reload() = start(currentTags)
+
     /**
      * (Re)opens the subscription. Your own posts count with your follows: you
      * just tagged it, you want to see it.
      */
-    private fun start() {
+    private fun start(tags: List<String>) {
         stop()
+        currentTags = tags
         val followSet = buildSet {
             addAll(feedService.followedPubkeys.value)
             configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() }?.let(::add)
         }
         // Null is everyone; empty is nobody (no Web of Trust yet fails closed, like Global).
         val trust = feedService.globalTrustSet()
+        val values = tagFilterValues(tags)
+        // Matched locally in lowercase; only the tags actually asked for.
+        val wantedTags = values.map { it.lowercase() }.toSet()
         val gen = synchronized(lock) {
             generation += 1
             seen.clear()
@@ -187,7 +206,7 @@ class HashtagFeedViewModel @Inject constructor(
         _fromOthers.value = emptyList()
         _isLoading.value = true
 
-        if (tag.isEmpty()) {
+        if (values.isEmpty()) {
             _isLoading.value = false
             return
         }
@@ -195,15 +214,15 @@ class HashtagFeedViewModel @Inject constructor(
         // past the cap, the open filter finds them. Capped so the REQ stays
         // under relay message limits.
         val filters = mutableListOf<JsonObject>()
-        if (followSet.isNotEmpty()) filters += hashtagFilter(followSet.sorted().take(AUTHORS_CAP))
+        if (followSet.isNotEmpty()) filters += hashtagFilter(values, followSet.sorted().take(AUTHORS_CAP))
         val others = trust?.minus(followSet)
         when {
             // Trusted authors by name, then open for those past the cap (iOS `trustScopedFilters`).
             !others.isNullOrEmpty() -> {
-                filters += hashtagFilter(others.sorted().take(AUTHORS_CAP))
-                filters += hashtagFilter(null)
+                filters += hashtagFilter(values, others.sorted().take(AUTHORS_CAP))
+                filters += hashtagFilter(values, null)
             }
-            trust == null || followSet.size > AUTHORS_CAP -> filters += hashtagFilter(null)
+            trust == null || followSet.size > AUTHORS_CAP -> filters += hashtagFilter(values, null)
         }
         if (filters.isEmpty()) {
             _isLoading.value = false
@@ -227,7 +246,7 @@ class HashtagFeedViewModel @Inject constructor(
             val client = WebSocketClient(url, viewModelScope)
             clients += client
             jobs += viewModelScope.launch(Dispatchers.Default) {
-                client.messages.collect { raw -> onMessage(raw, subId, gen, blocked, wantedAuthors) }
+                client.messages.collect { raw -> onMessage(raw, subId, gen, blocked, wantedAuthors, wantedTags) }
             }
             // Sent again after a reconnect, so the feed stays live.
             jobs += viewModelScope.launch {
@@ -243,10 +262,9 @@ class HashtagFeedViewModel @Inject constructor(
         }
     }
 
-    private fun hashtagFilter(authors: List<String>?): JsonObject = buildJsonObject {
+    private fun hashtagFilter(values: List<String>, authors: List<String>?): JsonObject = buildJsonObject {
         putJsonArray("kinds") { add(JsonPrimitive(1)) }
-        // NIP-24 says t tags are lowercase; [tag] already is.
-        putJsonArray("#t") { add(JsonPrimitive(tag)) }
+        putJsonArray("#t") { values.forEach { add(JsonPrimitive(it)) } }
         put("limit", LIMIT)
         if (authors != null) putJsonArray("authors") { authors.forEach { add(JsonPrimitive(it)) } }
     }
@@ -268,7 +286,14 @@ class HashtagFeedViewModel @Inject constructor(
      * posts that lack the tag, or come from people outside the requested
      * authors, and any event under any author, so every signature is checked.
      */
-    private fun onMessage(raw: String, subId: String, gen: Int, blocked: Set<String>, authors: Set<String>?) {
+    private fun onMessage(
+        raw: String,
+        subId: String,
+        gen: Int,
+        blocked: Set<String>,
+        authors: Set<String>?,
+        wantedTags: Set<String>,
+    ) {
         val array = try {
             json.parseToJsonElement(raw) as? JsonArray
         } catch (e: Exception) {
@@ -280,13 +305,18 @@ class HashtagFeedViewModel @Inject constructor(
             "EOSE" -> if (gen == generation) _isLoading.value = false
             "EVENT" -> {
                 val event = array.getOrNull(2) as? JsonObject ?: return
-                val note = parseNote(event, blocked, authors) ?: return
+                val note = parseNote(event, blocked, authors, wantedTags) ?: return
                 insert(note, gen)
             }
         }
     }
 
-    private fun parseNote(event: JsonObject, blocked: Set<String>, authors: Set<String>?): FeedNote? = try {
+    private fun parseNote(
+        event: JsonObject,
+        blocked: Set<String>,
+        authors: Set<String>?,
+        wantedTags: Set<String>,
+    ): FeedNote? = try {
         val id = event["id"]?.jsonPrimitive?.contentOrNull
         val pubkey = event["pubkey"]?.jsonPrimitive?.contentOrNull
         val content = event["content"]?.jsonPrimitive?.contentOrNull
@@ -297,7 +327,7 @@ class HashtagFeedViewModel @Inject constructor(
             null
         } else if (authors != null && pubkey !in authors) {
             null
-        } else if (tags.none { it.size >= 2 && it[0] == "t" && it[1].lowercase() == tag }) {
+        } else if (tags.none { it.size >= 2 && it[0] == "t" && it[1].lowercase() in wantedTags }) {
             null
         } else if (FeedNote.isNoiseOrSpam(content, tags)) {
             null
@@ -327,21 +357,6 @@ class HashtagFeedViewModel @Inject constructor(
         }
         if (updated) nostrService.fetchMissingProfiles(listOf(note.pubkey))
     }
-
-    fun toggleFollow() {
-        if (tag.isEmpty() || _followSaving.value) return
-        val follow = !isFollowingTag.value
-        _followSaving.value = true
-        viewModelScope.launch {
-            try {
-                if (!interestListService.setFollowing(tag, follow)) _followFailed.value = true
-            } finally {
-                _followSaving.value = false
-            }
-        }
-    }
-
-    fun clearFollowFailed() { _followFailed.value = false }
 
     // ── Engagement (same services as the feed, search and profile) ────────
 
@@ -375,6 +390,52 @@ class HashtagFeedViewModel @Inject constructor(
 
     fun fetchMissingQuotedProfiles(identifiers: List<String>) =
         feedService.fetchMissingQuotedProfiles(identifiers)
+}
+
+/** The hashtag sheet: one tag, with its Follow button. */
+@HiltViewModel
+class HashtagFeedViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    nostrService: NostrService,
+    configStore: ConfigStore,
+    feedService: FeedService,
+    zapSendService: ZapSendService,
+    private val interestListService: InterestListService,
+) : HashtagNotesViewModel(nostrService, configStore, feedService, zapSendService) {
+
+    val tag: String = HashtagLink.normalize(savedStateHandle.get<String>("tag").orEmpty()).orEmpty()
+
+    /** Followed hashtags: the account's interest list (kind 10015), the one other Nostr apps read. */
+    val isFollowingTag: StateFlow<Boolean> = interestListService.hashtags
+        .map { tag in it }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, interestListService.isFollowing(tag))
+
+    private val _followSaving = MutableStateFlow(false)
+    val followSaving: StateFlow<Boolean> = _followSaving.asStateFlow()
+
+    private val _followFailed = MutableStateFlow(false)
+    val followFailed: StateFlow<Boolean> = _followFailed.asStateFlow()
+
+    init {
+        interestListService.refreshIfNeeded()
+        // The follow list and the trust graph can arrive after the screen opens.
+        observe(flowOf(listOfNotNull(tag.takeIf { it.isNotEmpty() })))
+    }
+
+    fun toggleFollow() {
+        if (tag.isEmpty() || _followSaving.value) return
+        val follow = !isFollowingTag.value
+        _followSaving.value = true
+        viewModelScope.launch {
+            try {
+                if (!interestListService.setFollowing(tag, follow)) _followFailed.value = true
+            } finally {
+                _followSaving.value = false
+            }
+        }
+    }
+
+    fun clearFollowFailed() { _followFailed.value = false }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -627,7 +688,7 @@ private fun HashtagHeader(tag: String, isFollowing: Boolean, enabled: Boolean, o
 }
 
 @Composable
-private fun HashtagSectionHeader(title: String) {
+internal fun HashtagSectionHeader(title: String) {
     Text(
         text = title,
         color = SecondaryText,
@@ -640,13 +701,13 @@ private fun HashtagSectionHeader(title: String) {
 }
 
 @Composable
-private fun HashtagNote(
+internal fun HashtagNote(
     note: FeedNote,
     quotedNotesCache: Map<String, FeedNote>,
     profiles: Map<String, FeedProfile>,
     likedIds: Set<String>,
     repostedIds: Set<String>,
-    viewModel: HashtagFeedViewModel,
+    viewModel: HashtagNotesViewModel,
     onNoteClick: (String) -> Unit,
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,

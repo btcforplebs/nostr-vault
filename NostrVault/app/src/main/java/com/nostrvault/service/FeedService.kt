@@ -1246,6 +1246,7 @@ class FeedService @Inject constructor(
                     FeedMode.MARKETPLACE -> "marketplace"
                     FeedMode.REELS -> "reels"
                     FeedMode.MUSIC -> "music"
+                    FeedMode.HASHTAGS -> "hashtags"
                 }
                 sendPrimaryFeedSubscription(relayUrl, "feed-$label")
                 continue
@@ -1399,6 +1400,7 @@ class FeedService @Inject constructor(
             FeedMode.MARKETPLACE -> "marketplace"
             FeedMode.REELS -> "reels"
             FeedMode.MUSIC -> "music"
+            FeedMode.HASHTAGS -> "hashtags"
         }
         return "feed-$label"
     }
@@ -1491,6 +1493,7 @@ class FeedService @Inject constructor(
             FeedMode.MARKETPLACE -> "marketplace"
             FeedMode.REELS -> return
             FeedMode.MUSIC -> return
+            FeedMode.HASHTAGS -> return
         }
         // A changed follow set changes which follows' own relays are needed.
         reconcileOutboxRelays(resend = false)
@@ -1550,6 +1553,8 @@ class FeedService @Inject constructor(
                 FeedMode.MUSIC -> {
                     // Wavlake, not relays: MusicScreen loads its own catalogue.
                 }
+                // HashtagsFeedViewModel runs its own #t REQ.
+                FeedMode.HASHTAGS -> return
                 FeedMode.REELS -> return // Returned above; ReelsFeedService owns it
                 FeedMode.RECIPES -> {
                     // Ask the relays for the topic rather than pulling every
