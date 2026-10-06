@@ -26,6 +26,7 @@ final class RelayActivityModel: ObservableObject {
     @Published private(set) var health: PlainLog.Severity = .good
 
     private var cancellable: AnyCancellable?
+    private static let queue = DispatchQueue(label: "RelayActivityModel", qos: .utility)
     private static var shared: [ObjectIdentifier: RelayActivityModel] = [:]
 
     /// One model per log store. The app has a single `LogStore`, so this is
@@ -40,7 +41,8 @@ final class RelayActivityModel: ObservableObject {
 
     private init(store: LogStore) {
         cancellable = store.$logs
-            .receive(on: DispatchQueue.global(qos: .utility))
+            // Serial, so a slow pass can't land after a newer one.
+            .receive(on: Self.queue)
             .map { logs -> ([PlainLog.Item], PlainLog.Severity) in
                 let items = PlainLog.summarize(logs)
                 return (items, PlainLog.health(items))
