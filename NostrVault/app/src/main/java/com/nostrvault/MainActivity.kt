@@ -47,6 +47,7 @@ import com.nostrvault.ui.components.VideoPiPBridge
 import com.nostrvault.ui.navigation.BridgeEntityDecoder
 import com.nostrvault.ui.navigation.DeepLinkRouter
 import com.nostrvault.ui.navigation.NostrVaultNavHost
+import com.nostrvault.ui.navigation.NotificationNote
 import com.nostrvault.ui.navigation.PendingDeepLink
 import com.nostrvault.ui.notification.NotificationManager
 import com.nostrvault.ui.theme.AppTheme
@@ -229,6 +230,8 @@ class MainActivity : FragmentActivity() {
             eventId = intent.getStringExtra("notif_event_id"),
             author = intent.getStringExtra("notif_author"),
             npub = intent.getStringExtra("notif_npub"),
+            event = intent.getStringExtra(NotificationNote.EVENT_EXTRA),
+            target = intent.getStringExtra(NotificationNote.TARGET_EXTRA),
         )
         if (fromNotification != null) {
             // Consumed: a rotation re-delivers the same intent, and without this

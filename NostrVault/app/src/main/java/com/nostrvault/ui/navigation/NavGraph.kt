@@ -29,6 +29,7 @@ import com.nostrvault.ui.theme.Motion
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.FeedNote
 import com.nostrvault.relay.RelayForegroundService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.NostrService
@@ -156,6 +157,11 @@ fun NostrVaultNavHost(
             ?.takeIf { it != configStore.config.value.activeOrOwnerNpub() }
             ?.let { configStore.switchActiveAccount(it) }
         if (target.mediaPaste) PendingMediaPaste.request()
+        // A notification's post goes in the note cache first, so the note
+        // screen finds it there and shows it at once instead of fetching.
+        target.seedNote?.let {
+            feedService.cacheNote(FeedNote.fromEvent(it.id, it.pubkey, it.content, it.tags, it.createdAt, it.kind))
+        }
         val focus = target.relayFocus
         if (focus == null) {
             navController.navigate(target.route) { launchSingleTop = true }

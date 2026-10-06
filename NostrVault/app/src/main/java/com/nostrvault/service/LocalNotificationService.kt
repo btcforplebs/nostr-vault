@@ -22,6 +22,8 @@ import com.nostrvault.MainActivity
 import com.nostrvault.R
 import com.nostrvault.data.local.ConfigStore
 import com.nostrvault.relay.HavenBridge
+import com.nostrvault.ui.navigation.NotificationNote
+import com.nostrvault.ui.navigation.NotificationTarget
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -63,6 +65,7 @@ class LocalNotificationService @Inject constructor(
         private const val MAX_SEEN = 500
         /** How long a DM marker waits for the inbox to decrypt its message. */
         private const val DM_OPEN_TIMEOUT_MS = 3_000L
+        private const val CARRIED_LOOKUP_TIMEOUT_MS = 1_500L
         /**
          * The wait while a DM thread is open: a slow decrypt there (Amber) must
          * end with the message appearing in the thread, not a generic alert first.
@@ -257,7 +260,39 @@ class LocalNotificationService @Inject constructor(
 
         val profile = if (author.length == 64) nostrService.get().profiles.value[author] else null
         val (title, text) = buildContent(type, profile?.bestName, preview)
-        post(id, title, text, type, author, npub, profile?.pictureURL)
+        scope.launch {
+            val carried = carriedNotes(type, id)
+            post(id, title, text, type, author, npub, profile?.pictureURL, carried)
+        }
+    }
+
+    /**
+     * The event this notification is about, and for a like, zap or repost the
+     * post it was on, as intent extras ([NotificationNote]). Read from this
+     * device's relay — the inbox, where the event was stored before the marker
+     * was raised, and the outbox, which holds your own posts. The relay is
+     * in-process and answers in milliseconds; the timeout only bounds a socket
+     * that never does. Empty when it does not answer: the tap then loads by id.
+     */
+    private suspend fun carriedNotes(type: String, id: String): Map<String, String> {
+        val base = configStore.config.value.nostrURL?.trimEnd('/') ?: return emptyMap()
+        val routes = listOf(base, "$base/inbox")
+        suspend fun lookup(eventId: String) = try {
+            nostrService.get()
+                .queryRawEvents(listOf("""{"ids":["$eventId"],"limit":1}"""), routes, CARRIED_LOOKUP_TIMEOUT_MS)
+                .firstOrNull()
+                ?.let(NotificationNote::encode)
+        } catch (_: Exception) { null }
+
+        val event = lookup(id) ?: return emptyMap()
+        val carried = mutableMapOf(NotificationNote.EVENT_EXTRA to event)
+        val parsed = NotificationNote.decode(event) ?: return carried
+        if (type == "reaction" || type == "repost" || type == "zap") {
+            NotificationTarget.targetNoteId(type, parsed.id, parsed.tags)
+                ?.let { lookup(it) }
+                ?.let { carried[NotificationNote.TARGET_EXTRA] = it }
+        }
+        return carried
     }
 
     /**
@@ -368,7 +403,16 @@ class LocalNotificationService @Inject constructor(
     }
 
     @SuppressLint("MissingPermission") // guarded by the runtime check below
-    private fun post(id: String, title: String, text: String, type: String, author: String, npub: String, pictureUrl: String?) {
+    private fun post(
+        id: String,
+        title: String,
+        text: String,
+        type: String,
+        author: String,
+        npub: String,
+        pictureUrl: String?,
+        carried: Map<String, String> = emptyMap(),
+    ) {
         ensureChannel()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -390,6 +434,8 @@ class LocalNotificationService @Inject constructor(
             putExtra("notif_author", author)
             // The account it arrived for; the nav host switches to it on tap.
             putExtra("notif_npub", npub)
+            // The post itself, so the tap opens it with nothing to fetch.
+            carried.forEach { (key, value) -> putExtra(key, value) }
         }
         val pending = PendingIntent.getActivity(
             context,
