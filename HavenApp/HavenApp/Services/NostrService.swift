@@ -1270,6 +1270,88 @@ class NostrService: ObservableObject {
         }
     }
 
+    /// Ids of the active account's own reactions (kind 7) to `noteId`, from
+    /// the account's relay and the blastr relays. For removing a like saved
+    /// before its event id was kept.
+    func fetchOwnReactionIds(to noteId: String, timeout: TimeInterval = 5) async -> [String] {
+        let pubkey = activeHexPubkey
+        guard !pubkey.isEmpty else { return [] }
+        var urls = ConfigService.shared.config.activeBlastrRelays
+        if urls.isEmpty { urls = ["wss://relay.primal.net", "wss://nos.lol"] }
+        let own = ConfigService.shared.config.nostrURL
+        if !own.isEmpty, !urls.contains(own) { urls.append(own) }
+        let targets = urls.filter { !Self.isLoopbackRelay($0) }.compactMap { URL(string: $0) }
+        guard !targets.isEmpty else { return [] }
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<[String], Never>) in
+            let lock = NSLock()
+            var ids = Set<String>()
+            var finished = Set<Int>()
+            var resumed = false
+            var clients: [WebSocketClient] = []
+            var subs = Set<AnyCancellable>()
+
+            func finish() {
+                lock.lock()
+                guard !resumed else { lock.unlock(); return }
+                resumed = true
+                let result = Array(ids)
+                lock.unlock()
+                DispatchQueue.main.async {
+                    clients.forEach { $0.disconnect() }
+                    subs.removeAll()
+                }
+                continuation.resume(returning: result)
+            }
+
+            DispatchQueue.main.async {
+                for (index, url) in targets.enumerated() {
+                    let client = WebSocketClient()
+                    client.isTemporary = true
+                    clients.append(client)
+                    let subId = "myrx-\(UUID().uuidString.prefix(6))"
+                    client.messageSubject
+                        .sink { message in
+                            guard let data = message.data(using: .utf8),
+                                  let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                                  let type = json.first as? String else { return }
+                            if type == "EVENT", let dict = json[safe: 2] as? [String: Any],
+                               dict["kind"] as? Int == 7, dict["pubkey"] as? String == pubkey,
+                               let id = dict["id"] as? String,
+                               let tags = dict["tags"] as? [[String]],
+                               tags.contains(where: { $0.count >= 2 && $0[0] == "e" && $0[1] == noteId }),
+                               let raw = try? JSONSerialization.data(withJSONObject: dict),
+                               let str = String(data: raw, encoding: .utf8),
+                               NostrEventVerifier.isValid(json: str) {
+                                lock.lock()
+                                ids.insert(id)
+                                lock.unlock()
+                            } else if type == "EOSE" || type == "CLOSED" {
+                                lock.lock()
+                                finished.insert(index)
+                                let all = finished.count >= targets.count
+                                lock.unlock()
+                                if all { finish() }
+                            }
+                        }
+                        .store(in: &subs)
+                    client.$connectionState
+                        .sink { state in
+                            guard state == .connected else { return }
+                            let req = ["REQ", subId, ["kinds": [7], "authors": [pubkey], "#e": [noteId], "limit": 20]] as [Any]
+                            if let data = try? JSONSerialization.data(withJSONObject: req),
+                               let str = String(data: data, encoding: .utf8) {
+                                client.send(text: str)
+                            }
+                        }
+                        .store(in: &subs)
+                    client.connect(url: url)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish() }
+            }
+        }
+    }
+
     /// NIP-65: Publishes a Kind 10002 (Relay List Metadata) event advertising this relay
     /// as the account's inbox. Call when the user enables the toggle or on app launch.
     @MainActor
@@ -1384,7 +1466,7 @@ class NostrService: ObservableObject {
 
         // Cache raw event JSON immediately so rebroadcast + NIP-18 repost embedding
         // work without waiting for the event to echo back from the relay.
-        if event.kind == 1 || event.kind == 6 || event.kind == 30023 || event.kind == NIP10Thread.commentKind {
+        if event.kind == 1 || event.kind == 6 || event.kind == 30023 || event.kind == NIP10Thread.commentKind || event.kind == NIP88Poll.kind {
             if let evData = try? JSONSerialization.data(withJSONObject: eventDict, options: []),
                let evJSON = String(data: evData, encoding: .utf8) {
                 FeedService.shared.cacheRawEvent(id: event.id, json: evJSON)
@@ -1682,7 +1764,7 @@ class NostrService: ObservableObject {
     /// What the Relay tab counts as a post: notes, reposts, articles, NIP-22
     /// comments and highlights. Comments and highlights that tag you were
     /// never requested, so they never showed up there.
-    static let relayTabNoteKinds = [1, 6, 30023, NIP10Thread.commentKind, 9802]
+    static let relayTabNoteKinds = [1, 6, 30023, NIP10Thread.commentKind, 9802, NIP88Poll.kind]
 
     func fetchNotes(from relayURLs: [URL], until: Int64? = nil, since: Int64? = nil, authors: [String]? = nil) {
         // Count only the subscriptions we actually open/request below — NOT every

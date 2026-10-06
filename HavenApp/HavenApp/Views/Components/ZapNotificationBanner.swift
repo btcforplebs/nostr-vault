@@ -72,10 +72,15 @@ class UnlikeNotificationManager: ObservableObject {
     @Published var timeRemaining: Double = 3.0
     private var task: Task<Void, Never>?
     private var onUnlike: (() -> Void)?
+    private var onUndo: (() -> Void)?
 
-    func startCountdown(onUnlike: @escaping () -> Void) {
-        cancel()
+    /// Shows the pill for a reaction that was just removed. `onUnlike` makes
+    /// the removal final when the pill runs out; Undo calls `onUndo` instead.
+    func startCountdown(onUnlike: @escaping () -> Void, onUndo: @escaping () -> Void = {}) {
+        // One pill at a time: a removal still counting down becomes final.
+        commit()
         self.onUnlike = onUnlike
+        self.onUndo = onUndo
         timeRemaining = 3.0
         withAnimation(Motion.bannerIn) { isShowing = true }
         task = Task {
@@ -85,19 +90,32 @@ class UnlikeNotificationManager: ObservableObject {
                 await MainActor.run { self.timeRemaining -= 0.1 }
             }
             if Task.isCancelled { return }
-            await MainActor.run {
-                self.onUnlike?()
-                self.onUnlike = nil
-                withAnimation(Motion.bannerOut) { self.isShowing = false }
-            }
+            await MainActor.run { self.commit() }
         }
     }
 
+    /// Makes a pending removal final now.
+    func commit() {
+        let action = onUnlike
+        dismiss()
+        action?()
+    }
+
+    /// Undo: puts the removed reaction back.
     func cancel() {
+        let action = onUndo
+        dismiss()
+        action?()
+    }
+
+    private func dismiss() {
         task?.cancel()
         task = nil
         onUnlike = nil
-        withAnimation(Motion.bannerOut) { isShowing = false }
+        onUndo = nil
+        if isShowing {
+            withAnimation(Motion.bannerOut) { isShowing = false }
+        }
     }
 }
 
@@ -137,7 +155,7 @@ struct UnlikePill: View {
             Image(systemName: "heart.slash.fill")
                 .font(.appSystem(size: 12, weight: .bold))
 
-            Text("Unliking in \(max(1, Int(ceil(timeRemaining))))s")
+            Text("Reaction removed")
                 .font(.appSystem(size: 13, weight: .bold))
 
             Button("Undo") { onUndo() }
@@ -156,7 +174,7 @@ struct UnlikePill: View {
         )
         .foregroundColor(.white)
         .buttonStyle(.plain)
-        .accessibilityLabel("Unliking in \(max(1, Int(ceil(timeRemaining)))) seconds")
+        .accessibilityLabel("Reaction removed")
     }
 }
 

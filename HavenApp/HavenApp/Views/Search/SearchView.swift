@@ -1339,51 +1339,118 @@ private struct HashtagLinkHandling: ViewModifier {
 }
 
 /// Posts tagged with one hashtag (`#t`), newest first, live: the subscription
-/// stays open so new posts arrive while the screen is up.
+/// stays open so new posts arrive while the screen is up. Two groups: the
+/// people you follow, then everyone else the shield lets through (your Web of
+/// Trust, or everyone). Reaching the end of a group loads its next older page.
 @MainActor
 final class HashtagFeedModel: ObservableObject {
-    let tag: String
-    @Published private(set) var notes: [FeedNote] = []
+    /// The hashtags being shown. One for the sheet; the Hashtags feed swaps them.
+    private(set) var tags: [String]
+    @Published private(set) var fromFollows: [FeedNote] = []
+    @Published private(set) var fromOthers: [FeedNote] = []
     @Published private(set) var isLoading = true
+    /// The group whose older page is on its way, for the spinner under it.
+    @Published private(set) var loadingOlder: Section?
+
+    enum Section { case follows, others }
 
     private var clients: [WebSocketClient] = []
     private var cancellables = Set<AnyCancellable>()
     private var seen = Set<String>()
+    private var follows = Set<String>()
+    /// What the posts on hand were loaded for; see `start(follows:trust:)`.
+    private var shownTags: [String] = []
+    private var shownTrust: Set<String>?
     private let queue = DispatchQueue(label: "com.haven.hashtag-feed")
     private var generation = 0
+    /// What `start` asked for, kept so an older page asks the same of each group.
+    private var followsFilters: [[String: Any]] = []
+    private var othersFilters: [[String: Any]] = []
+    private var wantedTags = Set<String>()
+    private var wantedAuthors: Set<String>?
+    private var exhausted = Set<Section>()
+    private var pageClients: [WebSocketClient] = []
+    private var pageCancellables = Set<AnyCancellable>()
+    private var page = 0
 
-    init(tag: String) { self.tag = tag }
+    init(tag: String) { self.tags = [tag] }
+    init(tags: [String]) { self.tags = tags }
 
-    /// Set when "People I follow" was asked for before the follow list loaded:
-    /// showing Everyone under that label would show strangers.
-    @Published private(set) var waitingForFollows = false
+    /// Same as `start(follows:trust:)` for a new set of hashtags.
+    func start(tags: [String], follows: Set<String>, trust: Set<String>?) {
+        self.tags = tags
+        start(follows: follows, trust: trust)
+    }
 
-    /// `authors` narrows the query to those people (the "People I follow" view).
-    func start(authors: [String]?) {
+    /// `follows` fill the top group. `trust` is who else may show: nil is
+    /// everyone, empty is nobody (no Web of Trust yet fails closed, like Global).
+    /// Everyone is one list by time: with follows on top, a busy follow list
+    /// buried everyone else and the shield seemed to do nothing.
+    func start(follows: Set<String>, trust: Set<String>?) {
         stop()
         generation += 1
         let gen = generation
-        notes = []
-        seen = []
-        isLoading = true
-        waitingForFollows = false
-        if let authors, authors.isEmpty {
-            waitingForFollows = true
+        // Same feed as last time (back from a note): keep the posts so the
+        // list, and the scroll position on it, survive; the reopened
+        // subscription only adds what is new.
+        let resuming = tags == shownTags && follows == self.follows && trust == shownTrust
+            && !(fromFollows.isEmpty && fromOthers.isEmpty)
+        shownTags = tags
+        shownTrust = trust
+        if !resuming {
+            fromFollows = []
+            fromOthers = []
+            seen = []
+            isLoading = true
+        }
+        self.follows = follows
+        // Filters are rebuilt below; a resumed list keeps what it learned about its end.
+        followsFilters = []
+        othersFilters = []
+        if !resuming { exhausted = [] }
+
+        // NIP-24 says t tags are lowercase; some clients keep the typed case.
+        // Capped so the REQ stays under relay message limits.
+        let wantedTags = Set(tags.prefix(Self.maxTags).flatMap { [$0, $0.lowercased()] })
+        guard !wantedTags.isEmpty else {
             isLoading = false
             return
         }
-        let wantedTags = Set([tag, tag.lowercased()])
-        let wantedAuthors = authors.map(Set.init)
-
-        var filter: [String: Any] = [
+        let base: [String: Any] = [
             "kinds": [1],
-            // NIP-24 says t tags are lowercase; some clients keep the typed case.
-            "#t": Array(Set([tag, tag.lowercased()])),
-            "limit": 100,
+            "#t": Array(wantedTags).sorted(),
+            "limit": tags.count > 1 ? 200 : 100,
         ]
-        if let authors, !authors.isEmpty { filter["authors"] = authors }
+        // Follows asked by name, so a busy tag cannot push them out of the page;
+        // past the cap, the open filter finds them. Capped so the REQ stays
+        // under relay message limits.
+        if !follows.isEmpty {
+            var byFollows = base
+            byFollows["authors"] = Array(follows.sorted().prefix(FeedService.trustedAuthorsCap))
+            followsFilters = [byFollows]
+        }
+        if let trust {
+            let others = trust.subtracting(follows)
+            if !others.isEmpty {
+                othersFilters = FeedService.trustScopedFilters(base, trust: others)
+            } else if follows.count > FeedService.trustedAuthorsCap {
+                othersFilters = [base]
+            }
+        } else {
+            othersFilters = [base]
+        }
+        let filters = followsFilters + othersFilters
+        guard !filters.isEmpty else {
+            isLoading = false
+            return
+        }
+        let wantedAuthors = trust.map { $0.union(follows) }
+        self.wantedTags = wantedTags
+        self.wantedAuthors = wantedAuthors
+
         let subId = "hashtag-\(UUID().uuidString.prefix(8))"
-        guard let data = try? JSONSerialization.data(withJSONObject: ["REQ", subId, filter] as [Any]),
+        let message: [Any] = ["REQ", subId] + filters
+        guard let data = try? JSONSerialization.data(withJSONObject: message),
               let req = String(data: data, encoding: .utf8) else { return }
 
         let relays = ConfigService.shared.config.activeFeedRelays.compactMap(URL.init(string:))
@@ -1424,18 +1491,146 @@ final class HashtagFeedModel: ObservableObject {
         }
     }
 
+    static let maxTags = 100
+
     func stop() {
         clients.forEach { $0.disconnect() }
         clients = []
         cancellables.removeAll()
+        stopPage()
     }
+
+    private func stopPage() {
+        pageClients.forEach { $0.disconnect() }
+        pageClients = []
+        pageCancellables.removeAll()
+        loadingOlder = nil
+    }
+
+    /// Call as each row shows. Near the end of its group, loads that group's
+    /// next older page. Older posts only ever join the group being read, at
+    /// its end, so nothing above the reader moves: an older post from someone
+    /// you follow, found while paging the second group, waits for the first
+    /// group's own page.
+    func rowAppeared(_ note: FeedNote, in section: Section) {
+        let list = section == .follows ? fromFollows : fromOthers
+        guard let index = list.lastIndex(where: { $0.id == note.id }),
+              index >= list.count - Self.pageAhead else { return }
+        loadOlder(section)
+    }
+
+    /// The last card of a group showed (Threaded layout, where rows are
+    /// conversations rather than single posts).
+    func reachedEnd(of section: Section) {
+        loadOlder(section)
+    }
+
+    private func loadOlder(_ section: Section) {
+        let list = section == .follows ? fromFollows : fromOthers
+        let base = section == .follows ? followsFilters : othersFilters
+        guard loadingOlder == nil, !exhausted.contains(section),
+              let oldest = list.last, !base.isEmpty else { return }
+        // Inclusive, so posts sharing the oldest second are not skipped; seen drops repeats.
+        let until = Int(oldest.createdAt.timeIntervalSince1970)
+        let filters = base.map { filter -> [String: Any] in
+            var paged = filter
+            paged["until"] = until
+            paged["limit"] = Self.pageSize
+            return paged
+        }
+        let subId = "hashtag-older-\(UUID().uuidString.prefix(8))"
+        let message: [Any] = ["REQ", subId] + filters
+        guard let data = try? JSONSerialization.data(withJSONObject: message),
+              let req = String(data: data, encoding: .utf8) else { return }
+
+        let gen = generation
+        page += 1
+        let thisPage = page
+        loadingOlder = section
+        var added = 0
+        var pending = Set<ObjectIdentifier>()
+        let finish: () -> Void = { [weak self] in
+            guard let self, self.generation == gen, self.page == thisPage, self.loadingOlder != nil else { return }
+            if added == 0 { self.exhausted.insert(section) }
+            self.stopPage()
+        }
+        let relays = ConfigService.shared.config.activeFeedRelays.compactMap(URL.init(string:))
+        let blocked = ConfigService.shared.activeAccountBlockedHexPubkeys
+        let wantedTags = wantedTags
+        let wantedAuthors = wantedAuthors
+        for relay in relays {
+            let client = WebSocketClient()
+            client.isTemporary = true
+            pageClients.append(client)
+            pending.insert(ObjectIdentifier(client))
+            var sent = false
+            client.$connectionState
+                .sink { [weak client] state in
+                    guard state == .connected, !sent, let client else { return }
+                    sent = true
+                    client.send(text: req)
+                }
+                .store(in: &pageCancellables)
+            client.messageSubject
+                .receive(on: queue)
+                .compactMap { message -> FeedNote?? in
+                    Self.parse(message, subId: subId, blocked: blocked, tags: wantedTags, authors: wantedAuthors)
+                }
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self, weak client] parsed in
+                    guard let self, self.generation == gen, self.page == thisPage else { return }
+                    switch parsed {
+                    case .some(let note?):
+                        if self.insertOlder(note, into: section) { added += 1 }
+                    case .some(nil):
+                        if let client { pending.remove(ObjectIdentifier(client)) }
+                        if pending.isEmpty { finish() }
+                    case .none: break
+                    }
+                }
+                .store(in: &pageCancellables)
+            client.connect(url: relay)
+        }
+        if relays.isEmpty { finish() }
+        // A relay that never answers must not hold the next page forever.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: finish)
+    }
+
+    /// An older page's post, kept only if it belongs to the group being paged.
+    private func insertOlder(_ note: FeedNote, into section: Section) -> Bool {
+        // Same split as `insert`: with the shield off there is one list.
+        let home: Section = shownTrust != nil && follows.contains(note.pubkey) ? .follows : .others
+        guard home == section,
+              seen.insert(note.id).inserted else { return false }
+        if section == .follows {
+            Self.insert(note, into: &fromFollows)
+        } else {
+            Self.insert(note, into: &fromOthers)
+        }
+        return true
+    }
+
+    private static let pageSize = 100
+    /// How many rows before a group's end its next page starts loading.
+    private static let pageAhead = 5
+    /// Per group, so a long read stays bounded. Live posts arrive at the top,
+    /// so trimming drops the oldest, far below the reader.
+    private static let maxNotes = 1500
 
     private func insert(_ note: FeedNote) {
         guard seen.insert(note.id).inserted else { return }
-        let index = notes.firstIndex { $0.createdAt < note.createdAt } ?? notes.endIndex
-        notes.insert(note, at: index)
-        if notes.count > 300 { notes.removeLast(notes.count - 300) }
+        if shownTrust != nil, follows.contains(note.pubkey) {
+            Self.insert(note, into: &fromFollows)
+        } else {
+            Self.insert(note, into: &fromOthers)
+        }
         isLoading = false
+    }
+
+    private static func insert(_ note: FeedNote, into list: inout [FeedNote]) {
+        let index = list.firstIndex { $0.createdAt < note.createdAt } ?? list.endIndex
+        list.insert(note, at: index)
+        if list.count > maxNotes { list.removeLast(list.count - maxNotes) }
     }
 
     /// `.some(note)` for a usable event, `.some(nil)` for EOSE, nil otherwise.
@@ -1469,14 +1664,19 @@ final class HashtagFeedModel: ObservableObject {
     }
 }
 
+/// A hashtag's posts: people you follow first, then the rest of your network.
+/// Everyone sits behind the same app-wide shield and warning as Global.
 struct HashtagFeedView: View {
     let tag: String
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
     @ObservedObject private var feedService = FeedService.shared
+    @ObservedObject private var interests = InterestListService.shared
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model: HashtagFeedModel
-    @State private var followingOnly = false
+    @State private var showingEveryoneWarning = false
+    @State private var followSaving = false
+    @State private var showingFollowFailed = false
     @State private var showingProfile: IdentifiableString?
     @State private var showingNote: FeedNote?
     @State private var showingMediaUrl: IdentifiableURL?
@@ -1487,59 +1687,36 @@ struct HashtagFeedView: View {
         _model = StateObject(wrappedValue: HashtagFeedModel(tag: tag))
     }
 
+    private var everyone: Bool { configService.config.globalShowsEveryone }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    Picker("Show", selection: $followingOnly) {
-                        Text("Everyone").tag(false)
-                        Text("People I follow").tag(true)
+                    header
+                    if model.fromFollows.isEmpty && model.fromOthers.isEmpty {
+                        emptyState
                     }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-
-                    if model.notes.isEmpty {
-                        VStack(spacing: 10) {
-                            if model.waitingForFollows {
-                                ProgressView()
-                                Text("Loading the people you follow…")
-                                    .font(.appSubheadline)
-                                    .foregroundColor(.secondary)
-                            } else if model.isLoading {
-                                ProgressView()
-                            } else {
-                                Image(systemName: "number").font(.appSystem(size: 28)).foregroundColor(.secondary)
-                                Text(followingOnly ? "No posts tagged #\(tag) from people you follow yet"
-                                                   : "No posts tagged #\(tag) yet")
-                                    .font(.appSubheadline)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                            }
+                    if !model.fromFollows.isEmpty {
+                        sectionHeader("From people you follow")
+                        ForEach(model.fromFollows) { note in
+                            row(note).onAppear { model.rowAppeared(note, in: .follows) }
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 60)
+                        if model.loadingOlder == .follows { olderSpinner }
                     }
-
-                    ForEach(model.notes) { note in
-                        FeedNoteRow(
-                            note: note,
-                            profile: nostrService.profiles[note.pubkey],
-                            rowData: FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService),
-                            onProfile: { showingProfile = IdentifiableString(id: $0) },
-                            onMedia: { url, urls in showingMediaUrl = IdentifiableURL(url: url, allURLs: urls) },
-                            showParent: false
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture { showingNote = note }
-                        .padding(.horizontal, 16)
-                        .onAppear { nostrService.fetchMissingProfiles(for: [note.pubkey]) }
+                    if !model.fromOthers.isEmpty {
+                        if !everyone { sectionHeader("More from your network") }
+                        ForEach(model.fromOthers) { note in
+                            row(note).onAppear { model.rowAppeared(note, in: .others) }
+                        }
+                        if model.loadingOlder == .others { olderSpinner }
                     }
                 }
+                .padding(.top, 8)
                 .padding(.bottom, 24)
             }
             .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
-            .navigationTitle("#\(tag)")
+            .navigationTitle("")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -1547,20 +1724,47 @@ struct HashtagFeedView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        if everyone {
+                            configService.config.globalShowsEveryone = false
+                            configService.save()
+                        } else {
+                            showingEveryoneWarning = true
+                        }
+                    } label: {
+                        Image(systemName: everyone ? "shield.slash.fill" : "checkmark.shield.fill")
+                            .foregroundColor(everyone ? .orange : .havenPurple)
+                    }
+                    .accessibilityLabel(everyone ? "Everyone" : "Web of Trust")
+                    .help(everyone ? "Everyone: unfiltered posts. Click for your Web of Trust" : "Web of Trust: people you follow and the people they follow. Click for everyone")
+                }
             }
         }
         .hashtagLinks()
-        .task { model.start(authors: nil) }
-        .onChange(of: followingOnly) { _, onlyFollows in
-            model.start(authors: onlyFollows ? feedService.followedPubkeys : nil)
+        .task {
+            interests.refreshIfNeeded()
+            restart()
         }
-        // The follow list can arrive after the switch was flipped.
-        .onChange(of: feedService.followedPubkeys.count) { _, _ in
-            if followingOnly && model.waitingForFollows {
-                model.start(authors: feedService.followedPubkeys)
-            }
-        }
+        // The follow list and the trust graph can arrive after the sheet opens.
+        .onChange(of: feedService.followedPubkeys.count) { _, _ in restart() }
+        .onChange(of: feedService.wotPubkeys.count) { _, _ in restart() }
+        .onChange(of: everyone) { _, _ in restart() }
         .onDisappear { model.stop() }
+        .alert(String(localized: "feed.alert.sensitiveContent.title"), isPresented: $showingEveryoneWarning) {
+            Button(String(localized: "feed.alert.sensitiveContent.proceed"), role: .destructive) {
+                configService.config.globalShowsEveryone = true
+                configService.save()
+            }
+            Button(String(localized: "feed.alert.sensitiveContent.cancel"), role: .cancel) {}
+        } message: {
+            Text("Everyone shows posts from people outside your Web of Trust, unfiltered. Expect spam and sensitive content.")
+        }
+        .alert("Couldn't save", isPresented: $showingFollowFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Your relays didn't answer, so your hashtag list wasn't changed. Try again in a moment.")
+        }
         .sheet(item: $showingProfile) { profile in
             ProfileView(pubkey: profile.id, onDismiss: { showingProfile = nil })
                 .environmentObject(nostrService)
@@ -1575,5 +1779,108 @@ struct HashtagFeedView: View {
             .environmentObject(configService)
         }
         .mediaViewer(item: $showingMediaUrl, namespace: mediaZoom)
+    }
+
+    /// Your own posts count with your follows: you just tagged it, you want to see it.
+    private func restart() {
+        var follows = Set(feedService.followedPubkeys)
+        if !configService.activeAccountHexPubkey.isEmpty { follows.insert(configService.activeAccountHexPubkey) }
+        model.start(follows: follows, trust: feedService.globalTrustSet())
+    }
+
+    private var isFollowingTag: Bool { interests.isFollowing(tag) }
+
+    /// Big #tag with the Follow button. Followed tags are your interest list
+    /// (kind 10015), the same list other Nostr apps read.
+    private var header: some View {
+        HStack(spacing: 12) {
+            Text("#\(tag)")
+                .font(.appTitle2)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            Button(action: toggleFollow) {
+                HStack(spacing: 6) {
+                    Image(systemName: isFollowingTag ? "checkmark" : "plus")
+                        .font(.appSystem(size: 12, weight: .semibold))
+                    Text(isFollowingTag ? "Following" : "Follow")
+                        .font(.appSystem(size: 13, weight: .semibold))
+                }
+                .foregroundColor(isFollowingTag ? .white : .havenPurple)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(isFollowingTag ? Color.havenPurple : Color.havenPurple.opacity(0.12))
+                .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+            .disabled(followSaving || configService.activeAccountHexPubkey.isEmpty)
+            .accessibilityLabel(isFollowingTag ? "Unfollow #\(tag)" : "Follow #\(tag)")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+    }
+
+    private func toggleFollow() {
+        let follow = !isFollowingTag
+        followSaving = true
+        Task {
+            let ok = await interests.setFollowing(tag, follow)
+            followSaving = false
+            if !ok { showingFollowFailed = true }
+        }
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            if model.isLoading {
+                ProgressView()
+            } else {
+                Image(systemName: "number").font(.appSystem(size: 28)).foregroundColor(.secondary)
+                Text(everyone ? "No posts tagged #\(tag) yet"
+                              : "No posts tagged #\(tag) from people you follow or your network yet")
+                    .font(.appSubheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                if !everyone {
+                    Text("The shield above shows everyone.")
+                        .font(.appCaption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 24)
+        .padding(.top, 60)
+    }
+
+    private var olderSpinner: some View {
+        ProgressView()
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.appSubheadline.weight(.semibold))
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+    }
+
+    private func row(_ note: FeedNote) -> some View {
+        FeedNoteRow(
+            note: note,
+            profile: nostrService.profiles[note.pubkey],
+            rowData: FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService),
+            onProfile: { showingProfile = IdentifiableString(id: $0) },
+            onMedia: { url, urls in showingMediaUrl = IdentifiableURL(url: url, allURLs: urls) },
+            showParent: false
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { showingNote = note }
+        .padding(.horizontal, 16)
+        .onAppear { nostrService.fetchMissingProfiles(for: [note.pubkey]) }
     }
 }

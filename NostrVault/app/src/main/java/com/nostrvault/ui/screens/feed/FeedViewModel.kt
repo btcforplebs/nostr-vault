@@ -14,6 +14,7 @@ import com.nostrvault.data.model.MediaFeedMode
 import com.nostrvault.data.model.NoteStats
 import com.nostrvault.data.model.FeedThread
 import com.nostrvault.data.model.FeedThreadGrouping
+import com.nostrvault.data.model.FeedThreadReplies
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.Reel
 import com.nostrvault.data.model.ReelsScope
@@ -261,7 +262,7 @@ class FeedViewModel @Inject constructor(
      * `FeedView.currentFeedSupportsThreading`.
      */
     private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
-        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR -> true
+        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR, FeedMode.HASHTAGS -> true
         FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC -> false
     }
 
@@ -318,7 +319,8 @@ class FeedViewModel @Inject constructor(
         // A threaded feed with replies filtered out would show nothing but
         // roots, which is the layout the user just left. Turn replies on with
         // it; the Replies filter still switches them back off.
-        if (resolved == FeedLayoutMode.THREADED && !feedService.showReplies.value) {
+        // Hashtags runs its own subscription; the Replies filter is not its.
+        if (resolved == FeedLayoutMode.THREADED && feedMode != FeedMode.HASHTAGS && !feedService.showReplies.value) {
             feedService.setShowReplies(true)
         }
         _layoutModeToggle.value++
@@ -361,11 +363,24 @@ class FeedViewModel @Inject constructor(
         // Blocking can hide a thread's root or an ancestor without changing
         // the visible note list, so regroup on it directly.
         configStore.config.map { it.blockedForActiveAccount() }.distinctUntilChanged(),
-    ) { notes, threaded, _, _ ->
-        if (!threaded) emptyList() else {
+        feedService.feedThreadReplies,
+    ) { notes, threaded, _, _, fetchedReplies ->
+        // Hashtags groups its own sections (HashtagsFeed).
+        if (!threaded || _feedMode.value == FeedMode.HASHTAGS) emptyList() else {
             val blocked = feedService.blockedHexForActiveAccount()
+            // Popular holds only top-level posts, and Global's stream rarely
+            // carries the replies to what it shows, so their replies are
+            // fetched separately for this view, and the feed's own order is
+            // kept: a reply landing later doesn't reshuffle the posts.
+            val fetchesReplies = FeedThreadReplies.fetchesReplies(feedService.feedMode.value)
+            if (fetchesReplies) feedService.loadFeedThreadReplies(notes.map { it.id })
+            val pool = if (fetchesReplies) {
+                FeedThreadReplies.attach(notes, fetchedReplies.values, blocked)
+            } else {
+                notes
+            }
             FeedThreadGrouping.withoutBlocked(
-                FeedThreadGrouping.build(notes) { id ->
+                FeedThreadGrouping.build(pool, keepFeedOrder = fetchesReplies) { id ->
                     // A blocked author's post is never pulled in as context.
                     feedService.findNote(id)?.takeIf { it.pubkey !in blocked }
                 },
@@ -419,17 +434,31 @@ class FeedViewModel @Inject constructor(
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.wotPubkeys.value.isNotEmpty())
 
-    /**
-     * The shield is one app-wide setting. The note feeds re-filter and reload
-     * inside FeedService; feeds with their own service refetch under it.
-     */
+    // Declared after _feedMode, which the reload reads.
+    init {
+        reloadOnTrustScopeChange()
+    }
+
+    /** The shield is one app-wide setting; [reloadOnTrustScopeChange] follows every flip. */
     fun setGlobalShowsEveryone(on: Boolean) {
         feedService.setGlobalShowsEveryone(on)
-        when (_feedMode.value) {
-            FeedMode.REELS -> reelsFeedService.refresh()
-            FeedMode.LIVE -> liveFeedService.refresh()
-            FeedMode.MARKETPLACE -> marketplaceFeedService.refresh()
-            else -> Unit
+    }
+
+    /**
+     * The note feeds re-filter and reload inside FeedService; feeds with their
+     * own service refetch under the new scope. Watches the setting rather than
+     * the button, so a flip from a hashtag screen reloads this feed too.
+     */
+    private fun reloadOnTrustScopeChange() {
+        viewModelScope.launch {
+            configStore.config.map { it.globalShowsEveryone }.distinctUntilChanged().drop(1).collect {
+                when (_feedMode.value) {
+                    FeedMode.REELS -> reelsFeedService.refresh()
+                    FeedMode.LIVE -> liveFeedService.refresh()
+                    FeedMode.MARKETPLACE -> marketplaceFeedService.refresh()
+                    else -> Unit
+                }
+            }
         }
     }
 
@@ -492,6 +521,8 @@ class FeedViewModel @Inject constructor(
         }
         // Music is Wavlake; the note subscription has nothing to switch.
         if (mode == FeedMode.MUSIC) return
+        // Hashtags runs its own #t REQ (HashtagsFeedViewModel); same as Music.
+        if (mode == FeedMode.HASHTAGS) return
         viewModelScope.launch {
             feedService.switchFeedMode(mode)
         }
@@ -519,18 +550,8 @@ class FeedViewModel @Inject constructor(
 
     fun loadMore() = feedService.loadOlderNotes()
 
-    fun likeNote(noteId: String, emoji: String? = null) {
-        if (likedEventIds.value.contains(noteId) && emoji == null) {
-            // Already liked — start unlike countdown
-            notificationManager.startUnlikeCountdown {
-                feedService.unlikeNote(noteId)
-            }
-            return
-        }
-        viewModelScope.launch {
-            feedService.likeNote(noteId, emoji)
-        }
-    }
+    /** Tap ([emoji] null) toggles the reaction; a picked emoji is sent or, if already sent, taken back. */
+    fun likeNote(noteId: String, emoji: String? = null) = feedService.likeNote(noteId, emoji)
 
     fun repostNote(noteId: String) {
         viewModelScope.launch {
@@ -560,7 +581,7 @@ class FeedViewModel @Inject constructor(
             }
             // Real NIP-57 zap; effective id redirects kind-6 reposts to the
             // reposted event. ZapSendService bumps local stats on success.
-            zapSendService.zapNote(note.effectiveEventId, note.pubkey, amount).fold(
+            zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amount).fold(
                 onSuccess = {
                     ZapFlight.launch(note.effectiveEventId)
                     _zapMessage.emit("Zapped $amount sats")

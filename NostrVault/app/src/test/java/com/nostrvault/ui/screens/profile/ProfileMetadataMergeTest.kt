@@ -30,6 +30,15 @@ class ProfileMetadataMergeTest {
         assertEquals("sat", out["name"]!!.jsonPrimitive.content)
     }
 
+    @Test fun bannerEditIsAppliedAndClearingRemovesIt() {
+        val base = ProfileMetadataMerge.parseContent(relayContent)
+        val shownBanner = shown + ("banner" to "https://b/x.jpg")
+        val replaced = ProfileMetadataMerge.merge(base, shownBanner, shownBanner + ("banner" to "https://b/new.jpg"))
+        assertEquals("https://b/new.jpg", replaced["banner"]!!.jsonPrimitive.content)
+        val cleared = ProfileMetadataMerge.merge(base, shownBanner, shownBanner + ("banner" to ""))
+        assertFalse(cleared.containsKey("banner"))
+    }
+
     @Test fun clearedFieldIsRemoved() {
         val out = ProfileMetadataMerge.merge(ProfileMetadataMerge.parseContent(relayContent), shown, shown + ("website" to "  "))
         assertFalse(out.containsKey("website"))

@@ -52,7 +52,11 @@ internal fun blobHashInUrl(url: String): String? =
  * not where you meant to land. Ties break on id so the map is stable rather
  * than dependent on the order notes happened to arrive.
  */
-internal fun noteIdsByBlobHash(notes: List<FeedNote>): Map<String, String> {
+internal fun noteIdsByBlobHash(notes: List<FeedNote>): Map<String, String> =
+    oldestNoteByBlobHash(notes).mapValues { it.value.id }
+
+/** hash → the note [noteIdsByBlobHash] picks for it, whole, so its author is at hand too. */
+internal fun oldestNoteByBlobHash(notes: List<FeedNote>): Map<String, FeedNote> {
     val best = HashMap<String, FeedNote>()
     for (note in notes) {
         for (url in note.mediaURLs) {
@@ -66,7 +70,7 @@ internal fun noteIdsByBlobHash(notes: List<FeedNote>): Map<String, String> {
             }
         }
     }
-    return best.mapValues { it.value.id }
+    return best
 }
 
 /**
@@ -92,7 +96,7 @@ class BlobNoteIndexStore @Inject constructor(
 ) {
     companion object {
         /**
-         * Entry ceiling. An entry is two hex ids, so 20k of them is roughly 3MB
+         * Entry ceiling. An entry is three hex ids, so 20k of them is roughly 4.5MB
          * of JSON — large enough that no ordinary library reaches it, small
          * enough to stay a file rather than a database. Over the cap the
          * *newest* notes are kept: the gallery is browsed from the recent end.
@@ -101,8 +105,9 @@ class BlobNoteIndexStore @Inject constructor(
         private const val WRITE_DEBOUNCE_MS = 2_000L
     }
 
+    /** [pubkey] is the note's author; null in entries written before it was kept. */
     @Serializable
-    private data class Entry(val noteId: String, val createdAt: Long)
+    private data class Entry(val noteId: String, val createdAt: Long, val pubkey: String? = null)
 
     @Serializable
     private data class Persisted(val entries: Map<String, Entry> = emptyMap())
@@ -126,6 +131,14 @@ class BlobNoteIndexStore @Inject constructor(
 
     /** hash → note id, for every blob this device has ever seen referenced. */
     val index: StateFlow<Map<String, String>> = _index.asStateFlow()
+
+    private val _authors = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /**
+     * hash → author of the note in [index], where known. The media tab's
+     * Report Media / Block User target (iOS MediaItem.pubkey).
+     */
+    val authors: StateFlow<Map<String, String>> = _authors.asStateFlow()
 
     init {
         scope.launch { load() }
@@ -165,7 +178,9 @@ class BlobNoteIndexStore @Inject constructor(
                 // slot from the post the file was uploaded for.
                 if (existing == null ||
                     entry.createdAt < existing.createdAt ||
-                    (entry.createdAt == existing.createdAt && entry.noteId < existing.noteId)
+                    (entry.createdAt == existing.createdAt && entry.noteId < existing.noteId) ||
+                    // The same note seen again fills in an author an older file lacked.
+                    (entry.noteId == existing.noteId && existing.pubkey == null && entry.pubkey != null)
                 ) {
                     entries[hash] = entry
                     changed = true
@@ -178,23 +193,8 @@ class BlobNoteIndexStore @Inject constructor(
         }
     }
 
-    private fun noteIdsByBlobHashWithTime(notes: List<FeedNote>): Map<String, Entry> {
-        val best = HashMap<String, Entry>()
-        for (note in notes) {
-            val at = note.createdAt.time
-            for (url in note.mediaURLs) {
-                val hash = blobHashInUrl(url) ?: continue
-                val existing = best[hash]
-                if (existing == null ||
-                    at < existing.createdAt ||
-                    (at == existing.createdAt && note.id < existing.noteId)
-                ) {
-                    best[hash] = Entry(note.id, at)
-                }
-            }
-        }
-        return best
-    }
+    private fun noteIdsByBlobHashWithTime(notes: List<FeedNote>): Map<String, Entry> =
+        oldestNoteByBlobHash(notes).mapValues { (_, note) -> Entry(note.id, note.createdAt.time, note.pubkey) }
 
     private fun evictIfOverCap() {
         if (entries.size <= MAX_ENTRIES) return
@@ -208,6 +208,7 @@ class BlobNoteIndexStore @Inject constructor(
 
     private fun publish() {
         _index.value = entries.mapValues { it.value.noteId }
+        _authors.value = entries.mapNotNull { (hash, e) -> e.pubkey?.let { hash to it } }.toMap()
     }
 
     /**

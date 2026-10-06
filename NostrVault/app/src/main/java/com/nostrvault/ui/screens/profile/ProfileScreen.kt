@@ -3,6 +3,7 @@ package com.nostrvault.ui.screens.profile
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,7 +12,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -47,7 +49,7 @@ import com.nostrvault.ui.theme.*
  * row, stats, identity rows, 4 section tabs (Notes/Media/Replies/Tagged) with
  * counts, infinite scroll, a media grid, and a full-screen media viewer.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ProfileScreen(
     pubkey: String,
@@ -141,15 +143,26 @@ fun ProfileScreen(
         }
     }
 
-    // Full-screen media viewer state: media urls for the current (Media) tab.
+    // The Media tab's urls, in grid order; a tap opens the app's full-screen
+    // viewer on them (video, audio, drag to close; iOS MediaItemRenderer).
     val mediaItems = remember(filteredNotes, selectedSection) {
         if (selectedSection == ProfileSection.MEDIA) {
             filteredNotes.flatMap { note -> note.mediaURLs.map { it to note } }
         } else emptyList()
     }
-    var viewerIndex by remember { mutableStateOf<Int?>(null) }
+    val listState = rememberLazyListState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // Report Media / Block User from a Media grid tile's long-press menu.
+    var gridReportTarget by remember { mutableStateOf<String?>(null) }
+    var gridBlockTarget by remember { mutableStateOf<String?>(null) }
 
     GlassScaffold(
+        // The banner runs up under the toolbar; the toolbar's fade comes in
+        // as the page scrolls up behind it.
+        toolbarScrimAlpha = {
+            if (listState.firstVisibleItemIndex > 0) 1f
+            else listState.firstVisibleItemScrollOffset / with(density) { 110.dp.toPx() }
+        },
         toolbar = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -189,7 +202,6 @@ fun ProfileScreen(
             }
         },
     ) { padding ->
-        val listState = rememberLazyListState()
         // Items before the section tabs: header, actions, bio (when there is
         // one), stats and identity rows.
         val tabsIndex = if (profile?.about?.isNotBlank() == true) 5 else 4
@@ -218,6 +230,14 @@ fun ProfileScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             item {
+                ProfileBanner(
+                    bannerUrl = profile?.bannerURL?.takeIf { it.isNotBlank() },
+                    avatarUrl = profile?.pictureURL?.takeIf { it.isNotBlank() },
+                    pubkey = pubkey,
+                    topInset = padding.calculateTopPadding(),
+                    accent = colors.primary,
+                    onTap = { com.nostrvault.ui.components.FullScreenMediaRouter.open(listOf(it), 0, copyLink = true) },
+                )
                 ProfileHeader(
                     profile = profile,
                     pubkey = pubkey,
@@ -427,19 +447,50 @@ fun ProfileScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp, vertical = 2.dp),
                     ) {
-                        row.forEach { (url, _) ->
+                        row.forEach { (url, note) ->
                             val idx = mediaItems.indexOfFirst { it.first == url }
-                            AsyncImage(
-                                model = url,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(SecondaryGroupedBg)
-                                    .clickable { viewerIndex = idx },
-                            )
+                            // Long-press: Report Media / Block User on someone
+                            // else's media, as iOS's MediaGridItem menu offers.
+                            val target = remember(note.pubkey) { viewModel.mediaModerationTarget(note.pubkey) }
+                            var menuOpen by remember { mutableStateOf(false) }
+                            Box(Modifier.weight(1f).aspectRatio(1f)) {
+                                AsyncImage(
+                                    model = url,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(SecondaryGroupedBg)
+                                        .combinedClickable(
+                                            onClick = {
+                                                com.nostrvault.ui.components.FullScreenMediaRouter.open(
+                                                    mediaItems.map { it.first }, idx, copyLink = true,
+                                                )
+                                            },
+                                            onLongClick = if (target != null) ({ menuOpen = true }) else null,
+                                        ),
+                                )
+                                if (target != null) {
+                                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text("Report Media", color = ErrorRed) },
+                                            leadingIcon = {
+                                                Icon(NostrVaultIcons.Flag, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+                                            },
+                                            onClick = { menuOpen = false; gridReportTarget = target },
+                                        )
+                                        HorizontalDivider()
+                                        DropdownMenuItem(
+                                            text = { Text("Block User", color = ErrorRed) },
+                                            leadingIcon = {
+                                                Icon(NostrVaultIcons.Blocked, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+                                            },
+                                            onClick = { menuOpen = false; gridBlockTarget = target },
+                                        )
+                                    }
+                                }
+                            }
                         }
                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
@@ -448,11 +499,13 @@ fun ProfileScreen(
                 items(items = filteredNotes, key = { it.id }) { note ->
                     NoteCard(
                         note = note,
-                        profile = if (selectedSection == ProfileSection.TAGGED)
+                        // A repost on this profile is someone else's note:
+                        // credit its author, not the profile's owner.
+                        profile = if (selectedSection == ProfileSection.TAGGED || note.kind == 6)
                             allProfiles[note.pubkey] else profile,
                         profiles = allProfiles,
                         quotedNotes = quotedNotes,
-                        isLiked = viewModel.isLiked(note.id),
+                        isLiked = viewModel.isLiked(note.effectiveEventId),
                         isReposted = note.effectiveEventId in repostedIds,
                         repostedByProfile = note.repostedBy?.let { allProfiles[it] },
                         onNoteClick = onNoteClick,
@@ -462,7 +515,7 @@ fun ProfileScreen(
                         onRepost = viewModel::repostNote,
                         onReply = onReply,
                         onQuote = onQuote,
-                        onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
+                        onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
                     )
                     HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                 }
@@ -512,20 +565,37 @@ fun ProfileScreen(
         )
     }
 
+    // Reporting also blocks the author, as on iOS and everywhere else in the app.
+    gridReportTarget?.let { pubkey ->
+        com.nostrvault.ui.components.UGCReportDialog(
+            onReport = { reason, description ->
+                gridReportTarget = null
+                viewModel.reportAuthor(pubkey, reason, description)
+                viewModel.blockAuthor(pubkey)
+            },
+            onDismiss = { gridReportTarget = null },
+        )
+    }
+    gridBlockTarget?.let { pubkey ->
+        AlertDialog(
+            onDismissRequest = { gridBlockTarget = null },
+            title = { Text("Block User") },
+            text = { Text("Block this user? Their posts will be hidden from your feed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    gridBlockTarget = null
+                    viewModel.blockAuthor(pubkey)
+                }) { Text("Block", color = ErrorRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { gridBlockTarget = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     reelIndex?.let { start ->
         if (reels.isNotEmpty()) {
             DiVineViewer(reels, start.coerceIn(0, reels.lastIndex), onDismiss = { reelIndex = null })
-        }
-    }
-
-    // Full-screen media viewer overlay.
-    viewerIndex?.let { startIndex ->
-        if (mediaItems.isNotEmpty()) {
-            MediaViewerOverlay(
-                urls = mediaItems.map { it.first },
-                startIndex = startIndex.coerceIn(0, mediaItems.size - 1),
-                onDismiss = { viewerIndex = null },
-            )
         }
     }
 }
@@ -557,14 +627,24 @@ private fun ProfileHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         AvatarImage(
             url = profile?.pictureURL,
             pubkey = profile?.pubkey ?: pubkey,
-            size = 64.dp,
+            size = 72.dp,
             displayName = profile?.bestName,
+            modifier = Modifier
+                // Half over the banner; the name column stays below it.
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    val overlap = ProfileBannerStyle.avatarOverlap.roundToPx()
+                    layout(placeable.width, placeable.height - overlap) { placeable.place(0, -overlap) }
+                }
+                // A ring in the page color lifts the avatar off the banner.
+                .background(WindowBackground, CircleShape)
+                .padding(3.dp),
         )
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1001,97 +1081,6 @@ private fun DiVineViewer(reels: List<com.nostrvault.data.model.Reel>, startIndex
                 .padding(12.dp),
         ) {
             Icon(NostrVaultIcons.Dismiss, "Close", tint = Color.White, modifier = Modifier.size(28.dp))
-        }
-    }
-}
-
-/**
- * Whether a media link is worth copying: anything but this phone's own
- * relay (127.0.0.1 / localhost), which nobody else can open.
- * iOS: ConfigService.hasExternalShareURL.
- */
-internal fun isShareableMediaUrl(url: String): Boolean {
-    val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return false
-    return host != "127.0.0.1" && host != "localhost" && host != "0.0.0.0"
-}
-
-@Composable
-private fun MediaViewerOverlay(
-    urls: List<String>,
-    startIndex: Int,
-    onDismiss: () -> Unit,
-    // The feed viewer's save: MediaStore, the same toast lines.
-    saver: com.nostrvault.ui.components.FeedMediaMirrorViewModel = hiltViewModel(),
-) {
-    val pagerState = rememberPagerState(initialPage = startIndex, pageCount = { urls.size })
-    val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
-    val saveState by saver.saveState.collectAsState()
-    val currentUrl = urls[pagerState.currentPage.coerceIn(0, urls.lastIndex)]
-    LaunchedEffect(currentUrl) { saver.onOpen(currentUrl) }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.95f))
-            .clickable(onClick = onDismiss),
-    ) {
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                AsyncImage(
-                    model = urls[page],
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-        IconButton(
-            onClick = onDismiss,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(12.dp),
-        ) {
-            Icon(NostrVaultIcons.Dismiss, "Close", tint = Color.White, modifier = Modifier.size(28.dp))
-        }
-        // Copy link and Save to gallery, as iOS's profile viewer offers.
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .statusBarsPadding()
-                .padding(12.dp),
-        ) {
-            if (isShareableMediaUrl(currentUrl)) {
-                IconButton(
-                    onClick = {
-                        clipboard.setText(AnnotatedString(currentUrl))
-                        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.1f)),
-                ) {
-                    Icon(NostrVaultIcons.Copy, "Copy link", tint = Color.White, modifier = Modifier.size(20.dp))
-                }
-            }
-            val saving = saveState == com.nostrvault.ui.components.FeedMediaMirrorViewModel.SaveState.Saving
-            val saved = saveState == com.nostrvault.ui.components.FeedMediaMirrorViewModel.SaveState.Saved
-            IconButton(
-                onClick = {
-                    saver.saveToGallery(currentUrl) { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
-                },
-                enabled = !saving && !saved,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.1f)),
-            ) {
-                if (saving) {
-                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                } else {
-                    Icon(
-                        if (saved) NostrVaultIcons.Check else NostrVaultIcons.Import,
-                        if (saved) "Saved to gallery" else "Save to gallery",
-                        tint = Color.White, modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
         }
     }
 }

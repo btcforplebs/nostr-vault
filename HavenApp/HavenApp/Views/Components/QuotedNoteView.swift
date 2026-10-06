@@ -97,7 +97,8 @@ struct QuotedNoteView: View {
 
     private var articleSummary: String? {
         if let summary = note.longFormMetadata.summary { return summary }
-        let plain = MarkdownParser.plainText(note.content, limit: 200)
+        let body = note.gatedArticle == nil ? note.content : GatedArticleTeaser.strip(note.content)
+        let plain = MarkdownParser.plainText(body, limit: 200)
         return plain.isEmpty ? nil : plain
     }
 

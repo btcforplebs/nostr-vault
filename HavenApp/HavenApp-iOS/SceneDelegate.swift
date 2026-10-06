@@ -57,7 +57,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let host = UIHostingController(rootView: ZStack {
             ZapFlightStage()
             AppBannerStack()
+            ReactionTapbackLayer()
         })
+        // While the tapback bar waits for a tap, this window takes every
+        // touch, so a tap anywhere else closes the bar instead of reaching
+        // the post underneath.
+        ReactionTapback.shared.onModalChange = { modal in
+            BannerHitRegions.frames["tapback"] = modal ? CGRect(x: -1e6, y: -1e6, width: 2e6, height: 2e6) : nil
+        }
         host.view.backgroundColor = .clear
         banners.rootViewController = host
         banners.isHidden = false
@@ -137,6 +144,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Refresh what the widgets read. Rate limited inside the bridge, since
         // scene activation fires more often than the data meaningfully changes.
         Task { @MainActor in NVWidgetBridge.publish() }
+
+        // Something was shared to Nostr Vault while it was in the background:
+        // opening the app finishes the upload, notification tapped or not.
+        // Claiming the inbox is atomic, so a notification tap that also routes
+        // here cannot upload a file twice.
+        if NVShareInbox.hasPending {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                NVDeepLinkRouter.handle(NVDeepLink.shareInbox.url)
+            }
+        }
 
         // Show the in-app banner (not a system push) for relay activity while visible.
         LocalNotificationService.shared.appInForeground = true
@@ -306,7 +323,6 @@ private extension View {
 struct AppBannerStack: View {
     var body: some View {
         VStack(spacing: 6) {
-            SignerApprovalBanner().bannerHitRegion("signer")
             PostActionNotificationBanner().bannerHitRegion("postAction")
             ZapNotificationBanner().bannerHitRegion("zap")
             FollowNotificationBanner().bannerHitRegion("follow")

@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Feed
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.LocalFlorist
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Forum
@@ -157,6 +158,7 @@ object NostrVaultIcons {
     val Back: ImageVector = Icons.AutoMirrored.Filled.ArrowBack // chevron.left
     val Dismiss: ImageVector = Icons.Filled.Close          // xmark
     val Alert: ImageVector = Icons.Filled.Warning          // exclamationmark.triangle.fill
+    val Flag: ImageVector = Icons.Filled.Flag             // flag.fill
     val Create: ImageVector = Icons.Filled.Add             // plus
     /** Write a post: the Post button, the folded bar's compose action. */
     val Compose: ImageVector by lazy { squareAndPencil() } // square.and.pencil

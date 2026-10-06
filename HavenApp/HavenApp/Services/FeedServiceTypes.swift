@@ -324,9 +324,9 @@ extension FeedNote: ThreadGroupable {
 final class BackgroundAccumulator: @unchecked Sendable {
     var notes: [FeedNote] = []
     var profiles: [String] = []
-    /// Reaction events: (target note ID, reactor pubkey). Used for both self-like
-    /// detection and per-note reaction counting.
-    var reactionEvents: [(targetId: String, pubkey: String)] = []
+    /// Reaction events. Used for both self-like detection and per-note
+    /// reaction counting.
+    var reactionEvents: [EngagementTracker.ReactionEvent] = []
     /// Note IDs that were reposted (from kind 6 events).
     var repostTargets: [String] = []
     /// Raw event JSON strings for NIP-18 repost embedding (id → stringified JSON with sig).
@@ -387,7 +387,7 @@ final class BackgroundAccumulator: @unchecked Sendable {
     struct Snapshot {
         let notes: [FeedNote]
         let profiles: [String]
-        let reactionEvents: [(targetId: String, pubkey: String)]
+        let reactionEvents: [EngagementTracker.ReactionEvent]
         let repostTargets: [String]
         let rawEventEntries: [(id: String, json: String)]
     }
@@ -438,6 +438,7 @@ enum FeedMode: String, CaseIterable {
     case following = "Following"
     case discovery = "Discovery"
     case global = "Global"
+    case hashtags = "Hashtags"
     case popular = "Popular"
     case media = "Media"
     case reels = "Reels"
@@ -465,6 +466,7 @@ extension FeedMode {
         case .following: return "person.2"
         case .discovery: return "sparkles"
         case .global: return "globe"
+        case .hashtags: return "number"
         case .popular: return "flame"
         case .media: return "photo.on.rectangle"
         case .reels: return "play.rectangle"

@@ -33,6 +33,12 @@ enum ModePostPublisher {
     /// everyone else, so anything short of an outside URL is an error.
     static func upload(fileURL: URL, mimeType: String, configService: ConfigService, nostrService: NostrService,
                        progress: ((Double) -> Void)? = nil) async throws -> UploadedBlob {
+        // Never upload where it was taken (MediaPrivacy).
+        guard let cleanURL = await MediaPrivacy.removingLocation(fromFileAt: fileURL) else {
+            throw PublishError.upload(MediaPrivacy.failureMessage)
+        }
+        defer { if cleanURL != fileURL { try? FileManager.default.removeItem(at: cleanURL) } }
+        let fileURL = cleanURL
         guard let sha256 = ComposeView.streamingSHA256(of: fileURL) else {
             throw PublishError.upload("Couldn't read the file to upload.")
         }
@@ -43,6 +49,10 @@ enum ModePostPublisher {
     }
 
     static func upload(data: Data, mimeType: String, configService: ConfigService, nostrService: NostrService) async throws -> UploadedBlob {
+        // Never upload where it was taken (MediaPrivacy).
+        guard let data = MediaPrivacy.removingLocation(fromImageData: data) else {
+            throw PublishError.upload(MediaPrivacy.failureMessage)
+        }
         let sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let blossom = BlossomService(configService: configService, nostrService: nostrService)
         let outcome = await blossom.uploadForPost(data: data, sha256: sha256, contentType: mimeType)

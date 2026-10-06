@@ -150,7 +150,9 @@ fun UnlikeCountdownPill(notification: UnlikeCountdown, onUndo: () -> Unit) {
             modifier = Modifier.size(14.dp),
         )
         Text(
-            text = "Unliking in ${kotlin.math.max(1, kotlin.math.ceil(notification.timeRemaining.toDouble()).toInt())}s",
+            // The reaction is already off the note; the deletion goes out
+            // when this runs out (iOS #322).
+            text = "Reaction removed",
             color = Color.White,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,

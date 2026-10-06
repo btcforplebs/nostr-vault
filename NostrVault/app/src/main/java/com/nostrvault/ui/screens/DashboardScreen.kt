@@ -99,9 +99,10 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 /** What the Relay tab counts as a post: notes, reposts, articles, NIP-22
- *  comments and highlights. Comments and highlights that tag you were never
- *  requested, so they never showed up there. iOS: NostrService.relayTabNoteKinds. */
-private val RELAY_TAB_NOTE_KINDS = setOf(1, 6, 30023, NIP10Thread.COMMENT_KIND, 9802)
+ *  comments, highlights and NIP-88 polls. Comments and highlights that tag you
+ *  were never requested, so they never showed up there. iOS:
+ *  NostrService.relayTabNoteKinds. */
+private val RELAY_TAB_NOTE_KINDS = setOf(1, 6, 30023, NIP10Thread.COMMENT_KIND, 9802, NIP88Poll.KIND)
 
 /**
  * True when the Notes list holds back loaded notes behind its display cap, so
@@ -894,13 +895,13 @@ class DashboardViewModel @Inject constructor(
         val newest = newestEventCreatedAt
         val sinceClause = if (!isFullReload && newest > 0) ",\"since\":${newest - 60}" else ""
 
-        val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735],"authors":[$authorsJson]$sinceClause,"limit":500}"""
+        val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"authors":[$authorsJson]$sinceClause,"limit":500}"""
 
         val filters = if (ownerHex.isNotEmpty()) {
             // IMPORTANT: Mentions filter should NOT use sinceClause - we want ALL notes
             // where the user is tagged, not just recent ones. This fixes the bug where
             // older tagged notes never appear in the TAGGED filter.
-            val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735],"#p":["$ownerHex"],"limit":500}"""
+            val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$ownerHex"],"limit":500}"""
             "$authorFilter,$mentionsFilter"
         } else {
             authorFilter
@@ -1186,10 +1187,10 @@ class DashboardViewModel @Inject constructor(
             viewModelScope.launch(Dispatchers.IO) {
                 val untilSecs = oldest.time / 1000 - 1
                 val authorsJson = authors.joinToString(",") { "\"$it\"" }
-                val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735],"authors":[$authorsJson],"until":$untilSecs,"limit":200}"""
+                val authorFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"authors":[$authorsJson],"until":$untilSecs,"limit":200}"""
 
                 val filters = if (ownerHex.isNotEmpty()) {
-                    val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735],"#p":["$ownerHex"],"until":$untilSecs,"limit":300}"""
+                    val mentionsFilter = """{"kinds":[1,6,7,30023,1111,9802,9735,1068],"#p":["$ownerHex"],"until":$untilSecs,"limit":300}"""
                     "$authorFilter,$mentionsFilter"
                 } else {
                     authorFilter
@@ -2696,7 +2697,7 @@ fun DashboardScreen(
                 logs = currentLogs,
                 onViewAllLogs = {
                     showDashboardSheet = false
-                    onNavigate(Screen.LogViewer)
+                    onNavigate(Screen.RelayActivity)
                 },
                 statsService = viewModel.statsService,
                 ownerPubkey = viewModel.nostrService.ownerHexPubkey,

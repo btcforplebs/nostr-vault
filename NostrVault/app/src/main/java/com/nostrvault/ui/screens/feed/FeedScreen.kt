@@ -134,8 +134,11 @@ fun FeedScreen(
     onQuote: ((String) -> Unit)? = null,
     onNavigateToSettings: () -> Unit,
     viewModel: FeedViewModel = hiltViewModel(),
+    hashtagsViewModel: HashtagsFeedViewModel = hiltViewModel(),
 ) {
     val feedMode by viewModel.feedMode.collectAsState()
+    // Hashtags keeps its own list: its rows are not the note list's.
+    val hashtagsListState = rememberLazyListState()
     // The post button writes what the feed shows: a diVine in diVines, an
     // article in Articles, a recipe in Recipes, a note everywhere else.
     val modeComposer = when (feedMode) {
@@ -468,6 +471,14 @@ fun FeedScreen(
             // always reads as "at top" — a reselect must not wipe the viewer's
             // place by refreshing.
             if (viewModel.feedMode.value == FeedMode.REELS) return@collect
+            if (viewModel.feedMode.value == FeedMode.HASHTAGS) {
+                if (hashtagsListState.firstVisibleItemIndex == 0 && hashtagsListState.firstVisibleItemScrollOffset == 0) {
+                    hashtagsViewModel.reload()
+                } else {
+                    hashtagsListState.scrollToItem(0)
+                }
+                return@collect
+            }
             if (isAtTop) {
                 viewModel.refresh()
             } else {
@@ -478,7 +489,7 @@ fun FeedScreen(
 
     // Posts are waiting and either auto-load is off or the user has scrolled
     // away from the top. Never with the pill switched off in Appearance.
-    // Reels, Live, Marketplace and Music are not views of the note list; the
+    // Reels, Live, Marketplace, Music and Hashtags are not views of the note list; the
     // note subscription keeps filling `pending` underneath them, so a pill
     // there would offer posts that cannot show (same fix as iPhone #237).
     val scopeGlobal = when (feedMode) {
@@ -491,7 +502,7 @@ fun FeedScreen(
         else -> false
     }
     val showNewPosts = showNewPostsPill && pendingCount > 0 && (!autoLoad || !isAtTop) &&
-        feedMode !in setOf(FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC)
+        feedMode !in setOf(FeedMode.REELS, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.MUSIC, FeedMode.HASHTAGS)
     val loadNewPosts: () -> Unit = {
         viewModel.applyPendingNotes()
         // Scroll toward the top right away; if the animation
@@ -605,8 +616,9 @@ fun FeedScreen(
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize()) {
         PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = viewModel::refresh,
+            // Hashtags shows its own spinner; the note list's refresh is not its.
+            isRefreshing = isRefreshing && feedMode != FeedMode.HASHTAGS,
+            onRefresh = { if (feedMode == FeedMode.HASHTAGS) hashtagsViewModel.reload() else viewModel.refresh() },
             modifier = Modifier.fillMaxSize(),
         ) {
             if (feedMode == FeedMode.REELS) {
@@ -638,6 +650,21 @@ fun FeedScreen(
                         followedPubkeys = { viewModel.followedPubkeys.value.toSet() },
                     ),
                     contentPadding = padding,
+                )
+            } else if (feedMode == FeedMode.HASHTAGS) {
+                HashtagsFeed(
+                    viewModel = hashtagsViewModel,
+                    listState = hashtagsListState,
+                    contentPadding = padding,
+                    layoutMode = layoutMode,
+                    onNoteClick = onNoteClick,
+                    onArticleClick = onArticleClick,
+                    onProfileClick = onProfileClick,
+                    onReply = onReply ?: { _ -> onCompose() },
+                    onQuote = onQuote ?: {},
+                    // Not in the feed's note list; register the note so the
+                    // thread and compose screens resolve it by id, as Reels does.
+                    onCacheNote = viewModel::cacheNote,
                 )
             } else if (feedMode == FeedMode.MARKETPLACE) {
                 MarketplaceGrid(
@@ -749,6 +776,7 @@ fun FeedScreen(
                                 onFetchMissingNote = viewModel::fetchMissingNote,
                                 rootUnavailable = thread.rootId in unavailableNoteIds,
                                 lineAnchor = threadLineAnchor,
+                                bareRepostDisplay = { note -> rememberBareRepostDisplay(note, viewModel) },
                                 // iOS: 12pt sides in threaded mode, 12pt between rows.
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 expandedRow = { note, _ ->
@@ -940,7 +968,7 @@ fun FeedScreen(
             onReport = { reason, description ->
                 viewModel.reportNote(
                     reportTarget.effectiveEventId,
-                    reportTarget.pubkey,
+                    reportTarget.effectiveAuthor,
                     reason,
                     description,
                 )
@@ -960,7 +988,7 @@ fun FeedScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.blockUser(blockTarget.pubkey)
+                        viewModel.blockUser(blockTarget.effectiveAuthor)
                         blockNoteId = null
                     },
                 ) { Text("Block", color = ErrorRed) }
@@ -1598,7 +1626,9 @@ private fun FeedFullNoteRowContent(
         // meant other people's notes had no menu at all, so reporting and
         // blocking were only reachable two navigations deep — from the note
         // screen, which you have to open the content to see.
-        isOwnNote = viewModel.isOwnNote(note.pubkey),
+        // A repost row's Delete removes the repost, so it is yours when you
+        // reposted it, not when you wrote the note it carries.
+        isOwnNote = viewModel.isOwnNote(note.publisher),
         onReport = { onReport(note.id) },
         onBlock = { onBlock(note.id) },
         onDelete = { onDelete(note.id) },
@@ -1836,6 +1866,8 @@ private fun FeedTopBar(
             // replies and auto-load are all about kind-1 traffic.
             Box(Modifier.chromeFold(leadingGap = 4.dp).blockedWhen(collapsed)) { Row(verticalAlignment = Alignment.CenterVertically) { when (feedMode) {
                 FeedMode.MUSIC -> com.nostrvault.ui.screens.music.MusicToolbarButtons()
+                // The hashtag sheet's rule: follows, then your Web of Trust or everyone.
+                FeedMode.HASHTAGS -> TrustScopeButton(everyone = globalShowsEveryone, onClick = onToggleTrustScope)
                 // One rule for every feed with the choice: Following, Global
                 // (your Web of Trust, no warning), and the shield for Everyone.
                 FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS -> {
@@ -2114,6 +2146,7 @@ internal fun EmptyFeedPlaceholder(
                     FeedMode.MARKETPLACE -> NostrVaultIcons.Marketplace
                     FeedMode.REELS -> NostrVaultIcons.Reels
                     FeedMode.MUSIC -> NostrVaultIcons.Music
+                    FeedMode.HASHTAGS -> NostrVaultIcons.TagIcon
                 },
                 contentDescription = null,
                 tint = colors.primaryLight,
@@ -2133,6 +2166,7 @@ internal fun EmptyFeedPlaceholder(
                     FeedMode.MARKETPLACE -> "No Listings"
                     FeedMode.REELS -> "No Videos Yet"
                     FeedMode.MUSIC -> "No Music"
+                    FeedMode.HASHTAGS -> "No Hashtags"
                 },
                 color = PrimaryText,
                 fontSize = 22.sp,
@@ -2153,6 +2187,7 @@ internal fun EmptyFeedPlaceholder(
                     FeedMode.MARKETPLACE -> "Items for sale on Nostr show up here"
                     FeedMode.REELS -> "Videos from your feed show up here"
                     FeedMode.MUSIC -> "Songs from Wavlake show up here"
+                    FeedMode.HASHTAGS -> "Posts in the hashtags you follow show up here"
                 },
                 color = SecondaryText,
                 fontSize = 13.sp,
@@ -2279,6 +2314,7 @@ internal val FeedMode.icon: ImageVector
         FeedMode.LIVE -> NostrVaultIcons.Live
         FeedMode.MARKETPLACE -> NostrVaultIcons.Marketplace
         FeedMode.MUSIC -> NostrVaultIcons.Music
+        FeedMode.HASHTAGS -> NostrVaultIcons.TagIcon
     }
 
 /** Following and Global, the pair every feed with the choice shows. */

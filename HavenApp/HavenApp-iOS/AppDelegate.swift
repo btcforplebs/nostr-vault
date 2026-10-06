@@ -290,6 +290,17 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
 
         let userInfo = response.notification.request.content.userInfo
 
+        // The share sheet's "ready to upload" notification. Routed through the
+        // deep-link router so it lands exactly like nostrvault://shareinbox.
+        // Delayed for a cold launch, when ContentView is not listening yet.
+        if let link = userInfo["nv_deeplink"] as? String, let url = URL(string: link) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                NVDeepLinkRouter.handle(url)
+            }
+            completionHandler()
+            return
+        }
+
         if let eventId = userInfo["event_id"] as? String,
            let eventKind = userInfo["event_kind"] as? Int {
             let recipientPubkey = userInfo["recipient_pubkey"] as? String

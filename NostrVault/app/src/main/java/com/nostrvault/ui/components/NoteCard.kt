@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -64,6 +65,7 @@ import com.nostrvault.relay.HavenBridge
 import com.nostrvault.data.model.ArticleMeta
 import com.nostrvault.data.model.FeedNote
 import com.nostrvault.data.model.FeedProfile
+import com.nostrvault.data.model.poll
 import com.nostrvault.service.BlossomService
 import com.nostrvault.service.MediaCacheService
 import com.nostrvault.service.MediaSaveService
@@ -249,8 +251,8 @@ fun NoteCard(
                 onClick = {
                     val nevent = HavenBridge.encodeNevent(
                         note.effectiveEventId,
-                        note.pubkey,
-                        note.kind,
+                        note.effectiveAuthor,
+                        note.effectiveKind,
                     ) ?: HavenBridge.hexToNote1(note.effectiveEventId)
                         ?: note.effectiveEventId
                     menuClipboard.setText(AnnotatedString(threadLink(nevent)))
@@ -557,6 +559,7 @@ fun NoteCard(
             // quotes, links and media run the card's full width under the
             // avatar row, in every view (iOS #286, Logen: the most room).
             val isArticle = note.kind == ArticleMeta.KIND
+            val poll = remember(note.id, note.kind) { note.poll }
             if (repostPlaceholder != null) {
                 RepostPlaceholderLine(repostPlaceholder)
             } else if (isArticle) {
@@ -567,6 +570,11 @@ fun NoteCard(
                     note = note,
                     onClick = { (onArticleClick ?: onNoteClick)(note.id) },
                 )
+            } else if (poll != null) {
+                // A NIP-88 poll's question is its content and its options are
+                // tags, so the text path drew the question with nothing to
+                // vote on.
+                PollCard(poll = poll, isFocused = isFocused)
             } else if (note.content.isNotBlank()) {
                 val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }
                 val linkSet = remember(note.cardLinkURLs) { note.cardLinkURLs.toSet() }
@@ -828,17 +836,14 @@ internal fun EngagementBar(
             )
         }
 
-        // Like (with long-press for emoji picker) — hidden entirely in Zaps Only mode
+        // Like: tap reacts or takes it back, hold opens the tapback bar
+        // (its "+" is the emoji picker). Hidden entirely in Zaps Only mode.
         if (onLike != null && !LocalZapsOnlyMode.current) {
-            EngagementButton(
-                icon = if (isLiked) NostrVaultIcons.HeartFilled else NostrVaultIcons.Heart,
-                isActive = isLiked,
-                activeColor = LikeRed,
-                contentDescription = if (isLiked) "Unlike" else "Like",
-                onClick = { onLike.invoke(noteId) },
-                onLongClick = if (onLongPressLike != null) {
-                    { onLongPressLike.invoke(noteId) }
-                } else null,
+            ReactionButton(
+                noteId = noteId,
+                isLiked = isLiked,
+                onTap = { onLike.invoke(noteId) },
+                onMore = onLongPressLike?.let { more -> { more(noteId) } },
             )
         }
 
@@ -1080,6 +1085,10 @@ private fun VisualMediaPreview(
  * (swipe, back, or the X), back into it — iOS #117. It fades instead for a
  * video, a zoomed-in photo, a spot that has scrolled away, or Reduce Motion.
  * [onDismiss] runs once the close animation has landed.
+ *
+ * Audio pages play in [AudioPlayer], as iOS's MediaItemRenderer does; a
+ * vertical drag closes video and audio pages as it does a photo. [copyLink]
+ * adds a Copy link button (the profile viewer's, iOS ProfileView).
  */
 @Composable
 internal fun FullScreenMediaPager(
@@ -1087,11 +1096,13 @@ internal fun FullScreenMediaPager(
     initialIndex: Int,
     onDismiss: () -> Unit,
     origin: Long? = null,
+    copyLink: Boolean = false,
     viewModel: FeedMediaMirrorViewModel = hiltViewModel(),
 ) {
     val mirrorState by viewModel.state.collectAsState()
     val saveState by viewModel.saveState.collectAsState()
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val isInPiP by VideoPiPBridge.isInPiP.collectAsState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -1137,7 +1148,7 @@ internal fun FullScreenMediaPager(
     fun zoomFor(page: Int): Pair<ZoomTransform, ZoomRect>? {
         if (origin == null || Motion.isReduced || containerSize == IntSize.Zero) return null
         val url = urls.getOrNull(page) ?: return null
-        if (isVideoUrl(url)) return null
+        if (isVideoUrl(url) || isAudioUrl(url)) return null
         val source = MediaZoomSources.get(MediaSourceKey(origin, page)) ?: return null
         if (!MediaZoomGeometry.isOnScreen(source.full, source.visible)) return null
         val rect = source.full.offset(-containerOrigin.x, -containerOrigin.y)
@@ -1184,6 +1195,27 @@ internal fun FullScreenMediaPager(
     }
 
     BackHandler(onBack = close)
+
+    // Drag-to-dismiss, fed by ZoomableImage on a photo and by a drag detector
+    // on a video or audio page.
+    val onVerticalDrag: (Float) -> Unit = { deltaY ->
+        if (currentScale <= 1.05f && !closing) {
+            accumulatedDragY += deltaY
+            scope.launch { dragOffsetY.snapTo(accumulatedDragY) }
+        }
+    }
+    val onVerticalDragEnd: () -> Unit = {
+        if (closing) {
+            // The close animation owns the offset now.
+        } else if (abs(accumulatedDragY) > dismissThresholdPx) {
+            close()
+        } else {
+            scope.launch {
+                dragOffsetY.animateTo(0f, Motion.snapBack())
+            }
+        }
+        accumulatedDragY = 0f
+    }
 
     val shown by remember { derivedStateOf { progress.value.coerceIn(0f, 1f) } }
 
@@ -1241,36 +1273,41 @@ internal fun FullScreenMediaPager(
                     },
             ) { page ->
                 val url = urls[page]
-                if (isVideoUrl(url)) {
-                    // Only the visible page gets a player, to keep memory at one instance.
-                    if (page == pagerState.currentPage) {
-                        VideoPlayer(uri = url, modifier = Modifier.fillMaxSize())
-                    } else {
-                        Box(Modifier.fillMaxSize().background(Color.Black))
+                if (isVideoUrl(url) || isAudioUrl(url)) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color.Black)
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onDragEnd = onVerticalDragEnd,
+                                    onDragCancel = onVerticalDragEnd,
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    onVerticalDrag(dragAmount)
+                                }
+                            },
+                    ) {
+                        // Only the visible page gets a player, to keep memory at one instance.
+                        if (page == pagerState.currentPage) {
+                            if (isAudioUrl(url)) {
+                                AudioPlayer(
+                                    uri = url,
+                                    fileName = url.substringAfterLast('/').substringBefore('?').substringBefore('#'),
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                VideoPlayer(uri = url, modifier = Modifier.fillMaxSize())
+                            }
+                        }
                     }
                 } else {
                     ZoomableImage(
                         model = url,
                         contentDescription = null,
                         onScaleChanged = { currentScale = it },
-                        onVerticalDrag = { deltaY ->
-                            if (currentScale <= 1.05f && !closing) {
-                                accumulatedDragY += deltaY
-                                scope.launch { dragOffsetY.snapTo(accumulatedDragY) }
-                            }
-                        },
-                        onVerticalDragEnd = {
-                            if (closing) {
-                                // The close animation owns the offset now.
-                            } else if (abs(accumulatedDragY) > dismissThresholdPx) {
-                                close()
-                            } else {
-                                scope.launch {
-                                    dragOffsetY.animateTo(0f, Motion.snapBack())
-                                }
-                            }
-                            accumulatedDragY = 0f
-                        },
+                        onVerticalDrag = onVerticalDrag,
+                        onVerticalDragEnd = { onVerticalDragEnd() },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -1308,14 +1345,30 @@ internal fun FullScreenMediaPager(
                         .padding(8.dp)
                         .graphicsLayer { alpha = overlayAlpha * shown },
                 ) {
-                    SaveToGalleryPill(
-                        state = saveState,
-                        onSave = {
-                            viewModel.saveToGallery(currentUrl) { message ->
-                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                    )
+                    if (copyLink && isShareableMediaUrl(currentUrl)) {
+                        IconButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(currentUrl))
+                                Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color.Black.copy(alpha = 0.6f), CircleShape),
+                        ) {
+                            Icon(NostrVaultIcons.Copy, "Copy link", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    // A photo or video, as iOS offers Save to Photos; not audio.
+                    if (!isAudioUrl(currentUrl)) {
+                        SaveToGalleryPill(
+                            state = saveState,
+                            onSave = {
+                                viewModel.saveToGallery(currentUrl) { message ->
+                                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        )
+                    }
                     if (viewModel.canMirror) {
                         MirrorToBlossomPill(
                             state = mirrorState,
@@ -1325,31 +1378,19 @@ internal fun FullScreenMediaPager(
                 }
             }
 
-            // Page-position dots, only when the note carries more than one item.
+            // Page-position bar, only when the note carries more than one item.
             if (urls.size > 1 && !isInPiP) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                PagePositionBar(
+                    count = urls.size,
+                    index = pagerState.currentPage,
+                    track = Color.White.copy(alpha = 0.35f),
+                    lit = Color.White,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
                         .padding(bottom = 24.dp)
                         .graphicsLayer { alpha = overlayAlpha * shown },
-                ) {
-                    repeat(urls.size) { i ->
-                        val selected = i == pagerState.currentPage
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 3.dp)
-                                .size(if (selected) 8.dp else 6.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (selected) Color.White
-                                    else Color.White.copy(alpha = 0.4f),
-                                ),
-                        )
-                    }
-                }
+                )
             }
     }
 }
@@ -1781,28 +1822,56 @@ private fun MediaCarousel(
             }
         }
 
-        // Page indicator dots
-        Row(
-            horizontalArrangement = Arrangement.Center,
+        // Page-position bar
+        Box(
+            contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 6.dp),
+                .padding(top = 8.dp),
         ) {
-            repeat(urls.size) { i ->
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 2.dp)
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (i == pagerState.currentPage)
-                                LocalNostrVaultColors.current.primary
-                            else
-                                SecondaryText.copy(alpha = 0.3f)
-                        ),
-                )
-            }
+            PagePositionBar(
+                count = urls.size,
+                index = pagerState.currentPage,
+                track = SecondaryText.copy(alpha = 0.25f),
+                lit = LocalNostrVaultColors.current.primary,
+            )
         }
+    }
+}
+
+/**
+ * Thin position bar for a multi-image note: a hairline track with one slot per item and
+ * the current slot lit, sliding as the pager settles. Mirrors iOS PagePositionBar.
+ */
+@Composable
+internal fun PagePositionBar(
+    count: Int,
+    index: Int,
+    track: Color,
+    lit: Color,
+    modifier: Modifier = Modifier,
+) {
+    if (count < 2) return
+    // Slots shrink as the count grows so a long post still fits under a narrow card.
+    val slot = (140f / count).coerceIn(8f, 18f).dp
+    val clamped = index.coerceIn(0, count - 1)
+    val offset by androidx.compose.animation.core.animateDpAsState(
+        targetValue = slot * clamped,
+        label = "pagePositionBar",
+    )
+    Box(
+        modifier = modifier
+            .size(width = slot * count, height = 2.5.dp)
+            .clip(RoundedCornerShape(50))
+            .background(track),
+    ) {
+        Box(
+            modifier = Modifier
+                .offset(x = offset)
+                .size(width = slot, height = 2.5.dp)
+                .clip(RoundedCornerShape(50))
+                .background(lit),
+        )
     }
 }
 

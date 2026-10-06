@@ -2,6 +2,7 @@ package com.nostrvault.data.model
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
+import com.nostrvault.data.local.EngagementTracker
 import com.nostrvault.relay.HavenQuoteDecoder
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -187,6 +188,31 @@ data class FeedNote(
      */
     val effectiveEventId: String
         get() = if (kind == 6) repostedEventId ?: id else id
+
+    /**
+     * Who wrote the note engagement targets. Zaps, reports and blocks go
+     * here, never to the reposter. A repost that still holds its own
+     * `["e", repostedEventId]` tag was not unpacked and carries the
+     * reposter's pubkey, so the author comes from its `p` tag (the same test
+     * as [quoteTarget]). An embedded or resolved repost already holds the
+     * original's author.
+     */
+    val effectiveAuthor: String
+        get() {
+            val refId = repostedEventId
+            if (kind != 6 || refId == null) return pubkey
+            val stillWrapped = tags.any { it.size >= 2 && it[0] == "e" && it[1] == refId }
+            if (!stillWrapped) return pubkey
+            return tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: pubkey
+        }
+
+    /** The kind of the note engagement targets: a kind-6 repost always carries a kind 1. */
+    val effectiveKind: Int
+        get() = if (kind == 6 && repostedEventId != null) 1 else kind
+
+    /** Who published this event: the reposter for a repost, else the author. */
+    val publisher: String
+        get() = if (kind == 6) repostedBy ?: pubkey else pubkey
 
     /**
      * The links that get a card, and so leave the text. Capped: each card
@@ -495,6 +521,8 @@ data class FeedProfile(
     var name: String? = null,
     var displayName: String? = null,
     var pictureURL: String? = null,
+    /** The wide header image (kind-0 `banner`). */
+    var bannerURL: String? = null,
     var nip05: String? = null,
     var about: String? = null,
     var lud16: String? = null,
@@ -522,6 +550,14 @@ enum class FeedMode(val displayName: String) {
     FOLLOWING("Following"),
     DISCOVERY("Discover"),
     GLOBAL("Global"),
+
+    /**
+     * Posts in the hashtags you follow (NIP-51 interest list, kind 10015).
+     * Like [MUSIC], not a view of the note list: HashtagsFeedViewModel runs
+     * its own `#t` REQ and the note subscription is left alone. Declared after
+     * Global so a saved picker order gains it right after Global.
+     */
+    HASHTAGS("Hashtags"),
     POPULAR("Popular"),
     MEDIA("Media"),
 
@@ -657,7 +693,7 @@ class BackgroundAccumulator {
 
     val notes = mutableListOf<FeedNote>()
     val profiles = mutableListOf<String>()
-    val reactionEvents = mutableListOf<Pair<String, String>>() // (targetId, pubkey)
+    val reactionEvents = mutableListOf<EngagementTracker.ReactionEvent>()
     val zapEvents = mutableListOf<Pair<String, Long>>() // (targetId, amountSats)
     val repostTargets = mutableListOf<String>()
     val rawEventEntries = mutableListOf<Pair<String, String>>() // (id, json)
@@ -679,7 +715,7 @@ class BackgroundAccumulator {
     fun addNote(note: FeedNote) { synchronized(lock) { notes.add(note) } }
 
     /** Add a reaction engagement event. */
-    fun addReaction(targetId: String, pubkey: String) { synchronized(lock) { reactionEvents.add(targetId to pubkey) } }
+    fun addReaction(reaction: EngagementTracker.ReactionEvent) { synchronized(lock) { reactionEvents.add(reaction) } }
 
     /** Add a zap engagement event. */
     fun addZap(targetId: String, amountSats: Long) { synchronized(lock) { zapEvents.add(targetId to amountSats) } }
@@ -687,7 +723,7 @@ class BackgroundAccumulator {
     data class Snapshot(
         val notes: List<FeedNote>,
         val profiles: List<String>,
-        val reactions: List<Pair<String, String>>,
+        val reactions: List<EngagementTracker.ReactionEvent>,
         val zaps: List<Pair<String, Long>>,
         val repostTargets: List<String>,
         val rawEventEntries: List<Pair<String, String>>,

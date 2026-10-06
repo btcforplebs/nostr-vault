@@ -63,7 +63,7 @@ fun NotificationOverlay(
                         is ActionToast -> ActionToastPill(notification)
                         is UploadNotification -> UploadPill(notification)
                         is UnlikeCountdown -> UnlikeCountdownPill(notification) {
-                            notificationManager.cancelUnlikeCountdown()
+                            notificationManager.undoUnlikeCountdown()
                         }
                     }
                 }

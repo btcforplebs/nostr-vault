@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import ImageIO
 #if os(iOS)
 import Photos
 #endif
@@ -116,6 +117,13 @@ struct ProfileView: View {
     /// leaves blank space below, instead of the page snapping back down.
 
     @State private var viewportHeight: CGFloat = 0
+    /// Width of the scroll view; the banner's height follows it.
+    @State private var viewportWidth: CGFloat = 0
+    /// Height of the bars above the scroll view's content, which the banner
+    /// reaches up under.
+    @State private var topInset: CGFloat = 0
+    /// The topmost note on screen, which the scroll view keeps in place.
+    @State private var scrolledNoteID: String?
     @StateObject private var shop = SellerListingsLoader()
     /// This person's articles, diVines and music, each a tab when they have any.
     @StateObject private var extras = ProfileExtrasLoader()
@@ -295,31 +303,42 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if !embeddedInNavigation && (!isOwnProfile || onDismiss != nil) {
-                    dismissHeader
+                bannerHeader
+                VStack(spacing: 0) {
+                    headerBlock
+                    actionRow
+                        .padding(.top, 4)
+                    if let about = profile?.about, !about.isEmpty {
+                        bioBlock(about)
+                    }
+                    divider
+                    statsBlock
+                    divider
+                    identityBlock
+                    divider
+                    sectionTabBar
+                    sectionContent
+                        .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
+                        .tabBarBottomPadding()
+                        .frame(minHeight: viewportHeight, alignment: .top)
                 }
-                headerBlock
-                actionRow
-                    .padding(.top, 4)
-                if let about = profile?.about, !about.isEmpty {
-                    bioBlock(about)
-                }
-                divider
-                statsBlock
-                divider
-                identityBlock
-                divider
-                sectionTabBar
-                sectionContent
-                    .environment(\.feedActions, .make(feedService: feedService, nostrService: nostrService))
-                    .tabBarBottomPadding()
-                    .frame(minHeight: viewportHeight, alignment: .top)
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity)
         }
+        // Holds the note you are reading in place while notes arrive from
+        // each relay and are sorted in above it, and while rows above it
+        // grow as their media loads. The main feed does the same.
+        .scrollPosition(id: $scrolledNoteID)
         .scrollDirectionTracking(feedService: feedService)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: {
+            viewportHeight = $0.height
+            viewportWidth = $0.width
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { topInset = $0 }
+        // The banner draws its own scrim under the bar; the system edge would
+        // lay a grey band over it.
+        .hiddenTopScrollEdge()
         .if(isOwnProfile) { view in
             view.refreshable {
                 await refreshProfile()
@@ -639,18 +658,52 @@ struct ProfileView: View {
 
     // MARK: - Dismiss header (sheet context only)
 
+    private var showsDismissButton: Bool {
+        !embeddedInNavigation && (!isOwnProfile || onDismiss != nil)
+    }
+
+    /// Sits on the banner, so it carries its own dark disc instead of relying
+    /// on the page behind it.
     private var dismissHeader: some View {
         HStack {
             Spacer()
             Button(action: { performDismiss() }) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.appSystem(size: 22))
-                    .foregroundColor(.secondary.opacity(0.55))
+                    .font(.appSystem(size: 24))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white.opacity(0.9), .black.opacity(0.45))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Close")
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
+    }
+
+    // MARK: - Banner
+
+    /// A profile with a banner gets a strip a third as tall as it is wide;
+    /// one without gets a short tinted wash, so the avatar still has something
+    /// to sit on and the page has no gray block at the top.
+    private var bannerHeight: CGFloat {
+        guard profile?.bannerURL != nil else { return 64 }
+        let width = viewportWidth > 0 ? viewportWidth : 390
+        return min(max(width / 3, 110), 210)
+    }
+
+    private var bannerHeader: some View {
+        ProfileBannerView(
+            bannerURL: profile?.bannerURL,
+            avatarURL: profile?.pictureURL,
+            pubkey: pubkey,
+            height: bannerHeight,
+            topInset: topInset,
+            onTap: { url in showingMediaUrl = IdentifiableURL(url: url) }
+        )
+        .overlay(alignment: .top) {
+            if showsDismissButton { dismissHeader }
+        }
+        .animation(Motion.panel, value: bannerHeight)
     }
 
     private func performDismiss() {
@@ -672,10 +725,15 @@ struct ProfileView: View {
 
     private var headerBlock: some View {
         HStack(alignment: .top, spacing: 14) {
-            AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 64)
+            AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 72)
                 .overlay(
                     Circle().stroke(Color.havenPurple.opacity(0.35), lineWidth: 1.5)
                 )
+                // A ring in the page color lifts the avatar off the banner.
+                .padding(3)
+                .background(Circle().fill(Color.platformWindowBackground))
+                // Half over the banner; the name column stays below it.
+                .padding(.top, -36)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -717,7 +775,7 @@ struct ProfileView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 16)
+        .padding(.top, 10)
     }
 
     @ViewBuilder
@@ -1103,7 +1161,12 @@ struct ProfileView: View {
                     // different heights, and the page jumped while they did.
                     var instant = Transaction()
                     instant.disablesAnimations = true
-                    withTransaction(instant) { selectedSection = section }
+                    withTransaction(instant) {
+                        // The other section's notes are not this one's: an
+                        // anchor left over would pull the page to it.
+                        scrolledNoteID = nil
+                        selectedSection = section
+                    }
                 }) {
                     VStack(spacing: 6) {
                         // Icons only, no names (Logen): icon and count, or the
@@ -1382,6 +1445,7 @@ struct ProfileView: View {
                     }
                 }
             }
+            .scrollTargetLayout()
             .padding(.top, 4)
         }
     }
@@ -1501,7 +1565,7 @@ struct ProfileView: View {
 
                 Spacer()
 
-                MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true) { mediaItem in
+                MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true, showsPositionBar: false) { mediaItem in
                     ViewerViewMediaItem(mediaItem: mediaItem)
                         #if os(iOS)
                         .transition(.opacity.animation(Motion.media))
@@ -1781,7 +1845,7 @@ struct ProfileView: View {
                 .sink { state in
                     if state == .connected {
                         let notesFilter: [String: Any] = [
-                            "kinds": [1, 6, 30023],
+                            "kinds": [1, 6, 30023, NIP88Poll.kind],
                             "authors": [pubkey],
                             "limit": 50
                         ]
@@ -1801,7 +1865,7 @@ struct ProfileView: View {
                             "limit": 100
                         ]
                         let taggedFilter: [String: Any] = [
-                            "kinds": [1, 6, 30023],
+                            "kinds": [1, 6, 30023, NIP88Poll.kind],
                             "#p": [pubkey],
                             "limit": 50
                         ]
@@ -1840,6 +1904,7 @@ struct ProfileView: View {
                     prof.name = metadata["name"] as? String
                     prof.displayName = metadata["display_name"] as? String
                     prof.pictureURL = (metadata["picture"] as? String).flatMap { URL(string: $0) }
+                    prof.bannerURL = (metadata["banner"] as? String).flatMap { URL(string: $0) }
                     prof.nip05 = metadata["nip05"] as? String
                     prof.about = metadata["about"] as? String
                     prof.lud16 = metadata["lud16"] as? String
@@ -1872,7 +1937,7 @@ struct ProfileView: View {
 
             // Check if this is a tagged event (authored by someone else, but p-tagging the profile user)
             let isTaggedEvent = event.pubkey != pubkey &&
-                [1, 6, 30023].contains(event.kind) &&
+                [1, 6, 30023, NIP88Poll.kind].contains(event.kind) &&
                 event.tags.contains(where: { $0.count >= 2 && $0[0] == "p" && $0[1] == pubkey })
 
             if isTaggedEvent {
@@ -1975,7 +2040,7 @@ struct ProfileView: View {
         olderPageSection = selectedSection
 
         let filter: [String: Any] = [
-            "kinds": [1, 6, 30023],
+            "kinds": [1, 6, 30023, NIP88Poll.kind],
             "authors": [pubkey],
             "until": Int(oldest.createdAt.timeIntervalSince1970),
             "limit": 50
@@ -2063,7 +2128,7 @@ struct ProfileView: View {
         olderTaggedVisibleBefore = taggedFilteredNotes.count
 
         let filter: [String: Any] = [
-            "kinds": [1, 6, 30023],
+            "kinds": [1, 6, 30023, NIP88Poll.kind],
             "#p": [pubkey],
             "until": Int(oldest.createdAt.timeIntervalSince1970),
             "limit": 50
@@ -2286,6 +2351,7 @@ struct ProfileEditView: View {
     @State private var name: String = ""
     @State private var about: String = ""
     @State private var pictureURL: String = ""
+    @State private var bannerURL: String = ""
     @State private var nip05: String = ""
     @State private var lud16: String = ""
     @State private var website: String = ""
@@ -2302,6 +2368,8 @@ struct ProfileEditView: View {
 
                 ScrollView {
                     VStack(spacing: 0) {
+                        bannerBlock
+
                         previewBlock
 
                         divider
@@ -2324,6 +2392,8 @@ struct ProfileEditView: View {
 
                         fieldGroup(title: "MEDIA") {
                             field(label: "Picture URL", text: $pictureURL, placeholder: "https://…", keyboardKind: .urlLike)
+                            fieldDivider
+                            field(label: "Banner URL", text: $bannerURL, placeholder: "https://…", keyboardKind: .urlLike)
                             fieldDivider
                             field(label: "Website", text: $website, placeholder: "yourdomain.com", keyboardKind: .urlLike)
                         }
@@ -2398,6 +2468,27 @@ struct ProfileEditView: View {
                 .frame(height: 0.5),
             alignment: .bottom
         )
+    }
+
+    /// The Banner URL, previewed at the 3:1 shape profiles draw it in.
+    /// Hidden until the field holds a URL.
+    @ViewBuilder
+    private var bannerBlock: some View {
+        if let url = URL(string: bannerURL.trimmingCharacters(in: .whitespaces)), url.scheme != nil {
+            // The image sits in an overlay so a wide photo can't widen the row.
+            Rectangle()
+                .fill(Color.havenPurple.opacity(0.12))
+                .aspectRatio(3, contentMode: .fit)
+                .overlay {
+                    CachedAsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        ProgressView().tint(.havenPurple)
+                    }
+                }
+                .clipped()
+                .accessibilityLabel("Banner preview")
+        }
     }
 
     private var previewBlock: some View {
@@ -2514,6 +2605,7 @@ struct ProfileEditView: View {
         name = existing.name ?? ""
         about = existing.about ?? ""
         pictureURL = existing.pictureURL?.absoluteString ?? ""
+        bannerURL = existing.bannerURL?.absoluteString ?? ""
         nip05 = existing.nip05 ?? ""
         lud16 = existing.lud16 ?? ""
         website = existing.website ?? ""
@@ -2526,6 +2618,7 @@ struct ProfileEditView: View {
             ProfileMetadataMerge.name: name,
             ProfileMetadataMerge.about: about,
             ProfileMetadataMerge.picture: pictureURL,
+            ProfileMetadataMerge.banner: bannerURL,
             ProfileMetadataMerge.nip05: nip05,
             ProfileMetadataMerge.lud16: lud16,
             ProfileMetadataMerge.website: website,
@@ -2540,7 +2633,7 @@ struct ProfileEditView: View {
 
         Task {
             // A kind 0 replaces the whole profile. Start from the newest one on
-            // the relays so banner, lud06 and every key this form doesn't show
+            // the relays so lud06 and every key this form doesn't show
             // survive; if it can't be fetched, publishing would wipe them, so
             // don't (same rule as the follow list).
             let pubkey = nostrService.activeHexPubkey
@@ -2572,6 +2665,7 @@ struct ProfileEditView: View {
             updated.displayName = merged[ProfileMetadataMerge.displayName] as? String
             updated.about = merged[ProfileMetadataMerge.about] as? String
             updated.pictureURL = (merged[ProfileMetadataMerge.picture] as? String).flatMap { URL(string: $0) }
+            updated.bannerURL = (merged[ProfileMetadataMerge.banner] as? String).flatMap { URL(string: $0) }
             updated.nip05 = merged[ProfileMetadataMerge.nip05] as? String
             updated.lud16 = merged[ProfileMetadataMerge.lud16] as? String
             updated.lud06 = merged["lud06"] as? String
@@ -2669,5 +2763,198 @@ final class ProfileExtrasLoader: ObservableObject {
               let page = await MusicFeedState.shared.artistPage(artist.id) else { return }
         guard loadedPubkey == pubkey else { return }
         tracks = page.tracks
+    }
+}
+
+// MARK: - Profile banner
+
+/// The strip across the top of a profile. Runs edge to edge and up under the
+/// navigation bar, stretches when pulled down, and fades into the page at the
+/// bottom. Until the banner arrives, or when there is none, a wash tinted from
+/// the profile picture stands in so the header never jumps or sits empty.
+private struct ProfileBannerView: View {
+    let bannerURL: URL?
+    let avatarURL: URL?
+    let pubkey: String
+    let height: CGFloat
+    let topInset: CGFloat
+    let onTap: (URL) -> Void
+
+    @State private var image: PlatformImage?
+    @State private var tint: Color?
+
+    var body: some View {
+        GeometryReader { geo in
+            // Up under the navigation bar at rest, and further as the page is
+            // pulled down, so the stretch never shows a gap.
+            let reach = topInset + max(0, geo.frame(in: .scrollView(axis: .vertical)).minY)
+            ZStack {
+                wash
+                if let image {
+                    Image(platformImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: geo.size.width, height: height + reach)
+            .clipped()
+            .overlay(alignment: .top) {
+                // Keeps the toolbar buttons and close button legible on a
+                // bright banner.
+                LinearGradient(colors: [.black.opacity(0.45), .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: min(reach + 56, height + reach))
+            }
+            .overlay(alignment: .bottom) {
+                LinearGradient(colors: [.clear, Color.platformWindowBackground], startPoint: .top, endPoint: .bottom)
+                    .frame(height: height * 0.45)
+            }
+            .offset(y: -reach)
+        }
+        .frame(height: height)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if image != nil, let bannerURL { onTap(bannerURL) }
+        }
+        .accessibilityElement()
+        .accessibilityLabel(image != nil ? "Profile banner" : "")
+        .accessibilityAddTraits(image != nil ? .isButton : [])
+        .accessibilityHidden(image == nil)
+        .task(id: bannerURL) { await loadBanner() }
+        .task(id: avatarURL) { await loadTint() }
+    }
+
+    private var wash: some View {
+        let base = tint ?? ProfileBannerView.fallbackTint(pubkey)
+        return LinearGradient(
+            colors: [base.opacity(0.9), base.opacity(0.35)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private func loadBanner() async {
+        guard let url = bannerURL else { image = nil; return }
+        if let cached = BannerImageCache.shared.image(for: url) {
+            image = cached
+            return
+        }
+        image = nil
+        guard let loaded = await BannerImageCache.shared.load(url: url), !Task.isCancelled else { return }
+        withAnimation(Motion.media) { image = loaded }
+    }
+
+    private func loadTint() async {
+        guard let url = avatarURL else { tint = nil; return }
+        guard let average = await BannerImageCache.shared.averageColor(ofCachedImageAt: url),
+              !Task.isCancelled else { return }
+        // A picture with no real color takes the app accent.
+        withAnimation(Motion.fade) { tint = average ?? .havenPurple }
+    }
+
+    /// The same hue the letter avatar uses, for profiles with no picture yet.
+    static func fallbackTint(_ pubkey: String) -> Color {
+        let first = pubkey.unicodeScalars.first?.value ?? 200
+        return Color(hue: Double(first % 360) / 360.0, saturation: 0.55, brightness: 0.6)
+    }
+}
+
+/// Banner images, downsampled to screen size (banners are often several
+/// thousand pixels wide), and avatar tints. Disk caching is MediaCacheService's.
+private final class BannerImageCache: @unchecked Sendable {
+    static let shared = BannerImageCache()
+
+    private let images = NSCache<NSURL, PlatformImage>()
+    private let tints = NSCache<NSURL, ColorBox>()
+    private final class ColorBox { let color: Color?; init(_ c: Color?) { color = c } }
+
+    private static let targetPixelSize: CGFloat = 2048
+
+    init() {
+        images.countLimit = 24
+        tints.countLimit = 300
+    }
+
+    func image(for url: URL) -> PlatformImage? {
+        images.object(forKey: url as NSURL)
+    }
+
+    func load(url: URL) async -> PlatformImage? {
+        if let cached = image(for: url) { return cached }
+        if MediaCacheService.shared.isKnown404(url: url) { return nil }
+        var data = MediaCacheService.shared.loadFromCache(url: url)
+        if data == nil,
+           let (fetched, response) = try? await MediaSessionService.shared.session.data(from: url),
+           let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+            MediaCacheService.shared.saveToCache(url: url, data: fetched)
+            data = fetched
+        }
+        guard let data, let img = Self.downsample(data, maxPixel: Self.targetPixelSize) else { return nil }
+        images.setObject(img, forKey: url as NSURL)
+        return img
+    }
+
+    /// The average color of an avatar the app has already downloaded. Never
+    /// fetches: the avatar view does that, and a tint is not worth a request.
+    /// nil when the avatar isn't on disk; `.some(nil)` when it has no real color.
+    func averageColor(ofCachedImageAt url: URL) async -> Color?? {
+        if let box = tints.object(forKey: url as NSURL) { return box.color }
+        guard let data = MediaCacheService.shared.loadFromCache(url: url),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceThumbnailMaxPixelSize: 16
+              ] as CFDictionary) else { return nil }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        guard let ctx = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .medium
+        ctx.draw(thumb, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let color = Self.washColor(r: Double(pixel[0]) / 255, g: Double(pixel[1]) / 255, b: Double(pixel[2]) / 255)
+        tints.setObject(ColorBox(color), forKey: url as NSURL)
+        return color
+    }
+
+    /// A picture's average is usually a muddy dark gray. Keep its hue but give
+    /// it enough color and light to read as a tint; a picture with no real
+    /// color gives nil.
+    private static func washColor(r: Double, g: Double, b: Double) -> Color? {
+        let maxC = max(r, g, b), minC = min(r, g, b)
+        let delta = maxC - minC
+        let saturation = maxC > 0 ? delta / maxC : 0
+        guard saturation > 0.15, delta > 0 else { return nil }
+        var hue: Double
+        if maxC == r { hue = ((g - b) / delta).truncatingRemainder(dividingBy: 6) }
+        else if maxC == g { hue = (b - r) / delta + 2 }
+        else { hue = (r - g) / delta + 4 }
+        hue = (hue / 6 + 1).truncatingRemainder(dividingBy: 1)
+        return Color(hue: hue, saturation: min(max(saturation, 0.45), 0.8), brightness: min(max(maxC, 0.5), 0.75))
+    }
+
+    private static func downsample(_ data: Data, maxPixel: CGFloat) -> PlatformImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceShouldCacheImmediately: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceThumbnailMaxPixelSize: maxPixel
+              ] as CFDictionary) else { return nil }
+        #if canImport(AppKit)
+        return NSImage(cgImage: cg, size: .zero)
+        #else
+        return UIImage(cgImage: cg)
+        #endif
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func hiddenTopScrollEdge() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            self
+        }
     }
 }

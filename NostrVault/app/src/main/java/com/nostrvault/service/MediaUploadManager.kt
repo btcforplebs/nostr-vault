@@ -95,6 +95,10 @@ class MediaUploadManager @Inject constructor(
             }
 
             val contentType = contentResolver.getType(uri) ?: "application/octet-stream"
+            if (!MediaPrivacy.removeLocation(tempFile, contentType)) {
+                notificationManager.markUploadFailed(uploadId, MediaPrivacy.FAILURE_MESSAGE)
+                return
+            }
             val sha256 = blossomService.computeSHA256(tempFile)
 
             notificationManager.updateUploadProgress(uploadId, 0.3f)

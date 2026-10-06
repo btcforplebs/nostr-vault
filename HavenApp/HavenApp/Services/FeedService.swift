@@ -118,6 +118,14 @@ class FeedService: ObservableObject {
     @Published var newNoteCount: Int = 0
     @Published var pendingNotes: [FeedNote] = []
     @Published var likedEventIds: Set<String> = []
+    /// The emoji (and kind-7 event) behind each entry of `likedEventIds`.
+    @Published var myReactions: [String: EngagementTracker.MyReaction] = [:]
+    /// Reactions this account deleted; see `InteractionState.retractedReactionIds`.
+    var retractedReactionIds: Set<String> = []
+    /// Per note, the reaction currently being signed. A tap that changes or
+    /// removes it before signing ends replaces the token, and the stale
+    /// reaction is then never published.
+    var pendingReactionTokens: [String: UUID] = [:]
     @Published var repostedEventIds: Set<String> = []
     @Published var zappedEventIds: [String: Int] = [:]
     /// Per-note engagement counts (replies, reactions, reposts) from relay data.
@@ -989,6 +997,10 @@ class FeedService: ObservableObject {
         noteStats = snap.noteStats
         likedEventIds = snap.likedEventIds
         zappedEventIds = snap.zappedEventIds
+        // Which emoji went with each like lives only in the account's file.
+        let saved = EngagementTracker.loadInteractionState(forKey: key)
+        myReactions = saved.myReactions
+        retractedReactionIds = saved.retractedReactionIds
         contactListContent = snap.contactListContent
         contactListPTags = snap.contactListPTags
         lastFetchedContactCount = snap.lastFetchedContactCount
@@ -1024,6 +1036,8 @@ class FeedService: ObservableObject {
         resetFeedThreadReplies()
         isLoadingPopular = false
         likedEventIds.removeAll()
+        myReactions.removeAll()
+        retractedReactionIds.removeAll()
         zappedEventIds.removeAll()
         contactListContent = ""
         contactListPTags.removeAll()
@@ -1203,6 +1217,10 @@ class FeedService: ObservableObject {
 
         // 1. Stash the just-rendered state under the previous npub.
         captureSnapshot(forKey: previousKey)
+        // Write its likes now: a throttled save still waiting would run under
+        // the new account's key. Reactions still being signed are dropped.
+        writeInteractionState()
+        pendingReactionTokens.removeAll()
 
         // 2. Only disconnect feed clients if we need a full refresh (no snapshot available).
         // This prevents unnecessary relay disconnections when switching between accounts
@@ -1329,19 +1347,45 @@ class FeedService: ObservableObject {
         let result = EngagementTracker.loadInteractionState(forKey: key)
         self.likedEventIds = result.likedEventIds
         self.zappedEventIds = result.zappedEventIds
+        self.myReactions = result.myReactions
+        self.retractedReactionIds = result.retractedReactionIds
         #if DEBUG
         print("FeedService: Loaded \(result.likedEventIds.count) likes, \(result.zappedEventIds.count) zaps for account \(key.prefix(8))")
         #endif
     }
 
+    private var interactionSaveScheduled = false
+
     func saveInteractionState() {
-        // Throttle saves to at most once per 2 seconds
+        // Throttle saves to at most once per 2 seconds. A save inside the
+        // window runs at its end instead of being dropped: dropping one lost
+        // the newest like (or removal) whenever two came within 2 seconds.
         let now = Date()
-        guard now.timeIntervalSince(interactionSaveThrottle) > 2.0 else { return }
+        let wait = 2.0 - now.timeIntervalSince(interactionSaveThrottle)
+        guard wait <= 0 else {
+            guard !interactionSaveScheduled else { return }
+            interactionSaveScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait + 0.05) { [weak self] in
+                guard let self else { return }
+                self.interactionSaveScheduled = false
+                self.saveInteractionState()
+            }
+            return
+        }
         interactionSaveThrottle = now
+        writeInteractionState()
+    }
+
+    /// Saves the current account's interaction state now, unthrottled.
+    private func writeInteractionState() {
         EngagementTracker.saveInteractionState(
-            likedEventIds: likedEventIds,
-            zappedEventIds: zappedEventIds,
+            EngagementTracker.InteractionState(
+                likedEventIds: likedEventIds,
+                zappedEventIds: zappedEventIds,
+                myReactions: myReactions,
+                retractedReactionIds: retractedReactionIds,
+                account: loadedSnapshotNpub
+            ),
             forKey: loadedSnapshotNpub
         )
     }
@@ -1350,8 +1394,8 @@ class FeedService: ObservableObject {
 
     func refresh() {
         guard !isLoadingContacts, !isPaused else { return }
-        // Music has no relay feed to reload.
-        if feedMode == .music { return }
+        // Music has no relay feed to reload; Hashtags reloads its own.
+        if feedMode == .music || feedMode == .hashtags { return }
 
         // Ask the embedded relay to catch up its inbox/outbox from external
         // relays too, so a feed pull-to-refresh also freshens the Relay tab,
@@ -1614,6 +1658,8 @@ class FeedService: ObservableObject {
         if mode == .music {
             // Wavlake, not relays: MusicBrowserView loads its own catalogue,
             // and the note pipeline stays idle underneath it.
+        } else if mode == .hashtags {
+            // HashtagsFeedSection queries relays for its tags itself.
         } else if mode == .live {
             // Same reasoning as Recipes: LiveFeedService owns this one.
             LiveFeedService.shared.loadIfNeeded()
@@ -1753,7 +1799,7 @@ class FeedService: ObservableObject {
         case .following, .discovery: return true
         case .media: return mediaFeedMode == .following
         case .articles: return articlesFeedMode == .following
-        case .global, .popular, .recipes, .marketplace, .live, .reels, .music: return false
+        case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return false
         }
     }
 
@@ -1761,7 +1807,7 @@ class FeedService: ObservableObject {
     /// feed, so narrowing the REQ stops a page of results from being almost
     /// entirely kind-1 notes the mode is about to discard.
     private var primaryFeedKinds: [Int] {
-        feedMode == .articles ? [30023] : [1, 6, 30023, NIP10Thread.commentKind]
+        feedMode == .articles ? [30023] : [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind]
     }
 
     /// True for the modes whose primary subscription is `authors: followedPubkeys`.
@@ -1780,7 +1826,7 @@ class FeedService: ObservableObject {
         case .articles: return articlesFeedMode == .following ? followedPubkeys : []
         case .media: return mediaFeedMode == .following ? followedPubkeys : []
         case .discovery: return extendedNetworkPubkeys
-        case .global, .popular, .recipes, .marketplace, .live, .reels, .music: return []
+        case .global, .popular, .recipes, .marketplace, .live, .reels, .music, .hashtags: return []
         }
     }
 
@@ -1810,7 +1856,7 @@ class FeedService: ObservableObject {
         // no relay feed. Reconciling here opened an author-less kind-1 REQ
         // underneath them, so the hidden note pipeline filled with strangers'
         // posts and a "New Posts" pill appeared over the grid.
-        guard ![.recipes, .marketplace, .live, .music].contains(feedMode) else { return }
+        guard ![.recipes, .marketplace, .live, .music, .hashtags].contains(feedMode) else { return }
 
         // Author-filtered mode with no follows yet → no valid primary sub. Don't
         // send a dead authors:[] REQ; instead self-heal by (re)fetching contacts
@@ -2013,7 +2059,7 @@ class FeedService: ObservableObject {
         case .following: searchAuthors = followedPubkeys
         case .articles: searchAuthors = articlesFeedMode == .following ? followedPubkeys : nil
         case .discovery: searchAuthors = extendedNetworkPubkeys
-        case .global, .popular, .media, .recipes, .marketplace, .live, .reels, .music: searchAuthors = nil
+        case .global, .popular, .media, .recipes, .marketplace, .live, .reels, .music, .hashtags: searchAuthors = nil
         }
         if let searchAuthors, searchAuthors.isEmpty {
             searchCancellable?.cancel()
@@ -2035,7 +2081,7 @@ class FeedService: ObservableObject {
 
         // Build filter matching current feed mode
         var filter: [String: Any] = [
-            "kinds": [1, 6, 30023],
+            "kinds": [1, 6, 30023, NIP88Poll.kind],
             "limit": 2000
         ]
         if let searchAuthors {
@@ -2252,6 +2298,14 @@ class FeedService: ObservableObject {
     /// Still holding that tag means nothing was unpacked and this note carries
     /// the reposter's identity, so take the author from the repost's `p` tag.
     func quoteTarget(for note: FeedNote) -> FeedNote {
+        originalNote(for: note)
+    }
+
+    /// The note a repost stands for, for anything that acts on it: quoting,
+    /// liking, zapping, and the counts and states a repost row shows. Always
+    /// carries the original's id and author, even before its body arrives;
+    /// see `quoteTarget` for how an embedded copy is told from a bare repost.
+    func originalNote(for note: FeedNote) -> FeedNote {
         guard note.kind == 6, let refId = note.repostedEventId else { return note }
         if let original = findNote(id: refId) { return original }
         let carriesOriginal = !note.tags.contains { $0.count >= 2 && $0[0] == "e" && $0[1] == refId }
@@ -2262,6 +2316,21 @@ class FeedService: ObservableObject {
         let author = note.tags.first { $0.count >= 2 && $0[0] == "p" }?[1] ?? note.pubkey
         return FeedNote(id: refId, pubkey: author, content: "",
                         createdAt: note.createdAt, tags: [], kind: 1)
+    }
+
+    /// The note a thread view should open. Opening a kind-6 repost showed the
+    /// original's text over the wrapper's own empty likes and zaps, with no
+    /// conversation above it. Uses the loaded original, else the one the
+    /// repost embeds (same test as `quoteTarget`). A bare repost whose
+    /// original hasn't arrived stays as it is; the thread view already
+    /// handles that wrapper.
+    func threadTarget(for note: FeedNote) -> FeedNote {
+        guard note.kind == 6, let refId = note.repostedEventId else { return note }
+        if let original = findNote(id: refId) { return original }
+        let carriesOriginal = !note.tags.contains { $0.count >= 2 && $0[0] == "e" && $0[1] == refId }
+        guard carriesOriginal else { return note }
+        return FeedNote(id: refId, pubkey: note.pubkey, content: note.content,
+                        createdAt: note.originalCreatedAt ?? note.createdAt, tags: note.tags, kind: 1)
     }
 
     /// Finds a note matching an naddr coordinate ("naddr:<kind>:<pubkey>:<d-tag>").
@@ -3296,7 +3365,7 @@ class FeedService: ObservableObject {
 
         // Mentions (#p) of the owner (from anyone)
         let mentionsFilter: [String: Any] = [
-            "kinds": [1, 6, 30023, NIP10Thread.commentKind],
+            "kinds": [1, 6, 30023, NIP10Thread.commentKind, NIP88Poll.kind],
             "since": since,
             "#p": [ownerHex],
             "limit": 50
@@ -3510,13 +3579,14 @@ class FeedService: ObservableObject {
         if kind == 7 {
             if let targetId = tags.first(where: { $0.count >= 2 && $0[0] == "e" })?[1] {
                 let acc = self.bgAccumulator
-                let reactorPubkey = pubkey
-                let eventId = id
+                let reaction = EngagementTracker.ReactionEvent(
+                    targetId: targetId, pubkey: pubkey, eventId: id,
+                    content: ev["content"] as? String ?? "")
                 processingQueue.async { [weak self] in
                     // Deduplicate reactions from multiple relays
-                    guard !acc.seenEngagementIds.contains(eventId) else { return }
-                    acc.seenEngagementIds.insert(eventId)
-                    acc.reactionEvents.append((targetId: targetId, pubkey: reactorPubkey))
+                    guard !acc.seenEngagementIds.contains(reaction.eventId) else { return }
+                    acc.seenEngagementIds.insert(reaction.eventId)
+                    acc.reactionEvents.append(reaction)
                     self?.scheduleBackgroundFlush()
                 }
             }
@@ -3569,7 +3639,7 @@ class FeedService: ObservableObject {
         // For kind 1/30023: serialize the full event dict (includes sig).
         // For kind 6 with embedded content: the content IS the inner event's JSON.
         var rawEntries: [(id: String, json: String)] = []
-        if kind == 1 || kind == 30023 || kind == NIP10Thread.commentKind {
+        if kind == 1 || kind == 30023 || kind == NIP10Thread.commentKind || kind == NIP88Poll.kind {
             if let data = try? JSONSerialization.data(withJSONObject: ev, options: []),
                let json = String(data: data, encoding: .utf8) {
                 rawEntries.append((id: id, json: json))
@@ -3707,11 +3777,20 @@ class FeedService: ObservableObject {
             let ownerHex = NostrService.shared.activeHexPubkey
 
             // Self-likes: reactions authored by the owner
-            let selfLikes = EngagementTracker.detectSelfLikes(reactions: snap.reactionEvents, ownerHex: ownerHex)
-            if !selfLikes.isEmpty {
+            let selfReactions = EngagementTracker.detectSelfReactions(
+                reactions: snap.reactionEvents, ownerHex: ownerHex, retracted: retractedReactionIds)
+            if !selfReactions.isEmpty {
                 let before = likedEventIds.count
-                likedEventIds.formUnion(selfLikes)
-                if likedEventIds.count > before {
+                likedEventIds.formUnion(selfReactions.keys)
+                var changed = likedEventIds.count > before
+                // Only fills in notes with no known reaction. One made here
+                // (signed, or still signing) is the one to show and to delete
+                // on removal; an older echo of a replaced one must not win.
+                for (noteId, rx) in selfReactions where myReactions[noteId] == nil {
+                    myReactions[noteId] = rx
+                    changed = true
+                }
+                if changed {
                     saveInteractionState()
                 }
             }
@@ -3720,7 +3799,8 @@ class FeedService: ObservableObject {
             noteStats = EngagementTracker.mergeEngagementCounts(
                 reactions: snap.reactionEvents,
                 repostTargets: snap.repostTargets,
-                currentStats: noteStats
+                currentStats: noteStats,
+                retracted: retractedReactionIds
             )
         }
 
@@ -4216,7 +4296,7 @@ class FeedService: ObservableObject {
         // card on "Loading the start of this thread…" forever.
 
         // Cache raw event JSON for NIP-18 repost embedding
-        if kind == 1 || kind == 30023 || kind == NIP10Thread.commentKind {
+        if kind == 1 || kind == 30023 || kind == NIP10Thread.commentKind || kind == NIP88Poll.kind {
             if let evData = try? JSONSerialization.data(withJSONObject: ev, options: []),
                let evJSON = String(data: evData, encoding: .utf8) {
                 cacheRawEvent(id: id, json: evJSON)
@@ -4367,7 +4447,7 @@ class FeedService: ObservableObject {
     /// (1, 6, 7, 30023, 9735) and deduplicates via the shared injectedEventIds set.
     nonisolated func injectExternalEvent(_ eventDict: [String: Any], eventId: String) {
         guard let kind = eventDict["kind"] as? Int,
-              [1, 6, 7, 30023, 9735, NIP10Thread.commentKind].contains(kind) else { return }
+              [1, 6, 7, 30023, 9735, NIP10Thread.commentKind, NIP88Poll.kind].contains(kind) else { return }
 
         DispatchQueue.main.async { [weak self] in
             self?.injectIntoLocalRelay(eventDict, eventId: eventId)
@@ -4386,7 +4466,7 @@ class FeedService: ObservableObject {
 
         // Only inject feed-relevant event kinds (notes, reactions, reposts, zaps)
         guard let kind = ev["kind"] as? Int,
-              [1, 6, 7, 30023, 9735, NIP10Thread.commentKind].contains(kind) else { return }
+              [1, 6, 7, 30023, 9735, NIP10Thread.commentKind, NIP88Poll.kind].contains(kind) else { return }
 
         DispatchQueue.main.async { [weak self] in
             self?.injectIntoLocalRelay(ev, eventId: eventId)

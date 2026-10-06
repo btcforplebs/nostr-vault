@@ -65,7 +65,13 @@ struct ArticleCardView: View {
                         .font(.appSystem(size: 12))
                         .foregroundColor(.secondary)
 
-                    if let minutes = LongFormMetadata.readingTimeMinutes(for: note.content) {
+                    if let gated = note.gatedArticle {
+                        Text("·")
+                            .foregroundColor(.secondary)
+                        Label("\(gated.priceSats) sats", systemImage: "lock.fill")
+                            .font(.appSystem(size: 12, weight: .semibold))
+                            .foregroundColor(.havenPurple)
+                    } else if let minutes = LongFormMetadata.readingTimeMinutes(for: note.content) {
                         Text("·")
                             .foregroundColor(.secondary)
                         Text("\(minutes) min read")
@@ -91,7 +97,8 @@ struct ArticleCardView: View {
     /// the body with markdown syntax stripped.
     private var previewText: String? {
         if let summary = metadata.summary { return summary }
-        let plain = MarkdownParser.plainText(note.content, limit: 200)
+        let body = note.gatedArticle == nil ? note.content : GatedArticleTeaser.strip(note.content)
+        let plain = MarkdownParser.plainText(body, limit: 200)
         return plain.isEmpty ? nil : plain
     }
 
@@ -154,7 +161,10 @@ struct ArticleInlineBody: View {
                     .font(.appSystem(size: 10, weight: .semibold))
                 Text(String(localized: "feed.note.longForm"))
                     .font(.appSystem(size: 11, weight: .semibold))
-                if let minutes = LongFormMetadata.readingTimeMinutes(for: note.content) {
+                if let gated = note.gatedArticle {
+                    Text("· 🔒 \(gated.priceSats) sats")
+                        .font(.appSystem(size: 11, weight: .semibold))
+                } else if let minutes = LongFormMetadata.readingTimeMinutes(for: note.content) {
                     Text("· \(minutes) min read")
                         .font(.appSystem(size: 11))
                 }
@@ -170,7 +180,11 @@ struct ArticleInlineBody: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Divider()
                 }
-                MarkdownBodyView(markdown: note.content, onImageTap: onImageTap)
+                if let gated = note.gatedArticle {
+                    GatedArticleBody(note: note, gated: gated, onImageTap: onImageTap)
+                } else {
+                    MarkdownBodyView(markdown: note.content, onImageTap: onImageTap)
+                }
             } else if let preview = previewText, !preview.isEmpty {
                 Text(preview)
                     .font(.appSystem(size: 15))
@@ -186,7 +200,8 @@ struct ArticleInlineBody: View {
     /// body with markdown syntax stripped — never the raw markdown.
     private var previewText: String? {
         if let summary = metadata.summary { return summary }
-        let plain = MarkdownParser.plainText(note.content, limit: 200)
+        let body = note.gatedArticle == nil ? note.content : GatedArticleTeaser.strip(note.content)
+        let plain = MarkdownParser.plainText(body, limit: 200)
         return plain.isEmpty ? nil : plain
     }
 }
@@ -243,7 +258,9 @@ struct ArticleReaderView: View {
                             .font(.appSystem(size: 13, weight: .semibold))
                         HStack(spacing: 4) {
                             Text(note.longFormDisplayDate, format: .dateTime.month(.abbreviated).day().year())
-                            if let minutes = LongFormMetadata.readingTimeMinutes(for: note.content) {
+                            if let gated = note.gatedArticle {
+                                Text("· 🔒 \(gated.priceSats) sats")
+                            } else if let minutes = LongFormMetadata.readingTimeMinutes(for: note.content) {
                                 Text("· \(minutes) min read")
                             }
                         }
@@ -269,6 +286,11 @@ struct ArticleReaderView: View {
                         .foregroundColor(.havenPurple)
                 }
 
+                if let gated = note.gatedArticle {
+                    GatedArticleBody(note: note, gated: gated) { url in
+                        showingMediaUrl = IdentifiableURL(url: url, allURLs: [url])
+                    }
+                } else {
                 MarkdownBodyView(
                     markdown: note.content,
                     onImageTap: { url in
@@ -278,6 +300,7 @@ struct ArticleReaderView: View {
                     highlights: highlightsByBlock,
                     onShowHighlights: { shownHighlights = HighlightGroup(highlights: $0) }
                 )
+                }
 
                 if !highlights.isEmpty {
                     Divider()
@@ -967,6 +990,213 @@ private extension View {
             }
         } else {
             self
+        }
+    }
+}
+
+// MARK: - Gated (zap-to-unlock) body
+
+/// The body of a gated article: its teaser and a lock panel until the reader
+/// has paid, then the decrypted article. See `GatedArticle`.
+struct GatedArticleBody: View {
+    let note: FeedNote
+    let gated: GatedArticle
+    var onImageTap: ((URL) -> Void)? = nil
+    @EnvironmentObject var nostrService: NostrService
+    @Environment(\.openURL) private var openURL
+
+    private enum Phase: Equatable {
+        case checking, locked, paying, waiting, unlocked(String), failed(String)
+    }
+    @State private var phase: Phase = .checking
+    @State private var confirming = false
+    /// Shares of the price not yet paid. Fewer than all means money may have
+    /// moved already: the button then pays only what is left, or just
+    /// re-checks for the key, and never pays the same share twice.
+    @State private var unpaid: [GatedArticle.Share] = []
+
+    var body: some View {
+        if case .unlocked(let markdown) = phase {
+            MarkdownBodyView(markdown: markdown, onImageTap: onImageTap)
+        } else {
+            VStack(alignment: .leading, spacing: 16) {
+                let teaser = GatedArticleTeaser.strip(note.content)
+                if !teaser.isEmpty, teaser != note.longFormMetadata.summary {
+                    MarkdownBodyView(markdown: teaser, onImageTap: onImageTap)
+                }
+                lockPanel
+            }
+            // Keyed on the reader too: the stored key and payments belong to
+            // one account.
+            .task(id: note.id + nostrService.activeHexPubkey) { await checkAccess(auto: true) }
+        }
+    }
+
+    private var authorName: String {
+        nostrService.profiles[note.pubkey]?.bestName ?? "the author"
+    }
+
+    private var paid: Bool { unpaid.count < gated.shares.count }
+    private var dueSats: Int { unpaid.reduce(0) { $0 + $1.sats } }
+
+    private var lockPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.fill")
+                Text("Locked article")
+                    .font(.appSystem(size: 16, weight: .bold))
+                Spacer(minLength: 0)
+                Text("\(gated.priceSats) sats")
+                    .font(.appSystem(size: 13, weight: .semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.havenPurplePale)
+                    .foregroundColor(.havenPurple)
+                    .clipShape(Capsule())
+            }
+
+            Text(statusText)
+                .font(.appSystem(size: 14))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                if paid && unpaid.isEmpty { Task { await waitForKey() } } else { confirming = true }
+            } label: {
+                HStack(spacing: 8) {
+                    if busy {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: paid && unpaid.isEmpty ? "arrow.clockwise" : "bolt.fill")
+                    }
+                    Text(busy ? busyLabel : buttonLabel)
+                        .font(.appSystem(size: 15, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.havenPurple.opacity(busy ? 0.6 : 1))
+                .foregroundColor(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+
+            HStack(spacing: 16) {
+                if !paid, phase == .locked {
+                    Button {
+                        Task { await checkAccess(auto: false) }
+                    } label: {
+                        Label("Already paid?", systemImage: "checkmark.seal")
+                            .font(.appSystem(size: 13, weight: .medium))
+                            .foregroundColor(.havenPurple)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if let web = GatedArticleTeaser.unlockURL(note.content) {
+                    Button {
+                        openURL(web)
+                    } label: {
+                        Label("Open on \(web.host ?? "the web")", systemImage: "safari")
+                            .font(.appSystem(size: 13, weight: .medium))
+                            .foregroundColor(.havenPurple)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.controlBackgroundColor)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.havenPurple.opacity(0.35), lineWidth: 1)
+        )
+        .confirmationDialog(confirmTitle, isPresented: $confirming, titleVisibility: .visible) {
+            Button("Zap \(dueSats) sats") { Task { await pay() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your zap unlocks the full article.")
+        }
+    }
+
+    private var confirmTitle: String {
+        gated.shares.count == 1 ? "Zap \(dueSats) sats to \(authorName)?" : "Zap \(dueSats) sats to unlock?"
+    }
+
+    private var buttonLabel: String {
+        if !paid { return "Zap \(gated.priceSats) sats to unlock" }
+        return unpaid.isEmpty ? "Check again" : "Zap the remaining \(dueSats) sats"
+    }
+
+    private var busy: Bool { phase == .checking || phase == .paying || phase == .waiting }
+
+    private var busyLabel: String {
+        switch phase {
+        case .paying: return "Zapping…"
+        case .waiting: return "Unlocking…"
+        default: return "Checking…"
+        }
+    }
+
+    private var statusText: String {
+        switch phase {
+        case .failed(let message): return message
+        case .waiting: return "Paid. Waiting for the author's server to see your zap. This can take a minute or two."
+        case _ where paid && unpaid.isEmpty:
+            return "You've zapped for this article. If it hasn't opened, the receipt is still on its way."
+        case _ where paid:
+            return "Part of the price went through. Zap the rest to unlock."
+        default: return "Zap \(authorName) \(gated.priceSats) sats to read the full article here."
+        }
+    }
+
+    /// - Parameter auto: the check that runs on open. It asks the signer only
+    ///   when that's silent (a local key) or money has already moved — a
+    ///   remote signer would otherwise prompt on every view.
+    private func checkAccess(auto: Bool) async {
+        // A payment in flight owns the phase; a re-run of this task (the row
+        // scrolled away and back) must not hand the pay button back.
+        guard phase != .paying, phase != .waiting else { return }
+        unpaid = GatedArticleService.shared.unpaidShares(note: note, gated: gated)
+        if auto, !paid, !GatedArticleService.shared.canCheckSilently {
+            phase = .locked
+            return
+        }
+        phase = .checking
+        do {
+            phase = .unlocked(try await GatedArticleService.shared.open(note: note, gated: gated))
+        } catch {
+            guard phase == .checking else { return }
+            // Not paid yet is the normal case; anything else still leaves the
+            // way to pay open rather than a dead end.
+            phase = .locked
+        }
+    }
+
+    private func pay() async {
+        guard !busy else { return }
+        phase = .paying
+        do {
+            try await GatedArticleService.shared.pay(note: note, gated: gated)
+        } catch {
+            unpaid = GatedArticleService.shared.unpaidShares(note: note, gated: gated)
+            phase = .failed(paid
+                ? "The zap may not have gone through (\(error.localizedDescription)). Check your wallet before paying again — tap Check again if it did."
+                : error.localizedDescription)
+            return
+        }
+        unpaid = GatedArticleService.shared.unpaidShares(note: note, gated: gated)
+        await waitForKey()
+    }
+
+    private func waitForKey() async {
+        phase = .waiting
+        do {
+            phase = .unlocked(try await GatedArticleService.shared.waitForKey(note: note, gated: gated))
+        } catch GatedArticleService.UnlockError.notPaid {
+            phase = .failed("Your zap went through, but the key server hasn't seen the receipt yet. Tap Check again in a minute. It won't charge you again.")
+        } catch {
+            phase = .failed(error.localizedDescription)
         }
     }
 }

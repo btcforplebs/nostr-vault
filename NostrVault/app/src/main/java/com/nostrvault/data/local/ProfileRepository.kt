@@ -86,6 +86,7 @@ object ProfileRepository {
         val name = metadata["name"]?.jsonPrimitive?.contentOrNull
         val displayName = metadata["display_name"]?.jsonPrimitive?.contentOrNull
         val picture = metadata["picture"]?.jsonPrimitive?.contentOrNull
+        val banner = metadata["banner"]?.jsonPrimitive?.contentOrNull
         val nip05 = metadata["nip05"]?.jsonPrimitive?.contentOrNull
         val about = metadata["about"]?.jsonPrimitive?.contentOrNull
         val lud16 = metadata["lud16"]?.jsonPrimitive?.contentOrNull
@@ -99,6 +100,7 @@ object ProfileRepository {
             name = name.also { if (it != existing.name) changed = true },
             displayName = displayName.also { if (it != existing.displayName) changed = true },
             pictureURL = picture.also { if (it != existing.pictureURL) changed = true },
+            bannerURL = banner.also { if (it != existing.bannerURL) changed = true },
             nip05 = nip05.also { if (it != existing.nip05) changed = true },
             about = about.also { if (it != existing.about) changed = true },
             lud16 = lud16.also { if (it != existing.lud16) changed = true },

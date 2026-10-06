@@ -159,7 +159,9 @@ class PendingPostManager: ObservableObject {
         // For kind 6 notes, repostedEventId points to the original kind 1 event
         // (the only kind this app has ever wrapped in kind 6).
         let originalId = sourceNote.repostedEventId ?? sourceNote.id
-        let originalPubkey = sourceNote.pubkey // already swapped to inner author for kind 6
+        // A bare repost still carries the reposter's pubkey; only an embedded
+        // one was swapped to the inner author.
+        let originalPubkey = FeedService.shared.originalNote(for: sourceNote).pubkey
         let originalKind = sourceNote.repostedEventId != nil ? 1 : sourceNote.kind
 
         beginCountdown {

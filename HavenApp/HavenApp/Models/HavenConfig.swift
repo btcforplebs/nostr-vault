@@ -27,7 +27,7 @@ struct HavenConfig: Codable, Equatable {
     var hasCompletedInitialImport: Bool = false // Browse mode: tracks if first background import has run
     var disableMediaCache: Bool = false
     var autoplayVideos: Bool = true
-    var cacheTTLDays: Int = 7
+    var cacheTTLDays: Int = 3
     var prefetchProfilePictures: Bool = false
     var ownerNcryptsec: String = "" // NIP-49 encrypted private key
     var ownerNsec: String = "" // Deprecated: kept for migration purposes only

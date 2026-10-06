@@ -878,7 +878,7 @@ fun SearchScreen(
                             onRepost = viewModel::repostNote,
                             onReply = onReply,
                             onQuote = onQuote,
-                            onZap = { viewModel.zapNote(note.effectiveEventId, note.pubkey) },
+                            onZap = { viewModel.zapNote(note.effectiveEventId, note.effectiveAuthor) },
                         )
                         HorizontalDivider(color = SeparatorColor, thickness = 0.5.dp)
                     }

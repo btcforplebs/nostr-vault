@@ -4,6 +4,13 @@ import Combine
 
 struct NoteDetailView: View {
     let note: FeedNote
+
+    /// A repost opens the note it reposted: the thread, likes, zaps and
+    /// replies all belong to the original. Done here so every way into a
+    /// thread gets it, not each caller.
+    init(note: FeedNote) {
+        self.note = FeedService.shared.threadTarget(for: note)
+    }
     @StateObject private var feedService = FeedService.shared
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
@@ -22,7 +29,6 @@ struct NoteDetailView: View {
     @Namespace private var mediaZoom
     @State private var showingReportDialog = false
     @State private var showingDeleteConfirm = false
-    @State private var showingEmojiPicker = false
     @State private var showingBroadcastSheet = false
     @State private var noLightningAddressAlert = false
 
@@ -359,7 +365,8 @@ struct NoteDetailView: View {
                         icon: expandedEngagement ? "chart.bar.fill" : "chart.bar",
                         tooltip: "Thread Stats",
                         isSelected: expandedEngagement,
-                        color: .havenPurple
+                        color: .havenPurple,
+                        label: "Stats"
                     ) {
                         withAnimation(Motion.panel) {
                             expandedEngagement.toggle()
@@ -763,7 +770,7 @@ struct NoteDetailView: View {
             depth: depth,
             style: .plain,
             replyCount: replyCount,
-            contentOverride: original.map { $0.kind == 30023 ? $0.longFormDisplayTitle : $0.content },
+            contentOverride: original.map { $0.condensedTitle ?? $0.content },
             postedAt: original.map { $0.originalCreatedAt ?? $0.createdAt },
             mediaURLs: shown.mediaURLs,
             engagement: CondensedEngagement(
@@ -1226,37 +1233,62 @@ struct NoteDetailView: View {
         ] : configService.config.activeFeedRelays
         relayURLs.append(contentsOf: externalStrs.compactMap { URL(string: $0) })
 
-        let subId = "thread-eng-\(UUID().uuidString.prefix(6))"
+        // One request per small batch of notes, sent one after another on
+        // each relay, so every batch gets its own `limit`.
+        let requests = ThreadEngagementQuery.requests(
+            for: noteIds,
+            subscriptionPrefix: "thread-eng-\(UUID().uuidString.prefix(6))"
+        )
+        let threadIds = Set(noteIds)
+        let timeout = min(6.0 + 2.0 * Double(requests.count - 1), 20.0)
 
         for url in relayURLs {
             let client = WebSocketClient()
             client.isTemporary = true
-            let threadIds = Set(noteIds)
+            var nextRequest = 0
+
+            func sendNextRequest() {
+                guard nextRequest < requests.count else {
+                    client.disconnect()
+                    isLoadingExpandedEngagement = false
+                    return
+                }
+                let request = requests[nextRequest]
+                nextRequest += 1
+                let req = ["REQ", request.subscriptionId, request.filter] as [Any]
+                if let data = try? JSONSerialization.data(withJSONObject: req),
+                   let str = String(data: data, encoding: .utf8) {
+                    client.send(text: str)
+                }
+            }
 
             client.messageSubject
                 .receive(on: DispatchQueue.main)
                 .sink { msg in
-                    self.handleExpandedEngagementMessage(msg, threadIds: threadIds, client: client)
+                    self.handleExpandedEngagementMessage(msg, threadIds: threadIds) { subId in
+                        guard nextRequest > 0, subId == requests[nextRequest - 1].subscriptionId else { return }
+                        let req = ["CLOSE", subId]
+                        if let data = try? JSONSerialization.data(withJSONObject: req),
+                           let str = String(data: data, encoding: .utf8) {
+                            client.send(text: str)
+                        }
+                        sendNextRequest()
+                    }
                 }
                 .store(in: &cancellables)
 
             client.$connectionState
                 .receive(on: DispatchQueue.main)
                 .sink { state in
-                    if state == .connected {
-                        let filter: [String: Any] = ["kinds": [6, 7, 9735], "#e": noteIds, "limit": 500]
-                        let req = ["REQ", subId, filter] as [Any]
-                        if let data = try? JSONSerialization.data(withJSONObject: req),
-                           let str = String(data: data, encoding: .utf8) {
-                            client.send(text: str)
-                        }
+                    if state == .connected, nextRequest == 0 {
+                        sendNextRequest()
                     }
                 }
                 .store(in: &cancellables)
 
             client.connect(url: url)
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
                 client.disconnect()
                 if self.isLoadingExpandedEngagement {
                     self.isLoadingExpandedEngagement = false
@@ -1265,7 +1297,7 @@ struct NoteDetailView: View {
         }
     }
 
-    private func handleExpandedEngagementMessage(_ msg: String, threadIds: Set<String>, client: WebSocketClient) {
+    private func handleExpandedEngagementMessage(_ msg: String, threadIds: Set<String>, onEOSE: (String) -> Void) {
         guard let data = msg.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
               let type = json[0] as? String else { return }
@@ -1316,9 +1348,8 @@ struct NoteDetailView: View {
                nostrService.profiles[senderPubkey] == nil {
                 nostrService.fetchMissingProfiles(for: [senderPubkey])
             }
-        } else if type == "EOSE" {
-            client.disconnect()
-            isLoadingExpandedEngagement = false
+        } else if type == "EOSE", json.count >= 2, let subId = json[1] as? String {
+            onEOSE(subId)
         }
     }
 
@@ -1326,15 +1357,8 @@ struct NoteDetailView: View {
 
     private func groupedReactionsForNote(_ noteId: String) -> [(emoji: String, count: Int)] {
         if configService.config.zapsOnlyMode { return [] }
-        let reactions = perNoteReactions[noteId] ?? []
-        var groups: [String: Int] = [:]
-        for rx in reactions {
-            let emoji = (rx.content == "+" || rx.content.isEmpty) ? "❤️" : rx.content
-            guard emoji.count <= 4 else { continue }
-            groups[emoji, default: 0] += 1
-        }
-        return groups.map { (emoji: $0.key, count: $0.value) }
-            .sorted { $0.count > $1.count }
+        let reactions = (perNoteReactions[noteId] ?? []).map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
+        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count) }
     }
 
     private func zapTotalForNote(_ noteId: String) -> (count: Int, sats: Int64) {
@@ -1357,62 +1381,6 @@ struct NoteDetailView: View {
         Set((perNoteReposts[noteId] ?? []).map(\.pubkey)).count
     }
 
-    private func likeNote() {
-        let noteId = note.id
-        if feedService.likedEventIds.contains(noteId) {
-            UnlikeNotificationManager.shared.startCountdown {
-                self.feedService.likedEventIds.remove(noteId)
-                var stats = self.feedService.noteStats[noteId] ?? NoteStats()
-                stats.reactions = max(0, stats.reactions - 1)
-                self.feedService.noteStats[noteId] = stats
-                self.feedService.saveInteractionState()
-            }
-            return
-        }
-        feedService.likedEventIds.insert(noteId)
-        var currentStats = feedService.noteStats[noteId] ?? NoteStats()
-        currentStats.reactions += 1
-        feedService.noteStats[noteId] = currentStats
-        feedService.saveInteractionState()
-        let relayHint = ConfigService.shared.config.nostrURL
-        Task {
-            guard let signed = await nostrService.signEventAsync(kind: 7, content: "+", tags: [["e", noteId, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]) else {
-                await MainActor.run { LikeFeedback.failed() }
-                return
-            }
-            nostrService.postEvent(signed)
-            await MainActor.run {
-                LikeFeedback.liked()
-                feedService.keepLikedNoteLocally(id: noteId)
-            }
-        }
-    }
-
-    private func reactToNote(with emoji: String) {
-        if !feedService.likedEventIds.contains(note.id) {
-            feedService.likedEventIds.insert(note.id)
-
-            // Proactively update stats locally
-            var currentStats = feedService.noteStats[note.id] ?? NoteStats()
-            currentStats.reactions += 1
-            feedService.noteStats[note.id] = currentStats
-
-            feedService.saveInteractionState()
-        }
-        let relayHint = ConfigService.shared.config.nostrURL
-        Task {
-            guard let signed = await nostrService.signEventAsync(kind: 7, content: emoji, tags: [["e", note.id, relayHint], ["p", note.pubkey], ["k", String(note.kind)]]) else {
-                await MainActor.run { LikeFeedback.failed() }
-                return
-            }
-            nostrService.postEvent(signed)
-            await MainActor.run {
-                LikeFeedback.liked(emoji)
-                feedService.keepLikedNoteLocally(id: note.id)
-            }
-        }
-    }
-    
     private func blockUser(hexPubkey: String) {
         guard let data = Bech32.hexToData(hexPubkey),
               let npub = Bech32.encode(hrp: "npub", data: data) else { return }
@@ -1575,14 +1543,8 @@ struct NoteDetailView: View {
 
     private var groupedReactions: [(emoji: String, count: Int, reactorPubkeys: [String])] {
         if configService.config.zapsOnlyMode { return [] }
-        var groups: [String: [String]] = [:]
-        for rx in detailedReactions {
-            let emoji = (rx.content == "+" || rx.content.isEmpty) ? "❤️" : rx.content
-            guard emoji.count <= 4 else { continue }
-            groups[emoji, default: []].append(rx.pubkey)
-        }
-        return groups.map { (emoji: $0.key, count: $0.value.count, reactorPubkeys: $0.value) }
-            .sorted { $0.count > $1.count }
+        let reactions = detailedReactions.map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
+        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count, reactorPubkeys: $0.reactorPubkeys) }
     }
 
     struct ZapDetail: Hashable {
@@ -2027,14 +1989,8 @@ struct ThreadedReplyNode: View {
     // Per-note engagement helpers for this reply node
     private func groupedReactionsForReply(_ noteId: String) -> [(emoji: String, count: Int)] {
         if configService.config.zapsOnlyMode { return [] }
-        let reactions = perNoteReactions[noteId] ?? []
-        var groups: [String: Int] = [:]
-        for rx in reactions {
-            let emoji = (rx.content == "+" || rx.content.isEmpty) ? "❤️" : rx.content
-            guard emoji.count <= 4 else { continue }
-            groups[emoji, default: 0] += 1
-        }
-        return groups.map { (emoji: $0.key, count: $0.value) }.sorted { $0.count > $1.count }
+        let reactions = (perNoteReactions[noteId] ?? []).map { (content: $0.content, pubkey: $0.pubkey, createdAt: $0.created_at) }
+        return ReactionGrouping.groups(reactions).map { (emoji: $0.emoji, count: $0.count) }
     }
 
     private func zapTotalForReply(_ noteId: String) -> (count: Int, sats: Int64) {
@@ -2361,38 +2317,5 @@ struct OtherResponseCard: View {
         } else {
             card
         }
-    }
-}
-
-// MARK: - Zoom into a thread (iOS 18)
-
-extension View {
-    /// Marks a feed row as the place its thread view zooms out of.
-    @ViewBuilder
-    func threadZoomSource(id: String, in namespace: Namespace.ID) -> some View {
-        #if os(iOS)
-        if #available(iOS 18.0, *) {
-            self.matchedTransitionSource(id: id, in: namespace)
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
-    }
-
-    /// The thread view zooms open from the row it was tapped in; a normal
-    /// push on iOS 17 and the Mac.
-    @ViewBuilder
-    func threadZoomDestination(id: String, in namespace: Namespace.ID) -> some View {
-        #if os(iOS)
-        if #available(iOS 18.0, *) {
-            self.navigationTransition(.zoom(sourceID: id, in: namespace))
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
     }
 }
