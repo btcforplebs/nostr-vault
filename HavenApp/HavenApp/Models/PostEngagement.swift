@@ -64,26 +64,27 @@ enum PostEngagementQuery {
     /// Relay filters for the engagement on `ids`. The ids are split into small
     /// groups because a relay applies `limit` per filter: one filter for fifty
     /// posts would stop at the limit and undercount the popular ones.
-    static func filters(for ids: [String], groupSize: Int = 10, limit: Int = 500) -> [[String: Any]] {
+    /// - Parameter since: only engagement newer than this (unix seconds), for
+    ///   posts already counted once; nil asks for everything.
+    static func filters(for ids: [String], since: Int? = nil, groupSize: Int = 10, limit: Int = 500) -> [[String: Any]] {
         let kinds = [reactionKind] + repostKinds + [zapReceiptKind] + replyKinds
         return stride(from: 0, to: ids.count, by: max(groupSize, 1)).map { start in
             let group = Array(ids[start..<min(start + groupSize, ids.count)])
-            return ["kinds": kinds, "#e": group, "limit": limit]
+            var filter: [String: Any] = ["kinds": kinds, "#e": group, "limit": limit]
+            if let since { filter["since"] = since }
+            return filter
         }
     }
 
-    /// Counts what points at each of `targets`. Relays answer tag filters
-    /// loosely and the same event comes from several of them, so each event
-    /// is checked against its own tags and counted once.
-    static func tally(_ events: [[String: Any]], targets: Set<String>) -> [String: PostEngagement] {
-        var likers: [String: Set<String>] = [:]
-        var reposters: [String: Set<String>] = [:]
-        var replies: [String: Set<String>] = [:]
-        var zapSats: [String: Int] = [:]
-        var seen = Set<String>()
-
+    /// What points at each of `targets`, as the people and events behind the
+    /// numbers, so a saved ledger can add a later fetch without counting
+    /// anything twice. Relays answer tag filters loosely and the same event
+    /// comes from several of them, so each event is checked against its own
+    /// tags.
+    static func contributions(_ events: [[String: Any]], targets: Set<String>) -> [String: EngagementLedger] {
+        var out: [String: EngagementLedger] = [:]
         for event in events {
-            guard let id = event["id"] as? String, seen.insert(id).inserted,
+            guard let id = event["id"] as? String,
                   let kind = event["kind"] as? Int,
                   let pubkey = event["pubkey"] as? String,
                   let tags = event["tags"] as? [[String]] else { continue }
@@ -95,37 +96,75 @@ enum PostEngagementQuery {
                       targets.contains(target) else { continue }
                 // A "-" is a dislike, not attention worth counting as a like.
                 if (event["content"] as? String) == "-" { continue }
-                likers[target, default: []].insert(pubkey)
+                out[target, default: EngagementLedger()].likers.insert(EngagementLedger.key(pubkey))
 
             case _ where repostKinds.contains(kind):
                 guard let target = tags.first(where: { $0.count >= 2 && $0[0] == "e" && targets.contains($0[1]) })?[1]
                 else { continue }
-                reposters[target, default: []].insert(pubkey)
+                out[target, default: EngagementLedger()].reposters.insert(EngagementLedger.key(pubkey))
 
             case zapReceiptKind:
                 guard let target = tags.first(where: { $0.count >= 2 && $0[0] == "e" && targets.contains($0[1]) })?[1],
                       let bolt11 = tags.first(where: { $0.count >= 2 && $0[0] == "bolt11" })?[1],
                       let sats = Bolt11.sats(bolt11), sats > 0 else { continue }
-                zapSats[target, default: 0] += sats
+                out[target, default: EngagementLedger()].zaps[EngagementLedger.key(id)] = sats
 
             case _ where replyKinds.contains(kind):
                 // Only a reply to the post itself; a quote or a reply further
                 // down the thread also carries the id in an `e` tag.
                 guard let parent = NIP10Thread.parentEventId(kind: kind, tags: tags),
                       targets.contains(parent) else { continue }
-                replies[parent, default: []].insert(id)
+                out[parent, default: EngagementLedger()].replies.insert(EngagementLedger.key(id))
 
             default:
                 continue
             }
         }
-
-        var out: [String: PostEngagement] = [:]
-        for target in targets {
-            let e = PostEngagement(likes: likers[target]?.count ?? 0, reposts: reposters[target]?.count ?? 0,
-                                   replies: replies[target]?.count ?? 0, zapSats: zapSats[target] ?? 0)
-            if !e.isEmpty { out[target] = e }
-        }
         return out
+    }
+
+    /// Counts for each target, ready to show. Zero-engagement targets are left out.
+    static func tally(_ events: [[String: Any]], targets: Set<String>) -> [String: PostEngagement] {
+        contributions(events, targets: targets).compactMapValues { ledger in
+            // Whether these are a lower bound depends on where they came
+            // from, which only the caller knows.
+            var e = ledger.engagement
+            e.isLowerBound = false
+            return e.isEmpty ? nil : e
+        }
+    }
+}
+
+/// Everything counted so far for one post: who liked and reposted it, which
+/// replies and zap receipts were seen. Saved between launches so the next
+/// visit asks relays only for what's new and adds it, never counting the
+/// same like or zap twice.
+///
+/// Keys are the first 16 hex characters of a pubkey or event id: 64 bits is
+/// plenty to tell a few thousand apart, at a quarter of the storage.
+struct EngagementLedger: Codable, Equatable {
+    var likers: Set<String> = []
+    var reposters: Set<String> = []
+    var replies: Set<String> = []
+    /// Zap receipt key → sats.
+    var zaps: [String: Int] = [:]
+    /// When relays were last asked about this post. nil until then.
+    var checkedAt: Date?
+    /// Counted from relays only (anyone else's post): a lower bound.
+    var isLowerBound = true
+
+    static func key(_ hex: String) -> String { String(hex.prefix(16)) }
+
+    var engagement: PostEngagement {
+        PostEngagement(likes: likers.count, reposts: reposters.count, replies: replies.count,
+                       zapSats: zaps.values.reduce(0, +), isLowerBound: isLowerBound)
+    }
+
+    /// Adds what `other` saw. Sets union, so an event seen before adds nothing.
+    mutating func absorb(_ other: EngagementLedger) {
+        likers.formUnion(other.likers)
+        reposters.formUnion(other.reposters)
+        replies.formUnion(other.replies)
+        zaps.merge(other.zaps) { old, _ in old }
     }
 }

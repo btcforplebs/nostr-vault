@@ -110,4 +110,56 @@ final class PostEngagementTests: XCTestCase {
         XCTAssertFalse(relayOnly.merged(with: fromInbox).isLowerBound)
         XCTAssertTrue(relayOnly.merged(with: relayOnly).isLowerBound)
     }
+
+    // MARK: Ledger (kept between visits)
+
+    func testSecondVisitAddsOnlyWhatIsNew() {
+        let firstVisit = [
+            event("r1", kind: 7, pubkey: alice, tags: [["e", post]], content: "+"),
+            event("z1", kind: 9735, pubkey: alice, tags: [["e", post], ["bolt11", "lnbc10n1pvjluez"]]),
+        ]
+        // The relay hands back the same like and zap again, plus one new like.
+        let secondVisit = firstVisit + [event("r2", kind: 7, pubkey: bob, tags: [["e", post]], content: "+")]
+
+        var ledger = EngagementLedger()
+        ledger.absorb(PostEngagementQuery.contributions(firstVisit, targets: [post])[post]!)
+        ledger.absorb(PostEngagementQuery.contributions(secondVisit, targets: [post])[post]!)
+        XCTAssertEqual(ledger.engagement.likes, 2)
+        XCTAssertEqual(ledger.engagement.zapSats, 1)
+    }
+
+    func testSamePersonLikingAgainLaterStillOneLike() {
+        var ledger = EngagementLedger()
+        ledger.absorb(PostEngagementQuery.contributions([event("r1", kind: 7, pubkey: alice, tags: [["e", post]], content: "+")], targets: [post])[post]!)
+        ledger.absorb(PostEngagementQuery.contributions([event("r9", kind: 7, pubkey: alice, tags: [["e", post]], content: "🔥")], targets: [post])[post]!)
+        XCTAssertEqual(ledger.engagement.likes, 1)
+    }
+
+    func testLedgerSurvivesSaveAndLoad() throws {
+        var ledger = EngagementLedger()
+        ledger.absorb(PostEngagementQuery.contributions([
+            event("r1", kind: 7, pubkey: alice, tags: [["e", post]], content: "+"),
+            event("z1", kind: 9735, pubkey: bob, tags: [["e", post], ["bolt11", "lnbc2500u1pvjluez"]]),
+        ], targets: [post])[post]!)
+        ledger.checkedAt = Date(timeIntervalSince1970: 1_791_000_000)
+        ledger.isLowerBound = false
+        let data = try JSONEncoder().encode([post: ledger])
+        let back = try JSONDecoder().decode([String: EngagementLedger].self, from: data)
+        XCTAssertEqual(back[post], ledger)
+        XCTAssertEqual(back[post]?.engagement, PostEngagement(likes: 1, zapSats: 250_000))
+    }
+
+    func testLedgerKeysAreShortPrefixes() {
+        var ledger = EngagementLedger()
+        ledger.absorb(PostEngagementQuery.contributions([event(String(repeating: "f", count: 64), kind: 1, pubkey: alice,
+                                                                tags: [["e", post, "", "reply"]])], targets: [post])[post]!)
+        XCTAssertEqual(ledger.replies, [String(repeating: "f", count: 16)])
+        XCTAssertEqual(ledger.likers, [])
+    }
+
+    func testFollowUpFiltersCarrySince() {
+        let filters = PostEngagementQuery.filters(for: [post], since: 1_791_000_000)
+        XCTAssertEqual(filters.first?["since"] as? Int, 1_791_000_000)
+        XCTAssertNil(PostEngagementQuery.filters(for: [post]).first?["since"])
+    }
 }
