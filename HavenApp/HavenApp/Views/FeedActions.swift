@@ -10,7 +10,7 @@ struct ComposeContext: Identifiable {
 
 /// A composer for a feed that shows something other than notes.
 enum ModeComposer: String, Identifiable {
-    case divine, article, recipe, listing
+    case divine, article, recipe, listing, poll
 
     var id: String { rawValue }
 
@@ -20,6 +20,7 @@ enum ModeComposer: String, Identifiable {
         case .articles: self = .article
         case .recipes: self = .recipe
         case .marketplace: self = .listing
+        case .polls: self = .poll
         default: return nil
         }
     }
@@ -30,6 +31,7 @@ enum ModeComposer: String, Identifiable {
         case .article: return "Write"
         case .recipe: return "Recipe"
         case .listing: return "Sell"
+        case .poll: return "Poll"
         }
     }
 
@@ -39,6 +41,7 @@ enum ModeComposer: String, Identifiable {
         case .article: return "doc.richtext"
         case .recipe: return "fork.knife"
         case .listing: return "tag"
+        case .poll: return "chart.bar.xaxis"
         }
     }
 
@@ -48,6 +51,7 @@ enum ModeComposer: String, Identifiable {
         case .article: return "Write an article"
         case .recipe: return "Post a recipe"
         case .listing: return "Sell something"
+        case .poll: return "Post a poll"
         }
     }
 }

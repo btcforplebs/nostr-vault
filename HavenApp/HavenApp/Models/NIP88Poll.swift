@@ -156,3 +156,79 @@ struct PollTally: Equatable {
         voters.isEmpty ? 0 : Double(count(optionId)) / Double(voters.count)
     }
 }
+
+/// The Polls feed's Open / Closed / All filter.
+enum PollStatusFilter: String, CaseIterable {
+    case all = "All"
+    case open = "Open"
+    case closed = "Closed"
+
+    func admits(_ poll: NIP88Poll.Poll, now: Date = Date()) -> Bool {
+        switch self {
+        case .all: return true
+        case .open: return !poll.isClosed(now: now)
+        case .closed: return poll.isClosed(now: now)
+        }
+    }
+}
+
+/// A poll being written, turned into a kind 1068 event's content and tags.
+struct PollDraft: Equatable {
+    static let minOptions = 2
+    static let maxOptions = 10
+    /// Poll relays named in the event, at most this many.
+    static let maxRelays = 4
+
+    var question = ""
+    var options: [String] = ["", ""]
+    var type: NIP88Poll.PollType = .single
+    /// When voting closes; nil leaves the poll open.
+    var endsAt: Date?
+
+    var trimmedQuestion: String { question.trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// The filled-in options, in order.
+    var filledOptions: [String] {
+        options.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+
+    /// Two different case-insensitive labels at least, a question, and an
+    /// end time still ahead.
+    func isComplete(now: Date = Date()) -> Bool {
+        guard !trimmedQuestion.isEmpty else { return false }
+        let labels = filledOptions
+        guard labels.count >= Self.minOptions, labels.count <= Self.maxOptions else { return false }
+        guard Set(labels.map { $0.lowercased() }).count == labels.count else { return false }
+        if let endsAt, endsAt <= now { return false }
+        return true
+    }
+
+    /// NIP-88 tags: one `option` per label with a short id, the relays votes
+    /// go to, the poll type, and `endsAt` when set. `makeId` is for tests.
+    func tags(relays: [String], makeId: () -> String = PollDraft.randomOptionId) -> [[String]] {
+        var out: [[String]] = []
+        var used = Set<String>()
+        for label in filledOptions {
+            var id = makeId()
+            while !used.insert(id).inserted { id = makeId() }
+            out.append(["option", id, label])
+        }
+        var seen = Set<String>()
+        for relay in relays {
+            let url = relay.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard url.hasPrefix("wss://"), seen.insert(url.lowercased()).inserted else { continue }
+            out.append(["relay", url])
+            if seen.count >= Self.maxRelays { break }
+        }
+        out.append(["polltype", type == .multiple ? "multiplechoice" : "singlechoice"])
+        if let endsAt {
+            out.append(["endsAt", String(Int(endsAt.timeIntervalSince1970))])
+        }
+        return out
+    }
+
+    /// A 9-character alphanumeric option id, as other clients use.
+    static func randomOptionId() -> String {
+        let chars = Array("abcdefghijklmnopqrstuvwxyz0123456789")
+        return String((0..<9).map { _ in chars.randomElement()! })
+    }
+}
