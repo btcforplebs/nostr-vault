@@ -132,9 +132,6 @@ struct RelayActivityShareButtons: View {
 
     @State private var didCopy = false
     @State private var exportError: String?
-    #if os(iOS)
-    @State private var shareReport: SharedReport?
-    #endif
 
     var body: some View {
         HStack(spacing: iconOnly ? 12 : 8) {
@@ -144,11 +141,24 @@ struct RelayActivityShareButtons: View {
             .help("Copy a privacy-safe report to the clipboard")
             .accessibilityLabel(Text(didCopy ? "Copied" : "Copy report"))
 
+            #if os(macOS)
             Button(action: export) {
                 label("Export", systemImage: "square.and.arrow.up")
             }
             .help("Save a privacy-safe report as a text file")
             .accessibilityLabel(Text("Export report"))
+            #else
+            // ShareLink rather than a sheet: a sheet hung off a toolbar item
+            // doesn't present reliably on iOS. The file is written only when
+            // the user picks a destination.
+            ShareLink(
+                item: RelayReportFile(text: RelayActivityReport.text(items)),
+                preview: SharePreview("Relay report")
+            ) {
+                label("Export", systemImage: "square.and.arrow.up")
+            }
+            .accessibilityLabel(Text("Export report"))
+            #endif
         }
         .buttonStyle(.plain)
         .foregroundColor(.havenPurple)
@@ -160,11 +170,6 @@ struct RelayActivityShareButtons: View {
         } message: {
             Text(exportError ?? "")
         }
-        #if os(iOS)
-        .sheet(item: $shareReport) { report in
-            ShareSheet(activityItems: [report.url])
-        }
-        #endif
     }
 
     @ViewBuilder
@@ -188,40 +193,37 @@ struct RelayActivityShareButtons: View {
         }
     }
 
+    #if os(macOS)
     private func export() {
-        let text = RelayActivityReport.text(items)
-        let name = RelayActivityReport.fileName()
-        #if os(macOS)
         let panel = NSSavePanel()
         panel.title = "Export Relay Report"
-        panel.nameFieldStringValue = name
+        panel.nameFieldStringValue = RelayActivityReport.fileName()
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            try RelayActivityReport.text(items).write(to: url, atomically: true, encoding: .utf8)
         } catch {
             exportError = error.localizedDescription
         }
-        #else
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-        do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
-            shareReport = SharedReport(url: url)
-        } catch {
-            exportError = error.localizedDescription
-        }
-        #endif
     }
+    #endif
 }
 
-#if os(iOS)
-/// A written report waiting for the share sheet.
-private struct SharedReport: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
+/// The report as a .txt for the share sheet, written to a temp file only
+/// when the user picks where it goes.
+struct RelayReportFile: Transferable {
+    let text: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .plainText) { report in
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent(RelayActivityReport.fileName())
+            try report.text.write(to: url, atomically: true, encoding: .utf8)
+            return SentTransferredFile(url)
+        }
+    }
 }
-#endif
 
 /// The text Copy and Export hand out: app version and OS on top, then the
 /// scrubbed plain items. Nothing about the user's identity or network.
