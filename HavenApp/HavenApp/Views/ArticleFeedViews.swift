@@ -231,6 +231,7 @@ struct ArticleReaderView: View {
     @State private var highlightCommentContext: ComposeContext?
     /// Likes, zaps and comments from the network.
     @State private var tally = ArticleTally()
+    @AppStorage(PostButtons.storageKey) private var postButtons = ""
     @Environment(\.floatingTabBarHeight) private var tabBarHeight
 
     private var metadata: LongFormMetadata { note.longFormMetadata }
@@ -400,12 +401,14 @@ struct ArticleReaderView: View {
             actionButton("bubble.left", tint: .secondary, label: "Comment", count: tally.commentCount) {
                 composeContext = ComposeContext(replyTo: note, quoteTo: nil)
             }
-            actionButton(zapped ? "bolt.fill" : "bolt", tint: zapped ? .orange : .secondary, label: "Zap",
-                         count: zapSats, countText: zapSats > 0 ? Self.compact(zapSats) : nil) {
-                if lightningAddress != nil {
-                    zapSheetContext = ZapSheetContext(defaultAmount: ConfigService.shared.config.defaultZapAmount / 1000)
-                } else {
-                    noLightningAddressAlert = true
+            if PostButtons.showsZap(postButtons) {
+                actionButton(zapped ? "bolt.fill" : "bolt", tint: zapped ? .orange : .secondary, label: "Zap",
+                             count: zapSats, countText: zapSats > 0 ? Self.compact(zapSats) : nil) {
+                    if lightningAddress != nil {
+                        zapSheetContext = ZapSheetContext(defaultAmount: ConfigService.shared.config.defaultZapAmount / 1000)
+                    } else {
+                        noLightningAddressAlert = true
+                    }
                 }
             }
             actionButton("highlighter", tint: highlighting ? .havenPurple : .secondary, label: "Highlight") {
@@ -1014,6 +1017,7 @@ struct GatedArticleBody: View {
     /// moved already: the button then pays only what is left, or just
     /// re-checks for the key, and never pays the same share twice.
     @State private var unpaid: [GatedArticle.Share] = []
+    @AppStorage(PostButtons.storageKey) private var postButtons = ""
 
     var body: some View {
         if case .unlocked(let markdown) = phase {
@@ -1060,26 +1064,30 @@ struct GatedArticleBody: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                if paid && unpaid.isEmpty { Task { await waitForKey() } } else { confirming = true }
-            } label: {
-                HStack(spacing: 8) {
-                    if busy {
-                        ProgressView().controlSize(.small).tint(.white)
-                    } else {
-                        Image(systemName: paid && unpaid.isEmpty ? "arrow.clockwise" : "bolt.fill")
+            // Paying stays behind the same opt-in as zapping a post; re-checking
+            // for a key already paid for does not.
+            if PostButtons.showsZap(postButtons) || (paid && unpaid.isEmpty) {
+                Button {
+                    if paid && unpaid.isEmpty { Task { await waitForKey() } } else { confirming = true }
+                } label: {
+                    HStack(spacing: 8) {
+                        if busy {
+                            ProgressView().controlSize(.small).tint(.white)
+                        } else {
+                            Image(systemName: paid && unpaid.isEmpty ? "arrow.clockwise" : "bolt.fill")
+                        }
+                        Text(busy ? busyLabel : buttonLabel)
+                            .font(.appSystem(size: 15, weight: .semibold))
                     }
-                    Text(busy ? busyLabel : buttonLabel)
-                        .font(.appSystem(size: 15, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.havenPurple.opacity(busy ? 0.6 : 1))
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.havenPurple.opacity(busy ? 0.6 : 1))
-                .foregroundColor(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .buttonStyle(.plain)
+                .disabled(busy)
             }
-            .buttonStyle(.plain)
-            .disabled(busy)
 
             HStack(spacing: 16) {
                 if !paid, phase == .locked {
@@ -1146,6 +1154,8 @@ struct GatedArticleBody: View {
             return "You've zapped for this article. If it hasn't opened, the receipt is still on its way."
         case _ where paid:
             return "Part of the price went through. Zap the rest to unlock."
+        case _ where !PostButtons.showsZap(postButtons):
+            return "Locked by \(authorName) for \(gated.priceSats) sats. To zap from here, add ⚡️ in Settings → Post buttons."
         default: return "Zap \(authorName) \(gated.priceSats) sats to read the full article here."
         }
     }

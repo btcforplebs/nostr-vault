@@ -3223,6 +3223,10 @@ struct AppearanceSettingsView: View {
                 Text("Off, new posts wait until you pull down to refresh.")
             }
 
+            #if os(iOS)
+            PostButtonsSection()
+            #endif
+
             Section {
                 Toggle(isOn: $configService.config.zapsOnlyMode) {
                     Label {
@@ -4117,3 +4121,59 @@ struct CommitOnEndTextField: View {
         return changed
     }
 }
+
+#if os(iOS)
+/// Settings → Post buttons: the emoji the action bar under a post shows. Adding
+/// ⚡️ turns on the zap button on posts, which ships off on iOS. Labeled and in
+/// plain sight on purpose — App Review has to be able to find it.
+private struct PostButtonsSection: View {
+    @AppStorage(PostButtons.storageKey) private var postButtons = ""
+
+    var body: some View {
+        Section {
+            HStack {
+                Label {
+                    Text("Post buttons")
+                } icon: {
+                    Image(systemName: "hand.tap")
+                }
+                Spacer()
+                TextField("Add ⚡️", text: $postButtons)
+                    .multilineTextAlignment(.trailing)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .frame(maxWidth: 140)
+            }
+            preview
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(PostButtons.showsZap(postButtons)
+                    ? "Preview: reply, repost, quote, react, zap"
+                    : "Preview: reply, repost, quote, react")
+        } header: {
+            Text("Post buttons")
+        } footer: {
+            Text("Add ⚡️ to show a zap button on posts, live streams and locked articles. Zaps go straight from your own wallet to the author over Nostr Wallet Connect. Profile zaps are always available.")
+        }
+    }
+
+    private var preview: some View {
+        HStack(spacing: 8) {
+            ForEach(previewIcons, id: \.self) { icon in
+                Image(systemName: icon)
+                    .font(.appSystem(size: 14, weight: .medium))
+                    .foregroundColor(icon == "bolt" ? .orange : .secondary)
+                    .frame(width: 32, height: 32)
+                    .background(icon == "bolt" ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
+                    .clipShape(Capsule())
+            }
+            Spacer(minLength: 0)
+        }
+        .animation(Motion.pop, value: PostButtons.showsZap(postButtons))
+    }
+
+    private var previewIcons: [String] {
+        let base = ["message", "arrow.2.squarepath", "quote.closing", "heart"]
+        return PostButtons.showsZap(postButtons) ? base + ["bolt"] : base
+    }
+}
+#endif
