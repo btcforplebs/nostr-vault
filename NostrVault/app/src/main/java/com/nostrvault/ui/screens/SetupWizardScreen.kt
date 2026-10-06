@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -1962,6 +1963,13 @@ private fun ImportNotesStep(viewModel: SetupWizardViewModel) {
     val importCompleted by viewModel.importCompleted.collectAsState()
     val importStartDate by viewModel.importStartDate.collectAsState()
     val context = LocalContext.current
+
+    // Importing can run 20+ minutes; don't let the screen dim or lock while it's up.
+    val view = LocalView.current
+    DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
 
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Network", "Backup")

@@ -2087,6 +2087,20 @@ private struct RelayDiagramiOS: View {
     }
 }
 
+// MARK: - Keep screen awake
+
+private extension View {
+    /// Disables the iOS idle timer while this view is on screen. No-op on macOS.
+    func keepsScreenAwake() -> some View {
+        #if os(iOS)
+        onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+            .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        #else
+        self
+        #endif
+    }
+}
+
 // MARK: - Step 4: Import Notes
 
 private struct ImportNotesStep: View {
@@ -2148,6 +2162,8 @@ private struct ImportNotesStep: View {
             Spacer().frame(height: 8)
         }
         .onAppear { appeared = true }
+        // Importing can run 20+ minutes; don't let the screen dim or lock while it's up.
+        .keepsScreenAwake()
         .fileImporter(
             isPresented: $showingFileImporter,
             allowedContentTypes: [.zip, .json],
