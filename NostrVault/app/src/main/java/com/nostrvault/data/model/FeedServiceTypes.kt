@@ -189,6 +189,31 @@ data class FeedNote(
         get() = if (kind == 6) repostedEventId ?: id else id
 
     /**
+     * Who wrote the note engagement targets. Zaps, reports and blocks go
+     * here, never to the reposter. A repost that still holds its own
+     * `["e", repostedEventId]` tag was not unpacked and carries the
+     * reposter's pubkey, so the author comes from its `p` tag (the same test
+     * as [quoteTarget]). An embedded or resolved repost already holds the
+     * original's author.
+     */
+    val effectiveAuthor: String
+        get() {
+            val refId = repostedEventId
+            if (kind != 6 || refId == null) return pubkey
+            val stillWrapped = tags.any { it.size >= 2 && it[0] == "e" && it[1] == refId }
+            if (!stillWrapped) return pubkey
+            return tags.firstOrNull { it.size >= 2 && it[0] == "p" }?.get(1) ?: pubkey
+        }
+
+    /** The kind of the note engagement targets: a kind-6 repost always carries a kind 1. */
+    val effectiveKind: Int
+        get() = if (kind == 6 && repostedEventId != null) 1 else kind
+
+    /** Who published this event: the reposter for a repost, else the author. */
+    val publisher: String
+        get() = if (kind == 6) repostedBy ?: pubkey else pubkey
+
+    /**
      * The links that get a card, and so leave the text. Capped: each card
      * fetches its page, and a note can carry thousands of URLs to a host the
      * poster controls (Tron, #183). Links past the cap stay in the text.

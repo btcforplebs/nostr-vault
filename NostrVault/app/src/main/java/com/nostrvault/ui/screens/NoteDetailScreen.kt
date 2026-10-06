@@ -182,6 +182,10 @@ class NoteDetailViewModel @Inject constructor(
 
     private fun loadNoteThread() {
         val cached = feedService.findNote(noteId)
+        if (cached != null && cached.kind == 6) {
+            openRepostedOriginal(cached)
+            return
+        }
         if (cached != null) {
             startThreadLoad(cached)
             return
@@ -193,6 +197,28 @@ class NoteDetailViewModel @Inject constructor(
         nostrService.fetchNoteById(noteId, onRawEvent = feedService::cacheRawEvent) { fetched ->
             _isLoadingNote.value = false
             if (fetched != null) startThreadLoad(fetched)
+        }
+    }
+
+    /**
+     * A repost opens the note it reposted (iOS #326): the thread, likes, zaps,
+     * author and menu all belong to the original. A bare repost whose original
+     * isn't loaded fetches it by id, and keeps the repost if no relay has it.
+     */
+    private fun openRepostedOriginal(repost: FeedNote) {
+        val original = feedService.quoteTarget(repost.id)
+        if (original == null || original.id == repost.id) {
+            startThreadLoad(repost)
+            return
+        }
+        if (original.content.isNotEmpty()) {
+            startThreadLoad(original)
+            return
+        }
+        _isLoadingNote.value = true
+        nostrService.fetchNoteById(original.id, onRawEvent = feedService::cacheRawEvent) { fetched ->
+            _isLoadingNote.value = false
+            startThreadLoad(fetched ?: repost)
         }
     }
 
@@ -363,7 +389,7 @@ class NoteDetailViewModel @Inject constructor(
         if (_isZapping.value) return
         viewModelScope.launch {
             _isZapping.value = true
-            val result = zapSendService.zapNote(note.effectiveEventId, note.pubkey, amountSats)
+            val result = zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amountSats)
             _isZapping.value = false
             result.fold(
                 onSuccess = {
@@ -909,7 +935,7 @@ fun NoteDetailScreen(
                             profile = viewModel.profileFor(parent.pubkey),
                             profiles = profiles,
                             quotedNotes = quotedNotesMap,
-                            isLiked = viewModel.isLiked(parent.id),
+                            isLiked = viewModel.isLiked(parent.effectiveEventId),
                             isReposted = viewModel.isReposted(parent.effectiveEventId),
                             isFocused = parent.id == focusedNoteId,
                             parentIsNext = true,
@@ -954,9 +980,9 @@ fun NoteDetailScreen(
                                 viewModel.quotedNoteFor(qid)?.let { qid to it }
                             }.toMap()
                         },
-                        stats = viewModel.statsFor(focusedNote!!.id),
+                        stats = viewModel.statsFor(focusedNote!!.effectiveEventId),
                         engagement = engagementDetails,
-                        isLiked = viewModel.isLiked(focusedNote!!.id),
+                        isLiked = viewModel.isLiked(focusedNote!!.effectiveEventId),
                         isReposted = viewModel.isReposted(focusedNote!!.effectiveEventId),
                         isOwnNote = viewModel.isOwnNote(focusedNote!!.pubkey),
                         isFollowing = viewModel.isFollowing(focusedNote!!.pubkey),
@@ -1286,7 +1312,7 @@ private fun ThreadCondensedLine(
     val original = note.repostedEventId?.takeIf { note.isBareRepost }
         ?.let(viewModel::findNote)?.takeIf { it.kind != 6 }
     val shown = original?.let { note.withRepostedOriginal(it) } ?: note
-    val stats = viewModel.statsFor(note.id)
+    val stats = viewModel.statsFor(note.effectiveEventId)
     CondensedNoteLine(
         note = shown,
         profile = viewModel.profileFor(shown.pubkey),
@@ -1351,7 +1377,7 @@ private fun ThreadedReplyNode(
             profile = viewModel.profileFor(reply.pubkey),
             profiles = profiles,
             quotedNotes = quotedNotesMap,
-            isLiked = viewModel.isLiked(reply.id),
+            isLiked = viewModel.isLiked(reply.effectiveEventId),
             isReposted = viewModel.isReposted(reply.effectiveEventId),
             isFocused = isFocusedReply,
             onNoteClick = { onFocus(reply.id) },
@@ -1613,8 +1639,8 @@ private fun HeroNoteCard(
                                 NoteAction(NostrVaultIcons.LinkIcon, "Copy link") {
                                     val nevent = HavenBridge.encodeNevent(
                                         note.effectiveEventId,
-                                        note.pubkey,
-                                        note.kind,
+                                        note.effectiveAuthor,
+                                        note.effectiveKind,
                                     ) ?: HavenBridge.hexToNote1(note.effectiveEventId)
                                         ?: note.effectiveEventId
                                     heroClipboard.setText(AnnotatedString(threadLink(nevent)))
