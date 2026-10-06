@@ -122,6 +122,8 @@ struct ProfileView: View {
     /// Height of the bars above the scroll view's content, which the banner
     /// reaches up under.
     @State private var topInset: CGFloat = 0
+    /// The topmost note on screen, which the scroll view keeps in place.
+    @State private var scrolledNoteID: String?
     @StateObject private var shop = SellerListingsLoader()
     /// This person's articles, diVines and music, each a tab when they have any.
     @StateObject private var extras = ProfileExtrasLoader()
@@ -324,6 +326,10 @@ struct ProfileView: View {
                 .frame(maxWidth: .infinity)
             }
         }
+        // Holds the note you are reading in place while notes arrive from
+        // each relay and are sorted in above it, and while rows above it
+        // grow as their media loads. The main feed does the same.
+        .scrollPosition(id: $scrolledNoteID)
         .scrollDirectionTracking(feedService: feedService)
         .onGeometryChange(for: CGSize.self) { $0.size } action: {
             viewportHeight = $0.height
@@ -1155,7 +1161,12 @@ struct ProfileView: View {
                     // different heights, and the page jumped while they did.
                     var instant = Transaction()
                     instant.disablesAnimations = true
-                    withTransaction(instant) { selectedSection = section }
+                    withTransaction(instant) {
+                        // The other section's notes are not this one's: an
+                        // anchor left over would pull the page to it.
+                        scrolledNoteID = nil
+                        selectedSection = section
+                    }
                 }) {
                     VStack(spacing: 6) {
                         // Icons only, no names (Logen): icon and count, or the
@@ -1434,6 +1445,7 @@ struct ProfileView: View {
                     }
                 }
             }
+            .scrollTargetLayout()
             .padding(.top, 4)
         }
     }
