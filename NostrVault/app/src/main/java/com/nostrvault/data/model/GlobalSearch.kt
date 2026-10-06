@@ -312,6 +312,7 @@ fun parseProfileMetadata(pubkey: String, content: String): FeedProfile? = try {
         name = s("name"),
         displayName = s("display_name") ?: s("displayName"),
         pictureURL = s("picture"),
+        bannerURL = s("banner"),
         nip05 = s("nip05"),
         about = s("about"),
         lud16 = s("lud16"),

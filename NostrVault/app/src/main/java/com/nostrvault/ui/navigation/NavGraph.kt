@@ -48,6 +48,7 @@ import com.nostrvault.relay.LogStore
 import com.nostrvault.ui.screens.ArticleReaderScreen
 import com.nostrvault.ui.screens.*
 import com.nostrvault.ui.screens.dashboard.LogViewerScreen
+import com.nostrvault.ui.screens.dashboard.RelayActivityScreen
 import com.nostrvault.ui.screens.dm.DMInboxScreen
 import com.nostrvault.ui.screens.dm.DMThreadScreen
 import com.nostrvault.ui.screens.dm.NewMessageScreen
@@ -693,6 +694,15 @@ fun NostrVaultNavHost(
                 composable(Screen.BlossomDashboard.route) {
                     BlossomDashboardScreen(
                         onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Screen.RelayActivity.route) {
+                    val currentLogs by logStore.logs.collectAsState()
+                    RelayActivityScreen(
+                        logs = currentLogs,
+                        onBack = { navController.popBackStack() },
+                        onOpenFullLogs = { navController.navigate(Screen.LogViewer.route) },
                     )
                 }
 

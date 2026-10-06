@@ -39,7 +39,6 @@ class MediaCacheService @Inject constructor(
         private const val MAX_CONCURRENT_DOWNLOADS = 4
         private const val MAX_CONCURRENT_THUMBNAILS = 2
         private const val MIN_CACHE_SIZE = 100L // bytes
-        private const val TTL_DAYS = 30
         private const val MAX_DOWNLOAD_BYTES = 50L * 1024 * 1024 // 50 MB hard ceiling per download
         private const val DISK_CACHE_MAX_BYTES = 256L * 1024 * 1024 // 256 MB on-disk cap
         private const val NOT_FOUND_MAX_AGE_MS = 7L * 24 * 3600 * 1000 // 404 flags expire after 7 days (iOS parity)
@@ -540,7 +539,7 @@ class MediaCacheService @Inject constructor(
         imageCache.evictAll()
     }
 
-    fun evictExpiredFiles(ttlDays: Int = configStore.config.value.cacheTTLDays.takeIf { it > 0 } ?: TTL_DAYS) {
+    fun evictExpiredFiles(ttlDays: Int = configStore.config.value.cacheTTLDays) {
         // ttlDays <= 0 means "Never" — skip eviction entirely.
         if (ttlDays <= 0) return
         scope.launch {

@@ -776,6 +776,7 @@ fun FeedScreen(
                                 onFetchMissingNote = viewModel::fetchMissingNote,
                                 rootUnavailable = thread.rootId in unavailableNoteIds,
                                 lineAnchor = threadLineAnchor,
+                                bareRepostDisplay = { note -> rememberBareRepostDisplay(note, viewModel) },
                                 // iOS: 12pt sides in threaded mode, 12pt between rows.
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 expandedRow = { note, _ ->
@@ -967,7 +968,7 @@ fun FeedScreen(
             onReport = { reason, description ->
                 viewModel.reportNote(
                     reportTarget.effectiveEventId,
-                    reportTarget.pubkey,
+                    reportTarget.effectiveAuthor,
                     reason,
                     description,
                 )
@@ -987,7 +988,7 @@ fun FeedScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.blockUser(blockTarget.pubkey)
+                        viewModel.blockUser(blockTarget.effectiveAuthor)
                         blockNoteId = null
                     },
                 ) { Text("Block", color = ErrorRed) }
@@ -1625,7 +1626,9 @@ private fun FeedFullNoteRowContent(
         // meant other people's notes had no menu at all, so reporting and
         // blocking were only reachable two navigations deep — from the note
         // screen, which you have to open the content to see.
-        isOwnNote = viewModel.isOwnNote(note.pubkey),
+        // A repost row's Delete removes the repost, so it is yours when you
+        // reposted it, not when you wrote the note it carries.
+        isOwnNote = viewModel.isOwnNote(note.publisher),
         onReport = { onReport(note.id) },
         onBlock = { onBlock(note.id) },
         onDelete = { onDelete(note.id) },

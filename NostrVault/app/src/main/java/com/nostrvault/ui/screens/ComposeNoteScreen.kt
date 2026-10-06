@@ -60,6 +60,7 @@ import com.nostrvault.service.BlossomService
 import com.nostrvault.service.DraftService
 import com.nostrvault.service.FeedService
 import com.nostrvault.service.MediaPostQueue
+import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.service.NostrService
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.PendingPostManager
@@ -291,7 +292,8 @@ class ComposeNoteViewModel @Inject constructor(
         }
 
         if (replyToNoteId != null) {
-            val parentNote = feedService.findNote(replyToNoteId)
+            // Replying to a repost answers the note it carries, and its author.
+            val parentNote = feedService.quoteTarget(replyToNoteId)
             if (parentNote != null) {
                 val profile = nostrService.profiles.value[parentNote.pubkey]
                 _replyingToName.value = profile?.bestName ?: parentNote.pubkey.take(8) + "..."
@@ -935,6 +937,13 @@ class ComposeNoteViewModel @Inject constructor(
                     }
                 }
 
+                // The location comes out before the hash: the blob is public
+                // once uploaded (iOS #335).
+                if (!MediaPrivacy.removeLocation(tempFile, attachment.mimeType)) {
+                    tempFile.delete()
+                    return@withContext AttachmentUploadResult.Failed(MediaPrivacy.FAILURE_MESSAGE)
+                }
+
                 // Compute SHA-256
                 val sha256 = blossomService.computeSHA256(tempFile)
 
@@ -1047,16 +1056,14 @@ class ComposeNoteViewModel @Inject constructor(
      */
     private fun buildReplyTags(): Pair<List<List<String>>, Int> {
         val parentId = replyToNoteId ?: return emptyList<List<String>>() to 1
-        val parentNote = feedService.findNote(parentId) ?: return emptyList<List<String>>() to 1
+        // A repost is answered as the note it carries: findNote on the
+        // original's id can return the wrapper, whose kind (6) would make this
+        // a NIP-22 comment and, for a bare repost, name the reposter.
+        val parentNote = feedService.quoteTarget(parentId) ?: return emptyList<List<String>>() to 1
 
         val tags = mutableListOf<List<String>>()
 
-        // The effective parent of a kind 6 repost is the original. Its
-        // FeedNote already carries the original's pubkey and tags; the kind
-        // comes from the original if it is cached, else 1 (iOS parity).
-        val effectiveParentKind = if (parentNote.kind == 6) {
-            parentNote.repostedEventId?.let { feedService.findNote(it)?.kind } ?: 1
-        } else parentNote.kind
+        val effectiveParentKind = parentNote.effectiveKind
         // Automatic (Logen, 2026-10-03): a note gets a kind 1 reply, anything
         // else a NIP-22 comment. No switch to explain.
         val eventKind = NIP10Thread.replyKind(effectiveParentKind)
@@ -1093,7 +1100,7 @@ class ComposeNoteViewModel @Inject constructor(
             // Parent IS the root note — single e-tag with "root" marker. NIP-10: the
             // optional 5th element is the event author's pubkey, used by the outbox
             // model to know whose relays to fetch it from.
-            tags.add(listOf("e", parentId, "", "root", parentNote.pubkey))
+            tags.add(listOf("e", parentNote.id, "", "root", parentNote.pubkey))
         } else {
             // Parent is itself a reply — find the thread root
             val rootTag = parentNonMentionETags.firstOrNull { it.size >= 4 && it[3] == "root" }
@@ -1104,7 +1111,7 @@ class ComposeNoteViewModel @Inject constructor(
                 if (threadRootPubkey != null) listOf("e", threadRootId, "", "root", threadRootPubkey)
                 else listOf("e", threadRootId, "", "root")
             )
-            tags.add(listOf("e", parentId, "", "reply", parentNote.pubkey))
+            tags.add(listOf("e", parentNote.id, "", "reply", parentNote.pubkey))
 
             // A legacy thread under an addressable root carries its coordinate
             // forward. a/A tags have no marker field.

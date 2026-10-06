@@ -49,6 +49,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.nostrvault.service.MediaPrivacy
 import com.nostrvault.ui.navigation.FloatingButtonRow
 import com.nostrvault.ui.navigation.FloatingButtonRow.floatingRowButton
 import com.nostrvault.data.local.ConfigStore
@@ -404,6 +405,10 @@ class MediaGalleryViewModel @Inject constructor(
             }
 
             val contentType = contentResolver.getType(uri) ?: "application/octet-stream"
+            if (!withContext(Dispatchers.IO) { MediaPrivacy.removeLocation(tempFile!!, contentType) }) {
+                notificationManager.markUploadFailed(uploadId, MediaPrivacy.FAILURE_MESSAGE)
+                return false
+            }
             val sha256 = withContext(Dispatchers.IO) {
                 blossomService.computeSHA256(tempFile!!)
             }

@@ -43,6 +43,27 @@ class FeedThreadGroupingTest {
     private fun ids(thread: FeedThread): List<String> = thread.entries.map { it.id }
     private fun depths(thread: FeedThread): List<Int> = thread.entries.map { it.depth }
 
+    /**
+     * Popular and Global: the feed's posts come first, their fetched replies
+     * after them. A fresh reply on a low post must not lift it above the top
+     * one. iOS: testKeepFeedOrderKeepsTheRankingDespiteNewerReplies.
+     */
+    @Test
+    fun `keepFeedOrder keeps the ranking despite newer replies`() {
+        val notes = listOf(
+            note("top", 100),
+            note("second", 200),
+            note("reply", 900, parent = "second", root = "second", author = "bob"),
+        )
+
+        val ranked = FeedThreadGrouping.build(notes, keepFeedOrder = true)
+        assertEquals(listOf("top", "second"), ranked.map { it.rootId })
+        assertEquals(listOf("reply"), ranked[1].replies.map { it.id })
+
+        // Without it, the reply's activity reorders them.
+        assertEquals(listOf("second", "top"), FeedThreadGrouping.build(notes).map { it.rootId })
+    }
+
     @Test
     fun `standalone notes each become their own thread`() {
         val notes = listOf(note("b", 200), note("a", 100))

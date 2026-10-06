@@ -76,7 +76,12 @@ object FeedThreadGrouping {
      * @param resolveNote looks up a note that is referenced but not in
      *   [notes] (an ancestor the feed never showed). Returning null is fine —
      *   the thread is then rooted at the highest ancestor that did load.
-     * @return threads ordered by `latestActivity`, newest first.
+     * @param keepFeedOrder keep threads in the order their roots first appear
+     *   in [notes] instead of by latest activity. Popular is ranked by score
+     *   and Global by time, and a reply fetched after the posts must not
+     *   reshuffle either list.
+     * @return threads ordered by `latestActivity`, newest first, unless
+     *   [keepFeedOrder] is set.
      */
     /**
      * Drops conversations started by a blocked author (iOS #211). Their root
@@ -98,6 +103,7 @@ object FeedThreadGrouping {
 
     fun build(
         notes: List<FeedNote>,
+        keepFeedOrder: Boolean = false,
         resolveNote: (String) -> FeedNote? = { null },
     ): List<FeedThread> {
         if (notes.isEmpty()) return emptyList()
@@ -197,6 +203,7 @@ object FeedThreadGrouping {
             FeedThread(rootId = root, root = rootNote, entries = entries, latestActivity = latest)
         }
 
+        if (keepFeedOrder) return threads
         return threads.sortedWith(
             compareByDescending<FeedThread> { it.latestActivity }
                 .thenBy { order.indexOf(it.rootId) }

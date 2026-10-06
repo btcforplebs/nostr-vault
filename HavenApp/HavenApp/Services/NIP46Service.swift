@@ -58,14 +58,7 @@ class NIP46Service: ObservableObject {
     @Published var connectionState: ConnectionState = .disconnected
     @Published var authChallengeURL: String?
 
-    /// What the app is currently waiting on the signer for ("Sign your note",
-    /// "Decrypt a message"), set only once a request has been outstanding long
-    /// enough that the person may need to approve it. Drives the
-    /// "Approve in your signer" banner.
-    @Published private(set) var awaitingApproval: String?
     private var outstandingRequests = 0
-    /// Outstanding requests that may show the banner (user actions only).
-    private var bannerRequests = 0
 
     private var pingTask: Task<Void, Never>?
     private var authPollerTask: Task<Void, Never>?
@@ -378,8 +371,7 @@ class NIP46Service: ObservableObject {
     /// is active. No live session means an error, not a request to a signer
     /// that cannot sign for that key.
     func signEvent(eventJSON: String, withSigner signerPubkey: String) async throws -> String {
-        let label = Self.approvalLabel(forEventJSON: eventJSON)
-        return try await signerRequest(label, queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
+        return try await signerRequest(userAction: Self.isUserAction(eventJSON: eventJSON), queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
             try await self.callGo { NIP46SignEventWithC(
                 UnsafeMutablePointer(mutating: (signerPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
@@ -390,12 +382,12 @@ class NIP46Service: ObservableObject {
     func signEvent(eventJSON: String) async throws -> String {
         print("NIP46Service: signEvent called, connectionState=\(connectionState.rawValue)")
         try await ensureConnected()
-        let label = Self.approvalLabel(forEventJSON: eventJSON)
+        let userAction = Self.isUserAction(eventJSON: eventJSON)
         // The session this request goes to, so a late failure can never drop
         // the session of an account switched to while it was waiting.
         let sessionKey = Self.activeSignerKey()
         do {
-            return try await signerRequest(label, queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
+            return try await signerRequest(userAction: userAction, queued: Self.waitsInBackgroundQueue(eventJSON: eventJSON)) {
                 try await self.callGo { NIP46SignEventC(
                     UnsafeMutablePointer(mutating: (eventJSON as NSString).utf8String)
                 )}
@@ -404,8 +396,8 @@ class NIP46Service: ObservableObject {
             // Only something the person did (a post, a reaction): background
             // requests such as relay AUTH routinely go unanswered and say
             // nothing about the session.
-            if label != nil, case .timeout = error { await recheckSession(sessionKey) }
-            if label != nil, case .offline = error { await recheckSession(sessionKey) }
+            if userAction, case .timeout = error { await recheckSession(sessionKey) }
+            if userAction, case .offline = error { await recheckSession(sessionKey) }
             throw error
         }
     }
@@ -462,7 +454,7 @@ class NIP46Service: ObservableObject {
 
     func nip04Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest(nil, queued: false) {
+        return try await signerRequest(userAction: false, queued: false) {
             try await self.callGo { NIP46NIP04EncryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
@@ -472,7 +464,7 @@ class NIP46Service: ObservableObject {
 
     func nip04Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest(nil) {
+        return try await signerRequest(userAction: false) {
             try await self.callGo { NIP46NIP04DecryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
@@ -482,7 +474,7 @@ class NIP46Service: ObservableObject {
 
     func nip44Encrypt(thirdPartyPubkey: String, plaintext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest(nil, queued: false) {
+        return try await signerRequest(userAction: false, queued: false) {
             try await self.callGo { NIP46NIP44EncryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (plaintext as NSString).utf8String)
@@ -492,7 +484,7 @@ class NIP46Service: ObservableObject {
 
     func nip44Decrypt(thirdPartyPubkey: String, ciphertext: String) async throws -> String {
         try await ensureConnected()
-        return try await signerRequest(nil) {
+        return try await signerRequest(userAction: false) {
             try await self.callGo { NIP46NIP44DecryptC(
                 UnsafeMutablePointer(mutating: (thirdPartyPubkey as NSString).utf8String),
                 UnsafeMutablePointer(mutating: (ciphertext as NSString).utf8String)
@@ -568,15 +560,10 @@ class NIP46Service: ObservableObject {
         }
     }
 
-    /// Runs one request to the signer. Keeps the app alive in the background
-    /// while it is outstanding (so switching to the signer to approve doesn't
-    /// kill it), and after a short grace raises the "Approve in your signer"
-    /// banner — a request the signer auto-approves never shows it.
     /// Kinds a person signs by doing something (posting, reacting, following,
     /// sending a DM — kind 13 is the DM seal). Everything else the app signs on
     /// its own — relay AUTH (22242), Blossom and HTTP auth (24242, 27235),
-    /// list syncs — and must never put up the approval banner: those run all
-    /// the time, and a banner that is always up means nothing.
+    /// list syncs — and waits in the background queue.
     private static let userActionKinds: Set<Int> = [0, 1, 3, 5, 6, 7, 9, 13, 16, 20, 21, 22, 1111, 1984, 9734, 10015, 30023]
 
     /// Upload auth: Blossom (24242) and HTTP auth (27235). Signed without a
@@ -591,9 +578,9 @@ class NIP46Service: ObservableObject {
         return try? JSONDecoder().decode(KindOnly.self, from: data).kind
     }
 
-    private nonisolated static func approvalLabel(forEventJSON json: String) -> String? {
-        guard let kind = kind(ofEventJSON: json), userActionKinds.contains(kind) else { return nil }
-        return kind == 13 ? "Approve sending your message" : "Approve in your signer"
+    private nonisolated static func isUserAction(eventJSON json: String) -> Bool {
+        guard let kind = kind(ofEventJSON: json) else { return false }
+        return userActionKinds.contains(kind)
     }
 
     private nonisolated static func waitsInBackgroundQueue(eventJSON json: String) -> Bool {
@@ -601,13 +588,22 @@ class NIP46Service: ObservableObject {
         return !uploadAuthKinds.contains(kind)
     }
 
-    /// - Parameter label: banner text if this request waits on the person, or
-    ///   nil for background work (decrypting the DM backlog, relay AUTH), which
-    ///   never shows the banner however long the signer takes.
-    private func signerRequest<T>(_ label: String?, queued: Bool = true, _ body: @escaping () async throws -> T) async throws -> T {
+    /// Runs one request to the signer, keeping the app alive in the background
+    /// while it is outstanding so switching to the signer to approve doesn't
+    /// kill it.
+    ///
+    /// No "approve in your signer" banner: it could not tell a prompt from an
+    /// auto-approve on a slow relay, so it went up for nearly every action and
+    /// stayed until the slowest one answered. The signer prompts on its own,
+    /// and a rejection or timeout surfaces as an error.
+    ///
+    /// - Parameter userAction: true for something the person did (a post, a
+    ///   reaction); false for background work (decrypting the DM backlog,
+    ///   relay AUTH).
+    private func signerRequest<T>(userAction: Bool, queued: Bool = true, _ body: @escaping () async throws -> T) async throws -> T {
         // Background work (decrypting the DM backlog, relay AUTH, Blossom auth,
         // list syncs) goes to the signer one request at a time, however many
-        // callers ask at once. Things the person did (label != nil) skip the
+        // callers ask at once. Things the person did (userAction) skip the
         // queue so a post never waits behind a backlog.
         //
         // A request holds the queue for at most `backgroundLease`. The signer can
@@ -615,7 +611,7 @@ class NIP46Service: ObservableObject {
         // the app comes back to the foreground does this), and everything behind
         // it used to wait the whole time. Past the lease the request keeps
         // waiting for its answer, it just stops holding up the rest.
-        let gated = label == nil && queued
+        let gated = !userAction && queued
         var ticket: UInt64?
         if gated {
             let held = await Self.backgroundGate.wait()
@@ -627,7 +623,6 @@ class NIP46Service: ObservableObject {
         }
         defer { if let ticket { Task { await Self.backgroundGate.signal(ticket) } } }
         outstandingRequests += 1
-        if label != nil { bannerRequests += 1 }
         #if os(iOS)
         var bgTask: UIBackgroundTaskIdentifier = .invalid
         bgTask = UIApplication.shared.beginBackgroundTask(withName: "NIP46Request") {
@@ -637,16 +632,8 @@ class NIP46Service: ObservableObject {
             }
         }
         #endif
-        let banner = Task { @MainActor in
-            guard let label else { return }
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            if !Task.isCancelled { self.awaitingApproval = label }
-        }
         defer {
-            banner.cancel()
             outstandingRequests -= 1
-            if label != nil { bannerRequests -= 1 }
-            if bannerRequests == 0 { awaitingApproval = nil }
             #if os(iOS)
             if bgTask != .invalid {
                 UIApplication.shared.endBackgroundTask(bgTask)

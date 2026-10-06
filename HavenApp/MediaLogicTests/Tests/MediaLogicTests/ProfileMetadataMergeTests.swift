@@ -34,6 +34,18 @@ final class ProfileMetadataMergeTests: XCTestCase {
         XCTAssertEqual(out["name"] as? String, "sat")
     }
 
+    /// The form shows the banner now: a new upload replaces it, clearing removes it.
+    func testBannerEditIsApplied() {
+        let base = ProfileMetadataMerge.parseContent(relayContent)
+        let shownBanner = shown.merging([ProfileMetadataMerge.banner: "https://b/x.jpg"]) { _, new in new }
+        let replaced = ProfileMetadataMerge.merge(base: base, initial: shownBanner,
+                                                  edited: shownBanner.merging([ProfileMetadataMerge.banner: "https://b/new.jpg"]) { _, new in new })
+        XCTAssertEqual(replaced["banner"] as? String, "https://b/new.jpg")
+        let cleared = ProfileMetadataMerge.merge(base: base, initial: shownBanner,
+                                                 edited: shownBanner.merging([ProfileMetadataMerge.banner: ""]) { _, new in new })
+        XCTAssertNil(cleared["banner"])
+    }
+
     func testClearedFieldIsRemoved() {
         let out = ProfileMetadataMerge.merge(base: ProfileMetadataMerge.parseContent(relayContent),
                                              initial: shown, edited: edited(["website": "  "]))

@@ -14,6 +14,7 @@ import com.nostrvault.data.model.MediaFeedMode
 import com.nostrvault.data.model.NoteStats
 import com.nostrvault.data.model.FeedThread
 import com.nostrvault.data.model.FeedThreadGrouping
+import com.nostrvault.data.model.FeedThreadReplies
 import com.nostrvault.data.model.PopularFilter
 import com.nostrvault.data.model.Reel
 import com.nostrvault.data.model.ReelsScope
@@ -362,12 +363,24 @@ class FeedViewModel @Inject constructor(
         // Blocking can hide a thread's root or an ancestor without changing
         // the visible note list, so regroup on it directly.
         configStore.config.map { it.blockedForActiveAccount() }.distinctUntilChanged(),
-    ) { notes, threaded, _, _ ->
+        feedService.feedThreadReplies,
+    ) { notes, threaded, _, _, fetchedReplies ->
         // Hashtags groups its own sections (HashtagsFeed).
         if (!threaded || _feedMode.value == FeedMode.HASHTAGS) emptyList() else {
             val blocked = feedService.blockedHexForActiveAccount()
+            // Popular holds only top-level posts, and Global's stream rarely
+            // carries the replies to what it shows, so their replies are
+            // fetched separately for this view, and the feed's own order is
+            // kept: a reply landing later doesn't reshuffle the posts.
+            val fetchesReplies = FeedThreadReplies.fetchesReplies(feedService.feedMode.value)
+            if (fetchesReplies) feedService.loadFeedThreadReplies(notes.map { it.id })
+            val pool = if (fetchesReplies) {
+                FeedThreadReplies.attach(notes, fetchedReplies.values, blocked)
+            } else {
+                notes
+            }
             FeedThreadGrouping.withoutBlocked(
-                FeedThreadGrouping.build(notes) { id ->
+                FeedThreadGrouping.build(pool, keepFeedOrder = fetchesReplies) { id ->
                     // A blocked author's post is never pulled in as context.
                     feedService.findNote(id)?.takeIf { it.pubkey !in blocked }
                 },
@@ -537,18 +550,8 @@ class FeedViewModel @Inject constructor(
 
     fun loadMore() = feedService.loadOlderNotes()
 
-    fun likeNote(noteId: String, emoji: String? = null) {
-        if (likedEventIds.value.contains(noteId) && emoji == null) {
-            // Already liked — start unlike countdown
-            notificationManager.startUnlikeCountdown {
-                feedService.unlikeNote(noteId)
-            }
-            return
-        }
-        viewModelScope.launch {
-            feedService.likeNote(noteId, emoji)
-        }
-    }
+    /** Tap ([emoji] null) toggles the reaction; a picked emoji is sent or, if already sent, taken back. */
+    fun likeNote(noteId: String, emoji: String? = null) = feedService.likeNote(noteId, emoji)
 
     fun repostNote(noteId: String) {
         viewModelScope.launch {
@@ -578,7 +581,7 @@ class FeedViewModel @Inject constructor(
             }
             // Real NIP-57 zap; effective id redirects kind-6 reposts to the
             // reposted event. ZapSendService bumps local stats on success.
-            zapSendService.zapNote(note.effectiveEventId, note.pubkey, amount).fold(
+            zapSendService.zapNote(note.effectiveEventId, note.effectiveAuthor, amount).fold(
                 onSuccess = {
                     ZapFlight.launch(note.effectiveEventId)
                     _zapMessage.emit("Zapped $amount sats")

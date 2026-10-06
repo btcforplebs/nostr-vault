@@ -238,7 +238,7 @@ extension MediaGalleryView {
 
                 Spacer()
 
-                MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true) { mediaItem in
+                MediaPagerView(items: displayMedia, selection: $selectedMedia, enableKeyboardNavigation: true, showsPositionBar: false) { mediaItem in
                     MediaItemRenderer(mediaItem: mediaItem)
                         #if os(iOS)
                         .transition(.opacity.animation(Motion.media))
