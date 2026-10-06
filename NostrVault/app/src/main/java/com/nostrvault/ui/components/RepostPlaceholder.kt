@@ -14,11 +14,11 @@ import androidx.compose.ui.unit.sp
 import com.nostrvault.ui.theme.SecondaryText
 
 /** What a bare repost's row says while it has no original to show. */
-enum class RepostPlaceholder {
+enum class RepostPlaceholder(val text: String) {
     /** The original is being fetched. */
-    LOADING,
+    LOADING("Loading reposted note…"),
     /** No relay returned the original (deleted, or on none we ask). */
-    UNAVAILABLE,
+    UNAVAILABLE("The reposted note is unavailable"),
 }
 
 /**
@@ -37,10 +37,7 @@ fun RepostPlaceholderLine(placeholder: RepostPlaceholder, modifier: Modifier = M
             Spacer(Modifier.width(6.dp))
         }
         Text(
-            text = when (placeholder) {
-                RepostPlaceholder.LOADING -> "Loading reposted note…"
-                RepostPlaceholder.UNAVAILABLE -> "The reposted note is unavailable"
-            },
+            text = placeholder.text,
             color = SecondaryText,
             fontSize = 13.sp,
         )
