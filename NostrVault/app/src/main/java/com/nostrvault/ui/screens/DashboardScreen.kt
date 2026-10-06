@@ -2696,7 +2696,7 @@ fun DashboardScreen(
                 logs = currentLogs,
                 onViewAllLogs = {
                     showDashboardSheet = false
-                    onNavigate(Screen.LogViewer)
+                    onNavigate(Screen.RelayActivity)
                 },
                 statsService = viewModel.statsService,
                 ownerPubkey = viewModel.nostrService.ownerHexPubkey,

@@ -84,6 +84,7 @@ sealed class Screen(val route: String) {
     data object Dashboard : Screen("dashboard")
     data object BlossomDashboard : Screen("blossom_dashboard")
     data object LogViewer : Screen("log_viewer")
+    data object RelayActivity : Screen("relay_activity")
 
     // Setup
     data object SetupWizard : Screen("setup")
