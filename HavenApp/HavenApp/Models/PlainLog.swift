@@ -276,6 +276,8 @@ enum PlainLog {
             (#"(?:/Users|/var/mobile|/private|/data/user|/storage|/home)/\S*"#, "[path]"),
             // Private relay addresses (Tor, LAN, Tailscale) point at the user's own box.
             (#"\b(?:[\w-]+\.)+(?:onion|local|lan|internal|home\.arpa|ts\.net|localhost)\b|\blocalhost\b"#, "[private-relay]"),
+            // So does a single-label host such as ws://umbrel:4848.
+            (#"\b(wss?|https?)://[\w-]+(?=[:/?#\s'"]|$)"#, "$1://[private-relay]"),
             // Keep a URL's scheme and host; drop path and query, where tokens live.
             (#"\b((?:wss?|https?)://[^/\s?#'"]+)[^\s'"]*"#, "$1"),
         ]
@@ -306,7 +308,8 @@ enum PlainLog {
               let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)),
               let range = Range(match.range(at: 1), in: message),
               let url = URL(string: String(message[range])), let host = url.host else { return nil }
-        return host
+        // A single-label name (umbrel, mybox) is a LAN or Tailscale box: keep it out of titles.
+        return host.contains(".") ? host : "a private relay"
     }
 
     private static func firstNumber(after marker: String, in text: String) -> Int? {

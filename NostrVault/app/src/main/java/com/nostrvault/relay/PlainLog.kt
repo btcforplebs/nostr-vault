@@ -249,6 +249,8 @@ object PlainLog {
         """(?:/Users|/var/mobile|/private|/data/user|/storage|/home)/\S*""" to "[path]",
         // Private relay addresses (Tor, LAN, Tailscale) point at the user's own box.
         """\b(?:[\w-]+\.)+(?:onion|local|lan|internal|home\.arpa|ts\.net|localhost)\b|\blocalhost\b""" to "[private-relay]",
+        // So does a single-label host such as ws://umbrel:4848.
+        """\b(wss?|https?)://[\w-]+(?=[:/?#\s'"]|$)""" to "$1://[private-relay]",
         // Keep a URL's scheme and host; drop path and query, where tokens live.
         """\b((?:wss?|https?)://[^/\s?#'"]+)[^\s'"]*""" to "$1",
     ).map { (pattern, template) -> Regex(pattern) to template }
@@ -266,7 +268,9 @@ object PlainLog {
     /** Host of the relay named in a `relay=wss://…` (or parsed `relay: wss://…`) field. */
     fun relayHost(message: String): String? {
         val url = RELAY_REGEX.find(message)?.groupValues?.get(1) ?: return null
-        return runCatching { java.net.URI(url).host }.getOrNull()
+        val host = runCatching { java.net.URI(url).host }.getOrNull() ?: return null
+        // A single-label name (umbrel, mybox) is a LAN or Tailscale box: keep it out of titles.
+        return if ('.' in host) host else "a private relay"
     }
 
     private fun firstNumber(marker: String, text: String): Int? {

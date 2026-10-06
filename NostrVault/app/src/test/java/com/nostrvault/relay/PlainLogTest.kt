@@ -85,16 +85,18 @@ class PlainLogTest {
             "me@example.com /data/user/0/com.nostrvault/x.db " +
             "nostr+walletconnect://abc?relay=wss://r.example&secret=$hex " +
             "https://cdn.example.com/u/abc.jpg?token=SECRET wss://relay.damus.io/path " +
-            "wss://abcdefghijklmnop.onion ws://haven.local:3355 wss://box.tail1234.ts.net ws://localhost:4869"
+            "wss://abcdefghijklmnop.onion ws://haven.local:3355 wss://box.tail1234.ts.net ws://localhost:4869 ws://umbrel:4848"
         val out = PlainLog.scrub(raw)
         listOf("nsec1", "npub1", hex, "10.0.0.12", "fe80", "me@example.com", "/data/user",
             "walletconnect", "SECRET", "abc.jpg", "/path",
-            "abcdefghijklmnop", "haven.local", "tail1234", "localhost").forEach {
+            "abcdefghijklmnop", "haven.local", "tail1234", "localhost", "umbrel").forEach {
             assertFalse("leaked $it in: $out", out.contains(it))
         }
         assertTrue(out.contains("wss://relay.damus.io"))
         assertTrue(out.contains("https://cdn.example.com"))
         assertTrue(out.contains("wss://[private-relay]"))
+        assertEquals("a private relay", PlainLog.relayHost("relay=ws://umbrel:4848 x"))
+        assertEquals("nos.lol", PlainLog.relayHost("relay=wss://nos.lol x"))
     }
 
     @Test
