@@ -151,6 +151,9 @@ abstract class HashtagNotesViewModel(
     private var clients = mutableListOf<WebSocketClient>()
     private var jobs = mutableListOf<Job>()
     private var currentTags: List<String> = emptyList()
+    /** What the posts on hand were loaded for; see [start]. */
+    private var shownTags: List<String>? = null
+    private var shownTrust: Set<String>? = null
     private var observing: Job? = null
 
     /**
@@ -196,15 +199,24 @@ abstract class HashtagNotesViewModel(
         val values = tagFilterValues(tags)
         // Matched locally in lowercase; only the tags actually asked for.
         val wantedTags = values.map { it.lowercase() }.toSet()
+        // Same feed as last time (back from a note): keep the posts so the
+        // list, and the scroll position on it, survive; the reopened
+        // subscription only adds what is new.
+        val resuming = tags == shownTags && followSet == follows && trust == shownTrust &&
+            (_fromFollows.value.isNotEmpty() || _fromOthers.value.isNotEmpty())
+        shownTags = tags
+        shownTrust = trust
         val gen = synchronized(lock) {
             generation += 1
-            seen.clear()
+            if (!resuming) seen.clear()
             follows = followSet
             generation
         }
-        _fromFollows.value = emptyList()
-        _fromOthers.value = emptyList()
-        _isLoading.value = true
+        if (!resuming) {
+            _fromFollows.value = emptyList()
+            _fromOthers.value = emptyList()
+            _isLoading.value = true
+        }
 
         if (values.isEmpty()) {
             _isLoading.value = false

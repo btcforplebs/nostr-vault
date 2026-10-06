@@ -483,9 +483,9 @@ struct FeedView: View {
     /// cycle between expanded and condensed without a threaded stop.
     private var currentFeedSupportsThreading: Bool {
         switch feedService.feedMode {
-        case .following, .discovery, .global, .popular:
+        case .following, .discovery, .global, .popular, .hashtags:
             return true
-        case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags:
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
             return false
         }
     }
@@ -611,11 +611,11 @@ struct FeedView: View {
     private var isCompactModeActive: Bool {
         guard layoutModeForCurrentFeed.usesCondensedRows else { return false }
         switch feedService.feedMode {
-        case .following, .discovery, .global, .popular:
+        case .following, .discovery, .global, .popular, .hashtags:
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
         // compact mode has nothing to condense.
-        case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .hashtags:
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
             return false
         }
     }
@@ -2051,7 +2051,8 @@ struct FeedView: View {
     /// and debounced like the row-data cache so a burst of arriving notes
     /// doesn't regroup the timeline once per note.
     private func rebuildThreadsIfNeeded(immediate: Bool = false) {
-        guard isThreadedModeActive else {
+        // The Hashtags feed groups its own two sections (HashtagsFeedSection).
+        guard isThreadedModeActive, feedService.feedMode != .hashtags else {
             threadRebuildWork?.cancel()
             if !feedThreads.isEmpty { feedThreads = [] }
             return
@@ -2580,24 +2581,90 @@ struct FeedView: View {
     /// player can open. Never cached — a stream is only interesting while it is
     /// live, and a saved one is a gravestone.
     @ViewBuilder
-    /// Followed hashtags; rows open and act like the main timeline's.
+    /// One conversation card for the threaded layout. `proxy` keeps the
+    /// thread line still when a note opens in place; the Hashtags feed has no
+    /// line tracking of its own and passes nil.
+    private func feedThreadCard(_ thread: FeedThread<FeedNote>, proxy: ScrollViewProxy?) -> some View {
+        FeedThreadCard(
+            thread: thread,
+            // One open note across both condensed
+            // layouts: the same gesture, so the same
+            // selection.
+            openNoteId: $expandedNoteId,
+            isExpanded: Binding(
+                get: { expandedThreadIds.contains(thread.rootId) },
+                set: { isOpen in
+                    if isOpen {
+                        expandedThreadIds.insert(thread.rootId)
+                    } else {
+                        expandedThreadIds.remove(thread.rootId)
+                    }
+                }
+            ),
+            profileFor: { nostrService.profiles[$0] },
+            rowDataFor: { note in
+                rowDataCache[note.id] ?? FeedNoteRowData.resolve(
+                    for: note,
+                    feedService: feedService,
+                    nostrService: nostrService
+                )
+            },
+            onOpen: { openNoteDetail($0) },
+            onReply: {
+                composeContext = ComposeContext(
+                    replyTo: feedService.replyTarget(for: $0),
+                    quoteTo: nil
+                )
+            },
+            onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: $0)) },
+            onProfile: { showingProfileKey = IdentifiableString(id: $0) },
+            onMedia: { url, urls in
+                showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
+            },
+            rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId),
+            lineTops: proxy == nil ? nil : threadLineTops,
+            onOpenedInPlace: proxy.map { proxy in
+                { id, y in holdThreadLine(id, at: y, proxy: proxy) }
+            }
+        )
+    }
+
+    /// Followed hashtags; rows open and act like the main timeline's, in
+    /// whichever layout the feed's layout button picked.
     private var hashtagsFeedView: some View {
-        HashtagsFeedSection { note in
+        HashtagsFeedSection(threaded: isThreadedModeActive) { note in
+            let isExpanded = expandedNoteId == note.id
             let row = feedNoteRowContent(
                 note: note,
                 profile: nostrService.profiles[note.pubkey],
                 rowData: rowDataCache[note.id] ?? FeedNoteRowData.resolve(for: note, feedService: feedService, nostrService: nostrService),
                 parentIsNext: false,
-                isExpanded: false
+                isExpanded: isExpanded
             )
             .onAppear { nostrService.fetchMissingProfiles(for: [note.pubkey]) }
             #if os(iOS)
-            NoteNavigationLink(note: note) { row }
-                .buttonStyle(.plain)
+            // Same as the main timeline: a compact line opens in place on
+            // tap, an expanded one navigates.
+            if !isCompactModeActive || isExpanded {
+                NoteNavigationLink(note: note) { row }
+                    .buttonStyle(.plain)
+            } else {
+                row
+            }
             #else
-            row.onTapGesture { showingNoteId = note.id }
+            row.onTapGesture {
+                if !isCompactModeActive { showingNoteId = note.id }
+            }
             #endif
+        } threadRow: { thread in
+            feedThreadCard(thread, proxy: nil)
+                .padding(.horizontal, 12)
+                .onAppear {
+                    nostrService.fetchMissingProfiles(for: thread.entries.map(\.note.pubkey))
+                    if thread.root == nil { feedService.fetchMissingNote(id: thread.rootId) }
+                }
         }
+        .environment(\.feedActions, feedActionsValue)
     }
 
     private var liveGridView: some View {
@@ -2746,48 +2813,7 @@ struct FeedView: View {
 
                         if isThreadedModeActive {
                             ForEach(feedThreads) { thread in
-                                FeedThreadCard(
-                                    thread: thread,
-                                    // One open note across both condensed
-                                    // layouts: the same gesture, so the same
-                                    // selection.
-                                    openNoteId: $expandedNoteId,
-                                    isExpanded: Binding(
-                                        get: { expandedThreadIds.contains(thread.rootId) },
-                                        set: { isOpen in
-                                            if isOpen {
-                                                expandedThreadIds.insert(thread.rootId)
-                                            } else {
-                                                expandedThreadIds.remove(thread.rootId)
-                                            }
-                                        }
-                                    ),
-                                    profileFor: { nostrService.profiles[$0] },
-                                    rowDataFor: { note in
-                                        rowDataCache[note.id] ?? FeedNoteRowData.resolve(
-                                            for: note,
-                                            feedService: feedService,
-                                            nostrService: nostrService
-                                        )
-                                    },
-                                    onOpen: { openNoteDetail($0) },
-                                    onReply: {
-                                        composeContext = ComposeContext(
-                                            replyTo: feedService.replyTarget(for: $0),
-                                            quoteTo: nil
-                                        )
-                                    },
-                                    onQuote: { composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: $0)) },
-                                    onProfile: { showingProfileKey = IdentifiableString(id: $0) },
-                                    onMedia: { url, urls in
-                                        showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
-                                    },
-                                    rootUnavailable: feedService.unavailableNoteIds.contains(thread.rootId),
-                                    lineTops: threadLineTops,
-                                    onOpenedInPlace: { id, y in
-                                        holdThreadLine(id, at: y, proxy: proxy)
-                                    }
-                                )
+                                feedThreadCard(thread, proxy: proxy)
                                 .padding(.horizontal, 12)
                                 .onAppear { prefetchAhead(ofThread: thread.rootId) }
                                 .trackFeedVisibility(thread.rootId, in: visibleRows)

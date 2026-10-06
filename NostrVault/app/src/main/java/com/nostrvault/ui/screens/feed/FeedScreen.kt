@@ -656,6 +656,7 @@ fun FeedScreen(
                     viewModel = hashtagsViewModel,
                     listState = hashtagsListState,
                     contentPadding = padding,
+                    layoutMode = layoutMode,
                     onNoteClick = onNoteClick,
                     onArticleClick = onArticleClick,
                     onProfileClick = onProfileClick,
@@ -1837,15 +1838,13 @@ private fun FeedTopBar(
         // ── Trailing pill: compact toggle + mode-dependent filters.
         // Reels has no layout button, so collapsed there leaves nothing to show.
         AnimatedVisibility(
-            // Hashtags has only the shield, which folds away too.
-            visible = !(collapsed && (feedMode == FeedMode.REELS || feedMode == FeedMode.HASHTAGS)),
+            visible = !(collapsed && feedMode == FeedMode.REELS),
             enter = fadeIn(Motion.chrome()),
             exit = fadeOut(Motion.chrome()),
         ) { GlassPill(horizontalArrangement = Arrangement.Start) {
             // Layout mode toggle: expanded -> condensed -> threaded -> expanded.
             // Reels is one video per screen — there is no layout to switch.
-            // Hashtags has one layout too: the hashtag sheet's.
-            if (feedMode != FeedMode.REELS && feedMode != FeedMode.HASHTAGS) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
+            if (feedMode != FeedMode.REELS) IconButton(onClick = onCycleLayoutMode, modifier = Modifier.size(40.dp)) {
                 val icon = when (layoutMode) {
                     FeedLayoutMode.EXPANDED -> NostrVaultIcons.ExpandedView
                     FeedLayoutMode.CONDENSED -> NostrVaultIcons.CompactView

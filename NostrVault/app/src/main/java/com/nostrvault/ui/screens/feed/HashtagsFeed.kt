@@ -34,7 +34,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewModelScope
 import com.nostrvault.data.local.ConfigStore
+import com.nostrvault.data.model.FeedLayoutMode
 import com.nostrvault.data.model.FeedNote
+import com.nostrvault.data.model.FeedThread
+import com.nostrvault.data.model.FeedThreadGrouping
+import com.nostrvault.ui.components.CompactNoteCard
+import com.nostrvault.ui.components.FeedThreadCard
 import com.nostrvault.data.remote.WebSocketClient
 import com.nostrvault.relay.HavenBridge
 import com.nostrvault.service.FeedService
@@ -156,6 +161,11 @@ class HashtagsFeedViewModel @Inject constructor(
                 }
         }
     }
+
+    /** Thread cards look up ancestors the hashtag page did not carry. */
+    fun findNote(id: String): FeedNote? = feedService.findNote(id)
+    fun fetchMissingNote(id: String) = feedService.fetchMissingNote(id)
+    fun blockedPubkeys(): Set<String> = feedService.blockedHexForActiveAccount()
 
     fun setActive(on: Boolean) {
         active.value = on
@@ -281,6 +291,8 @@ internal fun HashtagsFeed(
     viewModel: HashtagsFeedViewModel,
     listState: LazyListState,
     contentPadding: PaddingValues,
+    /** The feed's layout button: full cards, compact lines, or conversations. */
+    layoutMode: FeedLayoutMode,
     onNoteClick: (String) -> Unit,
     onArticleClick: (String) -> Unit,
     onProfileClick: (String) -> Unit,
@@ -337,6 +349,66 @@ internal fun HashtagsFeed(
     val openNote: (String) -> Unit = { id -> byId[id]?.let(onCacheNote); onNoteClick(id) }
     val reply: (String) -> Unit = { id -> byId[id]?.let(onCacheNote); onReply(id) }
     val quote: (String) -> Unit = { id -> byId[id]?.let(onCacheNote); onQuote(id) }
+
+    // Compact lines open in place first, like the main feed; thread cards
+    // share the same open note.
+    var openNoteId by remember { mutableStateOf<String?>(null) }
+    val threadFolds = remember { mutableStateMapOf<String, Boolean>() }
+    val isCompact = layoutMode.usesCondensedRows
+    val isThreaded = layoutMode == FeedLayoutMode.THREADED
+    // Both sections grouped in one pass, so replies from a follow and from
+    // your network land in the same card. A card goes on top when anyone you
+    // follow posted in it: follows first still holds, nothing is split.
+    val threadSections = remember(isThreaded, fromFollows, fromOthers) {
+        if (!isThreaded) null else {
+            val followIds = fromFollows.mapTo(HashSet()) { it.id }
+            val blocked = viewModel.blockedPubkeys()
+            val threads = FeedThreadGrouping.withoutBlocked(
+                FeedThreadGrouping.build(fromFollows + fromOthers) { id ->
+                    viewModel.findNote(id)?.takeIf { it.pubkey !in blocked }
+                },
+                blocked,
+            ) { id -> viewModel.findNote(id) }
+            threads.partition { thread -> thread.entries.any { it.note.id in followIds } }
+        }
+    }
+
+    val fullRow: @Composable (FeedNote) -> Unit = { note ->
+        HashtagNote(note, quotedNotesCache, profiles, likedIds, repostedIds, viewModel,
+            openNote, onArticleClick, onProfileClick, reply, quote)
+    }
+    val noteRow: @Composable (FeedNote) -> Unit = { note ->
+        if (isCompact && openNoteId != note.id) {
+            CompactNoteCard(
+                note = note,
+                profile = profiles[note.pubkey],
+                profiles = profiles,
+                onNoteClick = { id -> openNoteId = id },
+                onProfileClick = onProfileClick,
+                // iOS: 8pt sides for a compact row, 12pt between rows.
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            )
+        } else {
+            fullRow(note)
+        }
+    }
+    val threadRow: @Composable (FeedThread) -> Unit = { thread ->
+        FeedThreadCard(
+            thread = thread,
+            profileFor = { pubkey -> profiles[pubkey] },
+            profiles = profiles,
+            openNoteId = openNoteId,
+            onOpenNoteChange = { id -> openNoteId = id },
+            isExpanded = threadFolds[thread.rootId] ?: false,
+            onExpandedChange = { expanded -> threadFolds[thread.rootId] = expanded },
+            onProfileClick = onProfileClick,
+            onOpenThread = { note -> onCacheNote(note); onNoteClick(note.id) },
+            onFetchMissingNote = viewModel::fetchMissingNote,
+            // iOS: 12pt sides in threaded mode, 12pt between rows.
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            expandedRow = { note, _ -> fullRow(note) },
+        )
+    }
 
     LazyColumn(
         state = listState,
@@ -426,21 +498,26 @@ internal fun HashtagsFeed(
             }
         }
 
-        if (fromFollows.isNotEmpty()) {
-            item(key = "hashtags-follows-header") { HashtagSectionHeader("From people you follow") }
-        }
-        items(fromFollows, key = { it.id }) { note ->
-            HashtagNote(note, quotedNotesCache, profiles, likedIds, repostedIds, viewModel,
-                openNote, onArticleClick, onProfileClick, reply, quote)
-        }
-        if (fromOthers.isNotEmpty()) {
-            item(key = "hashtags-others-header") {
-                HashtagSectionHeader(if (everyone) "More from everyone" else "More from your network")
+        val othersTitle = if (everyone) "More from everyone" else "More from your network"
+        if (threadSections != null) {
+            val (top, rest) = threadSections
+            if (top.isNotEmpty()) {
+                item(key = "hashtags-follows-header") { HashtagSectionHeader("From people you follow") }
             }
-        }
-        items(fromOthers, key = { it.id }) { note ->
-            HashtagNote(note, quotedNotesCache, profiles, likedIds, repostedIds, viewModel,
-                openNote, onArticleClick, onProfileClick, reply, quote)
+            items(top, key = { "thread-${it.rootId}" }) { threadRow(it) }
+            if (rest.isNotEmpty()) {
+                item(key = "hashtags-others-header") { HashtagSectionHeader(othersTitle) }
+            }
+            items(rest, key = { "thread-${it.rootId}" }) { threadRow(it) }
+        } else {
+            if (fromFollows.isNotEmpty()) {
+                item(key = "hashtags-follows-header") { HashtagSectionHeader("From people you follow") }
+            }
+            items(fromFollows, key = { it.id }) { noteRow(it) }
+            if (fromOthers.isNotEmpty()) {
+                item(key = "hashtags-others-header") { HashtagSectionHeader(othersTitle) }
+            }
+            items(fromOthers, key = { it.id }) { noteRow(it) }
         }
     }
 

@@ -261,9 +261,8 @@ class FeedViewModel @Inject constructor(
      * `FeedView.currentFeedSupportsThreading`.
      */
     private fun feedSupportsThreading(mode: FeedMode): Boolean = when (mode) {
-        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR -> true
-        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC,
-        FeedMode.HASHTAGS -> false
+        FeedMode.FOLLOWING, FeedMode.DISCOVERY, FeedMode.GLOBAL, FeedMode.POPULAR, FeedMode.HASHTAGS -> true
+        FeedMode.MEDIA, FeedMode.ARTICLES, FeedMode.RECIPES, FeedMode.LIVE, FeedMode.MARKETPLACE, FeedMode.REELS, FeedMode.MUSIC -> false
     }
 
     private fun defaultCompact(mode: FeedMode): Boolean = when (mode) {
@@ -319,7 +318,8 @@ class FeedViewModel @Inject constructor(
         // A threaded feed with replies filtered out would show nothing but
         // roots, which is the layout the user just left. Turn replies on with
         // it; the Replies filter still switches them back off.
-        if (resolved == FeedLayoutMode.THREADED && !feedService.showReplies.value) {
+        // Hashtags runs its own subscription; the Replies filter is not its.
+        if (resolved == FeedLayoutMode.THREADED && feedMode != FeedMode.HASHTAGS && !feedService.showReplies.value) {
             feedService.setShowReplies(true)
         }
         _layoutModeToggle.value++
@@ -363,7 +363,8 @@ class FeedViewModel @Inject constructor(
         // the visible note list, so regroup on it directly.
         configStore.config.map { it.blockedForActiveAccount() }.distinctUntilChanged(),
     ) { notes, threaded, _, _ ->
-        if (!threaded) emptyList() else {
+        // Hashtags groups its own sections (HashtagsFeed).
+        if (!threaded || _feedMode.value == FeedMode.HASHTAGS) emptyList() else {
             val blocked = feedService.blockedHexForActiveAccount()
             FeedThreadGrouping.withoutBlocked(
                 FeedThreadGrouping.build(notes) { id ->

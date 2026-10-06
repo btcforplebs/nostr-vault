@@ -1354,6 +1354,9 @@ final class HashtagFeedModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var seen = Set<String>()
     private var follows = Set<String>()
+    /// What the posts on hand were loaded for; see `start(follows:trust:)`.
+    private var shownTags: [String] = []
+    private var shownTrust: Set<String>?
     private let queue = DispatchQueue(label: "com.haven.hashtag-feed")
     private var generation = 0
 
@@ -1372,11 +1375,20 @@ final class HashtagFeedModel: ObservableObject {
         stop()
         generation += 1
         let gen = generation
-        fromFollows = []
-        fromOthers = []
-        seen = []
+        // Same feed as last time (back from a note): keep the posts so the
+        // list, and the scroll position on it, survive; the reopened
+        // subscription only adds what is new.
+        let resuming = tags == shownTags && follows == self.follows && trust == shownTrust
+            && !(fromFollows.isEmpty && fromOthers.isEmpty)
+        shownTags = tags
+        shownTrust = trust
+        if !resuming {
+            fromFollows = []
+            fromOthers = []
+            seen = []
+            isLoading = true
+        }
         self.follows = follows
-        isLoading = true
 
         // NIP-24 says t tags are lowercase; some clients keep the typed case.
         // Capped so the REQ stays under relay message limits.

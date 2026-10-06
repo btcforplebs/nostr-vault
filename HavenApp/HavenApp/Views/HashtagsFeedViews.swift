@@ -4,9 +4,13 @@ import Combine
 /// The Hashtags feed: posts carrying the hashtags you follow (your kind 10015
 /// interest list). Same scope as the hashtag sheet: people you follow first,
 /// then your network, Everyone only through the app-wide shield.
-struct HashtagsFeedSection<Row: View>: View {
+struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
+    /// Threaded layout: whole conversations instead of loose posts.
+    let threaded: Bool
     /// Draws one post the way the main feed does (navigation, actions).
     let row: (FeedNote) -> Row
+    /// Draws one conversation the way the main feed's threaded layout does.
+    let threadRow: (FeedThread<FeedNote>) -> ThreadRow
 
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var configService: ConfigService
@@ -18,8 +22,14 @@ struct HashtagsFeedSection<Row: View>: View {
     @State private var selected: String?
     @State private var showingFollowFailed = false
 
-    init(@ViewBuilder row: @escaping (FeedNote) -> Row) {
+    init(
+        threaded: Bool,
+        @ViewBuilder row: @escaping (FeedNote) -> Row,
+        @ViewBuilder threadRow: @escaping (FeedThread<FeedNote>) -> ThreadRow
+    ) {
+        self.threaded = threaded
         self.row = row
+        self.threadRow = threadRow
     }
 
     private var everyone: Bool { configService.config.globalShowsEveryone }
@@ -37,14 +47,18 @@ struct HashtagsFeedSection<Row: View>: View {
                 if model.fromFollows.isEmpty && model.fromOthers.isEmpty {
                     noPostsState
                 }
-                LazyVStack(spacing: 12) {
-                    if !model.fromFollows.isEmpty {
-                        sectionHeader("From people you follow")
-                        ForEach(model.fromFollows) { row($0) }
-                    }
-                    if !model.fromOthers.isEmpty {
-                        sectionHeader(everyone ? "More from everyone" : "More from your network")
-                        ForEach(model.fromOthers) { row($0) }
+                if threaded {
+                    threadedList
+                } else {
+                    LazyVStack(spacing: 12) {
+                        if !model.fromFollows.isEmpty {
+                            sectionHeader("From people you follow")
+                            ForEach(model.fromFollows) { row($0) }
+                        }
+                        if !model.fromOthers.isEmpty {
+                            sectionHeader(everyone ? "More from everyone" : "More from your network")
+                            ForEach(model.fromOthers) { row($0) }
+                        }
                     }
                 }
             }
@@ -209,6 +223,33 @@ struct HashtagsFeedSection<Row: View>: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 24)
         .padding(.top, 48)
+    }
+
+    // MARK: Threaded
+
+    /// Both sections grouped into conversations in one pass, so a reply from
+    /// your network and one from a follow land in the same card. A card goes
+    /// on top when anyone you follow posted in it: "following first" still
+    /// holds, and no conversation is split across the two sections.
+    private var threadedList: some View {
+        let followIds = Set(model.fromFollows.map(\.id))
+        let blocked = configService.activeAccountBlockedHexPubkeys
+        let threads = FeedThreadGrouping.build(notes: model.fromFollows + model.fromOthers) { id in
+            guard let note = feedService.findNote(id: id), !blocked.contains(note.pubkey) else { return nil }
+            return note
+        }
+        let top = threads.filter { $0.entries.contains { followIds.contains($0.note.id) } }
+        let rest = threads.filter { !$0.entries.contains { followIds.contains($0.note.id) } }
+        return LazyVStack(spacing: 12) {
+            if !top.isEmpty {
+                sectionHeader("From people you follow")
+                ForEach(top) { threadRow($0) }
+            }
+            if !rest.isEmpty {
+                sectionHeader(everyone ? "More from everyone" : "More from your network")
+                ForEach(rest) { threadRow($0) }
+            }
+        }
     }
 
     private func sectionHeader(_ title: String) -> some View {
