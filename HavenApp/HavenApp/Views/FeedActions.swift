@@ -432,8 +432,8 @@ struct FeedNoteRowData: Equatable {
 }
 
 /// The buttons under a post, as the emoji typed into Settings → Post buttons.
-/// Only ⚡️ is read: on iOS the zap button on posts, live streams and locked
-/// articles shows only once the user adds it, so App Review sees a labeled
+/// Only ⚡️ is read: on iOS the zap button on posts and live streams shows
+/// only once the user adds it, so App Review sees a labeled
 /// opt-in rather than a hidden feature. Profile zaps don't read this, and the
 /// Mac always shows zaps.
 enum PostButtons {

@@ -1012,12 +1012,13 @@ struct GatedArticleBody: View {
         case checking, locked, paying, waiting, unlocked(String), failed(String)
     }
     @State private var phase: Phase = .checking
+    #if !os(iOS)
     @State private var confirming = false
+    #endif
     /// Shares of the price not yet paid. Fewer than all means money may have
     /// moved already: the button then pays only what is left, or just
     /// re-checks for the key, and never pays the same share twice.
     @State private var unpaid: [GatedArticle.Share] = []
-    @AppStorage(PostButtons.storageKey) private var postButtons = ""
 
     var body: some View {
         if case .unlocked(let markdown) = phase {
@@ -1043,7 +1044,48 @@ struct GatedArticleBody: View {
     private var paid: Bool { unpaid.count < gated.shares.count }
     private var dueSats: Int { unpaid.reduce(0) { $0 + $1.sats } }
 
+    /// iOS never pays to unlock: that is buying digital content (App Store
+    /// 3.1.1), and no opt-in changes that. It still opens an article paid for
+    /// on the web or in another client, since the key server only checks the
+    /// zap receipt.
+    private var paysHere: Bool {
+        #if os(iOS)
+        false
+        #else
+        true
+        #endif
+    }
+
+    /// Where to read or buy the article outside the app: the author's own
+    /// link, or on iOS (where there is no pay button) the naddr on njump.
+    private var webURL: URL? {
+        if let url = GatedArticleTeaser.unlockURL(note.content) { return url }
+        #if os(iOS)
+        let relay = gated.shares.first(where: { $0.pubkey == note.pubkey })?.relay ?? gated.receiptRelays.first
+        guard let identifier = note.longFormMetadata.identifier,
+              let tlv = GatedArticle.naddrTLV(identifier: identifier, relay: relay, pubkey: note.pubkey, kind: note.kind),
+              let naddr = Bech32.encode(hrp: "naddr", data: tlv) else { return nil }
+        return URL(string: "https://njump.me/\(naddr)")
+        #else
+        return nil
+        #endif
+    }
+
     private var lockPanel: some View {
+        #if os(iOS)
+        lockCard
+        #else
+        lockCard
+            .confirmationDialog(confirmTitle, isPresented: $confirming, titleVisibility: .visible) {
+                Button("Zap \(dueSats) sats") { Task { await pay() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your zap unlocks the full article.")
+            }
+        #endif
+    }
+
+    private var lockCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "lock.fill")
@@ -1064,11 +1106,16 @@ struct GatedArticleBody: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Paying stays behind the same opt-in as zapping a post; re-checking
-            // for a key already paid for does not.
-            if PostButtons.showsZap(postButtons) || (paid && unpaid.isEmpty) {
+            // Re-checking for a key already paid for shows everywhere.
+            if paysHere || (paid && unpaid.isEmpty) {
                 Button {
-                    if paid && unpaid.isEmpty { Task { await waitForKey() } } else { confirming = true }
+                    if paid && unpaid.isEmpty {
+                        Task { await waitForKey() }
+                    } else {
+                        #if !os(iOS)
+                        confirming = true
+                        #endif
+                    }
                 } label: {
                     HStack(spacing: 8) {
                         if busy {
@@ -1090,7 +1137,7 @@ struct GatedArticleBody: View {
             }
 
             HStack(spacing: 16) {
-                if !paid, phase == .locked {
+                if phase == .locked, !paid || (!paysHere && !unpaid.isEmpty) {
                     Button {
                         Task { await checkAccess(auto: false) }
                     } label: {
@@ -1100,7 +1147,7 @@ struct GatedArticleBody: View {
                     }
                     .buttonStyle(.plain)
                 }
-                if let web = GatedArticleTeaser.unlockURL(note.content) {
+                if let web = webURL {
                     Button {
                         openURL(web)
                     } label: {
@@ -1119,12 +1166,6 @@ struct GatedArticleBody: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.havenPurple.opacity(0.35), lineWidth: 1)
         )
-        .confirmationDialog(confirmTitle, isPresented: $confirming, titleVisibility: .visible) {
-            Button("Zap \(dueSats) sats") { Task { await pay() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Your zap unlocks the full article.")
-        }
     }
 
     private var confirmTitle: String {
@@ -1152,10 +1193,12 @@ struct GatedArticleBody: View {
         case .waiting: return "Paid. Waiting for the author's server to see your zap. This can take a minute or two."
         case _ where paid && unpaid.isEmpty:
             return "You've zapped for this article. If it hasn't opened, the receipt is still on its way."
+        case _ where paid && !paysHere:
+            return "Part of the price went through. Pay the rest on the web or in another app, then tap Already paid?"
         case _ where paid:
             return "Part of the price went through. Zap the rest to unlock."
-        case _ where !PostButtons.showsZap(postButtons):
-            return "Locked by \(authorName) for \(gated.priceSats) sats. To zap from here, add ⚡️ in Settings → Post buttons."
+        case _ where !paysHere:
+            return "Locked by \(authorName) for \(gated.priceSats) sats. Paid on the web or in another app? Tap Already paid? to read it here."
         default: return "Zap \(authorName) \(gated.priceSats) sats to read the full article here."
         }
     }
@@ -1183,6 +1226,7 @@ struct GatedArticleBody: View {
         }
     }
 
+    #if !os(iOS)
     private func pay() async {
         guard !busy else { return }
         phase = .paying
@@ -1198,6 +1242,7 @@ struct GatedArticleBody: View {
         unpaid = GatedArticleService.shared.unpaidShares(note: note, gated: gated)
         await waitForKey()
     }
+    #endif
 
     private func waitForKey() async {
         phase = .waiting

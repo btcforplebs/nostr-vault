@@ -3265,17 +3265,6 @@ struct AppearanceSettingsView: View {
                     Text("Reactions")
                 }
             }
-
-            #if os(iOS)
-            Section {
-                AppIconPicker(selectedIcon: $configService.config.appIcon) { iconName in
-                    configService.save()
-                    setAppIcon(iconName)
-                }
-            } header: {
-                Text("App Icon")
-            }
-            #endif
         }
         .groupedFormStyleCompat()
         .sheet(isPresented: $showEmojiPicker) {
@@ -3309,22 +3298,6 @@ struct AppearanceSettingsView: View {
         .onChange(of: value.wrappedValue) { _, _ in configService.save() }
     }
 
-    #if os(iOS)
-    private func setAppIcon(_ iconName: String) {
-        let iconToSet = iconName == "Default" ? nil : iconName
-
-        guard UIApplication.shared.supportsAlternateIcons else {
-            print("Alternate icons not supported")
-            return
-        }
-
-        UIApplication.shared.setAlternateIconName(iconToSet) { error in
-            if let error = error {
-                print("Error setting alternate icon: \(error.localizedDescription)")
-            }
-        }
-    }
-    #endif
 
     
 }
@@ -4002,72 +3975,6 @@ struct BlossomSettingsView: View {
         }
     }
 }
-
-#if os(iOS)
-// MARK: - App Icon Selection
-
-enum AppIconOption: String, CaseIterable, Identifiable {
-    case `default` = "Default"
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .default: return "Vault (Default)"
-        }
-    }
-
-    var iconName: String? {
-        switch self {
-        case .default: return nil  // nil means the primary app icon
-        }
-    }
-
-    var previewImageName: String {
-        "AppIcon"  // All variants use the same preview for now
-    }
-}
-
-struct AppIconPicker: View {
-    @Binding var selectedIcon: String
-    let onChange: (String) -> Void
-
-    var body: some View {
-        ForEach(AppIconOption.allCases) { option in
-            Button(action: {
-                selectedIcon = option.rawValue
-                onChange(option.rawValue)
-            }) {
-                HStack(spacing: 12) {
-                    // App icon preview
-                    Image("AppIcon")
-                        .resizable()
-                        .frame(width: 60, height: 60)
-                        .cornerRadius(13.5)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 13.5)
-                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                        )
-
-                    Text(option.displayName)
-                        .foregroundColor(.primary)
-
-                    Spacer()
-
-                    if selectedIcon == option.rawValue {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.havenPurple)
-                    }
-                }
-                .padding(.vertical, 4)
-                // The whole row, not just the icon and name.
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-}
-#endif
 
 // RelayListEditor and LogsView moved to separate files
 
