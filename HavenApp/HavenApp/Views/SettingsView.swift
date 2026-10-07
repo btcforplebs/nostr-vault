@@ -43,8 +43,7 @@ struct SettingsView: View {
         case appearance = "Appearance"
         case media = "Media & Cache"
         case pushNotifications = "Notifications"
-        case dm = "DM Relays"
-        case blastr = "Broadcast"
+        case relays = "Relays"
         case blossom = "Media Servers"
         case macRelay = "Sync with Mac"
         case relayAccess = "Who Can Reach You"
@@ -81,8 +80,7 @@ struct SettingsView: View {
             case .appearance: return "paintpalette"
             case .media: return "photo.on.rectangle"
             case .pushNotifications: return "bell.badge"
-            case .dm: return "bubble.left.and.bubble.right"
-            case .blastr: return "paperplane"
+            case .relays: return "point.3.connected.trianglepath.dotted"
             case .blossom: return "server.rack"
             case .macRelay:
                 #if os(macOS)
@@ -119,7 +117,7 @@ struct SettingsView: View {
             ("Account", [.accounts, .blocked, .followingBackup, .wallet]),
             ("Feed & Display", [.feed, .appearance, .media]),
             ("Notifications", [.pushNotifications]),
-            ("Sharing", [.dm, .blastr, .blossom]),
+            ("Relays", [.relays]),
             ("Your Vault Relay", relayTabs),
             ("Help", [.tutorials]),
             ("Advanced", [.proofOfWork, .advanced, .logs]),
@@ -521,14 +519,13 @@ struct SettingsView: View {
         case .appearance: return .purple
         case .feed: return .pink
         case .media: return .indigo
-        case .dm: return .mint
+        case .relays: return .havenPurple
         case .pushNotifications: return .red
         case .importNotes: return .orange
         case .relayAccess: return .blue
         case .backup: return .indigo
         case .startup: return .green
         case .followingBackup: return .teal
-        case .blastr: return .cyan
         // Stays system green: this list is a categorical palette for the
         // section icons (pink, mint, blue, indigo, teal…), not a status. Using
         // `havenOnline` here would give one settings row the vocabulary of a
@@ -559,7 +556,7 @@ struct SettingsView: View {
             case .blocked: BlockedSettingsView()
             case .appearance: AppearanceSettingsView()
             case .feed: FeedSettingsView()
-            case .dm: DMSettingsView()
+            case .relays: RelayMatrixView()
             case .pushNotifications: PushNotificationSettingsView()
             case .importNotes: ImportSettingsView()
             case .media: MediaSettingsView()
@@ -567,7 +564,6 @@ struct SettingsView: View {
             case .startup: StartupSettingsView()
             case .backup: BackupSettingsView()
             case .followingBackup: FollowingBackupSettingsView()
-            case .blastr: BlastrSettingsView()
             case .blossom: BlossomSettingsView()
             case .macRelay:
                 #if os(iOS)
@@ -2328,53 +2324,14 @@ struct ImportSettingsView: View {
                 DatePicker(selection: importDateBinding, displayedComponents: .date) {
                     Text("Start Date").settingInfo(.relayImport)
                 }
-            }
-
-            Section {
-                RelayListEditor(relays: $configService.config.importSeedRelays)
-            } header: {
-                Text("Import From")
+            } footer: {
+                Text("Import pulls from the relays with Import on, in Settings > Relays.")
             }
         }
         .groupedFormStyleCompat()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-    }
-}
-
-/// The NIP-50 relays Global search asks, per device (UserDefaults, not the
-/// relay config — the relay never reads this list). Lives on the Feed page:
-/// it was a separate "Search Relays" row among the relay's own settings,
-/// which made it look like something the relay did.
-struct SearchRelaysSection: View {
-    @State private var relays: [String] = SearchRelaySettings.relays
-    @State private var isDefault = SearchRelaySettings.isDefault
-
-    var body: some View {
-        Section {
-            RelayListEditor(relays: Binding(
-                get: { relays },
-                // Shown = saved: the same normalization the store applies.
-                set: { relays = SearchRelayDefaults.normalized($0) }
-            ), duplicateKey: SearchRelayDefaults.key)
-
-            Button("Reset to Defaults") {
-                SearchRelaySettings.resetToDefaults()
-                isDefault = true
-                relays = SearchRelaySettings.relays
-            }
-            .disabled(isDefault)
-        } header: {
-            Text("Search Relays").settingInfo(.feedSearchRelays)
-        }
-        .onChange(of: relays) { _, newValue in
-            // A reset has already cleared the stored list; writing the
-            // defaults back would pin them and stop future default changes.
-            if isDefault && newValue == SearchRelaySettings.relays { return }
-            SearchRelaySettings.relays = newValue
-            isDefault = false
-        }
     }
 }
 
@@ -2746,7 +2703,7 @@ struct BackupSettingsView: View {
 
 }
 
-/// Everything about what the feed shows and where it reads from. The three
+/// What the feed shows (where it reads from is Settings > Relays). The three
 /// switches are the same values as the feed's toolbar buttons, so flipping
 /// one in either place flips both.
 struct FeedSettingsView: View {
@@ -2786,14 +2743,6 @@ struct FeedSettingsView: View {
                      ? "Posts go out as soon as you tap. There's no undo."
                      : "Posts wait \(Int(sendDelay)) seconds before going out, so you can undo or edit them.")
             }
-
-            Section {
-                RelayListEditor(relays: $configService.config.feedRelays)
-            } header: {
-                Text("Feed Relays").settingInfo(.feedRelays)
-            }
-
-            SearchRelaysSection()
         }
         .groupedFormStyleCompat()
         #if os(iOS)
@@ -2807,96 +2756,6 @@ struct FeedSettingsView: View {
         }
     }
 }
-
-struct DMSettingsView: View {
-    @EnvironmentObject var configService: ConfigService
-    @State private var showPublishSuccess = false
-    @State private var publishTask: Task<Void, Never>?
-
-    var body: some View {
-        Form {
-            Section {
-                RelayListEditor(relays: $configService.config.dmRelays)
-                    .onChange(of: configService.config.dmRelays) { _, _ in
-                        // Auto-publish when relays change (debounced)
-                        publishTask?.cancel()
-                        publishTask = Task {
-                            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 second debounce
-                            if !Task.isCancelled {
-                                publishDMRelayList()
-                            }
-                        }
-                    }
-            } header: {
-                Text("DM Relays").settingInfo(.shareDMRelays)
-            } footer: {
-                let havenInbox = configService.config.ownHavenDMInboxURL
-                if !havenInbox.isEmpty {
-                    Text("\(havenInbox) comes first. People send your DMs to it, your own sent messages go there too, and all your devices read from it. It stays first while it's set as your relay address.")
-                }
-            }
-
-            if showPublishSuccess {
-                Section {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.havenOnline)
-                        Text("DM relay preferences published to network")
-                            .font(.appCaption)
-                    }
-                }
-                .transition(.opacity)
-            }
-        }
-        .groupedFormStyleCompat()
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .onDisappear {
-            publishTask?.cancel()
-        }
-    }
-
-    private func publishDMRelayList() {
-        // Publishes the DM inbox list — the owner's Haven inbox first (the Mac
-        // relay on iOS, this relay on a Mac with a public address), then the
-        // relays above — and stamps it as the newest change, so the other
-        // devices adopt it at their next launch instead of overwriting it.
-        // Loopback entries are dropped: our 127.0.0.1 is the sender's own
-        // machine, so a gift wrap sent there never reached us.
-        NostrService.shared.publishOwnerDMInboxList()
-
-        // Show success feedback
-        showPublishSuccess = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            showPublishSuccess = false
-        }
-    }
-}
-
-struct BlastrSettingsView: View {
-    @EnvironmentObject var configService: ConfigService
-    
-    var body: some View {
-        Form {
-            // The raw "Blastr Relays File" field is gone: it named a JSON file
-            // inside the relay's data folder that the app writes itself from
-            // this list, so editing it only ever broke the broadcast.
-            Section {
-                RelayListEditor(relays: $configService.config.blastrRelays)
-            } header: {
-                Text("Broadcast Relays").settingInfo(.shareBroadcast)
-            }
-        }
-        .groupedFormStyleCompat()
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-    }
-}
-
-
-
 
 struct WalletSettingsView: View {
     @EnvironmentObject var configService: ConfigService
