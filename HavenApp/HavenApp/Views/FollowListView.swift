@@ -86,6 +86,10 @@ struct FollowListView: View {
                     }
                     ToolbarItem(placement: .primaryAction) { sortMenu }
                 }
+                #if os(iOS)
+                .toolbarBackground(Color.platformWindowBackground, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                #endif
                 .navigationDestination(for: FollowListRoute.self) { route in
                     ProfileView(pubkey: route.pubkey, embeddedInNavigation: true)
                 }
@@ -101,10 +105,6 @@ struct FollowListView: View {
         let sections = currentSections
         return ScrollView {
             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                tabPicker
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-
                 if sections.isEmpty {
                     emptyState
                 } else {
@@ -135,6 +135,19 @@ struct FollowListView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.immediately)
+        .solidTopEdge()
+        // Title, search and the switch stay put on a solid bar; rows and the
+        // pinned group headers slide under it, never show through it.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            tabPicker
+                .frame(maxWidth: 720)
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
+                .frame(maxWidth: .infinity)
+                .background(Color.platformWindowBackground)
+                .overlay(alignment: .bottom) { Divider() }
+        }
     }
 
     private var currentSections: [FollowListSection] {
@@ -292,6 +305,18 @@ struct FollowListView: View {
     }
 }
 
+private extension View {
+    /// iOS 26 blurs content up into the bar; this page's bar is solid.
+    @ViewBuilder
+    func solidTopEdge() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            self
+        }
+    }
+}
+
 struct FollowListRoute: Hashable {
     let pubkey: String
 }
@@ -314,13 +339,16 @@ struct FollowListRow: View {
     let followState: FollowButtonState?
     let onOpen: () -> Void
     let onToggleFollow: () -> Void
+    /// A profile that never arrives stops shimmering after a while.
+    @State private var gaveUpWaiting = false
+    @State private var shimmer = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             // The row's tap target. The Follow button is a sibling, never
             // inside it: a Button nested in a Button never gets the tap.
             HStack(alignment: .top, spacing: 12) {
-                AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 44)
+                AvatarView(url: profile?.pictureURL, pubkey: pubkey, size: 44, neutralPlaceholder: true)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 5) {
                         Text(name)
@@ -343,16 +371,7 @@ struct FollowListRow: View {
                                 .fixedSize()
                         }
                     }
-                    if let bio = FollowListLogic.bioLine(profile?.about) {
-                        // Plain text: links in a bio are not tappable here,
-                        // so the whole row stays one tap target.
-                        Text(verbatim: bio)
-                            .font(.appSystem(size: 13))
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    bio
                 }
                 Spacer(minLength: 0)
             }
@@ -368,6 +387,34 @@ struct FollowListRow: View {
         .padding(.leading, 16)
         .padding(.trailing, 12)
         .padding(.vertical, 8)
+        .task(id: pubkey) {
+            guard profile == nil else { return }
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            gaveUpWaiting = true
+        }
+    }
+
+    /// Always two lines tall, so rows keep one height as profiles land.
+    @ViewBuilder
+    private var bio: some View {
+        if profile == nil && !gaveUpWaiting {
+            Text(verbatim: "Loading this person's bio so it can be shown here on two lines")
+                .font(.appSystem(size: 13))
+                .lineLimit(2, reservesSpace: true)
+                .redacted(reason: .placeholder)
+                .opacity(shimmer ? 0.5 : 1.0)
+                .animation(Motion.shimmer, value: shimmer)
+                .onAppear { if Motion.shimmer != nil { shimmer = true } }
+                .accessibilityHidden(true)
+        } else {
+            // Plain text: links in a bio are not tappable here, so the whole
+            // row stays one tap target.
+            Text(verbatim: FollowListLogic.bioLine(profile?.about) ?? " ")
+                .font(.appSystem(size: 13))
+                .foregroundColor(.secondary)
+                .lineLimit(2, reservesSpace: true)
+                .multilineTextAlignment(.leading)
+        }
     }
 }
 
