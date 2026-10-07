@@ -10,7 +10,7 @@ use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
 use smoltcp::socket::tcp;
 use smoltcp::time::Instant;
-use smoltcp::wire::{HardwareAddress, IpAddress, IpCidr, Ipv6Address};
+use smoltcp::wire::{HardwareAddress, IpAddress, IpCidr};
 use std::collections::{HashMap, VecDeque};
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Ipv6Addr, SocketAddr, TcpListener, TcpStream};
@@ -282,7 +282,7 @@ pub fn run_with(
     let mut iface = Interface::new(Config::new(HardwareAddress::Ip), &mut dev, Instant::now());
     iface.update_ip_addrs(|a| {
         // /8 makes all of fd::/8 on-link; Medium::Ip has no neighbour step.
-        let _ = a.push(IpCidr::new(IpAddress::Ipv6(Ipv6Address::from(my_addr)), 8));
+        let _ = a.push(IpCidr::new(IpAddress::Ipv6(my_addr), 8));
     });
 
     let mut sockets = SocketSet::new(vec![]);
@@ -385,7 +385,7 @@ pub fn run_with(
                 let mut s = new_socket();
                 s.set_timeout(Some(CONNECT_TIMEOUT.into()));
                 next_port = if next_port == u16::MAX { 49152 } else { next_port + 1 };
-                let to = (IpAddress::Ipv6(Ipv6Address::from(*peer)), MESH_PORT);
+                let to = (IpAddress::Ipv6(*peer), MESH_PORT);
                 if let Err(e) = s.connect(iface.context(), to, next_port) {
                     eprintln!("mesh connect [{peer}]: {e}");
                     continue;
@@ -409,12 +409,13 @@ pub fn run_with(
             };
 
             // mesh -> local
-            if sp.pending.is_empty() && s.can_recv() {
-                if let Ok(n) = s.recv_slice(&mut buf) {
-                    sp.pending.extend_from_slice(&buf[..n]);
-                    rx.fetch_add(n as u64, Ordering::Relaxed);
-                    busy |= n > 0;
-                }
+            if sp.pending.is_empty()
+                && s.can_recv()
+                && let Ok(n) = s.recv_slice(&mut buf)
+            {
+                sp.pending.extend_from_slice(&buf[..n]);
+                rx.fetch_add(n as u64, Ordering::Relaxed);
+                busy |= n > 0;
             }
             if !sp.pending.is_empty() {
                 match sp.stream.write(&sp.pending) {
