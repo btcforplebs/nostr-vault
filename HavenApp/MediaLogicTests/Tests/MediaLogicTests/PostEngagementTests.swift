@@ -57,7 +57,46 @@ final class PostEngagementTests: XCTestCase {
             event("d1", kind: 1, pubkey: bob, tags: [["e", post, "", "root"], ["e", other, "", "reply"]]),
         ]
         let tally = PostEngagementQuery.tally(events, targets: [post])
-        XCTAssertNil(tally[post])
+        XCTAssertEqual(tally[post], PostEngagement(quotes: 1))
+    }
+
+    func testCountsBothKindsOfQuote() {
+        let events = [
+            event("q1", kind: 1, pubkey: alice, tags: [["q", post]]),
+            event("q2", kind: 1, pubkey: bob, tags: [["e", post, "", "mention"]]),
+            event("q3", kind: 1111, pubkey: bob, tags: [["E", other], ["e", other], ["q", post, "wss://r"]]),
+        ]
+        let tally = PostEngagementQuery.tally(events + events, targets: [post, other])
+        XCTAssertEqual(tally[post], PostEngagement(quotes: 3))
+        XCTAssertEqual(tally[other], PostEngagement(replies: 1))
+    }
+
+    func testReplyThatAlsoQuotesItsParentIsOnlyAReply() {
+        let events = [event("c1", kind: 1, pubkey: bob, tags: [["e", post, "", "reply"], ["q", post]])]
+        XCTAssertEqual(PostEngagementQuery.tally(events, targets: [post])[post], PostEngagement(replies: 1))
+    }
+
+    func testOneNoteQuotingTwoPostsCountsForEach() {
+        let events = [event("q1", kind: 1, pubkey: alice, tags: [["q", post], ["q", other]])]
+        let tally = PostEngagementQuery.tally(events, targets: [post, other])
+        XCTAssertEqual(tally[post]?.quotes, 1)
+        XCTAssertEqual(tally[other]?.quotes, 1)
+    }
+
+    func testQuoteFiltersAskByQTag() {
+        let filters = PostEngagementQuery.filters(for: [post], since: 1_791_000_000)
+        XCTAssertEqual(filters.count, 2)
+        XCTAssertEqual(filters[1]["#q"] as? [String], [post])
+        XCTAssertEqual(filters[1]["kinds"] as? [Int], [1, 1111])
+        XCTAssertEqual(filters[1]["since"] as? Int, 1_791_000_000)
+    }
+
+    func testLedgerSavedBeforeQuotesDecodesAsNeverAsked() throws {
+        let old = #"{"likers":["1111111111111111"],"reposters":[],"replies":[],"zaps":{},"isLowerBound":true}"#
+        let ledger = try JSONDecoder().decode(EngagementLedger.self, from: Data(old.utf8))
+        XCTAssertNil(ledger.quotes)
+        XCTAssertEqual(ledger.engagement, PostEngagement(likes: 1, isLowerBound: true))
+        XCTAssertEqual(EngagementLedger().quotes, [])
     }
 
     func testEventForAnotherPostIsIgnored() {
@@ -73,7 +112,8 @@ final class PostEngagementTests: XCTestCase {
     func testFiltersSplitIdsIntoGroups() {
         let ids = (0..<23).map { String(format: "%064d", $0) }
         let filters = PostEngagementQuery.filters(for: ids, groupSize: 10)
-        XCTAssertEqual(filters.map { ($0["#e"] as? [String])?.count }, [10, 10, 3])
+        XCTAssertEqual(filters.compactMap { ($0["#e"] as? [String])?.count }, [10, 10, 3])
+        XCTAssertEqual(filters.compactMap { ($0["#q"] as? [String])?.count }, [10, 10, 3])
         XCTAssertEqual(Set(filters.flatMap { $0["#e"] as? [String] ?? [] }), Set(ids))
         XCTAssertEqual(filters.first?["kinds"] as? [Int], [7, 6, 16, 9735, 1, 1111])
     }
