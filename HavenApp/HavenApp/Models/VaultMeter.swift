@@ -65,8 +65,10 @@ struct VaultMeter: Equatable {
         return "\(n) of \(slots) \(people) followed."
     }
 
-    /// An account that already follows this many never sees the guide.
-    static func skipsGuide(followCount: Int) -> Bool { followCount >= masterGoal }
+    /// An account that already follows this many never sees the guide: it is
+    /// marked finished straight away, because page tutorials only start once
+    /// "Fill your vault" is finished or skipped.
+    static func skipsGuide(followCount: Int) -> Bool { followCount >= goal }
 }
 
 /// Remembers, per account, that Vault Master was reached, so the gold meter

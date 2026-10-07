@@ -52,9 +52,9 @@ final class VaultMeterTests: XCTestCase {
         XCTAssertEqual(meter.recent.count, 10)
     }
 
-    func testTenOrMoreSkipsTheGuide() {
-        XCTAssertFalse(VaultMeter.skipsGuide(followCount: 9))
-        XCTAssertTrue(VaultMeter.skipsGuide(followCount: 10))
+    func testFiveOrMoreSkipsTheGuide() {
+        XCTAssertFalse(VaultMeter.skipsGuide(followCount: 4))
+        XCTAssertTrue(VaultMeter.skipsGuide(followCount: 5))
     }
 
     func testCelebrationFiresOncePerAccount() {
