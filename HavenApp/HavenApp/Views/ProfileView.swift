@@ -369,7 +369,14 @@ struct ProfileView: View {
             #endif
         }
         .onDisappear {
+            // Loads in flight die with their connections; without this a
+            // return before the first EOSE skips the notes load entirely.
             disconnectClients()
+            isLoadingNotes = false
+            isLoadingOlderNotes = false
+            olderPageSubId = nil
+            isLoadingOlderTaggedNotes = false
+            olderTaggedSubId = nil
             #if os(macOS)
             removeKeyMonitor()
             #endif

@@ -228,6 +228,7 @@ class ProfileViewModel @Inject constructor(
     /** Drops the stream and everything it loaded, for a fresh load. */
     private fun resetLoadedState() {
         stream?.close(); stream = null
+        pageToken++
         seenNoteIds.clear(); seenTaggedIds.clear(); followerPubkeys.clear()
         _profileNotes.value = emptyList()
         _taggedNotes.value = emptyList()
@@ -252,6 +253,7 @@ class ProfileViewModel @Inject constructor(
         _isLoading.value = true
         // A page of older notes in flight dies with the old stream.
         stream?.close(); stream = null
+        pageToken++
         _isLoadingOlder.value = false
         nostrService.fetchMissingProfiles(listOf(pk), force = true)
         loadProfile()
@@ -291,10 +293,9 @@ class ProfileViewModel @Inject constructor(
 
             // Seed instantly from cached feed notes (iOS parity).
             val cached = feedService.notes.value.filter { it.pubkey == pk }
-            if (cached.isNotEmpty()) {
-                cached.forEach { seenNoteIds.add(it.id) }
-                _profileNotes.value = cached.sortedByDescending { it.createdAt }
-            }
+            // Merged, not assigned: a refresh keeps what the relays already
+            // loaded (their notes are in seenNoteIds, so they won't come back).
+            if (cached.isNotEmpty()) mergeNotes(cached)
 
             startStream(pk)
 
@@ -346,6 +347,13 @@ class ProfileViewModel @Inject constructor(
     }
 
     @Synchronized
+    private fun mergeNotes(notes: List<FeedNote>) {
+        val fresh = notes.filter { seenNoteIds.add(it.id) }
+        if (fresh.isEmpty()) return
+        _profileNotes.value = (_profileNotes.value + fresh).sortedByDescending { it.createdAt }
+    }
+
+    @Synchronized
     private fun addTagged(note: FeedNote) {
         if (!seenTaggedIds.add(note.id)) return
         if (nostrService.profiles.value[note.pubkey] == null) {
@@ -354,6 +362,9 @@ class ProfileViewModel @Inject constructor(
         _taggedNotes.value = (_taggedNotes.value + note).sortedByDescending { it.createdAt }
         feedService.cacheNote(note)
     }
+
+    /** Bumped when a stream is replaced so an older page's check can't end paging. */
+    private var pageToken = 0
 
     /** Infinite-scroll: page older notes (or tagged) on the open stream sockets. */
     fun loadOlder() {
@@ -365,8 +376,10 @@ class ProfileViewModel @Inject constructor(
             _isLoadingOlder.value = true
             val before = _taggedNotes.value.size
             s.loadOlderTagged(oldest.createdAt.time / 1000)
+            val token = pageToken
             viewModelScope.launch {
                 delay(5000)
+                if (token != pageToken) return@launch
                 if (_taggedNotes.value.size == before) _hasMoreTagged.value = false
                 _isLoadingOlder.value = false
             }
@@ -376,8 +389,10 @@ class ProfileViewModel @Inject constructor(
             _isLoadingOlder.value = true
             val before = _profileNotes.value.size
             s.loadOlder(oldest.createdAt.time / 1000)
+            val token = pageToken
             viewModelScope.launch {
                 delay(5000)
+                if (token != pageToken) return@launch
                 if (_profileNotes.value.size == before) _hasMoreNotes.value = false
                 _isLoadingOlder.value = false
             }
