@@ -1663,7 +1663,7 @@ private fun HeroNoteCard(
             // bigger here, with who picked each option.
             val poll = remember(note.id, note.kind) { note.poll }
             if (poll != null) {
-                PollCard(poll = poll, isFocused = true)
+                PollCard(poll = poll, isFocused = true, hiddenURLs = (note.mediaURLs + note.cardLinkURLs).toSet())
                 Spacer(Modifier.height(12.dp))
             } else if (note.content.isNotBlank()) {
                 val mediaSet = remember(note.mediaURLs) { note.mediaURLs.toSet() }

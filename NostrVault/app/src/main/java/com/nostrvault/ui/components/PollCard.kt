@@ -86,6 +86,11 @@ class PollViewModel @Inject constructor(
 fun PollCard(
     poll: NIP88Poll.Poll,
     isFocused: Boolean = false,
+    /**
+     * Picture and link URLs the note draws below as media and cards — left in
+     * the question they showed as bare links (Logen, 2026-10-07).
+     */
+    hiddenURLs: Set<String> = emptySet(),
     viewModel: PollViewModel = hiltViewModel(),
     modifier: Modifier = Modifier,
 ) {
@@ -110,9 +115,12 @@ fun PollCard(
             .fillMaxWidth()
             .padding(top = 4.dp),
     ) {
-        if (poll.question.isNotEmpty()) {
+        val question = remember(poll.question, hiddenURLs) {
+            hiddenURLs.fold(poll.question) { text, url -> text.replace(url, "") }.trim()
+        }
+        if (question.isNotEmpty()) {
             Text(
-                text = poll.question,
+                text = question,
                 color = PrimaryText,
                 fontSize = if (isFocused) 19.sp else 17.sp,
                 fontWeight = FontWeight.SemiBold,
