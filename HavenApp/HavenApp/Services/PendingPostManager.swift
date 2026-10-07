@@ -134,6 +134,13 @@ class PendingPostManager: ObservableObject {
         timeRemaining = ActionType.countdownDuration
         withAnimation(Motion.bannerIn) { isShowing = true }
         beginCountdown {
+            // Past the countdown the post is committed: it is no longer the
+            // pending one. Left set, the next post, repost or delete ran
+            // clearPrevious() on it and removed this already-sent post from
+            // the feed, so your previous reply vanished from its thread.
+            if self.pendingEvent?.id == event.id {
+                self.pendingEvent = nil
+            }
             let confirmationId = self.beginConfirmation(type)
             nostrService.postEvent(event) { outcome in
                 self.finishConfirmation(confirmationId, outcome: outcome)
