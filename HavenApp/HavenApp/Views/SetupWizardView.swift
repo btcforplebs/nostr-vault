@@ -595,7 +595,12 @@ struct SetupWizardView: View {
         }
 
         if isIOSDevice {
-            PushNotificationService.shared.requestPermissionAndRegister()
+            // Not on top of the first tutorial or the import pill: ask when
+            // the first tutorial closes. If none does this launch,
+            // AppDelegate asks at the next launch.
+            TutorialCenter.shared.onNextClose = {
+                PushNotificationService.shared.requestPermissionAndRegister()
+            }
         }
 
         onComplete()
@@ -861,7 +866,7 @@ private struct ChoosePathStep: View {
                                             .transition(.scale.combined(with: .opacity))
                                     }
                                 }
-                                Text("Quick start -- we'll set everything up for you")
+                                Text("Quick start. We'll set everything up for you.")
                                     .font(.appSystem(size: 14))
                                     .foregroundColor(WizardColors.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)

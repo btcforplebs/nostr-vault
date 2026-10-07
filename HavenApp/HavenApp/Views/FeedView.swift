@@ -1514,6 +1514,10 @@ struct FeedView: View {
 
                 if feedService.feedMode == .reels {
                     reelsFeedView
+                } else if relayManager.isImporting && feedService.notes.isEmpty {
+                    // The relay is busy importing (I use Nostr's "Keep it
+                    // running"), so nothing loads until it's back.
+                    importingFeedView
                 } else if showLoadingContacts {
                     loadingContactsView
                 } else if feedService.feedMode == .discovery && feedService.isLoadingExtendedNetwork && feedService.notes.isEmpty {
@@ -1781,6 +1785,24 @@ struct FeedView: View {
     }
 
     // MARK: - Empty State
+
+    private var importingFeedView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .controlSize(.large)
+                .tint(Color.havenPurple)
+            Text("Your feed fills in as your notes come home")
+                .font(.appSystem(size: 20, weight: .bold))
+                .multilineTextAlignment(.center)
+            Text(ImportTourStage(statusMessage: relayManager.importStatusMessage, completed: false).text)
+                .font(.appSystem(size: 13))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+    }
 
     private var emptyStateView: some View {
         VStack(spacing: 40) {

@@ -37,6 +37,10 @@ final class TutorialCenter: ObservableObject {
     /// Fill your vault being marked done quietly (an account that already
     /// follows people) lets that page's tutorial start in the same launch.
     @Published private(set) var revision = 0
+    /// Runs once, a moment after the next tutorial is finished or skipped.
+    /// Setup uses it to hold the notification permission prompt until the
+    /// first tutorial is out of the way.
+    var onNextClose: (() -> Void)?
 
     init(store: TutorialStore = UserDefaultsTutorialStore()) {
         progress = TutorialProgress(store: store)
@@ -64,11 +68,22 @@ final class TutorialCenter: ObservableObject {
     func finish(_ id: TutorialID, account: String) {
         progress.finish(id, account: account)
         revision += 1
+        runNextClose()
     }
 
     func skip(_ id: TutorialID, account: String) {
         progress.skip(id, account: account)
         revision += 1
+        runNextClose()
+    }
+
+    private func runNextClose() {
+        guard let action = onNextClose else { return }
+        onNextClose = nil
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            action()
+        }
     }
 
     func resetAll(account: String) {
