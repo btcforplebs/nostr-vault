@@ -75,7 +75,7 @@ Never use background audio, VoIP or location modes to keep it alive. That fails 
 | 1b | Engine pieces for the app: sharing on/off, share and read at the same time, counters. | Tao | Open |
 | 1c | Working leaf-only mode: no forwarding for strangers (§6). Built in our fork first. | Tao | Open. **Gates "Share my relay" on by default.** |
 | 1d | Re-send a missed connect offer (the 2-min stall), as its own change in the same fork. | Tao | Open |
-| **2. Android sharing** | Engine in the app; Settings → Mesh with "Who can reach you" and "Share my relay" (off by default). The list picks whom we connect to. It is not a block list. | Ted | **Built.** Phone → Mac on home Wi-Fi: 20 MB, 3 of 3 identical, ~17 MB/s. Branch `feat/android-fips-v2`. |
+| **2. Android sharing** | Engine in the app; Settings → Mesh with a friends list and "Share my relay" (off by default). The list picks whom we connect to. It is not a block list. The screen still labels it "Who can reach you"; rename to "Friends I connect to" in the app. | Ted | **Built.** Phone → Mac on home Wi-Fi: 20 MB, 3 of 3 identical, ~17 MB/s. Branch `feat/android-fips-v2`. |
 | **3. Android reading** | Vault adds its mesh address to its kind 10063 server list. The app reads a friend over FIPS, falls back to normal servers, shows a "via FIPS" badge. | Ted | Not started |
 | **4. Real-world test** | Two phones, two networks, one on cellular. A full day of battery. Then an internal build. | Logen + Ted | Not started. Needs the engine in the background service first. Run the battery check early. |
 | **5. Mac, then iPhone** | Mac shares like Android. iPhone reads (plus kiosk). | Tao | After Android |
