@@ -654,6 +654,13 @@ struct FeedView: View {
             onDashboard: { showingRelayStatus = true }
         )
         .equatable()
+        // The Feeds tutorial points here, and starts here the first time
+        // the feed shows (after Fill your vault; see TutorialProgress).
+        .tutorialAnchor(TutorialContent.feedPicker)
+        .task(id: configService.config.ownerNpub) {
+            let account = Bech32.decode(configService.config.ownerNpub)?.hexString ?? ""
+            TutorialCenter.shared.startIfEligible(.feeds, account: account)
+        }
     }
     #endif
 

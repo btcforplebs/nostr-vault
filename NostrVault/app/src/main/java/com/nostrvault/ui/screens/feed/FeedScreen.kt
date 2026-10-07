@@ -1,5 +1,6 @@
 package com.nostrvault.ui.screens.feed
 
+import com.nostrvault.tutorials.tutorialAnchor
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -137,6 +138,12 @@ fun FeedScreen(
     hashtagsViewModel: HashtagsFeedViewModel = hiltViewModel(),
 ) {
     val feedMode by viewModel.feedMode.collectAsState()
+    // The Feeds tutorial starts here the first time the feed shows (after
+    // Fill your vault; see TutorialProgress). Its cards point at the picker.
+    val ownerHex by viewModel.ownerHexPubkey.collectAsState()
+    LaunchedEffect(ownerHex) {
+        com.nostrvault.tutorials.TutorialCenter.startIfEligible(com.nostrvault.tutorials.TutorialID.FEEDS, ownerHex)
+    }
     // Hashtags keeps its own list: its rows are not the note list's.
     val hashtagsListState = rememberLazyListState()
     // The post button writes what the feed shows: a diVine in diVines, an
@@ -1724,6 +1731,7 @@ private fun FeedTopBar(
             GlassPill(
                 horizontalArrangement = Arrangement.Start,
                 modifier = Modifier
+                    .tutorialAnchor(com.nostrvault.tutorials.TutorialContent.FEED_PICKER)
                     .clip(CircleShape)
                     .clickable(onClickLabel = "Switch feeds or open the feed dashboard") { feedModeExpanded = true }
                     .semantics { contentDescription = "Feed: ${feedMode.displayName}, $connectionStatus" },
