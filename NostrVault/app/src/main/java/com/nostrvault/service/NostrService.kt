@@ -786,7 +786,7 @@ class NostrService @Inject constructor(
         }
         if (pubkeys.isEmpty()) return
 
-        val blastrRelays = configStore.config.value.activeBlastrRelays
+        val readRelays = configStore.config.value.readRelays
 
         // Record the dispatch time so these pubkeys are negatively-cached for
         // PROFILE_RETRY_TTL_MS even if no kind-0 comes back (no resolvable profile, or it
@@ -813,9 +813,9 @@ class NostrService @Inject constructor(
         // Reuse a small pool of WARM connections to the Blastr relays (kind 0 is
         // widely replicated) instead of opening fresh sockets per flush. A stable
         // sub id means each flush just replaces the filter on the open sockets.
-        // The user's own relay (first in blastrRelays when configured) leads,
+        // The user's own relay (first in readRelays when configured) leads,
         // then the profile relays, then the rest of Blastr.
-        val relays = (blastrRelays.take(1) + PROFILE_RELAYS + blastrRelays)
+        val relays = (readRelays.take(1) + PROFILE_RELAYS + readRelays)
             .distinct()
             .filter { isValidRelayUrl(it) }
             .take(METADATA_POOL_SIZE)
@@ -1099,8 +1099,8 @@ class NostrService @Inject constructor(
             put("limit", 2)
         }
 
-        val blastrRelays = configStore.config.value.activeBlastrRelays
-        for (relayUrl in blastrRelays.take(3)) {
+        val readRelays = configStore.config.value.readRelays
+        for (relayUrl in readRelays.take(3)) {
             if (!isValidRelayUrl(relayUrl)) continue
             scope.launch(Dispatchers.IO) {
                 lookupPool.query(relayUrl, subId, listOf(buildFilterJson(filter)), TEMP_CLIENT_DISCONNECT_MS) { msg ->
@@ -1119,7 +1119,7 @@ class NostrService @Inject constructor(
      */
     fun fetchRelayLists(pubkeys: List<String>) {
         if (pubkeys.isEmpty()) return
-        val relays = (configStore.config.value.activeBlastrRelays.take(1) + PROFILE_RELAYS)
+        val relays = (configStore.config.value.readRelays.take(1) + PROFILE_RELAYS)
             .distinct()
             .filter { isValidRelayUrl(it) }
         for (chunk in pubkeys.distinct().chunked(RELAY_LIST_CHUNK)) {

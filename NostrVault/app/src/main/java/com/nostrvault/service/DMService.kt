@@ -900,13 +900,13 @@ class DMService @Inject constructor(
             val ownerHex = nostrService.activeHexPubkey
             val dmRelays = nostrService.dmRelayLists.value[ownerHex] ?: emptyList()
             val inboxRelays = nostrService.relayLists.value[ownerHex] ?: emptyList()
-            // Fall back to configured DM relays + blastr so a fetch still happens
+            // Fall back to configured DM relays + Read relays so a fetch still happens
             // when our own kind 10050/10002 isn't cached yet (e.g. a fresh setup
             // or an account that never published a relay list) — otherwise
             // pull-to-refresh queried zero relays and nothing ever loaded.
             val configured = ownDMInboxRelays(ownerHex)
-            val blastr = configStore.config.value.activeBlastrRelays
-            val allRelays = (configured + dmRelays + inboxRelays + blastr)
+            val read = configStore.config.value.readRelays
+            val allRelays = (configured + dmRelays + inboxRelays + read)
                 .distinct()
                 .filter { !it.contains("localhost") && !it.contains("127.0.0.1") }
                 .take(EXTERNAL_FETCH_MAX_RELAYS)
@@ -1060,14 +1060,14 @@ class DMService @Inject constructor(
     /**
      * The PUBLIC relays to keep persistent DM subscriptions on: the relays we
      * advertise in our kind 10050 (where senders deliver to us), plus our cached
-     * NIP-65 inbox relays and blastr relays as fallbacks. Loopback excluded.
+     * NIP-65 inbox relays and Read relays as fallbacks. Loopback excluded.
      */
     private fun liveExternalRelaySet(ownerHex: String): List<String> {
         val advertised = nostrService.dmRelayLists.value[ownerHex] ?: emptyList()
         val inbox = nostrService.relayLists.value[ownerHex] ?: emptyList()
         val configured = ownDMInboxRelays(ownerHex)
-        val blastr = configStore.config.value.activeBlastrRelays
-        return (configured + advertised + inbox + blastr)
+        val read = configStore.config.value.readRelays
+        return (configured + advertised + inbox + read)
             .map { it.trim() }
             .filter { it.isNotEmpty() && !it.contains("localhost") && !it.contains("127.0.0.1") }
             .distinct()

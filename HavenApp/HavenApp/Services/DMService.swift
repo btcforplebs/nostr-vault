@@ -604,8 +604,8 @@ class DMService: ObservableObject {
         fetchFromExternalRelays()
     }
 
-    /// Fetch DMs from the user's known external relays (seed relays / blastr relays)
-    /// to catch any gift wraps not yet imported by the Go relay.
+    /// Fetch DMs from the user's known external relays (the Read relays, then
+    /// the DM inbox) to catch any gift wraps not yet imported by the Go relay.
     func fetchFromExternalRelays() {
         let ownPubkey = loadedAccountPubkey
         guard !ownPubkey.isEmpty else { return }
@@ -613,7 +613,7 @@ class DMService: ObservableObject {
 
         let generation = self.switchGeneration
 
-        var relays = ConfigService.shared.config.writeRelays
+        var relays = ConfigService.shared.config.readRelays
 
         // Include own DM inbox relays: your sent copies from other devices
         // land there, as do messages to you.

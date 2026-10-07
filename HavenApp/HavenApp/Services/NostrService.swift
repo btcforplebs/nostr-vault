@@ -231,8 +231,8 @@ class NostrService: ObservableObject {
         let pubkeys = Array(profileFetchQueue)
         profileFetchQueue.removeAll()
 
-        // Use blastr relays or defaults if empty
-        var relays = ConfigService.shared.config.writeRelays
+        // Looking things up is reading: the Read relays
+        var relays = ConfigService.shared.config.readRelays
         relays += Self.profileIndexRelays
 
         // A lookup that found nothing must be able to run again, or a profile
@@ -245,7 +245,7 @@ class NostrService: ObservableObject {
         }
 
         #if DEBUG
-        print("NostrService: Batch fetching metadata for \(pubkeys.count) pubkeys from \(relays.count) Blastr relays")
+        print("NostrService: Batch fetching metadata for \(pubkeys.count) pubkeys from \(relays.count) Read relays")
         #endif
 
         let uniqueRelays = Array(Set(relays)).compactMap { URL(string: $0) }
@@ -343,8 +343,8 @@ class NostrService: ObservableObject {
         guard (relayLists[pubkey] == nil || dmRelayLists[pubkey] == nil) && !relaysInFlight.contains(pubkey) else { return }
         relaysInFlight.insert(pubkey)
 
-        // Use blastr relays or defaults if empty
-        var relays = ConfigService.shared.config.writeRelays
+        // Looking things up is reading: the Read relays
+        var relays = ConfigService.shared.config.readRelays
 
         // Include cached outbox (write) relays for this user — their kind 10002/10050
         // is most likely to be found on their own write relays.
