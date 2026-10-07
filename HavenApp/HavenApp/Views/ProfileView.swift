@@ -66,6 +66,8 @@ struct ProfileView: View {
     @State private var followsMe: Bool = false
     @State private var followersCount: Int? = nil
     @State private var followerPubkeys = Set<String>()
+    /// Largest NIP-45 COUNT any relay gave for this profile's followers.
+    @State private var relayFollowerCount: Int? = nil
 
     // Note streaming
     @State private var profileNotes: [FeedNote] = []
@@ -350,6 +352,7 @@ struct ProfileView: View {
             nostrService.fetchMissingProfiles(for: [pubkey])
             fetchAuthorNotes()
             fetchLocalRelayCounts()
+            fetchFollowerCount()
             shop.load(pubkey: pubkey)
             extras.load(pubkey: pubkey, relays: extrasRelays)
             #if os(macOS)
@@ -991,13 +994,13 @@ struct ProfileView: View {
                     value: followingCount.map(shortInt) ?? "—",
                     label: "FOLLOWING"
                 )
-                statDivider
-                statCell(
-                    value: followersCount.map(shortInt) ?? "∞",
-                    label: "FOLLOWERS",
-                    tint: followersCount == nil ? Color.havenVerified.opacity(0.55) : .primary
-                )
             }
+            statDivider
+            statCell(
+                value: displayedFollowersCount.map(shortInt) ?? "∞",
+                label: "FOLLOWERS",
+                tint: displayedFollowersCount == nil ? Color.havenVerified.opacity(0.55) : .primary
+            )
         }
         .padding(.horizontal, 16)
     }
@@ -1738,13 +1741,52 @@ struct ProfileView: View {
         followsMe = false
         followersCount = nil
         followerPubkeys.removeAll()
+        relayFollowerCount = nil
         totalNoteCount = nil
         totalMediaCount = nil
 
         fetchAuthorNotes()
         fetchLocalRelayCounts()
+        fetchFollowerCount()
 
         try? await Task.sleep(nanoseconds: 500_000_000)
+    }
+
+    // MARK: - Follower count
+
+    /// The streamed kind-3 events stop at 100 per relay, so they undercount
+    /// anyone with more followers. Relays that answer NIP-45 COUNT give the
+    /// full number; show whichever is larger.
+    private var displayedFollowersCount: Int? {
+        switch (relayFollowerCount, followersCount) {
+        case let (relay?, streamed?): return max(relay, streamed)
+        case let (relay, streamed): return relay ?? streamed
+        }
+    }
+
+    /// Asks each relay for its own follower COUNT and keeps the largest.
+    /// Relays hold different subsets of contact lists, so adding their
+    /// counts together would double-count; the largest single answer is
+    /// the closest to the real number.
+    private func fetchFollowerCount() {
+        var urls: [URL] = []
+        var seen = Set<String>()
+        // damus and primal answer COUNT; most other popular relays reject it.
+        let candidates = ["wss://relay.damus.io", "wss://relay.primal.net"]
+            + ConfigService.shared.config.activeFeedRelays.prefix(3)
+        for str in candidates where seen.insert(str).inserted {
+            if let url = URL(string: str) { urls.append(url) }
+        }
+        let filter: [String: Any] = ["kinds": [3], "#p": [pubkey]]
+
+        for url in urls {
+            Task {
+                guard let count = await nostrService.fetchCount(from: [url], filter: filter) else { return }
+                await MainActor.run {
+                    relayFollowerCount = max(relayFollowerCount ?? 0, count)
+                }
+            }
+        }
     }
 
     // MARK: - Local relay counts (own profile)
