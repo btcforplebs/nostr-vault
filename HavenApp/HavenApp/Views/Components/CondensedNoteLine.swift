@@ -146,12 +146,6 @@ struct CondensedNoteLine: View {
                             .padding(.top, 2)
                     }
                     linkChip
-                    // A poll's line is its question; this adds its votes and
-                    // time left, which is what a list of polls is read for.
-                    if let poll = note.poll {
-                        PollCondensedStatus(poll: poll)
-                            .padding(.top, 1)
-                    }
                     engagementRow
                 }
 

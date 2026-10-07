@@ -113,33 +113,3 @@ struct PollsEmptyStateView: View {
         }
     }
 }
-
-/// What a condensed Polls row adds after the question: the vote count and
-/// how long is left. Reads the shared `PollStore` model, so the count is the
-/// one the full card shows.
-struct PollCondensedStatus: View {
-    let poll: NIP88Poll.Poll
-    @StateObject private var model: PollModel
-
-    init(poll: NIP88Poll.Poll) {
-        self.poll = poll
-        _model = StateObject(wrappedValue: PollStore.shared.model(for: poll))
-    }
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(model.tally.voters.count == 1 ? "1 vote" : "\(model.tally.voters.count) votes")
-            if let endsAt = poll.endsAt {
-                if poll.isClosed() {
-                    Text("· Closed")
-                } else {
-                    Text("· Ends ") + Text(endsAt, format: .relative(presentation: .named))
-                }
-            }
-        }
-        .font(.appSystem(size: 12, weight: .medium))
-        .foregroundColor(.secondary)
-        .lineLimit(1)
-        .task { await model.load() }
-    }
-}

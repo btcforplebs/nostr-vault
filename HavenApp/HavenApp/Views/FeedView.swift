@@ -485,7 +485,6 @@ struct FeedView: View {
         switch feedService.feedMode {
         case .following, .discovery, .global, .popular, .hashtags:
             return true
-        // Polls are rows with a condensed form, but not conversations.
         case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .polls:
             return false
         }
@@ -496,7 +495,7 @@ struct FeedView: View {
     /// `isThreadedModeActive`); grids, card lists and Reels ignore them, so
     /// the button there cycled an icon and nothing else. The Mac toolbar
     /// already left it out for these feeds.
-    private var currentFeedHasLayouts: Bool { currentFeedSupportsThreading || feedService.feedMode == .polls }
+    private var currentFeedHasLayouts: Bool { currentFeedSupportsThreading }
 
     /// The stored layout for the current feed, migrating anyone who had the
     /// old per-feed compact boolean set.
@@ -612,11 +611,12 @@ struct FeedView: View {
     private var isCompactModeActive: Bool {
         guard layoutModeForCurrentFeed.usesCondensedRows else { return false }
         switch feedService.feedMode {
-        case .following, .discovery, .global, .popular, .hashtags, .polls:
+        case .following, .discovery, .global, .popular, .hashtags:
             return true
         // Articles and Media are card/grid layouts, not timeline rows —
-        // compact mode has nothing to condense.
-        case .media, .articles, .recipes, .marketplace, .live, .reels, .music:
+        // compact mode has nothing to condense. Polls always show the
+        // full card, since the vote bars are the point of the feed.
+        case .media, .articles, .recipes, .marketplace, .live, .reels, .music, .polls:
             return false
         }
     }
@@ -796,11 +796,11 @@ struct FeedView: View {
                     trustScopeButton
                 }
             } else if feedService.feedMode == .polls {
-                IconFilterButton(icon: feedService.pollsFeedMode == .following ? "person.2.fill" : "person.2", tooltip: "Following", isSelected: feedService.pollsFeedMode == .following, color: .havenPurple) {
-                    PollsFeed.setScope(.following)
-                }
-                IconFilterButton(icon: "globe", tooltip: "Global", isSelected: feedService.pollsFeedMode == .global, color: .havenPurple) {
-                    PollsFeed.setScope(.global)
+                // One scope toggle, not a Following / Global pair: with the
+                // shield, status and auto-load buttons a pair is too wide for
+                // an iPhone, and the whole row falls back to the Filter menu.
+                IconFilterButton(icon: feedService.pollsFeedMode == .following ? "person.2.fill" : "globe", tooltip: feedService.pollsFeedMode == .following ? "Following" : "Global", isSelected: true, color: .havenPurple) {
+                    PollsFeed.setScope(feedService.pollsFeedMode == .following ? .global : .following)
                 }
                 if feedService.pollsFeedMode == .global {
                     trustScopeButton
