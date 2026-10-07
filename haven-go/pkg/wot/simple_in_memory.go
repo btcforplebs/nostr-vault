@@ -83,6 +83,25 @@ func (wt *SimpleInMemory) Size() int {
 	return len(*m)
 }
 
+// NamesOnlyOwners reports whether a built graph holds nobody but the
+// whitelisted owners: the owner follows no one yet. Depths 0 and 1 never hold
+// anyone else, so they never count as waiting for follows.
+func (wt *SimpleInMemory) NamesOnlyOwners() bool {
+	if wt.WotDepth < 2 {
+		return false
+	}
+	m := wt.pubkeys.Load()
+	if m == nil {
+		return false
+	}
+	for pk := range *m {
+		if _, owner := wt.WhitelistedPubKeys[pk]; !owner {
+			return false
+		}
+	}
+	return true
+}
+
 func (wt *SimpleInMemory) Has(_ context.Context, pubKey string) bool {
 	if wt.WotDepth == 0 {
 		return true
