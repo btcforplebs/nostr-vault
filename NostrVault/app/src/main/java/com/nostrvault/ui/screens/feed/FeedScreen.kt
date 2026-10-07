@@ -140,9 +140,12 @@ fun FeedScreen(
     val feedMode by viewModel.feedMode.collectAsState()
     // The Feeds tutorial starts here the first time the feed shows (after
     // Fill your vault; see TutorialProgress). Its cards point at the picker.
-    val ownerHex by viewModel.ownerHexPubkey.collectAsState()
-    LaunchedEffect(ownerHex) {
-        com.nostrvault.tutorials.TutorialCenter.startIfEligible(com.nostrvault.tutorials.TutorialID.FEEDS, ownerHex)
+    // Re-checked when a status is saved, so an account whose Fill your vault
+    // is marked done after its follow list loads gets Feeds in this launch.
+    val activeHex by viewModel.activeHexPubkey.collectAsState()
+    val tutorialRevision by com.nostrvault.tutorials.TutorialCenter.revision.collectAsState()
+    LaunchedEffect(activeHex, tutorialRevision) {
+        com.nostrvault.tutorials.TutorialCenter.startIfEligible(com.nostrvault.tutorials.TutorialID.FEEDS, activeHex)
     }
     // Hashtags keeps its own list: its rows are not the note list's.
     val hashtagsListState = rememberLazyListState()

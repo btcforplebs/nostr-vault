@@ -20,6 +20,10 @@ final class UserDefaultsTutorialStore: TutorialStore {
 ///
 /// Fill your vault draws its own guide: it shows while
 /// `isActive(.fillYourVault)` and calls `finish` or `skip` itself.
+///
+/// `account` is always the active account's hex pubkey: Fill your vault is
+/// about whose follows you're looking at, and the page tutorials' gate reads
+/// that same account's Fill your vault status.
 @MainActor
 final class TutorialCenter: ObservableObject {
     static let shared = TutorialCenter()
@@ -29,6 +33,10 @@ final class TutorialCenter: ObservableObject {
     @Published private(set) var stepIndex = 0
     /// Where each `.tutorialAnchor` is on screen, in global coordinates.
     @Published private(set) var anchors: [String: CGRect] = [:]
+    /// Bumped whenever a status is saved. Pages key their start on it, so
+    /// Fill your vault being marked done quietly (an account that already
+    /// follows people) lets that page's tutorial start in the same launch.
+    @Published private(set) var revision = 0
 
     init(store: TutorialStore = UserDefaultsTutorialStore()) {
         progress = TutorialProgress(store: store)
@@ -55,14 +63,17 @@ final class TutorialCenter: ObservableObject {
 
     func finish(_ id: TutorialID, account: String) {
         progress.finish(id, account: account)
+        revision += 1
     }
 
     func skip(_ id: TutorialID, account: String) {
         progress.skip(id, account: account)
+        revision += 1
     }
 
     func resetAll(account: String) {
         progress.resetAll(account: account)
+        revision += 1
     }
 
     // MARK: Cards

@@ -585,7 +585,7 @@ fun NostrVaultNavHost(
 
                 composable(Screen.TutorialsSettings.route) {
                     com.nostrvault.tutorials.TutorialsSettingsScreen(
-                        account = nostrService.ownerHexPubkey,
+                        account = nostrService.activeHexPubkey,
                         onBack = { navController.popBackStack() },
                         // Back to the feed, where the replayed card waits.
                         onReplay = {
