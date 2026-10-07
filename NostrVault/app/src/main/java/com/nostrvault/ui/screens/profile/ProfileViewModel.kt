@@ -240,8 +240,9 @@ class ProfileViewModel @Inject constructor(
     }
 
     /**
-     * Pull-to-refresh: reloads the profile from scratch on a new stream —
-     * metadata, notes, tagged notes and counts — keeping the open tab.
+     * Pull-to-refresh, in place: a new stream adds what is new while the
+     * notes, counts and tabs on screen stay until something replaces them,
+     * so the page never blanks and refills. Metadata is fetched again.
      * iOS: ProfileView.refreshProfile().
      */
     fun refresh() {
@@ -249,7 +250,10 @@ class ProfileViewModel @Inject constructor(
         if (pk.isEmpty() || _isRefreshing.value) return
         _isRefreshing.value = true
         _isLoading.value = true
-        resetLoadedState()
+        // A page of older notes in flight dies with the old stream.
+        stream?.close(); stream = null
+        _isLoadingOlder.value = false
+        nostrService.fetchMissingProfiles(listOf(pk), force = true)
         loadProfile()
         shop.load(pk, force = true)
         loadExtras(pk, force = true)
@@ -260,6 +264,9 @@ class ProfileViewModel @Inject constructor(
             _isRefreshing.value = false
         }
     }
+
+    /** Bumped by each load so an earlier load's fallback can't end a later one. */
+    private var loadToken = 0
 
     private fun loadProfile() {
         val pk = _pubkey.value
@@ -291,10 +298,12 @@ class ProfileViewModel @Inject constructor(
 
             startStream(pk)
 
-            // Fallback: stop the spinner after 10s even if no EOSE arrives.
+            // Fallback: stop the spinner after 10s even if no EOSE arrives —
+            // unless a later load (a refresh) has started since.
+            val token = ++loadToken
             launch {
                 delay(10_000)
-                if (_pubkey.value == pk) _isLoading.value = false
+                if (_pubkey.value == pk && token == loadToken) _isLoading.value = false
             }
         }
     }
