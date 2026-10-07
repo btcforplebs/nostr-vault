@@ -385,7 +385,7 @@ struct FollowListRow: View {
             .accessibilityAddTraits(.isButton)
 
             if let followState {
-                FollowListButton(state: followState, action: onToggleFollow)
+                FollowListButton(state: followState, name: name, action: onToggleFollow)
             }
         }
         .padding(.leading, 16)
@@ -433,6 +433,8 @@ enum FollowButtonState: Equatable {
 /// hit area is at least 44pt.
 struct FollowListButton: View {
     let state: FollowButtonState
+    /// Whose button this is, so VoiceOver and Voice Control can tell rows apart.
+    let name: String
     let action: () -> Void
 
     var body: some View {
@@ -452,7 +454,7 @@ struct FollowListButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(filled ? "Follow" : "Following")
+        .accessibilityLabel(filled ? "Follow \(name)" : "Following \(name)")
         .accessibilityHint(filled ? "" : "Unfollows")
     }
 

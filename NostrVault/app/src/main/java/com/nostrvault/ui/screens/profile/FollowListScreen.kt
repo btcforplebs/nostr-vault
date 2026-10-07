@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -691,7 +692,7 @@ private fun FollowListRow(
         }
         if (followState != null) {
             Spacer(Modifier.width(8.dp))
-            FollowButton(followState, onToggleFollow)
+            FollowButton(followState, name, onToggleFollow)
         }
     }
 }
@@ -741,7 +742,7 @@ private fun EmptyAvatar() {
 
 /** Filled "Follow", outlined "Following". Drawn 32dp tall; the tap target is 48dp. */
 @Composable
-private fun FollowButton(state: FollowButtonState, onClick: () -> Unit) {
+private fun FollowButton(state: FollowButtonState, name: String, onClick: () -> Unit) {
     val colors = LocalNostrVaultColors.current
     val filled = when (state) {
         FollowButtonState.Follow -> true
@@ -754,8 +755,10 @@ private fun FollowButton(state: FollowButtonState, onClick: () -> Unit) {
         modifier = Modifier
             .heightIn(min = 48.dp)
             .widthIn(min = 88.dp)
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = if (filled) "Follow" else "Following, tap to unfollow" },
+            // Same wording as iOS: the label names the person so TalkBack and
+            // Voice Access can tell rows apart; the action says what a tap does.
+            .clickable(role = Role.Button, onClickLabel = if (filled) null else "Unfollow", onClick = onClick)
+            .semantics { contentDescription = if (filled) "Follow $name" else "Following $name" },
     ) {
         Box(
             contentAlignment = Alignment.Center,
@@ -777,6 +780,7 @@ private fun FollowButton(state: FollowButtonState, onClick: () -> Unit) {
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
+                modifier = Modifier.clearAndSetSemantics {},
             )
         }
     }
