@@ -2767,7 +2767,7 @@ final class ProfileExtrasLoader: ObservableObject {
 // MARK: - Profile banner
 
 /// The strip across the top of a profile. Runs edge to edge and up under the
-/// navigation bar, stretches when pulled down, and fades into the page at the
+/// navigation bar, scrolls with the page, and fades into the page at the
 /// bottom. Until the banner arrives, or when there is none, a wash tinted from
 /// the profile picture stands in so the header never jumps or sits empty.
 private struct ProfileBannerView: View {
