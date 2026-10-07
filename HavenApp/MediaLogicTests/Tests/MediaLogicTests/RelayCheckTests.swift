@@ -42,7 +42,7 @@ final class RelayCheckTests: XCTestCase {
         XCTAssertEqual(RelayCheck.summary(rows), "2 relays are ready to import from. 1 didn't answer, so we'll skip it.")
         XCTAssertEqual(RelayCheck.importList(rows), ["wss://relay.primal.net", "wss://nos.lol"])
         rows[1].result = .refused; rows[1].isOn = false
-        XCTAssertEqual(RelayCheck.summary(rows), "1 relay is ready to import from. 1 didn't answer, so we'll skip it. 1 doesn't keep notes.")
+        XCTAssertEqual(RelayCheck.summary(rows), "1 relay is ready to import from. 1 didn't answer, so we'll skip it. 1 won't share notes.")
         rows[0].isOn = false; rows[1].isOn = false
         XCTAssertTrue(RelayCheck.summary(rows).hasPrefix("No relays"))
     }
@@ -54,5 +54,14 @@ final class RelayCheckTests: XCTestCase {
         XCTAssertNil(RelayCheck.normalize("https://example.com"))
         XCTAssertNil(RelayCheck.normalize("not a relay"))
         XCTAssertNil(RelayCheck.normalize("localhost"))
+    }
+
+    /// relay.nostr.build answers kind-1 REQs with AUTH, then
+    /// CLOSED "auth-required: …" (checked 2026-10-07).
+    func testClosedReasons() {
+        XCTAssertEqual(RelayCheck.closedResult(reason: "auth-required: authenticate with AUTH before subscribing"), .needsSignIn)
+        XCTAssertEqual(RelayCheck.closedResult(reason: "ERROR: bad req: filter validation failed: kind not allowed: 1"), .refused)
+        XCTAssertEqual(RelayCheck.closedResult(reason: nil), .refused)
+        XCTAssertFalse(RelayCheck.Result.needsSignIn.canImport)
     }
 }

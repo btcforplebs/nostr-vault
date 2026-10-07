@@ -296,12 +296,12 @@ class ConfigService: ObservableObject {
         let envURL = relayDataDir.appendingPathComponent(".env")
         try? envContent.write(to: envURL, atomically: true, encoding: .utf8)
         
-        // Create relays_import.json
+        // Create relays_import.json (same list as HavenConfig.importSeedRelays)
         let importRelays = """
         [
             "wss://relay.primal.net",
-            "wss://nos.lol",
-            "wss://nostr.mom",
+            "wss://relay.damus.io",
+            "wss://relay.nostr.build",
             "wss://relay.btcforplebs.com",
             "wss://nostr-pub.wellorder.net"
         ]

@@ -929,7 +929,7 @@ struct RelayCheckStep: View {
         case .checking: WizardColors.textMuted
         case .ready: WizardColors.success
         case .slow: WizardColors.accentPrimary
-        case .notAnswering, .refused: WizardColors.error
+        case .notAnswering, .refused, .needsSignIn: WizardColors.error
         }
         return HStack(spacing: 10) {
             Circle().fill(dot).frame(width: 8, height: 8).accessibilityHidden(true)
@@ -957,7 +957,7 @@ struct RelayCheckStep: View {
                 Toggle("Import from \(value.url)", isOn: row.isOn)
                     .labelsHidden()
                     .tint(WizardColors.accentPrimary)
-                    .disabled(value.result == .notAnswering || value.result == .refused)
+                    .disabled(!value.result.canImport)
             }
         }
         .padding(.horizontal, 14)

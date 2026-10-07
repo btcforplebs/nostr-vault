@@ -20,6 +20,8 @@ enum RelayCheck {
         /// Answered, but refused the request (CLOSED): e.g. a chat-only
         /// relay that doesn't keep notes.
         case refused
+        /// Wants NIP-42 sign-in before it answers ("auth-required").
+        case needsSignIn
 
         init(answeredAfter seconds: Double?, hasNotes: Bool) {
             guard let seconds, seconds <= RelayCheck.timeout else { self = .notAnswering; return }
@@ -28,12 +30,20 @@ enum RelayCheck {
                 : .ready(seconds: seconds, hasNotes: hasNotes)
         }
 
+        /// Whether the import could read from it at all.
+        var canImport: Bool {
+            switch self {
+            case .ready, .slow: return true
+            case .checking, .notAnswering, .refused, .needsSignIn: return false
+            }
+        }
+
         /// On by default: answered, and if slow, only when it has their notes.
         var onByDefault: Bool {
             switch self {
             case .ready: return true
             case .slow(_, let hasNotes): return hasNotes
-            case .checking, .notAnswering, .refused: return false
+            case .checking, .notAnswering, .refused, .needsSignIn: return false
             }
         }
 
@@ -46,6 +56,7 @@ enum RelayCheck {
             case .slow(let s, false): return "Slow · none of your notes found · \(Self.format(s))"
             case .notAnswering: return "Not answering · skipped"
             case .refused: return "Doesn't keep notes · skipped"
+            case .needsSignIn: return "Needs sign-in · skipped"
             }
         }
 
@@ -106,10 +117,16 @@ enum RelayCheck {
         if on == 0 { text = "No relays are ready to import from. Add one, or check again." }
         if dead == 1 { text += " 1 didn't answer, so we'll skip it." }
         if dead > 1 { text += " \(dead) didn't answer, so we'll skip them." }
-        let refused = rows.filter { $0.result == .refused }.count
-        if refused == 1 { text += " 1 doesn't keep notes." }
-        if refused > 1 { text += " \(refused) don't keep notes." }
+        let refused = rows.filter { $0.result == .refused || $0.result == .needsSignIn }.count
+        if refused == 1 { text += " 1 won't share notes." }
+        if refused > 1 { text += " \(refused) won't share notes." }
         return text
+    }
+
+    /// A CLOSED reply: NIP-01 machine-readable prefix "auth-required:" means
+    /// it wants sign-in; anything else, it won't serve this request.
+    static func closedResult(reason: String?) -> Result {
+        (reason ?? "").hasPrefix("auth-required") ? .needsSignIn : .refused
     }
 
     /// What the import reads, in order.

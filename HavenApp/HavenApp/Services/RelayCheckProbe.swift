@@ -33,13 +33,15 @@ enum RelayCheckProbe {
                           let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
                           let type = json.first as? String,
                           json[safe: 1] as? String == subId else { return }
-                    if type == "EVENT" {
+                    if type == "AUTH" {
+                        return // a CLOSED auth-required follows if it matters
+                    } else if type == "EVENT" {
                         hasNotes = true
                     } else if type == "EOSE" || type == "CLOSED" {
                         let seconds = Date().timeIntervalSince(started)
                         finish(type == "EOSE"
                                ? RelayCheck.Result(answeredAfter: seconds, hasNotes: hasNotes)
-                               : .refused)
+                               : RelayCheck.closedResult(reason: json[safe: 2] as? String))
                     }
                 }
                 .store(in: &subs)

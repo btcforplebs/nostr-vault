@@ -293,10 +293,12 @@ data class HavenConfig(
     // Import
     val importStartDate: String = "2023-01-01",
     val importSeedRelaysFile: String = "relays_import.json",
+    // Same as iOS HavenConfig.importSeedRelays: relay.damus.io and
+    // relay.nostr.build replaced nos.lol and nostr.mom (2026-10-07).
     val importSeedRelays: List<String> = listOf(
         "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
+        "wss://relay.damus.io",
+        "wss://relay.nostr.build",
         "wss://relay.btcforplebs.com",
         "wss://nostr-pub.wellorder.net",
     ),
