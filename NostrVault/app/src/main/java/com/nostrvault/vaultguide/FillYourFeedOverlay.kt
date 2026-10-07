@@ -557,7 +557,7 @@ private fun ChoiceRow(title: String, detail: String, on: Boolean, onClick: () ->
     }
 }
 
-// ── Vault Master ───────────────────────────────────────────────────
+// ── the web of trust (10 follows) ───────────────────────────────────────────────────
 
 @Composable
 private fun MasterCard() {
@@ -570,12 +570,12 @@ private fun MasterCard() {
                 .background(Brush.radialGradient(listOf(GoldLight, GoldMid, GoldDark)), CircleShape),
             contentAlignment = Alignment.Center,
         ) { Icon(NostrVaultIcons.Zap, contentDescription = null, tint = GoldInk, modifier = Modifier.size(52.dp)) } }
-        CardTitle(FillYourFeedGuide.MASTER_TITLE, color = GoldLight, center = true)
+        CardTitle(FillYourFeedGuide.MASTER_CARD_TITLE, color = GoldLight, center = true)
         Text(
-            "You follow ${VaultMeter.MASTER_GOAL} people. Your meter stays gold.",
+            FillYourFeedGuide.MASTER_CARD_BODY,
             color = PrimaryText.copy(alpha = 0.85f), fontSize = 15.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
         )
-        PrimaryButton("Nice", modifier = Modifier.fillMaxWidth(), container = GoldMid, content = GoldInk, onClick = guide::dismissMasterCard)
+        PrimaryButton("Done", modifier = Modifier.fillMaxWidth(), container = GoldMid, content = GoldInk, onClick = guide::dismissMasterCard)
     }
 }
 

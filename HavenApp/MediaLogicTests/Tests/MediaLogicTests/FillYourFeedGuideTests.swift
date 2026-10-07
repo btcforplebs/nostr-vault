@@ -37,15 +37,15 @@ final class FillYourFeedGuideTests: XCTestCase {
         XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(3), compact: true), "3/5")
         XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(3)), "Look before you follow")
         XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(7), compact: false), "7 of 10")
-        XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(7)), "10 = Vault Master")
+        XCTAssertEqual(FillYourFeedGuide.meterSubtitle(meter(7)), "10 builds your web of trust")
         XCTAssertEqual(FillYourFeedGuide.pillText(meter(7)), "7/10")
-        XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(10), compact: true), "Vault Master")
-        XCTAssertEqual(FillYourFeedGuide.pillText(meter(10)), "Vault Master")
+        XCTAssertEqual(FillYourFeedGuide.meterTitle(meter(10), compact: true), "Web of trust")
+        XCTAssertEqual(FillYourFeedGuide.pillText(meter(10)), "Web of trust")
     }
 
     func testEarnedMasterStaysGoldBelowTen() {
         let m = meter(8, earned: true)
-        XCTAssertEqual(FillYourFeedGuide.pillText(m), "Vault Master")
+        XCTAssertEqual(FillYourFeedGuide.pillText(m), "Web of trust")
         XCTAssertEqual(FillYourFeedGuide.ringFraction(m), 1)
         XCTAssertEqual(FillYourFeedGuide.ringFraction(meter(4)), 0.4, accuracy: 0.0001)
     }

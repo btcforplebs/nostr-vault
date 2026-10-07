@@ -5,7 +5,7 @@ import CoreGraphics
 /// Applies `FillYourVaultRule` to the active account's follow list: starts the
 /// guide for a new account, marks it done without showing it for an account
 /// that already follows 5, and finishes it when the feed fills. Also keeps
-/// Vault Master once earned, and moves the "Fill your feed" guide between its
+/// the web of trust (10 follows) once earned, and moves the "Fill your feed" guide between its
 /// screens (`phase`). `FillYourFeedOverlay` draws what this publishes.
 @MainActor
 final class FillYourVaultCoordinator: ObservableObject {
@@ -13,7 +13,7 @@ final class FillYourVaultCoordinator: ObservableObject {
 
     /// The meter for the active account, rebuilt on every follow change.
     @Published private(set) var meter = VaultMeter(follows: [], owner: "", masterEarned: false)
-    /// Set when this account reaches Vault Master for the first time; the
+    /// Set when this account reaches the web of trust (10 follows) for the first time; the
     /// meter plays the gold bolt once and clears it.
     @Published var celebrateVaultMaster = false
     /// Which of the guide's screens is up.
@@ -119,7 +119,7 @@ final class FillYourVaultCoordinator: ObservableObject {
         phase = .browsing
     }
 
-    /// The bolt has crossed the meter: show the Vault Master card.
+    /// The bolt has crossed the meter: show the web-of-trust card.
     func showMasterCard() {
         celebrateVaultMaster = false
         meterCollapsed = false
@@ -163,7 +163,14 @@ final class FillYourVaultCoordinator: ObservableObject {
             defer { self.wasActive = active }
             guard active, !self.wasActive else { return }
             self.pickedTopics = []
-            self.phase = FillYourFeedGuide.entryPhase(meterOn: self.meterOn)
+            let entry = FillYourFeedGuide.entryPhase(meterOn: self.meterOn)
+            self.phase = entry
+            // Back mid-guide after a relaunch: their topic feed, where they
+            // were finding people, not a Following with only a few in it.
+            if entry == .browsing, self.meter.count < VaultMeter.goal,
+               !InterestListService.shared.hashtags.isEmpty {
+                FeedService.shared.switchMode(.hashtags)
+            }
         }
     }
 

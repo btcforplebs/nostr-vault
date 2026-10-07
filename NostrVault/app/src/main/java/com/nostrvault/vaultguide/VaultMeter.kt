@@ -10,7 +10,7 @@ import com.nostrvault.tutorials.TutorialStore
  * It reads the follow list itself, never taps made inside the guide, so a
  * follow from a profile, search or thread counts the same, and an unfollow
  * takes a slot back. 5 follows completes the guide; 10 makes the owner a
- * Vault Master, which is kept once earned (see [VaultMasterStore]).
+ * the web of trust (10 follows), which is kept once earned (see [VaultMasterStore]).
  */
 data class VaultMeter(
     /** People followed, not counting the owner. */
@@ -35,14 +35,14 @@ data class VaultMeter(
         get() {
             val n = minOf(count, slots)
             val people = if (n == 1) "person" else "people"
-            return if (stage == Stage.MASTER) "Vault Master. $n of $slots $people followed."
+            return if (stage == Stage.MASTER) "Web of trust built. $n of $slots $people followed."
             else "$n of $slots $people followed."
         }
 
     companion object {
         /** Follows that complete the guide. */
         const val GOAL = 5
-        /** Follows that earn Vault Master. */
+        /** Follows that earn the web of trust (10 follows). */
         const val MASTER_GOAL = 10
 
         /**
@@ -71,7 +71,7 @@ data class VaultMeter(
 }
 
 /**
- * Remembers, per account, that Vault Master was reached, so the gold meter is a
+ * Remembers, per account, that the web of trust (10 follows) was reached, so the gold meter is a
  * lasting mark and the bolt plays exactly once.
  */
 class VaultMasterStore(private val store: TutorialStore) {
@@ -79,7 +79,7 @@ class VaultMasterStore(private val store: TutorialStore) {
 
     fun isEarned(owner: String): Boolean = owner.isNotEmpty() && store.getString(key(owner)) == "1"
 
-    /** Returns true only on the call that first reaches Vault Master. */
+    /** Returns true only on the call that first reaches the web of trust (10 follows). */
     fun record(meter: VaultMeter, owner: String): Boolean {
         if (owner.isEmpty() || meter.count < VaultMeter.MASTER_GOAL || isEarned(owner)) return false
         store.putString(key(owner), "1")

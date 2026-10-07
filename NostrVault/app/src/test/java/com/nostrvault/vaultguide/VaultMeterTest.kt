@@ -42,7 +42,7 @@ class VaultMeterTest {
     @Test fun accessibilityText() {
         assertEquals("1 of 5 person followed.", meter(1).accessibilityText)
         assertEquals("4 of 5 people followed.", meter(4).accessibilityText)
-        assertEquals("Vault Master. 10 of 10 people followed.", meter(10).accessibilityText)
+        assertEquals("Web of trust built. 10 of 10 people followed.", meter(10).accessibilityText)
     }
 
     @Test fun recentKeepsTheNewestTen() {

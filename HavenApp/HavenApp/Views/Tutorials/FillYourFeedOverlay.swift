@@ -66,7 +66,7 @@ struct FillYourFeedOverlay: View {
         }
     }
 
-    /// Intro, "ready" and Vault Master sit over a dimmed feed; the topic
+    /// Intro, "ready" and the web of trust (10 follows) sit over a dimmed feed; the topic
     /// picker and the hint leave the feed in view.
     private var dims: Bool { [.intro, .ready, .master].contains(guide.phase) }
 
@@ -676,7 +676,7 @@ private struct ReadyCard: View {
     }
 }
 
-// MARK: - Vault Master
+// MARK: - the web of trust (10 follows)
 
 private struct MasterCard: View {
     @ObservedObject private var guide = FillYourVaultCoordinator.shared
@@ -695,17 +695,17 @@ private struct MasterCard: View {
             .frame(width: 96, height: 96)
             .frame(maxWidth: .infinity)
             .accessibilityHidden(true)
-            Text(FillYourFeedGuide.masterTitle)
+            Text(FillYourFeedGuide.masterCardTitle)
                 .font(.appTitle3.weight(.bold))
                 .foregroundColor(Gold.light)
                 .frame(maxWidth: .infinity)
                 .accessibilityAddTraits(.isHeader)
-            Text("You follow \(VaultMeter.masterGoal) people. Your meter stays gold.")
+            Text(FillYourFeedGuide.masterCardBody)
                 .font(.appSubheadline)
                 .foregroundColor(.white.opacity(0.85))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
-            PrimaryButton(title: "Nice", wide: true,
+            PrimaryButton(title: "Done", wide: true,
                           fill: AnyShapeStyle(LinearGradient(colors: [Gold.light, Gold.mid], startPoint: .topLeading, endPoint: .bottomTrailing)),
                           textColor: Color(red: 0.23, green: 0.16, blue: 0),
                           action: guide.dismissMasterCard)

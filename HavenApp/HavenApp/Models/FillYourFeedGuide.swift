@@ -17,7 +17,7 @@ enum FillYourFeedPhase: Equatable {
     case browsing
     /// "Your feed is ready", shown once at 5 follows.
     case ready
-    /// The one-time Vault Master card at 10.
+    /// The one-time "Your web of trust is built" card at 10.
     case master
 }
 
@@ -58,7 +58,7 @@ enum FillYourFeedGuide {
     static func meterSubtitle(_ meter: VaultMeter) -> String {
         switch meter.stage {
         case .filling: return "Look before you follow"
-        case .filled: return "10 = \(masterTitle)"
+        case .filled: return "10 builds your web of trust"
         case .master: return "\(VaultMeter.masterGoal) people followed"
         }
     }
@@ -73,8 +73,12 @@ enum FillYourFeedGuide {
         meter.stage == .master ? 1 : Double(min(meter.count, VaultMeter.masterGoal)) / Double(VaultMeter.masterGoal)
     }
 
-    /// Open question for Logen (Vault Master or Feed Master); one place to change.
-    static let masterTitle = "Vault Master"
+    /// The meter and pill at 10 (Logen: plain trust wording).
+    static let masterTitle = "Web of trust"
+
+    /// The one-time card at 10.
+    static let masterCardTitle = "Your web of trust is built"
+    static let masterCardBody = "Your feed now comes from 10 people you chose, and the people they trust."
 }
 
 /// Per account: whether the meter is on. Set on "Let's fill it", cleared by

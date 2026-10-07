@@ -5,17 +5,17 @@ import Foundation
 /// It reads the follow list itself, never taps made inside the guide, so a
 /// follow from a profile, search or thread counts the same, and an unfollow
 /// takes a slot back. 5 follows completes the guide; 10 makes the owner a
-/// Vault Master, which is kept once earned (see `VaultMasterStore`).
+/// the web of trust (10 follows), which is kept once earned (see `VaultMasterStore`).
 struct VaultMeter: Equatable {
     /// Follows that complete the guide.
     static let goal = 5
-    /// Follows that earn Vault Master.
+    /// Follows that earn the web of trust (10 follows).
     static let masterGoal = 10
 
     enum Stage: Equatable {
         /// Fewer than `goal` follows: the guide is still filling.
         case filling
-        /// `goal` or more: the vault is filled; Vault Master is optional.
+        /// `goal` or more: the vault is filled; the web of trust (10 follows) is optional.
         case filled
         /// `masterGoal` or more, now or at any point before.
         case master
@@ -61,7 +61,7 @@ struct VaultMeter: Equatable {
     var accessibilityText: String {
         let n = min(count, slots)
         let people = n == 1 ? "person" : "people"
-        if stage == .master { return "Vault Master. \(n) of \(slots) \(people) followed." }
+        if stage == .master { return "Web of trust built. \(n) of \(slots) \(people) followed." }
         return "\(n) of \(slots) \(people) followed."
     }
 
@@ -71,7 +71,7 @@ struct VaultMeter: Equatable {
     static func skipsGuide(followCount: Int) -> Bool { followCount >= goal }
 }
 
-/// Remembers, per account, that Vault Master was reached, so the gold meter
+/// Remembers, per account, that the web of trust (10 follows) was reached, so the gold meter
 /// is a lasting mark: unfollowing someone afterwards does not take it away,
 /// and the bolt animation plays exactly once.
 struct VaultMasterStore {
@@ -86,7 +86,7 @@ struct VaultMasterStore {
     }
 
     /// Records the meter's state. Returns true only on the call that first
-    /// reaches Vault Master, which is when the celebration plays.
+    /// reaches the web of trust (10 follows), which is when the celebration plays.
     @discardableResult
     func record(_ meter: VaultMeter, owner: String) -> Bool {
         guard !owner.isEmpty, meter.count >= VaultMeter.masterGoal, !isEarned(owner: owner) else { return false }
@@ -122,7 +122,7 @@ enum FillYourVaultRule {
         guard listKnown else { return .none }
         if isActive {
             // Only crossing 5 finishes it. A replay opened at 7 stays open so
-            // the person can go for Vault Master; closing it is up to them.
+            // the person can go for the web of trust (10 follows); closing it is up to them.
             if let previousCount, previousCount < VaultMeter.goal, count >= VaultMeter.goal { return .finish }
             return .none
         }

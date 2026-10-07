@@ -41,15 +41,15 @@ class FillYourFeedGuideTest {
         assertEquals("3/5", FillYourFeedGuide.meterTitle(meter(3), compact = true))
         assertEquals("Look before you follow", FillYourFeedGuide.meterSubtitle(meter(3)))
         assertEquals("7 of 10", FillYourFeedGuide.meterTitle(meter(7), compact = false))
-        assertEquals("10 = Vault Master", FillYourFeedGuide.meterSubtitle(meter(7)))
+        assertEquals("10 builds your web of trust", FillYourFeedGuide.meterSubtitle(meter(7)))
         assertEquals("7/10", FillYourFeedGuide.pillText(meter(7)))
-        assertEquals("Vault Master", FillYourFeedGuide.meterTitle(meter(10), compact = true))
-        assertEquals("Vault Master", FillYourFeedGuide.pillText(meter(10)))
+        assertEquals("Web of trust", FillYourFeedGuide.meterTitle(meter(10), compact = true))
+        assertEquals("Web of trust", FillYourFeedGuide.pillText(meter(10)))
     }
 
     @Test fun earnedMasterStaysGoldBelowTen() {
         val m = meter(8, earned = true)
-        assertEquals("Vault Master", FillYourFeedGuide.pillText(m))
+        assertEquals("Web of trust", FillYourFeedGuide.pillText(m))
         assertEquals(1f, FillYourFeedGuide.ringFraction(m), 0.0001f)
         assertEquals(0.4f, FillYourFeedGuide.ringFraction(meter(4)), 0.0001f)
     }

@@ -42,7 +42,7 @@ final class VaultMeterTests: XCTestCase {
         XCTAssertEqual(VaultMeter(follows: people(4), owner: owner, masterEarned: false).accessibilityText,
                        "4 of 5 people followed.")
         XCTAssertEqual(VaultMeter(follows: people(10), owner: owner, masterEarned: false).accessibilityText,
-                       "Vault Master. 10 of 10 people followed.")
+                       "Web of trust built. 10 of 10 people followed.")
     }
 
     func testRecentKeepsTheNewestTen() {

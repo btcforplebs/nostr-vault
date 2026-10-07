@@ -21,13 +21,17 @@ enum class FillYourFeedPhase {
     BROWSING,
     /** "Your feed is ready", shown once at 5 follows. */
     READY,
-    /** The one-time Vault Master card at 10. */
+    /** The one-time "Your web of trust is built" card at 10. */
     MASTER,
 }
 
 object FillYourFeedGuide {
-    /** Open question for Logen (Vault Master or Feed Master); one place to change. */
-    const val MASTER_TITLE = "Vault Master"
+    /** The meter and pill at 10 (Logen: plain trust wording). */
+    const val MASTER_TITLE = "Web of trust"
+
+    /** The one-time card at 10. */
+    const val MASTER_CARD_TITLE = "Your web of trust is built"
+    const val MASTER_CARD_BODY = "Your feed now comes from 10 people you chose, and the people they trust."
 
     /**
      * Where the guide opens when the tutorial engine starts it. Someone who
@@ -58,7 +62,7 @@ object FillYourFeedGuide {
 
     fun meterSubtitle(meter: VaultMeter): String = when (meter.stage) {
         VaultMeter.Stage.FILLING -> "Look before you follow"
-        VaultMeter.Stage.FILLED -> "10 = $MASTER_TITLE"
+        VaultMeter.Stage.FILLED -> "10 builds your web of trust"
         VaultMeter.Stage.MASTER -> "${VaultMeter.MASTER_GOAL} people followed"
     }
 

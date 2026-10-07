@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
  * Applies [FillYourVaultRule] to the active account's follow list: starts the
  * guide for a new account, marks it done without showing it for an account
  * that already follows 5, and finishes it when the feed fills. Also keeps
- * Vault Master once earned, and moves the "Fill your feed" guide between its
+ * the web of trust (10 follows) once earned, and moves the "Fill your feed" guide between its
  * screens ([phase]). `FillYourFeedOverlay` draws what this publishes.
  * iOS: FillYourVaultCoordinator.swift.
  *
@@ -45,7 +45,7 @@ object FillYourVaultCoordinator {
     /** The meter for the active account. The guide's views read it. */
     val meter: StateFlow<VaultMeter> = _meter.asStateFlow()
 
-    /** Set when this account first reaches Vault Master; the meter plays the bolt once and clears it. */
+    /** Set when this account first reaches the web of trust (10 follows); the meter plays the bolt once and clears it. */
     val celebrateVaultMaster = MutableStateFlow(false)
 
     private val _phase = MutableStateFlow(FillYourFeedPhase.OFF)
@@ -163,7 +163,7 @@ object FillYourVaultCoordinator {
         _phase.value = FillYourFeedPhase.BROWSING
     }
 
-    /** The bolt has crossed the meter: show the Vault Master card. */
+    /** The bolt has crossed the meter: show the web-of-trust card. */
     fun showMasterCard() {
         celebrateVaultMaster.value = false
         meterCollapsed.value = false
