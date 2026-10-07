@@ -131,6 +131,12 @@ struct ProfileView: View {
     @State private var totalMediaCount: Int? = nil
 
     @State private var selectedSection: ProfileSection = .notes
+    /// The late tabs on show. Set only when their loader finishes, so the
+    /// tab bar re-spaces once instead of once per tab as each one arrives.
+    @State private var revealedSections = Set<ProfileSection>()
+    /// Set once the profile has waited long enough for its metadata; the
+    /// header stops holding space for a bio that is not coming.
+    @State private var metadataWaitOver = false
 
     /// Height of the profile's scroll view. A section is at least this tall,
 
@@ -154,14 +160,17 @@ struct ProfileView: View {
     @State private var showingSell = false
     @State private var selectedListing: MarketListing?
 
+    /// The four tabs every profile has come first; the ones that only show
+    /// once this person's articles, diVines, music or listings arrive go
+    /// after them, so a late tab never pushes an earlier one along.
     enum ProfileSection: String, CaseIterable, Identifiable {
         case notes = "Notes"
         case media = "Media"
         case replies = "Replies"
+        case tagged = "Tagged"
         case articles = "Articles"
         case divines = "diVines"
         case music = "Music"
-        case tagged = "Tagged"
         case shop = "Shop"
         var id: String { rawValue }
 
@@ -365,11 +374,17 @@ struct ProfileView: View {
                         .padding(.top, 4)
                     if let about = profile?.about, !about.isEmpty {
                         bioBlock(about)
+                    } else if awaitingMetadata {
+                        bioPlaceholder
                     }
                     divider
                     statsBlock
                     divider
-                    identityBlock
+                    if awaitingMetadata {
+                        identityPlaceholder
+                    } else {
+                        identityBlock
+                    }
                     divider
                     sectionTabBar
                     sectionContent
@@ -411,10 +426,15 @@ struct ProfileView: View {
             fetchLocalRelayCounts()
             shop.load(pubkey: pubkey)
             extras.load(pubkey: pubkey, relays: extrasRelays)
+            revealLateSections()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { metadataWaitOver = true }
             #if os(macOS)
             installKeyMonitor()
             #endif
         }
+        .onChange(of: extras.isLoading) { _, _ in revealLateSections() }
+        .onChange(of: shop.isLoading) { _, _ in revealLateSections() }
+        .onChange(of: shop.listings.isEmpty) { _, _ in revealLateSections() }
         .onDisappear {
             // Loads in flight die with their connections; without this a
             // return before the first EOSE skips the notes load entirely.
@@ -823,6 +843,12 @@ struct ProfileView: View {
                         .font(.appSystem(size: 12))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
+                } else if awaitingMetadata {
+                    Text("name@example.com")
+                        .font(.appSystem(size: 12))
+                        .foregroundColor(.secondary)
+                        .redacted(reason: .placeholder)
+                        .accessibilityHidden(true)
                 }
 
                 Button(action: copyNpub) {
@@ -891,6 +917,42 @@ struct ProfileView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Metadata placeholders
+
+    /// No kind 0 for this person yet. The header holds the space the NIP-05
+    /// line, a short bio and the Lightning row usually take, so the tabs and
+    /// notes are not pushed down when they arrive.
+    private var awaitingMetadata: Bool {
+        guard !metadataWaitOver else { return false }
+        guard let p = profile else { return true }
+        return p.name == nil && p.displayName == nil && p.about == nil
+            && p.pictureURL == nil && p.nip05 == nil && p.lud16 == nil
+    }
+
+    private var bioPlaceholder: some View {
+        Text("A short bio about this person, about as long as most are, two lines.")
+            .font(.appSystem(size: 13))
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .redacted(reason: .placeholder)
+            .accessibilityHidden(true)
+    }
+
+    private var identityPlaceholder: some View {
+        identityRowContent(
+            label: "LIGHTNING",
+            value: "name@wallet.example",
+            icon: "bolt.fill",
+            tint: .secondary,
+            copied: false,
+            trailing: AnyView(EmptyView())
+        )
+        .redacted(reason: .placeholder)
+        .accessibilityHidden(true)
     }
 
     // MARK: - Bio
@@ -1282,14 +1344,30 @@ struct ProfileView: View {
     private var visibleSections: [ProfileSection] {
         ProfileSection.allCases.filter { section in
             switch section {
-            case .shop: return isOwnProfile || !shop.listings.isEmpty
+            case .shop: return isOwnProfile || revealedSections.contains(.shop)
             // Only when this person has some, so most profiles keep four tabs.
-            case .articles: return !extras.articles.isEmpty
-            case .divines: return !extras.reels.isEmpty
-            case .music: return !extras.tracks.isEmpty
+            case .articles, .divines, .music: return revealedSections.contains(section)
             default: return true
             }
         }
+    }
+
+    /// Shows the late tabs that have content, all at once. Runs when a
+    /// loader finishes; a tab already on show stays while a refresh runs.
+    private func revealLateSections() {
+        var next = revealedSections
+        if !extras.isLoading {
+            next.subtract([.articles, .divines, .music])
+            if !extras.articles.isEmpty { next.insert(.articles) }
+            if !extras.reels.isEmpty { next.insert(.divines) }
+            if !extras.tracks.isEmpty { next.insert(.music) }
+        }
+        if !shop.isLoading {
+            if shop.listings.isEmpty { next.remove(.shop) } else { next.insert(.shop) }
+        }
+        guard next != revealedSections else { return }
+        revealedSections = next
+        if !visibleSections.contains(selectedSection) { selectedSection = .notes }
     }
 
     private func count(for section: ProfileSection) -> Int {
@@ -2821,7 +2899,10 @@ final class ProfileExtrasLoader: ObservableObject {
     @Published private(set) var articles: [FeedNote] = []
     @Published private(set) var reels: [Reel] = []
     @Published private(set) var tracks: [WavlakeTrack] = []
+    /// True until both the events and the music lookups have answered.
+    @Published private(set) var isLoading = false
     private var loadedPubkey: String?
+    private var generation = 0
 
     /// `force` fetches again for the person already shown, keeping their
     /// tabs on screen until the new answers replace them.
@@ -2832,8 +2913,15 @@ final class ProfileExtrasLoader: ObservableObject {
             articles = []; reels = []; tracks = []
         }
         loadedPubkey = pubkey
-        Task { await loadEvents(pubkey: pubkey, relays: relays) }
-        Task { await loadMusic(pubkey: pubkey) }
+        generation += 1
+        let thisLoad = generation
+        isLoading = true
+        Task {
+            async let events: Void = loadEvents(pubkey: pubkey, relays: relays)
+            async let music: Void = loadMusic(pubkey: pubkey)
+            _ = await (events, music)
+            if generation == thisLoad { isLoading = false }
+        }
     }
 
     private func loadEvents(pubkey: String, relays: [URL]) async {
