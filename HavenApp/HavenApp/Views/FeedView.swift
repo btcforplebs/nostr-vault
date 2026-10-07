@@ -4108,6 +4108,10 @@ struct FeedNoteRow: View {
     private func toggleUserMenu() {
         if showingUserMenu {
             dismissMenu(expanded: $menuExpanded, showing: $showingUserMenu)
+        } else if FillYourVaultCoordinator.shared.meterShowing {
+            // Fill your feed: the photo opens the profile card like the name,
+            // rather than a Follow button that skips looking first.
+            onProfile?(rowData.displayPubkey)
         } else if !rowData.isOwnNote {
             withAnimation(Motion.panel) {
                 showingUserMenu = true
@@ -4121,6 +4125,8 @@ struct FeedNoteRow: View {
     private func toggleParentUserMenu() {
         if showingParentUserMenu {
             dismissMenu(expanded: $parentMenuExpanded, showing: $showingParentUserMenu)
+        } else if FillYourVaultCoordinator.shared.meterShowing, let parent = rowData.parentNote {
+            onProfile?(parent.pubkey)
         } else {
             withAnimation(Motion.panel) {
                 showingParentUserMenu = true

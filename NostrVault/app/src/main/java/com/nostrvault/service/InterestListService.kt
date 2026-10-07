@@ -45,7 +45,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class InterestListService @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val context: Context,
     private val configStore: ConfigStore,
     private val nostrService: NostrService,
     private val lookupPool: LookupSocketPool,
@@ -102,6 +102,8 @@ class InterestListService @Inject constructor(
         // Optimistic: the button flips now.
         _hashtags.value = applied(list).hashtags
 
+        // A key setup just made has no list anywhere: nothing to wait for.
+        if (!confirmed && FreshAccountKeys.isFresh(context, hex)) confirmed = true
         if (!confirmed) {
             val pending = fetch ?: startFetch()
             // An account switch cancels the fetch; that is a "no", not our own cancellation.

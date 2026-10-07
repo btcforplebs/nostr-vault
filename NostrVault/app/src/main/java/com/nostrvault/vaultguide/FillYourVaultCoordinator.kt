@@ -111,7 +111,15 @@ object FillYourVaultCoordinator {
                 val isOn = active == TutorialID.FILL_YOUR_VAULT
                 if (isOn && !wasActive) {
                     pickedTopics = emptyList()
-                    _phase.value = FillYourFeedGuide.entryPhase(_meterOn.value)
+                    val entry = FillYourFeedGuide.entryPhase(_meterOn.value)
+                    _phase.value = entry
+                    // Back mid-guide after a relaunch: their topic feed, where
+                    // they were finding people (iOS: FeedService's no-follows path).
+                    if (entry == FillYourFeedPhase.BROWSING && _meter.value.count < VaultMeter.GOAL &&
+                        followedTopics().isNotEmpty()
+                    ) {
+                        feed?.switchMode(FeedMode.HASHTAGS)
+                    }
                 }
                 wasActive = isOn
             }

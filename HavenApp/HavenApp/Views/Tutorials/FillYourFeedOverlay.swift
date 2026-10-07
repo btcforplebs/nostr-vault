@@ -163,10 +163,17 @@ struct FillYourFeedOverlay: View {
                         .shadow(color: gold ? Gold.mid.opacity(0.6) : .clear, radius: 4)
                         .transition(reduceMotion ? .opacity : .scale(scale: 0.4).combined(with: .opacity))
                 } else {
+                    // A ring in the meter's colour, like the photos', so
+                    // overlapping slots don't cross their dashes.
                     Circle()
-                        .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-                        .foregroundColor(.white.opacity(0.35))
-                        .background(Circle().fill(Color(white: 0.12)))
+                        .fill(Color(white: 0.12))
+                        .overlay(
+                            Circle()
+                                .inset(by: 2)
+                                .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                                .foregroundColor(.white.opacity(0.35))
+                        )
+                        .overlay(Circle().stroke(Color(white: 0.08), lineWidth: 2))
                         .frame(width: size, height: size)
                 }
             }

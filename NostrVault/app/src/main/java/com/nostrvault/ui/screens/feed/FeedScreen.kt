@@ -1680,7 +1680,15 @@ private fun FeedFullNoteRowContent(
         onLongPressLike = onLongPressLike,
         onRetryParent = viewModel::retryMissingNote,
         autoplayVideos = autoplayVideos,
-        avatarMenu = remember(viewModel) {
+        // Fill your feed: the photo opens the profile card like the name,
+        // rather than a quick Follow that skips looking first.
+        avatarMenu = if (com.nostrvault.vaultguide.FillYourFeedGuide.opensProfileCard(
+                com.nostrvault.vaultguide.FillYourFeedGuide.showsMeter(
+                    com.nostrvault.vaultguide.FillYourVaultCoordinator.phase.collectAsState().value,
+                    com.nostrvault.vaultguide.FillYourVaultCoordinator.meterOn.collectAsState().value,
+                ),
+            )
+        ) null else remember(viewModel) {
             AvatarMenuActions(
                 isOwn = viewModel::isOwnNote,
                 isFollowed = viewModel::isFollowing,

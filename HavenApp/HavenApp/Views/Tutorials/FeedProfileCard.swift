@@ -120,19 +120,26 @@ struct FeedProfileCard: View {
                             .font(.appSubheadline)
                             .lineLimit(6)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text(Date(timeIntervalSince1970: TimeInterval(post.created_at)), style: .relative)
+                        // The feed's format ("2m"), so the two places match.
+                        Text(CondensedNoteLine.relativeTime(post.createdAtDate))
                             .font(.appCaption)
                             .foregroundColor(.secondary)
                     }
                     .padding(.vertical, 6)
                     Divider()
                 }
-                Button("See full profile") { showingFullProfile = true }
-                    .font(.appSubheadline.weight(.semibold))
-                    .foregroundColor(.havenPurple)
-                    .frame(maxWidth: .infinity, minHeight: 44)
             }
             .padding(20)
+        }
+        // Pinned under the scrolling part, so the half-height card never
+        // cuts it off.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Button("See full profile") { showingFullProfile = true }
+                .font(.appSubheadline.weight(.semibold))
+                .foregroundColor(.havenPurple)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.bottom, 4)
+                .background(.bar)
         }
         .task(id: pubkey) { await load() }
         .sheet(isPresented: $showingFullProfile) {

@@ -18,7 +18,11 @@ final class InterestListService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
+        // The cached list right away: the feed's first load asks whether
+        // this account follows any topics before the publisher's next turn.
+        switchAccount(to: ConfigService.shared.activeAccountHexPubkey)
         ConfigService.shared.$activeAccountHexPubkey
+            .dropFirst()
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] hex in self?.switchAccount(to: hex) }

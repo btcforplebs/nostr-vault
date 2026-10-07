@@ -222,7 +222,7 @@ fun FillYourFeedOverlay(
         cardPubkey?.let { pubkey ->
             ModalBottomSheet(
                 onDismissRequest = { guide.profileCardPubkey.value = null },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
                 containerColor = CardSurface,
             ) {
                 ProfileCard(
@@ -655,10 +655,15 @@ private fun MeterSlots(meter: VaultMeter, profiles: Map<String, FeedProfile>, go
                     AvatarImage(url = profiles[pk]?.pictureURL, pubkey = pk, size = size, displayName = profiles[pk]?.bestName)
                 }
             } else {
+                // A ring in the meter's colour, like the photos', so
+                // overlapping slots don't cross their dashes.
                 Canvas(slot) {
-                    drawCircle(Color(0xFF1F1F1F))
+                    val ring = 2.dp.toPx()
+                    drawCircle(Color(0xFF141414))
+                    drawCircle(Color(0xFF1F1F1F), radius = this.size.minDimension / 2 - ring)
                     drawCircle(
                         Color.White.copy(alpha = 0.35f),
+                        radius = this.size.minDimension / 2 - ring - 0.75.dp.toPx(),
                         style = Stroke(1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))),
                     )
                 }
@@ -758,8 +763,12 @@ private fun ProfileCard(
     var data by remember(pubkey) { mutableStateOf(ProfileCardData()) }
     LaunchedEffect(pubkey) { data = load(pubkey) }
     val name = profile?.bestName ?: pubkey.take(10)
+    // Half the screen at most, so the sheet opens at half height with
+    // "See full profile" in view; the posts scroll above it.
+    val maxHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.5f
+    Column(Modifier.fillMaxWidth().heightIn(max = maxHeight)) {
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
+        Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -790,7 +799,9 @@ private fun ProfileCard(
             }
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
         }
-        TextButton(onClick = onFullProfile, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+    }
+        // Pinned under the scrolling part, so the half-height card never cuts it off.
+        TextButton(onClick = onFullProfile, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(bottom = 8.dp)) {
             Text("See full profile", color = primary, fontWeight = FontWeight.SemiBold)
         }
     }
