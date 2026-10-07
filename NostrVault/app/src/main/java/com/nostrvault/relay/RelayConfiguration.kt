@@ -314,12 +314,11 @@ data class HavenConfig(
 
     // Blastr
     val blastrRelaysFile: String = "relays_blastr.json",
+    // Default broadcast relays, same as iOS HavenConfig.blastrRelays.
     val blastrRelays: List<String> = listOf(
-        "wss://relay.primal.net",
-        "wss://nos.lol",
-        "wss://nostr.mom",
         "wss://relay.btcforplebs.com",
-        "wss://nostr-pub.wellorder.net",
+        "wss://relay.damus.io",
+        "wss://relay.snort.social",
     ),
 
     // DM Relays — the Go relay merges these with importSeedRelays for the
@@ -572,11 +571,9 @@ data class HavenConfig(
         get() {
             val relays = blastrRelays.ifEmpty {
                 listOf(
-                    "wss://relay.primal.net",
-                    "wss://nos.lol",
-                    "wss://nostr.mom",
                     "wss://relay.btcforplebs.com",
-                    "wss://nostr-pub.wellorder.net",
+                    "wss://relay.damus.io",
+                    "wss://relay.snort.social",
                 )
             }.toMutableList()
             val macWss = macRelayWssURL
