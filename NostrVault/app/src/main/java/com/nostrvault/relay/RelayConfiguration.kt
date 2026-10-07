@@ -609,6 +609,18 @@ data class HavenConfig(
     val writeRelays: List<String>
         get() = activeBlastrRelays.ifEmpty { RelayConfiguration.FALLBACK_WRITE_RELAYS }
 
+    /**
+     * Kind 10002 tags: the Haven relay, then the Read relays (the feed list,
+     * or the setup wizard's inbox list when the feed list was never set) and
+     * the Write relays. See [PublicRelayList].
+     */
+    val publicRelayListTags: List<List<String>>
+        get() = PublicRelayList.tags(
+            ownRelays = listOf(macRelayWssURL),
+            read = feedRelays ?: activeInboxRelays,
+            write = blastrRelays,
+        )
+
     /** Active import seed relays, including the Haven relay if configured. */
     val activeImportSeedRelays: List<String>
         get() {

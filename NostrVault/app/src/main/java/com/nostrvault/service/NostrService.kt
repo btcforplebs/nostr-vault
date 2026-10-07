@@ -1587,9 +1587,8 @@ class NostrService @Inject constructor(
             Log.w(TAG, "publishRelayList: ${accountNpub.take(12)} is not the owner or active account; not published")
             return
         }
-        val config = configStore.config.value
-        val relays = config.inboxRelays ?: return
-        val tags = relays.map { listOf("r", it) }
+        val tags = configStore.config.value.publicRelayListTags
+        if (tags.isEmpty()) return
         signAndPost(kind = 10002, content = "", tags = tags, forceOwner = forceOwner)
     }
 

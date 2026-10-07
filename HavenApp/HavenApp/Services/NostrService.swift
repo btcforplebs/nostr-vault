@@ -1449,27 +1449,17 @@ class NostrService: ObservableObject {
         }
     }
 
-    /// NIP-65: Publishes a Kind 10002 (Relay List Metadata) event advertising this relay
-    /// as the account's inbox. Call when the user enables the toggle or on app launch.
+    /// NIP-65: Publishes a Kind 10002 (Relay List Metadata) event: the owner's
+    /// own relays plus the Read and Write relays (`HavenConfig.publicRelayListTags`).
+    /// Call when the user enables the toggle or on app launch.
     @MainActor
     func publishRelayList(forNpub accountNpub: String) {
-        let config = ConfigService.shared.config
-        guard !config.isLocal else {
+        let tags = ConfigService.shared.config.publicRelayListTags
+        guard !tags.isEmpty else {
             #if DEBUG
-            print("NostrService: Relay is local-only, skipping Kind 10002 publish")
+            print("NostrService: No public relays to list, skipping Kind 10002 publish")
             #endif
             return
-        }
-
-        let publicURL = "wss://\(config.sanitizedRelayURL)"
-
-        // Build NIP-65 tags: no marker means both read and write
-        var tags: [[String]] = [["r", publicURL]]
-
-        // Include the Mac relay in the relay list if configured (both platforms)
-        let macRelay = config.macRelayWssURL
-        if !macRelay.isEmpty {
-            tags.append(["r", macRelay])
         }
 
         Task {
@@ -1490,7 +1480,6 @@ class NostrService: ObservableObject {
     @MainActor
     func publishRelayListsForEnabledAccounts() {
         let config = ConfigService.shared.config
-        guard !config.isLocal else { return }
 
         let enabledAccounts = config.publishRelayListPerAccount.filter { $0.value }.map { $0.key }
         guard !enabledAccounts.isEmpty else { return }

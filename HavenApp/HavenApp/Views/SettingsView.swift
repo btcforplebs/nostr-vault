@@ -1066,7 +1066,7 @@ struct AccountDetailView: View {
                 }
 
                 // NIP-65 Relay List Publishing
-                if (hasLocalKey || hasBunker) && !configService.config.isLocal {
+                if hasLocalKey || hasBunker {
                     Section {
                         Toggle(isOn: Binding(
                             get: { configService.config.publishRelayListPerAccount[npub] ?? false },
@@ -1078,7 +1078,7 @@ struct AccountDetailView: View {
                                 }
                             }
                         )) {
-                            Text("Publish Inbox Relay").settingInfo(.accountPublishInbox)
+                            Text("Publish Relay List").settingInfo(.accountPublishInbox)
                         }
                     } header: {
                         Text("Relay List")
