@@ -73,7 +73,8 @@ Never use background audio, VoIP or location modes to keep it alive. That fails 
 |---|---|---|---|
 | **1. Engine** | Upstream fips + app-owned TUN + smoltcp. Two networks, found through Nostr relays, direct link, no seed. | Tao | **Works.** Cut-off-file bug fixed (`8e2c598`). Branch `feat/fips-v2-upstream`. |
 | 1b | Engine pieces for the app: sharing on/off, share and read at the same time, counters. | Tao | Open |
-| 1c | Working leaf-only mode: no forwarding for strangers (§6). Needs upstream work. | Tao | Open. **Gates "Share my relay" on by default.** |
+| 1c | Working leaf-only mode: no forwarding for strangers (§6). Built in our fork first. | Tao | Open. **Gates "Share my relay" on by default.** |
+| 1d | Re-send a missed connect offer (the 2-min stall), as its own change in the same fork. | Tao | Open |
 | **2. Android sharing** | Engine in the app; Settings → Mesh with "Who can reach you" and "Share my relay" (off by default). The list picks whom we connect to. It is not a block list. | Ted | **Built.** Phone → Mac on home Wi-Fi: 20 MB, 3 of 3 identical, ~17 MB/s. Branch `feat/android-fips-v2`. |
 | **3. Android reading** | Vault adds its mesh address to its kind 10063 server list. The app reads a friend over FIPS, falls back to normal servers, shows a "via FIPS" badge. | Ted | Not started |
 | **4. Real-world test** | Two phones, two networks, one on cellular. A full day of battery. Then an internal build. | Logen + Ted | Not started. Needs the engine in the background service first. Run the battery check early. |
@@ -89,12 +90,22 @@ forwarding uses your battery and data.
 The fix is FIPS's "leaf-only" mode: a node that can be reached by anyone, but never forwards
 traffic and is never picked as a route parent. Upstream has designed it but not built it. In
 v0.5.2 and on master, `node.leaf_only` only changes one internal setting, and the node still
-forwards and can still become a route parent. So this needs upstream work (we'll offer to help),
-or a patch we carry until it lands.
+forwards and can still become a route parent. So we build it ourselves (§6a).
 
 Notes:
 - `policy: configured_only` only limits whom *we* dial. It does not stop others connecting to us.
 - A friends-only allow list is not the goal. It would also block people who should be able to read you.
+
+### 6a. How we build and contribute it
+
+Build first, then ask upstream:
+
+1. Fork `jmcorgan/fips` to btcforplebs, with a branch off v0.5.2.
+2. Build leaf-only there: reachable by anyone, never forwards other nodes' traffic, never picked
+   as a route parent. The missed-offer re-send goes in as a separate change.
+3. Test with unit tests, upstream's multi-node test harness, and a real phone ↔ Mac link.
+4. Open the upstream issue and PR together, linked. Logen approves the exact text first.
+5. The app uses our fork until upstream merges and tags a release, then switches back.
 
 ## 7. Risks
 
@@ -103,7 +114,7 @@ Notes:
 | Your node forwards strangers' traffic | Working leaf-only mode (§6). Sharing off by default until it lands. |
 | Battery drain from an always-open link | Measure a full day on the moto as soon as sharing works. If it drains badly, the Android design changes. |
 | Slow, lossy links (a hotspot gave ~32 KB/s at 15% loss, 360 ms round trips) | Tune smoltcp buffers and retransmit. The ceiling is the link's own upload speed. |
-| A missed connection offer stalls the connect | `signal_ttl_secs = 30` in the app (default 120, so 2 min). Real fix: re-send our offer when the peer's arrives unanswered. Reported upstream as jmcorgan/fips#181. |
+| A missed connection offer stalls the connect | `signal_ttl_secs = 30` in the app (default 120, so 2 min). Real fix: re-send our offer when the peer's arrives unanswered (step 1d). |
 | Same home network fails to punch (router doesn't hairpin) | Share LAN addresses, but only with friends on your list. |
 | Upstream is git-only and changing (`fips` 0.6.0-dev on master) | Pin release tags, never master. Keep our patches small and send them upstream. |
 | Upstream on Android was "compiles in CI" only | Now run on a real phone. The iOS build of upstream is still unverified. |
