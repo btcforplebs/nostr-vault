@@ -64,6 +64,8 @@ pub struct Control {
     /// Loopback port per peer, so a second ask for the same peer reuses it.
     connect_ports: Mutex<HashMap<Ipv6Addr, u16>>,
     stop: AtomicBool,
+    /// Sockets the stack holds, listeners included; a leak shows up here.
+    sockets: AtomicU64,
     pub counters: Counters,
 }
 
@@ -74,8 +76,9 @@ impl Control {
 
     /// Returns once the running stack listens (or has cut and stopped
     /// listening), so a friend dialling right after sharing is turned on is
-    /// not reset. Waits at most 2 s, e.g. when the stack is not running.
-    pub fn set_serve(&self, forward: Option<SocketAddr>) {
+    /// not reset. Waits at most 2 s; false if the stack never applied it (it
+    /// is not running).
+    pub fn set_serve(&self, forward: Option<SocketAddr>) -> bool {
         let want = {
             let mut serve = self.serve.lock().unwrap();
             *serve = forward;
@@ -88,6 +91,7 @@ impl Control {
         {
             std::thread::sleep(Duration::from_millis(1));
         }
+        self.serve_applied.load(Ordering::SeqCst) >= want
     }
 
     /// The forward and the generation it belongs to, read together.
@@ -116,6 +120,10 @@ impl Control {
 
     pub fn connect_ports(&self) -> Vec<(Ipv6Addr, u16)> {
         self.connect_ports.lock().unwrap().iter().map(|(a, p)| (*a, *p)).collect()
+    }
+
+    pub fn socket_count(&self) -> u64 {
+        self.sockets.load(Ordering::Relaxed)
     }
 
     /// Ends `run`: every connection is reset and the thread returns.
@@ -216,6 +224,17 @@ impl Splice {
 /// reset. Without it a SYN to an offline friend retries forever and the
 /// splice never ends.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(if cfg!(test) { 1 } else { 20 });
+/// Keep-alive probes an idle connection; one that hears nothing back for
+/// IDLE_TIMEOUT is reset, so a friend who vanishes without a FIN or RST does
+/// not hold a splice open. Keep-alive only probes; the timeout does the cut.
+const KEEP_ALIVE: Duration = Duration::from_secs(if cfg!(test) { 1 } else { 20 });
+const IDLE_TIMEOUT: Duration = Duration::from_secs(if cfg!(test) { 3 } else { 60 });
+
+/// A local stream ready to splice: non-blocking, no Nagle.
+fn local_ready(stream: &TcpStream) -> std::io::Result<()> {
+    stream.set_nonblocking(true)?;
+    stream.set_nodelay(true)
+}
 
 fn new_socket() -> tcp::Socket<'static> {
     let mut s = tcp::Socket::new(
@@ -223,7 +242,8 @@ fn new_socket() -> tcp::Socket<'static> {
         tcp::SocketBuffer::new(vec![0; 256 * 1024]),
     );
     s.set_nagle_enabled(false);
-    s.set_keep_alive(Some(smoltcp::time::Duration::from_secs(20)));
+    s.set_keep_alive(Some(KEEP_ALIVE.into()));
+    s.set_timeout(Some(IDLE_TIMEOUT.into()));
     s
 }
 
@@ -333,10 +353,10 @@ pub fn run_with(
                 if s.is_active() {
                     listeners.swap_remove(i);
                     let remote = s.remote_endpoint();
-                    match TcpStream::connect_timeout(&forward, Duration::from_secs(3)) {
+                    let local = TcpStream::connect_timeout(&forward, Duration::from_secs(3))
+                        .and_then(|stream| local_ready(&stream).map(|()| stream));
+                    match local {
                         Ok(stream) => {
-                            stream.set_nonblocking(true)?;
-                            stream.set_nodelay(true)?;
                             println!("mesh accept {remote:?} -> {forward}");
                             c.served_total.fetch_add(1, Ordering::Relaxed);
                             splices.push(Splice::new(h, stream, Kind::Served));
@@ -344,6 +364,7 @@ pub fn run_with(
                         Err(e) => {
                             eprintln!("forward {forward} failed: {e}");
                             s.abort();
+                            dying.push(h);
                         }
                     }
                     busy = true;
@@ -355,16 +376,20 @@ pub fn run_with(
 
         for (l, peer) in &connects {
             while let Ok((stream, from)) = l.accept() {
-                stream.set_nonblocking(true)?;
-                stream.set_nodelay(true)?;
+                // A failure here costs this one connection (the local client
+                // sees it closed), never the stack.
+                if let Err(e) = local_ready(&stream) {
+                    eprintln!("local accept {from}: {e}");
+                    continue;
+                }
                 let mut s = new_socket();
                 s.set_timeout(Some(CONNECT_TIMEOUT.into()));
                 next_port = if next_port == u16::MAX { 49152 } else { next_port + 1 };
-                s.connect(
-                    iface.context(),
-                    (IpAddress::Ipv6(Ipv6Address::from(*peer)), MESH_PORT),
-                    next_port,
-                )?;
+                let to = (IpAddress::Ipv6(Ipv6Address::from(*peer)), MESH_PORT);
+                if let Err(e) = s.connect(iface.context(), to, next_port) {
+                    eprintln!("mesh connect [{peer}]: {e}");
+                    continue;
+                }
                 println!("local accept {from} -> mesh [{peer}]:{MESH_PORT}");
                 c.read_total.fetch_add(1, Ordering::Relaxed);
                 splices.push(Splice::new(sockets.add(s), stream, Kind::Read));
@@ -374,9 +399,9 @@ pub fn run_with(
 
         splices.retain_mut(|sp| {
             let s = sockets.get_mut::<tcp::Socket>(sp.handle);
-            if s.timeout().is_some() && s.may_send() {
-                // Connected: from here keep-alive decides when a friend is gone.
-                s.set_timeout(None);
+            if sp.kind == Kind::Read && s.may_send() && s.timeout() != Some(IDLE_TIMEOUT.into()) {
+                // Connected: from here the idle timeout decides when a friend is gone.
+                s.set_timeout(Some(IDLE_TIMEOUT.into()));
             }
             let (rx, tx) = match sp.kind {
                 Kind::Served => (&c.served_rx, &c.served_tx),
@@ -456,6 +481,7 @@ pub fn run_with(
         let served = splices.iter().filter(|sp| sp.kind == Kind::Served).count();
         c.served_open.store(served as u64, Ordering::Relaxed);
         c.read_open.store((splices.len() - served) as u64, Ordering::Relaxed);
+        ctl.sockets.store(sockets.iter().count() as u64, Ordering::Relaxed);
 
         if !busy {
             let wait = iface

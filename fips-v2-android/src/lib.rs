@@ -270,7 +270,9 @@ pub fn export(port: u16) -> i32 {
         Some(_) => return ERR_ALREADY_EXPORTED,
         None => {}
     }
-    run.ctl.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port))));
+    if !run.ctl.set_serve(Some(SocketAddr::from(([127, 0, 0, 1], port)))) {
+        return ERR_START;
+    }
     run.exported = Some(port);
     0
 }
@@ -279,8 +281,10 @@ pub fn export(port: u16) -> i32 {
 pub fn unexport() -> i32 {
     let mut state = STATE.lock().unwrap();
     let Some(run) = state.as_mut() else { return ERR_NOT_RUNNING };
-    run.ctl.set_serve(None);
     run.exported = None;
+    if !run.ctl.set_serve(None) {
+        return ERR_START;
+    }
     0
 }
 
@@ -510,7 +514,7 @@ mod tests {
         use std::io::{Read, Write};
         use std::net::{Ipv6Addr, SocketAddr, TcpListener, TcpStream};
         use std::sync::Arc;
-        use std::sync::atomic::Ordering;
+        use std::sync::atomic::{AtomicBool, Ordering};
         use std::thread::JoinHandle;
         use std::time::{Duration, Instant};
 
@@ -520,6 +524,8 @@ mod tests {
         struct Side {
             ctl: Arc<Control>,
             thread: JoinHandle<()>,
+            /// Set to drop every packet between the two sides, as a lost path would.
+            cut: Arc<AtomicBool>,
         }
 
         /// Start stacks at A and B; each one's outbound packets are the other's inbound.
@@ -528,13 +534,21 @@ mod tests {
             let (b_out, mut b_out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
             let (a_in_tx, a_in) = std::sync::mpsc::channel();
             let (b_in_tx, b_in) = std::sync::mpsc::channel();
+            let cut = Arc::new(AtomicBool::new(false));
+            let (cut_ab, cut_ba) = (cut.clone(), cut.clone());
             std::thread::spawn(move || {
                 while let Some(p) = a_out_rx.blocking_recv() {
+                    if cut_ab.load(Ordering::Relaxed) {
+                        continue;
+                    }
                     let _ = b_in_tx.send(p);
                 }
             });
             std::thread::spawn(move || {
                 while let Some(p) = b_out_rx.blocking_recv() {
+                    if cut_ba.load(Ordering::Relaxed) {
+                        continue;
+                    }
                     let _ = a_in_tx.send(p);
                 }
             });
@@ -542,7 +556,7 @@ mod tests {
                 let ctl = Control::new();
                 let c = ctl.clone();
                 let thread = std::thread::spawn(move || stack::run_with(addr, 1280, out, inbound, &c).unwrap());
-                Side { ctl, thread }
+                Side { ctl, thread, cut: cut.clone() }
             };
             (side(A, a_out, a_in), side(B, b_out, b_in))
         }
@@ -661,6 +675,46 @@ mod tests {
             assert_eq!(ask(&mut ok, "one").unwrap(), "B:one");
             std::thread::sleep(Duration::from_millis(1500));
             assert_eq!(ask(&mut ok, "two").unwrap(), "B:two");
+            a.ctl.stop();
+            b.ctl.stop();
+        }
+
+        #[test]
+        fn a_friend_who_vanishes_is_let_go() {
+            let (a, b) = pair();
+            b.ctl.set_serve(Some(relay("B:")));
+            let mut s = open(a.ctl.connect_port(B).unwrap());
+            assert_eq!(ask(&mut s, "hi").unwrap(), "B:hi");
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+
+            // Idle but alive: keep-alive answers, nothing is cut.
+            std::thread::sleep(Duration::from_secs(4));
+            assert_eq!(ask(&mut s, "still").unwrap(), "B:still");
+
+            // The path goes silent, with no FIN or RST: both ends give up.
+            a.cut.store(true, Ordering::Relaxed);
+            let end = Instant::now() + Duration::from_secs(10);
+            while get(&a.ctl.counters.read_open) + get(&b.ctl.counters.served_open) > 0 {
+                assert!(Instant::now() < end, "a vanished friend holds the splice open");
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            a.ctl.stop();
+            b.ctl.stop();
+        }
+
+        #[test]
+        fn a_relay_that_is_down_costs_nothing() {
+            let (a, b) = pair();
+            // Nothing listens on the forward port.
+            let dead = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+            b.ctl.set_serve(Some(dead));
+            let to_b = a.ctl.connect_port(B).unwrap();
+            for _ in 0..3 {
+                assert!(ask(&mut open(to_b), "x").is_err());
+            }
+            let get = |x: &std::sync::atomic::AtomicU64| x.load(Ordering::Relaxed);
+            assert_eq!(get(&b.ctl.counters.served_total), 0);
+            wait_for("only the armed listeners to be left", || b.ctl.socket_count() == 4);
             a.ctl.stop();
             b.ctl.stop();
         }
