@@ -341,6 +341,7 @@
 		A945F90593453AEC2794E43C /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E7F41B7A5FACA30EA7AE9015 /* Localizable.xcstrings */; };
 		A9BB3CB519144EE25890C345 /* BlossomDashboardMirrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD2828F9DD6C5EB7FA5ADE4 /* BlossomDashboardMirrors.swift */; };
 		AA107D7B77C75318F5856F10 /* PlayableLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8C3E65ED03CD249289CAA9 /* PlayableLinks.swift */; };
+		AA59BF000A3A92965CAF6A2B /* FillYourVaultCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 550D9D8D45278CB4685E44C9 /* FillYourVaultCoordinator.swift */; };
 		AA7A14658D6BCB88A3174586 /* RelayLogParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09F904D883705C247E543061 /* RelayLogParser.swift */; };
 		AA9098B6CACF80681F56169C /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40B2EEC207C674DD88ABB935 /* SearchView.swift */; };
 		AAABCCC974BE94C9B2626D3B /* RelayProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22D8D67DB985CB4EA94E4FAF /* RelayProcessManager.swift */; };
@@ -500,6 +501,7 @@
 		EDCA08DB3ED399583C55F594 /* BunkerURI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 702B73F5AC3EE620877BDAB0 /* BunkerURI.swift */; };
 		EF504DE874026A1BCD53E4AF /* VideoThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0D1824D5ECD6975EAF3F98 /* VideoThumbnailView.swift */; };
 		EF8DF414D640B5AC1CE1F212 /* MediaGalleryTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EA2FCD67EDBE04915305C51 /* MediaGalleryTypes.swift */; };
+		EFE4EE263128163EF65CD063 /* FillYourVaultCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 550D9D8D45278CB4685E44C9 /* FillYourVaultCoordinator.swift */; };
 		F0A25A9631B2DA7F4906AB39 /* Ping.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = C375F066296CAA325CD86CFE /* Ping.mp3 */; };
 		F10135C9F1B704EF4CFDCDB7 /* MempoolAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CC7FAABBAB90283299F087 /* MempoolAPIService.swift */; };
 		F11DF1086DA8F6B030403814 /* QuoteReferenceIDs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CF9A4E3F7A9F3E2726673 /* QuoteReferenceIDs.swift */; };
@@ -653,6 +655,7 @@
 		51EA54117C5443C0DA93781D /* HavenApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HavenApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		528D1E62E799D477438A8E24 /* QuoteReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteReference.swift; sourceTree = "<group>"; };
 		53A58C1E653A14F58B7B1F09 /* InitialFollowsStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InitialFollowsStepView.swift; sourceTree = "<group>"; };
+		550D9D8D45278CB4685E44C9 /* FillYourVaultCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FillYourVaultCoordinator.swift; sourceTree = "<group>"; };
 		558FCD15C2C7144DF3D20135 /* EmojiPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerView.swift; sourceTree = "<group>"; };
 		5717FE059897D5903CA56549 /* NIP44Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP44Service.swift; sourceTree = "<group>"; };
 		58DD627BE3CD8F7939B4F325 /* SellerListingsLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerListingsLoader.swift; sourceTree = "<group>"; };
@@ -1269,6 +1272,7 @@
 				E21025C4F8626E1E4FFAB180 /* FeedFilterEngine.swift */,
 				EC33568A91E5B5B737A03D1F /* FeedService.swift */,
 				A19809A765C51F397B19FD14 /* FeedServiceTypes.swift */,
+				550D9D8D45278CB4685E44C9 /* FillYourVaultCoordinator.swift */,
 				BAD62347E7E49CB5F2D3C53B /* FIPSDetectionService.swift */,
 				C81B813614AC332D9C184C78 /* FollowingBackupService.swift */,
 				A4464865603517B64343AFC9 /* FollowingFeedState.swift */,
@@ -1622,6 +1626,7 @@
 				2CB176ED82313ACA85A8AE44 /* FeedThreadCard.swift in Sources */,
 				60135B288D01F67F43BF7E6B /* FeedThreadGrouping.swift in Sources */,
 				BBADE21A4A5A36ACE752BE4A /* FeedView.swift in Sources */,
+				AA59BF000A3A92965CAF6A2B /* FillYourVaultCoordinator.swift in Sources */,
 				DA4D22419FAD927F58025331 /* FilterButton.swift in Sources */,
 				20909F66629BEC603D2806A0 /* FloatingArrowController.swift in Sources */,
 				CCDD2DE2A5F8B1ECDA15E248 /* FollowingBackupService.swift in Sources */,
@@ -1890,6 +1895,7 @@
 				F7E4D75941ED6FAE9AF5480E /* FeedThreadCard.swift in Sources */,
 				E9B017046B79DE70C07E4574 /* FeedThreadGrouping.swift in Sources */,
 				1944C38B0920934C57D8F4E3 /* FeedView.swift in Sources */,
+				EFE4EE263128163EF65CD063 /* FillYourVaultCoordinator.swift in Sources */,
 				9D8C4B533215C3CB63C3E7E8 /* FilterButton.swift in Sources */,
 				CA413CD72E9FB270DDA60F7D /* FloatingArrowController.swift in Sources */,
 				B90CCC03D296B8EDD6E7AC90 /* FollowingBackupService.swift in Sources */,

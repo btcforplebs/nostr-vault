@@ -198,6 +198,11 @@ class FeedViewModel @Inject constructor(
     }
 
     init {
+        // Starts, or quietly finishes, Fill your vault once the follow list is known.
+        com.nostrvault.vaultguide.FillYourVaultCoordinator.start(feedService, configStore)
+    }
+
+    init {
         // Diff the profile map off the main thread and write only what changed:
         // the cache holds up to 5,000 entries, and scanning that on the main
         // thread three times a second would cost more than the recompositions
@@ -439,6 +444,11 @@ class FeedViewModel @Inject constructor(
     val trustGraphReady: StateFlow<Boolean> = feedService.wotPubkeys
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.wotPubkeys.value.isNotEmpty())
+
+    /** The graph is built and empty: this account follows nobody yet. */
+    val noWebOfTrustYet: StateFlow<Boolean> = combine(feedService.wotCacheRead, feedService.wotPubkeys) { read, wot ->
+        read && wot.isEmpty()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), feedService.hasNoWebOfTrustYet())
 
     // Declared after _feedMode, which the reload reads.
     init {

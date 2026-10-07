@@ -106,6 +106,8 @@ class HashtagsFeedViewModel @Inject constructor(
 
     val followedTags: StateFlow<List<String>> = interestListService.hashtags
 
+    override val opensWithoutWebOfTrust: Boolean = true
+
     /** The tag the chips narrow to; null is All. */
     private val _selected = MutableStateFlow<String?>(null)
     val selected: StateFlow<String?> = _selected.asStateFlow()
@@ -310,6 +312,7 @@ internal fun HashtagsFeed(
     val notes = remember(fromFollows, fromOthers) { fromFollows + fromOthers }
     val isLoading by viewModel.isLoading.collectAsState()
     val everyone by viewModel.globalShowsEveryone.collectAsState()
+    val unfiltered by viewModel.unfilteredForNewAccount.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
     val quotedNotesCache by viewModel.quotedNotesCache.collectAsState()
     val likedIds by viewModel.likedEventIds.collectAsState()
@@ -442,6 +445,11 @@ internal fun HashtagsFeed(
             }
         }
 
+        if (unfiltered && followedTags.isNotEmpty()) {
+            item(key = "hashtags-unfiltered") {
+                HashtagSectionHeader("Unfiltered: people you don't know yet")
+            }
+        }
         if (followedTags.isEmpty()) {
             item(key = "hashtags-none") {
                 HashtagsEmptyHeader("Follow a hashtag to see it here")
@@ -512,7 +520,7 @@ internal fun HashtagsFeed(
                 threadRow(thread)
             }
             if (loadingOlder == follows) item(key = "hashtags-follows-older") { HashtagOlderSpinner() }
-            if (rest.isNotEmpty() && !everyone) {
+            if (rest.isNotEmpty() && !everyone && !unfiltered) {
                 item(key = "hashtags-others-header") { HashtagSectionHeader("More from your network") }
             }
             items(rest, key = { "thread-${it.rootId}" }) { thread ->
@@ -529,7 +537,7 @@ internal fun HashtagsFeed(
                 noteRow(note)
             }
             if (loadingOlder == follows) item(key = "hashtags-follows-older") { HashtagOlderSpinner() }
-            if (fromOthers.isNotEmpty() && !everyone) {
+            if (fromOthers.isNotEmpty() && !everyone && !unfiltered) {
                 item(key = "hashtags-others-header") { HashtagSectionHeader("More from your network") }
             }
             items(fromOthers, key = { it.id }) { note ->

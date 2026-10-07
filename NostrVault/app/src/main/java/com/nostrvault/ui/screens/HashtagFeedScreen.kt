@@ -192,6 +192,17 @@ abstract class HashtagNotesViewModel(
      * the trust graph or the shield change. Called from a subclass's init,
      * once its own properties exist.
      */
+    /**
+     * Following nobody means no Web of Trust to filter by. The Hashtags feed
+     * then opens to everyone and says so: it is where a new account finds its
+     * first people. The single-tag sheet keeps failing closed.
+     */
+    protected open val opensWithoutWebOfTrust: Boolean = false
+
+    /** True while this feed is showing everyone because there's no Web of Trust yet. */
+    private val _unfilteredForNewAccount = MutableStateFlow(false)
+    val unfilteredForNewAccount: StateFlow<Boolean> = _unfilteredForNewAccount.asStateFlow()
+
     protected fun observe(tags: Flow<List<String>>, active: Flow<Boolean> = flowOf(true)) {
         observing?.cancel()
         observing = viewModelScope.launch {
@@ -199,7 +210,10 @@ abstract class HashtagNotesViewModel(
                 tags.distinctUntilChanged(),
                 active.distinctUntilChanged(),
                 feedService.followedPubkeys,
-                feedService.wotPubkeys.map { it.size }.distinctUntilChanged(),
+                combine(
+                    feedService.wotPubkeys.map { it.size }.distinctUntilChanged(),
+                    feedService.wotCacheRead,
+                ) { size, read -> size to read },
                 globalShowsEveryone,
             ) { t, on, _, _, _ -> t to on }
                 .collect { (t, on) -> if (on) start(t) else stop() }
@@ -226,7 +240,9 @@ abstract class HashtagNotesViewModel(
             configStore.activeAccountHexPubkey.value.takeIf { it.isNotEmpty() }?.let(::add)
         }
         // Null is everyone; empty is nobody (no Web of Trust yet fails closed, like Global).
-        val trust = feedService.globalTrustSet()
+        val unfiltered = opensWithoutWebOfTrust && !globalShowsEveryone.value && feedService.hasNoWebOfTrustYet()
+        _unfilteredForNewAccount.value = unfiltered
+        val trust = if (unfiltered) null else feedService.globalTrustSet()
         val values = tagFilterValues(tags)
         // Matched locally in lowercase; only the tags actually asked for.
         val wantedTags = values.map { it.lowercase() }.toSet()

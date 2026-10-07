@@ -192,6 +192,7 @@ fun FeedScreen(
     val globalShowsEveryone by viewModel.globalShowsEveryone.collectAsState()
     val globalFeedLanguages by viewModel.globalFeedLanguages.collectAsState()
     val trustGraphReady by viewModel.trustGraphReady.collectAsState()
+    val noWebOfTrustYet by viewModel.noWebOfTrustYet.collectAsState()
     val showEngagementStats by viewModel.showEngagementStats.collectAsState()
     val pendingCount by viewModel.pendingNoteCount.collectAsState()
     // The parent, quote and repost caches are not collected here. Every parent
@@ -747,7 +748,11 @@ fun FeedScreen(
                     } else if (feedMode == FeedMode.GLOBAL && !globalShowsEveryone && !trustGraphReady) {
                         // Global fails closed without the trust graph; say so
                         // rather than "waiting for notes" over a full inbox.
-                        "Building your Web of Trust\u2026 Tap the shield to see everyone"
+                        if (noWebOfTrustYet) {
+                            "Follow people to build your web of trust"
+                        } else {
+                            "Building your Web of Trust\u2026 Tap the shield to see everyone"
+                        }
                     } else if (feedMode == FeedMode.GLOBAL && globalFeedLanguages.isNotEmpty()) {
                         "Nothing in ${FeedLanguage.summary(globalFeedLanguages)} yet"
                     } else {

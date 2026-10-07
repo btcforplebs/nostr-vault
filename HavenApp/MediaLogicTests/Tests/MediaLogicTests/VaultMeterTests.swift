@@ -88,3 +88,50 @@ final class VaultMeterTests: XCTestCase {
         XCTAssertNil(VaultTopics.normalize(" # "))
     }
 }
+
+final class FillYourVaultRuleTests: XCTestCase {
+    private func act(known: Bool = true, prev: Int? = nil, _ count: Int,
+                     _ status: TutorialStatus = .notStarted, active: Bool = false) -> FillYourVaultRule.Action {
+        FillYourVaultRule.onFollowsChanged(listKnown: known, previousCount: prev, count: count,
+                                           status: status, isActive: active)
+    }
+
+    // The count reads 0 for everyone until the list loads.
+    func testNothingHappensBeforeTheFollowListLoads() {
+        XCTAssertEqual(act(known: false, 0), .none)
+        XCTAssertEqual(act(known: false, 300), .none)
+    }
+
+    func testNewAccountStartsTheGuide() {
+        XCTAssertEqual(act(0), .start)
+        XCTAssertEqual(act(4), .start)
+    }
+
+    // Page tutorials wait for Fill your vault, so established accounts must
+    // be marked done or they never see them.
+    func testEstablishedAccountIsFinishedSilently() {
+        XCTAssertEqual(act(5), .finishSilently)
+        XCTAssertEqual(act(300), .finishSilently)
+    }
+
+    func testDecidedOnceOnly() {
+        XCTAssertEqual(act(0, .skipped), .none)
+        XCTAssertEqual(act(300, .done), .none)
+    }
+
+    func testCrossingFiveWhileShowingFinishes() {
+        XCTAssertEqual(act(prev: 4, 5, active: true), .finish)
+        XCTAssertEqual(act(prev: 3, 4, active: true), .none)
+    }
+
+    // A replay opened past 5 stays up so the person can go for 10.
+    func testReplayPastFiveStaysOpen() {
+        XCTAssertEqual(act(prev: nil, 7, .done, active: true), .none)
+        XCTAssertEqual(act(prev: 7, 8, .done, active: true), .none)
+    }
+
+    func testClosingByHand() {
+        XCTAssertEqual(FillYourVaultRule.onClose(count: 2), .skipped)
+        XCTAssertEqual(FillYourVaultRule.onClose(count: 7), .done)
+    }
+}

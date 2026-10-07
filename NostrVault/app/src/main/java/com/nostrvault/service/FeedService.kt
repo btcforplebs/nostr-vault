@@ -442,6 +442,21 @@ class FeedService @Inject constructor(
     val wotPubkeys: StateFlow<Set<String>> = _wotPubkeys.asStateFlow()
 
     /**
+     * True once the relay's graph file has been read for this account, even
+     * if it named nobody. Separates "no graph built yet" from "built and
+     * empty because you follow nobody". iOS: FeedService.wotCacheRead.
+     */
+    private val _wotCacheRead = MutableStateFlow(false)
+    val wotCacheRead: StateFlow<Boolean> = _wotCacheRead.asStateFlow()
+
+    /**
+     * The graph is built and names nobody: the account follows no one yet.
+     * Global says so, and the Hashtags feed opens up (labelled) so there is
+     * somewhere to find people to follow.
+     */
+    fun hasNoWebOfTrustYet(): Boolean = _wotCacheRead.value && _wotPubkeys.value.isEmpty()
+
+    /**
      * Everyone around the user, for ranking search and mention results after
      * their follows: the relay's Web of Trust graph plus the extended network.
      * iOS: FeedService.webOfTrustForRanking.
@@ -801,7 +816,21 @@ class FeedService @Inject constructor(
      * publish: a timed-out load leaves an empty or partial list in memory, and
      * publishing it would replace every follow on every relay (iOS #180).
      */
-    @Volatile private var contactListConfirmed = false
+    private val _contactListConfirmed = MutableStateFlow(false)
+    private var contactListConfirmed: Boolean
+        get() = _contactListConfirmed.value
+        set(value) { _contactListConfirmed.value = value }
+
+    /**
+     * The real follow list has loaded for the active account: the same test
+     * Follow uses before it publishes. Until then the follow list can read
+     * empty for someone who follows hundreds. iOS: FeedService.followListIsKnown.
+     */
+    val followListIsKnown: StateFlow<Boolean> = combine(
+        _hasAttemptedContactLoad, _isLoadingContacts, _contactListConfirmed,
+    ) { attempted, loading, confirmed ->
+        contactManager.mayPublishFollowList(attempted, loading, confirmed)
+    }.stateIn(scope, SharingStarted.Eagerly, false)
 
     private fun queueFollowAction(pubkey: String, follow: Boolean, unavailable: Boolean = false) {
         pendingFollowActions.removeAll { it.pubkey == pubkey }
@@ -2280,6 +2309,7 @@ class FeedService @Inject constructor(
                         }
                         Log.d(TAG, "WoT loaded: ${loaded.size} pubkeys")
                         withContext(Dispatchers.Main.immediate) {
+                            _wotCacheRead.value = true
                             if (loaded != _wotPubkeys.value) {
                                 _wotPubkeys.value = loaded
                                 // Global is filtered against this set; notes

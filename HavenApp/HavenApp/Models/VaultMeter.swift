@@ -94,3 +94,45 @@ struct VaultMasterStore {
         return true
     }
 }
+
+/// When "Fill your vault" starts, finishes or is skipped. No UI here, so the
+/// rules are tested on their own; `FillYourVaultCoordinator` applies them.
+enum FillYourVaultRule {
+    enum Action: Equatable {
+        case none
+        /// A new account: show the guide.
+        case start
+        /// Mark it done without showing anything: an account that already
+        /// follows enough was never new. Page tutorials wait for this.
+        case finishSilently
+        /// The guide is showing and the vault just filled.
+        case finish
+    }
+
+    /// What to do after the follow list changes.
+    ///
+    /// - Parameters:
+    ///   - listKnown: the real follow list has loaded. Before that the count
+    ///     reads 0 for everyone, and deciding then would show the guide to
+    ///     people who follow hundreds.
+    ///   - previousCount: the count before this change, nil for the first
+    ///     known list.
+    static func onFollowsChanged(listKnown: Bool, previousCount: Int?, count: Int,
+                                 status: TutorialStatus, isActive: Bool) -> Action {
+        guard listKnown else { return .none }
+        if isActive {
+            // Only crossing 5 finishes it. A replay opened at 7 stays open so
+            // the person can go for Vault Master; closing it is up to them.
+            if let previousCount, previousCount < VaultMeter.goal, count >= VaultMeter.goal { return .finish }
+            return .none
+        }
+        guard status == .notStarted else { return .none }
+        return VaultMeter.skipsGuide(followCount: count) ? .finishSilently : .start
+    }
+
+    /// Closing the guide by hand. Past 5 it counts as done, so a replay closed
+    /// at 7 doesn't turn a finished guide into a skipped one.
+    static func onClose(count: Int) -> TutorialStatus {
+        count >= VaultMeter.goal ? .done : .skipped
+    }
+}

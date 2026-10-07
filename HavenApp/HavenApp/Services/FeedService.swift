@@ -83,7 +83,7 @@ class FeedService: ObservableObject {
     /// ContactManager.loadConfirmsList). Until it is, follow / unfollow never
     /// publish: a timed-out load leaves an empty or partial list in memory,
     /// and publishing it would replace every follow on every relay.
-    private(set) var contactListConfirmed = false
+    @Published private(set) var contactListConfirmed = false
     @Published var isLoadingExtendedNetwork = false
     @Published var isLoadingPopular = false
     @Published var popularFilter: PopularFilter = .all
@@ -569,6 +569,15 @@ class FeedService: ObservableObject {
     /// follows nobody has no graph at all, because nothing but the owner's own
     /// follows may build one.
     var curatedGraphReady: Bool { !wotPubkeys.isEmpty }
+
+    /// The real follow list has loaded for the active account: the same test
+    /// Follow uses before it publishes. Until then `followedPubkeys` can read
+    /// empty for someone who follows hundreds.
+    var followListIsKnown: Bool {
+        ContactManager.mayPublishFollowList(hasAttemptedLoad: hasAttemptedContactLoad,
+                                            isLoading: isLoadingContacts,
+                                            listConfirmed: contactListConfirmed)
+    }
 
     /// The graph is built and names nobody: the owner follows no one yet.
     /// Feeds that fail closed say so, and the topic feed opens up (labelled)
