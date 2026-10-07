@@ -126,10 +126,6 @@ struct ProfileView: View {
     @State private var quietOlderTaggedPages = 0
     @State private var autoPagedTaggedInARow = 0
 
-    // Total counts from local relay (own profile)
-    @State private var totalNoteCount: Int? = nil
-    @State private var totalMediaCount: Int? = nil
-
     @State private var selectedSection: ProfileSection = .notes
     /// The late tabs on show. Set only when their loader finishes, so the
     /// tab bar re-spaces once instead of once per tab as each one arrives.
@@ -346,10 +342,30 @@ struct ProfileView: View {
         )
     }
 
+    /// What each tab holds so far. These are the notes loaded, not totals:
+    /// `hasMore` says when older pages may still add to them. Your own
+    /// relay's note count included replies and your Blossom file count
+    /// included every upload, so neither matched its tab and both are gone.
     private var sectionCount: (notes: Int, media: Int, replies: Int, tagged: Int) {
-        let notes = (isOwnProfile ? totalNoteCount : nil) ?? topNotes.count
-        let media = (isOwnProfile ? totalMediaCount : nil) ?? mediaNotes.count
-        return (notes, media, replyNotes.count, taggedFilteredNotes.count)
+        (topNotes.count, mediaNotes.count, replyNotes.count, taggedFilteredNotes.count)
+    }
+
+    /// True until paging has found no older notes. A short profile shows the
+    /// sentinel at once, so it pages to the end and drops the "+" quickly.
+    private func hasMore(for section: ProfileSection) -> Bool {
+        switch section {
+        case .notes, .media, .replies: return hasMoreNotes
+        case .tagged: return hasMoreTaggedNotes
+        default: return false
+        }
+    }
+
+    /// "48", or "48+" while older pages may still raise it. Nothing loaded
+    /// yet with more to come reads "—", as FOLLOWING does before it knows.
+    private func countText(for section: ProfileSection) -> String {
+        let n = count(for: section)
+        guard hasMore(for: section) else { return shortInt(n) }
+        return n == 0 ? "—" : shortInt(n) + "+"
     }
 
     /// Opens a note in the split pane's detail column when this profile is the
@@ -423,7 +439,6 @@ struct ProfileView: View {
         .onAppear {
             nostrService.fetchMissingProfiles(for: [pubkey])
             fetchAuthorNotes()
-            fetchLocalRelayCounts()
             shop.load(pubkey: pubkey)
             extras.load(pubkey: pubkey, relays: extrasRelays)
             revealLateSections()
@@ -1104,9 +1119,9 @@ struct ProfileView: View {
 
     private var statsBlock: some View {
         HStack(spacing: 0) {
-            statCell(value: shortInt(sectionCount.notes), label: "NOTES")
+            statCell(value: countText(for: .notes), label: "NOTES")
             statDivider
-            statCell(value: shortInt(sectionCount.media), label: "MEDIA")
+            statCell(value: countText(for: .media), label: "MEDIA")
             statDivider
             if isOwnProfile {
                 statCell(
@@ -1384,8 +1399,7 @@ struct ProfileView: View {
     }
 
     private func countLabel(for section: ProfileSection) -> String {
-        let n = count(for: section)
-        return n > 0 ? shortInt(n) : ""
+        count(for: section) > 0 ? countText(for: section) : ""
     }
 
     // MARK: - Section content
@@ -1879,7 +1893,6 @@ struct ProfileView: View {
         olderTaggedSubId = nil
 
         fetchAuthorNotes()
-        fetchLocalRelayCounts()
 
         // Until every relay has answered (EOSE, CLOSED or a failed
         // connection), 8s at most, and long enough that the spinner reads as
@@ -1892,39 +1905,6 @@ struct ProfileView: View {
             try? await Task.sleep(nanoseconds: UInt64((0.6 - shown) * 1_000_000_000))
         }
     }
-
-    // MARK: - Local relay counts (own profile)
-
-    private func fetchLocalRelayCounts() {
-        guard isOwnProfile else { return }
-        guard RelayProcessManager.shared.isRunning && !RelayProcessManager.shared.isBooting else { return }
-
-        let config = ConfigService.shared.config
-        #if os(macOS)
-        let baseURLString = "ws://127.0.0.1:\(config.relayPort)"
-        #else
-        let baseURLString = "wss://127.0.0.1:\(config.relayPort)"
-        #endif
-        guard let baseURL = URL(string: baseURLString) else { return }
-
-        Task {
-            // Fetch kind 1 note count
-            let noteCount = await nostrService.fetchCount(
-                from: [baseURL],
-                filter: ["kinds": [1], "authors": [pubkey]]
-            )
-            if let count = noteCount, count > 0 {
-                await MainActor.run { totalNoteCount = count }
-            }
-
-            // Fetch media count via blossom blob list
-            let blobs = await StatsService.shared.fetchBlobList(for: pubkey)
-            if !blobs.isEmpty {
-                await MainActor.run { totalMediaCount = blobs.count }
-            }
-        }
-    }
-
 
     // MARK: - Profile editing
 
