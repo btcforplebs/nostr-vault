@@ -12,7 +12,8 @@ see "What changed" below.*
 
 ## 1. The short version
 
-- Each vault runs a small FIPS mesh node inside the app. Your Nostr key is its address.
+- Each vault runs a small FIPS mesh node inside the app. Each vault gets its own mesh key, and
+  that key is its address. It is separate from your Nostr account key.
 - Two vaults find each other by posting short signed messages on ordinary Nostr relays, then
   connect directly (UDP hole-punching with STUN). No middle server or "seed" node is needed.
 - The vault's relay and Blossom media server already share one port, so one connection path
@@ -52,14 +53,14 @@ fips node ◄── find each other via Nostr relays + STUN ──► fips node
 - **Engine:** upstream `fips`, pinned to a tag (v0.5.2 today), plus smoltcp, in one Rust core
   shared by every platform. Code: `fips-v2/` (engine) and `fips-v2-android/` (Android wrapper).
 - **Sharing:** the node accepts mesh connections on port 80 and passes them to the local relay.
-- **Reading:** one local port per friend. The app points that friend's relay and Blossom URLs at
+- **Reading (planned):** one local port per friend. The app points that friend's relay and Blossom URLs at
   `127.0.0.1:<port>`, so URLSession, AVFoundation, Coil and ExoPlayer need no changes.
 
 ## 4. Platforms
 
 | Platform | Shares its vault? | Reads friends' vaults? | Notes |
 |---|---|---|---|
-| **Android** | Yes | Yes | Engine runs inside the relay's existing background service. Ships first. |
+| **Android** | Yes | Yes | Ships first. Today the engine starts with the app and stops when the app is killed. Planned: move it into the relay's background service. |
 | **macOS** | Yes, 24/7 | Yes | Same core. Never suspended, so a good always-on home for your vault. |
 | **iOS** | Only in opt-in "kiosk" mode | Yes | iOS suspends background apps. An old iPhone or iPad on a charger with the app open can host. |
 
@@ -73,9 +74,9 @@ Never use background audio, VoIP or location modes to keep it alive. That fails 
 | **1. Engine** | Upstream fips + app-owned TUN + smoltcp. Two networks, found through Nostr relays, direct link, no seed. | Tao | **Works.** Cut-off-file bug fixed (`8e2c598`). Branch `feat/fips-v2-upstream`. |
 | 1b | Engine pieces for the app: sharing on/off, share and read at the same time, counters. | Tao | Open |
 | 1c | Friends-only lock (§6). | Tao | Open. **Gates "Share my relay" on by default.** |
-| **2. Android sharing** | Engine in the app; Settings → Mesh with "Who can reach you" and "Share my relay" (off by default). | Ted | **Built.** Phone → Mac on home Wi-Fi: 20 MB, 3 of 3 identical, ~17 MB/s. Branch `feat/android-fips-v2`. |
+| **2. Android sharing** | Engine in the app; Settings → Mesh with "Who can reach you" and "Share my relay" (off by default). The list picks whom we connect to; it does **not** block anyone else yet (§6). | Ted | **Built.** Phone → Mac on home Wi-Fi: 20 MB, 3 of 3 identical, ~17 MB/s. Branch `feat/android-fips-v2`. |
 | **3. Android reading** | Vault adds its mesh address to its kind 10063 server list. The app reads a friend over FIPS, falls back to normal servers, shows a "via FIPS" badge. | Ted | Not started |
-| **4. Real-world test** | Two phones, two networks, one on cellular. A full day of battery. Then an internal build. | Logen + Ted | Not started. Run the battery check early, as soon as sharing works. |
+| **4. Real-world test** | Two phones, two networks, one on cellular. A full day of battery. Then an internal build. | Logen + Ted | Not started. Needs the engine in the background service first. Run the battery check early. |
 | **5. Mac, then iPhone** | Mac shares like Android. iPhone reads (plus kiosk). | Tao | After Android |
 
 ## 6. The friends-only lock
