@@ -28,7 +28,13 @@ final class RelayProbe: ObservableObject {
             guard results[key] != .probing, let parsed = URL(string: HavenConfig.normalizedRelayURL(url)) else { continue }
             results[key] = .probing
             Task {
-                let result = await Self.measure(parsed)
+                // One retry before calling a relay down, so a blip doesn't
+                // put a Remove button in front of anyone.
+                var result = await Self.measure(parsed)
+                if result == .unreachable {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    result = await Self.measure(parsed)
+                }
                 self.results[key] = result
             }
         }

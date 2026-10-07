@@ -90,19 +90,19 @@ enum RelayMatrix {
     }
 
     /// One row per relay, in the order relays first appear across the jobs
-    /// (Read, Write, DMs, Search, Import). `pinned` (the owner's own relay) is
-    /// left out: it has its own row.
-    static func rows(_ lists: Lists, pinned: String = "") -> [Row] {
+    /// (Read, Write, DMs, Search, Import). `pinned` (the owner's own relay and
+    /// its DM inbox) is left out: it has its own row.
+    static func rows(_ lists: Lists, pinned: [String] = []) -> [Row] {
         var order: [String] = []
         var firstSpelling: [String: String] = [:]
         var jobs: [String: Set<Job>] = [:]
-        let pinnedKey = pinned.isEmpty ? nil : key(pinned)
+        let pinnedKeys = Set(pinned.filter { !$0.isEmpty }.map(key))
         for job in Job.allCases {
             for raw in lists[job] {
                 let url = HavenConfig.normalizedRelayURL(raw)
                 guard !url.isEmpty else { continue }
                 let k = key(url)
-                if k == pinnedKey { continue }
+                if pinnedKeys.contains(k) { continue }
                 if firstSpelling[k] == nil {
                     firstSpelling[k] = url
                     order.append(k)

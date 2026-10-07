@@ -21,8 +21,10 @@ final class RelayMatrixTests: XCTestCase {
     }
 
     func testPinnedRelayHasNoRow() {
-        let rows = RelayMatrix.rows(lists, pinned: "wss://a.example/")
+        let rows = RelayMatrix.rows(lists, pinned: ["wss://a.example/", "wss://D.example", ""])
         XCTAssertFalse(rows.contains { $0.url == "wss://a.example" })
+        XCTAssertFalse(rows.contains { $0.url == "wss://d.example" })
+        XCTAssertEqual(rows.count, 3)
     }
 
     func testTurningAJobOffRemovesEverySpelling() {

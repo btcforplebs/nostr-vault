@@ -52,7 +52,9 @@ struct RelayMatrixView: View {
         configService.config.ownPublicRelays.first { !$0.isEmpty } ?? ""
     }
 
-    private var rows: [RelayMatrix.Row] { RelayMatrix.rows(lists, pinned: ownRelay) }
+    private var rows: [RelayMatrix.Row] {
+        RelayMatrix.rows(lists, pinned: [ownRelay, configService.config.ownHavenDMInboxURL])
+    }
 
     private var problems: [RelayMatrix.Problem] {
         RelayMatrix.problems(lists, ownDMInbox: configService.config.ownHavenDMInboxURL,
@@ -237,6 +239,7 @@ struct RelayMatrixView: View {
                 Text(RelayMatrix.label(ownRelay))
                     .font(.appBody)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .truncationMode(.middle)
                 HStack(spacing: 6) {
                     subtitle(probe.result(for: ownRelay), tags: [])
@@ -268,6 +271,7 @@ struct RelayMatrixView: View {
                         .font(.appBody)
                         .foregroundColor(.primary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .truncationMode(.middle)
                     subtitle(probe.result(for: row.url),
                              tags: RelayMatrix.Job.advanced.filter(row.has).map(\.title))
@@ -350,6 +354,7 @@ struct RelayMatrixView: View {
             .font(.appCaption)
             .foregroundColor(tint)
             .lineLimit(1)
+            .minimumScaleFactor(0.8)
     }
 
     private var mediaSection: some View {
