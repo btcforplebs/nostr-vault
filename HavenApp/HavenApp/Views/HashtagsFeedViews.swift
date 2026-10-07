@@ -33,6 +33,10 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
     }
 
     private var everyone: Bool { configService.config.globalShowsEveryone }
+    /// Following nobody means no web of trust to filter by. Rather than show
+    /// nothing, the topic feed opens to everyone and says so: it is where a
+    /// new account finds its first people.
+    private var unfilteredForNewAccount: Bool { !everyone && feedService.hasNoWebOfTrustYet }
     private var shownTags: [String] {
         if let selected, interests.hashtags.contains(selected) { return [selected] }
         return interests.hashtags
@@ -44,6 +48,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                 noTagsState
             } else {
                 chipRow
+                if unfilteredForNewAccount { unfilteredBanner }
                 if model.fromFollows.isEmpty && model.fromOthers.isEmpty {
                     noPostsState
                 }
@@ -59,7 +64,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                             if model.loadingOlder == .follows { olderSpinner }
                         }
                         if !model.fromOthers.isEmpty {
-                            if !everyone { sectionHeader("More from your network") }
+                            if !everyone && !unfilteredForNewAccount { sectionHeader("More from your network") }
                             ForEach(model.fromOthers) { note in
                                 row(note).onAppear { model.rowAppeared(note, in: .others) }
                             }
@@ -84,6 +89,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
         .onChange(of: feedService.followedPubkeys.count) { _, _ in restart() }
         .onChange(of: feedService.wotPubkeys.count) { _, _ in restart() }
         .onChange(of: everyone) { _, _ in restart() }
+        .onChange(of: feedService.wotCacheRead) { _, _ in restart() }
         .alert("Couldn't save", isPresented: $showingFollowFailed) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -100,7 +106,17 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
             suggestions.load(follows: Set(feedService.followedPubkeys), excluding: [])
             return
         }
-        model.start(tags: shownTags, follows: follows, trust: feedService.globalTrustSet())
+        let trust = unfilteredForNewAccount ? nil : feedService.globalTrustSet()
+        model.start(tags: shownTags, follows: follows, trust: trust)
+    }
+
+    private var unfilteredBanner: some View {
+        Label("Unfiltered: people you don't know yet", systemImage: "eye")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            .accessibilityLabel("Unfiltered. These posts are from people you don't know yet.")
     }
 
     private func setFollowing(_ tag: String, _ followed: Bool) {
@@ -257,7 +273,7 @@ struct HashtagsFeedSection<Row: View, ThreadRow: View>: View {
                 if model.loadingOlder == .follows { olderSpinner }
             }
             if !rest.isEmpty {
-                if !everyone { sectionHeader("More from your network") }
+                if !everyone && !unfilteredForNewAccount { sectionHeader("More from your network") }
                 ForEach(rest) { thread in
                     threadRow(thread).onAppear {
                         if thread.id == rest.last?.id { model.reachedEnd(of: .others) }

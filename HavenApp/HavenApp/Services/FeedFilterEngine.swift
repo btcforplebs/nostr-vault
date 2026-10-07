@@ -102,9 +102,8 @@ enum FeedFilterEngine {
                 // firehose — measured at two thirds spam on the default seed
                 // relays. An unusable graph now shows nothing and the caller
                 // says so, rather than quietly showing the worst of Nostr.
-                // The graph is seeded from the starter pack for an owner who
-                // follows nobody, so empty here means "not built yet", not
-                // "this user has no friends".
+                // Empty means either "not built yet" or "the owner follows
+                // nobody"; nothing else may build a graph, so both show nothing.
                 // "Everyone" (opted into behind a warning) skips the graph.
                 if globalRequiresTrust && !wotPubkeys.contains(note.pubkey) { return false }
                 if note.isReply { return false }

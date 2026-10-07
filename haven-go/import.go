@@ -76,7 +76,7 @@ func runImport(ctx context.Context) {
 		config.WotFetchTimeoutSeconds,
 		config.WotCachePath,
 		config.WotCacheTTLMinutes,
-	).WithFallbackSeeds(loadStarterPack())
+	)
 
 	// Try to load from cache first. MarkReady on the cache-hit path also
 	// stores the instance, so GetInstance() below never returns nil.

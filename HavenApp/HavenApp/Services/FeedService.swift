@@ -294,6 +294,10 @@ class FeedService: ObservableObject {
     /// cached WOT graph (`wot_cache.json`). Used to filter the GLOBAL feed and
     /// Media tab so only notes/media from WOT members are shown.
     @Published private(set) var wotPubkeys: Set<String> = []
+    /// True once the relay's graph file has been read for this account, even
+    /// if it named nobody. Separates "the relay has not built a graph yet"
+    /// from "the graph is built and empty because you follow nobody".
+    @Published private(set) var wotCacheRead = false
 
     /// Popularity scores returned by the local DVM, keyed by note ID.
     /// Used to sort the Popular feed by engagement rank.
@@ -515,6 +519,7 @@ class FeedService: ObservableObject {
             return
         }
         wotPubkeys = loaded
+        wotCacheRead = true
         #if DEBUG
         print("FeedService: Loaded \(wotPubkeys.count) usable WOT pubkeys from cache")
         #endif
@@ -560,11 +565,15 @@ class FeedService: ObservableObject {
     static let trustedAuthorsCap = 500
 
     /// True when the Global feed has a trust graph to filter against. The
-    /// relay writes `wot_cache.json` shortly after first launch, seeded from
-    /// the starter pack for an owner who follows nobody — so on a brand-new
-    /// install this is false for a few seconds and the feed legitimately has
-    /// nothing to show yet.
+    /// relay writes `wot_cache.json` shortly after first launch; an owner who
+    /// follows nobody has no graph at all, because nothing but the owner's own
+    /// follows may build one.
     var curatedGraphReady: Bool { !wotPubkeys.isEmpty }
+
+    /// The graph is built and names nobody: the owner follows no one yet.
+    /// Feeds that fail closed say so, and the topic feed opens up (labelled)
+    /// so there is somewhere to find people to follow.
+    var hasNoWebOfTrustYet: Bool { wotCacheRead && wotPubkeys.isEmpty }
 
     /// Everyone around the user for ranking search and mention results after
     /// their follows: the relay's Web of Trust graph plus the extended network
@@ -576,7 +585,11 @@ class FeedService: ObservableObject {
     /// Status text for a Global feed with no graph yet. Global fails closed, so
     /// without this the user would sit in front of an empty screen labelled
     /// "No notes found" and reasonably conclude the app is broken.
-    private var curatedGraphPendingStatus: String { "Building your starter feed…" }
+    private var curatedGraphPendingStatus: String {
+        hasNoWebOfTrustYet
+            ? "Follow people to build your web of trust"
+            : "Building your web of trust…"
+    }
 
     private var curatedGraphPollAttempts = 0
     private var curatedGraphPollTimer: Timer?

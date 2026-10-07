@@ -37,7 +37,9 @@ type wotCache struct {
 
 // wotCacheVersion 2: the depth-3 pass no longer drops every contact list a
 // batch had collected when one seed relay was slow to send EOSE.
-const wotCacheVersion = 2
+// wotCacheVersion 3: an owner who follows nobody is no longer seeded from a
+// starter pack, so graphs built from those seeds are thrown away.
+const wotCacheVersion = 3
 
 type SimpleInMemory struct {
 	pubkeys atomic.Pointer[map[string]bool]
@@ -45,11 +47,6 @@ type SimpleInMemory struct {
 	// Dependencies for Refresh
 	Pool               *nostr.SimplePool
 	WhitelistedPubKeys map[string]struct{}
-
-	// FallbackSeedPubKeys bootstraps the graph for an owner who follows nobody.
-	// Seeding from the whitelist alone gives such an owner a "graph" of exactly
-	// themselves, which carries no trust information — see Refresh.
-	FallbackSeedPubKeys []string
 
 	SeedRelays      []string
 	WotDepth        int
@@ -70,13 +67,6 @@ func NewSimpleInMemory(pool *nostr.SimplePool, whitelistedPubKeys map[string]str
 		CachePath:          cachePath,
 		CacheTTLMinutes:    cacheTTLMinutes,
 	}
-}
-
-// WithFallbackSeeds sets the pubkeys used to bootstrap the graph when the owner
-// follows nobody.
-func (wt *SimpleInMemory) WithFallbackSeeds(pubkeys []string) *SimpleInMemory {
-	wt.FallbackSeedPubKeys = pubkeys
-	return wt
 }
 
 // Size reports how many pubkeys the graph currently holds.
@@ -199,36 +189,6 @@ func (wt *SimpleInMemory) Init(ctx context.Context) {
 	wt.Refresh(ctx)
 }
 
-// applyFallbackSeeds bootstraps the graph when the owner follows nobody.
-//
-// Seeding only from the whitelist gives such an owner a one-hop network of
-// nothing and a "graph" containing exactly themselves, which carries no trust
-// information — every feed built on it then either shows nothing or gives up
-// and shows the open firehose. The starter pack stands in as the one-hop
-// network, exactly as if the owner followed those accounts, and the depth-3
-// pass prunes their follows by the same minimum-follower rule.
-//
-// Seeds are written straight into newWot; the follower prune only ever adds to
-// that map, so they survive without a synthetic follower count (faking one
-// would also skew the top-N diagnostics).
-//
-// This never touches the owner's own follow list. It is a local trust graph,
-// not a follow — an owner who follows nobody still follows nobody afterwards.
-// It is also skipped entirely the moment the owner follows one person, so an
-// established account is never diluted by strangers.
-//
-// Reports whether the seeds were applied.
-func (wt *SimpleInMemory) applyFallbackSeeds(oneHopNetwork, newWot map[string]bool) bool {
-	if len(oneHopNetwork) > 0 || len(wt.FallbackSeedPubKeys) == 0 {
-		return false
-	}
-	for _, pk := range wt.FallbackSeedPubKeys {
-		oneHopNetwork[pk] = true
-		newWot[pk] = true
-	}
-	return true
-}
-
 func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 	if wt.WotDepth == 0 {
 		return
@@ -276,11 +236,6 @@ func (wt *SimpleInMemory) Refresh(ctx context.Context) {
 				newWot[contact[1]] = true
 			}
 		}
-	}
-
-	if wt.applyFallbackSeeds(oneHopNetwork, newWot) {
-		slog.Info("🌱 owner follows nobody — seeded Web of Trust from the starter pack",
-			"seeds", len(wt.FallbackSeedPubKeys))
 	}
 
 	if wt.WotDepth == 2 {

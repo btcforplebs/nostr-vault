@@ -21,8 +21,8 @@ func TestRefreshWritesCacheAtEveryDepth(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		wt := NewSimpleInMemory(nostr.NewSimplePool(ctx),
 			map[string]struct{}{"owner": {}},
-			nil, // no seed relays: depth 2 fetches nothing and falls back to the seeds
-			depth, 1, 1, path, 60).WithFallbackSeeds([]string{"seed"})
+			nil, // no seed relays: depth 2 fetches nothing
+			depth, 1, 1, path, 60)
 		wt.Refresh(ctx)
 		cancel()
 
@@ -91,5 +91,25 @@ func TestCacheFromOlderBuildIsRebuilt(t *testing.T) {
 	}
 	if ok, _ := NewSimpleInMemory(nil, nil, nil, 3, 1, 1, path, 60).LoadFromCache(); ok {
 		t.Fatal("a cache without a version was served")
+	}
+}
+
+// An owner who follows nobody has a graph of exactly themselves. Nothing the
+// app or relay picks may stand in for follows the owner never made: the web of
+// trust comes only from the people the owner follows.
+func TestOwnerWhoFollowsNobodyGetsNoSeededGraph(t *testing.T) {
+	for _, depth := range []int{2, 3} {
+		path := filepath.Join(t.TempDir(), "wot_cache.json")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		wt := NewSimpleInMemory(nostr.NewSimplePool(ctx),
+			map[string]struct{}{"owner": {}},
+			nil, // no seed relays: the owner's follow list is empty
+			depth, 1, 1, path, 60)
+		wt.Refresh(ctx)
+		cancel()
+
+		if got := wt.Size(); got != 1 || !wt.Has(context.Background(), "owner") {
+			t.Fatalf("depth %d: graph holds %d pubkeys, want only the owner", depth, got)
+		}
 	}
 }

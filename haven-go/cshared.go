@@ -267,7 +267,7 @@ func StartRelayC(importMode bool) {
 				config.WotFetchTimeoutSeconds,
 				config.WotCachePath,
 				config.WotCacheTTLMinutes,
-			).WithFallbackSeeds(loadStarterPack())
+			)
 
 			// Try to load from cache first - instant startup
 			// Only run full network rebuild if cache is missing or expired

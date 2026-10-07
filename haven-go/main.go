@@ -94,7 +94,7 @@ func main() {
 		config.WotFetchTimeoutSeconds,
 		config.WotCachePath,
 		config.WotCacheTTLMinutes,
-	).WithFallbackSeeds(loadStarterPack())
+	)
 
 	if err := initRelays(mainCtx); err != nil {
 		log.Fatal("🚫 error initializing databases/relays:", err)
