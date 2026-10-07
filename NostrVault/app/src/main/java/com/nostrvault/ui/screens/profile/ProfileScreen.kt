@@ -107,10 +107,14 @@ fun ProfileScreen(
     val reels by viewModel.reels.collectAsState()
     val tracks by viewModel.tracks.collectAsState()
     var reelIndex by remember { mutableStateOf<Int?>(null) }
-    val musicActions = remember(onComposeText, onProfileClick) {
+    // This screen already shows [pubkey]; tapping its own name must not open it again.
+    val openOtherProfile: (String) -> Unit = remember(pubkey, onProfileClick) {
+        { tapped -> if (tapped != pubkey) onProfileClick(tapped) }
+    }
+    val musicActions = remember(onComposeText, openOtherProfile) {
         com.nostrvault.ui.screens.music.MusicActions(
             onShare = onComposeText,
-            onOpenProfile = onProfileClick,
+            onOpenProfile = openOtherProfile,
             npubToHex = viewModel::npubToHex,
         )
     }
@@ -277,7 +281,7 @@ fun ProfileScreen(
                     NostrContentText(
                         content = bio,
                         profiles = allProfiles,
-                        onProfileClick = onProfileClick,
+                        onProfileClick = openOtherProfile,
                         textColor = SecondaryText,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
@@ -510,7 +514,7 @@ fun ProfileScreen(
                         repostedByProfile = note.repostedBy?.let { allProfiles[it] },
                         onNoteClick = onNoteClick,
                         onArticleClick = onArticleClick,
-                        onProfileClick = onProfileClick,
+                        onProfileClick = openOtherProfile,
                         onLike = viewModel::likeNote,
                         onRepost = viewModel::repostNote,
                         onReply = onReply,

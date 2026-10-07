@@ -1410,8 +1410,10 @@ struct ProfileView: View {
                         onQuote: {
                             composeContext = ComposeContext(replyTo: nil, quoteTo: feedService.quoteTarget(for: note))
                         },
-                        onProfile: { pubkey in
-                            showingProfileKey = IdentifiableString(id: pubkey)
+                        onProfile: { tapped in
+                            // This page already shows that profile.
+                            guard tapped != pubkey else { return }
+                            showingProfileKey = IdentifiableString(id: tapped)
                         },
                         onMedia: { url, urls in
                             showingMediaUrl = IdentifiableURL(url: url, allURLs: urls)
