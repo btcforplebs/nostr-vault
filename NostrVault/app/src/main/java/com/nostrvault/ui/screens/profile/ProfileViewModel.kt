@@ -284,6 +284,14 @@ class ProfileViewModel @Inject constructor(
             // Own following count is known instantly from our contact list.
             if (own) {
                 _followingCount.value = feedService.followedPubkeys.value.count { it != pk }
+                // Your followers come from the relay's ledger, which is complete
+                // (spam left out); relay samples would cap at a page.
+                launch {
+                    val ledger = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.nostrvault.data.model.FollowerSnapshot.parse(com.nostrvault.relay.HavenBridge.getFollowers(pk))
+                    }
+                    if (ledger != null && _pubkey.value == pk) _followersCount.value = ledger.current.size
+                }
             }
 
             // Fetch metadata if missing.
@@ -318,7 +326,7 @@ class ProfileViewModel @Inject constructor(
             _followsMe.value = followsMe
         }
         s.onFollower = { followerPk ->
-            if (followerPubkeys.add(followerPk)) {
+            if (followerPubkeys.add(followerPk) && !_isOwnProfile.value) {
                 _followersCount.value = followerPubkeys.size
             }
         }

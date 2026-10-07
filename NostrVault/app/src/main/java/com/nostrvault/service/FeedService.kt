@@ -2299,7 +2299,8 @@ class FeedService @Inject constructor(
     // Following / unfollowing
     // ══════════════════════════════════════════════════════════════════
 
-    fun followUser(pubkey: String): Result<Unit> {
+    /** [undo], when given, is offered on the "Followed" pill. */
+    fun followUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> {
         if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
             queueFollowAction(pubkey, follow = true)
             return Result.failure(FollowActionError.ContactsNotLoaded)
@@ -2316,15 +2317,18 @@ class FeedService @Inject constructor(
         )
         return result.fold(
             onSuccess = { followResult ->
+                val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
-                publishContactList(followResult.pubkeys)
+                publishContactList(followResult.pubkeys, rollback = previous) {
+                    notificationManager.showFollow(displayName, FollowKind.FAILED("Couldn't publish the follow"))
+                }
                 // Re-filter so already-loaded notes from the newly-followed author
                 // surface immediately in the Following feed.
                 recomputeFilteredNotes()
                 // Re-issue the live primary REQ so the new follow's FUTURE notes
                 // stream in without waiting for a full refresh.
                 resubscribePrimaryToConnected()
-                notificationManager.showFollow(displayName, FollowKind.FOLLOWED)
+                notificationManager.showFollow(displayName, FollowKind.FOLLOWED, undo)
                 Result.success(Unit)
             },
             onFailure = {
@@ -2339,7 +2343,8 @@ class FeedService @Inject constructor(
         )
     }
 
-    fun unfollowUser(pubkey: String): Result<Unit> {
+    /** [undo], when given, is offered on the "Unfollowed" pill. */
+    fun unfollowUser(pubkey: String, undo: (() -> Unit)? = null): Result<Unit> {
         if (!_hasAttemptedContactLoad.value || _isLoadingContacts.value) {
             queueFollowAction(pubkey, follow = false)
             return Result.failure(FollowActionError.ContactsNotLoaded)
@@ -2360,15 +2365,18 @@ class FeedService @Inject constructor(
                 if (contactManager.shouldBlockPublish(followResult.pubkeys.size, _followedPubkeys.value.size)) {
                     return Result.failure(FollowActionError.SafetyCheckFailed)
                 }
+                val previous = _followedPubkeys.value
                 _followedPubkeys.value = followResult.pubkeys
-                publishContactList(followResult.pubkeys)
+                publishContactList(followResult.pubkeys, rollback = previous) {
+                    notificationManager.showFollow(displayName, FollowKind.FAILED("Couldn't publish the unfollow"))
+                }
                 // Re-filter so the unfollowed author's notes disappear from the
                 // Following feed immediately (the filter excludes non-follows).
                 recomputeFilteredNotes()
                 // Re-issue the live primary REQ so the relay stops streaming the
                 // unfollowed author's future notes.
                 resubscribePrimaryToConnected()
-                notificationManager.showFollow(displayName, FollowKind.UNFOLLOWED)
+                notificationManager.showFollow(displayName, FollowKind.UNFOLLOWED, undo)
                 Result.success(Unit)
             },
             onFailure = {
@@ -2383,8 +2391,28 @@ class FeedService @Inject constructor(
         )
     }
 
-    private fun publishContactList(pubkeys: List<String>) {
+    /**
+     * [rollback]: the list before this edit. If signing fails or every relay
+     * refuses the event, and nothing has changed the list since, it is put
+     * back so the screen never shows a follow that was not published; then
+     * [onFailed] runs, on the main thread.
+     */
+    private fun publishContactList(
+        pubkeys: List<String>,
+        rollback: List<String>? = null,
+        onFailed: (() -> Unit)? = null,
+    ) {
         val tags = pubkeys.map { listOf("p", it) }
+        val fail: () -> Unit = {
+            scope.launch(Dispatchers.Main.immediate) {
+                if (rollback != null && _followedPubkeys.value == pubkeys) {
+                    _followedPubkeys.value = rollback
+                    recomputeFilteredNotes()
+                    resubscribePrimaryToConnected()
+                }
+                onFailed?.invoke()
+            }
+        }
         // Bump the local-edit guard synchronously to "now" so an immediate contact
         // refresh (firing before the async sign/post below completes) can't accept a
         // stale relay copy and drop the edit we're about to publish.
@@ -2398,6 +2426,7 @@ class FeedService @Inject constructor(
                 content = contactListContent,
                 tags = tags,
             ) }.onFailure { Log.e(TAG, "contact list not signed: ${it.message}") }.getOrNull()
+            if (event == null) fail()
             event?.let {
                 // Record the published list's created_at + a durable backup so a
                 // later relay fetch returning an older copy can't clobber this edit.
@@ -2409,7 +2438,9 @@ class FeedService @Inject constructor(
                     contactListCreatedAt = it.createdAt,
                     forAccountKey = accountKey,
                 )
-                nostrService.postEvent(it)
+                nostrService.postEvent(it) { outcome ->
+                    if (outcome == BroadcastTally.Outcome.REFUSED) fail()
+                }
             }
         }
     }

@@ -40,10 +40,12 @@ data class FollowNotification(
     override val id: String = UUID.randomUUID().toString(),
     val recipientName: String,
     val kind: FollowKind,
+    /** Reverses the follow; the pill shows Undo and stays up longer. */
+    val undo: (() -> Unit)? = null,
 ) : AppNotification() {
     override val autoDismissMs: Long
         get() = when (kind) {
-            FollowKind.FOLLOWED, FollowKind.UNFOLLOWED -> 3_000L
+            FollowKind.FOLLOWED, FollowKind.UNFOLLOWED -> if (undo != null) 5_000L else 3_000L
             is FollowKind.FAILED -> 5_000L
         }
 }

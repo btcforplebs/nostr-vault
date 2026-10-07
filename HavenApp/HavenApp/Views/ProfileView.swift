@@ -2330,7 +2330,13 @@ struct ProfileView: View {
             // Two empty rounds in a row, not one: a single quiet round is more
             // often a slow relay than the end of the list.
             quietFollowerPages += 1
-            if quietFollowerPages >= 2 { followersExhausted = true }
+            if quietFollowerPages >= 2 {
+                followersExhausted = true
+            } else {
+                // The loader keeps its identity when nothing landed, so it
+                // won't ask again; take the second look now.
+                loadMoreFollowers()
+            }
         }
     }
 
